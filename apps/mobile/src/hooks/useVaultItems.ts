@@ -24,6 +24,7 @@ import {
   deleteItem,
   vaultItemCount,
 } from '@dina/core';
+
 import type { VaultItem } from '@dina/test-harness';
 
 export interface VaultItemUI {

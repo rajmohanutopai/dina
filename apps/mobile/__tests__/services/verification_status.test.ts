@@ -9,6 +9,8 @@
  */
 
 import * as Keychain from 'react-native-keychain';
+
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   dismissVerificationBanner,
   isVerificationBannerDismissed,
@@ -16,7 +18,6 @@ import {
   markVerificationPending,
   markVerified,
 } from '../../src/services/verification_status';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const SERVICE = 'dina.verification_status';
 

@@ -27,8 +27,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 3c (task 3.31/3.32/3.33).
  */
 
-import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 /**

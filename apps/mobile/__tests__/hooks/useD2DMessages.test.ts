@@ -4,18 +4,7 @@
  * Source: ARCHITECTURE.md Task 6.19
  */
 
-import {
-  getQuarantinedMessages,
-  acceptFromQuarantine,
-  blockFromQuarantine,
-  composeReply,
-  getQuarantineBadge,
-  registerSenderLabel,
-  resetD2DMessages,
-} from '../../src/hooks/useD2DMessages';
-import { quarantineMessage, resetQuarantineState } from '../../../core/src/d2d/quarantine';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
-import { claim, resetStagingState } from '../../../core/src/staging/service';
 import {
   addContact,
   getContact,
@@ -26,6 +15,17 @@ import {
   setContactRepository,
   type ContactRepository,
 } from '../../../core/src/contacts/repository';
+import { quarantineMessage, resetQuarantineState } from '../../../core/src/d2d/quarantine';
+import { claim, resetStagingState } from '../../../core/src/staging/service';
+import {
+  getQuarantinedMessages,
+  acceptFromQuarantine,
+  blockFromQuarantine,
+  composeReply,
+  getQuarantineBadge,
+  registerSenderLabel,
+  resetD2DMessages,
+} from '../../src/hooks/useD2DMessages';
 
 /**
  * A contact repository whose durable `update()` throws (e.g. disk failure)
@@ -53,6 +53,7 @@ function makeFailingUpdateContactRepo(): ContactRepository {
   };
 }
 import { clearGatesState } from '../../../core/src/d2d/gates';
+
 import { makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('D2D Message View Hook (6.19)', () => {

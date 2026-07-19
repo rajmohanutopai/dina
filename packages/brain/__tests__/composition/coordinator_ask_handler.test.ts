@@ -18,16 +18,12 @@
  *     thread.
  */
 
-import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
-} from '@dina/core';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '@dina/core';
+ clearVaults, storeItem } from '@dina/core';
+
+import { getThread, resetThreads } from '../../src/chat/thread';
 import {
   buildAgenticAskPipeline,
   type BuildAgenticAskPipelineInput,
@@ -37,15 +33,20 @@ import {
   createAskCoordinator,
   type AskCoordinatorCoreClient,
 } from '../../src/composition/ask_coordinator';
-import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 import { getAskApprovalGateway } from '../../src/composition/ask_gateway_registry';
-import { getThread, resetThreads } from '../../src/chat/thread';
+import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
+import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import {
+  setAccessiblePersonas,
+  resetReasoningProvider,
+} from '../../src/vault_context/assembly';
+
 import type {
   ChatResponse,
   LLMProvider,
   ToolCall,
 } from '../../src/llm/adapters/provider';
-import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 const REQUESTER = 'did:key:zBridgeTester';
 const SYSTEM_PROMPT = 'You answer with vault data.';
@@ -250,7 +251,7 @@ describe('createCoordinatorAskHandler — synchronous outcomes', () => {
     };
 
     const coord = buildCoord(depleted, 5_000);
-    const failures: Array<{ kind: string; message: string }> = [];
+    const failures: { kind: string; message: string }[] = [];
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,

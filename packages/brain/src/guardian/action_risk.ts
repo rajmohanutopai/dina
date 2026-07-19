@@ -141,13 +141,13 @@ export function resetApprovalThreshold(): void {
 const proposals = new Map<string, ActionProposal>();
 
 /** Intent audit trail: every action proposed or executed. */
-const auditTrail: Array<{
+const auditTrail: {
   proposalId: string;
   action: string;
   riskLevel: RiskLevel;
   status: ProposalStatus;
   timestamp: number;
-}> = [];
+}[] = [];
 
 // ---------------------------------------------------------------
 // Public API

@@ -12,10 +12,12 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import { RPC_RESPONSE_TYPE } from '../constants';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { RPC_RESPONSE_TYPE } from '../constants';
 import { sign, verify } from '../crypto/ed25519';
 import { sealEncrypt } from '../crypto/nacl';
+
 import type { CoreRPCResponse } from './rpc_envelope';
 
 /**

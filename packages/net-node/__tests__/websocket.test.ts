@@ -20,12 +20,12 @@ import {
 /** Build a minimal fake `ws` module whose WebSocket class records
  *  every `.on()` call and exposes a way to simulate events. */
 class MockWs {
-  public sent: Array<string | Uint8Array | ArrayBuffer> = [];
+  public sent: (string | Uint8Array | ArrayBuffer)[] = [];
   public closed = false;
   public readyState = 0;
   public url: string;
   public options: unknown;
-  private listeners: Record<string, Array<(...args: unknown[]) => void>> = {
+  private listeners: Record<string, ((...args: unknown[]) => void)[]> = {
     open: [],
     message: [],
     close: [],

@@ -1,17 +1,31 @@
 /**
- * ISVC-9 — `useRuns` data hook. Drives the pure list/steer functions against a
- * wired in-process `RunService` (the same singleton mobile boot registers).
+ * ISVC-9 — `useRuns` data hook. Drives the list/steer functions through the
+ * owner-only control client (InProcessOwnerRunClient → /v1/run/* route guards),
+ * the same owner-marked dispatch mobile boot registers via `setOwnerRunClient` —
+ * NOT the raw `getRunService()` global (which Brain shares in-process, §20).
  */
 
-import { RunService, setRunService, InMemoryRunRepository } from '@dina/core';
+import {
+  RunService,
+  setRunService,
+  setRunRepository,
+  InMemoryRunRepository,
+  InProcessOwnerRunClient,
+  createCoreRouter,
+} from '@dina/core';
 
 import { getActiveRuns, pauseRun, resumeRun, stopRun } from '../../src/hooks/useRuns';
+import { setOwnerRunClient } from '../../src/services/owner_run_client';
 
 const NOW = 1_700_000_000_000;
 
 function wireRuns(): RunService {
-  const svc = new RunService({ repository: new InMemoryRunRepository(), nowMsFn: () => NOW });
+  const repo = new InMemoryRunRepository();
+  setRunRepository(repo);
+  const svc = new RunService({ repository: repo, nowMsFn: () => NOW });
   setRunService(svc);
+  // The owner UI reaches runs ONLY through this owner-marked dispatch.
+  setOwnerRunClient(new InProcessOwnerRunClient(createCoreRouter({ ownerCapability: 'test-owner-cap' }), 'test-owner-cap'));
   return svc;
 }
 
@@ -26,11 +40,15 @@ function makeRun(svc: RunService, key: string): string {
   }).run_id;
 }
 
-afterEach(() => setRunService(null));
+afterEach(() => {
+  setRunService(null);
+  setRunRepository(null);
+  setOwnerRunClient(null);
+});
 
 describe('useRuns', () => {
-  it('returns [] when no run service is wired', async () => {
-    setRunService(null);
+  it('returns [] when no owner client is wired', async () => {
+    setOwnerRunClient(null);
     expect(await getActiveRuns()).toEqual([]);
   });
 

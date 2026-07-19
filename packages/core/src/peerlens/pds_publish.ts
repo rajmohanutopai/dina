@@ -24,6 +24,7 @@ import {
   type SubjectRef,
   type SubjectType,
 } from '@dina/protocol';
+
 import { canonicalize, signCanonical, verifyCanonical } from '../identity/signing';
 import { defaultFetch } from '../runtime/fetch';
 

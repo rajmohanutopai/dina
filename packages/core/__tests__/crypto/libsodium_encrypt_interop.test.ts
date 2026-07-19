@@ -11,11 +11,12 @@
  * PyNaCl-side half.
  */
 
-import { x25519 } from '@noble/curves/ed25519.js';
 import { xsalsa20poly1305, hsalsa } from '@noble/ciphers/salsa.js';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { blake2b } from '@noble/hashes/blake2.js';
-import { sealEncrypt, ed25519PubToX25519 } from '../../src/crypto/nacl';
+
 import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealEncrypt, ed25519PubToX25519 } from '../../src/crypto/nacl';
 
 const KNOWN_ED25519_SEED = new Uint8Array(32).fill(0x42);
 

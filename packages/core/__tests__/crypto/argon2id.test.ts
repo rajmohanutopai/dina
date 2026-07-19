@@ -12,7 +12,6 @@
  * Source: core/test/crypto_test.go (TestCrypto_4_*)
  */
 
-import { deriveKEK, ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
 import {
   TEST_PASSPHRASE,
   TEST_PASSPHRASE_WRONG,
@@ -25,6 +24,8 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { deriveKEK, ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
 
 // 128MB argon2id in WASM is slow — allow up to 30s per test
 jest.setTimeout(30_000);

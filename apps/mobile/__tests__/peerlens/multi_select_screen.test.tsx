@@ -8,8 +8,8 @@
  * behaviour.
  */
 
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import React from 'react';
 
 import {
   MultiSelectScreen,
@@ -19,7 +19,7 @@ import {
 
 type Sample = 'a' | 'b' | 'c';
 
-const OPTIONS: ReadonlyArray<MultiSelectOption<Sample>> = [
+const OPTIONS: readonly MultiSelectOption<Sample>[] = [
   { value: 'a', label: 'Apple', description: 'fruit' },
   { value: 'b', label: 'Banana' },
   { value: 'c', label: 'Cherry', description: 'red' },

@@ -25,8 +25,8 @@
  * docs/PREFERRED_CONTACTS_PORT_TASKS.md for the rationale.
  */
 
-import type { TopicExtractor } from './topic_extractor';
 import type { PreferenceExtractor } from './preference_extractor';
+import type { TopicExtractor } from './topic_extractor';
 
 /** Minimum CoreClient surface needed by the pipeline. */
 export interface TopicTouchCoreClient {

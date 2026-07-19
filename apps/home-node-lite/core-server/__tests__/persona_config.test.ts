@@ -109,7 +109,7 @@ describe('loadPersonaConfig (task 4.68)', () => {
         }),
       );
       expect(err!.code).toBe('invalid_shape');
-      const issues = (err!.detail?.issues as Array<{ path: string }>) ?? [];
+      const issues = (err!.detail?.issues as { path: string }[]) ?? [];
       expect(issues.some((i) => i.path === 'version')).toBe(true);
     });
 

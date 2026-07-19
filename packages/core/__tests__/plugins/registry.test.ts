@@ -22,14 +22,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { SQLitePluginDecisionRepository } from '../../src/plugins/decisions';
+import { SQLitePluginGrantRepository, parseConstraints } from '../../src/plugins/grants';
+import { SQLitePluginInstallRepository } from '../../src/plugins/registry';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { SQLitePluginInstallRepository } from '../../src/plugins/registry';
-import { SQLitePluginGrantRepository, parseConstraints } from '../../src/plugins/grants';
-import { SQLitePluginDecisionRepository } from '../../src/plugins/decisions';
 
 const T0 = 1_750_000_000_000;
 const T0_SEC = Math.floor(T0 / 1000);

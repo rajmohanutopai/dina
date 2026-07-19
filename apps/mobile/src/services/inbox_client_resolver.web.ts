@@ -8,13 +8,13 @@
  * Mirrors the reminder/chat web transports.
  */
 
+import type { InboxCoreClient } from '../hooks/useServiceInbox';
 import type {
   ServiceRespondRequestBody,
   ServiceRespondResult,
   WorkflowTask,
 } from '@dina/core';
 
-import type { InboxCoreClient } from '../hooks/useServiceInbox';
 
 const BASE = '/api/v1/workflow/tasks';
 

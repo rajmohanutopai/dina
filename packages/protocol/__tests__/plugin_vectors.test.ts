@@ -7,8 +7,8 @@
  * to update casually (packages/protocol/docs/conformance.md §14).
  */
 
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import {
@@ -31,7 +31,7 @@ function loadVector<T>(slot: string): T {
 
 describe('plugin_digests vector', () => {
   interface DigestVector {
-    cases: Array<{
+    cases: {
       name: string;
       manifest: PluginManifest;
       expected: {
@@ -40,7 +40,7 @@ describe('plugin_digests vector', () => {
         behavior_hash: string;
         presentation_hash: string;
       };
-    }>;
+    }[];
   }
 
   const vector = loadVector<DigestVector>('plugin_digests.json');
@@ -59,11 +59,11 @@ describe('plugin_digests vector', () => {
 
 describe('plugin_release_rkey vector', () => {
   interface RkeyVector {
-    cases: Array<{
+    cases: {
       name: string;
       inputs: { digest_source_utf8: string; cid: string };
       expected_rkey: string;
-    }>;
+    }[];
   }
 
   const vector = loadVector<RkeyVector>('plugin_release_rkey.json');

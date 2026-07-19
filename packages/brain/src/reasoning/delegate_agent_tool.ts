@@ -43,7 +43,9 @@
  */
 
 import { randomBytes, bytesToHex } from '@noble/hashes/utils.js';
+
 import { scrubPII, type CoreClient } from '@dina/core';
+
 import type { AgentTool } from './tool_registry';
 
 export interface DelegateToAgentToolOptions {

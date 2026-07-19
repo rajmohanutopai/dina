@@ -28,13 +28,14 @@
 // home-node-lite's brain-server lands, it'll route those three calls
 // through `CoreClient.scratchpadCheckpoint/Resume/Clear` over HTTP;
 // for now the direct imports reflect the in-process-only reality.
-import type { ScratchpadEntry } from '@dina/core';
 import {
   checkpoint as coreCheckpoint,
   clearScratchpad as coreClear,
   resume as coreResume,
   sweepStaleScratchpads as coreSweep,
 } from '@dina/core';
+
+import type { ScratchpadEntry } from '@dina/core';
 
 export interface Checkpoint {
   taskId: string;

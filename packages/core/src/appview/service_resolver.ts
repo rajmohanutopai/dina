@@ -18,9 +18,10 @@
  * contact-gate check is bypassed.
  */
 
-import { backoff as defaultBackoff } from '../transport/http_retry';
-import { defaultFetch } from '../runtime/fetch';
 import { resolveCanonicalCapability } from '@dina/protocol';
+
+import { defaultFetch } from '../runtime/fetch';
+import { backoff as defaultBackoff } from '../transport/http_retry';
 
 /** Configuration for `AppViewServiceResolver`. */
 export interface AppViewServiceResolverOptions {

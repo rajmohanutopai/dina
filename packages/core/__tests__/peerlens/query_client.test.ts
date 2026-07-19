@@ -17,7 +17,7 @@ import {
 } from '../../src/peerlens/query_client';
 
 function createMockFetch(body: unknown, status = 200) {
-  const calls: Array<{ url: string; method: string }> = [];
+  const calls: { url: string; method: string }[] = [];
   const mockFetch = jest.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     calls.push({ url, method: init?.method ?? 'GET' });

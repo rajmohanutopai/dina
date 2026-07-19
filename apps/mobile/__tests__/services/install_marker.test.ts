@@ -7,7 +7,6 @@
  * THIS install or a prior one.
  */
 
-import * as Keychain from 'react-native-keychain';
 import {
   __getDeletedEntries,
   __getEntries,
@@ -22,6 +21,8 @@ import {
   __throwOnFileWrite,
   __throwOnList,
 } from 'expo-file-system';
+import * as Keychain from 'react-native-keychain';
+
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   clearOrphanKeychainState,

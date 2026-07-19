@@ -26,7 +26,8 @@
  * acceptable). Pinned in `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
+
 import type {
   Contact,
   TrustLevel,
@@ -34,7 +35,7 @@ import type {
   Relationship,
   DataResponsibility,
 } from './directory';
-import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface ContactRepository {
   /** Insert a contact policy row. `contact.personId` is the key. */

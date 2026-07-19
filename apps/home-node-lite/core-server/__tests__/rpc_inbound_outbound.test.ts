@@ -16,8 +16,9 @@ import {
   type CoreRPCRequest,
   type CoreRPCResponse,
 } from '@dina/core';
-import { RPC_REQUEST_TYPE, RPC_RESPONSE_TYPE } from '@dina/protocol';
 import { mnemonicToSeed, generateMnemonic } from '@dina/core';
+import { RPC_REQUEST_TYPE, RPC_RESPONSE_TYPE } from '@dina/protocol';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import { unsealInboundRpc } from '../src/msgbox/rpc_inbound';
 import { sealOutboundRpc } from '../src/msgbox/rpc_outbound';

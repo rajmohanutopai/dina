@@ -24,10 +24,11 @@
  * Design doc: §4 (data model), §5 (scoring), §6.2 (canonicalization).
  */
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
-import type { Topic, TopicKind, TouchRequest } from './domain';
 import { isTopicKind } from './domain';
 import { computeSalience, stemLite } from './scoring';
+
+import type { Topic, TopicKind, TouchRequest } from './domain';
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 /**
  * Per-persona repository for working-memory topics.

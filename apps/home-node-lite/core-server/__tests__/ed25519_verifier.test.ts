@@ -8,6 +8,7 @@
  */
 
 import { Crypto } from '@dina/adapters-node';
+
 import { verifySignature } from '../src/auth/ed25519_verifier';
 
 /**

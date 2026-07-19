@@ -45,8 +45,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.46.
  */
 
-import type { CoreRPCRequest, CoreRPCResponse } from '@dina/protocol';
 import { RPC_RESPONSE_TYPE } from '@dina/protocol';
+
+import type { CoreRPCRequest, CoreRPCResponse } from '@dina/protocol';
 
 /**
  * Fastify inject result — the structural subset we consume. Matches

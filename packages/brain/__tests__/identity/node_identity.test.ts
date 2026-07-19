@@ -9,9 +9,10 @@
  *   - Fallthrough: bad-password / 5xx errors are NOT coerced into account creation.
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+
 import { ensureNodeIdentity } from '../../src/identity/node_identity';
 import { PDSAccountError } from '../../src/pds/account';
-import { randomBytes } from '@noble/ciphers/utils.js';
 
 type MockFetch = jest.Mock<Promise<Response>, [input: string | URL | Request, init?: RequestInit]>;
 

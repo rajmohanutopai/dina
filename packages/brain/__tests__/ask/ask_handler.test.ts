@@ -15,7 +15,7 @@ import {
 import { AskRegistry, InMemoryAskAdapter } from '../../src/ask/ask_registry';
 
 function mockScheduler() {
-  const queue: Array<{ fn: () => void; fireAt: number; handle: number }> = [];
+  const queue: { fn: () => void; fireAt: number; handle: number }[] = [];
   let nextHandle = 1;
   let now = 0;
   return {

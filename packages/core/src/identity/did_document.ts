@@ -19,6 +19,7 @@
 // downstream consumers (@dina/brain, @dina/test-harness, apps/mobile).
 export type { VerificationMethod, ServiceEndpoint, DIDDocument } from '@dina/protocol';
 import { DID_V1_CONTEXT, MULTIKEY_CONTEXT } from '@dina/protocol';
+
 import type { DIDDocument, ServiceEndpoint } from '@dina/protocol';
 
 /**

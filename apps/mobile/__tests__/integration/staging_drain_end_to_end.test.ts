@@ -16,17 +16,20 @@
  * contact carrying `preferredFor: ['dental']`."
  */
 
+import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
+
 import { StagingDrainScheduler } from '../../../brain/src/staging/scheduler';
-import type { StagingDrainCoreClient } from '../../../brain/src/staging/drain';
-import { buildStagingEnrichment } from '../../src/services/staging_enrichment';
-import type { CoreClient } from '@dina/core';
 import {
   resetContactDirectory,
   addContact,
   getContact,
 } from '../../../core/src/contacts/directory';
 import { setPeopleRepository } from '../../../core/src/people/repository';
-import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
+import { buildStagingEnrichment } from '../../src/services/staging_enrichment';
+
+import type { StagingDrainCoreClient } from '../../../brain/src/staging/drain';
+import type { CoreClient } from '@dina/core';
+
 
 type TestCoreClient = StagingDrainCoreClient & Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 
@@ -45,9 +48,9 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
     expect(getContact('did:plc:drcarl')!.preferredFor ?? []).toEqual([]);
 
     // Capture core calls to verify the shape of the wire contract.
-    const resolveCalls: Array<{ itemId: string; persona: string | string[]; data: unknown }> = [];
-    const updateContactCalls: Array<{ did: string; preferredFor?: string[] }> = [];
-    const memoryTouches: Array<{ topic: string }> = [];
+    const resolveCalls: { itemId: string; persona: string | string[]; data: unknown }[] = [];
+    const updateContactCalls: { did: string; preferredFor?: string[] }[] = [];
+    const memoryTouches: { topic: string }[] = [];
 
     const core = {
       // Drain-facing surface
@@ -127,7 +130,7 @@ describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {
     const { setPreferredFor } = await import('../../../core/src/contacts/directory');
     setPreferredFor('did:plc:drcarl', ['dental']);
 
-    const updateContactCalls: Array<{ did: string }> = [];
+    const updateContactCalls: { did: string }[] = [];
     const core = {
       async stagingClaim() {
         const items = [

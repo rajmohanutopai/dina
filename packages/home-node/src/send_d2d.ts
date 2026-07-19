@@ -14,11 +14,13 @@
  * `pickEd25519VerificationMethod` shared helper.
  */
 
-import { DIDResolver, sendD2D as coreSendD2D } from '@dina/core/runtime';
 import { multibaseToPublicKey } from '@dina/core';
-import type { AppViewServiceResolver, D2DOutboxRow, RedeliverOutcome } from '@dina/core';
+import { DIDResolver, sendD2D as coreSendD2D } from '@dina/core/runtime';
 
 import { pickEd25519VerificationMethod } from './resolve_sender';
+
+import type { AppViewServiceResolver, D2DOutboxRow, RedeliverOutcome } from '@dina/core';
+
 
 export interface MakeSendD2DOptions {
   /** Our own DID — signed as sender on every outbound envelope. */

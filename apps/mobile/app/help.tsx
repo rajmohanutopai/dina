@@ -9,11 +9,13 @@
  * and links to the relevant settings drill-downs.
  */
 
+import { Stack, useRouter } from 'expo-router';
 import React, { useCallback } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { FEATURES, FeatureIcon } from '../src/features';
+
 import { FEATURE_NAMES } from '@dina/core';
+
+import { FEATURES, FeatureIcon } from '../src/features';
 import { requestGuidedDemoReplay } from '../src/guided_demo/replay_request';
 import { colors, fonts, radius, shadows, spacing, textStyles } from '../src/theme';
 

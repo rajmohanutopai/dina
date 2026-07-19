@@ -13,15 +13,20 @@
  * Source: ARCHITECTURE.md Task 2.30, AT Protocol PLC directory spec
  */
 
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { base58 } from '@scure/base';
+
+import { DEFAULT_PLC_DIRECTORY } from '../constants';
 import { getPublicKey } from '../crypto/ed25519';
 import { deriveRotationKey } from '../crypto/slip0010';
+import { defaultFetch } from '../runtime/fetch';
+
+import { base32LowercaseNoPad } from './base32';
 import { deriveDIDKey, publicKeyToMultibase } from './did';
 import { buildDIDDocument } from './did_document';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { base58 } from '@scure/base';
-import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { base32LowercaseNoPad } from './base32';
+
 
 /** Multicodec varint prefix for secp256k1 public key: 0xe7 0x01. */
 const SECP256K1_MULTICODEC = new Uint8Array([0xe7, 0x01]);
@@ -34,8 +39,6 @@ function secp256k1ToMultibase(pubKey: Uint8Array): string {
   return 'z' + base58.encode(payload);
 }
 
-import { DEFAULT_PLC_DIRECTORY } from '../constants';
-import { defaultFetch } from '../runtime/fetch';
 const DEFAULT_PLC_URL = DEFAULT_PLC_DIRECTORY;
 
 export interface PLCCreateParams {

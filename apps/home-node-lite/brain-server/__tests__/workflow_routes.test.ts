@@ -8,6 +8,7 @@
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { CoreHttpError, type WorkflowTask } from '@dina/core';
 import { MockCoreClient } from '@dina/test-harness';
 

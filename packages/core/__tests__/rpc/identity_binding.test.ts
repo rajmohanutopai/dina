@@ -3,6 +3,7 @@
  */
 
 import { assertIdentityBinding, IdentityBindingError } from '../../src/rpc/identity_binding';
+
 import type { RPCInnerRequest } from '../../src/rpc/types';
 
 function req(headers: Record<string, string>): RPCInnerRequest {

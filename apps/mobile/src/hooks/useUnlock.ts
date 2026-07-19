@@ -15,6 +15,7 @@
  * Source: ARCHITECTURE.md Task 4.5
  */
 
+import { setAccessiblePersonas } from '@dina/brain';
 import {
   closePersona,
   deriveDIDKey,
@@ -24,17 +25,17 @@ import {
   unwrapSeed,
   type WrappedSeed,
 } from '@dina/core';
-import { setAccessiblePersonas } from '@dina/brain';
 import { openAllPersonasForInAppUser } from '@dina/home-node';
+
+import { seedDefaultPersonas } from '../onboarding/default_personas';
 import { loadPersistedDid } from '../services/identity_record';
+import { wipeOrphanVaultFiles } from '../services/install_marker';
 import {
   initializePersistence,
   openPersonaDB,
   isPersistenceReady,
   shutdownAllPersistence,
 } from '../storage/init';
-import { seedDefaultPersonas } from '../onboarding/default_personas';
-import { wipeOrphanVaultFiles } from '../services/install_marker';
 
 export type UnlockStep =
   | 'idle'
@@ -176,7 +177,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
       // recovered from anyway.
       const message = err instanceof Error ? err.message : String(err);
       if (/file is not a database/i.test(message)) {
-        // eslint-disable-next-line no-console
+         
         console.warn(
           '[unlock] SQLCipher DEK mismatch — wiping orphan vault files and retrying',
         );
@@ -184,7 +185,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
         try {
           await initializePersistence(masterSeed, wrappedSeed.salt);
         } catch (retryErr) {
-          // eslint-disable-next-line no-console
+           
           console.warn('[unlock] persistence init failed after orphan wipe:', retryErr);
         }
       } else {
@@ -193,7 +194,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
         // shouldn't brick unlock. The boot service's in-memory fallback
         // will fire with `persistence.in_memory` so the banner makes it
         // visible.
-        // eslint-disable-next-line no-console
+         
         console.warn('[unlock] persistence init failed:', err);
       }
     }
@@ -224,7 +225,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
       ? (persona: string) => openPersonaDB(persona)
       : undefined,
     onVaultOpenError: (persona: string, err: unknown) => {
-      // eslint-disable-next-line no-console
+       
       console.warn(`[unlock] openPersonaDB failed for "${persona}":`, err);
     },
   });

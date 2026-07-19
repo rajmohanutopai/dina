@@ -240,7 +240,7 @@ describe('selectSkeletonOrData — render-branch discriminator', () => {
   });
 
   it('genericity: works for any T (not pinned to skeleton row arrays)', () => {
-    type Score = { value: number };
+    interface Score { value: number }
     const r = selectSkeletonOrData<Score>({
       loading: false,
       data: { value: 42 },

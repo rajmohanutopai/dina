@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Section 2.61
  */
 
+import { setReminderRepository } from '../../src/reminders/repository';
 import {
   createReminder,
   createReminderDurable,
@@ -21,8 +22,8 @@ import {
   subscribeReminderCreated,
   hydrateRemindersFromRepo,
 } from '../../src/reminders/service';
+
 import type { ReminderRepository } from '../../src/reminders/repository';
-import { setReminderRepository } from '../../src/reminders/repository';
 import type { Reminder } from '../../src/reminders/service';
 
 describe('Reminder Service', () => {
@@ -730,9 +731,9 @@ describe('Reminder Service', () => {
      */
     function recordingRepo(rows: Reminder[]): {
       repo: ReminderRepository;
-      updates: Array<{ id: string; updates: Partial<Reminder> }>;
+      updates: { id: string; updates: Partial<Reminder> }[];
     } {
-      const updates: Array<{ id: string; updates: Partial<Reminder> }> = [];
+      const updates: { id: string; updates: Partial<Reminder> }[] = [];
       const repo: ReminderRepository = {
         async create(r) {
           rows.push({ ...r });

@@ -10,16 +10,17 @@
  * Source: core/test/brainclient_test.go
  */
 
-import { signRequest } from '../auth/canonical';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { signRequest } from '../auth/canonical';
+import { defaultFetch } from '../runtime/fetch';
 import {
   isNonRetryableStatus,
   isRetryableStatus,
   backoff,
   parseResponseBody,
 } from '../transport/http_retry';
-import { defaultFetch } from '../runtime/fetch';
 
 export interface BrainClientConfig {
   coreURL: string;

@@ -36,6 +36,7 @@ import {
   createSearchProviderServicesTool,
   createQueryServiceTool,
 } from '../../src/reasoning/service_tools';
+
 import type { ServiceProfile } from '../../src/appview_client/http';
 import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
 
@@ -119,14 +120,14 @@ describe('mobile Scenario 5 — Service-query end-to-end', () => {
       lat: loc.lat,
       lng: loc.lng,
       radius_km: 5,
-    })) as Array<{
+    })) as {
       did: string;
       name: string;
       capability_schemas: Record<
         string,
         { schema_hash: string; params_schema: Record<string, unknown> }
       >;
-    }>;
+    }[];
 
     expect(providers.length).toBe(1);
     const demoProvider = providers[0]!;
@@ -140,13 +141,13 @@ describe('mobile Scenario 5 — Service-query end-to-end', () => {
     // contract between tool → orchestrator → sendD2D. The real
     // orchestrator interface speaks camelCase (toDID / schemaHash);
     // snake_case shows up only on the wire after the client call.
-    const dispatched: Array<{
+    const dispatched: {
       toDID: string;
       capability: string;
       params: Record<string, unknown>;
       schemaHash: string | undefined;
       serviceName: string | undefined;
-    }> = [];
+    }[] = [];
     const orchestrator = {
       async issueQueryToDID(args: {
         toDID: string;
@@ -253,9 +254,9 @@ describe('mobile Scenario 5 — Service-query end-to-end', () => {
         return [DEMO_PROVIDER_PROFILE];
       } },
     });
-    const [profile] = (await search.execute({ capability: 'eta_query' })) as Array<{
+    const [profile] = (await search.execute({ capability: 'eta_query' })) as {
       capability_schemas: Record<string, { schema_hash: string }>;
-    }>;
+    }[];
 
     expect(profile.capability_schemas.eta_query!.schema_hash).toBe(
       'sha256:demoprovider-eta-v1',

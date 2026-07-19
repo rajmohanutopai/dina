@@ -3,6 +3,7 @@
  */
 
 import { mnemonicToSeed, generateMnemonic } from '@dina/core';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import {
   buildPushEnvelope,

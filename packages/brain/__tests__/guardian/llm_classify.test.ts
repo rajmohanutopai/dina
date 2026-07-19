@@ -4,12 +4,13 @@
  * Source: ARCHITECTURE.md Task 3.21
  */
 
+import { makeEvent } from '@dina/test-harness';
+
 import {
   classifyWithLLM,
   registerSilenceLLM,
   resetSilenceLLM,
 } from '../../src/guardian/llm_classify';
-import { makeEvent } from '@dina/test-harness';
 
 describe('Guardian LLM Classification', () => {
   beforeEach(() => resetSilenceLLM());

@@ -11,10 +11,13 @@
  */
 
 import { Writable } from 'node:stream';
+
 import { pino } from 'pino';
+
 import { createServer } from '../src/server';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -28,11 +31,11 @@ function baseConfig(): CoreServerConfig {
 
 interface LogCapture {
   logger: Logger;
-  lines: Array<Record<string, unknown>>;
+  lines: Record<string, unknown>[];
 }
 
 function capturingLogger(): LogCapture {
-  const lines: Array<Record<string, unknown>> = [];
+  const lines: Record<string, unknown>[] = [];
   const sink = new Writable({
     write(chunk, _enc, cb) {
       const text = chunk.toString('utf8');

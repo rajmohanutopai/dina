@@ -3,13 +3,15 @@
  */
 
 import { RPC_RESPONSE_TYPE } from '@dina/protocol';
-import type { CoreRPCResponse } from '@dina/protocol';
+
 import {
   IdempotencyCache,
   DEFAULT_IDEMPOTENCY_TTL_MS,
   DEFAULT_IDEMPOTENCY_MAX_ENTRIES,
   MIN_IDEMPOTENCY_TTL_MS,
 } from '../src/msgbox/idempotency_cache';
+
+import type { CoreRPCResponse } from '@dina/protocol';
 
 // Shortest legal TTL — equal to the timestamp-validator window (task 4.83).
 // Tests that need to exercise expiry pin their TTL here + advance the mock

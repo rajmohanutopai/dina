@@ -11,8 +11,9 @@
  * Source: ARCHITECTURE.md Task 2.54
  */
 
-import { checkSharingPolicy, filterByTier, type SharingTier } from './sharing';
 import { scrubPII } from '../pii/patterns';
+
+import { checkSharingPolicy, filterByTier, type SharingTier } from './sharing';
 
 export interface EgressData {
   text: string;

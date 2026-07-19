@@ -12,13 +12,8 @@
  *   - Provider role with no config: publish is skipped silently
  */
 
-import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
-import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { MockCoreClient } from '@dina/test-harness';
-import type { CoreClient, WorkflowTask } from '@dina/core';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
-import type { IdentityKeypair } from '../../../core/src/identity/keypair';
-import type { PDSSession } from '../../../brain/src/pds/account';
+
 import {
   resetServiceCommandHandler,
   resetServiceApproveCommandHandler,
@@ -26,6 +21,13 @@ import {
   resetChatDefaults,
 } from '../../../brain/src/chat/orchestrator';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
+
+import type { PDSSession } from '../../../brain/src/pds/account';
+import type { IdentityKeypair } from '../../../core/src/identity/keypair';
+import type { ServiceConfig } from '../../../core/src/service/service_config';
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 function fakeScheduler() {
   let nextHandle = 1;
@@ -249,7 +251,7 @@ describe('createNode — lifecycle', () => {
 
 describe('createNode — Response Bridge wiring', () => {
   it('completing a service_query_execution delegation fires sendD2D', async () => {
-    const sent: Array<{ to: string; type: string; body: unknown }> = [];
+    const sent: { to: string; type: string; body: unknown }[] = [];
     const repo = new InMemoryWorkflowRepository();
     const node = await createNode(
       baseOptions({

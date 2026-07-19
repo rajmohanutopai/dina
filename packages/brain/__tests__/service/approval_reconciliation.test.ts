@@ -3,6 +3,7 @@
  */
 
 import { ApprovalReconciler } from '../../src/service/approval_reconciliation';
+
 import type { CoreClient, WorkflowTask } from '@dina/core';
 
 /** Deterministic interval scheduler. Tests advance time explicitly. */
@@ -41,9 +42,9 @@ function fakeScheduler() {
 }
 
 interface StubClient {
-  listCalls: Array<{ kind: string; state: string; limit?: number }>;
-  respondCalls: Array<{ taskId: string; body: unknown }>;
-  failCalls: Array<{ id: string; error: string }>;
+  listCalls: { kind: string; state: string; limit?: number }[];
+  respondCalls: { taskId: string; body: unknown }[];
+  failCalls: { id: string; error: string }[];
   listResult: WorkflowTask[];
   listError: Error | null;
   respondError: Error | null;
@@ -195,7 +196,7 @@ describe('ApprovalReconciler.runTick', () => {
     const { client } = stubClient({
       listResult: [task('a', nowSec - 1), task('b', nowSec - 1)],
     });
-    const events: Array<{ id: string; outcome: string }> = [];
+    const events: { id: string; outcome: string }[] = [];
     const r = new ApprovalReconciler({
       coreClient: client,
       nowMsFn: sched.nowMs,

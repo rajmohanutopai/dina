@@ -12,13 +12,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   SQLiteServiceGrantRepository,
   type ServiceGrant,
 } from '../../src/service/service_grant_repository';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 function harness() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-svc-grants-'));

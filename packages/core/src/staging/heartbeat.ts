@@ -41,8 +41,8 @@ let heartbeatCounter = 0;
  */
 export function startHeartbeat(
   itemId: string,
-  extensionSeconds: number = 300,
-  intervalMs: number = 300_000,
+  extensionSeconds = 300,
+  intervalMs = 300_000,
 ): Heartbeat {
   const id = `hb-${++heartbeatCounter}`;
 
@@ -98,7 +98,7 @@ export function stopHeartbeat(heartbeat: Heartbeat): void {
  * Manually trigger a single heartbeat (extend lease once).
  * Useful for testing without waiting for the interval.
  */
-export function beatOnce(itemId: string, extensionSeconds: number = 300): boolean {
+export function beatOnce(itemId: string, extensionSeconds = 300): boolean {
   try {
     const item = getItem(itemId);
     if (item && item.status === 'classifying') {

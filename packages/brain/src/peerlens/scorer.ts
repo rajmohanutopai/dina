@@ -129,7 +129,7 @@ export function scoreSender(
   sender: string,
   source: string,
   ingressChannel: string,
-  contacts: Array<{ name: string; email?: string; aliases?: string[] }>,
+  contacts: { name: string; email?: string; aliases?: string[] }[],
 ): TrustScore {
   const channel = ingressChannel.toLowerCase();
 
@@ -228,7 +228,7 @@ export function scoreSender(
  */
 export function matchSenderToContact(
   sender: string,
-  contacts: Array<{ name: string; email?: string; aliases?: string[] }>,
+  contacts: { name: string; email?: string; aliases?: string[] }[],
 ): { matched: boolean; contactName?: string } {
   if (!sender) return { matched: false };
 

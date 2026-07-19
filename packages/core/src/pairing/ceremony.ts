@@ -19,10 +19,10 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { registerDevice as persistDevice } from '../devices/registry';
+
 import { registerDevice as registerDeviceAuth } from '../auth/caller_type';
-import { multibaseToPublicKey } from '../identity/did';
-import { deriveDIDKey } from '../identity/did';
+import { registerDevice as persistDevice } from '../devices/registry';
+import { multibaseToPublicKey , deriveDIDKey } from '../identity/did';
 
 export interface PairingCode {
   code: string; // 8-char Crockford-Base32 string

@@ -4,14 +4,15 @@
  * Source: ARCHITECTURE.md Section 19.2.
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
 import {
   buildRPCRequest,
   sealRPCRequest,
   unsealRPCRequest,
   validateInnerAuth,
 } from '../../src/relay/rpc_envelope';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('Core RPC Request Envelope', () => {
   const senderDID = 'did:key:z6MkCLIDevice';

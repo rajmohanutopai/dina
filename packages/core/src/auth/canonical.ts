@@ -11,11 +11,14 @@
  * Source: core/internal/middleware/auth.go
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes as nobleHexToBytes } from '@noble/hashes/utils.js';
-import { randomBytes } from '@noble/ciphers/utils.js';
+
 import { buildCanonicalPayload as protocolBuildCanonicalPayload } from '@dina/protocol';
+
 import { sign, verify } from '../crypto/ed25519';
+
 import { toRFC3339 } from './timestamp';
 
 /**

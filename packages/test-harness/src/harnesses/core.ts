@@ -12,6 +12,8 @@
  *   await harness.teardown();
  */
 
+import { MockSignatureValidator } from '../mocks';
+
 import {
   Router,
   TestHTTPServer,
@@ -19,8 +21,8 @@ import {
   type RouteResponse,
   type Middleware,
 } from './http-server';
+
 import type { SignatureValidator } from '../ports';
-import { MockSignatureValidator } from '../mocks';
 
 // ---------------------------------------------------------------------------
 // Auth middleware (real Ed25519 validation via injected validator)
@@ -370,7 +372,7 @@ export class CoreTestHarness {
 
 function registerStubRoutes(router: Router): void {
   const vaultItems = new Map<string, unknown>();
-  const stagingItems: Array<Record<string, unknown>> = [];
+  const stagingItems: Record<string, unknown>[] = [];
 
   router.get('/healthz', async () => ({ status: 200, body: { status: 'ok' } }));
   router.get('/readyz', async () => ({ status: 200, body: { status: 'ready' } }));

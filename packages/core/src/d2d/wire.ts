@@ -25,9 +25,11 @@
  *     with a non-b64 char (like `{`).
  */
 
-import type { DinaMessage } from '@dina/test-harness';
 import { base64 } from '@scure/base';
+
 import { buildMessageJSON } from '@dina/protocol';
+
+import type { DinaMessage } from '@dina/test-harness';
 
 export type { DinaMessage };
 

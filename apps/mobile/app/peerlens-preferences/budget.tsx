@@ -27,17 +27,18 @@ import React, { useCallback, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, radius, spacing, textStyles } from '../../src/theme';
 import {
   BUDGET_CATEGORIES,
   type BudgetCategory,
 } from '../../src/peerlens/preferences/budget_categories';
+import { colors, radius, spacing, textStyles } from '../../src/theme';
+
 import type { BudgetTier } from '../../src/services/user_preferences';
 
 /** Segment value: `null` = "None"; otherwise the tier itself. */
 type SegmentValue = null | BudgetTier;
 
-const SEGMENTS: ReadonlyArray<{ value: SegmentValue; label: string }> = [
+const SEGMENTS: readonly { value: SegmentValue; label: string }[] = [
   { value: null, label: 'None' },
   { value: '$', label: '$' },
   { value: '$$', label: '$$' },

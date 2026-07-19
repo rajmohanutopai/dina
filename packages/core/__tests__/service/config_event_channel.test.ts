@@ -213,7 +213,7 @@ describe('ConfigEventChannel — default singleton', () => {
 describe('Integration: setServiceConfig fires the event', () => {
   // Import lazily so we can re-import between this suite and the channel
   // suites above without test-order dependencies.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const {
     setServiceConfig,
     clearServiceConfig,

@@ -247,7 +247,7 @@ function multibaseToPublicKey(mb: string): Uint8Array | null {
   // We don't have a base58 decoder imported — use the one in @dina/core's
   // transitive deps. `@scure/base` is already pulled in by directory.ts.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const { base58 } = require('@scure/base') as typeof import('@scure/base');
     const decoded = base58.decode(mb.slice(1));
     // Ed25519 multicodec prefix: 0xed 0x01

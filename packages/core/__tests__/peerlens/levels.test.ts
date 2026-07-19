@@ -15,6 +15,7 @@ import {
   minRingForAction,
   isCacheStale,
 } from '../../src/peerlens/levels';
+
 import type { TrustLevel } from '../../src/peerlens/levels';
 
 describe('Trust Levels', () => {

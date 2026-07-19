@@ -114,7 +114,7 @@ export function unsealInboundRpc(input: UnsealRpcInput): UnsealRpcResult {
   }
 
   // Shape check — every required field present + correct type.
-  const required: Array<keyof CoreRPCRequest> = [
+  const required: (keyof CoreRPCRequest)[] = [
     'request_id',
     'from',
     'method',

@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Task 4.5
  */
 
+import { wrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
+import { generateMnemonic, mnemonicToSeed } from '../../../core/src/crypto/bip39';
+import { resetPersonaState, personaExists, isPersonaOpen } from '../../../core/src/persona/service';
 import {
   unlock,
   getUnlockState,
@@ -14,9 +17,6 @@ import {
   getUnlockDuration,
   resetUnlockState,
 } from '../../src/hooks/useUnlock';
-import { wrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
-import { generateMnemonic, mnemonicToSeed } from '../../../core/src/crypto/bip39';
-import { resetPersonaState, personaExists, isPersonaOpen } from '../../../core/src/persona/service';
 
 const PASSPHRASE = 'TestPass1!';
 

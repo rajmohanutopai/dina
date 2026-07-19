@@ -303,7 +303,7 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
   });
 
   function mockParams(params: Record<string, string>): void {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const expoRouter = require('expo-router');
     useLocalSearchParamsSpy = jest
       .spyOn(expoRouter, 'useLocalSearchParams')
@@ -830,7 +830,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   });
 
   function mockParams(params: Record<string, string>): void {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const expoRouter = require('expo-router');
     useLocalSearchParamsSpy = jest
       .spyOn(expoRouter, 'useLocalSearchParams')
@@ -838,7 +838,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   }
 
   it('pre-fills the form from a review-draft lifecycle', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const thread = require('@dina/brain/chat');
     thread.resetThreads();
     const lifecycle = {
@@ -880,7 +880,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   });
 
   it('falls through to the empty form when the draft id is unknown', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const thread = require('@dina/brain/chat');
     thread.resetThreads();
     mockParams({ draftId: 'draft-missing', threadId: 'main' });

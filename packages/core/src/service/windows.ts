@@ -21,7 +21,7 @@ import { QueryWindow } from './query_window';
 
 let _providerWindow: QueryWindow | null = null;
 let _requesterWindow: QueryWindow | null = null;
-let _cleanupDisposers: Array<() => void> = [];
+let _cleanupDisposers: (() => void)[] = [];
 
 /** Default sweeper interval when `startServiceWindowCleanup` is called. */
 export const DEFAULT_WINDOW_CLEANUP_INTERVAL_MS = 30_000;

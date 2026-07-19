@@ -7,15 +7,17 @@
  * Source: core/test/onboarding_test.go (portable parts)
  */
 
+import { TEST_PASSPHRASE } from '@dina/test-harness';
+
+import { unwrapSeed } from '../../src/crypto/aesgcm';
+import { validateMnemonic } from '../../src/crypto/bip39';
 import {
   runOnboarding,
   verifyDefaultPersona,
   verifyDefaultSharingRules,
 } from '../../src/onboarding/portable';
-import { validateMnemonic } from '../../src/crypto/bip39';
-import { unwrapSeed } from '../../src/crypto/aesgcm';
 import { deserializeWrappedSeed } from '../../src/storage/seed_file';
-import { TEST_PASSPHRASE } from '@dina/test-harness';
+
 
 describe('Portable Onboarding', () => {
   describe('runOnboarding', () => {

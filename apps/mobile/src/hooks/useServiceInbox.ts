@@ -12,8 +12,9 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-008.
  */
 
-import type { CoreClient, WorkflowTask } from '@dina/core';
 import { markNotificationRead } from '@dina/brain/notifications';
+
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 /**
  * Approval-task variants the inbox knows how to render.

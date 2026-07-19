@@ -31,8 +31,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4c task 4.28.
  */
 
-import type { FastifyRequest } from 'fastify';
 import type { CallerType } from '@dina/core';
+import type { FastifyRequest } from 'fastify';
 
 declare module 'fastify' {
   interface FastifyRequest {

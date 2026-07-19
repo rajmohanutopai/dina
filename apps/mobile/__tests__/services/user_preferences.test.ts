@@ -15,8 +15,8 @@
  */
 
 import * as Keychain from 'react-native-keychain';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   clearUserPreferences,
   defaultPreferences,

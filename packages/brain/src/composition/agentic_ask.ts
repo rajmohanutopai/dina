@@ -41,9 +41,18 @@
  */
 
 import { getMemoryService } from '@dina/core';
+
 import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
+import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
+import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
+import { createDraftReviewTool } from '../reasoning/draft_review_tool';
+import { createGuardScanner } from '../reasoning/guard_scanner';
+import { IntentClassifier } from '../reasoning/intent_classifier';
+import { createSearchPeerlensTool } from '../reasoning/peerlens_tool';
+import { createFindPersonTool } from '../reasoning/people_tool';
+import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import {
   createGeocodeTool,
   createSearchCapabilitiesTool,
@@ -51,14 +60,7 @@ import {
   createQueryServiceTool,
   createFindPreferredProviderTool,
 } from '../reasoning/service_tools';
-import { createGuardScanner } from '../reasoning/guard_scanner';
-import { IntentClassifier } from '../reasoning/intent_classifier';
-import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
-import { createDraftReviewTool } from '../reasoning/draft_review_tool';
-import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
-import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
-import { createSearchPeerlensTool } from '../reasoning/peerlens_tool';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -66,7 +68,6 @@ import {
   createGetFullContentTool,
   type VaultPersonaGuard,
 } from '../reasoning/vault_tool';
-import { createFindPersonTool } from '../reasoning/people_tool';
 
 import { createPersonaGuard, type VaultApprovalWorkflowClient } from './persona_guard';
 

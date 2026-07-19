@@ -10,6 +10,8 @@
  */
 
 import { AppState } from 'react-native';
+
+import { resetKVStore } from '../../../../packages/core/src/kv/store';
 import {
   cacheTrustScore,
   trustCacheSize,
@@ -17,7 +19,6 @@ import {
   MEMORY_WARNING_TARGET,
   type TrustScore,
 } from '../../../../packages/core/src/peerlens/cache';
-import { resetKVStore } from '../../../../packages/core/src/kv/store';
 import { registerTrustCacheMemoryWarning } from '../../src/peerlens/memory_warning';
 
 describe('registerTrustCacheMemoryWarning (TN-MOB-006)', () => {

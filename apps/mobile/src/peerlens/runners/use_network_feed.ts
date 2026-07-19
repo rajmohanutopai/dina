@@ -93,7 +93,7 @@ export function useNetworkFeed(opts: UseNetworkFeedOptions): NetworkFeedState {
  * matches the search-result card behaviour.
  */
 function mapToFeedItems(
-  rows: ReadonlyArray<NetworkFeedAttestation>,
+  rows: readonly NetworkFeedAttestation[],
   viewerDid: string,
 ): FeedItem[] {
   const out: FeedItem[] = [];

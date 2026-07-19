@@ -9,8 +9,9 @@
  * can't silently drop a method from the aggregate.
  */
 
-import type { CryptoAdapterNode } from '../src';
 import { NodeCryptoAdapter } from '../src';
+
+import type { CryptoAdapterNode } from '../src';
 
 describe('NodeCryptoAdapter — aggregate type', () => {
   it('constructs and satisfies CryptoAdapterNode at compile + runtime', () => {

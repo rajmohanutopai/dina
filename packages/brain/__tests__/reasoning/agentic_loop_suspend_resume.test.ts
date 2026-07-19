@@ -19,6 +19,7 @@ import {
   ToolRegistry,
   type AgentTool,
 } from '../../src/reasoning/tool_registry';
+
 import type {
   ChatOptions,
   ChatResponse,
@@ -32,12 +33,12 @@ import type {
  * the other file. The script is a sequence of canned responses; index
  * advances on each `chat()` call.
  */
-function scriptedProvider(script: Array<Partial<ChatResponse>>): {
+function scriptedProvider(script: Partial<ChatResponse>[]): {
   provider: LLMProvider;
-  calls: Array<{ messages: number; hasTools: boolean; lastRole: string | undefined }>;
+  calls: { messages: number; hasTools: boolean; lastRole: string | undefined }[];
 } {
   let i = 0;
-  const calls: Array<{ messages: number; hasTools: boolean; lastRole: string | undefined }> = [];
+  const calls: { messages: number; hasTools: boolean; lastRole: string | undefined }[] = [];
   const provider: LLMProvider = {
     name: 'test',
     supportsStreaming: false,

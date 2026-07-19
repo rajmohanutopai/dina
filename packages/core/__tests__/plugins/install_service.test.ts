@@ -10,7 +10,6 @@ import { mkdtempSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   PLUGIN_NSIDS,
   base32Encode,
@@ -20,21 +19,16 @@ import {
   type RepoProofResult,
   type RepoProofVerifier,
 } from '@dina/protocol';
+import { pluginLane } from '@dina/protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import {
-  SQLitePluginInstallRepository,
-  setPluginInstallRepository,
-  getPluginInstallRepository,
-} from '../../src/plugins/registry';
-import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
+import * as pluginsBarrel from '../../src/plugins';
 import {
   SQLitePluginDecisionRepository,
   setPluginDecisionRepository,
   getPluginDecisionRepository,
 } from '../../src/plugins/decisions';
-import * as pluginsBarrel from '../../src/plugins';
+import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import {
   attestVerifiedRelease,
   beginInstall,
@@ -48,10 +42,16 @@ import {
   terminateInstallInFlight,
   type VerifiedReleaseAttestation,
 } from '../../src/plugins/install_service';
-import { pluginLane } from '@dina/protocol';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+  getPluginInstallRepository,
+} from '../../src/plugins/registry';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../src/workflow/plugin_envelope';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
-import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../src/workflow/plugin_envelope';
 
 const T0 = 1_750_000_000_000;
 const T0_SEC = Math.floor(T0 / 1000);

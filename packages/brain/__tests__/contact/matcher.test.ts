@@ -8,6 +8,7 @@
  */
 
 import { matchContacts, containsContact } from '../../src/contact/matcher';
+
 import type { ContactInfo } from '../../src/contact/matcher';
 
 describe('Contact Matcher', () => {

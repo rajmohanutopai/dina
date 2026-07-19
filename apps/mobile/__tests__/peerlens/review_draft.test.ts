@@ -19,19 +19,21 @@
 import { describe, expect, it, jest, beforeEach, afterEach } from '@jest/globals';
 
 import {
-  startReviewDraft,
-  mergeDraftIntoFormState,
-} from '../../src/peerlens/review_draft';
-import {
   resetThreads,
   getThread,
   readLifecycle,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
+
+import {
+  startReviewDraft,
+  mergeDraftIntoFormState,
+} from '../../src/peerlens/review_draft';
 import {
   emptyWriteFormState,
   serializeFormToV2Extras,
 } from '../../src/peerlens/write_form_data';
+
 import type {
   ChatMessage,
   ChatOptions,

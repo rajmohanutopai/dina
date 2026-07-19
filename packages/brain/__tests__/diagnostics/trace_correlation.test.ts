@@ -2,6 +2,7 @@
  * Task 5.58 — trace correlation tests.
  */
 
+import { installNodeTraceScopeStorage } from '../../node-trace-storage';
 import {
   currentTrace,
   getTraceScopeStorage,
@@ -18,7 +19,6 @@ import {
   withTrace,
   type TraceContext,
 } from '../../src/diagnostics/trace_correlation';
-import { installNodeTraceScopeStorage } from '../../node-trace-storage';
 
 describe('newRequestId (task 5.58)', () => {
   it('returns a 32-char lowercase hex string', () => {

@@ -38,29 +38,28 @@ export interface AnthropicClient {
 export interface AnthropicCreateParams {
   model: string;
   max_tokens: number;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: { role: 'user' | 'assistant'; content: string }[];
   system?: string;
   temperature?: number;
-  tools?: Array<{
+  tools?: {
     name: string;
     description: string;
     input_schema: Record<string, unknown>;
-  }>;
+  }[];
   stream?: boolean;
 }
 
 export interface AnthropicMessageResponse {
   id: string;
   model: string;
-  content: Array<
-    | { type: 'text'; text: string }
-    | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  >;
+  content: (| { type: 'text'; text: string }
+    | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> })[];
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens' | null;
   usage: { input_tokens: number; output_tokens: number };
 }
 
 import { DEFAULT_CLAUDE_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
+
 import { safeCall } from './safety';
 const DEFAULT_MODEL = DEFAULT_CLAUDE_MODEL;
 const DEFAULT_MAX_TOKENS = MAX_TOKENS;
@@ -197,7 +196,7 @@ function mapResponse(response: AnthropicMessageResponse): ChatResponse {
  */
 export function createClaudeAdapter(apiKey: string, model?: string): ClaudeAdapter {
   // Lazy import to avoid requiring the SDK at module load time.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const { default: Anthropic } = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
   return new ClaudeAdapter(client, model);

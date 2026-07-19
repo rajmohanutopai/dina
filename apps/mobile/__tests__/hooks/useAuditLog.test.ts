@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Task 9.13
  */
 
+import { appendAudit, resetAuditState } from '../../../core/src/audit/service';
 import {
   getAuditEntries,
   getDistinctActors,
@@ -12,7 +13,6 @@ import {
   getAuditSummary,
   resetAudit,
 } from '../../src/hooks/useAuditLog';
-import { appendAudit, resetAuditState } from '../../../core/src/audit/service';
 
 describe('Audit Log Hook (9.13)', () => {
   beforeEach(() => {

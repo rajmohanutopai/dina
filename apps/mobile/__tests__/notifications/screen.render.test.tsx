@@ -7,14 +7,14 @@
  * a real router.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
-import NotificationsScreen from '../../app/notifications';
 import {
   appendNotification,
   resetNotifications,
 } from '../../../../packages/brain/src/notifications/inbox';
+import NotificationsScreen from '../../app/notifications';
 
 const pushed: string[] = [];
 

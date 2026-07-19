@@ -17,8 +17,9 @@
  * Auth: open to `agent`, `brain`, `admin` (see `auth/authz.ts`).
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
+
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 export function registerSessionRoutes(router: CoreRouter): void {
   router.post('/v1/session/start', async (_req: CoreRequest): Promise<CoreResponse> => {

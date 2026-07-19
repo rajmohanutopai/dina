@@ -79,7 +79,12 @@ export interface RunRepository {
    *  next_fetch_at (= now + interval) + last_commit_at. Returns true iff the
    *  guard held (a false means a barrier/TTL raced in and the enqueue-commit
    *  must roll back — no slot committed, no cursor advance). */
-  incrementProducedAndAdvance(runId: string, nowMs: number, intervalMs: number): boolean;
+  incrementProducedAndAdvance(
+    runId: string,
+    nowMs: number,
+    intervalMs: number,
+    expectedCursor?: number,
+  ): boolean;
 
   /** Bump decided_count on an owner decision (§5.1 decided-basis count).
    *  Returns the new decided_count (0 if the run is missing). */
@@ -99,8 +104,29 @@ export interface RunRepository {
 
   /** List runs by state (diagnostics + sweepers). */
   listByState(state: RunState, limit?: number): RunRecord[];
+  /** Keyset page of runs in `state`, strictly after the `(created_at, run_id)`
+   *  cursor, ordered by `(created_at ASC, run_id ASC)`. Lets boot recovery page
+   *  the FULL terminal set to exhaustion (E76-09) instead of revisiting a fixed
+   *  oldest-N window that would strand later crash-gap runs. */
+  listByStateAfter(
+    state: RunState,
+    afterCreatedAt: number,
+    afterRunId: string,
+    limit: number,
+  ): RunRecord[];
   /** List every non-terminal run (sweeper scan). */
   listActive(limit?: number): RunRecord[];
+  /** List non-terminal runs that are DUE for a sweep at `nowMs`: past their hard
+   *  TTL, or draining past their `drain_deadline_at`. Targets the due set directly
+   *  so an unbounded backlog of live-but-not-due runs can never starve a newer
+   *  expired run (the sweeper pages this until it drains). */
+  listDueForSweep(nowMs: number, limit?: number): RunRecord[];
+  /** List ACTIVE pull runs DUE to fetch at `nowMs` (`next_fetch_at <= nowMs`),
+   *  ordered by `next_fetch_at` ASC (most-overdue first). Fair by construction: a
+   *  run that just committed has its `next_fetch_at` pushed into the future and
+   *  drops out of the due set, so a backlog of old-but-not-due runs can never
+   *  starve a newer eligible run (the oldest-N `created_at` scan did). */
+  listPullDueForFetch(nowMs: number, limit?: number): RunRecord[];
 
   size(): number;
 }
@@ -287,7 +313,21 @@ export class SQLiteRunRepository implements RunRepository {
     );
   }
 
-  incrementProducedAndAdvance(runId: string, nowMs: number, intervalMs: number): boolean {
+  incrementProducedAndAdvance(
+    runId: string,
+    nowMs: number,
+    intervalMs: number,
+    expectedCursor?: number,
+  ): boolean {
+    // Optional in-order commit CAS (§7/§8): a reservation may only commit at the
+    // run's CURRENT fetch_cursor, so two fetch-ahead reservations advance the
+    // cursor exactly once each, in order — never a skipped or double-advanced
+    // position. Absent (push / legacy), only the state+TTL barrier guard applies.
+    const cursorClause = expectedCursor === undefined ? '' : ' AND COALESCE(fetch_cursor, 0) = ?';
+    const params =
+      expectedCursor === undefined
+        ? [nowMs + intervalMs, nowMs, nowMs, runId, nowMs]
+        : [nowMs + intervalMs, nowMs, nowMs, runId, nowMs, expectedCursor];
     return (
       this.db.run(
         `UPDATE interactive_runs
@@ -296,8 +336,8 @@ export class SQLiteRunRepository implements RunRepository {
                next_fetch_at = ?,
                last_commit_at = ?,
                updated_at = ?
-         WHERE run_id = ? AND state = 'active' AND ? < expires_at`,
-        [nowMs + intervalMs, nowMs, nowMs, runId, nowMs],
+         WHERE run_id = ? AND state = 'active' AND ? < expires_at${cursorClause}`,
+        params,
       ) > 0
     );
   }
@@ -358,11 +398,64 @@ export class SQLiteRunRepository implements RunRepository {
       .map(rowToRun);
   }
 
+  listByStateAfter(
+    state: RunState,
+    afterCreatedAt: number,
+    afterRunId: string,
+    limit: number,
+  ): RunRecord[] {
+    return this.db
+      .query(
+        `SELECT * FROM interactive_runs
+          WHERE state = ?
+            AND (created_at > ? OR (created_at = ? AND run_id > ?))
+          ORDER BY created_at ASC, run_id ASC
+          LIMIT ?`,
+        [state, afterCreatedAt, afterCreatedAt, afterRunId, limit],
+      )
+      .map(rowToRun);
+  }
+
   listActive(limit = 100): RunRecord[] {
     return this.db
       .query(
         `SELECT * FROM interactive_runs WHERE state NOT IN ${TERMINAL_SQL} ORDER BY created_at ASC LIMIT ?`,
         [limit],
+      )
+      .map(rowToRun);
+  }
+
+  listPullDueForFetch(nowMs: number, limit = 500): RunRecord[] {
+    return this.db
+      .query(
+        `SELECT * FROM interactive_runs
+           WHERE state = 'active' AND transport = 'pull'
+             AND (next_fetch_at IS NULL OR next_fetch_at <= ?)
+           ORDER BY next_fetch_at ASC LIMIT ?`,
+        [nowMs, limit],
+      )
+      .map(rowToRun);
+  }
+
+  listDueForSweep(nowMs: number, limit = 500): RunRecord[] {
+    // ACTIONABLE-only so paging makes monotonic progress: each returned run is
+    // one the sweep will transition OUT of this set — an active/paused run past
+    // its TTL (→ expiry barrier), a permissive drain past its TTL (→ strengthen
+    // to fencing, once), or any drain past its deadline (→ force-terminate). A
+    // draining-fencing run past its TTL but before its deadline is NOT due (there
+    // is nothing to do until the deadline), so it can never fill a page and
+    // starve a newer, genuinely-due run.
+    return this.db
+      .query(
+        `SELECT * FROM interactive_runs
+           WHERE state NOT IN ${TERMINAL_SQL}
+             AND (
+               (state IN ('active', 'paused') AND ? >= expires_at)
+               OR (state = 'draining' AND drain_strength = 'permissive' AND ? >= expires_at)
+               OR (state = 'draining' AND drain_deadline_at IS NOT NULL AND ? >= drain_deadline_at)
+             )
+         ORDER BY created_at ASC LIMIT ?`,
+        [nowMs, nowMs, nowMs, limit],
       )
       .map(rowToRun);
   }
@@ -458,9 +551,16 @@ export class InMemoryRunRepository implements RunRepository {
     return true;
   }
 
-  incrementProducedAndAdvance(runId: string, nowMs: number, intervalMs: number): boolean {
+  incrementProducedAndAdvance(
+    runId: string,
+    nowMs: number,
+    intervalMs: number,
+    expectedCursor?: number,
+  ): boolean {
     const r = this.runs.get(runId);
     if (!r || r.state !== 'active' || nowMs >= r.expires_at) return false;
+    // In-order commit CAS (§7/§8): only the reservation at the current cursor may commit.
+    if (expectedCursor !== undefined && (r.fetch_cursor ?? 0) !== expectedCursor) return false;
     r.produced_count += 1;
     r.fetch_cursor = (r.fetch_cursor ?? 0) + 1;
     r.next_fetch_at = nowMs + intervalMs;
@@ -514,9 +614,54 @@ export class InMemoryRunRepository implements RunRepository {
       .map((r) => ({ ...r }));
   }
 
+  listByStateAfter(
+    state: RunState,
+    afterCreatedAt: number,
+    afterRunId: string,
+    limit: number,
+  ): RunRecord[] {
+    return [...this.runs.values()]
+      .filter((r) => r.state === state)
+      .filter(
+        (r) =>
+          r.created_at > afterCreatedAt ||
+          (r.created_at === afterCreatedAt && r.run_id > afterRunId),
+      )
+      .sort((a, b) => a.created_at - b.created_at || a.run_id.localeCompare(b.run_id))
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+
   listActive(limit = 100): RunRecord[] {
     return [...this.runs.values()]
       .filter((r) => !['completed', 'stopped', 'expired'].includes(r.state))
+      .sort((a, b) => a.created_at - b.created_at)
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+
+  listPullDueForFetch(nowMs: number, limit = 500): RunRecord[] {
+    return [...this.runs.values()]
+      .filter(
+        (r) =>
+          r.state === 'active' &&
+          r.transport === 'pull' &&
+          (r.next_fetch_at === null || r.next_fetch_at <= nowMs),
+      )
+      .sort((a, b) => (a.next_fetch_at ?? 0) - (b.next_fetch_at ?? 0))
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+
+  listDueForSweep(nowMs: number, limit = 500): RunRecord[] {
+    return [...this.runs.values()]
+      .filter((r) => !['completed', 'stopped', 'expired'].includes(r.state))
+      .filter(
+        (r) =>
+          ((r.state === 'active' || r.state === 'paused') && nowMs >= r.expires_at) ||
+          (r.state === 'draining' && r.drain_strength === 'permissive' && nowMs >= r.expires_at) ||
+          (r.state === 'draining' && r.drain_deadline_at !== null && nowMs >= r.drain_deadline_at),
+      )
       .sort((a, b) => a.created_at - b.created_at)
       .slice(0, limit)
       .map((r) => ({ ...r }));

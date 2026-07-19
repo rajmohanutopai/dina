@@ -18,13 +18,14 @@ import {
   toggleArrayValue,
   type MultiSelectOption,
 } from '../../src/peerlens/preferences/multi_select_screen';
+
 import type { DeviceCompat } from '../../src/services/user_preferences';
 
 // Order matches platform popularity / device-store ordering. Each
 // description anchors what subjects we're filtering against — e.g.
 // "iPhone" rather than "iOS" alone, since "iOS" doesn't tell the
 // user which physical thing they're declaring compatibility with.
-const OPTIONS: ReadonlyArray<MultiSelectOption<DeviceCompat>> = [
+const OPTIONS: readonly MultiSelectOption<DeviceCompat>[] = [
   { value: 'ios', label: 'iOS', description: 'iPhone' },
   { value: 'ipad', label: 'iPad', description: 'iPadOS tablet' },
   { value: 'android', label: 'Android', description: 'Phone or tablet' },

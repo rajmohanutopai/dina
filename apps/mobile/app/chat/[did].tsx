@@ -12,6 +12,7 @@
  * simply never arrives unless both sides have the other in contacts.
  */
 
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
@@ -25,22 +26,23 @@ import {
   Alert,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
-import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
+
+import { IdentityModal } from '../../src/components/identity/identity_modal';
 import { InlineGrantRequestCard } from '../../src/components/InlineGrantRequestCard';
+import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
 import { runChatTurn } from '../../src/hooks/chat_transport';
+import { useD2DChat } from '../../src/hooks/useD2DChat';
+import { getProfile as getTrustProfile } from '../../src/peerlens/appview_runtime';
+import { displayName as displayNameOf } from '../../src/peerlens/handle_display';
 import {
   routeComposerText,
   isScheduleCommand,
   SCHEDULE_SEED,
 } from '../../src/services/chat_composer_routing';
-import { useD2DChat } from '../../src/hooks/useD2DChat';
-import { getProfile as getTrustProfile } from '../../src/peerlens/appview_runtime';
-import { displayName as displayNameOf } from '../../src/peerlens/handle_display';
-import { colors, spacing, textStyles } from '../../src/theme';
 import { ChatSendError } from '../../src/services/chat_d2d';
-import { IdentityModal } from '../../src/components/identity/identity_modal';
+import { colors, spacing, textStyles } from '../../src/theme';
 
 export default function ChatScreen() {
   const params = useLocalSearchParams<{ did: string }>();

@@ -6,6 +6,7 @@
 import {
   resetKVStore,
 } from '../../../core/src/kv/store';
+import { DEMO_STEPS, DEMO_SALON, DEMO_TASK, type DemoStep } from '../../src/guided_demo/content';
 import {
   D2D_MESSAGE_STEP,
   AGENT_APPROVAL_STEP,
@@ -21,21 +22,20 @@ import {
   type DemoApprovalRequest,
   type GuidedDemoSeams,
 } from '../../src/guided_demo/runner';
-import { DEMO_STEPS, DEMO_SALON, DEMO_TASK, type DemoStep } from '../../src/guided_demo/content';
 
 interface Recorded {
-  sends: Array<{ mode: string; message: string; vault: string }>;
-  recommendations: Array<{ question: string; answer: string }>;
-  serviceCards: Array<{ capability: string; serviceName: string; question: string }>;
-  servicePreviewCards: Array<{ serviceName: string; capability: string; status: string }>;
+  sends: { mode: string; message: string; vault: string }[];
+  recommendations: { question: string; answer: string }[];
+  serviceCards: { capability: string; serviceName: string; question: string }[];
+  servicePreviewCards: { serviceName: string; capability: string; status: string }[];
   publishConfirms: number;
   approvals: DemoApprovalRequest[];
   denied: string[];
   cards: string[];
   userMessages: string[];
   navigations: string[];
-  d2dMessages: Array<{ from: string; message: string; reminder: string }>;
-  reviewCards: Array<{ product: string; rating: number; text: string }>;
+  d2dMessages: { from: string; message: string; reminder: string }[];
+  reviewCards: { product: string; rating: number; text: string }[];
   delays: (number | undefined)[];
   seededPeople: { name: string; relation: string }[];
   seededReminders: string[];

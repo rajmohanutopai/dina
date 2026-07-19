@@ -20,8 +20,8 @@ const DEFAULT_ROTATION_INTERVAL_MS = 300_000;
 const DEFAULT_MAX_ENTRIES = 100_000;
 
 export class NonceCache {
-  private current: Set<string> = new Set();
-  private previous: Set<string> = new Set();
+  private current = new Set<string>();
+  private previous = new Set<string>();
   private lastRotation: number = Date.now();
 
   private readonly rotationIntervalMs: number;

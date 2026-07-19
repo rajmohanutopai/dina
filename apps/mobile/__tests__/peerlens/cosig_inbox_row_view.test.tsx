@@ -16,13 +16,14 @@
  *   - formatExpiryDelta bucket boundaries (pure helper)
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import {
   CosigInboxRowView,
   formatExpiryDelta,
 } from '../../src/peerlens/components/cosig_inbox_row_view';
+
 import type { CosigInboxRowDisplay } from '../../src/peerlens/cosig_inbox';
 
 function makeDisplay(overrides: Partial<CosigInboxRowDisplay> = {}): CosigInboxRowDisplay {

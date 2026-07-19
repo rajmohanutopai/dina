@@ -13,12 +13,13 @@ import {
   type DensityTier,
   type DensityAnalysis,
 } from '../../src/guardian/density';
+
 import type { AssembledContext } from '../../src/vault_context/assembly';
 
 function makeContext(
   count: number,
-  persona: string = 'general',
-  score: number = 0.8,
+  persona = 'general',
+  score = 0.8,
 ): AssembledContext {
   const items = Array.from({ length: count }, (_, i) => ({
     id: `item-${i}`,

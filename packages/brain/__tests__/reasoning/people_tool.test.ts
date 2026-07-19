@@ -4,11 +4,13 @@
  * `PeopleReadBackend` (home-node-lite, HTTP-routed via brain-server).
  */
 
+import { setPeopleRepository } from '@dina/core';
+
 import { createFindPersonTool } from '../../src/reasoning/people_tool';
 import {
   setPeopleReadBackend,
 } from '../../src/vault_context/assembly';
-import { setPeopleRepository } from '@dina/core';
+
 import type {
   ApplyExtractionResponse,
   ExtractionResult,
@@ -158,11 +160,11 @@ describe('createFindPersonTool — in-process repo (mobile path)', () => {
     const tool = createFindPersonTool();
     const out = (await tool.execute({ name: 'emma' })) as {
       name: string;
-      matches: Array<{
+      matches: {
         canonicalName: string;
         relationshipHint: string;
-        surfaces: Array<{ surface: string }>;
-      }>;
+        surfaces: { surface: string }[];
+      }[];
     };
     expect(out.name).toBe('emma');
     expect(out.matches).toHaveLength(1);
@@ -175,7 +177,7 @@ describe('createFindPersonTool — in-process repo (mobile path)', () => {
     setPeopleRepository(new StubRepo([alex1, alex2]));
     const tool = createFindPersonTool();
     const out = (await tool.execute({ name: 'Alex' })) as {
-      matches: Array<{ canonicalName: string }>;
+      matches: { canonicalName: string }[];
     };
     expect(out.matches.map((m) => m.canonicalName).sort()).toEqual([
       'Alex Garcia',
@@ -213,7 +215,7 @@ describe('createFindPersonTool — remote backend (lite path)', () => {
     setPeopleRepository(new StubRepo([]));
     const tool = createFindPersonTool();
     const out = (await tool.execute({ name: 'Emma' })) as {
-      matches: Array<{ canonicalName: string }>;
+      matches: { canonicalName: string }[];
     };
     expect(calls).toEqual(['Emma']);
     expect(out.matches[0]?.canonicalName).toBe('Emma');

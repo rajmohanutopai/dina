@@ -2,8 +2,9 @@
  * PII scrub route — scrub text, return rehydration tokens.
  */
 
-import type { CoreRouter } from '../router';
 import { scrubPII } from '../../pii/patterns';
+
+import type { CoreRouter } from '../router';
 
 export function registerPIIRoutes(router: CoreRouter): void {
   router.post('/v1/pii/scrub', async (req) => {

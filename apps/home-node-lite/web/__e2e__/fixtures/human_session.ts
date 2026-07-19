@@ -13,6 +13,7 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
 import { egressHost, isAllowedEgress, scanForLeaks } from '../support/log_hygiene';
+
 import * as backstage from './backstage';
 import { ChatThread } from './pages/chat_thread';
 import { Composer } from './pages/composer';

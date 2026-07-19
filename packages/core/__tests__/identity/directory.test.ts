@@ -6,6 +6,8 @@
  * Source: ARCHITECTURE.md Task 2.30
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   buildCreationOperation,
   signOperation,
@@ -14,10 +16,9 @@ import {
   resolveDIDPLC,
   type PLCCreateParams,
 } from '../../src/identity/directory';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 function createMockFetch(body: unknown, status = 200) {
-  const calls: Array<{ url: string; method: string; body?: string }> = [];
+  const calls: { url: string; method: string; body?: string }[] = [];
   const mockFetch = jest.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     calls.push({ url, method: init?.method ?? 'GET', body: init?.body as string });

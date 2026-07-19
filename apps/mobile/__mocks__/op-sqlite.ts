@@ -40,7 +40,7 @@ interface BetterSqliteDb {
   exec: (sql: string) => void;
   close: () => void;
 }
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const Database = require('better-sqlite3-multiple-ciphers') as new (path: string) => BetterSqliteDb;
 
 interface OpenOptions {

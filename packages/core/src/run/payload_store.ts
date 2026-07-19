@@ -105,6 +105,17 @@ export class PayloadStore {
    * Tier-0 registry (prepared → published CAS) as the sole commit.
    */
   putPayload(input: PutPayloadInput): PayloadRef {
+    // Idempotent for an ALREADY-PUBLISHED payload: return the existing ref
+    // WITHOUT generating a new leaf key or re-inserting. Without this, a
+    // duplicate `putPayload(payloadId)` would `INSERT OR REPLACE` a fresh leaf
+    // key over the live one and then fail the PK insert — destroying access to
+    // the existing ciphertext (data loss). A published payload is committed;
+    // never re-key or re-write it.
+    if (this.blobState(input.payloadId) === 'published') {
+      const existing = this.contentId(input.payloadId);
+      if (existing !== null) return { payload_id: input.payloadId, content_id: existing };
+    }
+
     const kP = generateAeadKey();
     const kE = generateAeadKey();
 
@@ -116,16 +127,25 @@ export class PayloadStore {
     const wrappedKey = aeadEncrypt(kE, conf);
 
     const ts = this.now();
-    // External leaf key first (not part of the SQLite commit, §13).
+    // External leaf key first (not part of the SQLite commit, §13). Only
+    // reachable when the payload is NOT yet published — either a fresh payload
+    // or a re-prepare of a crashed `prepared`/`abandoned` row or a locked-arrival
+    // staging key being republished under the open-persona envelope; replacing
+    // that not-yet-committed key is correct.
     this.erasure().put(input.payloadId, kE);
 
-    // Tier-0 registry: pin `prepared`, then publish CAS. Both mutate the
-    // registry row, so orphan-GC's delete-claim serializes against the publish.
+    // Tier-0 registry: (re-)pin `prepared` via UPSERT (a crash-retried prepare
+    // must not PK-conflict), then publish CAS. Both mutate the registry row, so
+    // orphan-GC's delete-claim serializes against the publish.
     this.db.transaction(() => {
       this.db.run(
         `INSERT INTO run_payload_blobs
            (payload_id, run_id, persona, content_id, blob, wrapped_key, state, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'prepared', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'prepared', ?, ?)
+         ON CONFLICT(payload_id) DO UPDATE SET
+           run_id = excluded.run_id, persona = excluded.persona,
+           content_id = excluded.content_id, blob = excluded.blob,
+           wrapped_key = excluded.wrapped_key, state = 'prepared', updated_at = excluded.updated_at`,
         [input.payloadId, input.runId, input.persona, contentId, blob, wrappedKey, ts, ts],
       );
       const published = this.db.run(
@@ -138,6 +158,57 @@ export class PayloadStore {
     });
 
     return { payload_id: input.payloadId, content_id: contentId };
+  }
+
+  /**
+   * PREPARE half of a two-phase publish (§13, F2). Writes the external leaf key +
+   * pins the Tier-0 `prepared` row, but does NOT publish. The caller then runs the
+   * enqueue-commit + message lifecycle + {@link publishPayload} as ONE Tier-0
+   * transaction, so a crash before that commit leaves the payload merely
+   * `prepared` (reclaimable by the prepared-lease sweep / GC) rather than a
+   * `published` orphan with no message. Idempotent for an already-published id.
+   */
+  preparePayload(input: PutPayloadInput): PayloadRef {
+    if (this.blobState(input.payloadId) === 'published') {
+      const existing = this.contentId(input.payloadId);
+      if (existing !== null) return { payload_id: input.payloadId, content_id: existing };
+    }
+    const kP = generateAeadKey();
+    const kE = generateAeadKey();
+    const blob = aeadEncrypt(kP, input.plaintext);
+    const contentId = bytesToHex(sha256(blob));
+    const conf = this.cipher.wrap(input.persona, kP);
+    if (conf === null) throw new PersonaLockedError(input.persona);
+    const wrappedKey = aeadEncrypt(kE, conf);
+    const ts = this.now();
+    this.erasure().put(input.payloadId, kE); // external leaf key first (§13)
+    this.db.run(
+      `INSERT INTO run_payload_blobs
+         (payload_id, run_id, persona, content_id, blob, wrapped_key, state, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'prepared', ?, ?)
+       ON CONFLICT(payload_id) DO UPDATE SET
+         run_id = excluded.run_id, persona = excluded.persona,
+         content_id = excluded.content_id, blob = excluded.blob,
+         wrapped_key = excluded.wrapped_key, state = 'prepared', updated_at = excluded.updated_at`,
+      [input.payloadId, input.runId, input.persona, contentId, blob, wrappedKey, ts, ts],
+    );
+    return { payload_id: input.payloadId, content_id: contentId };
+  }
+
+  /**
+   * PUBLISH half (§13, F2): the `prepared → published` CAS as a SINGLE statement,
+   * so it composes inside the caller's enqueue-commit transaction. Idempotent — a
+   * re-publish of an already-`published` row is a no-op success. Returns false only
+   * when there is no `prepared`/`published` row to publish (a crash-shredded pin).
+   */
+  publishPayload(payloadId: string): boolean {
+    if (this.blobState(payloadId) === 'published') return true;
+    return (
+      this.db.run(
+        "UPDATE run_payload_blobs SET state = 'published', updated_at = ? WHERE payload_id = ? AND state = 'prepared'",
+        [this.now(), payloadId],
+      ) > 0
+    );
   }
 
   /**
@@ -197,6 +268,23 @@ export class PayloadStore {
    */
   shredPayload(payloadId: string): void {
     this.erasure().destroy(payloadId);
+  }
+
+  /**
+   * Terminal crypto-shred for an entire run (§13): destroy the per-payload leaf
+   * erasure key of every one of the run's payloads (any state). Called from the
+   * termination `shredPayloads(runId)` callback the moment a run finalizes, so a
+   * cancelled/expired run's staged responses become inert immediately. Idempotent
+   * (a re-shred of an already-destroyed key is a no-op) and per-payload isolated
+   * (never touches another run's blobs). Returns the count of payloads shredded.
+   */
+  shredRun(runId: string): number {
+    const rows = this.db.query<{ payload_id: string }>(
+      'SELECT payload_id FROM run_payload_blobs WHERE run_id = ?',
+      [runId],
+    );
+    for (const r of rows) this.erasure().destroy(String(r.payload_id));
+    return rows.length;
   }
 
   /**

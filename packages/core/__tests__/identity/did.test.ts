@@ -6,13 +6,14 @@
  * Source: core/test/identity_test.go
  */
 
+import { bytesToHex } from '@dina/test-harness';
+
 import {
   deriveDIDKey,
   extractPublicKey,
   publicKeyToMultibase,
   multibaseToPublicKey,
 } from '../../src/identity/did';
-import { bytesToHex } from '@dina/test-harness';
 
 describe('DID Generation', () => {
   const publicKey = new Uint8Array(32).fill(0x42);

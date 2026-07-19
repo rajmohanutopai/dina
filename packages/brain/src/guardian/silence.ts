@@ -60,9 +60,10 @@ const MARKETING_SOURCES = new Set(['promo', 'marketing', 'newsletter', 'social']
 const HEALTH_ELEVATION_PATTERN =
   /blood\s*(?:sugar|pressure|test)|cholesterol|a1c|medication|prescription|insulin|hemoglobin|pathology|radiology/i;
 
+import { scrubPII } from '@dina/core';
+
 import { GUARDIAN_STALE_THRESHOLD_MS, ESCALATION_THRESHOLD as ESC_THRESHOLD } from '../constants';
 import { SILENCE_CLASSIFY } from '../llm/prompts';
-import { scrubPII } from '@dina/core';
 
 const STALE_THRESHOLD_MS = GUARDIAN_STALE_THRESHOLD_MS;
 

@@ -28,6 +28,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import {
   currentDataScope,
   getNotificationLogRepository,
@@ -274,11 +275,11 @@ function persist(item: NotificationItem): void {
   if (repo === null) return;
   try {
     void repo.append(itemToStored(item)).catch((err) => {
-      // eslint-disable-next-line no-console
+       
       console.warn('[notifications] persist failed:', err);
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[notifications] persist failed:', err);
   }
 }
@@ -288,11 +289,11 @@ function persistMarkRead(id: string, readAt: number): void {
   if (repo === null) return;
   try {
     void repo.markRead(id, readAt).catch((err) => {
-      // eslint-disable-next-line no-console
+       
       console.warn('[notifications] markRead persist failed:', err);
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[notifications] markRead persist failed:', err);
   }
 }
@@ -311,11 +312,11 @@ function maybePurge(now: number): void {
   if (repo === null) return;
   try {
     void repo.purgeBefore(cutoff).catch((err) => {
-      // eslint-disable-next-line no-console
+       
       console.warn('[notifications] purge failed:', err);
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.warn('[notifications] purge failed:', err);
   }
 }

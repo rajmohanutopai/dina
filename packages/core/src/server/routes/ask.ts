@@ -18,8 +18,9 @@
  * Source: MT-38 (OpenClaw locked-vault data request with approval resume).
  */
 
-import type { CoreRouter } from '../router';
 import { API_ASK } from './paths';
+
+import type { CoreRouter } from '../router';
 
 // ---------------------------------------------------------------------------
 // Injectable handler contracts — Core defines; Brain satisfies

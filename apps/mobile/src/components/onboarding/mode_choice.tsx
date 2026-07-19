@@ -7,8 +7,10 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { OnboardingShell } from './shell';
+
 import { colors, radius, shadows, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface ModeChoiceProps {
   onCreate: () => void;

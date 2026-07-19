@@ -36,12 +36,12 @@ import {
 } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { colors, radius, spacing, textStyles } from '../../src/theme';
 import {
   buildCountryList,
   filterCountries,
   type Country,
 } from '../../src/peerlens/preferences/country_list';
+import { colors, radius, spacing, textStyles } from '../../src/theme';
 
 export default function RegionScreen(): React.ReactElement {
   const router = useRouter();

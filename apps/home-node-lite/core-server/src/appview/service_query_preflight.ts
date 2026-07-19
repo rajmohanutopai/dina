@@ -39,6 +39,7 @@
  */
 
 import { classifyCapability } from '@dina/protocol';
+
 import {
   type TrustAction,
   type TrustContext,

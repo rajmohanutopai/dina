@@ -28,16 +28,18 @@ import {
   AppViewServiceResolver,
   InProcessTransport,
   LocalDelegationRunner,
+  MsgTypeServiceResponse,
   SQLiteWorkflowRepository,
   getServiceConfig,
   registerPublicKeyResolver,
   registerService,
   setOutboxRedeliverFn,
   startOutboxDrainer,
+  wireRunPlaneNode,
   type CoreRouter,
   type ServiceConfig,
 } from '@dina/core';
-import type { DinaMessage } from '@dina/core/runtime';
+
 // `setD2DSender` registers the generic D2D egress callback for the
 // `/v1/msg/send` route. It lives on the runtime subpath (route module),
 // not the main `@dina/core` barrel.
@@ -45,19 +47,22 @@ import { setD2DSender } from '@dina/core/runtime';
 import {
   makeSendD2D,
   makeOutboxRedeliver,
+  makeResolveSender,
   wireWorkflowPlane as wireSharedWorkflowPlane,
   type WiredWorkflowPlane as SharedWiredWorkflowPlane,
 } from '@dina/home-node';
+
+import { makeHttpTier1Runner } from './http_tier1_runner';
+
+import type { PdsIdentity } from '../identity/provision_pds';
+import type { Logger } from '../logger';
 import type {
   ApprovalNotifier,
   OrchestratorAppView,
   ServiceInboundNotifier,
 } from '@dina/brain';
+import type { DinaMessage } from '@dina/core/runtime';
 import type { DatabaseAdapter } from '@dina/core/storage';
-
-import type { Logger } from '../logger';
-import type { PdsIdentity } from '../identity/provision_pds';
-import { makeHttpTier1Runner } from './http_tier1_runner';
 
 export interface WireWorkflowPlaneOptions {
   /** Identity DB adapter from `initializeStorage`. */
@@ -163,6 +168,36 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
   );
   startOutboxDrainer();
 
+  // ISVC-10 — the interactive-run pull loop, live. `wireRunPlaneNode` composes
+  // the run drivers (pacer/sweeper/classify/completion) over the Tier-0 run
+  // stores registered in storage init, using the SAME signed `sendD2D` egress
+  // for its `service.query` pulls. The trust-boundary verifier (§6.2) resolves
+  // the runtime issuer's Ed25519 key through the SHARED `resolveSender` — the
+  // exact key the receive pipeline verified the D2D envelope against — so a run
+  // message is admitted only if it is re-signed by the provider over its own
+  // signed projection. `recoverOnBoot()` re-arms in-flight runs + re-shreds
+  // terminal payloads; `start()` runs the four background loops (timers unref'd
+  // inside the drivers). Its receive hook is consulted in `onBypassedD2D` below.
+  const resolveRunSender = makeResolveSender({
+    selfDID: pdsIdentity.did,
+    selfPublicKey: signingKeypair.publicKey,
+  });
+  const runPlaneNode = wireRunPlaneNode({
+    db: identityDB,
+    sendD2D,
+    resolveVerificationKey: async (issuerDid, _keyId, _issuedAtSec) => {
+      // V1: the runtime issuer IS the provider (verifyRunMessage binds this), so
+      // we resolve the provider's current signing key from its DID doc. `key_id`/
+      // `issued_at` are plumbed for a future rotation-history-aware resolver; a
+      // rotated-out key simply fails to resolve here → fail-closed.
+      const { keys } = await resolveRunSender(issuerDid);
+      return keys[0] ?? null;
+    },
+    log: (entry) => logger.info(entry, 'run-plane'),
+  });
+  runPlaneNode.plane.recoverOnBoot();
+  runPlaneNode.start();
+
   // AppView client — discovery surface for service.query egress.
   // Lite operates as a provider node first, so the requester path is
   // less critical; stubbed to "no candidates" until a real AppView
@@ -267,6 +302,16 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
 
   return {
     async onBypassedD2D(info): Promise<void> {
+      // ISVC-10 — a run-correlated provider `service.response` (the reply to a
+      // pacer-emitted `service.query`) is consumed by the run plane's trust
+      // boundary FIRST. `handleServiceResponse` returns true iff the body was a
+      // live run response (verified-and-ingested or rejected); either way it
+      // must NOT fall through to the requester dispatcher, which would mint a
+      // spurious workflow task. A non-run `service.response` returns false and
+      // continues to the normal dispatcher path below.
+      if (info.messageType === MsgTypeServiceResponse) {
+        if (await runPlaneNode.handleServiceResponse(info.senderDID, info.body)) return;
+      }
       const raw: Partial<DinaMessage> = {
         type: info.messageType,
         from: info.senderDID,
@@ -279,6 +324,9 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       );
     },
     async dispose(): Promise<void> {
+      // Stop the run-plane loops first so no pacer tick races the teardown, and
+      // await tick quiescence before the shared stores are torn down (§13).
+      await runPlaneNode.stop();
       // stop() only clears the claim timer; an in-flight Tier-1 capability
       // execution may still be running. flush() awaits it so we don't tear
       // down the workflow plane (shared.dispose) out from under a live run.

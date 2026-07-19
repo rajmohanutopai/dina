@@ -12,17 +12,17 @@
  *   - Loyalty Law: hook never reaches the network.
  */
 
+import { act, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Text, View } from 'react-native';
-import { act, render, waitFor } from '@testing-library/react-native';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
 import {
   resetUserPreferencesForTest,
   saveUserPreferences,
   type UserPreferences,
 } from '../../src/services/user_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const ORIGINAL_INTL = global.Intl;
 

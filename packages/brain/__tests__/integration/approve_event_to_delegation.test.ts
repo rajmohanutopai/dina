@@ -17,21 +17,21 @@
  *   WorkflowEventConsumer (real) — onApproved → executeAndRespond
  */
 
-import { WorkflowService } from '@dina/core';
-import { InMemoryWorkflowRepository } from '@dina/core';
+import { WorkflowService , InMemoryWorkflowRepository } from '@dina/core';
+
 // ServiceHandler now catches `WorkflowConflictError` from `@dina/core`
 // (task 1.32-H). Core's export IS the repository's class, so the test's
 // previous repo→client-error translation is redundant — the repository
 // error propagates unchanged and satisfies the handler's `instanceof`.
-import type { WorkflowTask, WorkflowTaskState } from '@dina/core';
 import { ServiceHandler } from '../../src/service/service_handler';
-import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
 import {
   WorkflowEventConsumer,
   type WorkflowEventConsumerCoreClient,
   type ApprovedExecutionPayload,
 } from '../../src/service/workflow_event_consumer';
-import type { ServiceConfig } from '@dina/core';
+
+import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
+import type { WorkflowTask, WorkflowTaskState , ServiceConfig } from '@dina/core';
 
 const REQUESTER = 'did:plc:requester';
 const NOW_MS = 1_700_000_000_000;
@@ -141,7 +141,7 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     expect(repo.getById(approvalId)!.status).toBe('queued');
 
     // 3. Consumer polls the event, dispatches to executeAndRespond.
-    const dispatched: Array<{ taskId: string; payload: ApprovedExecutionPayload }> = [];
+    const dispatched: { taskId: string; payload: ApprovedExecutionPayload }[] = [];
     const consumer = new WorkflowEventConsumer({
       coreClient: consumerAdapter(service),
       deliver: () => {

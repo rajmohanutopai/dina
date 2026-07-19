@@ -12,6 +12,7 @@ import {
   buildCrashReport,
   auditCrashLogForPII,
 } from '../../src/crash/safety';
+
 import type { CrashReport } from '../../src/crash/safety';
 
 describe('Crash Traceback Safety', () => {

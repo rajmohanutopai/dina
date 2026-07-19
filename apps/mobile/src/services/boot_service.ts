@@ -26,16 +26,6 @@
  * proceed, warn, or block.
  */
 
-import type {
-  AgenticAskHandlerOptions,
-  AppViewClient,
-  LLMProvider,
-  PDSPublisher,
-  PDSSession,
-  ToolRegistry,
-} from '@dina/brain';
-import type { IdentityKeypair } from '@dina/core';
-
 import { buildRememberRuntime } from '@dina/brain';
 import { addMessage, postReminderCard } from '@dina/brain/chat';
 import { listPersonas } from '@dina/core';
@@ -59,12 +49,15 @@ import {
   configureRateLimiter,
   setClassificationJobRepository,
   setCommandReceiptRepository,
+  setCommandTxRunner,
   setCompletionReceiptRepository,
   setErasureKeyStore,
   setMessageRepository,
   setReservationRepository,
   setRunRepository,
   setRunService,
+  wireRunPlaneNode,
+  InProcessOwnerRunClient,
   createCoreRouter,
   createInProcessDispatch,
   getTopicRepository,
@@ -98,9 +91,20 @@ export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
 import { isAppViewStub } from './appview_stub';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { createDemoServiceResponder } from './demo_service_responder';
+import { setOwnerRunClient } from './owner_run_client';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { talkThreadResolver } from './talk_thread_routing';
+
+import type {
+  AgenticAskHandlerOptions,
+  AppViewClient,
+  LLMProvider,
+  PDSPublisher,
+  PDSSession,
+  ToolRegistry,
+} from '@dina/brain';
+import type { IdentityKeypair } from '@dina/core';
 
 export type BootLogger = (entry: Record<string, unknown>) => void;
 
@@ -345,7 +349,19 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // MsgBox ingress + signed in-process dispatch share one router so the
   // D2D receive path and Brain→Core calls hit the same route table. Tests
   // can override via `inputs.coreRouter` (pre-seeded with fakes).
-  const router = inputs.coreRouter ?? createCoreRouter();
+  // Boot-minted OWNER capability (INTERACTIVE_SERVICES §12.5, F15). A fresh 32-byte
+  // secret generated here + held in this boot closure, passed to BOTH the router
+  // (guard verifies it) and the InProcessOwnerRunClient (stamps it). It stops a
+  // prompt-injection-STEERED Brain (no owner client, no secret) from forging owner
+  // calls. It is NOT a hard boundary against a Brain running arbitrary hostile JS
+  // in this shared VM — such code can patch CoreRouter.prototype.handle to skim the
+  // secret off a live owner request (F15 re-review). That threat is out of scope
+  // for any in-VM mechanism; the server split is the strong-isolation story. See
+  // SECURITY.md. Defense-in-depth, honestly scoped.
+  const ownerCapBytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(ownerCapBytes);
+  const ownerCapability = Array.from(ownerCapBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  const router = inputs.coreRouter ?? createCoreRouter({ ownerCapability });
   const coreDispatch = createInProcessDispatch({ router });
   const signedDispatch = async (
     method: string,
@@ -388,12 +404,22 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     const runRepository = new SQLiteRunRepository(inputs.databaseAdapter);
     setRunRepository(runRepository);
     setRunService(new RunService({ repository: runRepository }));
+    // The owner-only run/watch control client (§12.5). The run UI reaches every
+    // list/steer through THIS (owner-marked dispatch → route guards → durable
+    // command receipts), never the raw getRunService()/getWatchService() globals
+    // that Brain shares on this same JS VM — "trusted-in-process" is not the
+    // owner boundary (§20). Router already has /v1/run/* + /v1/watch/* registered
+    // (createCoreRouter).
+    setOwnerRunClient(new InProcessOwnerRunClient(router, ownerCapability));
     setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
     setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
     setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));
     setClassificationJobRepository(new SQLiteClassificationJobRepository(inputs.databaseAdapter));
     setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(inputs.databaseAdapter));
     setCommandReceiptRepository(new SQLiteCommandReceiptRepository(inputs.databaseAdapter));
+    // One atomic commit for each owner command's mutation + its receipt (§5/§12.5).
+    const cmdReceiptDb = inputs.databaseAdapter;
+    setCommandTxRunner((fn) => cmdReceiptDb.transaction(fn));
   } else {
     workflowRepository = new InMemoryWorkflowRepository();
     serviceConfigRepository = new InMemoryServiceConfigRepository();
@@ -473,6 +499,38 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   const demoSendD2D: CreateNodeOptions['sendD2D'] = isAppViewStub(appViewClient)
     ? createDemoServiceResponder({ log }).wrap(sendD2D)
     : sendD2D;
+
+  // ISVC-10 — the interactive-run pull loop, live on-device. `wireRunPlaneNode`
+  // composes the run drivers (pacer/sweeper/classify/completion) over the Tier-0
+  // run stores registered above, pulling via the SAME signed `demoSendD2D` egress
+  // and encrypting payloads under the live persona DEK. Requires the identity DB
+  // (the in-memory fallback can't back the plane's tx/erasure), so it's inert on
+  // the degraded no-SQLite path. The §6.2 trust boundary resolves a provider's
+  // Ed25519 key through the SAME inbound `resolveSender` the receive pipeline
+  // uses; without a sender-resolver (no MsgBox transport) no provider response
+  // can arrive, so a null-returning resolver is the correct fail-closed default.
+  // Its receive hook + `stop` are handed to `createNode` (below), which consults
+  // the hook in `onBypassedD2D` and stops the loop on node teardown.
+  const runPlaneNode =
+    inputs.databaseAdapter !== undefined
+      ? wireRunPlaneNode({
+          db: inputs.databaseAdapter,
+          sendD2D: demoSendD2D,
+          resolveVerificationKey: async (issuerDid, _keyId, _issuedAtSec) => {
+            // V1: runtime issuer IS the provider (verifyRunMessage binds this);
+            // resolve the provider's current signing key. `key_id`/`issued_at`
+            // are plumbed for a future rotation-aware resolver (fail-closed today).
+            if (inputs.resolveSender === undefined) return null;
+            const { keys } = await inputs.resolveSender(issuerDid);
+            return keys[0] ?? null;
+          },
+          log: (entry) => log(entry),
+        })
+      : undefined;
+  if (runPlaneNode !== undefined) {
+    runPlaneNode.plane.recoverOnBoot();
+    runPlaneNode.start();
+  }
 
   const isProvider = inputs.role === 'provider' || inputs.role === 'both';
   if (isProvider && (inputs.pdsPublisher === undefined || inputs.pdsSessionReachable === false)) {
@@ -665,6 +723,10 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     // in-process dispatch share one route table (issue #13).
     coreRouter: router,
     resolveSender: inputs.resolveSender,
+    // ISVC-10 — the interactive-run pull loop's receive hook + stop, consulted
+    // in `onBypassedD2D` (verify-and-ingest run responses) and stopped on
+    // teardown. `undefined` on the in-memory (no-SQLite) degraded path.
+    runPlane: runPlaneNode,
     agenticAsk:
       inputs.agenticAsk !== undefined
         ? {

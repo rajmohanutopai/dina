@@ -4,6 +4,7 @@
  * Tests the shared safety utilities used by all 3 LLM adapters.
  */
 
+import { LLMError, ConfigError } from '../../../../core/src/errors';
 import {
   withTimeout,
   classifyAndThrow,
@@ -11,7 +12,6 @@ import {
   LLM_TIMEOUT_MS,
   GEMINI_TIMEOUT_MS,
 } from '../../../src/llm/adapters/safety';
-import { LLMError, ConfigError } from '../../../../core/src/errors';
 
 describe('LLM Adapter Safety', () => {
   describe('LLM_TIMEOUT_MS', () => {

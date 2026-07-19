@@ -4,6 +4,14 @@
  * Source: brain/tests/test_staging_processor.py
  */
 
+import { addKnownContact, clearKnownContacts } from '@dina/core';
+import { resetFactoryCounters } from '@dina/test-harness';
+
+import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
+import {
+  registerEnrichmentLLM,
+  resetEnrichmentPipeline,
+} from '../../src/enrichment/pipeline';
 import {
   processPendingItems,
   classifyItem,
@@ -13,13 +21,6 @@ import {
   clearPendingItems,
   addPendingItem,
 } from '../../src/staging/processor';
-import { resetFactoryCounters } from '@dina/test-harness';
-import { addKnownContact, clearKnownContacts } from '@dina/core';
-import {
-  registerEnrichmentLLM,
-  resetEnrichmentPipeline,
-} from '../../src/enrichment/pipeline';
-import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
 
 const rec = (overrides?: Record<string, unknown>) =>
   ({

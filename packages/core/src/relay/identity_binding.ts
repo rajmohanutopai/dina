@@ -13,6 +13,7 @@
  */
 
 import { deriveDIDKey } from '../identity/did';
+
 import type { CoreRPCRequest } from './rpc_envelope';
 
 /**

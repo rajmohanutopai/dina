@@ -16,6 +16,7 @@ import {
   setGuardScanner,
   resetStreamState,
 } from '../../src/hooks/useChatStreaming';
+
 import type { StreamChunk } from '../../../brain/src/llm/adapters/provider';
 
 /** Create an async iterable from an array of chunks. */

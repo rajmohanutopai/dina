@@ -18,9 +18,11 @@
  *     peer's data)
  */
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import React from 'react';
+
 import { IdentityModal } from '../../src/components/identity/identity_modal';
+
 import type { PlcLookupResult } from '../../src/services/plc_lookup';
 
 const DID = 'did:plc:zaxxz2vts2umzfk2r5fpzes4';

@@ -7,8 +7,9 @@
  * Source: tests/test_identity.py, core/internal/adapter/crypto/pem.go
  */
 
-import { sign, verify, getPublicKey } from '../crypto/ed25519';
 import { randomBytes } from '@noble/ciphers/utils.js';
+
+import { sign, verify, getPublicKey } from '../crypto/ed25519';
 
 export interface IdentityKeypair {
   publicKey: Uint8Array; // 32-byte Ed25519 public key

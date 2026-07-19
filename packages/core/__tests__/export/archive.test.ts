@@ -7,6 +7,8 @@
  * Source: core/test/portability_test.go
  */
 
+import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
+
 import {
   createArchive,
   readManifest,
@@ -19,8 +21,8 @@ import {
   checkCompatibility,
   listArchiveContents,
 } from '../../src/export/archive';
+
 import type { ArchiveManifest } from '../../src/export/archive';
-import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
 
 describe('Export Archive (.dina format)', () => {
   let archive: Uint8Array;

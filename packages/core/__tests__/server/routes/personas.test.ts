@@ -7,6 +7,7 @@
  */
 
 import { makePersonasHandlers } from '../../../src/server/routes/personas';
+
 import type { PersonaState } from '../../../src/persona/service';
 
 function persona(name: string, tier: PersonaState['tier'], isOpen: boolean): PersonaState {
@@ -56,7 +57,7 @@ describe('GET /v1/personas', () => {
     const { list } = makePersonasHandlers();
     const res = await list();
     expect(res.status).toBe(200);
-    const body = res.body as { personas: Array<{ name: string; tier: string; isOpen: boolean }> };
+    const body = res.body as { personas: { name: string; tier: string; isOpen: boolean }[] };
     expect(Array.isArray(body.personas)).toBe(true);
     // Sort invariant holds for whatever happened to be in the registry.
     const names = body.personas.map((p) => p.name);

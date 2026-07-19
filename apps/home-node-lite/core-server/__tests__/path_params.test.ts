@@ -18,11 +18,14 @@
  */
 
 import { pino } from 'pino';
+
 import { CoreRouter } from '@dina/core';
+
 import { createServer } from '../src/server';
 import { bindCoreRouter } from '../src/server/bind_core_router';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function baseConfig(): CoreServerConfig {
   return {

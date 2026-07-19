@@ -4,6 +4,16 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
+import { ingest, resetStagingState, stagingResolve as resolve , storeItem, clearVaults , DEFAULT_TEST_PERSONAS , createPersona, resetPersonaState, openPersona } from '@dina/core';
+import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
+import {
+  assembleBriefing,
+  registerEngagementProvider,
+  registerApprovalProvider,
+  registerMemoryProvider,
+  resetBriefingState,
+} from '../../src/briefing/assembly';
 import {
   collectEngagementItems,
   collectApprovalItems,
@@ -12,18 +22,6 @@ import {
   resetProviderState,
   registerAllProviders,
 } from '../../src/briefing/providers';
-import {
-  assembleBriefing,
-  registerEngagementProvider,
-  registerApprovalProvider,
-  registerMemoryProvider,
-  resetBriefingState,
-} from '../../src/briefing/assembly';
-import { ingest, resetStagingState, stagingResolve as resolve } from '@dina/core';
-import { storeItem, clearVaults } from '@dina/core';
-import { DEFAULT_TEST_PERSONAS } from '@dina/core';
-import { createPersona, resetPersonaState, openPersona } from '@dina/core';
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 const NOW = Date.now();
 const ONE_HOUR = 60 * 60 * 1000;

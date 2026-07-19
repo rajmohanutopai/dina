@@ -35,8 +35,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.49.
  */
 
-import type { CoreRPCResponse } from '@dina/protocol';
 import { TIMESTAMP_WINDOW_MS } from '../auth/timestamp_window';
+
+import type { CoreRPCResponse } from '@dina/protocol';
 
 /**
  * **Replay window**, expressed in minutes (task 4.83).

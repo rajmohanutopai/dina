@@ -4,16 +4,17 @@
  * Source: ARCHITECTURE.md Task 10.4
  */
 
+import { addContact, resetContactDirectory, setPeopleRepository , addAlias } from '@dina/core';
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import { registerPersonLinkProvider, resetPersonLinkProvider } from '../../src/person/linking';
 import {
   extractPeople,
   extractPeopleBatch,
   mergeByContact,
 } from '../../src/pipeline/people_extraction';
-import { registerPersonLinkProvider, resetPersonLinkProvider } from '../../src/person/linking';
+
 import type { ResolvedPerson } from '../../src/person/linking';
-import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
-import { addAlias } from '@dina/core';
-import { makeFakePeopleRepo } from '@dina/test-harness';
 
 const knownPeople: ResolvedPerson[] = [
   { personId: 'p1', name: 'Alice', surfaces: ['alice@example.com', 'Ali'] },

@@ -18,8 +18,8 @@
  * priming block. No translation, no information loss.
  */
 
-import type { AgentTool } from './tool_registry';
 import type { IntentClassifier } from './intent_classifier';
+import type { AgentTool } from './tool_registry';
 
 const CLASSIFY_INTENT_DESCRIPTION = [
   'Re-evaluate routing for a query when your understanding has evolved (e.g. you gathered new context from other tools and need to reroute).',

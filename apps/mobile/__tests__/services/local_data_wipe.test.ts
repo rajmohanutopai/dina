@@ -86,18 +86,19 @@ jest.mock('../../src/storage/init', () => ({
   }),
 }));
 
-import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
-import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
-import { clearIdentitySeeds } from '../../src/services/identity_store';
-import { clearPersistedDid } from '../../src/services/identity_record';
+import * as Notifications from 'expo-notifications';
+
+import { resetUnlockState } from '../../src/hooks/useUnlock';
 import { clearDisplayNameOverride } from '../../src/services/display_name_override';
-import { clearAutoPassphrase } from '../../src/services/startup_preferences';
+import { clearPersistedDid } from '../../src/services/identity_record';
+import { clearIdentitySeeds } from '../../src/services/identity_store';
 import {
   clearOrphanKeychainState,
   deleteInstallMarker,
 } from '../../src/services/install_marker';
-import * as Notifications from 'expo-notifications';
-import { resetUnlockState } from '../../src/hooks/useUnlock';
+import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
+import { clearAutoPassphrase } from '../../src/services/startup_preferences';
+import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
 import { shutdownAllPersistence } from '../../src/storage/init';
 
 describe('signOutLocal', () => {

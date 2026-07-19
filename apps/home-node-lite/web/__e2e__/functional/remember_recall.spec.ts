@@ -10,8 +10,8 @@
  * finance (cross-domain). Live tier.
  */
 
-import { expectJudgePass } from '../fixtures/judge';
 import { expect, test } from '../fixtures/human_session';
+import { expectJudgePass } from '../fixtures/judge';
 
 const PERSONAS = ['general', 'health', 'finance', 'work'];
 
@@ -40,7 +40,7 @@ test.describe('MRS-01/02 — Remember + persona routing + Ask recall', () => {
     const dinoP = await backstage.waitForPersonaContaining(PERSONAS, 'dinosaur');
     const hbaP = await backstage.waitForPersonaContaining(PERSONAS, 'HbA1c');
     const bankP = await backstage.waitForPersonaContaining(PERSONAS, 'Barclays');
-    // eslint-disable-next-line no-console
+     
     console.log(`[MRS-01 routing] dinosaur→${dinoP} HbA1c→${hbaP} Barclays→${bankP}`);
     // Pin the exact bucket for ALL three (matching health/finance) — the
     // general fact routes to `general` (no sensitive signal), not merely

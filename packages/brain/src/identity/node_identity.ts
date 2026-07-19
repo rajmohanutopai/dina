@@ -28,6 +28,7 @@
  */
 
 import { createDIDPLC, getPublicKey, type IdentityKeypair } from '@dina/core';
+
 import { PDSAccountClient, PDSAccountError, type PDSSession } from '../pds/account';
 
 export interface EnsureNodeIdentityParams {

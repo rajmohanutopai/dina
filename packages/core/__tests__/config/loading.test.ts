@@ -7,6 +7,7 @@
  */
 
 import { loadConfig, validateConfig } from '../../src/config/loading';
+
 import type { CoreConfig } from '../../src/config/loading';
 
 describe('Configuration Loading', () => {

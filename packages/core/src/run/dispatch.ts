@@ -98,6 +98,29 @@ export class RunDispatchService {
       return { state: 'policy_refused', reason: 'not_approved' };
     }
 
+    // Fail closed while the persona is LOCKED (§18 hard bounds): risk state must
+    // not advance (approved → risk_authorized) under a closed persona. Hold the
+    // message `approved` (no-op) — it re-gates once the persona re-opens; a lock
+    // that lands after authorization is caught again at the claim guard.
+    if (!this.personaOpen(run.persona)) {
+      return { state: 'risk_pending' };
+    }
+
+    // Fail closed if the run is SHEDDING (§18 "hard bounds in guards"): a
+    // terminal / fencing-draining / past-drain-deadline run never newly
+    // authorizes an action. Hold the message `approved` (a no-op outcome) so the
+    // barrier / deadline sweep fences it — never mint a stale `risk_authorized`
+    // on a run that can no longer dispatch. (The claim guard enforces the same
+    // bound at the dispatch linearization point.)
+    if (
+      isRunTerminal(run.state) ||
+      (run.state === 'draining' &&
+        (run.drain_strength === 'fencing' ||
+          (run.drain_deadline_at !== null && nowMs >= run.drain_deadline_at)))
+    ) {
+      return { state: 'risk_pending' };
+    }
+
     const risk = (msg.risk_class ?? 'MODERATE') as string;
     // Run the gate's lifecycle transitions atomically (VERIF #5): a crash
     // mid-gate must not strand the message at an intermediate state.
@@ -122,9 +145,28 @@ export class RunDispatchService {
   }
 
   /** Owner confirmation/unlock for a MODERATE/HIGH message (risk_pending →
-   *  risk_authorized). Returns true iff it was risk_pending. */
+   *  risk_authorized). Returns true iff it was risk_pending AND every hard bound
+   *  still holds — persona open, message + run not expired, run not
+   *  fencing/terminal, and (while draining) before the deadline. A lock or a
+   *  barrier/deadline that landed between risk evaluation and this owner
+   *  confirmation must NOT leave a stale `risk_authorized` (§18 hard bounds). */
   authorizeRisk(messageId: string): boolean {
-    return this.messages.transition(messageId, 'risk_pending', 'risk_authorized', this.now());
+    const msg = this.messages.getById(messageId);
+    if (msg === null || msg.state !== 'risk_pending') return false;
+    const run = this.runs.getById(msg.run_id);
+    if (run === null) return false;
+    const nowMs = this.now();
+    if (!this.personaOpen(run.persona)) return false; // persona lock → hold
+    if (nowMs >= msg.expires_at || nowMs >= run.expires_at) return false;
+    if (
+      isRunTerminal(run.state) ||
+      (run.state === 'draining' &&
+        (run.drain_strength === 'fencing' ||
+          (run.drain_deadline_at !== null && nowMs >= run.drain_deadline_at)))
+    ) {
+      return false;
+    }
+    return this.messages.transition(messageId, 'risk_pending', 'risk_authorized', nowMs);
   }
 
   /**

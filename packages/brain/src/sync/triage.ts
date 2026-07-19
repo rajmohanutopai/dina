@@ -38,11 +38,11 @@ export interface EmailItem {
 
 /** Injectable LLM classifier for Pass 2. */
 export type LLMTriageClassifier = (items: EmailItem[]) => Promise<
-  Array<{
+  {
     id: string;
     decision: TriageDecision;
     confidence: number;
-  }>
+  }[]
 >;
 
 // ---------------------------------------------------------------

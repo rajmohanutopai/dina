@@ -12,21 +12,6 @@
  * Source: ARCHITECTURE.md Tasks 6.8–6.12
  */
 
-import { appendAudit } from '../audit/service';
-import { getServiceOfferRepository } from '../contacts/service_offers_repository';
-import { getServiceGrantRepository } from '../service/service_grant_repository';
-import {
-  evaluateServiceIngressBypass,
-  type ServiceBypassDecision,
-  type LocalCapabilityChecker,
-  type RequesterWindowView,
-} from '../service/bypass';
-import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../service/service_config';
-import { requesterWindow, setProviderWindow } from '../service/windows';
-import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
-import { WorkflowConflictError } from '../workflow/repository';
-import { getWorkflowService } from '../workflow/service';
-
 import {
   parseServiceListingUri,
   validateServiceOfferBody,
@@ -34,6 +19,22 @@ import {
   type ServiceOfferBody,
   type ServiceGrantRequestBody,
 } from '@dina/protocol';
+
+import { appendAudit } from '../audit/service';
+import { getServiceOfferRepository } from '../contacts/service_offers_repository';
+import {
+  evaluateServiceIngressBypass,
+  type ServiceBypassDecision,
+  type LocalCapabilityChecker,
+  type RequesterWindowView,
+} from '../service/bypass';
+import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../service/service_config';
+import { getServiceGrantRepository } from '../service/service_grant_repository';
+import { requesterWindow, setProviderWindow } from '../service/windows';
+import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
+import { WorkflowConflictError } from '../workflow/repository';
+import { getWorkflowService } from '../workflow/service';
+
 
 import { unsealMessage, type D2DPayload } from './envelope';
 import {
@@ -45,8 +46,8 @@ import {
   MsgTypeServiceOffer,
   MsgTypeServiceGrantRequest,
 } from './families';
-import { handleServiceGrantRequest } from './grant_request_handler';
 import { checkScenarioGate } from './gates';
+import { handleServiceGrantRequest } from './grant_request_handler';
 import { quarantineMessage } from './quarantine';
 import { receiveAndStage } from './receive';
 import { emitServiceOfferReceived } from './service_offer_events';

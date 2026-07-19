@@ -10,6 +10,8 @@
  * Source: ARCHITECTURE.md Task 10.4
  */
 
+import { findByAlias } from '@dina/core';
+
 import {
   resolveMultiple,
   deduplicatePersons,
@@ -17,7 +19,6 @@ import {
   type ResolvedPerson,
   type PersonLink,
 } from '../person/linking';
-import { findByAlias } from '@dina/core';
 
 export interface PersonMention {
   name: string;
@@ -112,7 +113,7 @@ export async function extractPeople(
  * Returns one ExtractionResult per item.
  */
 export async function extractPeopleBatch(
-  items: Array<{ id: string; text: string }>,
+  items: { id: string; text: string }[],
   knownPeople: ResolvedPerson[],
 ): Promise<ExtractionResult[]> {
   const results: ExtractionResult[] = [];

@@ -31,14 +31,14 @@ import {
   LOCAL_RUNNER_NAME,
   buildServiceQueryExecutionPayload,
 } from '@dina/protocol';
-import type { ServiceQueryExecutionPayload } from '@dina/protocol';
+
 
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
 import { canonicalCapabilitySchemaHash } from './service_publisher';
 
 import type { CoreClient } from '@dina/core';
-import type {
+import type { ServiceQueryExecutionPayload ,
   ServiceConfig,
   ServiceCapabilityConfig,
   ServiceCapabilitySchemas,

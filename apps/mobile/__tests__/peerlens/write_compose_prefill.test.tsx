@@ -16,8 +16,8 @@
  * queryVault returns empty by default) and pin pure form behaviour.
  */
 
-import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 jest.mock('@dina/core', () => ({
   __esModule: true,
@@ -26,7 +26,9 @@ jest.mock('@dina/core', () => ({
 }));
 
 import * as vaultCrud from '@dina/core';
+
 import WriteScreen from '../../app/peerlens/write';
+
 import type {
   ChatMessage,
   ChatOptions,

@@ -34,8 +34,8 @@ import {
   stagingListByStatus as listByStatus,
 } from '@dina/core';
 import { addContact, clearGatesState } from '@dina/core/d2d';
-import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 import { MSG_TYPE_SOCIAL_UPDATE } from '@dina/protocol';
+import { makeDinaMessage, resetFactoryCounters } from '@dina/test-harness';
 
 describe('mobile Scenario 3 — D2D node A → node B', () => {
   // Two "nodes" sharing this Jest process — each has its own

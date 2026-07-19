@@ -21,15 +21,15 @@ import {
   InMemoryAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../src/agent/grant_repository';
+import { queryAudit, resetAuditState } from '../../src/audit/service';
+import { createPersona, resetPersonaState } from '../../src/persona/service';
+import { WorkflowTaskState } from '../../src/workflow/domain';
+import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import {
   WorkflowService,
   getWorkflowService,
   setWorkflowService,
 } from '../../src/workflow/service';
-import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowTaskState } from '../../src/workflow/domain';
-import { createPersona, resetPersonaState } from '../../src/persona/service';
-import { queryAudit, resetAuditState } from '../../src/audit/service';
 
 const AGENT_A = 'did:key:agentA';
 const AGENT_B = 'did:key:agentB';

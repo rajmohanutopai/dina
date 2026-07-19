@@ -57,7 +57,7 @@ export interface BindCoreRouterOptions {
    * `/healthz` as the process liveness route while binding the rest of
    * CoreRouter's API surface.
    */
-  skipRoutes?: ReadonlyArray<{ method: CoreRequest['method']; path: string }>;
+  skipRoutes?: readonly { method: CoreRequest['method']; path: string }[];
   /** The Fastify instance to bind onto. Any instance returned by `createServer()`. */
   app: {
     get(path: string, handler: FastifyHandler): unknown;

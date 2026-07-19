@@ -38,6 +38,16 @@
  */
 
 import {
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+
+  resetStagingState,
+  stagingGetItem as getStagingItem,
+  createPersona,
+  openPersona,
+  resetPersonaState, configureRateLimiter , createCoreRouter , InProcessTransport } from '@dina/core';
+
+import {
   handleChat,
   setRememberDrainHook,
   resetRememberDrainHook,
@@ -52,22 +62,6 @@ import {
 } from '../../src/routing/persona_selector';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
 
-import {
-  clearVaults,
-  DEFAULT_TEST_PERSONAS,
-} from '@dina/core';
-import {
-  resetStagingState,
-  stagingGetItem as getStagingItem,
-} from '@dina/core';
-import {
-  createPersona,
-  openPersona,
-  resetPersonaState,
-} from '@dina/core';
-import { configureRateLimiter } from '@dina/core';
-import { createCoreRouter } from '@dina/core';
-import { InProcessTransport } from '@dina/core';
 
 import {
   closeSQLiteVault,
@@ -227,7 +221,7 @@ describeReal('/remember reply pins persona name (real Gemini + real SQLCipher)',
       const replyText =
         resp.response !== '' ? resp.response : (dinaMsgs[dinaMsgs.length - 1]?.content ?? '');
       if (!replyText.includes(expectedPhrase)) {
-        // eslint-disable-next-line no-console
+         
         console.log(
           `[${scenario.label}] expected "${expectedPhrase}" in reply, got:\n  ${replyText}`,
         );

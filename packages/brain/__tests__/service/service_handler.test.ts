@@ -2,11 +2,13 @@
  * ServiceHandler tests.
  */
 
+import { WorkflowConflictError } from '@dina/core';
+
 import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service/service_handler';
 import { canonicalCapabilitySchemaHash } from '../../src/service/service_publisher';
+
 // ServiceHandler catches `WorkflowConflictError` from `@dina/core`.
 // The test throws the same class so `instanceof` matches.
-import { WorkflowConflictError } from '@dina/core';
 import type { ServiceConfig } from '@dina/core';
 
 interface CreateCall {
@@ -25,14 +27,14 @@ interface CreateCall {
 function stubCore(overrides?: { nextCreateError?: Error; nextCancelError?: Error }): {
   client: ServiceHandlerCoreClient;
   createCalls: CreateCall[];
-  cancelCalls: Array<{ id: string; reason?: string }>;
-  respondCalls: Array<unknown>;
+  cancelCalls: { id: string; reason?: string }[];
+  respondCalls: unknown[];
   nextCreateError: Error | null;
   nextCancelError: Error | null;
 } {
   const createCalls: CreateCall[] = [];
-  const cancelCalls: Array<{ id: string; reason?: string }> = [];
-  const respondCalls: Array<unknown> = [];
+  const cancelCalls: { id: string; reason?: string }[] = [];
+  const respondCalls: unknown[] = [];
   let nextCreateError: Error | null = overrides?.nextCreateError ?? null;
   let nextCancelError: Error | null = overrides?.nextCancelError ?? null;
   const client = {
@@ -313,7 +315,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     // `schema_hash_required` — a stale client must not be allowed to
     // skip version safety.
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -332,7 +334,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
 
   it('GAP-SH-01: also rejects empty schema_hash string', async () => {
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -386,7 +388,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     // emitted rejection would carry a `lat`-related message instead of
     // `schema_version_mismatch`. Pins the ordering via the log sink.
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -414,7 +416,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     // the declared keys must reach the task payload, and the dropped
     // keys must appear in a structured log event.
     const core = stubCore();
-    const logEntries: Array<Record<string, unknown>> = [];
+    const logEntries: Record<string, unknown>[] = [];
     const config: ServiceConfig = {
       ...baseConfig,
       capabilities: {
@@ -471,7 +473,7 @@ describe('ServiceHandler.handleQuery — auto path', () => {
 
   it('WM-BRAIN-06b: does not log when no params are dropped', async () => {
     const core = stubCore();
-    const logEntries: Array<Record<string, unknown>> = [];
+    const logEntries: Record<string, unknown>[] = [];
     const config: ServiceConfig = {
       ...baseConfig,
       capabilities: {
@@ -835,7 +837,7 @@ describe('ServiceHandler.handleQuery — review path', () => {
 
   it('fires the notifier with the approve command', async () => {
     const core = stubCore();
-    const notifications: Array<{ taskId: string; approveCommand: string }> = [];
+    const notifications: { taskId: string; approveCommand: string }[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -857,7 +859,7 @@ describe('ServiceHandler.handleQuery — review path', () => {
 
   it('isolates notifier errors (create still succeeds)', async () => {
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -883,7 +885,7 @@ describe('ServiceHandler.handleQuery — review path', () => {
 describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat visibility)', () => {
   it('fires for the auto path with kind="execution" after task creation', async () => {
     const core = stubCore();
-    const seen: Array<Record<string, unknown>> = [];
+    const seen: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -908,7 +910,7 @@ describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat vis
 
   it('fires for the review path with kind="approval"', async () => {
     const core = stubCore();
-    const seen: Array<Record<string, unknown>> = [];
+    const seen: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -933,7 +935,7 @@ describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat vis
 
   it('does NOT fire when the query is rejected (unknown capability)', async () => {
     const core = stubCore();
-    const seen: Array<Record<string, unknown>> = [];
+    const seen: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -951,7 +953,7 @@ describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat vis
 
   it('does NOT fire when the query is rejected for schema hash mismatch', async () => {
     const core = stubCore();
-    const seen: Array<Record<string, unknown>> = [];
+    const seen: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -968,7 +970,7 @@ describe('ServiceHandler.handleQuery — inboundNotifier (provider-side chat vis
 
   it('isolates inboundNotifier errors — task creation still succeeds, error is logged', async () => {
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -1065,7 +1067,7 @@ describe('ServiceHandler.executeAndRespond', () => {
     const core = stubCore({
       nextCancelError: new Error('already terminal'),
     });
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const handler = new ServiceHandler({
       coreClient: core.client,
       readConfig: () => baseConfig,
@@ -1278,7 +1280,7 @@ describe('ServiceHandler — Tier 1 execution-plane routing (docs/SERVICE_PROVID
 
   it('a capability with NO execution plane is rejected `capability_not_executable` and creates NO task', async () => {
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const noPlane: ServiceConfig = {
       isDiscoverable: true,
       name: 'Broken Svc',
@@ -1308,7 +1310,7 @@ describe('ServiceHandler — Tier 1 execution-plane routing (docs/SERVICE_PROVID
 
   it('whitespace-only instruction does NOT count as an execution plane', async () => {
     const core = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const wsConfig: ServiceConfig = {
       isDiscoverable: true,
       name: 'WS Svc',

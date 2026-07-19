@@ -13,6 +13,7 @@ import {
   blacklistAgent,
   clearBlacklist,
 } from '../../src/mcp/delegation';
+
 import type { DelegationRequest } from '../../src/mcp/delegation';
 
 describe('MCP Agent Delegation', () => {

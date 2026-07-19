@@ -13,14 +13,19 @@
  * in the thread for chronological reference.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import type { ChatMessage } from '@dina/brain/chat';
-import { transportComplete, transportSnooze } from '../hooks/reminder_transport';
+
+
 import { addSystemMessage } from '@dina/brain/chat';
+
+import { transportComplete, transportSnooze } from '../hooks/reminder_transport';
 import { colors, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 

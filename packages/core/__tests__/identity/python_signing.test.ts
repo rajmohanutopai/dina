@@ -8,9 +8,10 @@
  * Source: tests/test_signing.py (26 tests)
  */
 
-import { canonicalize, signCanonical, verifyCanonical } from '../../src/identity/signing';
-import { getPublicKey } from '../../src/crypto/ed25519';
 import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { canonicalize, signCanonical, verifyCanonical } from '../../src/identity/signing';
 
 describe('Python Signing Vectors', () => {
   const testVerdict = {

@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Task 3.30
  */
 
+import { signRequest , getPublicKey } from '@dina/core';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   authenticateUIRequest,
   registerUIDeviceKey,
@@ -11,9 +14,6 @@ import {
   isRegisteredUIDevice,
   resetUIAuth,
 } from '../../src/auth/ui_auth';
-import { signRequest } from '@dina/core';
-import { getPublicKey } from '@dina/core';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const deviceDID = 'did:key:z6MkUIDevice';
 const devicePub = getPublicKey(TEST_ED25519_SEED);

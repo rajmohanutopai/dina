@@ -7,6 +7,7 @@
  * Source: tests/integration/test_client_sync.py
  */
 
+import { completePairing, setNodeDID } from '../../src/pairing/ceremony';
 import {
   syncFromCheckpoint,
   pushToClient,
@@ -26,8 +27,8 @@ import {
   MAX_BATCH_ITEMS,
   MAX_ITEM_SIZE_BYTES,
 } from '../../src/sync/client';
+
 import type { SyncItem } from '../../src/sync/client';
-import { completePairing, setNodeDID } from '../../src/pairing/ceremony';
 
 describe('Device Sync Integration', () => {
   beforeEach(() => resetSyncState());

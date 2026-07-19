@@ -26,18 +26,18 @@
  * taps Publish — same explicit gate as the form-driven review path.
  */
 
-import { queryVault } from '@dina/core';
-import { listPersonas, isPersonaOpen } from '@dina/core';
 import {
   addLifecycleMessage,
   updateReviewDraftLifecycle,
   type ReviewDraftLifecycle,
   type ReviewDraftStatus,
 } from '@dina/brain/chat';
-import type { LLMProvider } from '@dina/brain/llm';
+import { listPersonas, isPersonaOpen , queryVault } from '@dina/core';
+
 
 import { loadActiveProvider } from '../ai/active_provider';
 import { createLLMProvider } from '../ai/provider';
+
 import {
   inferComposeContext,
   type ComposeContextResult,
@@ -50,6 +50,8 @@ import {
   type SubjectKind,
   type WriteFormState,
 } from './write_form_data';
+
+import type { LLMProvider } from '@dina/brain/llm';
 
 // Intent detection used to live here as a regex pair. It was deleted
 // once the agentic `/ask` loop's `draft_review` tool took over —

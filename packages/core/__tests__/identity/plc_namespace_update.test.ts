@@ -13,6 +13,8 @@
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { TEST_MNEMONIC_SEED } from '@dina/test-harness';
+
 import {
   buildCreationOperation,
   cidForOperation,
@@ -28,7 +30,6 @@ import {
   namespaceFragment,
   signOperation,
 } from '../../src';
-import { TEST_MNEMONIC_SEED } from '@dina/test-harness';
 
 // Build a real genesis PLC op signed by the canonical test rotation
 // key — the composer's input shape. Uses TEST_MNEMONIC_SEED so the

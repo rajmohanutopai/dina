@@ -24,9 +24,9 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { SQLiteDeviceRepository } from '../../src/devices/repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { SQLiteDeviceRepository } from '../../src/devices/repository';
 
 import type { PairedDevice } from '../../src/devices/registry';
 

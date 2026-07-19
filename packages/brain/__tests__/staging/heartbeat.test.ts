@@ -8,7 +8,7 @@ import { LeaseHeartbeat, withHeartbeat, type LeaseExtender } from '../../src/sta
 
 /** Create a mock lease extender that tracks calls. */
 function createMockExtender(): LeaseExtender & {
-  calls: Array<{ itemId: string; seconds: number }>;
+  calls: { itemId: string; seconds: number }[];
   failNext: boolean;
 } {
   const mock: any = {

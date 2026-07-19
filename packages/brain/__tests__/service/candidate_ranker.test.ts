@@ -8,6 +8,7 @@ import {
   rankCandidates,
   type Location,
 } from '../../src/service/candidate_ranker';
+
 import type { ServiceProfile } from '../../src/appview_client/http';
 
 function profile(

@@ -4,10 +4,13 @@
  * Source: core/test/transport_d2d_sig_test.go
  */
 
-import { signMessage, verifyMessage, verifyMessageSingle } from '../../src/d2d/signature';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import type { DinaMessage } from '../../src/d2d/envelope';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { signMessage, verifyMessage, verifyMessageSingle } from '../../src/d2d/signature';
+
+import type { DinaMessage } from '../../src/d2d/envelope';
+
 
 describe('D2D Message Signature', () => {
   const msg: DinaMessage = {

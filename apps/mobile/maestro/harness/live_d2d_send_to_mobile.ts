@@ -21,8 +21,8 @@
  * always adds the mobile DID so its own egress gate passes.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 
 import { deriveDIDKey, getPublicKey } from '@dina/core';
 

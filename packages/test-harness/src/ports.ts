@@ -228,9 +228,7 @@ export interface PairedDevice {
   revoked: number;
 }
 
-export interface SharingPolicy {
-  [category: string]: 'none' | 'summary' | 'full' | 'locked';
-}
+export type SharingPolicy = Record<string, 'none' | 'summary' | 'full' | 'locked'>;
 
 export type ScenarioTier = 'allow' | 'deny' | 'approval_required';
 
@@ -537,7 +535,7 @@ export interface CrashLogger {
   store(entry: { component: string; message: string; stack_hash: string }): Promise<void>;
   query(
     since: number,
-  ): Promise<Array<{ id: number; ts: number; component: string; message: string }>>;
+  ): Promise<{ id: number; ts: number; component: string; message: string }[]>;
   purge(retentionDays: number): Promise<number>;
 }
 

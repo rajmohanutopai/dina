@@ -34,13 +34,15 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4k task 4.78.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
 import { detectPII, rehydratePII } from '@dina/core';
+
 import { AllowList, filterMatches } from './allow_list';
 import {
   type RehydrationSessionRegistry,
   type RehydrationEntity,
 } from './rehydration_sessions';
+
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Default cap on input length (matches Python `max_length=100_000`). */
 export const DEFAULT_MAX_TEXT_LENGTH = 100_000;
@@ -66,13 +68,13 @@ export interface PiiRoutesOptions {
 
 export interface ScrubResponseBody {
   scrubbed: string;
-  entities: Array<{
+  entities: {
     type: string;
     start: number;
     end: number;
     value: string;
     token: string;
-  }>;
+  }[];
 }
 
 /** Structural Fastify subset — matches the pattern in `src/pair/routes.ts`. */
@@ -217,7 +219,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
       return;
     }
 
-    let entities: ReadonlyArray<RehydrationEntity>;
+    let entities: readonly RehydrationEntity[];
     if (hasSessionId) {
       if (rehydrationSessions === undefined) {
         await reply

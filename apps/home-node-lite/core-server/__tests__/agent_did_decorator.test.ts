@@ -2,15 +2,18 @@
  * Task 4.28 — agent-DID request decorator tests.
  */
 
-import { pino } from 'pino';
 import { Writable } from 'node:stream';
-import { createServer } from '../src/server';
+
+import { pino } from 'pino';
+
 import {
   setAgentContext,
   requireAgentContext,
 } from '../src/auth/agent_did_decorator';
-import type { Logger } from '../src/logger';
+import { createServer } from '../src/server';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -117,7 +120,7 @@ describe('agent-DID decorator (task 4.28)', () => {
   });
 
   it('setAgentContext also forwards DID to the log-binding context (task 4.7)', async () => {
-    const lines: Array<Record<string, unknown>> = [];
+    const lines: Record<string, unknown>[] = [];
     const sink = new Writable({
       write(chunk, _enc, cb) {
         const text = chunk.toString('utf8');

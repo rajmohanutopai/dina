@@ -17,6 +17,9 @@
  * Source: ARCHITECTURE.md Task 9.3
  */
 
+import { TRUST_CACHE_TTL_MS } from '../constants';
+import { listContacts, getContact, resolveByName, type Contact } from '../contacts/directory';
+
 import { getCachedTrust, cacheTrustScore, type TrustScore } from './cache';
 import {
   type PeerlensQueryClient,
@@ -25,8 +28,6 @@ import {
   type AttestationSearchHit,
   type AttestationSearchParams,
 } from './query_client';
-import { listContacts, getContact, resolveByName, type Contact } from '../contacts/directory';
-import { TRUST_CACHE_TTL_MS } from '../constants';
 
 // ---------------------------------------------------------------
 // Types

@@ -23,7 +23,6 @@
 
 import { WorkflowConflictError } from './core-client';
 import { CoreHttpError } from './http-transport';
-import type { QuarantinedMessage } from '../d2d/quarantine';
 
 import type {
   CoreClient,
@@ -87,6 +86,7 @@ import type {
   RiskLevel,
   ServiceOfferView,
 } from './core-client';
+import type { QuarantinedMessage } from '../d2d/quarantine';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
 
 /**

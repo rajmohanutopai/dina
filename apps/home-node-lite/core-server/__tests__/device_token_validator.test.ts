@@ -6,12 +6,12 @@
  * on the very next `validate()` call without reloading the validator.
  */
 
-import { DeviceTokenRegistry } from '../src/pair/device_tokens';
 import {
   DeviceTokenBearerValidator,
   authenticateBearerFromDeviceRegistry,
   type DeviceTokenValidationDetail,
 } from '../src/auth/device_token_validator';
+import { DeviceTokenRegistry } from '../src/pair/device_tokens';
 
 function scriptedRandom(scripts: number[][]): (n: number) => Uint8Array {
   let i = 0;

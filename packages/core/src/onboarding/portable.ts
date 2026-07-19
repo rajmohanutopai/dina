@@ -13,10 +13,10 @@
  * Source: core/test/onboarding_test.go (portable parts)
  */
 
+import { wrapSeed } from '../crypto/aesgcm';
 import { generateMnemonic, mnemonicToEntropy } from '../crypto/bip39';
 import { deriveRootSigningKey } from '../crypto/slip0010';
 import { deriveDIDKey } from '../identity/did';
-import { wrapSeed } from '../crypto/aesgcm';
 import { serializeWrappedSeed } from '../storage/seed_file';
 
 export interface OnboardingResult {

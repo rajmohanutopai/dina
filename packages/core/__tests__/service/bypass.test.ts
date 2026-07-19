@@ -2,13 +2,13 @@
  * Tests for `evaluateServiceEgressBypass` / `evaluateServiceIngressBypass`.
  */
 
+import { MsgTypeServiceQuery, MsgTypeServiceResponse } from '../../src/d2d/families';
 import {
   evaluateServiceEgressBypass,
   evaluateServiceIngressBypass,
   type ProviderServiceResolver,
   type RequesterWindowView,
 } from '../../src/service/bypass';
-import { MsgTypeServiceQuery, MsgTypeServiceResponse } from '../../src/d2d/families';
 
 const validQueryBody = {
   query_id: 'q-1',
@@ -576,7 +576,7 @@ describe('evaluateServiceIngressBypass', () => {
     });
 
     it('peek is called with (fromDID, query_id, capability)', () => {
-      const calls: Array<[string, string, string]> = [];
+      const calls: [string, string, string][] = [];
       const requester: RequesterWindowView = {
         peek: (...args) => {
           calls.push(args);

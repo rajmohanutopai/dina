@@ -439,7 +439,7 @@ describe('createGetProfileClient (task 6.13)', () => {
 
   describe('events', () => {
     it('fetched event carries capability count', async () => {
-      type Ev = { kind: 'fetched'; operatorDid: string; capabilityCount: number };
+      interface Ev { kind: 'fetched'; operatorDid: string; capabilityCount: number }
       const events: Ev[] = [];
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody()),

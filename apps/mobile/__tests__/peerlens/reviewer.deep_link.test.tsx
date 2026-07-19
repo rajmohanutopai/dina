@@ -21,8 +21,8 @@
  *     before using it.
  */
 
-import React from 'react';
 import { render } from '@testing-library/react-native';
+import React from 'react';
 
 import ReviewerProfileScreen from '../../app/peerlens/reviewer/[did]';
 import {

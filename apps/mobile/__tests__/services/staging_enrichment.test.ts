@@ -2,20 +2,23 @@
  * Bootstrap-layer staging enrichment wiring (GAP-RT-02 / PC-BRAIN-13).
  */
 
-import {
-  buildStagingEnrichment,
-  providerToExtractorLLM,
-  defaultContactResolver,
-} from '../../src/services/staging_enrichment';
-import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
-import type { CoreClient } from '@dina/core';
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
 import {
   resetContactDirectory,
   addContact,
   setPreferredFor,
 } from '../../../core/src/contacts/directory';
 import { setPeopleRepository } from '../../../core/src/people/repository';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+import {
+  buildStagingEnrichment,
+  providerToExtractorLLM,
+  defaultContactResolver,
+} from '../../src/services/staging_enrichment';
+
+import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
+import type { CoreClient } from '@dina/core';
+
 
 function fakeProvider(response: string): LLMProvider {
   return {
@@ -52,10 +55,10 @@ function fakeCore(): Pick<CoreClient, 'memoryTouch' | 'updateContact'> {
 
 describe('providerToExtractorLLM', () => {
   it('adapts LLMProvider.chat into the (system, prompt) => string shape', async () => {
-    const captured: Array<{ system?: string; content: string }> = [];
+    const captured: { system?: string; content: string }[] = [];
     const provider = {
       ...fakeProvider('{"entities":["Dr Carl"],"themes":[]}'),
-      chat: async (messages: Array<{ content: string }>, options?: { systemPrompt?: string }) => {
+      chat: async (messages: { content: string }[], options?: { systemPrompt?: string }) => {
         captured.push({
           system: options?.systemPrompt,
           content: messages[0].content,

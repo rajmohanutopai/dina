@@ -205,8 +205,8 @@ export function createTrustResolveClient(
 
 // ── Internals ──────────────────────────────────────────────────────────
 
-type ParseOk = { ok: true; response: TrustResolveResponse };
-type ParseFail = { ok: false; reason: 'malformed_response'; detail: string };
+interface ParseOk { ok: true; response: TrustResolveResponse }
+interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
 
 function parseResponse(
   body: Record<string, unknown>,

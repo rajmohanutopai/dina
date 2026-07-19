@@ -14,8 +14,9 @@
  * Source: ARCHITECTURE.md Task 6.15
  */
 
-import type { DeadDropSpoolPort } from '../storage/spool';
 import { ingest } from '../staging/service';
+
+import type { DeadDropSpoolPort } from '../storage/spool';
 
 export interface DrainResult {
   drained: number;

@@ -17,8 +17,8 @@
  * the wire-up between props and rendered output.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import NamespaceScreen from '../../app/peerlens/namespace';
 

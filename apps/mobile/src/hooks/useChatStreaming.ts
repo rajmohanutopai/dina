@@ -23,7 +23,7 @@ export interface StreamState {
   text: string;
   tokens: string[];
   tokenCount: number;
-  toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+  toolCalls: { name: string; arguments: Record<string, unknown> }[];
   startedAt: number | null;
   completedAt: number | null;
   error: string | null;

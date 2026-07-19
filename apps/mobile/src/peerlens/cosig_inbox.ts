@@ -44,9 +44,10 @@
  * action / state / deep-link rules and they drift.
  */
 
+import { buildAttestationDeepLink } from './inbox_deep_link';
+
 import type { CosigRequest } from '@dina/protocol';
 
-import { buildAttestationDeepLink } from './inbox_deep_link';
 
 // ─── Public types ─────────────────────────────────────────────────────────
 

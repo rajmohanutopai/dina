@@ -194,8 +194,8 @@ export function createGetProfileClient(
 
 // ── Internals ──────────────────────────────────────────────────────────
 
-type ParseOk = { ok: true; response: GetProfileResponse };
-type ParseFail = { ok: false; reason: 'malformed_response'; detail: string };
+interface ParseOk { ok: true; response: GetProfileResponse }
+interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
 
 function parseResponse(
   body: Record<string, unknown>,
@@ -246,7 +246,7 @@ function parseResponse(
   };
 }
 
-type ProfileParseOk = { ok: true; value: ServiceProfileView };
+interface ProfileParseOk { ok: true; value: ServiceProfileView }
 function parseProfile(
   raw: unknown,
   operatorDid: string,

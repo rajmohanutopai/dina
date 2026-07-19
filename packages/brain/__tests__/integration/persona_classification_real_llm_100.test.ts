@@ -34,6 +34,7 @@ import {
   createGeminiClassifier,
   type InstalledPersona,
 } from '../../src/routing/gemini_classify';
+
 import type { ClassificationInput, MentionedContact } from '../../src/routing/domain';
 
 // Real-LLM gate: only run when a developer has explicitly opted in via
@@ -473,7 +474,7 @@ describeReal(
         };
         const result = await classifier(input, AVAILABLE_PERSONAS);
         if (result.persona !== scenario.expected) {
-          // eslint-disable-next-line no-console
+           
           console.log(
             `[scenario] text=${JSON.stringify(scenario.text)} expected=${scenario.expected} got=${result.persona} reason=${result.reason}`,
           );

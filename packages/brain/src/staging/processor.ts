@@ -27,6 +27,7 @@
  */
 
 import { classifySourceTrust } from '@dina/core';
+
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,

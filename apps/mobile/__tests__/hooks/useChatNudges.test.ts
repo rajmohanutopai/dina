@@ -4,6 +4,11 @@
  * Source: ARCHITECTURE.md Task 4.12
  */
 
+import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import {
+  listNotifications,
+  resetNotifications,
+} from '../../../brain/src/notifications/inbox';
 import {
   createNudge,
   dismissNudge,
@@ -14,11 +19,6 @@ import {
   isDND,
   resetNudges,
 } from '../../src/hooks/useChatNudges';
-import { resetThreads, getThread } from '../../../brain/src/chat/thread';
-import {
-  listNotifications,
-  resetNotifications,
-} from '../../../brain/src/notifications/inbox';
 
 describe('Chat Nudge Cards Hook (4.12)', () => {
   beforeEach(() => {

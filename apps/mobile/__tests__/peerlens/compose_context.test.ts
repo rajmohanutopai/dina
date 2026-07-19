@@ -25,6 +25,7 @@ import {
   inferComposeContext,
   type ComposeVaultItem,
 } from '../../src/peerlens/compose_context';
+
 import type {
   ChatMessage,
   ChatOptions,
@@ -50,7 +51,7 @@ const TECH_VOCAB = ['everyday', 'professional', 'travel', 'gaming', 'creative'];
  * canned responses. Records every call so individual specs can pin
  * the systemPrompt / responseSchema / message shape the inferer sent.
  */
-function stubLLM(responses: Array<string | Error>): {
+function stubLLM(responses: (string | Error)[]): {
   llm: LLMProvider;
   chatMock: jest.Mock<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>;
 } {

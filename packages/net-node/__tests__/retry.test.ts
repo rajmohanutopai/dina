@@ -9,7 +9,7 @@ import { RetryingHttpClient, type HttpClient, type HttpResponse } from '../src';
 
 /** Fake HttpClient that returns pre-queued responses or throws pre-queued errors. */
 class FakeClient implements HttpClient {
-  private readonly queue: Array<(() => Promise<HttpResponse>)> = [];
+  private readonly queue: (() => Promise<HttpResponse>)[] = [];
   public calls = 0;
 
   enqueueResponse(status: number): void {
@@ -231,11 +231,11 @@ describe('RetryingHttpClient (task 3.36)', () => {
       fake.enqueueResponse(500);
       fake.enqueueError('net');
       fake.enqueueResponse(200);
-      const events: Array<{
+      const events: {
         attempt: number;
         status: number | null;
         errorMsg: string | null;
-      }> = [];
+      }[] = [];
       const retry = new RetryingHttpClient(fake, {
         sleepMs: noSleep,
         onRetry: (attempt, response, error) => {

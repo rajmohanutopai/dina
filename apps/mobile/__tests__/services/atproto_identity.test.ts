@@ -1,8 +1,8 @@
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   normalizeIdentifier,
   resolveExistingAtprotoIdentity,
 } from '../../src/services/atproto_identity';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const DID = 'did:plc:external123';
 const HANDLE = 'alice.bsky.social';

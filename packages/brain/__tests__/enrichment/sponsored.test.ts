@@ -4,13 +4,13 @@
  * Source: brain/src/service/guardian.py — sponsored content tagging
  */
 
+import { enrichItem, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 import {
   detectSponsored,
   tagSponsored,
   untagSponsored,
   type SponsoredResult,
 } from '../../src/enrichment/sponsored';
-import { enrichItem, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 
 describe('Sponsored Content Detection', () => {
   describe('detectSponsored', () => {

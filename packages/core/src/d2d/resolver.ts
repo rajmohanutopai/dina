@@ -15,13 +15,12 @@
  * Source: ARCHITECTURE.md Task 6.1
  */
 
-import type { DIDDocument, ServiceEndpoint } from '../identity/did_document';
-import { validateDIDDocument, getMessagingService } from '../identity/did_document';
-import { buildDIDDocument } from '../identity/did_document';
-import { extractPublicKey, publicKeyToMultibase } from '../identity/did';
-
 import { DEFAULT_PLC_DIRECTORY, DID_CACHE_TTL_MS } from '../constants';
+import { extractPublicKey, publicKeyToMultibase } from '../identity/did';
+import { validateDIDDocument, getMessagingService , buildDIDDocument } from '../identity/did_document';
 import { defaultFetch } from '../runtime/fetch';
+
+import type { DIDDocument, ServiceEndpoint } from '../identity/did_document';
 
 const DEFAULT_TTL_MS = DID_CACHE_TTL_MS;
 

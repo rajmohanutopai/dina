@@ -335,7 +335,7 @@ describe('installHeartbeat (task 4.39)', () => {
 
   describe('logger hook', () => {
     it('logs trace on ping + warn on timeout', () => {
-      const lines: Array<[string, string]> = [];
+      const lines: [string, string][] = [];
       const sched = mockSchedule();
       const clock = mockClock();
       installHeartbeat({

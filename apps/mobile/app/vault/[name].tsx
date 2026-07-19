@@ -15,6 +15,8 @@
  * reminder planning — Python's dina-cli has the same restriction.
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
@@ -25,9 +27,7 @@ import {
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
+
 import {
   formatPersonaDisplayName,
   getPersonaUI,
@@ -39,6 +39,7 @@ import {
   listVaultItemsUI,
   type VaultItemUI,
 } from '../../src/hooks/useVaultItems';
+import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
 
 interface ScreenState {
   persona: PersonaUIState | null;

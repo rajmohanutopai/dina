@@ -4,6 +4,7 @@
  * persistence the StartupMode picker in onboarding is dead UI.
  */
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   clearAutoPassphrase,
   loadAutoPassphrase,
@@ -12,7 +13,6 @@ import {
   saveAutoPassphrase,
   saveStartupMode,
 } from '../../src/services/startup_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 beforeEach(() => {
   resetKeychainMock();

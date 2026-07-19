@@ -72,7 +72,7 @@ export interface VaultEvidence {
 
 export interface InferenceContext {
   /** Vault items in display order (newest first; we don't sort). */
-  readonly vaultItems: ReadonlyArray<VaultEvidence>;
+  readonly vaultItems: readonly VaultEvidence[];
   /** ISO 3166-1 alpha-2 from device locale, or null. */
   readonly localeRegion: string | null;
   /** BCP-47 language tag from device locale, or null. */
@@ -167,10 +167,10 @@ function inferDevices(ctx: InferenceContext): DeviceCompat[] {
  * trustworthy — a wrong filter mutes results the user actually
  * wanted to see.
  */
-const DIETARY_PATTERNS: ReadonlyArray<{
+const DIETARY_PATTERNS: readonly {
   readonly tag: DietaryTag;
-  readonly patterns: ReadonlyArray<RegExp>;
-}> = [
+  readonly patterns: readonly RegExp[];
+}[] = [
   {
     tag: 'vegan',
     patterns: [
@@ -227,7 +227,7 @@ const DIETARY_PATTERNS: ReadonlyArray<{
   },
 ];
 
-function inferDietary(items: ReadonlyArray<VaultEvidence>): DietaryTag[] {
+function inferDietary(items: readonly VaultEvidence[]): DietaryTag[] {
   if (items.length === 0) return [];
   const seen = new Set<DietaryTag>();
   for (const item of items) {

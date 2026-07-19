@@ -8,6 +8,8 @@
  *   - disposes cleanly
  */
 
+import { handleChat } from '../../src/chat/orchestrator';
+import { getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 import {
   ServiceOrchestratorError,
   ServiceQueryOrchestrator,
@@ -15,8 +17,6 @@ import {
   type IssueQueryResult,
 } from '../../src/service/service_query_orchestrator';
 import { errorToAck, wireServiceOrchestrator } from '../../src/service/service_wiring';
-import { handleChat } from '../../src/chat/orchestrator';
-import { getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 
 function stubOrchestrator(impl: (req: IssueQueryRequest) => Promise<IssueQueryResult>): {
   orchestrator: ServiceQueryOrchestrator;

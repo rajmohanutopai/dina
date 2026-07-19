@@ -7,8 +7,10 @@
  * Source: core/test/transport_d2d_sig_test.go
  */
 
-import { sign, verify } from '../crypto/ed25519';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { sign, verify } from '../crypto/ed25519';
+
 // Import from the neutral `wire.ts` so there's no runtime edge back
 // into envelope.ts. Previously `./envelope` → `./signature` (for
 // signMessage) AND `./signature` → `./envelope` (for buildMessage +

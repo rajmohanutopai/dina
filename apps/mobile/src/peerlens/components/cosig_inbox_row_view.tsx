@@ -39,6 +39,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, spacing, radius, textStyles } from '../../theme';
+
 import type { CosigInboxRowDisplay, CosigInboxAction } from '../cosig_inbox';
 
 const STATE_LABEL: Record<CosigInboxRowDisplay['state'], string> = {

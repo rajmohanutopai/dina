@@ -56,26 +56,6 @@
  * 1–2 agentic turns on /ask). 5 scenarios = ~15 calls, a few cents.
  */
 
-import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
-import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import { ToolRegistry } from '../../src/reasoning/tool_registry';
-import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
-import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
-import {
-  handleChat,
-  resetAskCommandHandler,
-  setAskCommandHandler,
-} from '../../src/chat/orchestrator';
-import {
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
-import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import { createGeminiClassifier } from '../../src/routing/gemini_classify';
-import {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from '../../src/routing/persona_selector';
 import { InProcessTransport } from '@dina/core';
 
 import { createCoreRouter } from '@dina/core';
@@ -91,6 +71,26 @@ import {
   resetPersonaState,
 } from '@dina/core';
 import { configureRateLimiter } from '@dina/core';
+import {
+  handleChat,
+  resetAskCommandHandler,
+  setAskCommandHandler,
+} from '../../src/chat/orchestrator';
+import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
+import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
+import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
+import { ToolRegistry } from '../../src/reasoning/tool_registry';
+import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
+import { createGeminiClassifier } from '../../src/routing/gemini_classify';
+import {
+  registerPersonaSelector,
+  resetPersonaSelector,
+} from '../../src/routing/persona_selector';
+import { StagingDrainScheduler } from '../../src/staging/scheduler';
+import {
+  resetReasoningProvider,
+  setAccessiblePersonas,
+} from '../../src/vault_context/assembly';
 
 import {
   closeSQLiteVault,
@@ -305,7 +305,7 @@ describeReal(
           haystack.includes(needle.toLowerCase()),
         );
         if (!hit) {
-          // eslint-disable-next-line no-console
+           
           console.log(
             `[${scenario.label}]\n  remember=${scenario.remember}\n  ask=${scenario.ask}\n  response=${askResp.response}\n  expectedAny=${JSON.stringify(scenario.mustContainAny)}`,
           );

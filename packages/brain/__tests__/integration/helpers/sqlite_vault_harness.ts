@@ -25,17 +25,16 @@
  * Not for production code — this module lives under `__tests__/`.
  */
 
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { randomBytes } from 'node:crypto';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
-import { applyMigrations, PERSONA_MIGRATIONS } from '@dina/core';
-import {
+import { applyMigrations, PERSONA_MIGRATIONS ,
   SQLiteVaultRepository,
   setVaultRepository,
 } from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 export interface SQLiteVaultHandle {
   adapter: NodeSQLiteAdapter;

@@ -20,19 +20,22 @@
  * continuing to stub out the seam.
  */
 
-import { createNode, type DinaNode } from '../../src/services/bootstrap';
-import { createCoreRouter } from '../../../core/src/server/core_server';
-import { createInProcessDispatch } from '../../../core/src/server/in_process_dispatch';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { InProcessTransport } from '../../../core/src/client/in-process-transport';
-import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
-import { InMemoryServiceConfigRepository } from '../../../core/src/service/service_config_repository';
-import { getServiceConfig } from '../../../core/src/service/service_config';
 import { getPublicKey } from '../../../core/src/crypto/ed25519';
 import { deriveDIDKey } from '../../../core/src/identity/did';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
-import type { ServiceConfig } from '../../../core/src/service/service_config';
-import type { PDSSession } from '../../../brain/src/pds/account';
+import { createCoreRouter } from '../../../core/src/server/core_server';
+import { createInProcessDispatch } from '../../../core/src/server/in_process_dispatch';
+import { getServiceConfig } from '../../../core/src/service/service_config';
+import { InMemoryServiceConfigRepository } from '../../../core/src/service/service_config_repository';
+import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { createNode, type DinaNode } from '../../src/services/bootstrap';
+
+
 import type { AppViewClient } from '../../../brain/src/appview_client/http';
+import type { PDSSession } from '../../../brain/src/pds/account';
+import type { ServiceConfig } from '../../../core/src/service/service_config';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -84,7 +87,7 @@ function stubAppView(): Pick<AppViewClient, 'searchServices'> {
  */
 async function composeNode(opts?: {
   sendD2D?: (toDID: string, body: unknown) => Promise<void>;
-  handlerLog?: Array<Record<string, unknown>>;
+  handlerLog?: Record<string, unknown>[];
 }): Promise<{ node: DinaNode; sent: unknown[] }> {
   const router = createCoreRouter();
   // Bridge the two SignedDispatch variants:
@@ -120,7 +123,7 @@ async function composeNode(opts?: {
   // callback, so asserting on `sent` proves the live wiring is
   // correct. Previously the test manually called setServiceQuerySender
   // which bypassed the createNode code path it was meant to prove.
-  const sent: Array<{ to: string; body: unknown }> = [];
+  const sent: { to: string; body: unknown }[] = [];
 
   const node = await createNode({
     did: PROVIDER_DID,
@@ -207,7 +210,7 @@ describe('Service-query end-to-end runtime composition', () => {
   });
 
   it('dispatcher routes inbound service.query to the registered ServiceHandler (issues #5, #6)', async () => {
-    const handlerLog: Array<Record<string, unknown>> = [];
+    const handlerLog: Record<string, unknown>[] = [];
     const { node } = await composeNode({ handlerLog });
     try {
       const body = {
@@ -238,7 +241,7 @@ describe('Service-query end-to-end runtime composition', () => {
       if (tasks.length === 0) {
         // Make the assertion failure actionable by dumping what the
         // handler actually did.
-        // eslint-disable-next-line no-console
+         
         console.log('handler log:', JSON.stringify(handlerLog, null, 2));
       }
       expect(tasks).toHaveLength(1);

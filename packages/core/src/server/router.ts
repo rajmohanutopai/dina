@@ -83,6 +83,25 @@ export interface CoreRequest {
   callerType?: string;
   /** Resolved caller DID — the agent's DID for `callerType === 'agent'`. */
   callerDID?: string;
+  /**
+   * The owner control-plane capability (INTERACTIVE_SERVICES §12.5, F15). A
+   * boot-minted secret the app holds in an app-layer closure and stamps on every
+   * owner-marked `/v1/run|watch` request. The route guard compares it to the
+   * capability the router was registered with; a caller that merely sets
+   * `callerType:'owner'` (a prompt-injection-steered Brain following normal code
+   * paths, which has no owner client and no secret) is rejected.
+   *
+   * THREAT MODEL — read honestly (F15 re-review): this is DEFENSE-IN-DEPTH against
+   * the realistic in-VM threat (a steered Brain), NOT a hard boundary against a
+   * Brain executing arbitrary hostile JS in the shared mobile VM. Such a Brain can
+   * monkeypatch `CoreRouter.prototype.handle` to skim this field off a live owner
+   * request, or read the closure via the heap — and a Brain with that capability
+   * can already read the vault DEKs + master seed from RAM, so the owner boundary
+   * is not the meaningful control there. STRONG owner isolation is the server-split
+   * deployment (Core + Brain as separate OS processes with Ed25519-signed hops).
+   * See SECURITY.md. Fabricating this field without the secret is still rejected.
+   */
+  ownerCapability?: string;
 }
 
 export interface CoreResponse {

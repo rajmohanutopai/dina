@@ -23,11 +23,12 @@ import React, { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius, spacing, textStyles } from '../../theme';
+
 import type { ViewerFilter, ViewerFilterId } from '../preferences/viewer_filters';
 
 export interface ViewerFilterChipsViewProps {
   /** Applicable filters — the parent computes this with `applicableFilters(profile)`. */
-  readonly filters: ReadonlyArray<ViewerFilter>;
+  readonly filters: readonly ViewerFilter[];
   /** Currently-toggled-ON filter ids. */
   readonly active: ReadonlySet<ViewerFilterId>;
   /** Tap handler — receives the filter id. Caller flips the chip's state in `active`. */

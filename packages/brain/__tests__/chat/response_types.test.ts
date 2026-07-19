@@ -5,6 +5,16 @@
  * Source: port of `brain/src/domain/response.py`.
  */
 
+import { resetStagingState } from '@dina/core';
+
+import {
+  handleChat,
+  resetAskCommandHandler,
+  resetChatDefaults,
+  resetServiceCommandHandler,
+  resetServiceApproveCommandHandler,
+  resetServiceDenyCommandHandler,
+} from '../../src/chat/orchestrator';
 import {
   confirmResponse,
   contactListResponse,
@@ -16,16 +26,8 @@ import {
   peerlensScoreResponse,
   type BotResponse,
 } from '../../src/chat/response_types';
-import {
-  handleChat,
-  resetAskCommandHandler,
-  resetChatDefaults,
-  resetServiceCommandHandler,
-  resetServiceApproveCommandHandler,
-  resetServiceDenyCommandHandler,
-} from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
-import { resetStagingState } from '@dina/core';
+
 
 describe('Typed response constructors', () => {
   it('plainResponse carries kind + text + plain format', () => {

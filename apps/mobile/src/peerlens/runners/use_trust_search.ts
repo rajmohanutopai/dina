@@ -12,12 +12,15 @@
  */
 
 import { useEffect, useState } from 'react';
+
 import { listContacts } from '@dina/core';
+
+import { getBootedNode } from '../../hooks/useNodeBootstrap';
 import { searchAttestations, type SearchAttestationHit } from '../appview_runtime';
 import { annotateReviewRing, compareCards } from '../contact_rerank';
 import { displayName } from '../handle_display';
 import { deriveSubjectCard, type SubjectCardInput, type SubjectReview } from '../subject_card';
-import { getBootedNode } from '../../hooks/useNodeBootstrap';
+
 import type { SearchResult } from '../../../app/peerlens/search';
 
 export interface TrustSearchState {

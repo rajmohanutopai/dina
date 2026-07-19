@@ -187,7 +187,7 @@ export function getPassphraseStrength(
 /**
  * Get available background timeout presets for the picker.
  */
-export function getTimeoutPresets(): Array<{ value: number; label: string }> {
+export function getTimeoutPresets(): { value: number; label: string }[] {
   return [
     { value: 60, label: '1 minute' },
     { value: 300, label: '5 minutes' },

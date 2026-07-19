@@ -3,11 +3,13 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
+
 import { AllowList } from '../src/pii/allow_list';
-import { DEFAULT_MAX_TEXT_LENGTH, registerPiiRoutes } from '../src/pii/routes';
 import { RehydrationSessionRegistry } from '../src/pii/rehydration_sessions';
+import { DEFAULT_MAX_TEXT_LENGTH, registerPiiRoutes } from '../src/pii/routes';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -37,13 +39,13 @@ async function buildApp(
 
 interface ScrubResponse {
   scrubbed: string;
-  entities: Array<{
+  entities: {
     type: string;
     start: number;
     end: number;
     value: string;
     token: string;
-  }>;
+  }[];
 }
 
 describe('POST /v1/pii/scrub (task 4.78)', () => {

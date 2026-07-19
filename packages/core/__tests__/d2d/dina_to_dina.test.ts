@@ -7,17 +7,19 @@
  * Source: tests/integration/test_dina_to_dina.py
  */
 
+import { makeDinaMessage, TEST_ED25519_SEED, resetFactoryCounters } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealMessage, unsealMessage } from '../../src/d2d/envelope';
 import {
   checkEgressGates,
   addContact,
   setSharingRestrictions,
   clearGatesState,
 } from '../../src/d2d/gates';
-import { sealMessage, unsealMessage } from '../../src/d2d/envelope';
 import { signMessage, verifyMessage, verifyMessageSingle } from '../../src/d2d/signature';
-import { getPublicKey } from '../../src/crypto/ed25519';
 import { mapTierToPriority } from '../../src/notify/priority';
-import { makeDinaMessage, TEST_ED25519_SEED, resetFactoryCounters } from '@dina/test-harness';
+
 
 describe('Dina-to-Dina Integration', () => {
   const senderPriv = TEST_ED25519_SEED;

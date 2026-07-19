@@ -13,6 +13,7 @@ import {
   type GeminiResult,
   type GeminiEmbedResult,
 } from '../../../src/llm/adapters/gemini';
+
 import type { StreamChunk, ToolDefinition } from '../../../src/llm/adapters/provider';
 
 function createMockModel(chatResult: GeminiResult, embedResult?: GeminiEmbedResult): GeminiModel {

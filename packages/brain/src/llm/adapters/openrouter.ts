@@ -18,6 +18,18 @@
  * Source: ARCHITECTURE.md Task 3.6
  */
 
+
+import {
+  OPENROUTER_BASE_URL as OR_BASE,
+  DEFAULT_OPENROUTER_MODEL,
+  OPENROUTER_APP_NAME,
+  OPENROUTER_APP_URL,
+  DEFAULT_MAX_TOKENS as MAX_TOKENS,
+} from '../../constants';
+import { defaultFetch } from '../../runtime/fetch';
+
+import { safeCall } from './safety';
+
 import type {
   LLMProvider,
   ChatMessage,
@@ -28,16 +40,6 @@ import type {
   EmbedResponse,
   ToolCall,
 } from './provider';
-
-import {
-  OPENROUTER_BASE_URL as OR_BASE,
-  DEFAULT_OPENROUTER_MODEL,
-  OPENROUTER_APP_NAME,
-  OPENROUTER_APP_URL,
-  DEFAULT_MAX_TOKENS as MAX_TOKENS,
-} from '../../constants';
-import { safeCall } from './safety';
-import { defaultFetch } from '../../runtime/fetch';
 
 const OPENROUTER_BASE_URL = OR_BASE;
 const DEFAULT_MODEL = DEFAULT_OPENROUTER_MODEL;
@@ -58,18 +60,18 @@ export interface OpenRouterConfig {
 interface OpenRouterResponse {
   id: string;
   model: string;
-  choices: Array<{
+  choices: {
     message: {
       role: 'assistant';
       content: string | null;
-      tool_calls?: Array<{
+      tool_calls?: {
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      }>;
+      }[];
     };
     finish_reason: 'stop' | 'tool_calls' | 'length' | null;
-  }>;
+  }[];
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
@@ -99,7 +101,7 @@ export class OpenRouterAdapter implements LLMProvider {
     const model = options?.model ?? this.defaultModel;
     const maxTokens = options?.maxTokens ?? DEFAULT_MAX_TOKENS;
 
-    const apiMessages: Array<{ role: string; content: string }> = [];
+    const apiMessages: { role: string; content: string }[] = [];
 
     if (options?.systemPrompt) {
       apiMessages.push({ role: 'system', content: options.systemPrompt });

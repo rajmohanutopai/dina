@@ -16,16 +16,17 @@
  *   - Stable queryId: uses the one we generate even if Core echoes a blank.
  */
 
+import { AppViewError } from '../../src/appview_client/http';
 import {
   ServiceQueryOrchestrator,
   ServiceOrchestratorError,
 } from '../../src/service/service_query_orchestrator';
+
 import type {
   AppViewClient,
   ServiceProfile,
   SearchServicesParams,
 } from '../../src/appview_client/http';
-import { AppViewError } from '../../src/appview_client/http';
 import type { CoreClient, ServiceQueryResult as SendServiceQueryResult } from '@dina/core';
 
 function stubAppView(

@@ -6,11 +6,13 @@
  */
 
 import * as path from 'node:path';
-import type { AddressInfo } from 'node:net';
+
 
 import sodium from 'libsodium-wrappers';
 
 import { createHarness, type Harness } from '../conformance/http_harness';
+
+import type { AddressInfo } from 'node:net';
 
 const VECTORS_DIR = path.resolve(__dirname, '..', 'conformance', 'vectors');
 
@@ -50,7 +52,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('GET /vectors → index.json body', async () => {
     const res = await fetch(`${origin}/vectors`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { vectors: Array<{ name: string }> };
+    const body = await res.json() as { vectors: { name: string }[] };
     expect(Array.isArray(body.vectors)).toBe(true);
     expect(body.vectors.length).toBeGreaterThan(0);
   });
@@ -102,7 +104,7 @@ describe('HTTP harness (task 10.16)', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as {
       count: number;
-      features: Array<{ name: string; task: string; level: string }>;
+      features: { name: string; task: string; level: string }[];
     };
     expect(body.count).toBe(body.features.length);
     expect(body.count).toBeGreaterThan(0);

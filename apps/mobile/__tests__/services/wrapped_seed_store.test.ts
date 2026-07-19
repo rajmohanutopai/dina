@@ -4,15 +4,18 @@
  * and the first-run empty case.
  */
 
+import * as Keychain from 'react-native-keychain';
+
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   loadWrappedSeed,
   saveWrappedSeed,
   hasWrappedSeed,
   clearWrappedSeed,
 } from '../../src/services/wrapped_seed_store';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
+
 import type { WrappedSeed } from '../../../core/src/crypto/aesgcm';
-import * as Keychain from 'react-native-keychain';
+
 
 function makeSeed(): WrappedSeed {
   return {

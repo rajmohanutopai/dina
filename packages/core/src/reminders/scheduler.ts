@@ -81,7 +81,7 @@ export function tick(now?: number): TickResult {
  *
  * Useful for showing "upcoming" in the Reminders tab.
  */
-export function getUpcoming(hoursAhead: number = 24, now?: number): Reminder[] {
+export function getUpcoming(hoursAhead = 24, now?: number): Reminder[] {
   const currentTime = now ?? Date.now();
   const windowEnd = currentTime + hoursAhead * 60 * 60 * 1000;
   return listPending(windowEnd);

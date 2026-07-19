@@ -15,19 +15,15 @@ import {
   sweep,
   stagingGetItem as getItem,
   resetStagingState,
-} from '@dina/core';
-import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';
-import { isDuplicate, markSeen, resetDedupState } from '@dina/core';
-import {
+ isDuplicate, markSeen, resetDedupState ,
   createPersona,
   isPersonaOpen,
   openPersona,
-  resetPersonaState,
-} from '@dina/core';
-import { clearVaults, queryVault, storeItem } from '@dina/core';
+  resetPersonaState, clearVaults, queryVault, storeItem , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
 import { resetReminderState, listByPersona } from '@dina/core/reminders';
-import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
 import { resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
+
+import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';
 
 describe('Staging Pipeline End-to-End Integration', () => {
   beforeEach(() => {

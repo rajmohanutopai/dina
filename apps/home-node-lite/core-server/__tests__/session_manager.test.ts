@@ -3,11 +3,6 @@
  */
 
 import {
-  InMemoryKeystoreAdapter,
-  SessionTokenStore,
-  type SessionRecord,
-} from '../src/appview/session_token_store';
-import {
   SessionManager,
   type CreateAccountInput,
   type CreateSessionInput,
@@ -16,6 +11,11 @@ import {
   type SessionManagerEvent,
   type SessionOutcome,
 } from '../src/appview/session_manager';
+import {
+  InMemoryKeystoreAdapter,
+  SessionTokenStore,
+  type SessionRecord,
+} from '../src/appview/session_token_store';
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 

@@ -116,7 +116,7 @@ export function getBudgets(): Record<string, number> {
  * Formula: items × dimensions × 4 bytes × overhead_factor (graph links)
  * For M=16, overhead ≈ 1.5x (each node stores M neighbor pointers per layer)
  */
-export function estimateHNSWMemory(itemCount: number, dimensions: number, M: number = 16): number {
+export function estimateHNSWMemory(itemCount: number, dimensions: number, M = 16): number {
   const vectorBytes = itemCount * dimensions * 4;
   const graphOverhead = itemCount * M * 2 * 8; // 2 layers avg, 8 bytes per pointer
   const totalBytes = vectorBytes + graphOverhead;

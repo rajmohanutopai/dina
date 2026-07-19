@@ -14,11 +14,13 @@
  * Source: ARCHITECTURE.md Tasks 2.22, 2.23
  */
 
-import { unsealRPCRequest, type CoreRPCRequest } from './rpc_envelope';
-import { validateIdentityBinding } from './identity_binding';
-import { validateInnerAuth } from './rpc_envelope';
 import { appendAudit } from '../audit/service';
 import { verifyRequest } from '../auth/canonical';
+
+import { validateIdentityBinding } from './identity_binding';
+import { unsealRPCRequest, type CoreRPCRequest } from './rpc_envelope';
+import { validateInnerAuth } from './rpc_envelope';
+
 
 export interface RPCHandlerResult {
   valid: boolean;

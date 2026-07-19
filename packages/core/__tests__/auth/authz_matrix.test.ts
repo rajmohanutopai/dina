@@ -7,13 +7,15 @@
  * Source: core/test/authz_test.go
  */
 
-import { isAuthorized, getAuthorizationMatrix } from '../../src/auth/authz';
-import type { CallerType } from '../../src/auth/authz';
 import { hasFixture, loadVectors } from '@dina/test-harness';
+
+import { isAuthorized, getAuthorizationMatrix } from '../../src/auth/authz';
+
+import type { CallerType } from '../../src/auth/authz';
 
 describe('Authorization Matrix', () => {
   // Allowed cases from ARCHITECTURE.md Section 18.4
-  const allowedCases: Array<{ caller: CallerType; method: string; path: string; label: string }> = [
+  const allowedCases: { caller: CallerType; method: string; path: string; label: string }[] = [
     { caller: 'brain', method: 'POST', path: '/v1/vault/query', label: 'Brain → vault/query' },
     { caller: 'brain', method: 'POST', path: '/v1/vault/store', label: 'Brain → vault/store' },
     {
@@ -92,7 +94,7 @@ describe('Authorization Matrix', () => {
   }
 
   // Denied cases
-  const deniedCases: Array<{ caller: CallerType; method: string; path: string; label: string }> = [
+  const deniedCases: { caller: CallerType; method: string; path: string; label: string }[] = [
     { caller: 'admin', method: 'POST', path: '/v1/vault/query', label: 'Admin x vault/query' },
     {
       caller: 'connector',
@@ -270,7 +272,7 @@ describe('Authorization Matrix', () => {
     // This fixture has flat vectors: { caller, path, allowed } — not standard inputs/expected
     const data = fixtureAvailable ? require(`../../../fixtures/${fixture}`) : { vectors: [] };
 
-    for (const v of data.vectors as Array<{ caller: string; path: string; allowed: boolean }>) {
+    for (const v of data.vectors as { caller: string; path: string; allowed: boolean }[]) {
       const label = `${v.caller} → ${v.path} = ${v.allowed ? 'allowed' : 'denied'}`;
       it(label, () => {
         expect(isAuthorized(v.caller as CallerType, 'POST', v.path)).toBe(v.allowed);

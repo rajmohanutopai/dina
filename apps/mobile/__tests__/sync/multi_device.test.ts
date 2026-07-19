@@ -8,6 +8,11 @@
  */
 
 import {
+  registerDevice as registerDeviceInRegistry,
+  listActiveDevices,
+  resetDeviceRegistry,
+} from '../../../core/src/devices/registry';
+import {
   pushToClient,
   flushOfflineQueue,
   searchLocalCache,
@@ -19,11 +24,6 @@ import {
   addSyncItem,
   corruptCache,
 } from '../../../core/src/sync/client';
-import {
-  registerDevice as registerDeviceInRegistry,
-  listActiveDevices,
-  resetDeviceRegistry,
-} from '../../../core/src/devices/registry';
 import {
   bufferMessage,
   flushBuffer,

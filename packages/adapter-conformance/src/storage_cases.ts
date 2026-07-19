@@ -21,11 +21,12 @@
  */
 
 import { assert, assertEqual, assertBytesEqual, assertThrowsSync, errorText } from './assert';
+
 import type { ConformanceCase } from './case';
 import type { ConformanceDatabaseAdapter } from './types';
 
 /** First row of a result set, asserting the set is non-empty. */
-function first(rows: Array<Record<string, unknown>>, label: string): Record<string, unknown> {
+function first(rows: Record<string, unknown>[], label: string): Record<string, unknown> {
   const row = rows[0];
   assert(row !== undefined, `${label}: expected at least one row, got none`);
   return row;
@@ -43,7 +44,7 @@ function rowCount(adapter: ConformanceDatabaseAdapter, table: string): number {
   return Number(scalar(adapter, `SELECT COUNT(*) FROM ${table}`));
 }
 
-export const STORAGE_CASES: ReadonlyArray<ConformanceCase<ConformanceDatabaseAdapter>> = [
+export const STORAGE_CASES: readonly ConformanceCase<ConformanceDatabaseAdapter>[] = [
   // ── run(): rows affected — the original op-sqlite bug ────────────────────
   {
     name: 'run-insert-returns-1',

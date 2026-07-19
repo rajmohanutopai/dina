@@ -11,6 +11,7 @@ import {
   mnemonicToSeed,
   generateMnemonic,
 } from '@dina/core';
+
 import {
   deriveIdentity,
   SERVICE_INDEX,

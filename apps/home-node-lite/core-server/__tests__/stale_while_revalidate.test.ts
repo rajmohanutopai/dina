@@ -241,7 +241,7 @@ describe('SwrCache (task 6.16)', () => {
   describe('error fallback', () => {
     it('blocking refetch that fails with a stale entry → serve stale', async () => {
       const events: SwrEvent[] = [];
-      const sequence: Array<() => string> = [
+      const sequence: (() => string)[] = [
         () => 'first',
         () => {
           throw new Error('network');
@@ -268,7 +268,7 @@ describe('SwrCache (task 6.16)', () => {
 
     it('SWR background refresh that fails does NOT become an unhandled rejection', async () => {
       const events: SwrEvent[] = [];
-      const sequence: Array<() => string> = [
+      const sequence: (() => string)[] = [
         () => 'first',
         () => {
           throw new Error('transient-network-error');
@@ -355,7 +355,7 @@ describe('SwrCache (task 6.16)', () => {
 
   describe('ttlMsFn contract', () => {
     it('ttlMsFn receives value + key + its return drives freshness', async () => {
-      const seen: Array<{ v: string; k: string }> = [];
+      const seen: { v: string; k: string }[] = [];
       const cache = new SwrCache<string, string>({
         fetchFn: async () => 'hello',
         ttlMsFn: (v, k) => {

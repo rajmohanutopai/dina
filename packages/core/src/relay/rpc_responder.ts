@@ -13,11 +13,13 @@
  * Source: ARCHITECTURE.md Tasks 2.24, 2.25
  */
 
-import { buildSignedResponse, sealRPCResponse } from './rpc_response';
-import { buildForwardHeaders, postToForward, type ForwardResult } from './msgbox_forward';
-import { getPublicKey } from '../crypto/ed25519';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { appendAudit } from '../audit/service';
+import { getPublicKey } from '../crypto/ed25519';
+
+import { buildForwardHeaders, postToForward, type ForwardResult } from './msgbox_forward';
+import { buildSignedResponse, sealRPCResponse } from './rpc_response';
 
 export interface RespondInput {
   requestId: string;

@@ -8,9 +8,10 @@
  * `authz.ts` (PC-CORE-09 — verified).
  */
 
-import type { CoreRequest } from '../../../src/server/router';
 import { makeContactsHandlers } from '../../../src/server/routes/contacts';
+
 import type { Contact } from '../../../src/contacts/directory';
+import type { CoreRequest } from '../../../src/server/router';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {
@@ -176,7 +177,7 @@ describe('GET /v1/contacts/by-preference (PC-CORE-10)', () => {
 
 describe('PUT /v1/contacts/:did (PC-CORE-11)', () => {
   function setup() {
-    const calls: Array<{ did: string; categories: readonly string[] }> = [];
+    const calls: { did: string; categories: readonly string[] }[] = [];
     const known = new Map<string, Contact>();
     const { updateContact } = makeContactsHandlers({
       getContact: (d) => known.get(d) ?? null,

@@ -12,13 +12,14 @@
  * screens get the Stack's auto back-chevron header.
  */
 
-import React from 'react';
-import { Stack, useRouter } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, navTitle } from '../../src/theme';
+import { Stack, useRouter } from 'expo-router';
+import React from 'react';
+import { Platform, Pressable } from 'react-native';
+
 import { openMenu } from '../../src/navigation/menu_state';
 import { StackIndexHeader } from '../../src/navigation/stack_index_header';
+import { colors, navTitle } from '../../src/theme';
 
 // CR-3 fix: see the matching note in `app/trust/_layout.tsx`. The
 // shared `StackIndexHeader` is a JS-rendered View that replaces the

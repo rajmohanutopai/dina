@@ -3,14 +3,16 @@
  */
 
 import { pino } from 'pino';
+
 import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
 import { NotifyHub, type WebSocketLike } from '../src/ws/notify_hub';
 import {
   DEFAULT_NOTIFY_WS_PATH,
   registerNotifyRoute,
   type NotifyAuthResult,
 } from '../src/ws/notify_route';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

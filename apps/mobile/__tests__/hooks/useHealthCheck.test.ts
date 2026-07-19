@@ -4,6 +4,8 @@
  * Source: ARCHITECTURE.md Task 9.14
  */
 
+import { configureProvider, resetProviderConfig } from '../../../brain/src/llm/provider_config';
+import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
 import {
   runHealthChecks,
   runSingleCheck,
@@ -12,8 +14,6 @@ import {
   resetHealthChecks,
   type HealthReport,
 } from '../../src/hooks/useHealthCheck';
-import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
-import { configureProvider, resetProviderConfig } from '../../../brain/src/llm/provider_config';
 
 describe('Health Check Diagnostic Hook (9.14)', () => {
   beforeEach(() => {

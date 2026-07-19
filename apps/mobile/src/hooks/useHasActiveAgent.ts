@@ -21,6 +21,7 @@
  */
 
 import { useEffect, useState } from 'react';
+
 import {
   listActiveDevices,
   subscribeToDeviceRegistry,

@@ -13,8 +13,8 @@
 
 import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { Reminder } from './service';
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface ReminderRepository {
   create(reminder: Reminder): Promise<void>;

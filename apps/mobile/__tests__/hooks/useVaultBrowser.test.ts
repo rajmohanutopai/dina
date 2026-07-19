@@ -4,6 +4,8 @@
  * Source: ARCHITECTURE.md Task 9.12
  */
 
+import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
+import { storeItem, clearVaults } from '../../../core/src/vault/crud';
 import {
   getPersonaList,
   searchVault,
@@ -11,8 +13,6 @@ import {
   getTieredContent,
   isPersonaBrowsable,
 } from '../../src/hooks/useVaultBrowser';
-import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
-import { storeItem, clearVaults } from '../../../core/src/vault/crud';
 
 describe('Vault Browser Hook (9.12)', () => {
   beforeEach(() => {

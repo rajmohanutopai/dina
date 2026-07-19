@@ -60,7 +60,7 @@ export interface Migration {
  */
 export function runMigrations(
   adapter: DatabaseAdapter,
-  migrations: ReadonlyArray<Migration>,
+  migrations: readonly Migration[],
   nowMsFn: () => number = () => Date.now(),
 ): number {
   if (!adapter) {
@@ -112,7 +112,7 @@ export function getSchemaVersion(adapter: DatabaseAdapter): number {
 // ── Internals ──────────────────────────────────────────────────────────
 
 function validateMigrations(
-  migrations: ReadonlyArray<Migration>,
+  migrations: readonly Migration[],
 ): Migration[] {
   const sorted = [...migrations].sort((a, b) => a.id - b.id);
   let lastId = -Infinity;

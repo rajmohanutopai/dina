@@ -14,6 +14,7 @@
  */
 
 import { EntityVault } from '../pii/entity_vault';
+
 import { requiresScrubbing } from './router';
 
 export interface CloudGateResult {

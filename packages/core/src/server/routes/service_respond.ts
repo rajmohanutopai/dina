@@ -11,12 +11,13 @@
  *   7. On success: setRunId (crash marker) + completeWithDetails.
  */
 
-import type { CoreRouter } from '../router';
 import { MsgTypeServiceResponse, MAX_SERVICE_TTL } from '../../d2d/families';
-import type { ServiceResponseBody } from '../../d2d/service_bodies';
 import { setProviderWindow, releaseProviderWindow } from '../../service/windows';
 import { WorkflowTaskState, isTerminal } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
+
+import type { ServiceResponseBody } from '../../d2d/service_bodies';
+import type { CoreRouter } from '../router';
 
 export type ServiceRespondSender = (
   recipientDID: string,

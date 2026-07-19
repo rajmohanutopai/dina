@@ -7,11 +7,12 @@
  */
 
 import { OpenRouterAdapter, type OpenRouterConfig } from '../../../src/llm/adapters/openrouter';
+
 import type { StreamChunk, ToolDefinition } from '../../../src/llm/adapters/provider';
 
 /** Create a mock fetch that returns a canned JSON response. */
 function createMockFetch(body: unknown, status = 200) {
-  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const calls: { url: string; init: RequestInit }[] = [];
 
   const mockFetch = async (url: string | URL | globalThis.Request, init?: RequestInit) => {
     calls.push({ url: url as string, init: init! });

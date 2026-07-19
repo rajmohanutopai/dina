@@ -12,8 +12,11 @@
  */
 
 import { Writable } from 'node:stream';
+
 import { pino } from 'pino';
+
 import { createLogger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(overrides: Partial<CoreServerConfig['runtime']> = {}): CoreServerConfig {

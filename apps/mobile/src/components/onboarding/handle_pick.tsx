@@ -29,6 +29,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+
 import {
   type AvailabilityResult,
   maxPrefixChars,
@@ -38,10 +39,11 @@ import {
 } from '@dina/core';
 import { pdsHostForEndpoints } from '@dina/home-node';
 
-import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
-import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
+import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
 import { colors, radius, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface HandlePickProps {
   /** Sanitised seed from `create_name`. May be empty if the user typed

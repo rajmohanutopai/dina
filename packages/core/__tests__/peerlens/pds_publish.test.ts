@@ -11,6 +11,9 @@
  *         appview/src/ingester/record-validator.ts (wire contract).
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
 import {
   signAttestation,
   validateLexicon,
@@ -19,9 +22,8 @@ import {
   setPDSFetchFn,
   resetPDSFetchFn,
 } from '../../src/peerlens/pds_publish';
+
 import type { Attestation } from '../../src/peerlens/pds_publish';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('PDS Attestation Publishing', () => {
   // Fixed timestamp keeps signatures deterministic across runs.

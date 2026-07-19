@@ -4,13 +4,15 @@
  * Source: ARCHITECTURE.md Tasks 2.24, 2.25
  */
 
-import { sendRPCResponse } from '../../src/relay/rpc_responder';
-import { verifyResponseSignature } from '../../src/relay/rpc_response';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 import { setFetchFn, resetFetchFn } from '../../src/relay/msgbox_forward';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { sendRPCResponse } from '../../src/relay/rpc_responder';
+import { verifyResponseSignature } from '../../src/relay/rpc_response';
+
 
 const corePriv = TEST_ED25519_SEED;
 const corePub = getPublicKey(corePriv);

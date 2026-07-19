@@ -18,6 +18,7 @@ import {
   type D2DScanner,
   type D2DHandler,
 } from '../../src/guardian/d2d_dispatcher';
+
 import type { DinaMessage } from '@dina/test-harness';
 
 function makeMessage(type: string, body: Record<string, unknown>): DinaMessage {
@@ -224,7 +225,7 @@ describe('D2DDispatcher', () => {
 
     it('invokes onError observer with (err, messageType)', async () => {
       const d = new D2DDispatcher();
-      const observed: Array<{ err: unknown; type: string }> = [];
+      const observed: { err: unknown; type: string }[] = [];
       d.setErrorObserver((err, type) => observed.push({ err, type }));
       d.register('service.query', () => {
         throw new Error('X');

@@ -13,6 +13,13 @@ import { InMemoryDatabaseAdapter } from '../../src/storage/db_adapter';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
+  WorkflowTaskKind,
+  WorkflowTaskPriority,
+  WorkflowTaskState,
+  type WorkflowTask,
+  type WorkflowEvent,
+} from '../../src/workflow/domain';
+import {
   InMemoryWorkflowRepository,
   MAX_EVIDENCE_BYTES,
   SQLiteWorkflowRepository,
@@ -21,13 +28,6 @@ import {
   rowToEvent,
   rowToTask,
 } from '../../src/workflow/repository';
-import {
-  WorkflowTaskKind,
-  WorkflowTaskPriority,
-  WorkflowTaskState,
-  type WorkflowTask,
-  type WorkflowEvent,
-} from '../../src/workflow/domain';
 
 function baseTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
   return {

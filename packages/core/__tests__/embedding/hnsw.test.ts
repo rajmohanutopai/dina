@@ -20,7 +20,7 @@ function randomVector(dims: number): Float32Array {
 }
 
 /** Create a vector pointing strongly in a given direction. */
-function directedVector(dims: number, mainDim: number, strength: number = 0.9): Float32Array {
+function directedVector(dims: number, mainDim: number, strength = 0.9): Float32Array {
   const v = new Float32Array(dims);
   for (let i = 0; i < dims; i++) v[i] = 0.01;
   v[mainDim] = strength;
@@ -167,7 +167,7 @@ describe('HNSW Vector Index (8.6)', () => {
       const index = new HNSWIndex({ dimensions: 768, M: 16, efConstruction: 50 });
 
       // Insert 100 random vectors
-      const vectors: Array<{ id: string; v: Float32Array }> = [];
+      const vectors: { id: string; v: Float32Array }[] = [];
       for (let i = 0; i < 100; i++) {
         const v = randomVector(768);
         vectors.push({ id: `item-${i}`, v });

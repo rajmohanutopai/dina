@@ -24,11 +24,12 @@
  */
 
 import { aeadEncrypt, aeadDecrypt } from '../crypto/aead';
-import { derivePersonaDEK } from '../crypto/hkdf';
-import { deriveDEKHash } from '../crypto/hkdf';
-import { openPersona, closePersona, getPersona, isPersonaOpen } from './service';
-import { requiresApproval, requiresPassphrase } from '../vault/lifecycle';
+import { derivePersonaDEK , deriveDEKHash } from '../crypto/hkdf';
 import { buildIndex, destroyIndex, hasIndex } from '../embedding/persona_index';
+import { requiresApproval, requiresPassphrase } from '../vault/lifecycle';
+
+import { openPersona, closePersona, getPersona, isPersonaOpen } from './service';
+
 
 export interface UnlockResult {
   success: boolean;
@@ -57,7 +58,7 @@ let vaultCloser: ((persona: string) => Promise<void>) | null = null;
 
 /** Injectable embedding loader — loads embeddings from vault for HNSW. */
 let embeddingLoader:
-  | ((persona: string) => Promise<Array<{ id: string; embedding: Uint8Array | Float32Array }>>)
+  | ((persona: string) => Promise<{ id: string; embedding: Uint8Array | Float32Array }[]>)
   | null = null;
 
 /** Configure the vault opener (for production/testing). */
@@ -74,7 +75,7 @@ export function setVaultCloser(closer: (persona: string) => Promise<void>): void
 
 /** Configure the embedding loader. */
 export function setEmbeddingLoader(
-  loader: (persona: string) => Promise<Array<{ id: string; embedding: Uint8Array | Float32Array }>>,
+  loader: (persona: string) => Promise<{ id: string; embedding: Uint8Array | Float32Array }[]>,
 ): void {
   embeddingLoader = loader;
 }

@@ -33,6 +33,9 @@
  * Quiet failure; no error toast.
  */
 
+import { BODY_MAX_LENGTH, HEADLINE_MAX_LENGTH, SENTIMENT_OPTIONS } from './write_form_data';
+
+import type { LastUsedBucket } from './write_form_data';
 import type {
   ChatMessage,
   ChatOptions,
@@ -40,8 +43,6 @@ import type {
 } from '@dina/brain/llm';
 import type { Sentiment } from '@dina/protocol';
 
-import type { LastUsedBucket } from './write_form_data';
-import { BODY_MAX_LENGTH, HEADLINE_MAX_LENGTH, SENTIMENT_OPTIONS } from './write_form_data';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 

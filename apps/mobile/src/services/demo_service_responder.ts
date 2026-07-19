@@ -26,8 +26,9 @@
  * provider node and the wrapper becomes a no-op.
  */
 
-import type { EtaQueryParams, EtaQueryResult } from '@dina/brain';
 import { getWorkflowService } from '@dina/core';
+
+import type { EtaQueryParams, EtaQueryResult } from '@dina/brain';
 
 export const DEMO_DEMO_PROVIDER_DID = 'did:plc:bus42demo';
 
@@ -38,9 +39,7 @@ const FALLBACK_LOCATION = { lat: 37.762, lng: -122.435 } as const;
 /** Origin pin for the map deep link (Civic Center, SF). */
 const MAP_ORIGIN = { lat: 37.7793, lng: -122.4193 } as const;
 
-interface SendD2DFn {
-  (to: string, type: string, body: Record<string, unknown>): Promise<void>;
-}
+type SendD2DFn = (to: string, type: string, body: Record<string, unknown>) => Promise<void>;
 
 interface DemoLogEntry {
   event: string;

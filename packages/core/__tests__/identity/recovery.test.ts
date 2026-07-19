@@ -7,10 +7,6 @@
  * Source: tests/release/test_rel_005_recovery.py
  */
 
-import { mnemonicToSeed, validateMnemonic, generateMnemonic } from '../../src/crypto/bip39';
-import { derivePath } from '../../src/crypto/slip0010';
-import { derivePersonaDEK } from '../../src/crypto/hkdf';
-import { deriveDIDKey } from '../../src/identity/did';
 import {
   TEST_MNEMONIC_SEED,
   TEST_USER_SALT,
@@ -18,6 +14,11 @@ import {
   HKDF_INFO_STRINGS,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { mnemonicToSeed, validateMnemonic, generateMnemonic } from '../../src/crypto/bip39';
+import { derivePersonaDEK } from '../../src/crypto/hkdf';
+import { derivePath } from '../../src/crypto/slip0010';
+import { deriveDIDKey } from '../../src/identity/did';
 
 describe('Identity Recovery (Release Verification)', () => {
   describe('mnemonic → seed → identity', () => {

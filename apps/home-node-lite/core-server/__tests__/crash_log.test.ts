@@ -7,6 +7,7 @@
  */
 
 import { pino } from 'pino';
+
 import {
   InMemoryCrashLogWriter,
   installCrashLogHandlers,

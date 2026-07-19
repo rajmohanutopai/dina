@@ -13,20 +13,20 @@
  *   - Loyalty Law: no fetch on segment press.
  */
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import React from 'react';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import BudgetScreen from '../../app/peerlens-preferences/budget';
+import {
+  BUDGET_CATEGORIES,
+  BUDGET_CATEGORY_KEYS,
+} from '../../src/peerlens/preferences/budget_categories';
 import {
   loadUserPreferences,
   resetUserPreferencesForTest,
   saveUserPreferences,
 } from '../../src/services/user_preferences';
-import {
-  BUDGET_CATEGORIES,
-  BUDGET_CATEGORY_KEYS,
-} from '../../src/peerlens/preferences/budget_categories';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const ORIGINAL_INTL = global.Intl;
 

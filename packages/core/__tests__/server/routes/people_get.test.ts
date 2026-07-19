@@ -6,8 +6,13 @@
  * stay out of scope (covered by the existing applyExtraction tests).
  */
 
-import type { CoreRequest } from '../../../src/server/router';
 import { makePeopleHandlers } from '../../../src/server/routes/people';
+import {
+  InMemoryVaultRepository,
+  setVaultRepository,
+  getVaultRepository,
+} from '../../../src/vault/repository';
+
 import type {
   ApplyExtractionResponse,
   ExtractionResult,
@@ -15,11 +20,7 @@ import type {
   PersonSurface,
 } from '../../../src/people/domain';
 import type { PeopleRepository } from '../../../src/people/repository';
-import {
-  InMemoryVaultRepository,
-  setVaultRepository,
-  getVaultRepository,
-} from '../../../src/vault/repository';
+import type { CoreRequest } from '../../../src/server/router';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {

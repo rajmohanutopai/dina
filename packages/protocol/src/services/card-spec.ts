@@ -163,7 +163,7 @@ export interface RatingBlock {
 
 export interface ChipsBlock {
   kind: 'chips';
-  items: Array<{ text: string; tone?: CardTone }>;
+  items: { text: string; tone?: CardTone }[];
 }
 
 export interface ListRow {

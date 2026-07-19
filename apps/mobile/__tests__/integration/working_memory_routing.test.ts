@@ -27,12 +27,13 @@
  *   - general_knowledge + static  — "what is EWMA decay?"
  */
 
+import { formatIntentHintBlock } from '../../../brain/src/reasoning/ask_handler';
 import {
   IntentClassifier,
   parseIntentClassification,
   type IntentClassification,
 } from '../../../brain/src/reasoning/intent_classifier';
-import { formatIntentHintBlock } from '../../../brain/src/reasoning/ask_handler';
+
 import type { TocEntry } from '../../../core/src/memory/domain';
 
 // ---------------------------------------------------------------------------

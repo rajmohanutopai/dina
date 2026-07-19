@@ -3,6 +3,7 @@
  */
 
 import { AUTH_SUCCESS, AUTH_CHALLENGE } from '@dina/protocol';
+
 import {
   awaitAuthSuccess,
   DEFAULT_AUTH_SUCCESS_TIMEOUT_MS,

@@ -11,8 +11,9 @@
  */
 
 import { ConfigSync, toPublisherConfig } from '../../src/service/config_sync';
-import type { ServiceConfig } from '@dina/core';
+
 import type { ServicePublisher, ServicePublisherConfig } from '../../src/service/service_publisher';
+import type { ServiceConfig } from '@dina/core';
 
 /** Deferred: expose a Promise plus an external `resolve` handle. */
 function deferred<T = void>(): { promise: Promise<T>; resolve: (v: T) => void } {

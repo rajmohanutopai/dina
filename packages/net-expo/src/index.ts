@@ -17,8 +17,9 @@
  * apps/mobile/src/services/msgbox_wiring.ts's WebSocket-factory helpers).
  */
 
-import type { WSFactory, WSLike } from '@dina/core';
 import { resolveHostedDinaEndpoints, resolveMobileHostedDinaEndpoints } from '@dina/home-node';
+
+import type { WSFactory, WSLike } from '@dina/core';
 
 /** Default shared Dina mailbox URL — matches the test-infra relay. */
 export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;

@@ -11,8 +11,9 @@ import {
   AskApprovalResumer,
   type AskApprovalResumerEvent,
 } from '../../src/ask/ask_approval_resumer';
-import type { AskExecuteFn, ExecuteOutcome } from '../../src/ask/ask_handler';
 import { AskRegistry, InMemoryAskAdapter, type AskEvent } from '../../src/ask/ask_registry';
+
+import type { AskExecuteFn, ExecuteOutcome } from '../../src/ask/ask_handler';
 import type {
   AgenticLoopResult,
   PausedAgenticState,

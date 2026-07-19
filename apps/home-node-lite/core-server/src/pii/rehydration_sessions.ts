@@ -40,7 +40,7 @@ export interface RehydrationEntity {
 
 interface SessionRecord {
   readonly id: string;
-  readonly entities: ReadonlyArray<RehydrationEntity>;
+  readonly entities: readonly RehydrationEntity[];
   readonly createdAtMs: number;
   readonly expiresAtMs: number;
 }
@@ -96,7 +96,7 @@ export class RehydrationSessionRegistry {
    * of the same entity map — this registry does not de-duplicate.
    */
   create(
-    entities: ReadonlyArray<RehydrationEntity>,
+    entities: readonly RehydrationEntity[],
     opts: { ttlMs?: number } = {},
   ): { sessionId: string; expiresAtMs: number } {
     if (!Array.isArray(entities)) {
@@ -147,7 +147,7 @@ export class RehydrationSessionRegistry {
    * `get(same-id)` subsequently returns undefined without the caller
    * having to sweep first.
    */
-  get(sessionId: string): ReadonlyArray<RehydrationEntity> | undefined {
+  get(sessionId: string): readonly RehydrationEntity[] | undefined {
     const record = this.sessions.get(sessionId);
     if (record === undefined) return undefined;
     if (record.expiresAtMs <= this.nowMsFn()) {
@@ -174,7 +174,7 @@ export class RehydrationSessionRegistry {
    * PII map is gone immediately after use. Returns undefined when
    * the id is unknown or expired (same as `get`).
    */
-  consume(sessionId: string): ReadonlyArray<RehydrationEntity> | undefined {
+  consume(sessionId: string): readonly RehydrationEntity[] | undefined {
     const entities = this.get(sessionId);
     if (entities === undefined) return undefined;
     this.sessions.delete(sessionId);

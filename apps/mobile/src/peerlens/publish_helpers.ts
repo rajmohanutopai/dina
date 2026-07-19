@@ -14,14 +14,15 @@
  * same subject across two rows.
  */
 
-import type { SubjectRef as SubjectRefBody } from '@dina/protocol';
-
 import {
   serializeFormToV2Extras,
   type SubjectKind,
   type WriteFormState,
   type WriteSubjectState,
 } from './write_form_data';
+
+import type { SubjectRef as SubjectRefBody } from '@dina/protocol';
+
 
 /**
  * Map the form's per-kind subject inputs into the `SubjectRef` shape

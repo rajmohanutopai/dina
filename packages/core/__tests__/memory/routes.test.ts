@@ -8,11 +8,12 @@
  * `server/core_router_integration.test.ts` once WM-CORE-10 lands.
  */
 
-import type { CoreRequest, CoreResponse } from '../../src/server/router';
-import { makeMemoryHandlers } from '../../src/server/routes/memory';
 import { InMemoryTopicRepository, type TopicRepository } from '../../src/memory/repository';
 import { MemoryService } from '../../src/memory/service';
 import { resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
+import { makeMemoryHandlers } from '../../src/server/routes/memory';
+
+import type { CoreRequest, CoreResponse } from '../../src/server/router';
 
 const T0 = 1_700_000_000;
 
@@ -221,7 +222,7 @@ describe('GET /v1/memory/toc', () => {
     const { toc } = setupService();
     const res = await toc(req({ method: 'GET', path: '/v1/memory/toc' }));
     expect(res.status).toBe(200);
-    const body = res.body as { entries: Array<{ topic: string; persona: string }>; limit: number };
+    const body = res.body as { entries: { topic: string; persona: string }[]; limit: number };
     expect(body.limit).toBe(50);
     expect(body.entries.map((e) => e.topic).sort()).toEqual(['Dr Carl', 'HDFC FD']);
   });
@@ -235,7 +236,7 @@ describe('GET /v1/memory/toc', () => {
         query: { persona: 'health' },
       }),
     );
-    const body = res.body as { entries: Array<{ topic: string }> };
+    const body = res.body as { entries: { topic: string }[] };
     expect(body.entries.map((e) => e.topic)).toEqual(['Dr Carl']);
   });
 
@@ -298,7 +299,7 @@ describe('GET /v1/memory/toc', () => {
         query: { persona: '' },
       }),
     );
-    const body = res.body as { entries: Array<{ topic: string }> };
+    const body = res.body as { entries: { topic: string }[] };
     expect(body.entries).toHaveLength(2);
   });
 
@@ -311,7 +312,7 @@ describe('GET /v1/memory/toc', () => {
         query: { persona: ',   ,' },
       }),
     );
-    const body = res.body as { entries: Array<{ topic: string }> };
+    const body = res.body as { entries: { topic: string }[] };
     expect(body.entries).toHaveLength(2);
   });
 });

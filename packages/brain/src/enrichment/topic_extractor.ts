@@ -25,8 +25,8 @@
  * and §7 (attribution).
  */
 
-import { EntityVault } from '../pii/entity_vault';
 import { extractJSON, sanitiseList } from '../llm/output_parser';
+import { EntityVault } from '../pii/entity_vault';
 
 /** Content fields fed to the extractor. */
 export interface TopicExtractorInput {
@@ -163,7 +163,7 @@ function empty(): TopicExtractionResult {
   return { entities: [], themes: [] };
 }
 
-function stringOrEmpty(...candidates: Array<string | undefined>): string {
+function stringOrEmpty(...candidates: (string | undefined)[]): string {
   for (const c of candidates) {
     if (typeof c === 'string' && c !== '') return c;
   }

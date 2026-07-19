@@ -20,6 +20,7 @@ import {
   toggleArrayValue,
   type MultiSelectOption,
 } from '../../src/peerlens/preferences/multi_select_screen';
+
 import type { AccessibilityTag } from '../../src/services/user_preferences';
 
 // Order: physical access first (wheelchair), then sensory (captions
@@ -27,7 +28,7 @@ import type { AccessibilityTag } from '../../src/services/user_preferences';
 // Each description anchors what the tag means in plain language —
 // "wheelchair" alone could mean either "I use one" or "places suitable
 // for one"; the description disambiguates.
-const OPTIONS: ReadonlyArray<MultiSelectOption<AccessibilityTag>> = [
+const OPTIONS: readonly MultiSelectOption<AccessibilityTag>[] = [
   {
     value: 'wheelchair',
     label: 'Wheelchair',

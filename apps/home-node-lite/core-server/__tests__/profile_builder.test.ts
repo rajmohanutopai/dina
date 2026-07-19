@@ -2,7 +2,6 @@
  * Task 6.17 — service profile builder tests.
  */
 
-import { computeSchemaHash } from '../src/appview/schema_hash';
 import {
   SERVICE_PROFILE_TYPE,
   buildServiceProfile,
@@ -10,6 +9,7 @@ import {
   type BuildProfileInput,
   type CapabilitySchemaInput,
 } from '../src/appview/profile_builder';
+import { computeSchemaHash } from '../src/appview/schema_hash';
 
 function etaSchema(): CapabilitySchemaInput {
   return {

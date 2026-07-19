@@ -1,5 +1,5 @@
 import { installUnhandledRejectionGuard } from '@dina/test-harness';
-import { installNodeTraceScopeStorage } from '../node-trace-storage';
+
 
 import {
   ingest as stagingIngest,
@@ -14,6 +14,7 @@ import {
   setWorkflowRepository,
 } from '../../core/src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../core/src/workflow/service';
+import { installNodeTraceScopeStorage } from '../node-trace-storage';
 import { setRememberCoreClient } from '../src/chat/orchestrator';
 
 // Mirrors `packages/core/__tests__/setup.ts`. Brain has its own

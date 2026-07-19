@@ -4,6 +4,8 @@
  * Source: ARCHITECTURE.md Section 10.1
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   initializeRotation,
   rotateKey,
@@ -15,7 +17,6 @@ import {
   verifyWithAnyKey,
   resetRotationState,
 } from '../../src/identity/rotation';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('Key Rotation Manager', () => {
   beforeEach(() => resetRotationState());

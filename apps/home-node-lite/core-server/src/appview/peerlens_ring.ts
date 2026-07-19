@@ -145,7 +145,7 @@ export class TrustRingIndex {
    * Returns `null` for every subject when `userDid` is unknown — the
    * caller gets a stable shape regardless of provisioning state.
    */
-  rings(subjectDids: Iterable<Did>): Array<TrustRing | null> {
+  rings(subjectDids: Iterable<Did>): (TrustRing | null)[] {
     return Array.from(subjectDids, (d) => this.ring(d));
   }
 

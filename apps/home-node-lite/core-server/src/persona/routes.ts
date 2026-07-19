@@ -47,14 +47,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4m task 4.92.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { PersonaTier } from '@dina/core';
-
-import type { LoadedPersonaConfig, PersonaDefinition } from './persona_config';
-import type { PassphraseRegistry } from './passphrase_unlock';
-import type { AutoLockRegistry } from './auto_lock';
-import type { SessionGrantRegistry } from './session_grants';
 import type { ApprovalRegistry } from './approval_registry';
+import type { AutoLockRegistry } from './auto_lock';
+import type { PassphraseRegistry } from './passphrase_unlock';
+import type { LoadedPersonaConfig, PersonaDefinition } from './persona_config';
+import type { SessionGrantRegistry } from './session_grants';
+import type { PersonaTier } from '@dina/core';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 
 /**
  * Metadata a caller passes to `unlock()` when the tier requires proof.

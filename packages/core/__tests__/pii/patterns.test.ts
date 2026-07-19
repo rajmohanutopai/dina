@@ -7,8 +7,9 @@
  * Source: core/test/pii_test.go, pii_handler_test.go
  */
 
-import { detectPII, scrubPII, rehydratePII } from '../../src/pii/patterns';
 import { PII_TEST_CASES } from '@dina/test-harness';
+
+import { detectPII, scrubPII, rehydratePII } from '../../src/pii/patterns';
 
 describe('PII Tier 1 Regex Patterns', () => {
   describe('detectPII', () => {

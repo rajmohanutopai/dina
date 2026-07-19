@@ -21,6 +21,7 @@
  * detail view (not built yet).
  */
 
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
   View,
@@ -33,10 +34,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+
 import { addContact, getContact } from '@dina/core';
-import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
+
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { parseContactCard } from '../src/services/contact_card';
 import { colors, spacing, radius, textStyles } from '../src/theme';
 

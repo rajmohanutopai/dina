@@ -7,14 +7,16 @@
  * Source: tests/integration/test_trust_network.py
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
 import {
   signAttestation,
   validateLexicon,
   verifyAttestation,
 } from '../../src/peerlens/pds_publish';
+
 import type { Attestation } from '../../src/peerlens/pds_publish';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('PeerLens Integration', () => {
   const FIXED_CREATED_AT = '2026-01-15T12:00:00.000Z';

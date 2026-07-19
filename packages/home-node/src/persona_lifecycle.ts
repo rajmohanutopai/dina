@@ -30,11 +30,11 @@
  * for external dina-agent CLI traffic, not the owner's own app.
  */
 
+import { setAccessiblePersonas } from '@dina/brain';
 import {
   listPersonas,
   openPersona as openPersonaInRegistry,
 } from '@dina/core';
-import { setAccessiblePersonas } from '@dina/brain';
 
 export interface OpenAllPersonasOptions {
   /**

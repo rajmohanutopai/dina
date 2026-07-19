@@ -50,7 +50,6 @@ import {
 
 import { CapabilityPicker } from '../src/components/capability_picker';
 import { getBootDegradations } from '../src/hooks/useNodeBootstrap';
-import { buildContactServiceListingFields } from '../src/services/contact_service_listing';
 import {
   listServiceListings,
   loadServiceConfig,
@@ -67,6 +66,7 @@ import {
   type CatalogData,
   type CatalogFetch,
 } from '../src/services/catalog_source';
+import { buildContactServiceListingFields } from '../src/services/contact_service_listing';
 import { slugifyRkey } from '../src/services/listing_rkey';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';

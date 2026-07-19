@@ -25,9 +25,11 @@
  */
 
 import { useEffect } from 'react';
-import { fireMissedReminders, type Reminder } from '@dina/core/reminders';
+
 import { postReminderCard } from '@dina/brain/chat';
 import { appendNotification } from '@dina/brain/notifications';
+import { fireMissedReminders, type Reminder } from '@dina/core/reminders';
+
 import { watchFiredReminders } from './reminder_transport';
 
 const DEFAULT_TICK_MS = 30_000;

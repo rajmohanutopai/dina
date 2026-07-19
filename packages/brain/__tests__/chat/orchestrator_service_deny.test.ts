@@ -9,10 +9,10 @@ import {
   resetServiceDenyCommandHandler,
 } from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
-import { makeServiceDenyHandler } from '../../src/service/approve_command';
 import { CoreHttpError } from '../../src/errors';
-import type { CoreClient } from '@dina/core';
-import type { WorkflowTask } from '@dina/core';
+import { makeServiceDenyHandler } from '../../src/service/approve_command';
+
+import type { CoreClient , WorkflowTask } from '@dina/core';
 
 describe('Chat orchestrator — /service_deny', () => {
   beforeEach(() => {
@@ -38,7 +38,7 @@ describe('Chat orchestrator — /service_deny', () => {
   });
 
   it('with a handler installed, delegates with the parsed taskId + reason', async () => {
-    const calls: Array<{ taskId: string; reason: string }> = [];
+    const calls: { taskId: string; reason: string }[] = [];
     setServiceDenyCommandHandler(async (taskId, reason) => {
       calls.push({ taskId, reason });
       return { ack: `Denied ${taskId}: ${reason || '(no reason)'}` };

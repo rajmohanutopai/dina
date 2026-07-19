@@ -7,13 +7,15 @@
  * Source: tests/test_chat_integration.py
  */
 
-import { buildDIDDocument, validateDIDDocument } from '../../../core/src/identity/did_document';
-import { deriveDIDKey, publicKeyToMultibase } from '../../../core/src/identity/did';
+import { TEST_ED25519_SEED, resetFactoryCounters } from '@dina/test-harness';
+
+import { parseCommand, getAvailableCommands } from '../../../brain/src/chat/command_parser';
 import { getPublicKey } from '../../../core/src/crypto/ed25519';
+import { deriveDIDKey, publicKeyToMultibase } from '../../../core/src/identity/did';
+import { buildDIDDocument, validateDIDDocument } from '../../../core/src/identity/did_document';
 import { signCanonical, verifyCanonical, canonicalize } from '../../../core/src/identity/signing';
 import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
-import { parseCommand, getAvailableCommands } from '../../../brain/src/chat/command_parser';
-import { TEST_ED25519_SEED, resetFactoryCounters } from '@dina/test-harness';
+
 
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const did = deriveDIDKey(pubKey);

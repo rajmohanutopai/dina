@@ -14,6 +14,7 @@
  */
 
 import { type Reminder } from '@dina/core/reminders';
+
 import {
   transportListPending,
   transportListByPersona,
@@ -155,7 +156,7 @@ export async function removeReminder(id: string): Promise<boolean> {
 /**
  * Get snooze preset options for the picker.
  */
-export function getSnoozePresets(): Array<{ value: string; label: string }> {
+export function getSnoozePresets(): { value: string; label: string }[] {
   return [
     { value: 'one_hour', label: '1 hour' },
     { value: 'three_hours', label: '3 hours' },

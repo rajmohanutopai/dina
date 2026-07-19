@@ -41,6 +41,7 @@
  */
 
 import { isValidServiceListingRkey } from '@dina/protocol';
+
 import type { ServiceProfileRecord } from './profile_builder';
 
 export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile' as const;

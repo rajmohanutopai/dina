@@ -1,4 +1,5 @@
 import { dinaMatchers, installUnhandledRejectionGuard } from '@dina/test-harness';
+
 import { clearVaults, DEFAULT_TEST_PERSONAS } from '../src/vault/crud';
 
 expect.extend(dinaMatchers);

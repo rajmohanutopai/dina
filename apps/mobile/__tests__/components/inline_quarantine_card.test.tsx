@@ -18,9 +18,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 
-import { InlineQuarantineCard } from '../../src/components/InlineQuarantineCard';
 import { addLifecycleMessage, getThread, resetThreads, type ChatMessage } from '@dina/brain/chat';
-import { quarantineMessage, resetQuarantineState, clearGatesState } from '@dina/core/d2d';
 import {
   getContact,
   resetContactDirectory,
@@ -28,7 +26,10 @@ import {
   claim,
   resetStagingState,
 } from '@dina/core';
+import { quarantineMessage, resetQuarantineState, clearGatesState } from '@dina/core/d2d';
 import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import { InlineQuarantineCard } from '../../src/components/InlineQuarantineCard';
 
 const THREAD = 'main';
 const SENDER = 'did:plc:alonsoquarantinecard';

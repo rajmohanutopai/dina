@@ -26,25 +26,26 @@
  */
 
 import {
-  validateAlias,
-  validateRelationship,
-  validateDataResponsibility,
-  defaultResponsibility,
-} from './validation';
-import { getContactRepository } from './repository';
-import { getVaultRepository, listVaultPersonas } from '../vault/repository';
-import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
-import {
   addContact as addEgressGateContact,
   removeContact as removeEgressGateContact,
   clearGateContacts as clearEgressGateContacts,
 } from '../d2d/gates';
-import { getPeopleRepository, type PeopleRepository } from '../people/repository';
 import {
   addKnownContact,
   removeKnownContact,
   clearKnownContacts as clearSourceTrustContacts,
 } from '../peerlens/source_trust';
+import { getPeopleRepository, type PeopleRepository } from '../people/repository';
+import { getVaultRepository, listVaultPersonas } from '../vault/repository';
+
+import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
+import { getContactRepository } from './repository';
+import {
+  validateAlias,
+  validateRelationship,
+  validateDataResponsibility,
+  defaultResponsibility,
+} from './validation';
 
 /**
  * Valid trust levels (runtime list = single source of truth; `TrustLevel`

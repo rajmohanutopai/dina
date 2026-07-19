@@ -27,6 +27,7 @@
  */
 
 import { colors } from '../theme';
+
 import type { PeerlensBand } from './score_helpers';
 
 /**

@@ -7,13 +7,14 @@
  * Source: brain/tests/test_tier_classifier.py
  */
 
+import { VAULT_ITEM_TYPES } from '@dina/test-harness';
+
 import {
   classifyTier,
   getTier1Types,
   getTier2Types,
   areTiersDisjoint,
 } from '../../src/peerlens/tier_classifier';
-import { VAULT_ITEM_TYPES } from '@dina/test-harness';
 
 describe('Vault Item Tier Classifier', () => {
   describe('classifyTier', () => {

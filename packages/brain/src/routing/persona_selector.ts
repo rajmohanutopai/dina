@@ -11,10 +11,7 @@
  * Source: ARCHITECTURE.md Task 3.11
  */
 
-import { classifyDomain, type ClassificationInput, type ClassificationResult } from './domain';
-import { findSensitiveHits, hasWorkSignal } from './sensitive_signals';
 import { personaExists, listPersonas } from '@dina/core';
-import { resolveAlias } from '../persona/registry';
 import {
   getContact,
   resolveByName,
@@ -22,6 +19,10 @@ import {
 } from '@dina/core';
 
 import { PERSONA_SELECTOR_THRESHOLD } from '../constants';
+import { resolveAlias } from '../persona/registry';
+
+import { classifyDomain, type ClassificationInput, type ClassificationResult } from './domain';
+import { findSensitiveHits, hasWorkSignal } from './sensitive_signals';
 /** Confidence threshold — below this, LLM is consulted. */
 const LLM_THRESHOLD = PERSONA_SELECTOR_THRESHOLD;
 
@@ -42,11 +43,11 @@ export interface PersonaSelectorResult {
   reason: string;
   has_event?: boolean;
   event_hint?: string;
-  attribution_corrections?: Array<{
+  attribution_corrections?: {
     id: number;
     corrected_bucket?: string;
     reason?: string;
-  }>;
+  }[];
 }
 
 /** Injectable LLM persona selection provider. */

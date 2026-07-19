@@ -12,13 +12,13 @@
  * Source: ARCHITECTURE.md Task 4.11
  */
 
+import { getAskApprovalGateway } from '@dina/brain';
+import { addMessage, type ChatMessage } from '@dina/brain/chat';
 import {
   getApprovalManager,
   resetApprovalManager,
   type ApprovalRequest,
 } from '@dina/core';
-import { addMessage, type ChatMessage } from '@dina/brain/chat';
-import { getAskApprovalGateway } from '@dina/brain';
 
 export interface ApprovalCardData {
   id: string;

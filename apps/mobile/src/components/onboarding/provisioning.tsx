@@ -11,8 +11,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { OnboardingShell } from './shell';
-import { locateStep, type Step } from '../../onboarding/state';
+
 import {
   PROVISION_LABELS,
   type ProvisionOptions,
@@ -23,7 +22,10 @@ import {
   provisionExternalAtprotoIdentity,
   recoverIdentity,
 } from '../../onboarding/provision';
+import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 // Order mirrors provisionIdentity's emission order: derive + wrap in
 // memory, the two network steps (createAccount + PLC update), THEN the

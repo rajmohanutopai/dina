@@ -4,13 +4,14 @@
  * Source: ARCHITECTURE.md Section 24.1
  */
 
+import { stringToBytes } from '@dina/test-harness';
+
 import {
   verifyServiceAuth,
   isRegisteredUIDevice,
   registerUIDevice,
   clearRegistries,
 } from '../../src/auth/service_key';
-import { stringToBytes } from '@dina/test-harness';
 
 describe('UI Device Key Auth (Mobile-Specific)', () => {
   beforeEach(() => clearRegistries());

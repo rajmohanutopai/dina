@@ -159,6 +159,27 @@ describe('crypto-shred (§13/§20)', () => {
     expect(dec.decode(need(store.getPayload('b', 'general')))).toBe('B');
   });
 
+  it('shredRun crypto-shreds every payload of ONE run, never another run (ISVC-10 termination)', () => {
+    const cipher = new StubPersonaCipher();
+    cipher.open('general');
+    const erasure = new InMemoryErasureKeyStore('backup_resistant');
+    const { store } = makeStore(erasure, cipher);
+    store.putPayload({ payloadId: 'r1-a', runId: 'run1', persona: 'general', plaintext: enc.encode('A') });
+    store.putPayload({ payloadId: 'r1-b', runId: 'run1', persona: 'general', plaintext: enc.encode('B') });
+    store.putPayload({ payloadId: 'r2-c', runId: 'run2', persona: 'general', plaintext: enc.encode('C') });
+
+    // Terminal shred of run1: both its payloads become inert; run2 is untouched.
+    expect(store.shredRun('run1')).toBe(2);
+    expect(store.getPayload('r1-a', 'general')).toBeNull();
+    expect(store.getPayload('r1-b', 'general')).toBeNull();
+    expect(erasure.has('r1-a')).toBe(false);
+    expect(erasure.has('r1-b')).toBe(false);
+    expect(dec.decode(need(store.getPayload('r2-c', 'general')))).toBe('C');
+
+    // Idempotent: a second shred of the same run re-destroys nothing new (no throw).
+    expect(store.shredRun('run1')).toBe(2);
+  });
+
   it('logical_deletion caveat: a restored backup of the leaf key RECOVERS the payload', () => {
     const cipher = new StubPersonaCipher();
     cipher.open('general');

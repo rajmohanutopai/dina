@@ -6,7 +6,9 @@
  */
 
 import { useEffect, useState } from 'react';
+
 import { getProfile, type PeerlensProfile as WireProfile } from '../appview_runtime';
+
 import type { PeerlensProfile } from '@dina/core';
 
 export interface ReviewerProfileState {

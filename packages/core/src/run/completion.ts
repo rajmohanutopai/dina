@@ -15,7 +15,9 @@
  * evidence. Forged/unsigned/replayed/mismatched are rejected.
  */
 
+import { isRunTerminal } from './domain';
 import { getMessageRepository, type MessageRepository } from './message';
+import { getRunRepository, type RunRepository } from './repository';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -179,15 +181,24 @@ export type IngestOutcome =
 export interface CompletionServiceOptions {
   messageRepo?: MessageRepository;
   receiptRepo?: CompletionReceiptRepository;
+  /** The run store, used to order a completion against the run's drain deadline
+   *  (§6.2/§5.1). When wired, a completion arriving after the deadline can never
+   *  CAS-advance a still-claimed message — it becomes `outcome_unknown` + evidence
+   *  even if the sweeper has not run yet. */
+  runRepo?: RunRepository;
   nowMsFn?: () => number;
-  /** Verify the runtime-issuer signature + delegation binding (§6.2). Default
-   *  accepts (the wire signature verification is composed in — ISVC-8). */
+  /** Verify the runtime-issuer signature + delegation binding (§6.2). The
+   *  default is FAIL-CLOSED — an unsigned/unverified completion is rejected
+   *  unless a real verifier is composed in (ISVC-8 wire verification). A
+   *  fail-open default would let a forged completion advance a message, so the
+   *  security contract must reject when no verifier is wired. */
   verifyReceipt?: (input: IngestCompletionInput) => boolean;
 }
 
 export class CompletionService {
   private readonly messages: MessageRepository;
   private readonly receipts: CompletionReceiptRepository;
+  private readonly runs: RunRepository | null;
   private readonly now: () => number;
   private readonly verify: (input: IngestCompletionInput) => boolean;
 
@@ -199,8 +210,11 @@ export class CompletionService {
     }
     this.messages = messages;
     this.receipts = receipts;
+    this.runs = opts.runRepo ?? getRunRepository();
     this.now = opts.nowMsFn ?? (() => Date.now());
-    this.verify = opts.verifyReceipt ?? (() => true);
+    // Fail-closed: with no verifier wired, reject every completion (a forged
+    // completion must never advance a message).
+    this.verify = opts.verifyReceipt ?? (() => false);
   }
 
   /** Step 1+2 (§6.2): verify + commit `verified_pending`, then attempt the
@@ -209,11 +223,31 @@ export class CompletionService {
     if (!this.verify(input)) return 'rejected';
 
     const existing = this.receipts.getByDelegationId(input.delegation_id);
+    // First-writer-immutable (§6.2) — checked BEFORE the advanced-duplicate
+    // short-circuit: a runtime-issuer completion is signed + immutable, so a
+    // second receipt for the same delegation_id carrying a DIFFERENT outcome
+    // (status / result card) is anomalous and rejected even after the receipt has
+    // already ADVANCED (otherwise a conflicting `failed` after an advanced
+    // `completed` would be silently swallowed as a duplicate).
+    if (
+      existing !== null &&
+      (existing.status !== input.status || existing.result_card_ref !== (input.result_card_ref ?? null))
+    ) {
+      return 'rejected';
+    }
     if (existing?.receipt_state === 'advanced') return 'duplicate';
 
     const msg = this.messages.getById(input.message_id);
-    // mismatched delegation_id / unknown message → reject (never advance).
-    if (msg === null || msg.delegation_id !== input.delegation_id) return 'rejected';
+    // Mismatched delegation_id / run_id / unknown message → reject (never
+    // advance). The run_id binding stops a completion signed for one run from
+    // advancing a message that belongs to another run (§6.2 delegation binding).
+    if (
+      msg === null ||
+      msg.delegation_id !== input.delegation_id ||
+      msg.run_id !== input.run_id
+    ) {
+      return 'rejected';
+    }
 
     const nowMs = this.now();
     this.receipts.upsert({
@@ -228,6 +262,30 @@ export class CompletionService {
       created_at: existing?.created_at ?? nowMs,
       updated_at: nowMs,
     });
+
+    // Deadline ordering (§6.2/§5.1): if the run is already terminal or past its
+    // `drain_deadline_at` but the sweep has not yet reconciled this still-claimed
+    // message, a completion arriving now is LATE — it must NOT advance
+    // dispatched→completed. Record it as append-only evidence and move the
+    // message to `outcome_unknown` (the sweep's terminal reconciliation), so the
+    // result is deadline-correct even under a delayed sweeper.
+    if (this.runs !== null && (msg.state === 'dispatched' || msg.state === 'sending')) {
+      const run = this.runs.getById(input.run_id);
+      const pastDeadline =
+        run !== null &&
+        (isRunTerminal(run.state) ||
+          (run.drain_deadline_at !== null && nowMs >= run.drain_deadline_at));
+      if (pastDeadline) {
+        this.messages.appendReconciliation(
+          input.message_id,
+          JSON.stringify({ delegation_id: input.delegation_id, status: input.status, at: nowMs, late: true }),
+          nowMs,
+        );
+        this.messages.transition(input.message_id, msg.state, 'outcome_unknown', nowMs);
+        this.receipts.markAdvanced(input.delegation_id, nowMs);
+        return 'reconciliation_evidence';
+      }
+    }
 
     // Late completion (message already terminal, e.g. outcome_unknown) →
     // append-only reconciliation evidence; the receipt is consumed as evidence.
@@ -288,6 +346,55 @@ export class CompletionService {
 
   private tryAdvance(delegationId: string, messageId: string, status: CompletionStatus, nowMs: number): boolean {
     const to = status === 'completed' ? 'completed' : 'failed';
+    // Idempotent crash-recovery (§6.2, F13): the two-step advance is a lifecycle
+    // transition FOLLOWED BY `markAdvanced`. A crash between them leaves the
+    // message terminal but the receipt `verified_pending`; the recovery pass then
+    // re-runs here and the `dispatched → to` CAS below fails (already terminal),
+    // so the receipt would stay `verified_pending` forever and occupy the bounded
+    // recovery page. If the message ALREADY reached the terminal state THIS
+    // delegation implies, just finish the receipt — nothing else is re-applied.
+    const existing = this.messages.getById(messageId);
+    if (existing !== null && existing.delegation_id === delegationId) {
+      if (existing.state === to) {
+        this.receipts.markAdvanced(delegationId, nowMs);
+        return true;
+      }
+      if (existing.state === 'outcome_unknown') {
+        // A late completion already recorded as evidence + outcome_unknown, but
+        // the crash hit before markAdvanced — clear the receipt without a second
+        // reconciliation append.
+        this.receipts.markAdvanced(delegationId, nowMs);
+        return false;
+      }
+    }
+    // Deadline ordering, crash-safe (§6.2/§5.1, R2-05): the decision is anchored
+    // on the receipt's IMMUTABLE `received_at`, so it is identical whether taken
+    // inline on ingestion, in the crash-recovery pass, or at the deadline
+    // reconcile. A receipt RECEIVED at/after the run's `drain_deadline_at` (or on
+    // a terminal run) is LATE — it can NEVER become completed/failed; it is
+    // consumed as append-only evidence and the still-claimed message becomes
+    // `outcome_unknown`.
+    if (this.runs !== null) {
+      const receipt = this.receipts.getByDelegationId(delegationId);
+      const msg = this.messages.getById(messageId);
+      if (receipt !== null && msg !== null && (msg.state === 'dispatched' || msg.state === 'sending')) {
+        const run = this.runs.getById(msg.run_id);
+        const late =
+          run !== null &&
+          (isRunTerminal(run.state) ||
+            (run.drain_deadline_at !== null && receipt.received_at >= run.drain_deadline_at));
+        if (late) {
+          this.messages.appendReconciliation(
+            messageId,
+            JSON.stringify({ delegation_id: delegationId, status, at: nowMs, late: true }),
+            nowMs,
+          );
+          this.messages.transition(messageId, msg.state, 'outcome_unknown', nowMs);
+          this.receipts.markAdvanced(delegationId, nowMs);
+          return false; // consumed as late evidence — not advanced to completed
+        }
+      }
+    }
     // CAS keyed on the message being `dispatched` → double-advance impossible.
     if (this.messages.transition(messageId, 'dispatched', to, nowMs)) {
       this.receipts.markAdvanced(delegationId, nowMs);

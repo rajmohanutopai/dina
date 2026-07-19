@@ -15,10 +15,10 @@
  * Source: ARCHITECTURE.md Task 4.3
  */
 
+import { wrapSeed } from '../crypto/aesgcm';
 import { validateMnemonic, mnemonicToEntropy } from '../crypto/bip39';
 import { deriveRootSigningKey } from '../crypto/slip0010';
 import { deriveDIDKey } from '../identity/did';
-import { wrapSeed } from '../crypto/aesgcm';
 import { serializeWrappedSeed } from '../storage/seed_file';
 
 export interface RecoveryResult {

@@ -23,11 +23,13 @@
  */
 
 import { describe, expect, it } from '@jest/globals';
-import type { CoreClient, WorkflowTask } from '@dina/core';
+
 import {
   createDelegateToAgentTool,
   type DelegateOutcome,
 } from '../../src/reasoning/delegate_agent_tool';
+
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 type CreateInput = Parameters<CoreClient['createWorkflowTask']>[0];
 

@@ -13,12 +13,13 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a tasks 4.4–4.5.
  */
 
+import { z } from 'zod';
+
 import {
   HomeNodeEndpointConfigError,
   resolveServerHostedDinaEndpoints,
   type HostedDinaEndpoints,
 } from '@dina/home-node';
-import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -138,7 +139,7 @@ export type LoadedCoreServerConfig = Omit<CoreServerConfig, 'endpoints' | 'msgbo
 export class ConfigError extends Error {
   constructor(
     message: string,
-    public readonly issues: ReadonlyArray<{ path: string; message: string }>,
+    public readonly issues: readonly { path: string; message: string }[],
   ) {
     super(message);
     this.name = 'ConfigError';

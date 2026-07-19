@@ -20,13 +20,15 @@
  * Source: brain/src/adapter/appview_client.py
  */
 
-import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 import {
   httpBackoff as backoff,
   isRetryableStatus,
   parseResponseBody,
 } from '@dina/core';
+
 import { defaultFetch } from '../runtime/fetch';
+
+import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 
 /** Retryable client-side response statuses beyond 5xx. */
 const RETRYABLE_4XX = new Set([408, 429]);

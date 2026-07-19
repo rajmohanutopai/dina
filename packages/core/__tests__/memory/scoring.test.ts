@@ -15,13 +15,13 @@
  * 1e-6 (see `decaysAfter14DaysMatchesGoReference`).
  */
 
-import { computeSalience, isConsonant, stemLite } from '../../src/memory/scoring';
 import {
   TOPIC_SHORT_MIX,
   TOPIC_TAU_LONG_DAYS,
   TOPIC_TAU_SHORT_DAYS,
   type Topic,
 } from '../../src/memory/domain';
+import { computeSalience, isConsonant, stemLite } from '../../src/memory/scoring';
 
 function mkTopic(overrides: Partial<Topic> = {}): Topic {
   return {

@@ -17,9 +17,10 @@
  * Source: docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md § "Repository Enforcement"
  */
 
+import { currentDataScope, type DataScope } from './data_scope';
+
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
-import { currentDataScope, type DataScope } from './data_scope';
 
 /** Column name carrying the scope. Single source of truth for the SQL string. */
 export const DATA_SCOPE_COLUMN = 'data_scope';

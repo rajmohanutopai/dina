@@ -33,7 +33,7 @@ function registerBrainCaller(): void {
 
 class FakeMsgBoxWS implements ReturnType<WSFactory> {
   public readyState = 0;
-  public sent: Array<string | Uint8Array | ArrayBuffer> = [];
+  public sent: (string | Uint8Array | ArrayBuffer)[] = [];
   public closed = false;
   public onopen: (() => void) | null = null;
   public onmessage: ((event: { data: string }) => void) | null = null;

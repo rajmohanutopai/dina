@@ -227,8 +227,8 @@ function normaliseInput(input: ContactResolveRequest): ContactResolveRequest {
   };
 }
 
-type ParseOk = { ok: true; response: ContactResolveResponse };
-type ParseFail = { ok: false; reason: 'malformed_response'; detail: string };
+interface ParseOk { ok: true; response: ContactResolveResponse }
+interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.contacts)) {

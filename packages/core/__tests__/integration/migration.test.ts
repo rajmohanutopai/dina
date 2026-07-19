@@ -8,15 +8,17 @@
  * Source: ARCHITECTURE.md Task 9.6
  */
 
-import { runOnboarding } from '../../src/onboarding/portable';
+import { makeVaultItem, resetFactoryCounters, TEST_PASSPHRASE } from '@dina/test-harness';
+
+import { mnemonicToEntropy, validateMnemonic } from '../../src/crypto/bip39';
+import { deriveRootSigningKey } from '../../src/crypto/slip0010';
 import {
   createArchive,
   readManifest,
   importArchive,
   verifyArchive,
 } from '../../src/export/archive';
-import { storeItem, getItem, queryVault, clearVaults } from '../../src/vault/crud';
-import { createPersona, listPersonas, resetPersonaState } from '../../src/persona/service';
+import { deriveDIDKey } from '../../src/identity/did';
 import {
   initializeRotation,
   getCurrentPublicKey,
@@ -24,10 +26,10 @@ import {
   verifyWithAnyKey,
   resetRotationState,
 } from '../../src/identity/rotation';
-import { deriveRootSigningKey } from '../../src/crypto/slip0010';
-import { mnemonicToEntropy, validateMnemonic } from '../../src/crypto/bip39';
-import { deriveDIDKey } from '../../src/identity/did';
-import { makeVaultItem, resetFactoryCounters, TEST_PASSPHRASE } from '@dina/test-harness';
+import { runOnboarding } from '../../src/onboarding/portable';
+import { createPersona, listPersonas, resetPersonaState } from '../../src/persona/service';
+import { storeItem, getItem, queryVault, clearVaults } from '../../src/vault/crud';
+
 
 describe('Cross-Device Migration (Task 9.6)', () => {
   beforeEach(() => {

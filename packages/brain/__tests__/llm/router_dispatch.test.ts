@@ -9,18 +9,20 @@
  * live API to verify the router's own logic.
  */
 
+import { CloudConsentError } from '@dina/core';
+
 import {
   LLMRouter,
   RoutedLLMProvider,
   rehydrateResponse,
 } from '../../src/llm/router_dispatch';
+
 import type {
   ChatMessage,
   ChatOptions,
   ChatResponse,
   LLMProvider,
 } from '../../src/llm/adapters/provider';
-import { CloudConsentError } from '@dina/core';
 
 function makeStubProvider(overrides?: Partial<ChatResponse>): {
   provider: LLMProvider;

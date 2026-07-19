@@ -5,6 +5,7 @@ const EXPECTED_EXPORTS: Record<string, string> = {
   '.': './src/index.ts',
   './audit': './audit.ts',
   './d2d': './d2d.ts',
+  './fetch': './fetch.ts',
   './devices': './devices.ts',
   './kv': './kv.ts',
   './node': './node.ts',

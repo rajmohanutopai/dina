@@ -18,6 +18,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { hydrateThread, getThread, resetThreads } from '@dina/brain/chat';
 import {
   IDENTITY_MIGRATIONS,
   applyMigrations,
@@ -33,17 +34,16 @@ import {
   type StoredChatMessage,
 } from '@dina/core';
 import {
+  hydrateRemindersFromRepo,
+  resetReminderState,
+  listPending,
+} from '@dina/core/reminders';
+import {
   SQLiteReminderRepository,
   setReminderRepository,
   SQLiteChatMessageRepository,
   setChatMessageRepository,
 } from '@dina/core/storage';
-import {
-  hydrateRemindersFromRepo,
-  resetReminderState,
-  listPending,
-} from '@dina/core/reminders';
-import { hydrateThread, getThread, resetThreads } from '@dina/brain/chat';
 
 import { NodeSQLiteAdapter } from '../src/adapter';
 

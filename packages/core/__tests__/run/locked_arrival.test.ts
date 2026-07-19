@@ -144,6 +144,28 @@ describe('LockedArrivalStore (§7)', () => {
     expect(out).toEqual({ outcome: 'response_lost', reason: 'blob_missing' });
   });
 
+  it('a TRUNCATED staged framing surfaces response_lost:corrupt, never an uncaught throw (F16)', () => {
+    const { spool, locked } = setup();
+    // A 2-byte blob can't even hold the 4-byte length header.
+    const spoolId = spool.store(new Uint8Array([0, 0]));
+    const out = locked.publish('p1', 'r1', 'general', { spool_id: spoolId, content_digest: 'a'.repeat(64) });
+    expect(out).toEqual({ outcome: 'response_lost', reason: 'corrupt' });
+  });
+
+  it('a CORRUPT wrapped-key (blob digest still valid) surfaces response_lost:corrupt (F16)', () => {
+    const { spool, locked } = setup();
+    const ref = locked.stage('p1', enc.encode('secret'));
+    const staged = spool.peek(ref.spool_id);
+    if (staged === null) throw new Error('staged blob missing');
+    // Flip a byte INSIDE wrappedSealedKp (offset ≥ 4). The `blob` tail is untouched
+    // so the digest check passes — the corruption is only caught at decrypt time.
+    const tampered = new Uint8Array(staged);
+    tampered[4] ^= 0xff;
+    const newId = spool.store(tampered);
+    const out = locked.publish('p1', 'r1', 'general', { ...ref, spool_id: newId });
+    expect(out).toEqual({ outcome: 'response_lost', reason: 'corrupt' });
+  });
+
   it('a shredded leaf key before publish surfaces response_lost', () => {
     const { erasure, locked } = setup();
     const ref = locked.stage('p1', enc.encode('x'));

@@ -7,6 +7,8 @@
  * Source: core/test/vault_test.go (CRUD section)
  */
 
+import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
+
 import {
   storeItem,
   storeBatch,
@@ -16,7 +18,6 @@ import {
   deleteItem,
   clearVaults,
 } from '../../src/vault/crud';
-import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Vault CRUD Operations', () => {
   beforeEach(() => {

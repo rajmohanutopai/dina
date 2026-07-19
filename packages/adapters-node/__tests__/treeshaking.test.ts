@@ -25,16 +25,17 @@
  */
 
 import * as path from 'node:path';
+
 import { build } from 'esbuild';
 
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../..');
 
-type BuildResult = {
+interface BuildResult {
   /** Paths that contributed >0 bytes to the final bundle (post-treeshake). */
   bundled: string[];
   /** Total bundle size in bytes. */
   bundleSize: number;
-};
+}
 
 /**
  * Bundle a synthetic consumer stub that imports the given symbols from

@@ -130,7 +130,7 @@ describe('ordering claims', () => {
     // undefined; n >= undefined is always false), so a HIGH floor could
     // be "lowered" to an invalid level and run silent.
     const d = evaluatePluginIntent(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       input({
         actionClass: 'read',
         capabilityKind: 'canonical',

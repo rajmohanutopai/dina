@@ -8,19 +8,22 @@
  */
 
 import { pino } from 'pino';
+
 import {
   InMemoryTopicRepository,
   MemoryService,
   type TocEntry,
   type TopicRepository,
 } from '@dina/core';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
+
 import {
   DEFAULT_MEMORY_TOC_LIMIT,
   MAX_MEMORY_TOC_LIMIT,
   registerMemoryRoutes,
 } from '../src/memory/routes';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -43,7 +46,7 @@ function silentLogger() {
  * `toc`.
  */
 class FakeMemoryService extends MemoryService {
-  public calls: Array<{ personas: string[] | undefined; limit: number }> = [];
+  public calls: { personas: string[] | undefined; limit: number }[] = [];
   public result: TocEntry[] = [];
   override async toc(
     personas: string[] | undefined,

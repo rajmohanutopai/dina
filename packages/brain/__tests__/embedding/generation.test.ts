@@ -15,6 +15,7 @@ import {
   registerLocalProvider,
   registerCloudProvider,
 } from '../../src/embedding/generation';
+
 import type { EmbeddingResult } from '../../src/embedding/generation';
 
 /** Helper: create a mock provider that returns a fixed 768-dim vector. */

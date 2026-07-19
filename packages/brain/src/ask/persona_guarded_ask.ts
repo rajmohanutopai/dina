@@ -41,7 +41,6 @@
  * approvals appear there automatically — no separate HTTP surface needed.
  */
 
-import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
 import {
   checkPersonaGate,
   type PersonaGateCaller,
@@ -49,6 +48,8 @@ import {
   type PersonaGateOutcome,
   type PersonaGateTier,
 } from './persona_gate';
+
+import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
 import type { VaultApprovalWorkflowClient } from '../composition/persona_guard';
 
 /** Persona shape the gate cares about. */

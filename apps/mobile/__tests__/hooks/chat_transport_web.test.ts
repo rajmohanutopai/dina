@@ -55,7 +55,7 @@ const ORIG_EVENT_SOURCE = (globalThis as { EventSource?: unknown }).EventSource;
 
 class StubEventSource implements StubEventSourceLike {
   url: string;
-  private listeners: Record<string, Array<(ev: unknown) => void>> = {};
+  private listeners: Record<string, ((ev: unknown) => void)[]> = {};
   private closed = false;
 
   constructor(url: string) {

@@ -13,8 +13,8 @@
  *   - The dismiss CTA accepts the 48pt floor + has accessibilityRole=button.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import { FirstRunModalView } from '../../src/peerlens/components/first_run_modal_view';
 import { FIRST_RUN_MODAL_COPY } from '../../src/peerlens/first_run';

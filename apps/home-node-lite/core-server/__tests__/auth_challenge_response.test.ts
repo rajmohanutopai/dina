@@ -4,6 +4,7 @@
 
 import { mnemonicToSeed, generateMnemonic, verify as ed25519Verify } from '@dina/core';
 import { AUTH_CHALLENGE, AUTH_RESPONSE, type AuthChallengeFrame } from '@dina/protocol';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import {
   buildAuthResponse,

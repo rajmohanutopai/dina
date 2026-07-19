@@ -13,6 +13,7 @@
  */
 
 import { base58 } from '@scure/base';
+
 import { ED25519_PUBLIC_KEY_BYTES, ED25519_MULTICODEC as ED_MULTICODEC } from '../constants';
 
 /** Multicodec varint prefix for Ed25519 public key (from shared constants). */

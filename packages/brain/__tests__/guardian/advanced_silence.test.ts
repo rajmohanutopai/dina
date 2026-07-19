@@ -7,6 +7,8 @@
  * Source: brain/tests/test_silence.py, test_guardian.py (advanced sections)
  */
 
+import { makeEvent } from '@dina/test-harness';
+
 import {
   classifyPriority,
   classifyDeterministic,
@@ -33,7 +35,6 @@ import {
   purgeExpiredFingerprints,
   resetBatchingState,
 } from '../../src/guardian/silence';
-import { makeEvent } from '@dina/test-harness';
 
 describe('Advanced Silence Classification', () => {
   beforeEach(() => {

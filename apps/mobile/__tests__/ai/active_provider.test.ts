@@ -5,13 +5,13 @@
  * unknown provider ids (review findings #5, #16).
  */
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   loadActiveProvider,
   saveActiveProvider,
   peekActiveProvider,
   resetActiveProviderCache,
 } from '../../src/ai/active_provider';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 beforeEach(() => {
   resetKeychainMock();

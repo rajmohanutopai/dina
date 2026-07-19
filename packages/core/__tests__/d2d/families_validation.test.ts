@@ -2,6 +2,8 @@
  * D2D message type validation tests — scenario mapping + body size.
  */
 
+import { D2D_V1_MESSAGE_TYPES } from '@dina/test-harness';
+
 import {
   isValidV1Type,
   mapToVaultItemType,
@@ -12,7 +14,6 @@ import {
   MAX_MESSAGE_BODY_SIZE,
   D2D_SCENARIOS,
 } from '../../src/d2d/families';
-import { D2D_V1_MESSAGE_TYPES } from '@dina/test-harness';
 
 describe('D2D Message Families', () => {
   describe('V1 type validation', () => {

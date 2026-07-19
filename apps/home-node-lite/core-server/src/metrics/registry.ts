@@ -59,7 +59,7 @@ export interface HistogramSnapshot {
   route: string;
   method: string;
   /** Per-bucket (upper-bound-inclusive) count of observations. */
-  buckets: ReadonlyArray<{ le: number; count: number }>;
+  buckets: readonly { le: number; count: number }[];
   /** Observations that exceeded the largest bucket. */
   overflow: number;
   /** Total observations (sum of every bucket + overflow). */
@@ -69,8 +69,8 @@ export interface HistogramSnapshot {
 }
 
 export interface Snapshot {
-  counters: ReadonlyArray<CounterSnapshot>;
-  histograms: ReadonlyArray<HistogramSnapshot>;
+  counters: readonly CounterSnapshot[];
+  histograms: readonly HistogramSnapshot[];
   /** Total request count observed (all statuses). */
   totalRequests: number;
   /** Total error count (status >= 400). */
@@ -79,7 +79,7 @@ export interface Snapshot {
 
 export interface MetricsRegistryOptions {
   /** Histogram upper bounds in seconds. Must be sorted ascending + all > 0. */
-  bucketsSec?: ReadonlyArray<number>;
+  bucketsSec?: readonly number[];
 }
 
 interface HistogramEntry {
@@ -90,7 +90,7 @@ interface HistogramEntry {
 }
 
 export class MetricsRegistry {
-  readonly buckets: ReadonlyArray<number>;
+  readonly buckets: readonly number[];
   private readonly counters = new Map<string, { key: CounterKey; count: number }>();
   private readonly histograms = new Map<
     string,

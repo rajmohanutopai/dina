@@ -7,12 +7,9 @@
  * Source: ARCHITECTURE.md Task 1.54
  */
 
-import {
-  createPersona,
-  resetPersonaState,
-  isPersonaOpen,
-  listPersonas,
-} from '../../src/persona/service';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { destroyAllIndexes, hasIndex } from '../../src/embedding/persona_index';
 import {
   unlockPersona,
   lockPersona,
@@ -23,9 +20,14 @@ import {
   setEmbeddingLoader,
   resetOrchestratorState,
 } from '../../src/persona/orchestrator';
+import {
+  createPersona,
+  resetPersonaState,
+  isPersonaOpen,
+  listPersonas,
+} from '../../src/persona/service';
 import { storeItem, queryVault, clearVaults } from '../../src/vault/crud';
-import { destroyAllIndexes, hasIndex } from '../../src/embedding/persona_index';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const userSalt = new Uint8Array(16).fill(0xcd);
 

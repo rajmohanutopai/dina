@@ -4,10 +4,13 @@
  * Source: tests/integration/test_contract_wire_format.py (portable parts)
  */
 
-import { buildMessage, parseMessage } from '../../src/d2d/envelope';
-import type { DinaMessage } from '../../src/d2d/envelope';
-import { makeDinaMessage } from '@dina/test-harness';
 import { base64 } from '@scure/base';
+
+import { makeDinaMessage } from '@dina/test-harness';
+
+import { buildMessage, parseMessage } from '../../src/d2d/envelope';
+
+import type { DinaMessage } from '../../src/d2d/envelope';
 
 // On-wire `body` is base64-encoded UTF-8 (Go `[]byte` compat — see
 // buildMessage docstring). Test helper decodes it back to the JSON

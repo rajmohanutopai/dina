@@ -20,10 +20,8 @@
  * provider differs.
  */
 
+import { REMEMBER_AGENTIC } from '../llm/prompts';
 import { runAgenticTurn } from '../reasoning/agentic_loop';
-import { ToolRegistry } from '../reasoning/tool_registry';
-import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
-import { createVaultSearchTool } from '../reasoning/vault_tool';
 import {
   createBindPreferenceTool,
   createLinkToPersonTool,
@@ -31,7 +29,9 @@ import {
   emptyRememberSideEffects,
   type RememberSideEffects,
 } from '../reasoning/remember_tools';
-import { REMEMBER_AGENTIC } from '../llm/prompts';
+import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
+import { ToolRegistry } from '../reasoning/tool_registry';
+import { createVaultSearchTool } from '../reasoning/vault_tool';
 
 import type { LLMProvider } from '../llm/adapters/provider';
 

@@ -80,8 +80,6 @@ import {
 } from '@dina/core';
 import { DIDResolver, hydrateDeviceRegistry, getDeviceByDID } from '@dina/core/runtime';
 import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
-
-import { mobileHostedEndpoints } from './hosted_endpoints';
 import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 
 import { loadActiveProvider } from '../ai/active_provider';
@@ -93,6 +91,7 @@ import { getIdentityAdapter } from '../storage/init';
 
 import { AppViewStub, demoServiceProfile } from './appview_stub';
 import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
+import { mobileHostedEndpoints } from './hosted_endpoints';
 import { loadPersistedDid } from './identity_record';
 import { loadOrGenerateSeeds } from './identity_store';
 import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';

@@ -2,12 +2,13 @@
  * useServiceThreadDelivery — MOBILE-009 tests.
  */
 
+import { getThread, resetThreads } from '../../../brain/src/chat/thread';
 import {
   wireServiceThreadDelivery,
   type DeliveryCoreClient,
 } from '../../src/hooks/useServiceThreadDelivery';
+
 import type { WorkflowEvent, WorkflowTask } from '@dina/core';
-import { getThread, resetThreads } from '../../../brain/src/chat/thread';
 
 function makeEvent(overrides: Partial<WorkflowEvent> = {}): WorkflowEvent {
   return {

@@ -18,6 +18,8 @@ jest.mock('../../src/storage/init', () => ({
   openPersonaDB: jest.fn(async () => {}),
 }));
 
+import { setPersonaRepository, type PersonaRepository, type StoredPersona } from '@dina/core';
+
 import {
   getPersonaUIStates,
   addPersona,
@@ -27,7 +29,6 @@ import {
   getTierOptions,
   resetPersonas,
 } from '../../src/hooks/usePersonas';
-import { setPersonaRepository, type PersonaRepository, type StoredPersona } from '@dina/core';
 
 function inMemoryPersonaRepo(): PersonaRepository {
   const rows = new Map<string, StoredPersona>();

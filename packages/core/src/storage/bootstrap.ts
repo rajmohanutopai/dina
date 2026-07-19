@@ -10,11 +10,12 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter } from './db_adapter';
-import type { DBProvider } from './db_provider';
 import { setDBProvider, resetDBProvider } from './db_provider';
 import { applyMigrations } from './migration';
 import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from './schemas';
+
+import type { DatabaseAdapter } from './db_adapter';
+import type { DBProvider } from './db_provider';
 
 /**
  * Bootstrap persistence with the given database provider.

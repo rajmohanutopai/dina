@@ -93,7 +93,7 @@ describe('InMemoryClientTokenStore (task 4.25)', () => {
 
   describe('expiry', () => {
     it('accepts a token before its expiry', async () => {
-      let now = 1_000_000;
+      const now = 1_000_000;
       const store = new InMemoryClientTokenStore({ nowMsFn: () => now });
       await store.add('live', { deviceLabel: 'p', expiresAtMs: 2_000_000 });
       const res = await store.validate('live');
@@ -112,7 +112,7 @@ describe('InMemoryClientTokenStore (task 4.25)', () => {
     });
 
     it('rejects a token exactly at its expiry (boundary: <=)', async () => {
-      let now = 1_000_000;
+      const now = 1_000_000;
       const store = new InMemoryClientTokenStore({ nowMsFn: () => now });
       await store.add('edge', { deviceLabel: 'p', expiresAtMs: 1_000_000 });
       expect(await store.validate('edge')).toEqual({
@@ -122,7 +122,7 @@ describe('InMemoryClientTokenStore (task 4.25)', () => {
     });
 
     it('expiresAtMs = 0 means no expiry', async () => {
-      let now = 10_000_000_000;
+      const now = 10_000_000_000;
       const store = new InMemoryClientTokenStore({ nowMsFn: () => now });
       await store.add('forever', { deviceLabel: 'p', expiresAtMs: 0 });
       const res = await store.validate('forever');
@@ -130,7 +130,7 @@ describe('InMemoryClientTokenStore (task 4.25)', () => {
     });
 
     it('undefined expiresAtMs means no expiry', async () => {
-      let now = 10_000_000_000;
+      const now = 10_000_000_000;
       const store = new InMemoryClientTokenStore({ nowMsFn: () => now });
       await store.add('forever', { deviceLabel: 'p' });
       const res = await store.validate('forever');

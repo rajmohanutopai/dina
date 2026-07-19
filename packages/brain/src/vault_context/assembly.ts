@@ -8,21 +8,20 @@
  * Source: brain/tests/test_vault_context.py
  */
 
-import { queryVault, getItem, browseRecent } from '@dina/core';
-import { listPersonas } from '@dina/core';
-import {
+import { queryVault, getItem, browseRecent , listPersonas ,
   getContact,
   resolveByName,
   findByAlias,
   listContacts,
 } from '@dina/core';
-import { listPendingRemindersRouted } from '../reminders/backend';
 import {
   searchTrustNetwork,
   type PeerlensSearchQuery,
   type SearchType,
-} from '@dina/core';
-import type { CoreClient, VaultQueryItem } from '@dina/core';
+ CoreClient, VaultQueryItem } from '@dina/core';
+
+import { listPendingRemindersRouted } from '../reminders/backend';
+
 
 /**
  * Vault-read backend the brain uses for out-of-process Core deployments
@@ -172,11 +171,11 @@ export function resetReasoningProvider(): void {
 /**
  * Tool declarations for the reasoning agent.
  */
-const TOOL_DECLARATIONS: Array<{
+const TOOL_DECLARATIONS: {
   name: string;
   description: string;
   parameters?: Record<string, unknown>;
-}> = [
+}[] = [
   {
     name: 'list_personas',
     description:
@@ -223,7 +222,7 @@ const TOOL_DECLARATIONS: Array<{
 /**
  * Get tool declarations for the reasoning agent.
  */
-export function getToolDeclarations(): Array<{ name: string; description: string }> {
+export function getToolDeclarations(): { name: string; description: string }[] {
   return TOOL_DECLARATIONS.map(({ name, description }) => ({ name, description }));
 }
 
@@ -315,7 +314,7 @@ export async function assembleContext(
     perPersonaHits[persona] = results.length;
     allItems.push(...results);
   }
-  // eslint-disable-next-line no-console
+   
   console.info('[vault_context] assemble', {
     event: 'vault_context.searched',
     query_preview: query.slice(0, 80),
@@ -486,7 +485,7 @@ async function executeToolCall(call: ToolCall): Promise<unknown> {
 }
 
 /** List accessible personas with their types. */
-function executeListPersonas(): Array<{ name: string; tier: string; accessible: boolean }> {
+function executeListPersonas(): { name: string; tier: string; accessible: boolean }[] {
   const accessible = new Set(getAccessiblePersonas());
   return listPersonas().map((p) => ({
     name: p.name,
@@ -503,10 +502,10 @@ async function executeBrowseVault(persona: string, limit: number): Promise<Conte
 
   // Out-of-process (lite): list over the Core backend. In-process
   // (mobile): the local `browseRecent`. Same split as vault_search.
-  let items: Array<{ id: string; content_l0?: string; content_l1?: string; summary?: string }>;
+  let items: { id: string; content_l0?: string; content_l1?: string; summary?: string }[];
   if (vaultBackend?.vaultList !== undefined) {
     const res = await vaultBackend.vaultList(persona, { limit });
-    items = res.items as Array<{ id: string; content_l0?: string; summary?: string }>;
+    items = res.items as { id: string; content_l0?: string; summary?: string }[];
   } else {
     const now = Date.now();
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
@@ -582,7 +581,7 @@ function formatContactForLLM(contact: {
 async function executeReminderCheck(
   query: string,
   daysAhead: number,
-): Promise<Array<{ id: string; message: string; due_at: number; persona: string; kind: string }>> {
+): Promise<{ id: string; message: string; due_at: number; persona: string; kind: string }[]> {
   const now = Date.now();
   const windowEnd = now + daysAhead * 24 * 60 * 60 * 1000;
   // Out-of-process (lite): reminders live in Core's process — read over

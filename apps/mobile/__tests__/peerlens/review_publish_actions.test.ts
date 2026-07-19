@@ -21,6 +21,7 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
+import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 import {
   cancelReviewPublishJob,
   dismissReviewPublishReceipt,
@@ -28,7 +29,6 @@ import {
   retryReviewPublishJob,
 } from '../../src/peerlens/review_publish_actions';
 import { canDrainReviewPublish, drainReviewPublishNow } from '../../src/peerlens/review_publish_autodrain';
-import { getBootedNode } from '../../src/hooks/useNodeBootstrap';
 
 const mockGetBootedNode = getBootedNode as jest.MockedFunction<typeof getBootedNode>;
 const mockCanDrain = canDrainReviewPublish as jest.MockedFunction<typeof canDrainReviewPublish>;

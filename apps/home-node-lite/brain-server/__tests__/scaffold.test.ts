@@ -10,10 +10,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { getPersona, resetPersonaState } from '@dina/core';
+
 import { bootServer, ConfigError, loadConfig } from '../src/main';
 
 import type { AskCoordinator, LLMProvider } from '@dina/brain';
-import { getPersona, resetPersonaState } from '@dina/core';
 
 /**
  * Minimal LLM provider so boot wires the staging drain. The drain is

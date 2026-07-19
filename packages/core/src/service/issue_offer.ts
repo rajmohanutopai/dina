@@ -14,6 +14,7 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import {
   effectiveDiscoverability,
   effectiveListingStatus,
@@ -22,6 +23,7 @@ import {
 } from '@dina/protocol';
 
 import { getServiceConfig, configuredCapabilityKey } from './service_config';
+
 import type { ServiceGrantRepository } from './service_grant_repository';
 
 /**

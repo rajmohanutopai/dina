@@ -44,8 +44,8 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { secp256k1ToDidKeyMultibase } from '@dina/core';
 import { PDSAccountClient, PDSAccountError } from '@dina/brain';
+import { secp256k1ToDidKeyMultibase } from '@dina/core';
 import { applyDinaPlcUpdate } from '@dina/home-node';
 
 import type { IdentityDerivations } from './derivations';

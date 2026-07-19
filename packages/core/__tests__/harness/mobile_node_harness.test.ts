@@ -16,15 +16,13 @@
  * Gate with LIVE_HARNESS=1 so CI never runs this.
  */
 
-/* eslint-disable no-console */
+ 
 
 // Node `ws` has no bundled .d.ts. The shape we need (`send`, `close`,
 // event emitter) is stable across versions; cast to a local structural
 // type so ts-jest doesn't need @types/ws installed.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const WebSocket = require('ws') as unknown as {
-  new (url: string): NodeWS;
-};
+const WebSocket = require('ws') as unknown as new (url: string) => NodeWS;
 interface NodeWS {
   readyState: number;
   send(data: string): void;
@@ -36,14 +34,16 @@ interface NodeWS {
 }
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { resetCallerTypeState, setDeviceRoleResolver, isDevice } from '../../src/auth/caller_type';
+import { resetDeviceRegistry, getDeviceByDID, listDevices } from '../../src/devices/registry';
+import { createDIDPLC } from '../../src/identity/directory';
+import { setNodeDID, generatePairingCode, clearPairingState } from '../../src/pairing/ceremony';
 import { bootstrapMsgBox } from '../../src/relay/msgbox_boot';
 import { createCoreRouter } from '../../src/server/core_server';
-import { setNodeDID, generatePairingCode, clearPairingState } from '../../src/pairing/ceremony';
-import { resetDeviceRegistry, getDeviceByDID, listDevices } from '../../src/devices/registry';
-import { resetCallerTypeState, setDeviceRoleResolver, isDevice } from '../../src/auth/caller_type';
 import { setWorkflowRepository, InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { setWorkflowService, WorkflowService } from '../../src/workflow/service';
-import { createDIDPLC } from '../../src/identity/directory';
+
 import type { WSLike } from '../../src/relay/msgbox_ws';
 
 // Jest guards — opt-in via env so CI doesn't try to open live sockets.

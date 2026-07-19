@@ -13,13 +13,15 @@
 import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
-import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
 import {
   addLifecycleMessage,
   resetThreads,
   type ChatMessage,
   getThread,
 } from '@dina/brain/chat';
+
+import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
+
 import type { CardSpec } from '@dina/protocol';
 
 const THREAD = 'test-thread';

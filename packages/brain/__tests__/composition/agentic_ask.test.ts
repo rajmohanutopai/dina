@@ -10,9 +10,10 @@
 
 import { buildAgenticAskPipeline } from '../../src/composition/agentic_ask';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import { ToolRegistry } from '../../src/reasoning/tool_registry';
-import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import { ToolRegistry } from '../../src/reasoning/tool_registry';
+
+import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
 import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 /**

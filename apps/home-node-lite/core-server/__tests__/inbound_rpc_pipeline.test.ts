@@ -9,11 +9,7 @@
  */
 
 import { pino } from 'pino';
-import {
-  RPC_REQUEST_TYPE,
-  RPC_RESPONSE_TYPE,
-  type CoreRPCRequest,
-} from '@dina/protocol';
+
 import {
   generateMnemonic,
   mnemonicToSeed,
@@ -22,9 +18,12 @@ import {
   verifyResponseSignature,
   type CoreRPCResponse,
 } from '@dina/core';
+import {
+  RPC_REQUEST_TYPE,
+  RPC_RESPONSE_TYPE,
+  type CoreRPCRequest,
+} from '@dina/protocol';
 
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
 import { deriveIdentity } from '../src/identity/derivations';
 import { CancelRegistry } from '../src/msgbox/cancel_registry';
 import { IdempotencyCache } from '../src/msgbox/idempotency_cache';
@@ -33,6 +32,9 @@ import {
   type InboundRpcContext,
   type InboundRpcEvent,
 } from '../src/msgbox/inbound_rpc_pipeline';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

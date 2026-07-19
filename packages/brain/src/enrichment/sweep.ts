@@ -16,9 +16,9 @@
  * Source: brain/src/service/enrichment.py — enrich_pending(), enrich_item()
  */
 
+import { queryByEnrichmentStatus, updateEnrichment, getItem , listPersonas } from '@dina/core';
+
 import { enrichItem, type EnrichmentResult } from './pipeline';
-import { queryByEnrichmentStatus, updateEnrichment, getItem } from '@dina/core';
-import { listPersonas } from '@dina/core';
 
 // ---------------------------------------------------------------
 // Types

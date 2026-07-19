@@ -10,8 +10,8 @@
  * stubbed.
  */
 
-import React from 'react';
 import { render, fireEvent, act } from '@testing-library/react-native';
+import React from 'react';
 import { AppState } from 'react-native';
 
 // Prevent the screen from importing the real keychain at boot.
@@ -39,9 +39,10 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
 }));
 
+import { unwrapSeed, mnemonicToEntropy, generateMnemonic } from '@dina/core';
+
 import RecoveryPhraseScreen from '../../app/recovery-phrase';
 import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
-import { unwrapSeed, mnemonicToEntropy, generateMnemonic } from '@dina/core';
 
 const loadWrappedSeedMock = loadWrappedSeed as jest.MockedFunction<typeof loadWrappedSeed>;
 const unwrapSeedMock = unwrapSeed as jest.MockedFunction<typeof unwrapSeed>;

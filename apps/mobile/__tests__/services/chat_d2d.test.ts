@@ -9,6 +9,10 @@
  * card into the PEER thread.
  */
 
+import { validateServiceGrantRequestBody } from '@dina/protocol';
+
+import { resetThreads, getThread, readLifecycle } from '../../../brain/src/chat/thread';
+import { setD2DSender, getD2DSender } from '../../../core/src/server/routes/d2d_msg';
 import {
   sendChatMessage,
   sendServiceQuery,
@@ -17,9 +21,7 @@ import {
   setServiceQueryDispatcher,
   type ServiceQueryDispatcher,
 } from '../../src/services/chat_d2d';
-import { setD2DSender, getD2DSender } from '../../../core/src/server/routes/d2d_msg';
-import { resetThreads, getThread, readLifecycle } from '../../../brain/src/chat/thread';
-import { validateServiceGrantRequestBody } from '@dina/protocol';
+
 
 const PEER = 'did:plc:testdemoprovider';
 
@@ -50,7 +52,7 @@ describe('sendChatMessage', () => {
   });
 
   it('sends a coordination.request with {text} body and echos locally', async () => {
-    const calls: Array<{ to: string; type: string; body: unknown }> = [];
+    const calls: { to: string; type: string; body: unknown }[] = [];
     setD2DSender(async (to, type, body) => {
       calls.push({ to, type, body });
     });
@@ -71,7 +73,7 @@ describe('sendChatMessage', () => {
   });
 
   it('trims the outgoing text', async () => {
-    const calls: Array<{ body: unknown }> = [];
+    const calls: { body: unknown }[] = [];
     setD2DSender(async (_to, _type, body) => {
       calls.push({ body });
     });
@@ -160,8 +162,8 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
   function makeStubDispatcher(
     taskId = 'sq-q1-deadbeef',
     queryId = 'q1',
-  ): { dispatcher: ServiceQueryDispatcher; calls: Array<Record<string, unknown>> } {
-    const calls: Array<Record<string, unknown>> = [];
+  ): { dispatcher: ServiceQueryDispatcher; calls: Record<string, unknown>[] } {
+    const calls: Record<string, unknown>[] = [];
     const dispatcher: ServiceQueryDispatcher = {
       issueQueryToDID: async (req) => {
         calls.push(req as unknown as Record<string, unknown>);
@@ -340,7 +342,7 @@ describe('sendGrantRequest (Contact Services §5.2 bootstrap)', () => {
   });
 
   it('sends exactly ONE service.grant_request with capability + requested_surface:talk and NO rkey', async () => {
-    const calls: Array<{ to: string; type: string; body: Record<string, unknown> }> = [];
+    const calls: { to: string; type: string; body: Record<string, unknown> }[] = [];
     setD2DSender(async (to, type, body) => {
       calls.push({ to, type, body });
     });
@@ -368,7 +370,7 @@ describe('sendGrantRequest (Contact Services §5.2 bootstrap)', () => {
   });
 
   it('omits intent when blank/absent', async () => {
-    const calls: Array<{ body: Record<string, unknown> }> = [];
+    const calls: { body: Record<string, unknown> }[] = [];
     setD2DSender(async (_to, _type, body) => {
       calls.push({ body });
     });

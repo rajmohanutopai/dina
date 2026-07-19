@@ -93,7 +93,9 @@ describe('forceTerminate (§5.1)', () => {
       runService,
       messageRepo: messages,
       reservationRepo: reservations,
-      nowMsFn: () => NOW,
+      // forceTerminate only fires at/after `drain_deadline_at` (§5.1); the run's
+      // deadline is NOW + drain_deadline_ms, so the sweep clock is past it.
+      nowMsFn: () => NOW + 20_000,
       fenceClassificationJob: (id) => fencedJobs.push(id),
       reconcileClaimed: (id) => {
         messages.transition(id, 'dispatched', 'outcome_unknown', NOW);
@@ -127,6 +129,101 @@ describe('forceTerminate (§5.1)', () => {
       nowMsFn: () => NOW,
     });
     expect(termination.forceTerminate('r').terminated).toBe(false);
+  });
+});
+
+describe('applyTerminationCause monotonicity from committed state (NEW-01/§5.1)', () => {
+  it('a STALE snapshot cannot WEAKEN a committed fencing barrier to permissive', () => {
+    const runs = new InMemoryRunRepository();
+    const runService = new RunService({ repository: runs, nowMsFn: () => NOW, idFn: () => 'r' });
+    const stale = runService.create(params()); // snapshot captured while ACTIVE (no barrier)
+
+    // A fencing expiry barrier commits first (e.g. the sweeper past the hard TTL).
+    const fresh = runs.getById('r');
+    if (fresh === null) throw new Error('run missing');
+    runService.applyTerminationCause(fresh, 'expiry');
+    expect(runs.getById('r')?.drain_strength).toBe('fencing');
+    expect(runs.getById('r')?.drain_cause).toBe('expiry');
+
+    // A permissive exhaustion cause now arrives carrying the STALE (pre-barrier)
+    // snapshot. Deciding monotonicity from the fresh in-tx state (NEW-01) means it
+    // is a no-op — it must NOT overwrite/weaken the committed fencing barrier.
+    runService.applyTerminationCause(stale, 'exhaustion');
+    expect(runs.getById('r')?.drain_strength).toBe('fencing'); // unchanged
+    expect(runs.getById('r')?.drain_cause).toBe('expiry');
+  });
+});
+
+describe('onBarrier — atomic invalidation/fence at barrier SET (RR-01b/R2-02/§5.1)', () => {
+  it('an owner cancel_pending stop fences the uncommitted set + invalidates held reservations NOW', () => {
+    const runs = new InMemoryRunRepository();
+    const messages = new InMemoryMessageRepository();
+    const reservations = new InMemoryReservationRepository();
+    const runService = new RunService({ repository: runs, nowMsFn: () => NOW, idFn: () => 'r' });
+    const run = runService.create(params());
+    messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
+    messages.create(makeMsg({ message_id: 'claimed', run_id: run.run_id, state: 'dispatched' }));
+    reservations.create({
+      reservation_id: 'held', run_id: run.run_id, cursor: 0, state: 'held_by_lock',
+      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1',
+      error_reason: null, error_at: null, lease_expires_at: null, query_correlation_id: null,
+      created_at: NOW, updated_at: NOW,
+    });
+
+    const fencedJobs: string[] = [];
+    const discarded: string[] = [];
+    const termination = new RunTerminationService({
+      runRepo: runs, runService, messageRepo: messages, reservationRepo: reservations, nowMsFn: () => NOW,
+      fenceClassificationJob: (id) => fencedJobs.push(id),
+      discardHeld: (r: ReservationRecord) => discarded.push(r.reservation_id),
+    });
+    // Compose the hook (breaks the RunService ↔ termination cycle).
+    runService.setOnBarrier((r) => termination.onBarrier(r.run_id));
+
+    runService.stop(run.run_id); // cancel_pending → fencing barrier → hook fires NOW
+
+    // The run stays draining (claimed work drains until the deadline) …
+    expect(runs.getById(run.run_id)?.state).toBe('draining');
+    // … but the UNCOMMITTED set + reservations are fenced/invalidated at SET time,
+    // not at the deadline sweep.
+    expect(messages.getById('undecided')?.state).toBe('cancelled');
+    expect(messages.getById('claimed')?.state).toBe('dispatched'); // claimed NOT fenced
+    expect(reservations.getById('held')?.state).toBe('released');
+    expect(discarded).toEqual(['held']); // held ciphertext crypto-shredded at SET
+    expect(fencedJobs).toEqual(['undecided']);
+  });
+
+  it('a PERMISSIVE barrier invalidates outstanding reservations but does NOT fence messages (R2-02/§5.1)', () => {
+    const runs = new InMemoryRunRepository();
+    const messages = new InMemoryMessageRepository();
+    const reservations = new InMemoryReservationRepository();
+    const runService = new RunService({ repository: runs, nowMsFn: () => NOW, idFn: () => 'r' });
+    // finish_pending → a PERMISSIVE drain (decided work still completes).
+    const run = runService.create(params({ on_stop: 'finish_pending' }));
+    messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
+    reservations.create({
+      reservation_id: 'ahead', run_id: run.run_id, cursor: 1, state: 'reserved',
+      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null,
+      error_reason: null, error_at: null, lease_expires_at: NOW + 60_000, query_correlation_id: null,
+      created_at: NOW, updated_at: NOW,
+    });
+
+    const fencedJobs: string[] = [];
+    const termination = new RunTerminationService({
+      runRepo: runs, runService, messageRepo: messages, reservationRepo: reservations, nowMsFn: () => NOW,
+      fenceClassificationJob: (id) => fencedJobs.push(id),
+    });
+    runService.setOnBarrier((r) => termination.onBarrier(r.run_id));
+
+    runService.stop(run.run_id); // finish_pending → permissive drain → hook fires
+
+    expect(runs.getById(run.run_id)?.state).toBe('draining');
+    expect(runs.getById(run.run_id)?.drain_strength).toBe('permissive');
+    // Outstanding (fetch-ahead) reservation invalidated even on a PERMISSIVE barrier …
+    expect(reservations.getById('ahead')?.state).toBe('released');
+    // … but the undecided message is NOT fenced (decided work still completes).
+    expect(messages.getById('undecided')?.state).toBe('classified');
+    expect(fencedJobs).toEqual([]);
   });
 });
 

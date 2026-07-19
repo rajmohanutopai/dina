@@ -91,10 +91,10 @@ export function isToolAllowedInStage(toolName: string, stage: string): boolean {
  * Keeps the first occurrence of each unique key.
  */
 export function deduplicateBriefingItems(
-  items: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
+  items: Record<string, unknown>[],
+): Record<string, unknown>[] {
   const seen = new Set<string>();
-  const result: Array<Record<string, unknown>> = [];
+  const result: Record<string, unknown>[] = [];
 
   for (const item of items) {
     const key = `${item.source_id ?? ''}:${item.type ?? ''}`;
@@ -113,7 +113,7 @@ export function deduplicateBriefingItems(
  *
  * TODO: Requires Core HTTP client (task 3.2). Stub for now.
  */
-export async function regenerateBriefingFromSource(): Promise<Array<Record<string, unknown>>> {
+export async function regenerateBriefingFromSource(): Promise<Record<string, unknown>[]> {
   // TODO: Phase 3.2 — call Core API to fetch recent Tier 3 items
   return [];
 }

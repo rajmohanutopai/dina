@@ -11,8 +11,8 @@
  *     accessibilityState, not the visual style).
  */
 
-import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import React from 'react';
 
 import { ViewerFilterChipsView } from '../../src/peerlens/components/viewer_filter_chips_view';
 import {

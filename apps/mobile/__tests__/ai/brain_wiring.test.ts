@@ -10,10 +10,11 @@
  * orchestrator + timeout wrapper actually do with it.
  */
 
-import type { LanguageModel } from 'ai';
-import { registerBrainReasoningLLM } from '../../src/ai/brain_wiring';
-import { resetReasoningLLM } from '../../../brain/src/pipeline/chat_reasoning';
 import { resetChatDefaults } from '../../../brain/src/chat/orchestrator';
+import { resetReasoningLLM } from '../../../brain/src/pipeline/chat_reasoning';
+import { registerBrainReasoningLLM } from '../../src/ai/brain_wiring';
+
+import type { LanguageModel } from 'ai';
 
 // A minimal LanguageModel-alike. The `ai` SDK's `generateText` reads a
 // small set of fields — we stub enough for our wrapper's one call path.
@@ -44,7 +45,7 @@ function makeMockModel(
       const userMsg = prompt.find((m: { role: string }) => m.role === 'user');
       const userText =
         userMsg !== undefined && Array.isArray((userMsg as { content: unknown[] }).content)
-          ? ((userMsg as { content: Array<{ text?: string }> }).content[0]?.text ?? '')
+          ? ((userMsg as { content: { text?: string }[] }).content[0]?.text ?? '')
           : '';
       behaviour.onCall?.({
         system: systemMsg !== undefined ? (systemMsg as { content: string }).content : undefined,
@@ -82,7 +83,7 @@ beforeEach(() => {
 
 describe('registerBrainReasoningLLM — Brain orchestrator sees our provider', () => {
   it('passes query + context through to the registered model', async () => {
-    const seen: Array<{ system: string | undefined; prompt: string | undefined }> = [];
+    const seen: { system: string | undefined; prompt: string | undefined }[] = [];
     const model = makeMockModel({
       onCall: (args) => seen.push({ system: args.system, prompt: args.prompt }),
       response: 'from mock',
@@ -120,7 +121,7 @@ describe('makeTimedReasoningLLM — abort-signal timeout survives a stalled call
   // because fake timers also intercept the AI SDK's internal
   // setTimeouts, which hangs in cross-realm promise plumbing.
   it('aborts the underlying call when the timeout elapses', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { makeTimedReasoningLLM } =
       require('../../src/ai/brain_wiring') as typeof import('../../src/ai/brain_wiring');
 
@@ -152,7 +153,7 @@ describe('makeTimedReasoningLLM — abort-signal timeout survives a stalled call
   });
 
   it('returns the text unchanged on a successful call', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const { makeTimedReasoningLLM } =
       require('../../src/ai/brain_wiring') as typeof import('../../src/ai/brain_wiring');
     const model = makeMockModel({ response: 'hello world' });

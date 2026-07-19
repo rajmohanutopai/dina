@@ -3,12 +3,14 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
+
 import {
   SYNC_STATUS_PATH,
   registerSyncStatusRoute,
 } from '../src/admin/sync_status';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

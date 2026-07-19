@@ -30,8 +30,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4i task 4.69.
  */
 
-import { deriveKEK, ARGON2ID_PARAMS } from '@dina/core';
 import { randomBytes } from 'node:crypto';
+
+import { deriveKEK, ARGON2ID_PARAMS } from '@dina/core';
 
 /**
  * One passphrase record per persona. Flat + serializable so the

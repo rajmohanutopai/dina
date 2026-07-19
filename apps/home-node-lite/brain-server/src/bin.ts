@@ -33,16 +33,16 @@ bootServer()
   })
   .catch((err: unknown) => {
     if (err instanceof ConfigError) {
-      // eslint-disable-next-line no-console
+       
       console.error(`[brain-server] config error: ${err.message}`);
       for (const issue of err.issues) {
-        // eslint-disable-next-line no-console
+         
         console.error(`  - ${issue.path}: ${issue.message}`);
       }
       process.exit(78); // EX_CONFIG per sysexits.h
       return;
     }
-    // eslint-disable-next-line no-console
+     
     console.error('[brain-server] fatal:', err);
     process.exit(1);
   });

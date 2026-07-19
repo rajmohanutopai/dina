@@ -10,6 +10,7 @@
 
 import { gcm } from '@noble/ciphers/aes.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
+
 import { deriveKEK, ARGON2ID_PARAMS } from './argon2id';
 
 export interface WrappedSeed {

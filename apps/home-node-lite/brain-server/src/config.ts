@@ -10,11 +10,12 @@
  * can rely on a single naming convention for both Node processes.
  */
 
+import { z } from 'zod';
+
 import {
   HomeNodeEndpointConfigError,
   resolveServerHostedDinaEndpoints,
 } from '@dina/home-node';
-import { z } from 'zod';
 
 const NetworkSchema = z.object({
   /** Bind address. Default: loopback only. */
@@ -77,7 +78,7 @@ export type BrainServerConfig = z.infer<typeof BrainServerConfigSchema>;
 
 export class ConfigError extends Error {
   constructor(
-    public readonly issues: Array<{ path: string; message: string }>,
+    public readonly issues: { path: string; message: string }[],
   ) {
     super(
       `brain-server config invalid (${issues.length} issue${issues.length === 1 ? '' : 's'})`,

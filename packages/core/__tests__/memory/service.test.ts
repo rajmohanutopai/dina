@@ -150,7 +150,7 @@ describe('MemoryService.toc — MergesAcrossPersonas (WM-TEST-01 last case)', ()
   it('a missing persona (locked mid-read) is silently skipped and other personas still return', async () => {
     const general = makeRepo();
     await general.touch({ topic: 'alpha', kind: 'theme', nowUnix: T0 });
-    const warnings: Array<Record<string, unknown>> = [];
+    const warnings: Record<string, unknown>[] = [];
 
     const svc = new MemoryService({
       resolve: (p) => (p === 'general' ? general : null),
@@ -220,7 +220,7 @@ describe('MemoryService.toc — errors and limits', () => {
     };
     const general = makeRepo();
     await await general.touch({ topic: 'alpha', kind: 'theme', nowUnix: T0 });
-    const warnings: Array<Record<string, unknown>> = [];
+    const warnings: Record<string, unknown>[] = [];
     const svc = makeService({ general, stale: broken }, { onWarning: (e) => warnings.push(e) });
     const toc = await svc.toc(undefined, 10);
     expect(toc.map((e) => e.topic)).toEqual(['alpha']);
@@ -244,7 +244,7 @@ describe('MemoryService.toc — errors and limits', () => {
         /* unused */
       },
     };
-    const warnings: Array<Record<string, unknown>> = [];
+    const warnings: Record<string, unknown>[] = [];
     const svc = makeService({ broken }, { onWarning: (e) => warnings.push(e) });
     expect(await svc.toc(undefined, 10)).toEqual([]);
     expect(warnings[0]).toMatchObject({

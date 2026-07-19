@@ -8,6 +8,35 @@
  */
 
 import {
+  TEST_ED25519_SEED,
+  TEST_PASSPHRASE,
+  makeEvent,
+  makeFakePeopleRepo,
+  resetFactoryCounters,
+} from '@dina/test-harness';
+
+import {
+  assembleBriefing,
+  registerEngagementProvider,
+  registerApprovalProvider,
+  resetBriefingState,
+} from '../../../brain/src/briefing/assembly';
+import {
+  classifyPriority,
+  resetDNDState,
+  resetEscalationState,
+  resetUserOverrides,
+  resetQuietHoursState,
+  resetBatchingState,
+} from '../../../brain/src/guardian/silence';
+import { evaluateDelegation, clearBlacklist } from '../../../brain/src/mcp/delegation';
+import { assembleNudge } from '../../../brain/src/nudge/assembler';
+import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+import { getPublicKey } from '../../../core/src/crypto/ed25519';
+import { createArchive, verifyArchive, readManifest } from '../../../core/src/export/archive';
+import { evaluateIntent } from '../../../core/src/gatekeeper/intent';
+import { recoverFromMnemonic } from '../../../core/src/onboarding/recovery';
+import {
   signAttestation,
   verifyAttestation,
 } from '../../../core/src/peerlens/pds_publish';
@@ -26,37 +55,10 @@ import {
   checkGrant,
   endSession,
 } from '../../../core/src/session/lifecycle';
-import { evaluateIntent } from '../../../core/src/gatekeeper/intent';
-import { evaluateDelegation, clearBlacklist } from '../../../brain/src/mcp/delegation';
-import {
-  assembleBriefing,
-  registerEngagementProvider,
-  registerApprovalProvider,
-  resetBriefingState,
-} from '../../../brain/src/briefing/assembly';
 import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
-import { createArchive, verifyArchive, readManifest } from '../../../core/src/export/archive';
-import { recoverFromMnemonic } from '../../../core/src/onboarding/recovery';
 import { runOnboarding } from '../../../core/src/onboarding/portable';
-import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
 import { setPeopleRepository } from '../../../core/src/people/repository';
-import {
-  classifyPriority,
-  resetDNDState,
-  resetEscalationState,
-  resetUserOverrides,
-  resetQuietHoursState,
-  resetBatchingState,
-} from '../../../brain/src/guardian/silence';
-import { assembleNudge } from '../../../brain/src/nudge/assembler';
-import { getPublicKey } from '../../../core/src/crypto/ed25519';
-import {
-  TEST_ED25519_SEED,
-  TEST_PASSPHRASE,
-  makeEvent,
-  makeFakePeopleRepo,
-  resetFactoryCounters,
-} from '@dina/test-harness';
+
 
 describe('User Stories', () => {
   beforeEach(() => {

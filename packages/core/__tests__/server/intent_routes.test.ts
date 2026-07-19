@@ -21,21 +21,31 @@
  *   pending_approval → cancel  → status='denied'
  */
 
-import { createCoreRouter } from '../../src/server/core_server';
-import type { CoreRequest } from '../../src/server/router';
-import { signRequest } from '../../src/auth/canonical';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { deriveDIDKey } from '../../src/identity/did';
-import {
-  registerPublicKeyResolver,
-  resetMiddlewareState,
-} from '../../src/auth/middleware';
+import { randomBytes as nodeRandomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { randomBytes } from '@noble/ciphers/utils.js';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   registerService,
   registerDevice as registerDeviceDID,
   resetCallerTypeState,
   setDeviceRoleResolver,
 } from '../../src/auth/caller_type';
+import { signRequest } from '../../src/auth/canonical';
+import type { CoreRequest } from '../../src/server/router';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
+import {
+  registerPublicKeyResolver,
+  resetMiddlewareState,
+} from '../../src/auth/middleware';
+import { createCoreRouter } from '../../src/server/core_server';
 import {
   InMemoryWorkflowRepository,
   SQLiteWorkflowRepository,
@@ -44,13 +54,9 @@ import {
 } from '../../src/workflow/repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { NodeSQLiteAdapter } from '@dina/storage-node';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
-import { randomBytes } from '@noble/ciphers/utils.js';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { randomBytes as nodeRandomBytes } from 'node:crypto';
+
+
+
 
 interface Actor {
   did: string;

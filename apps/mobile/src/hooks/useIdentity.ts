@@ -45,7 +45,7 @@ export interface MnemonicBackup {
 /** In-memory identity state. */
 let currentSeed: Uint8Array | null = null;
 let currentMnemonic: string | null = null;
-let identityCreatedAt: number = 0;
+let identityCreatedAt = 0;
 let mnemonicBackup: MnemonicBackup | null = null;
 
 const MNEMONIC_DISPLAY_TTL_MS = MNEMONIC_TTL;

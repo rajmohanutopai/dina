@@ -14,6 +14,8 @@
  * Write path: PUT /v1/policy/actions/:action, DELETE /v1/policy/actions/:action.
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useNavigation } from 'expo-router';
 import React, { useState, useCallback, useLayoutEffect } from 'react';
 import {
   View,
@@ -29,18 +31,18 @@ import {
   Modal,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { useFocusEffect, useNavigation } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, textStyles } from '../src/theme';
+
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { colors, spacing, radius, textStyles } from '../src/theme';
+
 import type { ActionPolicyEntry, RiskLevel } from '@dina/core';
 
-type RiskGroup = {
+interface RiskGroup {
   title: string;
   risk: RiskLevel;
   description: string;
   data: ActionPolicyEntry[];
-};
+}
 
 const RISK_ORDER: RiskLevel[] = ['SAFE', 'MODERATE', 'HIGH', 'BLOCKED'];
 
@@ -127,7 +129,7 @@ export default function PolicyScreen() {
       const node = getBootedNode();
       if (node === null) return;
 
-      const options: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }> = [
+      const options: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }[] = [
         { text: 'Cancel', style: 'cancel' },
         ...RISK_ORDER.filter((r) => r !== entry.risk).map((r) => ({
           text: RISK_META[r].label,

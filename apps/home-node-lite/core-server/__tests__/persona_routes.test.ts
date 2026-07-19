@@ -3,12 +3,10 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
+
+import { ApprovalRegistry } from '../src/persona/approval_registry';
 import { AutoLockRegistry } from '../src/persona/auto_lock';
 import { PassphraseRegistry } from '../src/persona/passphrase_unlock';
-import { SessionGrantRegistry } from '../src/persona/session_grants';
-import { ApprovalRegistry } from '../src/persona/approval_registry';
 import {
   loadPersonaConfig,
   type LoadedPersonaConfig,
@@ -17,6 +15,10 @@ import {
   registerPersonaRoutes,
   type PersonaListEntry,
 } from '../src/persona/routes';
+import { SessionGrantRegistry } from '../src/persona/session_grants';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

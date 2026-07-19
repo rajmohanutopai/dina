@@ -18,7 +18,6 @@
  * test loop without the mobile dev-client.
  */
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import {
   handleChat,
@@ -27,8 +26,10 @@ import {
   subscribeToThread,
   createServiceQueryDeliverer,
 } from '@dina/brain/chat';
-import type { WorkflowEvent, WorkflowTask } from '@dina/core';
+
 import type { ServiceQueryEventDetails } from '@dina/brain';
+import type { WorkflowEvent, WorkflowTask } from '@dina/core';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface RegisterChatRoutesOptions {
   /** Route prefix override (defaults to `/api/v1`). */

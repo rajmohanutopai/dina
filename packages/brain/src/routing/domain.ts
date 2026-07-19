@@ -439,7 +439,7 @@ export function classifyPersonas(input: ClassificationInput): string[] {
   const sourceHint = SOURCE_HINTS[source];
   if (sourceHint !== undefined) return [sourceHint];
 
-  const scored: Array<{ persona: string; confidence: number }> = [];
+  const scored: { persona: string; confidence: number }[] = [];
   for (const domain of DOMAINS) {
     const { confidence } = scoreDomain(text, domain);
     if (confidence >= 0.5) {

@@ -11,9 +11,10 @@ import {
   type PreferredContactsClient,
   type FindPreferredProviderResult,
 } from '../../src/reasoning/service_tools';
-import type { Contact } from '@dina/core';
+
 import type { ServiceProfile } from '../../src/appview_client/http';
 import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
+import type { Contact } from '@dina/core';
 
 function mockFetch(impl: (url: string, init: RequestInit) => Response | Promise<Response>) {
   return jest.fn(async (input, init) =>
@@ -46,7 +47,7 @@ describe('createSearchCapabilitiesTool — local intentRoutable re-filter (defen
       },
     });
     const result = (await tool.execute({ intent: 'anything' })) as {
-      capabilities: Array<{ canonical: string }>;
+      capabilities: { canonical: string }[];
     };
     expect(result.capabilities.map((c) => c.canonical)).toEqual(['eta_query']);
   });
@@ -173,7 +174,7 @@ describe('createSearchProviderServicesTool', () => {
       lng: -122.41,
       radiusKm: 5,
     });
-    const profiles = result as Array<{
+    const profiles = result as {
       did: string;
       capability_schemas?: Record<
         string,
@@ -184,7 +185,7 @@ describe('createSearchProviderServicesTool', () => {
           default_ttl_seconds?: number;
         }
       >;
-    }>;
+    }[];
     expect(profiles).toHaveLength(1);
     expect(profiles[0].did).toBe('did:plc:demoprovider');
     expect(profiles[0].capability_schemas).toEqual({
@@ -208,9 +209,7 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
-      Record<string, unknown>
-    >;
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
     expect(profile.service_uri).toBe('at://did:plc:demoprovider/com.dinakernel.service.profile/route-42');
   });
 
@@ -229,9 +228,7 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
-      Record<string, unknown>
-    >;
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
     expect(profile.service_uri).toBeUndefined();
   });
 
@@ -263,9 +260,7 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
-      Record<string, unknown>
-    >;
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
     expect(profile.capability_schemas).toBeUndefined();
   });
 
@@ -294,9 +289,7 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Array<
-      Record<string, unknown>
-    >;
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
     const schemas = profile.capability_schemas as Record<string, Record<string, unknown>>;
     expect(schemas.eta_query.schema_hash).toBe('sha256:abc');
     expect(schemas.eta_query.description).toBe('Returns ETA in minutes for a route');
@@ -307,7 +300,7 @@ describe('createSearchProviderServicesTool', () => {
 
 describe('createQueryServiceTool', () => {
   it('calls orchestrator.issueQueryToDID with the exact operator_did + schema_hash (issue #7/#8)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator: {
         async issueQueryToDID(req) {
@@ -349,7 +342,7 @@ describe('createQueryServiceTool', () => {
   });
 
   it('forwards a chosen service_uri to the orchestrator (#1, multi-listing per DID)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator: {
         async issueQueryToDID(req) {
@@ -374,7 +367,7 @@ describe('createQueryServiceTool', () => {
   });
 
   it('omits service_uri when the model did not pass one (#1)', async () => {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator: {
         async issueQueryToDID(req) {
@@ -426,7 +419,7 @@ describe('createQueryServiceTool', () => {
   // -------------------------------------------------------------------
 
   function makeOrch() {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const orchestrator: Pick<ServiceQueryOrchestrator, 'issueQueryToDID'> = {
       async issueQueryToDID(req) {
         calls.push(req as unknown as Record<string, unknown>);
@@ -553,7 +546,7 @@ describe('createQueryServiceTool', () => {
   });
 
   it('a FAILED first dispatch does not burn the single-dispatch budget', async () => {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     let first = true;
     const orchestrator: Pick<ServiceQueryOrchestrator, 'issueQueryToDID'> = {
       async issueQueryToDID(req) {
@@ -657,7 +650,7 @@ describe('createQueryServiceTool', () => {
     // With an explicit service_uri, the resolved listing is authoritative.
     const UNLISTED_URI = 'at://did:plc:drcarl/com.dinakernel.service.profile/unlisted-1';
     const { orchestrator, calls } = makeOrch();
-    const logEntries: Array<Record<string, unknown>> = [];
+    const logEntries: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator,
       logger: (e) => logEntries.push(e),
@@ -751,7 +744,7 @@ describe('createQueryServiceTool', () => {
 
   it('WM-BRAIN-06d: AppView throws → logs + dispatch still succeeds without hash', async () => {
     const { orchestrator, calls } = makeOrch();
-    const logEntries: Array<Record<string, unknown>> = [];
+    const logEntries: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator,
       appViewClient: {
@@ -866,7 +859,7 @@ describe('createQueryServiceTool', () => {
 
   it('GAP-AUTOFILL-01: fills requester-identity fields with "self" when caller omits them', async () => {
     const { orchestrator, calls } = makeOrch();
-    const logEntries: Array<Record<string, unknown>> = [];
+    const logEntries: Record<string, unknown>[] = [];
     const tool = createQueryServiceTool({
       orchestrator,
       appViewClient: {
@@ -1058,7 +1051,7 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
   });
 
   it('core throws → empty providers + message (fail-soft)', async () => {
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const tool = createFindPreferredProviderTool({
       core: coreWith(new Error('core down')),
       logger: (e) => logs.push(e),
@@ -1100,7 +1093,7 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
       trustLevel: 'trusted',
       preferredFor: ['dental'],
     });
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const tool = createFindPreferredProviderTool({
       core: coreWith([drcarl]),
       appViewClient: {
@@ -1214,7 +1207,7 @@ describe('createFindPreferredProviderTool (PC-BRAIN-07)', () => {
 
 describe('createQueryServiceTool — listing disambiguation (P2)', () => {
   function captureOrch() {
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const orchestrator: Pick<ServiceQueryOrchestrator, 'issueQueryToDID'> = {
       async issueQueryToDID(req) {
         calls.push(req as unknown as Record<string, unknown>);
@@ -1334,7 +1327,7 @@ describe('createQueryServiceTool — listing disambiguation (P2)', () => {
     // picks store-3 (schemaHash H3). The autofetched schema_hash +
     // service_name MUST come from store-3 — not whichever listing the index
     // ordered first (the old `matchedProfiles[0]` bug).
-    const calls: Array<{ schemaHash?: string; serviceName?: string }> = [];
+    const calls: { schemaHash?: string; serviceName?: string }[] = [];
     const orchestrator = {
       async issueQueryToDID(req: { schemaHash?: string; serviceName?: string; toDID: string }) {
         calls.push({ schemaHash: req.schemaHash, serviceName: req.serviceName });

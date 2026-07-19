@@ -8,6 +8,7 @@ import {
   deriveAuthoredAttestationRows,
   type AuthoredAttestationRow,
 } from '../../src/peerlens/authored_attestations_data';
+
 import type { SearchAttestationHit } from '../../src/peerlens/appview_runtime';
 
 function makeHit(overrides: Partial<SearchAttestationHit> = {}): SearchAttestationHit {
@@ -214,7 +215,7 @@ describe('deriveAuthoredAttestationRows', () => {
     // Pin the contract that callers can pass `ReadonlyArray<...>` —
     // the runner returns frozen state, and we don't want the caller
     // to have to cast.
-    const ro: ReadonlyArray<SearchAttestationHit> = [makeHit()];
+    const ro: readonly SearchAttestationHit[] = [makeHit()];
     const rows: AuthoredAttestationRow[] = deriveAuthoredAttestationRows(ro);
     expect(rows).toHaveLength(1);
   });

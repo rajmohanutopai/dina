@@ -22,21 +22,11 @@
  * No HTTP, no real LLM, no real vault file. Pure in-memory wiring.
  */
 
-import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 import {
   createPersona,
   resetPersonaState,
-} from '@dina/core';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '@dina/core';
-import {
-  AskRegistry,
-  InMemoryAskAdapter,
-  type AskEvent,
-} from '../../src/ask/ask_registry';
+ clearVaults, storeItem } from '@dina/core';
+
 import {
   AskApprovalGateway,
   type ApprovalSource,
@@ -46,15 +36,26 @@ import {
   type AskApprovalResumerEvent,
 } from '../../src/ask/ask_approval_resumer';
 import {
+  AskRegistry,
+  InMemoryAskAdapter,
+  type AskEvent,
+} from '../../src/ask/ask_registry';
+import {
   buildAgenticAskPipeline,
   type AgenticAskPipeline,
   type BuildAgenticAskPipelineInput,
 } from '../../src/composition/agentic_ask';
+import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 import {
   resumeAgenticTurn,
   runAgenticTurn,
   type AgenticLoopResult,
 } from '../../src/reasoning/agentic_loop';
+import {
+  setAccessiblePersonas,
+  resetReasoningProvider,
+} from '../../src/vault_context/assembly';
+
 import type {
   ChatMessage,
   ChatOptions,
@@ -62,7 +63,7 @@ import type {
   LLMProvider,
   ToolCall,
 } from '../../src/llm/adapters/provider';
-import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 const REQUESTER = 'did:key:zRequester';
 const SYSTEM_PROMPT = 'You answer the user with the help of vault tools.';
@@ -330,7 +331,7 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
       JSON.stringify(firstResult.pausedState),
     );
 
-    let parked = await registry.get(askId);
+    const parked = await registry.get(askId);
     expect(parked?.status).toBe('pending_approval');
     expect(parked?.approvalId).toBe('appr-ask-1-health');
     expect(parked?.pausedStateJson).toBeDefined();

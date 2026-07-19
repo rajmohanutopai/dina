@@ -5,6 +5,7 @@
  */
 
 import { applyTieredLoading } from '../../src/vault/tiered_content';
+
 import type { TieredItem } from '../../src/vault/tiered_content';
 
 describe('Tiered Content Loading', () => {

@@ -21,8 +21,8 @@
  * multibaseToPublicKey).
  */
 
-import { DIDResolver } from '@dina/core/runtime';
 import { getContact, multibaseToPublicKey } from '@dina/core';
+import { DIDResolver } from '@dina/core/runtime';
 
 export interface MakeResolveSenderOptions {
   selfDID: string;
@@ -52,7 +52,7 @@ export function makeResolveSender(
   const onError =
     opts.onResolveError ??
     ((did, err) => {
-      // eslint-disable-next-line no-console
+       
       console.warn(`[resolveSender] ${did} failed:`, err.message);
     });
 
@@ -93,7 +93,7 @@ export function makeResolveSender(
  * quarantine the envelope.
  */
 export function pickEd25519VerificationMethod(
-  vms: Array<{ id?: string; type?: string; publicKeyMultibase?: string }>,
+  vms: { id?: string; type?: string; publicKeyMultibase?: string }[],
 ): { publicKeyMultibase?: string } | null {
   for (const vm of vms) {
     if (typeof vm.id === 'string' && vm.id.endsWith('#dina_signing')) {

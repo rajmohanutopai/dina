@@ -24,7 +24,7 @@ describe('Share Export Hook (9.7)', () => {
 
   describe('with mock native modules', () => {
     let shared: string[];
-    let written: Array<{ data: Uint8Array; name: string }>;
+    let written: { data: Uint8Array; name: string }[];
     let deleted: string[];
 
     beforeEach(() => {

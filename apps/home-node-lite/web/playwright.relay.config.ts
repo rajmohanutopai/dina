@@ -10,6 +10,7 @@
  * Run:    npm run -w @dina/home-node-lite-web-e2e test:e2e:relay
  */
 import path from 'node:path';
+
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({

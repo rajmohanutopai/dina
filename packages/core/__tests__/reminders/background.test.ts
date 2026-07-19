@@ -5,15 +5,15 @@
  * and fires reminders automatically.
  */
 
-import { startReminderScheduler, resetReminderScheduler } from '../../src/reminders/background';
-import { registerNotificationHandler, resetScheduler, tick } from '../../src/reminders/scheduler';
-import { createReminder, resetReminderState } from '../../src/reminders/service';
 import {
   getRegisteredTimers,
   clearTimers,
   startTimers,
   stopTimers,
 } from '../../src/background/timers';
+import { startReminderScheduler, resetReminderScheduler } from '../../src/reminders/background';
+import { registerNotificationHandler, resetScheduler, tick } from '../../src/reminders/scheduler';
+import { createReminder, resetReminderState } from '../../src/reminders/service';
 
 describe('Reminder Scheduler Background Wiring', () => {
   beforeEach(() => {

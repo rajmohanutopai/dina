@@ -7,8 +7,9 @@
  * Source: core/test/pii_handler_test.go, brain/tests/test_pii.py
  */
 
-import { scrubTier1, rehydrate, scrubProcessRehydrate } from '../../src/pii/scrub';
 import { PII_TEST_CASES } from '@dina/test-harness';
+
+import { scrubTier1, rehydrate, scrubProcessRehydrate } from '../../src/pii/scrub';
 
 describe('PII Scrub/Rehydrate Integration', () => {
   describe('scrubTier1', () => {

@@ -4,6 +4,11 @@
  * Source: ARCHITECTURE.md Task 2.21
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealEncrypt } from '../../src/crypto/nacl';
 import {
   handleIncomingMessage,
   classifyMessageType,
@@ -11,10 +16,7 @@ import {
   registerD2DHandler,
   resetMessageRouter,
 } from '../../src/relay/message_router';
-import { sealEncrypt } from '../../src/crypto/nacl';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const recipientPriv = TEST_ED25519_SEED;
 const recipientPub = getPublicKey(recipientPriv);

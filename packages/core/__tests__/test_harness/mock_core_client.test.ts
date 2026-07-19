@@ -10,8 +10,10 @@
  */
 
 import { MockCoreClient } from '@dina/test-harness';
-import type { CoreClient } from '../../src/client/core-client';
+
 import { WorkflowConflictError } from '../../src';
+
+import type { CoreClient } from '../../src/client/core-client';
 
 describe('MockCoreClient (task 1.34)', () => {
   // Compile-time assertion: any drift in CoreClient that MockCoreClient

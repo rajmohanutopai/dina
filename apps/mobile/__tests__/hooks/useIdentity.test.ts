@@ -4,6 +4,8 @@
  * Source: ARCHITECTURE.md Task 4.14
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   initIdentity,
   getIdentityInfo,
@@ -14,7 +16,6 @@ import {
   hasIdentity,
   resetIdentityHook,
 } from '../../src/hooks/useIdentity';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const TEST_MNEMONIC =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';

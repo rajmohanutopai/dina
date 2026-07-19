@@ -264,7 +264,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
     });
 
     it('fires searched event with result count', async () => {
-      type Ev = { kind: 'searched'; capability: string | undefined; resultCount: number };
+      interface Ev { kind: 'searched'; capability: string | undefined; resultCount: number }
       const events: Ev[] = [];
       const search = createServiceSearchClient({
         fetchFn: stubFetch(okBody([match(), match({ name: 'X' })])),

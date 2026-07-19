@@ -7,11 +7,12 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import { Linking } from 'react-native';
 
+import { addLifecycleMessage, getThread, resetThreads, type ChatMessage } from '@dina/brain/chat';
+
 import {
   InlineMissingCapabilityCard,
   DINA_SERVICES_GUIDE_URL,
 } from '../../src/components/InlineMissingCapabilityCard';
-import { addLifecycleMessage, getThread, resetThreads, type ChatMessage } from '@dina/brain/chat';
 
 const THREAD = 'test-thread';
 

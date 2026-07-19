@@ -133,6 +133,15 @@ describe('risk gate (§6.3)', () => {
     messages.create(makeMsg({ state: 'classified', decision: null }));
     expect(dispatch.evaluateRisk('m1').state).toBe('policy_refused');
   });
+
+  it('holds (does NOT authorize) a SAFE action while the persona is LOCKED (F6/§18)', () => {
+    const { messages, dispatch } = setup({ personaOpen: false });
+    messages.create(makeMsg({ risk_class: 'SAFE' }));
+    // Even a SAFE action must not advance to risk_authorized under a locked
+    // persona — it holds `approved` and re-gates on unlock.
+    expect(dispatch.evaluateRisk('m1')).toEqual({ state: 'risk_pending' });
+    expect(messages.getById('m1')?.state).toBe('approved');
+  });
 });
 
 describe('atomic outbox claim (§8)', () => {
@@ -191,7 +200,11 @@ describe('completion advancement (§6.2)', () => {
       messageRepo: messages,
       receiptRepo: receipts,
       nowMsFn: () => NOW,
-      verifyReceipt: over.verify,
+      // These suites exercise the ADVANCEMENT state machine, so they stand in a
+      // validly-signed receipt (verifier passes) unless a case explicitly injects
+      // a failing verifier. The verifier is fail-closed by default (an unwired
+      // verifier rejects), so a passing stub is required to reach advancement.
+      verifyReceipt: over.verify ?? (() => true),
     });
     return { messages, runs, receipts, completion, delegationId: claim.delegation_id };
   }
@@ -230,7 +243,12 @@ describe('completion advancement (§6.2)', () => {
     messages.create(makeMsg({ state: 'risk_authorized', decision_revision: 7 }));
     const claim = dispatch.claimDispatch('m1');
     if (!claim.claimed) throw new Error('claim failed');
-    const completion = new CompletionService({ messageRepo: messages, receiptRepo: receipts, nowMsFn: () => NOW });
+    const completion = new CompletionService({
+      messageRepo: messages,
+      receiptRepo: receipts,
+      nowMsFn: () => NOW,
+      verifyReceipt: () => true,
+    });
     expect(completion.ingestCompletion(receipt(claim.delegation_id))).toBe('verified_pending');
     expect(messages.getById('m1')?.state).toBe('sending');
     // now the send completes; the recovery pass advances the pending receipt
@@ -241,6 +259,31 @@ describe('completion advancement (§6.2)', () => {
     expect(completion.recoverAdvance()).toBe(0);
   });
 
+  it('recovery finishes a receipt stranded verified_pending by a crash after the transition (F13)', () => {
+    const { messages, receipts, dispatch } = setup();
+    messages.create(makeMsg({ state: 'risk_authorized', decision_revision: 7 }));
+    const claim = dispatch.claimDispatch('m1');
+    if (!claim.claimed) throw new Error('claim failed');
+    const completion = new CompletionService({
+      messageRepo: messages,
+      receiptRepo: receipts,
+      nowMsFn: () => NOW,
+      verifyReceipt: () => true,
+    });
+    expect(completion.ingestCompletion(receipt(claim.delegation_id))).toBe('verified_pending');
+    dispatch.markDispatched('m1');
+    // Simulate the crash: the lifecycle transition (dispatched → completed)
+    // committed, but the process died BEFORE markAdvanced — the receipt is left
+    // verified_pending, and the plain CAS in the recovery pass can no longer fire.
+    messages.transition('m1', 'dispatched', 'completed', NOW);
+    expect(receipts.getByDelegationId(claim.delegation_id)?.receipt_state).toBe('verified_pending');
+    // Recovery must idempotently FINISH the stranded receipt, not leave it forever
+    // occupying the bounded recovery page.
+    expect(completion.recoverAdvance()).toBe(1);
+    expect(receipts.getByDelegationId(claim.delegation_id)?.receipt_state).toBe('advanced');
+    expect(completion.recoverAdvance()).toBe(0);
+  });
+
   it('a late completion (message already outcome_unknown) is append-only evidence', () => {
     const { messages, receipts, dispatch } = setup();
     messages.create(makeMsg({ state: 'risk_authorized', decision_revision: 7 }));
@@ -248,7 +291,12 @@ describe('completion advancement (§6.2)', () => {
     if (!claim.claimed) throw new Error('claim failed');
     dispatch.markDispatched('m1');
     messages.transition('m1', 'dispatched', 'outcome_unknown', NOW); // deadline hit first
-    const completion = new CompletionService({ messageRepo: messages, receiptRepo: receipts, nowMsFn: () => NOW });
+    const completion = new CompletionService({
+      messageRepo: messages,
+      receiptRepo: receipts,
+      nowMsFn: () => NOW,
+      verifyReceipt: () => true,
+    });
     expect(completion.ingestCompletion(receipt(claim.delegation_id))).toBe('reconciliation_evidence');
     expect(messages.getById('m1')?.state).toBe('outcome_unknown'); // not mutated
     const ev = JSON.parse(String(messages.getById('m1')?.reconciliation_evidence)) as unknown[];

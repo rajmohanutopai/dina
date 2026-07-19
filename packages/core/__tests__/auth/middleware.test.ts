@@ -4,15 +4,17 @@
  * Source: ARCHITECTURE.md Section 2.4
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { registerService, resetCallerTypeState } from '../../src/auth/caller_type';
+import { signRequest } from '../../src/auth/canonical';
 import {
   authenticateRequest,
   registerPublicKeyResolver,
   resetMiddlewareState,
 } from '../../src/auth/middleware';
-import { signRequest } from '../../src/auth/canonical';
 import { getPublicKey } from '../../src/crypto/ed25519';
-import { registerService, resetCallerTypeState } from '../../src/auth/caller_type';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const did = 'did:key:z6MkBrainService';

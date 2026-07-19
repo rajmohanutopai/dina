@@ -154,7 +154,7 @@ import {
   StagingDrainScheduler,
   type StagingDrainOptions,
 } from '@dina/brain/runtime';
-import { stagingGetItem, getContact } from '@dina/core';
+import { stagingGetItem, getContact, MsgTypeServiceResponse } from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import { resolveSearchableCapability } from '@dina/protocol';
@@ -210,6 +210,19 @@ export interface CreateNodeOptions {
   resolveSender?: (did: string) => Promise<{ keys: Uint8Array[]; trust: string }>;
   /** CoreRouter — receives inbound MsgBox RPC envelopes via in-process dispatch. */
   coreRouter?: CoreRouter;
+  /**
+   * ISVC-10 — the interactive-run pull loop (built in `boot_service.ts`, which
+   * holds the identity DB). A run-correlated provider `service.response` is
+   * consumed by `handleServiceResponse` FIRST inside `onBypassedD2D` (it verifies
+   * at the §6.2 trust boundary + ingests, or rejects — either way returns `true`
+   * so it never falls through to the requester dispatcher). `stop` is registered
+   * as a disposer so the pacer/sweeper timers clear on node teardown. Structural
+   * subset of `RunPlaneNode` so the caller can pass it directly.
+   */
+  runPlane?: {
+    handleServiceResponse: (senderDID: string, body: unknown) => Promise<boolean>;
+    stop: () => void | Promise<void>;
+  };
 
   // --- Clients + stores the caller provides -------------------------------
   /**
@@ -804,6 +817,13 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
 
   // Chat-orchestrator globals are also deferred to start(). Issue #8.
   const globalDisposers: (() => void)[] = [];
+  // ISVC-10 — stop the interactive-run pull loop (pacer/sweeper/classify/
+  // completion timers) when the node tears down, before the run stores it reads
+  // are torn down under it.
+  if (options.runPlane) {
+    const runPlane = options.runPlane;
+    globalDisposers.push(() => runPlane.stop());
+  }
   const installChatGlobals = (): void => {
     if (!globalWiring) return;
     const disposeWire = wireServiceOrchestrator({ orchestrator });
@@ -1130,6 +1150,16 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           readyTimeoutMs: 30_000,
           // Bypassed D2D traffic → Brain's dispatcher. Issue #5 fix.
           onBypassedD2D: async ({ senderDID, messageType, body }) => {
+            // ISVC-10 — a run-correlated provider `service.response` (the reply
+            // to a pacer-emitted `service.query`) is consumed by the run plane's
+            // trust boundary FIRST. It returns true iff the body was a live run
+            // response (verified-and-ingested or rejected); either way it must
+            // NOT fall through to the dispatcher, which would mint a spurious
+            // workflow task. A non-run `service.response` returns false and
+            // continues to the normal dispatcher path below.
+            if (messageType === MsgTypeServiceResponse && options.runPlane) {
+              if (await options.runPlane.handleServiceResponse(senderDID, body)) return;
+            }
             // Minimal DinaMessage for the dispatcher. The only fields it
             // consults off `raw` are `type`, `from`, `to`, `id`; the
             // receive pipeline has already validated signatures + nonces

@@ -152,7 +152,7 @@ describeMaybe('perf smoke — 10K items, FTS5 p95 < 50ms (tasks 3.18 + 11.4)', (
     const p99 = percentile(latencies, 0.99);
     // Emit a summary line so CI logs show the measured numbers on
     // both pass and fail — helps triage when the budget tightens.
-    // eslint-disable-next-line no-console
+     
     console.log(`[perf_smoke] queries=${MEASURED_QUERIES} p50=${p50.toFixed(2)}ms p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms budget=${P95_BUDGET_MS}ms`);
     expect(p95).toBeLessThan(P95_BUDGET_MS);
   }, 60_000); // long timeout — 10K-insert + 150 queries fit easily, but avoid flakes on cold CI

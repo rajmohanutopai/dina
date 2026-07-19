@@ -9,9 +9,10 @@
  * for languages).
  */
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import React from 'react';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import AccessibilityScreen from '../../app/peerlens-preferences/accessibility';
 import LanguagesScreen from '../../app/peerlens-preferences/languages';
 import {
@@ -19,7 +20,6 @@ import {
   resetUserPreferencesForTest,
   saveUserPreferences,
 } from '../../src/services/user_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const ORIGINAL_INTL = global.Intl;
 

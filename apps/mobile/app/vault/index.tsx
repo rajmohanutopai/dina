@@ -12,6 +12,8 @@
  * with an "edit" affordance on the detail page.
  */
 
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
@@ -23,9 +25,7 @@ import {
   View,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
+
 import {
   addPersona,
   formatPersonaDisplayName,
@@ -34,6 +34,8 @@ import {
   type PersonaUIState,
 } from '../../src/hooks/usePersonas';
 import { countVaultItems } from '../../src/hooks/useVaultItems';
+import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
+
 import type { PersonaTier } from '@dina/core';
 
 interface VaultRow extends PersonaUIState {

@@ -20,7 +20,7 @@ export function makeStubRememberRuntime(
 ): {
   run: () => Promise<{
     sideEffects: {
-      routes: Array<{ primary: string; secondary: string[] }>;
+      routes: { primary: string; secondary: string[] }[];
       reminders: never[];
       people: never[];
       preferences: never[];

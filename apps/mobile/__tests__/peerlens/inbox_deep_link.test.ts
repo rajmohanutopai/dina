@@ -284,7 +284,7 @@ describe('buildAttestationDeepLink ↔ parseAttestationDeepLink — round trip',
   // Property-style pairs covering the dimensions that matter for
   // mobile in practice: simple ids, slash-bearing ids, percent-
   // bearing ids, no-anchor and anchored forms.
-  const cases: Array<{ subjectId: string; attestationUri?: string | null }> = [
+  const cases: { subjectId: string; attestationUri?: string | null }[] = [
     { subjectId: 'subj-aeron', attestationUri: null },
     { subjectId: 'subj-aeron', attestationUri: VALID_AT_URI },
     { subjectId: 'a/b c', attestationUri: null },

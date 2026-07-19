@@ -27,8 +27,8 @@
  *      AppView.
  */
 
-import React from 'react';
 import { render, act } from '@testing-library/react-native';
+import React from 'react';
 import { Text } from 'react-native';
 
 jest.mock('../../src/peerlens/appview_runtime', () => ({
@@ -40,10 +40,10 @@ jest.mock('../../src/peerlens/appview_runtime', () => ({
 }));
 
 import * as appview from '../../src/peerlens/appview_runtime';
-import { useTrustSearch } from '../../src/peerlens/runners/use_trust_search';
+import { useNetworkFeed } from '../../src/peerlens/runners/use_network_feed';
 import { useReviewerProfile } from '../../src/peerlens/runners/use_reviewer_profile';
 import { useSubjectDetail } from '../../src/peerlens/runners/use_subject_detail';
-import { useNetworkFeed } from '../../src/peerlens/runners/use_network_feed';
+import { useTrustSearch } from '../../src/peerlens/runners/use_trust_search';
 
 const searchMock = appview.searchAttestations as jest.MockedFunction<
   typeof appview.searchAttestations

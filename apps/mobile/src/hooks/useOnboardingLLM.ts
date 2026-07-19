@@ -33,12 +33,12 @@ export interface LLMSetupState {
 }
 
 /** Provider display info for the selection screen. */
-const PROVIDER_OPTIONS: Array<{
+const PROVIDER_OPTIONS: {
   name: ProviderName;
   label: string;
   description: string;
   keyPrefix: string;
-}> = [
+}[] = [
   {
     name: 'claude',
     label: 'Anthropic Claude',

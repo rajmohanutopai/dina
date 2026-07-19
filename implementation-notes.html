@@ -2729,6 +2729,304 @@
       <li><strong>PSVC-4</strong> &mdash; subscription-management surface. <span class="status done">DONE</span> (owner-only <code>/v1/watch/*</code> routes + owner-client + list DTO; Activity <code>push</code>/<code>run</code> kinds; the RN Subscriptions <em>and</em> Interactive-runs screens shipped with hooks + Maestro flows)</li>
     </ul>
 
+    <h2>Dual-review remediation (post-<code>1c315fb8</code>) &mdash; correctness fixes + the honest wired-vs-substrate boundary</h2>
+    <p>
+      An adversarial dual review (Claude continuity + Codex) against the two design docs surfaced a
+      mix of genuine correctness bugs and negative claims. Each was independently re-verified against
+      the code before acting. The genuine bugs are fixed; the rest are recorded below as
+      <em>spec-prescribed honest degradation</em> or <em>phase-deferred</em>, named not hidden.
+    </p>
+
+    <h3>Correctness fixes landed</h3>
+    <ul>
+      <li>
+        <strong>Fail-closed completion verifier + delegation binding</strong>
+        (<code>run/completion.ts</code>). The default <code>verifyReceipt</code> is now
+        <code>() =&gt; false</code> (a completion with no wired verifier is <em>rejected</em>, never
+        advanced), and <code>ingestCompletion</code> rejects any receipt whose
+        <code>delegation_id</code> <em>or</em> <code>run_id</code> does not match the target message
+        &mdash; a forged / cross-run completion can never advance a message (§6.2 delegation binding).
+      </li>
+      <li>
+        <strong>Payload store is loss-safe + idempotent</strong> (<code>run/payload_store.ts</code>).
+        <code>putPayload</code> short-circuits for an already-<code>published</code> payload and the
+        blob write is an <code>ON CONFLICT DO UPDATE</code> re-<code>prepare</code> rather than
+        <code>INSERT OR REPLACE</code>, so a duplicate call can never re-key or destroy live
+        ciphertext (§13).
+      </li>
+      <li>
+        <strong>Monotonic decide barrier + hard-TTL recheck + optimistic concurrency</strong>
+        (<code>server/routes/run.ts</code> decide). The decided-basis count barrier is applied via
+        <code>applyTerminationCause</code>/<code>decideBarrier</code> (strengthen-only, never weakens a
+        cause or pushes <code>drain_deadline_at</code> later); a decision rechecks the run's hard TTL
+        &ldquo;now&rdquo;; and an optional <code>expected_decision_revision</code> rejects a stale card
+        (§5.1/§12.5).
+      </li>
+      <li>
+        <strong>Durable command idempotency is complete + atomic</strong>
+        (<code>run/command_receipt.ts</code>, <code>server/routes/run.ts</code>). <code>start</code> and
+        <code>update</code> now mint receipts (<code>start</code> keys on
+        <code>(owner, route, idempotency_key)</code> and stores the <code>run_id</code>; a same-key /
+        different-body command is a 409), and the command mutation + its receipt write commit in
+        <strong>one transaction</strong> (<code>setCommandTxRunner</code>, wired to
+        <code>db.transaction</code> in both boots) &mdash; a crash can no longer lose a receipt and let a
+        replayed old <code>resume</code> undo a newer <code>pause</code> across restart (§5/§12.5).
+      </li>
+      <li>
+        <strong>Update validation + terminal guard + interval recompute + real <code>pending[]</code></strong>
+        (<code>server/routes/run.ts</code> update / status, <code>run/service.ts</code>).
+        <code>/update</code> now range-validates <code>interval_ms</code> / <code>queue_cap</code> and
+        rejects an invalid <code>priority_ceiling</code> enum (the same bounds creation enforces),
+        rejects a config change on a terminal run (§5.1 absorbing), and an interval change recomputes
+        <code>next_fetch_at = max(now, last_commit_at + new_interval)</code> service-side on a committed
+        pull run (§11). <code>/status</code> returns the real classified-and-awaiting
+        <code>pending[]</code> instead of a hardcoded <code>[]</code>.
+      </li>
+      <li>
+        <strong>Atomic classify transition</strong> (<code>run/classification.ts</code>).
+        <code>RunClassifyService</code> takes a <code>tx</code> hook; the
+        <code>classification_pending &rarr; classified</code> transition and the
+        <code>setTier</code> write (in <code>beginClassification</code>, <code>workerReport</code>, and
+        <code>finalizeTimeout</code>) commit as one unit, so a crash can never strand a message
+        <code>classified</code> with a null <code>final_tier</code> (§6.3).
+      </li>
+      <li>
+        <strong>The owner UI goes through the owner boundary</strong>
+        (<code>client/owner-run-client.ts</code>, <code>hooks/useRuns.ts</code>,
+        <code>hooks/useSubscriptions.ts</code>, boot). The run + subscription screens now route every
+        list/steer through <code>InProcessOwnerRunClient</code> (owner-marked dispatch &rarr;
+        <code>/v1/run/*</code> · <code>/v1/watch/*</code> guards &rarr; durable receipts), <strong>not</strong>
+        the raw <code>getRunService()</code>/<code>getWatchService()</code> globals that Brain shares on
+        mobile's single JS VM &mdash; because &ldquo;trusted-in-process&rdquo; is explicitly not the owner
+        boundary (§20). Added <code>GET /v1/run/list</code> (owner-only, returns display DTOs so the raw
+        <code>RunRecord</code> never leaks) + <code>setOwnerRunClient</code> boot wiring.
+      </li>
+    </ul>
+
+    <h3>Round 2 &mdash; Codex adversarial pass (R2-01&hellip;R2-09, all substrate findings fixed)</h3>
+    <p>
+      A second reviewer (Codex) disproved three of the &ldquo;over-reach&rdquo; verdicts below and
+      surfaced further genuine gaps. All substrate findings were re-verified and fixed (the one remaining
+      non-substrate finding &mdash; that the active-engine <em>driver</em> is not yet started in a boot loop
+      &mdash; is the ISVC-10 integration tracked in &ldquo;The honest wired-vs-substrate boundary&rdquo;
+      below, not a code defect):
+    </p>
+    <ul>
+      <li>
+        <strong>Hard-bound guards now include <code>drain_deadline_at</code></strong> (§18 "hard bounds
+        in guards"): <code>/decide</code>, classify <code>runEligible</code>, and the risk gate now fail
+        closed on a permissive drain past its deadline (dispatch's claim guard already did) &mdash; so no
+        fenced/past-deadline work can be decided, classified, risk-authorized, or dispatched even if the
+        sweeper is delayed.
+      </li>
+      <li>
+        <strong>Barrier-set is now proactive AND atomic for EVERY barrier (§5.1, R2-01/R2-02)</strong>:
+        setting <em>any</em> barrier fires <code>RunService.onBarrier</code> &rarr;
+        <code>RunTerminationService.onBarrier</code> inside the SAME Tier-0 transaction as the barrier row
+        (<code>applyTerminationCause</code> wraps <code>applyBarrier</code> + the hook in <code>tx()</code>).
+        Per §5.1 &ldquo;setting the barrier &hellip; atomically invalidates every outstanding uncommitted
+        reservation&rdquo;: EVERY barrier (permissive or fencing) invalidates outstanding reservations +
+        crypto-shreds their held ciphertext; a FENCING barrier ADDITIONALLY fences the uncommitted message
+        set + cancels their classification jobs (the run still drains cause-retained CLAIMED work until the
+        deadline). The earlier round wired this for fencing barriers only (<code>onFencingBarrier</code> /
+        <code>fenceOnBarrier</code>); R2-01/R2-02 generalized it so a permissive count/exhaustion/expiry
+        barrier can no longer leave a fetch-ahead reservation live past the barrier, and the invalidation +
+        barrier row can never diverge across a crash.
+      </li>
+      <li>
+        <strong>The produced-count barrier routes through the same hook (§5.1, R2-02)</strong>: the
+        <code>AdmissionService</code> commit that takes <code>produced_count</code> to
+        <code>max_count</code> sets the count barrier and fires <code>onBarrier</code> IN THE COMMIT
+        TRANSACTION, uniform with the owner/expiry path. (Invariant: the produced-budget gate
+        <code>produced_count + open &lt; max_count</code> &mdash; <code>held_by_lock</code> included &mdash;
+        means the barrier-setting commit has no open sibling to invalidate in the single-node model, so the
+        hook is defense-in-depth that keeps the barrier path uniform and cannot leave a slot live past the
+        cap if the budget logic ever changes.)
+      </li>
+      <li>
+        <strong><code>forceTerminate</code> is one atomic Tier-0 transition</strong> (§5.1) + a
+        <code>drain_deadline_at</code> self-guard: reconcile-claimed + fence + invalidate + finalize
+        commit together; the external crypto-shred / spool-ack runs after the commit, idempotently.
+      </li>
+      <li>
+        <strong>Completion advancement is deadline-ordered + first-writer-immutable</strong> (§6.2): a
+        completion arriving after the run's drain deadline can no longer CAS-advance a still-claimed
+        message (it becomes <code>outcome_unknown</code> + append-only evidence even under a delayed
+        sweeper); and a second receipt for a <code>delegation_id</code> carrying a DIFFERENT outcome is
+        rejected rather than overwriting the recorded one.
+      </li>
+      <li>
+        <strong>Pull fetch-ahead is single-flight-per-cursor</strong> (§7): each open reservation gets a
+        DISTINCT cursor (no two fetch the same provider position), and commit CAS-advances the run cursor
+        strictly in order (an out-of-order commit fails + releases) &mdash; a position can never be
+        skipped or double-advanced.
+      </li>
+      <li>
+        <strong><code>erasure_mode</code> is probed at <code>create()</code>, never caller-supplied</strong>
+        (§13): <code>erasure_mode</code> is removed from <code>CreateRunParams</code> and
+        <code>RunService.create</code> freezes the PROBED platform mode &mdash; a direct caller can no
+        longer claim <code>backup_resistant</code> without a conforming backend.
+      </li>
+      <li>
+        <strong>The run sweeper pages the DUE set, not the oldest-N active window</strong>: a new
+        <code>listDueForSweep</code> (actionable-only, so paging makes monotonic progress) replaces the
+        <code>listActive() LIMIT 100</code> scan, so a backlog of live-but-not-due runs can never starve a
+        newer expired / past-deadline run.
+      </li>
+      <li>
+        <strong>The owner run/subscription UI now sends through the boundary correctly</strong>:
+        <code>/status</code>'s <code>pending[]</code> carries <code>decision_revision</code> (for a checked
+        decide), and the mobile hook tests were rewired through <code>InProcessOwnerRunClient</code> (they
+        had regressed to the raw globals).
+      </li>
+    </ul>
+
+    <h3>The honest wired-vs-substrate boundary (§20)</h3>
+    <p>
+      <strong>Wired end-to-end in both boots</strong>
+      (<code>core_server.ts</code> registers the routes; <code>core-server/&hellip;/storage/init.ts</code>
+      and mobile <code>boot_service.ts</code> compose the stores + service + owner client): the run /
+      message / reservation / classification-job / completion-receipt / command-receipt / erasure /
+      push-subscription Tier-0 stores, the <code>RunService</code>, the owner-only <code>/v1/run/*</code>
+      and <code>/v1/watch/*</code> routes + <code>InProcessOwnerRunClient</code>, and the
+      <strong>poll-mode watch loop</strong> (<code>WatchService</code> + <code>WatchPollSweeper</code>,
+      PSVC-0). A run created via <code>/v1/run/start</code> is durable, listable, decidable and
+      steerable today.
+    </p>
+    <p>
+      <strong>ISVC-10 &mdash; the active-engine driver (in progress, built inline slice by slice).</strong>
+      <em>Slice&nbsp;1 landed:</em> <code>RunEngine</code> (<code>packages/core/src/run/engine.ts</code>) is
+      the pure, injectable driver &mdash; a <code>pacerTick</code> (§7/§11: for each ACTIVE pull run,
+      <code>reserve</code> gates cadence/queue/count/persona/grant, then the injected egress emits the
+      run&rsquo;s <code>service.query</code>; a send failure releases the slot) and a
+      <code>dispatchTick</code> (§6.3/§8: run the risk gate on owner-<code>approved</code> actions, then
+      atomically CLAIM every <code>risk_authorized</code> action and emit its delegation). All external
+      effects are injected callbacks, so the loop is unit-tested with stubs (12 cases) and the boots wire
+      the real D2D egress. <em>Slice&nbsp;2 landed:</em> <code>RunResponseIngest</code>
+      (<code>packages/core/src/run/ingest.ts</code>) &mdash; the pull response-correlation ingress (§7):
+      it matches a verified provider <code>service.response</code> to its reserved slot by correlation id
+      (new <code>reservation.setQueryCorrelation</code> / <code>getByCorrelation</code>),
+      envelope-encrypts + stores the payload, runs the GUARDED enqueue-commit CAS (a raced barrier/TTL
+      crypto-shreds the ciphertext and admits nothing), then creates the <code>enqueued</code> message and
+      begins classification. Idempotent by <code>message_id</code>; a locked persona reports
+      <code>persona_locked</code> (the held path is ISVC-6). Proven against a REAL SQLite engine (6 cases).
+      <em>Remaining slices (not yet wired):</em> the Brain
+      classification worker (new Core route + <code>workerAcquire</code>/<code>workerReport</code>
+      CoreClient methods on both transports + a Brain consumer); the completion D2D ingress
+      (<code>ingestCompletion</code>); an fs-backed <code>RunSpool</code> on both platforms for the
+      locked-arrival held path; and the boot composition that instantiates <code>PayloadStore</code> +
+      <code>AdmissionService</code>(onBarrier) + <code>RunTerminationService</code> +
+      <code>RunSweeper</code> + <code>RunEngine</code> on an interval with crash-recovery, in both
+      <code>init.ts</code> and mobile <code>bootstrap.ts</code>. The state machine + admission + barrier +
+      completion + crypto-shred + now the driver ticks are proven by the §18 unit suites (which drive the
+      logic directly), but a run is <strong>not auto-paced end-to-end</strong> in the shipped app until the
+      remaining slices land. This is the §17 Phase-1 &ldquo;gated pacer as a driven loop&rdquo; boundary,
+      stated openly: the product must not claim a run <em>auto-streams</em> decisions until then.
+    </p>
+
+    <h3>Round 3 &mdash; Codex adversarial pass over the driver core (16 findings, all fixed)</h3>
+    <p>
+      A third Codex pass reviewed the net-new <code>RunEngine</code> + <code>RunResponseIngest</code>
+      driver core against the substrate and returned 16 findings; all were independently validated and
+      remediated (each with a new test; run subsystem 193/193, owner-route + client suites 37/37, mobile
+      hooks 8/8, eslint clean, workspace <code>tsc</code> 0 errors):
+    </p>
+    <ul>
+      <li><strong>F15 owner boundary &mdash; boot-minted capability (security).</strong> The mobile-VM
+        owner boundary was forgeable: Brain, co-resident in the one JS VM, could <code>import
+        '@dina/core'</code>, construct an <code>InProcessOwnerRunClient</code> (or hand-set
+        <code>callerType:'owner'</code>), and the guard trusted that forgeable field. Fix: the app boot
+        mints a 32-byte secret held ONLY in the boot closure, passes it to
+        <code>createCoreRouter({ ownerCapability })</code> (the guard closes over it, <em>fail-closed</em>
+        when unset) AND to the owner client (which stamps it); a request that is owner-marked but lacks the
+        capability is 403 (forgery test). Raises the bar from a public-API call to a heap-level VM
+        compromise; the server split&rsquo;s process boundary remains the strong-isolation deployment.</li>
+      <li><strong>F2 single-Tier-0 atomicity.</strong> <code>PayloadStore</code> split into
+        <code>preparePayload</code> + <code>publishPayload</code>; <code>AdmissionService.commit</code>
+        takes an <code>onCommitted</code> callback run INSIDE the commit tx, so the ingress&rsquo;s
+        cursor/count/barrier advance + message enqueue + <code>beginClassification</code> + payload publish
+        commit or roll back as ONE transaction &mdash; a crash can no longer leave an advanced cursor with
+        no message, nor a <code>published</code> orphan blob.</li>
+      <li><strong>F1</strong> engine stamps a durable query-correlation id before egress (was unset &rarr;
+        every composed response would <code>no_slot</code>); <strong>F14/R2-09</strong> reverted the
+        erasure regression (external shred is now AFTER the commit, idempotent, never inside a rollback-able
+        tx); <strong>F7</strong> restart-safe outbox (re-drive durable <code>sending</code> rows with the
+        same delegation id; an ambiguous send is retried, never falsely terminal-failed);
+        <strong>F13</strong> completion-recovery idempotency; <strong>F5</strong> provider-supplied
+        <code>risk_class</code> no longer trusted (Core derives; default MODERATE); <strong>F3</strong>
+        persona recheck at the commit point (fail-closed); <strong>F4</strong> dedup by
+        <code>(run_id, dedup_key)</code> + canonical signed digest; <strong>F6</strong> risk-gate persona
+        guard; <strong>F8</strong> fair <code>listPullDueForFetch</code> paging; <strong>F9</strong> pacer
+        surfaces <code>past_ttl</code>/<code>grant_unavailable</code>; <strong>F10</strong> exhausted-marker
+        ingress; <strong>F11</strong> classify lease-expiry + report recheck; <strong>F12</strong>
+        <code>sweepTimeouts</code> drives the classify-timeout fallback so Brain is non-load-bearing;
+        <strong>F16</strong> locked-arrival envelope robustness (<code>response_lost</code>, not a throw).</li>
+    </ul>
+    <p>
+      The still-pending integration is unchanged and stated honestly: the boot COMPOSITION that starts
+      these ticks in a live loop (both boots), the Brain classify-worker route + consumer, and the fs
+      <code>RunSpool</code> adapter. The driver logic is built + unit-proven; it is not yet composed into a
+      running boot, so a run still does not auto-stream decisions in the shipped app.
+    </p>
+
+    <p>
+      <strong>Push transports &mdash; §17 Phase 2, deferred.</strong> The push decision authority
+      (<code>push/delivery.ts</code> <code>decidePushDelivery</code>: authorize &rarr; dedup &rarr; budget
+      &rarr; classify-cap &rarr; cry-wolf), the default-deny subscription store, and the
+      <code>push.*</code> protocol schemas (incl. the runtime <code>validatePushEventBody</code>) are
+      built and unit-tested, but the D2D receive-pipeline push <em>ingress</em> branch is
+      <strong>not</strong> wired (<code>decidePushDelivery</code> has no <code>receive_pipeline</code>
+      caller). Per interactive §17 Phase 2 / §20 (&ldquo;must not claim the push transports ship in the
+      pull-first phase&rdquo;), the &ldquo;Scope read&rdquo; above enumerates the §8 pipeline pieces that
+      exist as unit-tested <em>authority</em>, <strong>not</strong> as a wired inbound transport.
+    </p>
+
+    <h3>Verified over-reach / phase-deferred (adversarial findings that are not defects)</h3>
+    <ul>
+      <li>
+        <strong>Dispatch outbox / lease.</strong> The message row <em>is</em> the transactional outbox
+        (the stable <code>delegation_id</code> is minted + persisted inside the claim transaction);
+        physical transmission is the downstream <code>markDispatched</code> hop (§6.3). There is
+        deliberately no claim lease &mdash; a claimed effect is never re-dispatched
+        (&ldquo;at most one logical delegation&rdquo;, §16.5); crash recovery is the stable id + at-least-once
+        re-send + the deadline <code>outcome_unknown</code> reconciliation.
+      </li>
+      <li>
+        <strong>Provider-grant expiry.</strong> Populating <code>provider_grant_expires_at_sec</code> +
+        the fetch-pause-on-expiry is Phase-1 pacer behavior (§19 &ldquo;Provider-grant expiry/revocation
+        UX and re-grant flow&rdquo;); <code>/status</code> honestly returns <code>null</code> until then,
+        no over-claim.
+      </li>
+      <li>
+        <strong>Protocol runtime validators / vectors.</strong> The bounded, injection-safe envelope
+        encoding is deferred (§19); push already ships a runtime fail-closed validator
+        (<code>validatePushEventBody</code>); there are no frozen run/push cross-language vectors because
+        the shared wire framing is intentionally <em>unfrozen</em> (§19/§20). Hardening noted: the
+        canonical <code>\n</code>-join should length-prefix/escape free-string fields when that framing
+        is frozen.
+      </li>
+      <li>
+        <strong><code>erasure_mode</code> always <code>logical_deletion</code>.</strong> The mode
+        <em>value</em> is correct &mdash; the shipping keystore's guarantee <em>is</em>
+        <code>logical_deletion</code>, the spec-prescribed honest degradation (§20/§13). Round 2 fixed the
+        real hole: the mode is now PROBED at <code>create()</code> and removed from caller input, so a
+        caller can't over-claim <code>backup_resistant</code>. The terminal-shred <em>scheduler</em>
+        remains Phase-1 (§19 retention window); the shred <em>primitive</em> is built and tested.
+      </li>
+      <li>
+        <strong>Reservation cursor &mdash; FIXED in Round 2.</strong> Cursor-at-reserve is the §7 snapshot,
+        but under fetch-ahead two open reservations shared it. Now each open reservation gets a distinct
+        cursor and commit CAS-advances the run cursor strictly in order (see the Round-2 list).
+      </li>
+      <li>
+        <strong>Barrier invalidation timing &mdash; FIXED in Round 2.</strong> The earlier note argued the
+        per-gate guards enforced the semantics and only the erasure-<em>timing</em> was deferred. Codex
+        (correctly) held §5.1 to the letter, so barrier-set is now a proactive atomic fence
+        (<code>fenceOnBarrier</code>) AND the guards were completed with the <code>drain_deadline_at</code>
+        check (see the Round-2 list).
+      </li>
+    </ul>
+
     <h2>ISVC-1 &mdash; run store + domain + owner-only boundary <span class="status done">DONE</span></h2>
     <p>
       The Core-owned run object (INTERACTIVE &sect;5/&sect;5.1/&sect;12.5). New module
@@ -3471,6 +3769,133 @@
       (<code>ENOTFOUND test-mailbox.dinakernel.com</code>). Their contracts are covered by the deterministic
       suites (D2D / service-query / peerlens tests in core + brain + protocol, all green above).
     </p>
+
+    <h2>Round 4 &mdash; Codex V1-scope re-adjudication <span class="status done">2 test-coverage gaps closed</span></h2>
+    <p>
+      A dual-review cycle re-measured the prior driver-core findings <em>against the design docs' own
+      V1 scope</em> (INTERACTIVE &sect;17 phasing / &sect;19 deferred; PUSH &sect;line-41 "a run-bound push is
+      designed but not yet claimable", &sect;line-270 replay-claim crash/restart "a deferred joint contract",
+      &sect;line-105 remote wake "out of scope for v1"). Holding a <strong>V1</strong> artifact to the full
+      multi-phase spec is the "invent new requirements to keep the loop running" anti-pattern the review
+      rubric forbids &mdash; a finding is actionable only against a violated <em>V1</em> requirement. The met
+      V1 requirement is the <strong>honesty property</strong>, verified in code:
+      <code>validateCreateParams</code> rejects any non-<code>pull</code> transport ("deferred in V1 &hellip;
+      await &sect;19 joint freeze"); <code>/start</code> rejects <code>priority_ceiling=fiduciary</code>
+      ("Tier-1 is Phase 2"); <code>erasure_mode</code> is Core-<em>probed</em> (a caller can't over-claim
+      <code>backup_resistant</code>; default <code>logical_deletion</code>); pushed <code>exhausted</code> is
+      pull-only. So the seven previously-held findings resolve as: <strong>F3 / F14 / NEW-02</strong>
+      (fs-spool held-path, held-shred recovery, replay-claim atomicity) &rarr; conformance-gated /
+      &sect;19-deferred, code honestly degrades; <strong>F9</strong> (grant-revocation cascade) &rarr; deferred
+      push contract; <strong>F7 / F8</strong> (keyset paging over the full durable set) &rarr; scale-only, no
+      V1 impact at a single owner's bounded run count.
+    </p>
+    <p>
+      That left <strong>two items materially V1-relevant</strong>, both framed as "requirement gaps the suite
+      does not exercise" &mdash; now closed with empirical tests (no code defect was found; the pull path was
+      already correct):
+    </p>
+    <ul>
+      <li>
+        <strong>(A) grant rejection connected to the pacer</strong> &mdash;
+        <code>engine.test.ts</code> "an invalidated (revoked/expired) grant NEVER fetches, then recovers on a
+        valid grant (F9)": an invalid <code>provider_grant</code> emits <strong>zero</strong>
+        <code>service.query</code> egress and sets <code>paused_reason=provider_grant_unavailable</code>; an
+        owner rebind (<code>updateConfig</code>) clears the pause and resumes. Proves the pacer never queries a
+        dead grant. (The full provider-initiated revocation <em>cascade</em> remains the deferred &sect;19
+        contract; the pull-side pacer connection is the V1 piece and it holds.)
+      </li>
+      <li>
+        <strong>(B) classify-timeout sweep under a multi-run backlog</strong> &mdash;
+        <code>classification.test.ts</code> "sweepTimeouts drains a multi-run backlog incl. a
+        leased-but-lease-expired job (F12 multi-run)": eight runs (&gt; the "seven max-cap runs" concern),
+        one acquired by a since-dead Brain worker (still <code>pending</code> under an expiring lease), are all
+        finalized by a single sweep. Empirically disproves a starvation bound at personal scale &mdash; the
+        oldest-first <code>listPending</code> scan + lease-agnostic <code>finalizeTimeout</code>
+        (<code>WHERE state='pending'</code>) already covers it.
+      </li>
+    </ul>
+    <p>Run subsystem <strong>196</strong> green (was 194; +2), <code>@dina/core</code> tsc + focused route/client
+      + mobile hook suites green, lint clean.</p>
+
+    <h2>Round 5 &mdash; Codex FAIL(2) remediation: real code gaps my Round-4 tests masked <span class="status done">both fixed</span></h2>
+    <p>
+      A completed Codex delta review returned <code>STATUS: FAIL</code> with two findings &mdash; and both
+      were valid: my Round-4 tests <em>demonstrated</em> the concerns rather than <em>closing</em> them, and
+      each hid a genuine V1 code gap. This is the dual review working: the finder that the tests were
+      inadequate also surfaced the underlying defects.
+    </p>
+    <ul>
+      <li>
+        <strong>F9 &mdash; grant expiry never persisted by the owner routes (§10 violation).</strong>
+        <code>INTERACTIVE:306</code> requires that on provider-side expiry/revocation a run fetch-pauses, and
+        that a versioned <code>/update</code> rebind is <em>Core-revalidated and resumes</em>, with the grant
+        binding + expiry <em>persisted</em>. But <code>/start</code> and <code>/update</code> copied only
+        <code>provider_grant_id</code>, never <code>provider_grant_expires_at_sec</code> &mdash; so the expiry
+        stayed <code>null</code>, <code>providerGrantValid</code> never tripped, and a rebind retained the old
+        (expired) timestamp so a paused run could never resume. My Round-4 test bypassed this by calling
+        <code>updateConfig</code> directly. <strong>Fix:</strong> both routes now parse + persist
+        <code>provider_grant_expires_at_sec</code> (the domain/patch layers already carried it); a rebind
+        carries the replacement's expiry (and clears it when the grant is cleared). The pacer already
+        pause-on-invalid / resume-on-valid, so "Core auto-revalidates and resumes" now holds end-to-end. New
+        <em>route-level</em> test drives the real <code>/start</code> + <code>/update</code>
+        (<code>run_decide.test.ts</code> "persists provider grant expiry&hellip;").
+        <br /><strong>On the reviewer's third sub-point</strong> ("a live provider revocation is not
+        distinguished from an ordinary egress failure; <code>RunEngine</code> only releases the reservation"):
+        this was <em>not</em> followed, deliberately. <code>emitQuery</code> resolves on <em>sent</em>, so its
+        rejection is a transport <em>send</em>-failure, which per F7/§6.2 MUST retry &mdash; pausing on a
+        transient network blip would be a regression. The deterministic V1 revocation path is expiry-based
+        (now fully wired) and a silently-revoked run is bounded by its hard TTL. A signed provider
+        <em>rejection response</em> that auto-pauses without a local-expiry update is the networked
+        revocation-signal cascade, which the docs defer (§19); it needs a response-protocol variant that does
+        not exist and is out of V1 scope.
+      </li>
+      <li>
+        <strong>F12 &mdash; classify-timeout sweep could starve due jobs beyond the 200-row window
+        (§9.1/§297/§471 violation).</strong> <code>sweepTimeouts</code> did a single
+        <code>listPending(200)</code> scan; with &gt;200 pending jobs of <em>mixed</em> timeout windows, older
+        not-yet-due jobs could fill the window and permanently hide newer <em>due</em> jobs behind them &mdash;
+        so "delivery never waits on Brain" could silently fail at ~7 max-cap runs (224 jobs). My Round-4 N=8
+        test never crossed the 200 window, so it proved nothing. <strong>Fix:</strong> a new keyset page
+        method (<code>listPendingAfter(created_at, message_id, limit)</code>, both repos) and
+        <code>sweepTimeouts</code> now pages the ENTIRE pending set by <code>(created_at, message_id)</code>,
+        advancing past every scanned row (due or not) so no due job is ever starved. New regression builds 205
+        not-yet-due jobs ahead of 5 due jobs (one under a dead-worker lease) &mdash; the old single-window
+        sweep returns 0; the keyset sweep finalizes all 5.
+      </li>
+    </ul>
+    <p>Run + route suites <strong>227</strong> green, <code>@dina/core</code> tsc + lint clean.</p>
+
+    <h2>Round 6 &mdash; Codex FAIL(2): F9 completeness through the typed client + idempotency hash <span class="status done">both fixed</span></h2>
+    <p>
+      Codex's next pass accepted the Round-5 fixes (F12 gone; the F9 emitQuery-vs-revocation reasoning
+      accepted as non-actionable) but caught two real F9 <em>completeness</em> gaps &mdash; my route fix was
+      correct but did not reach the whole owner path:
+    </p>
+    <ul>
+      <li>
+        <strong>The typed owner client didn't expose the field.</strong>
+        <code>RunStartRequest</code>/<code>RunUpdateRequest</code> (<code>owner-run-client.ts</code>) lacked
+        <code>provider_grant_expires_at_sec</code>, so the REAL owner path (mobile &rarr;
+        <code>InProcessOwnerRunClient</code> &rarr; route) still couldn't send it &mdash; my route test had
+        bypassed the client with a raw <code>CoreRequest</code>. <strong>Fix:</strong> both typed request
+        contracts now carry the field (it flows via the client's body-spread); a new
+        <em>client-level</em> test (<code>owner_run_client.test.ts</code>) drives start + rebind through the
+        typed client and reads the expiry back via <code>/status</code>'s <code>provider_grant_valid_until</code>.
+        Per the reviewer's "preserve the distinction", rebinding a real grant now REQUIRES an explicit expiry
+        (a number, or <code>null</code> for intentionally non-expiring) &mdash; an omitted expiry on rebind is
+        a 400 (validated up-front, outside the idempotency barrier), never silently read as "never expires".
+      </li>
+      <li>
+        <strong>The <code>/update</code> idempotency hash omitted the field (§352).</strong> Two same-key
+        updates with different replacement expiries hashed identically, so the second would replay the first's
+        200 and silently drop its expiry. <strong>Fix:</strong> the normalized
+        <code>provider_grant_expires_at_sec</code> is now in the receipt request-hash; new test proves
+        same-key/different-expiry &rarr; <strong>409</strong> (first expiry stands) while same-key/same-expiry
+        replays 200.
+      </li>
+    </ul>
+    <p>Run + all route + client suites <strong>498</strong> green; <code>@dina/core</code> tsc, mobile tsc,
+      lint all clean.</p>
 
     <h2>Open questions for the owner</h2>
     <ul>

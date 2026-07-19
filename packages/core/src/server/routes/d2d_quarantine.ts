@@ -20,7 +20,7 @@
  * private: the whole surface is Brain + Admin only (see auth/authz).
  */
 
-import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
+import { getContact, updateContact, addContact } from '../../contacts/directory';
 import {
   listQuarantined,
   unquarantineSender,
@@ -28,7 +28,8 @@ import {
   quarantineMessage,
 } from '../../d2d/quarantine';
 import { receiveAndStage } from '../../d2d/receive';
-import { getContact, updateContact, addContact } from '../../contacts/directory';
+
+import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 function j(status: number, body: unknown): CoreResponse {
   return { status, body };

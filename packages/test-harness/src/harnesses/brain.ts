@@ -11,6 +11,8 @@
  *   await harness.teardown();
  */
 
+import { MockSignatureValidator } from '../mocks';
+
 import {
   Router,
   TestHTTPServer,
@@ -18,8 +20,8 @@ import {
   type RouteResponse,
   type Middleware,
 } from './http-server';
+
 import type { SignatureValidator } from '../ports';
-import { MockSignatureValidator } from '../mocks';
 import type { RequestSigner } from './core';
 
 // ---------------------------------------------------------------------------

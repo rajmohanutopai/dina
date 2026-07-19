@@ -9,11 +9,12 @@
  * lite. The wrappers are the single choke point that keeps that honest.
  */
 
-import { MockCoreClient } from '@dina/test-harness';
 import {
   listByPersona as listByPersonaInProcess,
   resetReminderState,
 } from '@dina/core/reminders';
+import { MockCoreClient } from '@dina/test-harness';
+
 import {
   setReminderBackend,
   getReminderBackend,

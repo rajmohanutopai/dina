@@ -7,15 +7,17 @@
  * Source: ARCHITECTURE.md Section 19.2 (response envelope).
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealDecrypt } from '../../src/crypto/nacl';
 import {
   buildSignedResponse,
   buildResponseCanonical,
   verifyResponseSignature,
   sealRPCResponse,
 } from '../../src/relay/rpc_response';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { sealDecrypt } from '../../src/crypto/nacl';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 describe('Core RPC Response Auth', () => {
   const coreDID = 'did:plc:mobileCore123';

@@ -133,7 +133,7 @@ describe('createTrustResolveClient (task 6.11)', () => {
     });
 
     it('fires resolved event', async () => {
-      type Ev = { kind: 'resolved'; did: string; hasScores: boolean };
+      interface Ev { kind: 'resolved'; did: string; hasScores: boolean }
       const events: Ev[] = [];
       const resolve = createTrustResolveClient({
         fetchFn: stubFetch(okBody()),

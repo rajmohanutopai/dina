@@ -13,6 +13,7 @@ import {
   mentionsContact,
   mentionsHousehold,
 } from '../../src/contact/attributor';
+
 import type { AttributorContext } from '../../src/contact/attributor';
 
 describe('Subject Attributor', () => {

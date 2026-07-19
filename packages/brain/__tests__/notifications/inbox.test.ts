@@ -7,6 +7,14 @@
  */
 
 import {
+  InMemoryNotificationLogRepository,
+  newGuidedDemoScope,
+  resetDataScope,
+  setCurrentDataScope,
+  setNotificationLogRepository,
+} from '@dina/core';
+
+import {
   appendNotification,
   dropGuidedDemoNotifications,
   getUnreadCount,
@@ -18,13 +26,6 @@ import {
   subscribeNotifications,
   type NotificationEvent,
 } from '../../src/notifications/inbox';
-import {
-  InMemoryNotificationLogRepository,
-  newGuidedDemoScope,
-  resetDataScope,
-  setCurrentDataScope,
-  setNotificationLogRepository,
-} from '@dina/core';
 
 describe('Notifications inbox (5.66)', () => {
   beforeEach(() => {
@@ -336,7 +337,7 @@ describe('Notifications inbox (5.66)', () => {
       });
       setNotificationLogRepository(repo);
 
-      const events: Array<{ type: string; loaded?: number }> = [];
+      const events: { type: string; loaded?: number }[] = [];
       const off = subscribeNotifications((event) => {
         if (event.type === 'hydrated') events.push({ type: event.type, loaded: event.loaded });
       });

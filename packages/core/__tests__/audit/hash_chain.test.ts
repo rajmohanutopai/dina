@@ -18,6 +18,7 @@ import {
   verifyLink,
   GENESIS_MARKER,
 } from '../../src/audit/hash_chain';
+
 import type { AuditEntry } from '../../src/audit/hash_chain';
 
 describe('Audit Hash Chain', () => {

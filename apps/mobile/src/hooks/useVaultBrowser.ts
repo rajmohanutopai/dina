@@ -18,6 +18,7 @@ import {
   storeItem,
   vaultItemCount,
 } from '@dina/core';
+
 import type { VaultItem, SearchQuery } from '@dina/test-harness';
 
 export interface PersonaListItem {
@@ -134,7 +135,7 @@ export function getTieredContent(
  * The in-memory implementation cannot enumerate all items via search,
  * so this returns an empty array until the native backend is wired.
  */
-export function getTypeDistribution(_persona: string): Array<{ type: string; count: number }> {
+export function getTypeDistribution(_persona: string): { type: string; count: number }[] {
   // Cannot enumerate all items via FTS search (wildcard not supported).
   // Will be implemented when NativeVaultDB provides SQL GROUP BY.
   return [];

@@ -4,6 +4,8 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
+import { createReminder, resetReminderState } from '@dina/core/reminders';
+
 import {
   assembleBriefing,
   setBriefingHour,
@@ -17,8 +19,8 @@ import {
   sortBySourcePriority,
   deduplicateByTitle,
 } from '../../src/briefing/assembly';
+
 import type { BriefingItem } from '../../src/briefing/assembly';
-import { createReminder, resetReminderState } from '@dina/core/reminders';
 
 describe('Daily Briefing Assembly', () => {
   beforeEach(() => {

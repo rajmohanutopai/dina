@@ -9,18 +9,18 @@
  * D2D hiccup.
  */
 
-import {
-  WorkflowService,
-  type ResponseBridgeSender,
-  type ServiceQueryBridgeContext,
-} from '../../src/workflow/service';
-import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
+import { BridgePendingSweeper } from '../../src/workflow/bridge_pending_sweeper';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
   WorkflowTaskState,
 } from '../../src/workflow/domain';
-import { BridgePendingSweeper } from '../../src/workflow/bridge_pending_sweeper';
+import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
+import {
+  WorkflowService,
+  type ResponseBridgeSender,
+  type ServiceQueryBridgeContext,
+} from '../../src/workflow/service';
 
 const SERVICE_QUERY_PAYLOAD = JSON.stringify({
   type: 'service_query_execution',
@@ -397,7 +397,7 @@ describe('BridgePendingSweeper', () => {
   it('onTick observer is called with the result', async () => {
     const { repo } = makeExecTask();
     const service = new WorkflowService({ repository: repo });
-    const seen: Array<{ cleared: number; errors: unknown[] }> = [];
+    const seen: { cleared: number; errors: unknown[] }[] = [];
     const sweeper = new BridgePendingSweeper({
       service,
       onTick: (r) => seen.push(r),

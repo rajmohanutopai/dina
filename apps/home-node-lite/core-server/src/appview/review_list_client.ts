@@ -236,8 +236,8 @@ function normaliseInput(input: ReviewListRequest): ReviewListRequest {
   };
 }
 
-type ParseOk = { ok: true; response: ReviewListResponse };
-type ParseFail = { ok: false; reason: 'malformed_response'; detail: string };
+interface ParseOk { ok: true; response: ReviewListResponse }
+interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.reviews)) {

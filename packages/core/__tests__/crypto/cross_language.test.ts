@@ -21,11 +21,18 @@
  *   Total: 47 fixture vectors + 10 additional verifications = 57+ tests
  */
 
+import { gcm } from '@noble/ciphers/aes.js';
+
 import {
-  derivePath,
-  derivePathSecp256k1,
-  deriveNamespaceKey,
-} from '../../src/crypto/slip0010';
+  TEST_MNEMONIC_SEED,
+  hasFixture,
+  loadVectors,
+  hexToBytes,
+  bytesToHex,
+} from '@dina/test-harness';
+
+import { deriveKEK } from '../../src/crypto/argon2id';
+import { mnemonicToSeed } from '../../src/crypto/bip39';
 import { sign, verify, getPublicKey } from '../../src/crypto/ed25519';
 import { derivePersonaDEK, deriveDEKHash } from '../../src/crypto/hkdf';
 import {
@@ -34,16 +41,11 @@ import {
   sealEncrypt,
   sealDecrypt,
 } from '../../src/crypto/nacl';
-import { mnemonicToSeed } from '../../src/crypto/bip39';
-import { deriveKEK } from '../../src/crypto/argon2id';
-import { gcm } from '@noble/ciphers/aes.js';
 import {
-  TEST_MNEMONIC_SEED,
-  hasFixture,
-  loadVectors,
-  hexToBytes,
-  bytesToHex,
-} from '@dina/test-harness';
+  derivePath,
+  derivePathSecp256k1,
+  deriveNamespaceKey,
+} from '../../src/crypto/slip0010';
 
 // Argon2id is slow in WASM
 jest.setTimeout(30_000);

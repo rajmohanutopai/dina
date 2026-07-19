@@ -11,8 +11,8 @@
  */
 
 import { TopicExtractor, type TopicExtractorLLM } from '../../src/enrichment/topic_extractor';
-import { EntityVault } from '../../src/pii/entity_vault';
 import { sanitiseList } from '../../src/llm/output_parser';
+import { EntityVault } from '../../src/pii/entity_vault';
 
 function fakeLLM(response: string): jest.Mock {
   return jest.fn(async () => response);

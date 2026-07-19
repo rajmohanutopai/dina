@@ -8,6 +8,7 @@
  */
 
 import { pino } from 'pino';
+
 import { createServer } from '../src/server';
 import {
   defineRouteSchema,
@@ -20,8 +21,9 @@ import {
   SIGNATURE_SCHEMA,
   PERSONA_SCHEMA,
 } from '../src/server/route_schemas';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function baseConfig(): CoreServerConfig {
   return {

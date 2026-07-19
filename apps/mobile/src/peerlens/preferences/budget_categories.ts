@@ -34,7 +34,7 @@ export interface BudgetCategory {
   readonly description?: string;
 }
 
-export const BUDGET_CATEGORIES: ReadonlyArray<BudgetCategory> = Object.freeze([
+export const BUDGET_CATEGORIES: readonly BudgetCategory[] = Object.freeze([
   {
     key: 'food',
     label: 'Food & dining',

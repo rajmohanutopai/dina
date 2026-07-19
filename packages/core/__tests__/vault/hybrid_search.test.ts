@@ -5,6 +5,7 @@
  */
 
 import { queryVault, storeItem, clearVaults, cosineSimilarity } from '../../src/vault/crud';
+
 import type { SearchQuery } from '@dina/test-harness';
 
 /** Create a normalized 4-dim embedding for testing. */

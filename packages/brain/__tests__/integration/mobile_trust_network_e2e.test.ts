@@ -29,14 +29,13 @@ import {
   registerTrustQueryClient,
   resetTrustQueryClient,
   resetSearchCache,
-} from '@dina/core';
-import type { PeerlensQueryClient, PeerlensProfile, QueryResult } from '@dina/core';
-import {
+
   addContact,
   resetContactDirectory,
-  setPeopleRepository,
-} from '@dina/core';
+  setPeopleRepository} from '@dina/core';
 import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import type { PeerlensQueryClient, PeerlensProfile, QueryResult } from '@dina/core';
 
 describe('mobile Scenario 4 — PeerLens query', () => {
   beforeEach(() => {

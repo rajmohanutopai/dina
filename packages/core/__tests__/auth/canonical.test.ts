@@ -11,19 +11,20 @@
  */
 
 import {
-  buildCanonicalPayload,
-  sha256Hex,
-  signRequest,
-  verifyRequest,
-} from '../../src/auth/canonical';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import {
   TEST_ED25519_SEED,
   stringToBytes,
   hasFixture,
   loadVectors,
   bytesToHex,
 } from '@dina/test-harness';
+
+import {
+  buildCanonicalPayload,
+  sha256Hex,
+  signRequest,
+  verifyRequest,
+} from '../../src/auth/canonical';
+import { getPublicKey } from '../../src/crypto/ed25519';
 
 describe('Canonical Payload Construction', () => {
   const body = stringToBytes('{"source":"gmail","type":"email"}');

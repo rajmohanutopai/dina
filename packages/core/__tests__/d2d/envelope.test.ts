@@ -4,11 +4,14 @@
  * Source: core/test/transport_d2d_sig_test.go
  */
 
+import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
 import { buildMessage, parseMessage, sealMessage, unsealMessage } from '../../src/d2d/envelope';
 import { verifyMessageSingle } from '../../src/d2d/signature';
-import { getPublicKey } from '../../src/crypto/ed25519';
+
 import type { DinaMessage } from '../../src/d2d/envelope';
-import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
+
 
 describe('D2D Envelope', () => {
   const testMsg: DinaMessage = {

@@ -15,6 +15,7 @@ import {
   registerPersonLinkProvider,
   resetPersonLinkProvider,
 } from '../../src/person/linking';
+
 import type { ResolvedPerson } from '../../src/person/linking';
 
 describe('Person Identity Linking', () => {

@@ -24,7 +24,7 @@
 import { useEffect, useState } from 'react';
 
 import { queryVault } from '@dina/core';
-import type { LLMProvider } from '@dina/brain/llm';
+
 
 import { loadActiveProvider } from '../../ai/active_provider';
 import { createLLMProvider } from '../../ai/provider';
@@ -34,6 +34,8 @@ import {
   type ComposeVaultItem,
 } from '../compose_context';
 import { useCasesForCategory } from '../write_form_data';
+
+import type { LLMProvider } from '@dina/brain/llm';
 
 export interface UseComposeContextOptions {
   /** Subject the user is reviewing — drives the vault search query. */

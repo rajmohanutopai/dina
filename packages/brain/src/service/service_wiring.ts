@@ -22,6 +22,7 @@ import {
   setServiceCommandHandler,
   type ServiceCommandHandler,
 } from '../chat/orchestrator';
+
 import {
   ServiceOrchestratorError,
   type ServiceQueryOrchestrator,

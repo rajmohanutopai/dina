@@ -7,8 +7,9 @@
  * Source: core/test/crypto_adversarial_test.go
  */
 
-import { derivePath } from '../../src/crypto/slip0010';
 import { TEST_MNEMONIC_SEED, FORBIDDEN_BIP44_PATH, NON_HARDENED_PATH } from '@dina/test-harness';
+
+import { derivePath } from '../../src/crypto/slip0010';
 
 describe('SLIP-0010 Adversarial', () => {
   const seed = TEST_MNEMONIC_SEED;

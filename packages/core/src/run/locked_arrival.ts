@@ -91,7 +91,7 @@ export type PublishOutcome =
   | { outcome: 'published'; ref: PayloadRef }
   | {
       outcome: 'response_lost';
-      reason: 'blob_missing' | 'digest_mismatch' | 'erasure_key_gone' | 'publish_failed';
+      reason: 'blob_missing' | 'digest_mismatch' | 'erasure_key_gone' | 'publish_failed' | 'corrupt';
     };
 
 export interface LockedArrivalStoreOptions {
@@ -110,8 +110,16 @@ function serializeStaged(wrappedSealedKp: Uint8Array, blob: Uint8Array): Uint8Ar
   return out;
 }
 
-function deserializeStaged(bytes: Uint8Array): { wrappedSealedKp: Uint8Array; blob: Uint8Array } {
+function deserializeStaged(
+  bytes: Uint8Array,
+): { wrappedSealedKp: Uint8Array; blob: Uint8Array } | null {
+  // Bounds-check the framing BEFORE reading (F16): a truncated header (< 4 bytes)
+  // would throw on getUint32, and a length that overruns the buffer would silently
+  // slice garbage. Either is a corrupt/partial staged blob → the caller surfaces a
+  // detected `response_lost`, never an uncaught throw or a mis-decoded envelope.
+  if (bytes.length < 4) return null;
   const len = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, false);
+  if (len > bytes.length - 4) return null; // header claims more key bytes than exist
   return {
     wrappedSealedKp: bytes.slice(4, 4 + len),
     blob: bytes.slice(4 + len),
@@ -174,16 +182,27 @@ export class LockedArrivalStore {
 
     const staged = this.spool.peek(ref.spool_id);
     if (staged === null) return { outcome: 'response_lost', reason: 'blob_missing' };
-    const { wrappedSealedKp, blob } = deserializeStaged(staged);
+    const parsed = deserializeStaged(staged);
+    if (parsed === null) return { outcome: 'response_lost', reason: 'corrupt' }; // bad framing
+    const { wrappedSealedKp, blob } = parsed;
     if (bytesToHex(sha256(blob)) !== ref.content_digest) {
       return { outcome: 'response_lost', reason: 'digest_mismatch' };
     }
     const kE = this.erasure().get(payloadId);
     if (kE === null) return { outcome: 'response_lost', reason: 'erasure_key_gone' };
 
-    const sealedKp = aeadDecrypt(kE, wrappedSealedKp);
-    const kP = this.sealer.unseal(sealedKp);
-    const plaintext = aeadDecrypt(kP, blob);
+    // The stored digest covers only `blob`, so a corrupted `wrappedSealedKp` (or
+    // a tampered sealed k_p) passes the digest check and only fails here — catch
+    // the auth/decrypt throw and surface `response_lost` rather than propagating
+    // an uncaught exception that would strand the unlock recovery (F16).
+    let plaintext: Uint8Array;
+    try {
+      const sealedKp = aeadDecrypt(kE, wrappedSealedKp);
+      const kP = this.sealer.unseal(sealedKp);
+      plaintext = aeadDecrypt(kP, blob);
+    } catch {
+      return { outcome: 'response_lost', reason: 'corrupt' };
+    }
 
     // Re-encrypt under the normal open-persona envelope (fresh keys + persona
     // DEK); the Tier-0 pointer CAS is the sole commit (§13). `putPayload`

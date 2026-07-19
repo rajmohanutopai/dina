@@ -7,13 +7,14 @@
  * Source: core/test/vault_test.go (cross-persona section)
  */
 
+import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
+
 import {
   queryVault,
   storeItem,
   clearVaults,
   DEFAULT_TEST_PERSONAS,
 } from '../../src/vault/crud';
-import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Cross-Persona Vault', () => {
   beforeEach(() => {

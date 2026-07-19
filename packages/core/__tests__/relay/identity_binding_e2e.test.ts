@@ -7,16 +7,18 @@
  * Source: ARCHITECTURE.md Task 7.2
  */
 
-import { buildRPCRequest, sealRPCRequest, unsealRPCRequest } from '../../src/relay/rpc_envelope';
-import { buildSignedResponse, verifyResponseSignature } from '../../src/relay/rpc_response';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
 import {
   verifyEnvelopeBinding,
   verifyDIDDerivesFromKey,
   validateIdentityBinding,
 } from '../../src/relay/identity_binding';
-import { deriveDIDKey } from '../../src/identity/did';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { buildRPCRequest, sealRPCRequest, unsealRPCRequest } from '../../src/relay/rpc_envelope';
+import { buildSignedResponse, verifyResponseSignature } from '../../src/relay/rpc_response';
+
 
 describe('Identity Binding E2E (Task 7.2)', () => {
   // Sender (CLI / paired device)

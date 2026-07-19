@@ -23,19 +23,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import type {
-  DIDDocument,
-  VerificationMethod,
-  ServiceEndpoint,
-  ServiceQueryBody,
-  ServiceResponseBody,
-  CoreRPCRequest,
-  CoreRPCResponse,
-  AuthChallengeFrame,
-  AuthResponseFrame,
-  AuthSuccessFrame,
-  D2DPayload,
-} from '../src';
 import {
   AUTH_CHALLENGE,
   AUTH_RESPONSE,
@@ -50,6 +37,20 @@ import {
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
   MAX_SERVICE_TTL,
+} from '../src';
+
+import type {
+  DIDDocument,
+  VerificationMethod,
+  ServiceEndpoint,
+  ServiceQueryBody,
+  ServiceResponseBody,
+  CoreRPCRequest,
+  CoreRPCResponse,
+  AuthChallengeFrame,
+  AuthResponseFrame,
+  AuthSuccessFrame,
+  D2DPayload,
 } from '../src';
 
 const FIXTURES_ROOT = resolve(__dirname, '..', '..', 'fixtures');
@@ -86,7 +87,7 @@ describe('@dina/protocol type ↔ fixture compatibility (task 1.27)', () => {
     const fixture = JSON.parse(
       readFileSync(resolve(FIXTURES_ROOT, 'identity', 'did_document.json'), 'utf8'),
     ) as {
-      vectors: Array<{ expected: { context: string[]; service_type: string } }>;
+      vectors: { expected: { context: string[]; service_type: string } }[];
     };
     expect(fixture.vectors.length).toBeGreaterThan(0);
     expect(fixture.vectors[0]!.expected.context).toContain(DID_V1_CONTEXT);

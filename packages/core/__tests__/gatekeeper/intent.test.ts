@@ -7,6 +7,8 @@
  * Source: core/test/gatekeeper_test.go
  */
 
+import { DEFAULT_ACTION_POLICIES } from '@dina/test-harness';
+
 import {
   evaluateIntent,
   evaluateIntentWithPersona,
@@ -14,7 +16,6 @@ import {
   isBrainDenied,
   isMoneyAction,
 } from '../../src/gatekeeper/intent';
-import { DEFAULT_ACTION_POLICIES } from '@dina/test-harness';
 
 describe('Gatekeeper Intent Evaluation', () => {
   describe('getDefaultRiskLevel', () => {

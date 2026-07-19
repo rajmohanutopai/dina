@@ -4,13 +4,9 @@
  * Source: ARCHITECTURE.md Tasks 2.41–2.47
  */
 
+import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
+import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 import { InMemoryStagingRepository, setStagingRepository } from '../../src/staging/repository';
-import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
-import {
-  WorkflowService,
-  getWorkflowService,
-  setWorkflowService,
-} from '../../src/workflow/service';
 import {
   ingest,
   claim,
@@ -36,8 +32,12 @@ import {
   clearOnDrainCallback,
 } from '../../src/staging/service';
 import { getItem as getVaultItem, listRecentItems, clearVaults } from '../../src/vault/crud';
-import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
-import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
+import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 describe('Staging Service', () => {
   beforeEach(() => {
@@ -807,7 +807,7 @@ describe('Staging Service', () => {
 
   describe('OnDrain callback', () => {
     it('fires on resolve when persona is open + classifiedItem provided', () => {
-      const drained: Array<{ id: string; persona: string }> = [];
+      const drained: { id: string; persona: string }[] = [];
       setOnDrainCallback((item, persona) => {
         drained.push({ id: item.id, persona });
       });

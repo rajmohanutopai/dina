@@ -5,6 +5,8 @@
  * precedence rule (BYOK over grant).
  */
 
+import { setGenericPassword } from 'react-native-keychain';
+
 import {
   CREDITS_DEFAULT_CONFIG,
   __resetCreditsCachesForTest,
@@ -18,7 +20,6 @@ import {
   refreshBalance,
   runClaimFlow,
 } from '../../src/ai/credits';
-import { setGenericPassword } from 'react-native-keychain';
 
 function fetchJson(status: number, body: unknown): typeof fetch {
   return jest.fn(async () => ({

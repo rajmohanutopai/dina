@@ -4,9 +4,9 @@
  * healthz + vault CRUD surface (task 1.30 scaffold scope).
  */
 
+import { WorkflowConflictError } from '../../src';
 import { InProcessTransport } from '../../src/client/in-process-transport';
 import { CoreRouter } from '../../src/server/router';
-import { WorkflowConflictError } from '../../src';
 
 function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
   const r = new CoreRouter();
@@ -473,7 +473,7 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
   );
 
   // Workflow events routes (task 1.32 slice B)
-  const workflowEvents: Array<{
+  const workflowEvents: {
     event_id: number;
     task_id: string;
     at: number;
@@ -483,7 +483,7 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
     delivery_failed: boolean;
     details: string;
     acknowledged_at?: number;
-  }> = [
+  }[] = [
     {
       event_id: 1,
       task_id: 'sq-1',
@@ -563,7 +563,7 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
 
   // Workflow tasks routes (task 1.32 slices C + D) — in-memory store
   // lets one fixture drive both read + create + transition scenarios.
-  const workflowTasks: Array<Record<string, unknown>> = [
+  const workflowTasks: Record<string, unknown>[] = [
     {
       id: 'wf-1',
       kind: 'service_query',
@@ -706,7 +706,7 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
   );
 
   // Memory + contacts routes (task 1.32 slice E)
-  const memoryTouches: Array<{ persona: string; topic: string; kind: string }> = [];
+  const memoryTouches: { persona: string; topic: string; kind: string }[] = [];
   const lockedPersonas = new Set(['financial']); // simulates a locked persona path
   r.post(
     '/v1/memory/topic/touch',
@@ -878,7 +878,7 @@ describe('InProcessTransport (task 1.30)', () => {
     const t = new InProcessTransport(buildRouter());
     const r = await t.vaultQuery('personal', { text: 'dentist', type: 'contact' });
     expect(r.count).toBe(1);
-    const first = (r.items as Array<Record<string, unknown>>)[0];
+    const first = (r.items as Record<string, unknown>[])[0];
     expect(first?.persona).toBe('personal');
     expect(first?.text).toBe('dentist');
   });

@@ -38,12 +38,12 @@ export interface ValidationResult {
   total: number;
   passed: number;
   failed: number;
-  errors: Array<{
+  errors: {
     description: string;
     field: string;
     expected: string;
     actual: string;
-  }>;
+  }[];
 }
 
 /**
@@ -55,8 +55,8 @@ export interface ValidationResult {
 export function validateVector(
   vector: TestVector,
   implementationFn: (inputs: Record<string, string>) => Record<string, string>,
-): { passed: boolean; errors: Array<{ field: string; expected: string; actual: string }> } {
-  const errors: Array<{ field: string; expected: string; actual: string }> = [];
+): { passed: boolean; errors: { field: string; expected: string; actual: string }[] } {
+  const errors: { field: string; expected: string; actual: string }[] = [];
 
   try {
     const actual = implementationFn(vector.inputs);

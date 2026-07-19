@@ -11,16 +11,20 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
+import * as path from 'path';
+
+import { TEST_PASSPHRASE, TEST_MNEMONIC_SEED, bytesToHex } from '@dina/test-harness';
+
+import { wrapSeed } from '../../src/crypto/aesgcm';
 import { serializeWrappedSeed, deserializeWrappedSeed } from '../../src/storage/seed_file';
 import {
   writeWrappedSeed,
   readWrappedSeed,
   wrappedSeedExists,
 } from '../../src/storage/seed_file_node';
-import { wrapSeed } from '../../src/crypto/aesgcm';
-import { TEST_PASSPHRASE, TEST_MNEMONIC_SEED, bytesToHex } from '@dina/test-harness';
+
+
 import type { WrappedSeed } from '../../src/crypto/aesgcm';
 
 // Argon2id is needed for wrapSeed

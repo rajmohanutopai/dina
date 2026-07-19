@@ -12,12 +12,14 @@
 
 import { pino } from 'pino';
 
-import type { CoreRouter } from '@dina/core';
 import { quarantineSize, listQuarantined, resetQuarantineState } from '@dina/core/d2d';
-import type { FastifyReply, FastifyRequest } from 'fastify';
+
 
 import { registerDebugDispatch } from '../src/server/debug_dispatch';
+
 import type { Logger } from '../src/logger';
+import type { CoreRouter } from '@dina/core';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 type Handler = (req: FastifyRequest, reply: FastifyReply) => Promise<void> | void;
 

@@ -4,6 +4,8 @@
  * Source: core/test/gatekeeper_test.go (sharing tiers section)
  */
 
+import { PHASE1_RECOGNIZED_CATEGORIES } from '@dina/test-harness';
+
 import {
   checkSharingPolicy,
   getSharingTier,
@@ -15,8 +17,8 @@ import {
   buildTieredPayload,
   selectPayloadTier,
 } from '../../src/gatekeeper/sharing';
+
 import type { SharingTier } from '../../src/gatekeeper/sharing';
-import { PHASE1_RECOGNIZED_CATEGORIES } from '@dina/test-harness';
 
 describe('Sharing Tier Enforcement', () => {
   const friendDID = 'did:plc:closeFriend';

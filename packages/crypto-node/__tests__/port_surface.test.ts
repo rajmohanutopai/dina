@@ -34,6 +34,7 @@
  */
 
 import * as ed from '@noble/ed25519';
+
 import { NodeCryptoAdapter, ARGON2_OWASP_DEFAULTS, type CryptoAdapterNode } from '../src';
 
 describe('NodeCryptoAdapter — port-surface coverage audit (3.29)', () => {
@@ -49,7 +50,7 @@ describe('NodeCryptoAdapter — port-surface coverage audit (3.29)', () => {
     const key32 = new Uint8Array(32);
     const key33 = new Uint8Array(33);
 
-    const calls: Array<[string, Promise<unknown>]> = [
+    const calls: [string, Promise<unknown>][] = [
       ['ed25519DerivePath', adapter.ed25519DerivePath(seed, "m/0'")],
       ['ed25519Sign', adapter.ed25519Sign(seed, message)],
       ['ed25519Verify', adapter.ed25519Verify(key32, message, sig)],

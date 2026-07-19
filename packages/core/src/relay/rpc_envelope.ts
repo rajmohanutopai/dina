@@ -9,10 +9,13 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { sealEncrypt, sealDecrypt } from '../crypto/nacl';
+
+import { buildRPCRequest as protocolBuildRPCRequest } from '@dina/protocol';
+
 import { hasSigningHeaders } from '../cli/client';
 import { RPC_REQUEST_TYPE, RPC_RESPONSE_TYPE } from '../constants';
-import { buildRPCRequest as protocolBuildRPCRequest } from '@dina/protocol';
+import { sealEncrypt, sealDecrypt } from '../crypto/nacl';
+
 
 // Types moved to @dina/protocol in Phase 1b task 1.17 (category 1.16f).
 // Re-exported here so core's public API surface is unchanged for

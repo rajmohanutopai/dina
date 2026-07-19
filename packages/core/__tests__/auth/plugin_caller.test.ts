@@ -7,13 +7,13 @@
  * a pinning test that this NEVER happens — that test lives here.
  */
 
+import { isAuthorized } from '../../src/auth/authz';
 import {
   registerDevice,
   resetCallerTypeState,
   resolveCallerType,
   setDeviceRoleResolver,
 } from '../../src/auth/caller_type';
-import { isAuthorized } from '../../src/auth/authz';
 
 const PLUGIN_DID = 'did:key:zplugininstance';
 
@@ -47,7 +47,7 @@ describe('resolveCallerType — plugin role (§7)', () => {
 });
 
 describe('authz matrix — plugin P0 surface (§9.0: nothing else, in any phase)', () => {
-  const ALLOWED: Array<[string, string]> = [
+  const ALLOWED: [string, string][] = [
     ['POST', '/v1/workflow/tasks/claim'],
     ['POST', '/v1/workflow/tasks/task-42/heartbeat'],
     ['POST', '/v1/workflow/tasks/task-42/progress'],
@@ -60,7 +60,7 @@ describe('authz matrix — plugin P0 surface (§9.0: nothing else, in any phase)
     expect(isAuthorized('plugin', method, path)).toBe(true);
   });
 
-  const DENIED: Array<[string, string]> = [
+  const DENIED: [string, string][] = [
     // The rest of the workflow sub-tree — a plugin must not mint, read,
     // enumerate, approve, or cancel work.
     ['POST', '/v1/workflow/tasks'],

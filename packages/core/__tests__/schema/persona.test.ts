@@ -6,13 +6,14 @@
  * Source: core/internal/adapter/sqlite/schema/persona_001.sql
  */
 
+import { VAULT_ITEM_TYPES } from '@dina/test-harness';
+
 import {
   getPersonaTableNames,
   getVaultItemsColumns,
   getVaultItemTypeValues,
 } from '../../src/schema/persona';
 import { getPersona001DDL } from '../../src/schema/persona_node';
-import { VAULT_ITEM_TYPES } from '@dina/test-harness';
 
 describe('Persona Vault Schema', () => {
   describe('persona_001', () => {

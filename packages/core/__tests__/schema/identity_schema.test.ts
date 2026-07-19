@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { parseSchema, validateIdentitySchema } from '../../src/schema/validator';
 
 const SCHEMA_PATH = path.resolve(__dirname, '../../../fixtures/schema/identity_001.sql');

@@ -13,15 +13,16 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   InMemoryAgentGrantRepository,
   SQLiteAgentGrantRepository,
   type AgentGrantRepository,
   type AgentPersonaGrantInsert,
 } from '../../src/agent/grant_repository';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 function sqliteHarness() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-grants-'));
@@ -71,10 +72,10 @@ function grant(over: Partial<AgentPersonaGrantInsert> = {}): AgentPersonaGrantIn
   };
 }
 
-const factories: Array<{
+const factories: {
   name: string;
   make: () => { repo: AgentGrantRepository; cleanup: () => void };
-}> = [
+}[] = [
   {
     name: 'InMemory',
     make: () => ({ repo: new InMemoryAgentGrantRepository(), cleanup: () => {} }),

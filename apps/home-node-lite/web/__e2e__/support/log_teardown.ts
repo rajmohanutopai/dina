@@ -57,6 +57,6 @@ export default async function globalTeardown(): Promise<void> {
       `MRS-14 log-hygiene FAILED — vault content / secrets leaked into server logs:\n${report}`,
     );
   }
-  // eslint-disable-next-line no-console
+   
   console.log('[MRS-14] server-log hygiene clean.');
 }

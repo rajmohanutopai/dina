@@ -13,6 +13,7 @@ import {
   type LeaseExpirySweepResult,
 } from '../../src/workflow/lease_expiry_sweeper';
 import { InMemoryWorkflowRepository, type WorkflowRepository } from '../../src/workflow/repository';
+
 import type { WorkflowTask } from '../../src/workflow/domain';
 
 /** Deterministic interval scheduler — tests advance time explicitly. */
@@ -131,7 +132,7 @@ describe('LeaseExpirySweeper.runTick', () => {
     seedRunningDelegation(repo, 'b', sched.nowMs() - 5_000, 'did:plc:agent-b');
     seedRunningDelegation(repo, 'c', sched.nowMs() + 60_000);
 
-    const observed: Array<{ id: string; priorAgent?: string }> = [];
+    const observed: { id: string; priorAgent?: string }[] = [];
     const sweeper = new LeaseExpirySweeper({
       repository: repo,
       nowMsFn: sched.nowMs,

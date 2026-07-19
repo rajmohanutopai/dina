@@ -11,15 +11,15 @@
  *   - Loyalty Law: no fetch / network.
  */
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import React from 'react';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import RegionScreen from '../../app/peerlens-preferences/region';
 import {
   resetUserPreferencesForTest,
   saveUserPreferences,
 } from '../../src/services/user_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 // Capture pop-on-select calls. The screen uses `router.replace` (not
 // `router.back`) to land on Settings — replace prevents the user from

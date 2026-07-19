@@ -30,6 +30,7 @@ import React from 'react';
 import { ScrollView, Pressable, Text, StyleSheet } from 'react-native';
 
 import { colors, spacing, radius, textStyles } from '../../theme';
+
 import type { FacetBar } from '../facets';
 
 export interface FacetBarViewProps {

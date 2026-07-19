@@ -27,7 +27,6 @@
  * core-client + LLM provider already wired elsewhere.
  */
 
-import type { CoreClient } from '@dina/core';
 import {
   PreferenceExtractor,
   TopicExtractor,
@@ -35,8 +34,10 @@ import {
   TopicExtractorLLM,
   TopicTouchPipelineOptions,
 } from '@dina/brain/enrichment';
-import type { LLMProvider } from '@dina/brain/llm';
 import { resolveByName } from '@dina/core';
+
+import type { LLMProvider } from '@dina/brain/llm';
+import type { CoreClient } from '@dina/core';
 
 export interface BuildStagingEnrichmentOptions {
   /**

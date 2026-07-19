@@ -18,21 +18,29 @@
  *   - pii scrub + service_config round-trip
  */
 
-import { createCoreRouter } from '../../src/server/core_server';
-import type { CoreRequest, CoreResponse } from '../../src/server/router';
-import { signRequest } from '../../src/auth/canonical';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { deriveDIDKey } from '../../src/identity/did';
-import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
+import { randomBytes } from '@noble/ciphers/utils.js';
+
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import {
   registerDevice as registerDeviceDID,
   registerService,
   resetCallerTypeState,
   setDeviceRoleResolver,
 } from '../../src/auth/caller_type';
+import { signRequest } from '../../src/auth/canonical';
+import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
+import { setNodeDID } from '../../src/pairing/ceremony';
+import { createCoreRouter } from '../../src/server/core_server';
 import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
+
 import { WorkflowService, setWorkflowService, getWorkflowService } from '../../src/workflow/service';
+import type { CoreRequest, CoreResponse } from '../../src/server/router';
+
 import type { WorkflowTask } from '../../src/workflow/domain';
+
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { setServiceQuerySender } from '../../src/server/routes/service_query';
 import { setServiceRespondSender } from '../../src/server/routes/service_respond';
@@ -42,13 +50,12 @@ import {
   setServiceConfig,
 } from '../../src/service/service_config';
 import { setD2DSender } from '../../src/server/routes/d2d_msg';
-import { setNodeDID } from '../../src/pairing/ceremony';
 import {
   setServiceGrantRepository,
   type ServiceGrant,
 } from '../../src/service/service_grant_repository';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
-import { randomBytes } from '@noble/ciphers/utils.js';
+
+
 
 interface Actor {
   did: string;
@@ -849,7 +856,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/query forwards service_uri onto the D2D body (#1, chosen listing)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceQuerySender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });
@@ -874,7 +881,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/query omits service_uri from the D2D body when absent (#1)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceQuerySender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });
@@ -976,7 +983,7 @@ describe('CoreRouter integration', () => {
       // `service.response` body (the requester re-validates it untrusted).
       // The route builds the D2D body INLINE — a separate path from the
       // bridge's deriveResponseBody — so it needs its own coverage.
-      const sent: Array<{ to: string; body: Record<string, unknown> }> = [];
+      const sent: { to: string; body: Record<string, unknown> }[] = [];
       setServiceRespondSender(async (to, _type, body) => {
         sent.push({ to, body: body as unknown as Record<string, unknown> });
       });
@@ -1018,7 +1025,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('POST /v1/service/respond drops a non-object card (never garbage on the wire)', async () => {
-      const sent: Array<{ body: Record<string, unknown> }> = [];
+      const sent: { body: Record<string, unknown> }[] = [];
       setServiceRespondSender(async (_to, _type, body) => {
         sent.push({ body: body as unknown as Record<string, unknown> });
       });

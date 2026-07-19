@@ -26,8 +26,8 @@ export interface ApprovalRequest {
 export type ApprovalRequestListener = (req: ApprovalRequest) => void;
 
 export class ApprovalManager {
-  private readonly requests: Map<string, ApprovalRequest> = new Map();
-  private readonly listeners: Set<ApprovalRequestListener> = new Set();
+  private readonly requests = new Map<string, ApprovalRequest>();
+  private readonly listeners = new Set<ApprovalRequestListener>();
 
   /**
    * Create a new approval request.

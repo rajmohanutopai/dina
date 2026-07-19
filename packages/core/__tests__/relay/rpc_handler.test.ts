@@ -4,12 +4,14 @@
  * Source: ARCHITECTURE.md Tasks 2.22, 2.23
  */
 
-import { handleRPCRequest, resetRPCHandler } from '../../src/relay/rpc_handler';
-import { buildRPCRequest, sealRPCRequest } from '../../src/relay/rpc_envelope';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { buildRPCRequest, sealRPCRequest } from '../../src/relay/rpc_envelope';
+import { handleRPCRequest, resetRPCHandler } from '../../src/relay/rpc_handler';
+
 
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);

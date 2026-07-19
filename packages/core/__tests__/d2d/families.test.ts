@@ -8,17 +8,18 @@
  */
 
 import {
+  D2D_V1_MESSAGE_TYPES,
+  D2D_MEMORY_TYPE_MAP,
+  D2D_EPHEMERAL_MESSAGE_TYPES,
+} from '@dina/test-harness';
+
+import {
   isValidV1Type,
   mapToVaultItemType,
   shouldStore,
   alwaysPasses,
 } from '../../src/d2d/families';
 import { VALID_VAULT_ITEM_TYPES } from '../../src/vault/validation';
-import {
-  D2D_V1_MESSAGE_TYPES,
-  D2D_MEMORY_TYPE_MAP,
-  D2D_EPHEMERAL_MESSAGE_TYPES,
-} from '@dina/test-harness';
 
 const EPHEMERAL = new Set<string>(D2D_EPHEMERAL_MESSAGE_TYPES);
 

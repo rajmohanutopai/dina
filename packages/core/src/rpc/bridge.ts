@@ -22,16 +22,16 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md CORE-P0-002.
  */
 
+import { IdempotencyCache } from './idempotency_cache';
+import { assertIdentityBinding, IdentityBindingError } from './identity_binding';
+import { withPanicRecovery } from './panic_recovery';
 import {
   type RPCInnerRequest,
   type RPCInnerResponse,
   assertInnerBodyWithinSize,
   InnerBodyTooLargeError,
 } from './types';
-import { assertIdentityBinding, IdentityBindingError } from './identity_binding';
-import { IdempotencyCache } from './idempotency_cache';
 import { RPCWorkerPool } from './worker_pool';
-import { withPanicRecovery } from './panic_recovery';
 
 export interface RPCBridgeOptions {
   /** Downstream HTTP dispatcher — e.g. an Express adapter. */

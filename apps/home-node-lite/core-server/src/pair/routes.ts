@@ -35,16 +35,17 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4h tasks 4.63 + 4.67.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import {
-  PairingCodeError,
-  type PairingCodeRegistry,
-} from './pairing_codes';
 import {
   DeviceTokenError,
   type DeviceTokenRegistry,
   type DeviceRole,
 } from './device_tokens';
+import {
+  PairingCodeError,
+  type PairingCodeRegistry,
+} from './pairing_codes';
+
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export interface PairRoutesOptions {
   /** Code registry — task 4.62. Usually shared via boot DI. */

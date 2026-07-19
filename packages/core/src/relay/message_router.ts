@@ -13,8 +13,8 @@
  * Source: ARCHITECTURE.md Task 2.21
  */
 
-import { sealDecrypt } from '../crypto/nacl';
 import { appendAudit } from '../audit/service';
+import { sealDecrypt } from '../crypto/nacl';
 
 export type MessageType = 'core_rpc_request' | 'd2d_payload' | 'unknown';
 

@@ -14,14 +14,19 @@
  *         (geocode / search_provider_services / query_service entries).
  */
 
+import { getCapabilityEntry, resolveCanonicalCapability } from '@dina/protocol';
+
+import { defaultFetch } from '../runtime/fetch';
+import { rankCandidates } from '../service/candidate_ranker';
+
+import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
+
 import type { AgentTool } from './tool_registry';
 import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact, ServiceOfferView } from '@dina/core';
-import { getCapabilityEntry, resolveCanonicalCapability } from '@dina/protocol';
-import { rankCandidates } from '../service/candidate_ranker';
-import { autofillRequesterFields, type RequesterAutofillSchema } from './requester_autofill';
-import { defaultFetch } from '../runtime/fetch';
+
+
 
 /**
  * Index a published-schema map (from an AppView service profile) by an
@@ -148,11 +153,11 @@ export function createGeocodeTool(options: GeocodeToolOptions = {}): AgentTool {
       if (!resp.ok) {
         throw new Error(`geocode: HTTP ${resp.status}`);
       }
-      const rows = (await resp.json()) as Array<{
+      const rows = (await resp.json()) as {
         lat?: string;
         lon?: string;
         display_name?: string;
-      }>;
+      }[];
       if (!Array.isArray(rows) || rows.length === 0) {
         throw new Error(`geocode: no result for "${address}"`);
       }
@@ -217,7 +222,7 @@ export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOpti
       required: ['intent'],
     },
     async execute(args): Promise<{
-      capabilities: Array<{ canonical: string; description: string; domain: string }>;
+      capabilities: { canonical: string; description: string; domain: string }[];
     }> {
       const intent = String(args.intent ?? '');
       if (intent === '') throw new Error('search_capabilities: intent is required');
@@ -307,7 +312,7 @@ export function createSearchProviderServicesTool(
       },
       required: ['capability'],
     },
-    async execute(args): Promise<Array<LLMProfile>> {
+    async execute(args): Promise<LLMProfile[]> {
       const capability = String(args.capability ?? '');
       if (capability === '') throw new Error('search_provider_services: capability is required');
       const profiles = await options.appViewClient.searchServices({
@@ -783,7 +788,7 @@ export interface PreferredProviderEntry {
   contact_did: string;
   contact_name: string;
   trust_level: string;
-  capabilities: Array<{
+  capabilities: {
     name: string;
     /** 'public' = published/AppView-discoverable; 'offer' = a direct
      *  known_only offer this contact sent us. Absent ⇒ public (back-compat). */
@@ -796,7 +801,7 @@ export interface PreferredProviderEntry {
     /** OFFER only: the schema_hash to pass to query_service (no AppView record
      *  exists to auto-fetch it from for a known_only listing). */
     schema_hash?: string;
-  }>;
+  }[];
 }
 export interface FindPreferredProviderResult {
   providers: PreferredProviderEntry[];

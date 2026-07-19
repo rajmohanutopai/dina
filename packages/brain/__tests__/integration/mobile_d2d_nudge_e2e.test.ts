@@ -20,27 +20,26 @@
  * This asserts both paths.
  */
 
-import { createCoreRouter, InProcessTransport, stagingIngest, resetStagingState } from '@dina/core';
-import { clearVaults, storeItem } from '@dina/core';
-import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
-import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import type {
-  StagingDrainCoreClient,
-  D2DReceivedNotification,
-  D2DInboundMessage,
-} from '../../src/staging/drain';
-import { configureRateLimiter, registerPublicKeyResolver } from '@dina/core';
-import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
-import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
+import { createCoreRouter, InProcessTransport, stagingIngest, resetStagingState , clearVaults, storeItem , configureRateLimiter, registerPublicKeyResolver , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
 import { resetReminderState } from '@dina/core/reminders';
-import { clearCheckpoints, readCheckpoint } from '../../src/scratchpad/lifecycle';
+import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
+
 import { resetNudgeFrequency } from '../../src/nudge/assembler';
+import { clearCheckpoints, readCheckpoint } from '../../src/scratchpad/lifecycle';
+import { StagingDrainScheduler } from '../../src/staging/scheduler';
+import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 import {
   openSQLiteVault,
   closeSQLiteVault,
   type SQLiteVaultHandle,
 } from './helpers/sqlite_vault_harness';
+
+import type {
+  StagingDrainCoreClient,
+  D2DReceivedNotification,
+  D2DInboundMessage,
+} from '../../src/staging/drain';
 
 describe('D2D arrival → nudge notification (Sancho Moment)', () => {
   const openHandles: SQLiteVaultHandle[] = [];

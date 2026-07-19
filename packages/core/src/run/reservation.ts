@@ -61,6 +61,14 @@ export interface ReservationRepository {
   /** Count of OPEN reservations (reserved + held_by_lock) for a run. */
   countOpen(runId: string): number;
 
+  /** Stamp the correlation id the pacer tags its `service.query` with, so the
+   *  provider's response can be matched back to this slot (§7). CAS on `reserved`
+   *  (a committed/released slot is never re-tagged). Returns true iff stamped. */
+  setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean;
+  /** The reserved slot awaiting the response for this correlation id (§7). Returns
+   *  null if none (already committed / invalidated / unknown id). */
+  getByCorrelation(correlationId: string): ReservationRecord | null;
+
   /** CAS `reserved → committed`, stamping the wire ids. Returns true iff the
    *  reservation was still `reserved` (the enqueue-commit linearization point). */
   commit(reservationId: string, input: CommitReservationInput, nowMs: number): boolean;
@@ -171,6 +179,23 @@ export class SQLiteReservationRepository implements ReservationRepository {
     );
   }
 
+  setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
+    return (
+      this.db.run(
+        "UPDATE run_reservations SET query_correlation_id = ?, updated_at = ? WHERE reservation_id = ? AND state = 'reserved'",
+        [correlationId, nowMs, reservationId],
+      ) > 0
+    );
+  }
+
+  getByCorrelation(correlationId: string): ReservationRecord | null {
+    const rows = this.db.query(
+      'SELECT * FROM run_reservations WHERE query_correlation_id = ? LIMIT 1',
+      [correlationId],
+    );
+    return rows.length > 0 ? rowToRes(rows[0]) : null;
+  }
+
   invalidateOpen(runId: string, nowMs: number): ReservationRecord[] {
     const open = this.db
       .query(
@@ -237,6 +262,19 @@ export class InMemoryReservationRepository implements ReservationRepository {
     r.state = 'released';
     r.updated_at = nowMs;
     return true;
+  }
+  setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
+    const r = this.rows.get(reservationId);
+    if (!r || r.state !== 'reserved') return false;
+    r.query_correlation_id = correlationId;
+    r.updated_at = nowMs;
+    return true;
+  }
+  getByCorrelation(correlationId: string): ReservationRecord | null {
+    for (const r of this.rows.values()) {
+      if (r.query_correlation_id === correlationId) return { ...r };
+    }
+    return null;
   }
   invalidateOpen(runId: string, nowMs: number): ReservationRecord[] {
     const out: ReservationRecord[] = [];

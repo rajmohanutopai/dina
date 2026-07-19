@@ -109,6 +109,12 @@ Core bypasses its own auth middleware for `/admin/*` paths and reverse-proxies t
 
 This is acceptable for the Phase 1 single-user home node deployment where Brain is a co-located sidecar. It is NOT acceptable for multi-tenant, remote-Brain, or untrusted-network deployments.
 
+### Owner control-plane boundary on mobile — shared-VM limitation (F15)
+
+The interactive-run owner control plane (`/v1/run/*`, `/v1/watch/*`, INTERACTIVE_SERVICES §12.5) is owner-only. On the **server split** this is a hard boundary: Core and Brain are separate OS processes and every Brain→Core hop is Ed25519-signed, so Brain cannot issue owner commands. On **mobile**, Core and Brain share one JavaScript VM (Hermes) — there is no process boundary. The owner boundary there is enforced by a **boot-minted owner capability**: the app mints a 32-byte secret at boot, holds it in an app-layer closure, registers the CoreRouter guard with it, and the owner client stamps it on each request; a request that merely sets `callerType:'owner'` without the secret is rejected (fail-closed).
+
+**This is defense-in-depth, not a hard boundary, and we state that honestly.** It stops the realistic threat — a **prompt-injection-steered Brain** whose LLM reasoning is coaxed into calling run-control; that Brain follows normal code paths, holds no owner client and no secret, and cannot forge the call. It does **not** stop a Brain executing **arbitrary hostile JavaScript** in the shared VM: such code can monkeypatch `CoreRouter.prototype.handle` to skim the capability off a live owner request, or read the closure from the heap. That threat is unfixable by any in-VM mechanism (a token/closure/`private` field is transparent to code already running in the same VM) — and a Brain with arbitrary-code-execution can already read the vault DEKs and master seed from RAM, so the owner boundary is not the meaningful control against it. **Strong owner isolation is the server-split deployment.** Shipping Dina with only vetted first-party Brain code (no untrusted native dependency, no in-VM plugin code — plugins run out-of-process, per the kernel rule) is what keeps this threat out of scope on mobile.
+
 **Planned (Phase 2):** Replace CLIENT_TOKEN with the same Ed25519 model used everywhere else. The admin UI backend authenticates to Core with Ed25519; the browser authenticates to the admin backend with a session cookie. This eliminates CLIENT_TOKEN entirely:
 
 ```

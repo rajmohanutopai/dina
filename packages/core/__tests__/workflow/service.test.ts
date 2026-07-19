@@ -2,17 +2,17 @@
  * CORE-P2-F01-F06 — WorkflowService tests.
  */
 
+import {
+  WorkflowTaskKind,
+  WorkflowTaskPriority,
+  WorkflowTaskState,
+} from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
 import {
   WorkflowService,
   WorkflowTransitionError,
   WorkflowValidationError,
 } from '../../src/workflow/service';
-import {
-  WorkflowTaskKind,
-  WorkflowTaskPriority,
-  WorkflowTaskState,
-} from '../../src/workflow/domain';
 
 function setup(nowMs = 1_700_000_000_000) {
   const repo = new InMemoryWorkflowRepository();
@@ -428,7 +428,7 @@ describe('WorkflowService construction', () => {
 describe('WorkflowService — Response Bridge (CORE-P3-I01/I02/T01)', () => {
   function setupBridge() {
     const repo = new InMemoryWorkflowRepository();
-    const calls: Array<Record<string, unknown>> = [];
+    const calls: Record<string, unknown>[] = [];
     const service = new WorkflowService({
       repository: repo,
       nowMsFn: () => 1_700_000_000_000,

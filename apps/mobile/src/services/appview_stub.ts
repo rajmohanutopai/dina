@@ -13,7 +13,6 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md Blocker #4 (demo seed).
  */
 
-import { FEATURE_NAMES } from '@dina/core';
 import {
   computeSchemaHash,
   EtaQueryParamsSchema,
@@ -23,6 +22,7 @@ import {
   type CapabilityCandidate,
   type ServiceProfile,
 } from '@dina/brain';
+import { FEATURE_NAMES } from '@dina/core';
 import { allCanonicalCapabilities, resolveSearchableCapability } from '@dina/protocol';
 
 export interface AppViewStubOptions {

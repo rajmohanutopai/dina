@@ -33,8 +33,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4e task 4.36.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { NotifyHub, WebSocketLike } from './notify_hub';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Result of `authenticate()`. */
 export type NotifyAuthResult =

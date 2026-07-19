@@ -24,9 +24,9 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { Platform } from 'react-native';
 import argon2 from 'react-native-argon2';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 
 import { setKDFOverride } from '@dina/core';
 

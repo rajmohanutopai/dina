@@ -10,6 +10,7 @@ import {
   scopedParams,
   scopedTableDeleter,
 } from '../../src/scope/repository';
+
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
 describe('scoped repository helpers', () => {
@@ -39,7 +40,7 @@ describe('scoped repository helpers', () => {
   });
 
   it('scopedTableDeleter deletes only the requested scope + counts accurately + idempotent', () => {
-    const rows: Array<{ data_scope: string }> = [
+    const rows: { data_scope: string }[] = [
       { data_scope: 'user' },
       { data_scope: 'user' },
       { data_scope: 'guided_demo:x' },

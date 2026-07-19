@@ -20,15 +20,15 @@ export interface AliasMatch {
  */
 export function matchWithAliases(
   text: string,
-  contacts: Array<{ name: string; aliases?: string[]; kinship?: string }>,
+  contacts: { name: string; aliases?: string[]; kinship?: string }[],
 ): AliasMatch[] {
   if (!text || contacts.length === 0) return [];
 
-  const terms: Array<{
+  const terms: {
     contactName: string;
     term: string;
     matchType: 'alias' | 'name' | 'kinship';
-  }> = [];
+  }[] = [];
   for (const contact of contacts) {
     if (contact.name.length >= 2) {
       terms.push({ contactName: contact.name, term: contact.name, matchType: 'name' });
@@ -45,7 +45,7 @@ export function matchWithAliases(
 
   const matches: AliasMatch[] = [];
   const seenContacts = new Set<string>();
-  const coveredRanges: Array<[number, number]> = [];
+  const coveredRanges: [number, number][] = [];
 
   for (const { contactName, term, matchType } of terms) {
     if (seenContacts.has(contactName)) continue;
@@ -76,7 +76,7 @@ export function matchWithAliases(
  */
 export function attributeWithPrecedence(
   text: string,
-  contacts: Array<{ name: string; aliases?: string[]; kinship?: string }>,
+  contacts: { name: string; aliases?: string[]; kinship?: string }[],
 ): { subject: string; matchType: string } | null {
   const matches = matchWithAliases(text, contacts);
   if (matches.length === 0) {
@@ -121,7 +121,7 @@ export function overrideStagingResponsibility(
  */
 export function generateRecallHints(
   text: string,
-  contacts: Array<{ name: string; aliases?: string[] }>,
+  contacts: { name: string; aliases?: string[] }[],
 ): string[] {
   const matches = matchWithAliases(text, contacts);
   return matches.map((m) => `Recall context for ${m.contactName}`);

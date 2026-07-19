@@ -160,7 +160,7 @@ function safeParseArray(raw: unknown): string[] {
 export class InMemoryChatMessageRepository implements ChatMessageRepository {
   // Each row carries the scope it was appended under (mirrors the SQLite
   // data_scope column), so reads/deletes can isolate by the active scope.
-  private readonly rows: Array<{ msg: StoredChatMessage; scope: DataScope }> = [];
+  private readonly rows: { msg: StoredChatMessage; scope: DataScope }[] = [];
 
   async append(msg: StoredChatMessage): Promise<void> {
     // Upsert semantics — match SQLite's INSERT OR REPLACE on id (ids are

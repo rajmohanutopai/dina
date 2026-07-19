@@ -129,7 +129,7 @@ describe('DND policy (5.69)', () => {
     });
 
     it('isInQuietHours: simple in-day window', () => {
-      const at = (h: number, m: number = 0) => new Date(2026, 0, 1, h, m);
+      const at = (h: number, m = 0) => new Date(2026, 0, 1, h, m);
       // Window 09:00–17:00.
       expect(isInQuietHours('09:00', '17:00', at(8, 59))).toBe(false);
       expect(isInQuietHours('09:00', '17:00', at(9, 0))).toBe(true); // inclusive start
@@ -139,7 +139,7 @@ describe('DND policy (5.69)', () => {
     });
 
     it('isInQuietHours: wraps-midnight window (default 22:00–07:00)', () => {
-      const at = (h: number, m: number = 0) => new Date(2026, 0, 1, h, m);
+      const at = (h: number, m = 0) => new Date(2026, 0, 1, h, m);
       expect(isInQuietHours('22:00', '07:00', at(21, 59))).toBe(false);
       expect(isInQuietHours('22:00', '07:00', at(22, 0))).toBe(true);
       expect(isInQuietHours('22:00', '07:00', at(23, 30))).toBe(true);
@@ -150,7 +150,7 @@ describe('DND policy (5.69)', () => {
     });
 
     it('isInQuietHours: empty window when start === end', () => {
-      const at = (h: number, m: number = 0) => new Date(2026, 0, 1, h, m);
+      const at = (h: number, m = 0) => new Date(2026, 0, 1, h, m);
       expect(isInQuietHours('00:00', '00:00', at(0, 0))).toBe(false);
       expect(isInQuietHours('12:00', '12:00', at(12, 0))).toBe(false);
     });

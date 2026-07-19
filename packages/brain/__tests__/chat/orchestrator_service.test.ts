@@ -39,7 +39,7 @@ describe('Chat orchestrator — /service', () => {
   });
 
   it('with a handler, delegates to it and returns its ack string', async () => {
-    const calls: Array<{ capability: string; payload: string }> = [];
+    const calls: { capability: string; payload: string }[] = [];
     setServiceCommandHandler(async (capability, payload) => {
       calls.push({ capability, payload });
       return { ack: `Asking provider for ${capability}…` };

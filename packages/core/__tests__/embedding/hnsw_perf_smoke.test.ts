@@ -98,7 +98,7 @@ describeMaybe(`HNSW perf smoke — ${ROW_COUNT} items, p95 < ${P95_BUDGET_MS} ms
     // Summary on stdout so CI dashboards surface the numbers on both
     // pass and fail. Format matches storage-node's FTS5 perf smoke for
     // grep'able consistency.
-    // eslint-disable-next-line no-console
+     
     console.log(
       `[hnsw_perf] queries=${MEASURED_QUERIES} p50=${p50.toFixed(2)}ms p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms budget=${P95_BUDGET_MS}ms`,
     );

@@ -7,9 +7,10 @@
  * Source: tests/integration/test_memory_flows.py
  */
 
-import { storeItem, queryVault, deleteItem, getItem, clearVaults } from '../../src/vault/crud';
-import { scrubPII } from '../../src/pii/patterns';
 import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
+
+import { scrubPII } from '../../src/pii/patterns';
+import { storeItem, queryVault, deleteItem, getItem, clearVaults } from '../../src/vault/crud';
 
 describe('Memory Flows Integration', () => {
   beforeEach(() => {

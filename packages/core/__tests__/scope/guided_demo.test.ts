@@ -21,11 +21,12 @@ import {
   markGuidedDemoStep,
   endGuidedDemo,
 } from '../../src/scope/guided_demo';
+
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
 /** Fake adapter honouring `… WHERE data_scope = ?` count + delete. */
 function fakeDb() {
-  const tables = new Map<string, Array<{ data_scope: string }>>();
+  const tables = new Map<string, { data_scope: string }[]>();
   const tableOf = (sql: string): string => /FROM\s+(\w+)/i.exec(sql)?.[1] ?? '';
   const db = {
     query: (sql: string, params?: unknown[]): unknown[] => {

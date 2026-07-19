@@ -10,12 +10,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
+
 import { pdsHostForEndpoints } from '@dina/home-node';
 
-import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
-import { OnboardingShell } from './shell';
 import { locateStep, type Step } from '../../onboarding/state';
+import { mobileHostedEndpoints } from '../../services/hosted_endpoints';
 import { colors, radius, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface OwnerNameProps {
   initialName?: string;

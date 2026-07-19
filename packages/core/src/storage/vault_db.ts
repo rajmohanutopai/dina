@@ -17,9 +17,7 @@
  * Source: ARCHITECTURE.md Tasks 1.30, 1.31, 1.32
  */
 
-export interface VaultDBRow {
-  [key: string]: string | number | null | Uint8Array;
-}
+export type VaultDBRow = Record<string, string | number | null | Uint8Array>;
 
 export interface VaultDB {
   /** Whether the database is currently open. */
@@ -82,7 +80,7 @@ export class InMemoryVaultDB implements VaultDB {
   private _isOpen = false;
   private _walEnabled = false;
   private _persona: string;
-  private _dekHash: string = '';
+  private _dekHash = '';
   private tables = new Map<string, VaultDBRow[]>();
   private pragmas = new Map<string, string>();
 

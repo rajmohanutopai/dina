@@ -4,6 +4,10 @@
  * Source: ARCHITECTURE.md Task 6.16
  */
 
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import { addAlias } from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
 import {
   getContactList,
   searchContacts,
@@ -15,9 +19,7 @@ import {
   getTrustLevelOptions,
   resetContacts,
 } from '../../src/hooks/useContacts';
-import { addAlias } from '../../../core/src/contacts/directory';
-import { setPeopleRepository } from '../../../core/src/people/repository';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+
 
 describe('Contacts Tab Hook (6.16)', () => {
   beforeEach(() => {

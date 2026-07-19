@@ -4,8 +4,9 @@
  */
 
 import { RPCBridge } from '../../src/rpc/bridge';
-import type { RPCInnerRequest, RPCInnerResponse } from '../../src/rpc/types';
 import { MAX_INNER_BODY_SIZE } from '../../src/rpc/types';
+
+import type { RPCInnerRequest, RPCInnerResponse } from '../../src/rpc/types';
 
 function decode(body: Uint8Array): Record<string, unknown> {
   return JSON.parse(new TextDecoder().decode(body));

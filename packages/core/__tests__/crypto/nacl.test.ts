@@ -11,13 +11,6 @@
  */
 
 import {
-  sealEncrypt,
-  sealDecrypt,
-  ed25519PubToX25519,
-  ed25519SecToX25519,
-} from '../../src/crypto/nacl';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import {
   TEST_ED25519_SEED,
   TEST_MESSAGE,
   hasFixture,
@@ -25,6 +18,14 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import {
+  sealEncrypt,
+  sealDecrypt,
+  ed25519PubToX25519,
+  ed25519SecToX25519,
+} from '../../src/crypto/nacl';
 
 describe('NaCl crypto_box_seal', () => {
   const recipientPriv = TEST_ED25519_SEED;

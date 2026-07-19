@@ -18,6 +18,7 @@
 import { Platform } from 'react-native';
 
 import { listVaultItemsUI } from '../hooks/useVaultItems';
+
 import {
   inferPreferences,
   type InferenceContext,
@@ -50,7 +51,7 @@ export async function bootstrapInferredPreferences(opts?: {
   /** Override the locale resolver (tests). */
   readonly resolveLocale?: () => { bcp47: string | null; region: string | null };
   /** Override the vault read (tests). */
-  readonly readVault?: () => ReadonlyArray<VaultEvidence>;
+  readonly readVault?: () => readonly VaultEvidence[];
 }): Promise<void> {
   const personaName = opts?.personaName ?? 'general';
   const limit = opts?.vaultItemLimit ?? 200;
@@ -65,7 +66,7 @@ function runInference(
   opts:
     | {
         readonly resolveLocale?: () => { bcp47: string | null; region: string | null };
-        readonly readVault?: () => ReadonlyArray<VaultEvidence>;
+        readonly readVault?: () => readonly VaultEvidence[];
       }
     | undefined,
 ): Partial<UserPreferences> {
@@ -106,7 +107,7 @@ function resolvePlatform(): InferenceContext['platform'] {
 function safeReadVault(
   personaName: string,
   limit: number,
-): ReadonlyArray<VaultEvidence> {
+): readonly VaultEvidence[] {
   try {
     const items = listVaultItemsUI(personaName, limit);
     return items.map((it) => ({

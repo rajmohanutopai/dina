@@ -9,7 +9,6 @@
  * (Closes the bug *class*, per "contract tests over scenario tests".)
  */
 
-import { MockCoreClient } from '@dina/test-harness';
 import {
   createReminder,
   snoozeReminder,
@@ -19,6 +18,7 @@ import {
   getReminder,
   resetReminderState,
 } from '@dina/core/reminders';
+import { MockCoreClient } from '@dina/test-harness';
 
 describe('MockCoreClient ⇄ real reminder service parity', () => {
   beforeEach(() => resetReminderState());

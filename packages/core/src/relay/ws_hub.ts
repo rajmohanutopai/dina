@@ -62,7 +62,7 @@ interface BufferedEvent {
 }
 
 export class WebSocketHub {
-  private readonly clients: Map<string, ConnectedClient> = new Map();
+  private readonly clients = new Map<string, ConnectedClient>();
   private readonly buffer: BufferedEvent[] = [];
   private readonly bufferSize: number;
   private readonly bufferTTLMs: number;

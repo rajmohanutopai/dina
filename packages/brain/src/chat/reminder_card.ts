@@ -13,9 +13,10 @@
  * shows the set-time header and hides Snooze / Mark-done, which only
  * make sense once the reminder actually fires.
  */
+import { addMessage } from './thread';
+
 import type { Reminder } from '@dina/core/reminders';
 
-import { addMessage } from './thread';
 
 export function postReminderCard(
   threadId: string,

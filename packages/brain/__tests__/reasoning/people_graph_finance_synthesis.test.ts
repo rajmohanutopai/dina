@@ -31,14 +31,6 @@
  * the scripted LLM's final text + which vault items were returned.
  */
 
-import { runAgenticTurn } from '../../src/reasoning/agentic_loop';
-import { ToolRegistry } from '../../src/reasoning/tool_registry';
-import { createFindPersonTool } from '../../src/reasoning/people_tool';
-import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
-import {
-  setAccessiblePersonas,
-  setPeopleReadBackend,
-} from '../../src/vault_context/assembly';
 import {
   clearVaults,
   createPersona,
@@ -46,6 +38,22 @@ import {
   setPeopleRepository,
   storeItem,
 } from '@dina/core';
+
+import { runAgenticTurn } from '../../src/reasoning/agentic_loop';
+import { createFindPersonTool } from '../../src/reasoning/people_tool';
+import { ToolRegistry } from '../../src/reasoning/tool_registry';
+import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
+import {
+  setAccessiblePersonas,
+  setPeopleReadBackend,
+} from '../../src/vault_context/assembly';
+
+import type {
+  ChatOptions,
+  ChatResponse,
+  LLMProvider,
+  ToolCall,
+} from '../../src/llm/adapters/provider';
 import type {
   ApplyExtractionResponse,
   ExtractionResult,
@@ -53,12 +61,6 @@ import type {
   Person,
   PersonSurface,
 } from '@dina/core';
-import type {
-  ChatOptions,
-  ChatResponse,
-  LLMProvider,
-  ToolCall,
-} from '../../src/llm/adapters/provider';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -157,7 +159,7 @@ class EmmaRepo implements PeopleRepository {
 // Scripted LLM (records every tool call the loop dispatched)
 // ---------------------------------------------------------------------------
 
-function scriptedProvider(script: Array<Partial<ChatResponse>>): {
+function scriptedProvider(script: Partial<ChatResponse>[]): {
   provider: LLMProvider;
   toolCalls: ToolCall[];
 } {

@@ -208,7 +208,7 @@ export function verifyProcessIsolation(): { isolated: boolean; reason: string } 
 /**
  * Get the default service config for the current platform.
  */
-export function getDefaultConfig(platform: Platform, corePort: number = 8100): ServiceConfig {
+export function getDefaultConfig(platform: Platform, corePort = 8100): ServiceConfig {
   return {
     platform,
     corePort,

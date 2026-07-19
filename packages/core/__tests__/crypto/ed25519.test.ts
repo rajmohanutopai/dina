@@ -7,7 +7,6 @@
  * Source: core/test/crypto_test.go + signature_test.go
  */
 
-import { sign, verify, getPublicKey } from '../../src/crypto/ed25519';
 import {
   TEST_ED25519_SEED,
   TEST_MESSAGE,
@@ -16,6 +15,8 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { sign, verify, getPublicKey } from '../../src/crypto/ed25519';
 
 describe('Ed25519 Signing & Verification', () => {
   const privateKey = TEST_ED25519_SEED;

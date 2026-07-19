@@ -9,9 +9,11 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { OnboardingShell } from './shell';
+
 import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface MnemonicRevealProps {
   mnemonic: string[];

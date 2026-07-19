@@ -110,7 +110,7 @@ describe('reminder_transport.web — fired SSE stream', () => {
     }
     (globalThis as unknown as { EventSource: unknown }).EventSource = FakeEventSource;
 
-    const fired: Array<{ id: string }> = [];
+    const fired: { id: string }[] = [];
     const dispose = watchFiredReminders((r) => fired.push(r as { id: string }));
 
     expect(openedUrl).toBe('/api/v1/reminders/stream');

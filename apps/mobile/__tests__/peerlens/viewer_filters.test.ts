@@ -18,6 +18,7 @@ import {
   applyFilters,
   type ViewerFilterId,
 } from '../../src/peerlens/preferences/viewer_filters';
+
 import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 import type { UserPreferences } from '../../src/services/user_preferences';
 

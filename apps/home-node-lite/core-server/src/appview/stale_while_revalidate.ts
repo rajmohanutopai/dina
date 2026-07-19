@@ -119,8 +119,8 @@ export class SwrCache<K, V> {
   private readonly keyFn: (key: K) => string;
   private readonly nowMsFn: () => number;
   private readonly onEvent?: (event: SwrEvent) => void;
-  private readonly entries: Map<string, CacheEntry<V>> = new Map();
-  private readonly inFlight: Map<string, Promise<V>> = new Map();
+  private readonly entries = new Map<string, CacheEntry<V>>();
+  private readonly inFlight = new Map<string, Promise<V>>();
 
   constructor(opts: SwrCacheOptions<K, V>) {
     if (typeof opts.fetchFn !== 'function') {

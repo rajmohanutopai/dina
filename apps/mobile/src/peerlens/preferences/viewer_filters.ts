@@ -25,8 +25,8 @@
  * file" change.
  */
 
-import type { SubjectCardDisplay } from '../subject_card';
 import type { UserPreferences } from '../../services/user_preferences';
+import type { SubjectCardDisplay } from '../subject_card';
 
 /**
  * One filter chip's full contract: identity, label, when to render,
@@ -149,7 +149,7 @@ const ACCESSIBILITY_FILTER: ViewerFilter = {
  * Full ordered filter list. Order matches the visual chip-row
  * order. Edit this when adding new filters or shuffling.
  */
-export const ALL_VIEWER_FILTERS: ReadonlyArray<ViewerFilter> = Object.freeze([
+export const ALL_VIEWER_FILTERS: readonly ViewerFilter[] = Object.freeze([
   LANGUAGE_FILTER,
   REGION_FILTER,
   BUDGET_FILTER,
@@ -166,7 +166,7 @@ export const ALL_VIEWER_FILTERS: ReadonlyArray<ViewerFilter> = Object.freeze([
  * — either because the viewer has no preference for that field OR
  * the wire data isn't yet there to filter on.
  */
-export function applicableFilters(profile: UserPreferences): ReadonlyArray<ViewerFilter> {
+export function applicableFilters(profile: UserPreferences): readonly ViewerFilter[] {
   return ALL_VIEWER_FILTERS.filter((f) => f.isApplicable(profile));
 }
 
@@ -179,10 +179,10 @@ export function applicableFilters(profile: UserPreferences): ReadonlyArray<Viewe
  * memoises this with `useMemo` over `(results, profile, activeIds)`.
  */
 export function applyFilters<T extends { display: SubjectCardDisplay }>(
-  results: ReadonlyArray<T>,
+  results: readonly T[],
   profile: UserPreferences,
   activeIds: ReadonlySet<ViewerFilterId>,
-): ReadonlyArray<T> {
+): readonly T[] {
   if (activeIds.size === 0) return results;
   const activeFilters = ALL_VIEWER_FILTERS.filter((f) => activeIds.has(f.id));
   return results.filter((r) =>

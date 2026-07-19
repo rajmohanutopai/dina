@@ -3,21 +3,23 @@
  * the receive pipeline.
  */
 
-import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState, queryAudit } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { clearGatesState } from '../../src/d2d/gates';
-import { resetStagingState } from '../../src/staging/service';
-import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { resetQuarantineState } from '../../src/d2d/quarantine';
-import { clearReplayCache } from '../../src/transport/adversarial';
-import { getPublicKey } from '../../src/crypto/ed25519';
+import { receiveD2D } from '../../src/d2d/receive_pipeline';
 import {
   providerWindow,
   requesterWindow,
   resetServiceWindows,
   setRequesterWindow,
 } from '../../src/service/windows';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { resetStagingState } from '../../src/staging/service';
+import { clearReplayCache } from '../../src/transport/adversarial';
+
 
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);

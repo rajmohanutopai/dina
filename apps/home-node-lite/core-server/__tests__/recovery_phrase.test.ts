@@ -3,6 +3,7 @@
  */
 
 import { generateMnemonic } from '@dina/core';
+
 import {
   WORD_COUNT_TO_ENTROPY_BYTES,
   exportRecoveryPhrase,

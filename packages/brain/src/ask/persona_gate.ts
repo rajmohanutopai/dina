@@ -55,7 +55,7 @@ export type PersonaGateOp = 'read' | 'write' | 'share' | 'export';
 
 export interface PersonaGateSessionGrant {
   /** Ops this grant covers. */
-  ops: ReadonlyArray<PersonaGateOp>;
+  ops: readonly PersonaGateOp[];
   /** Unix seconds — grant expires at/after this time. */
   expiresAtSec: number;
 }

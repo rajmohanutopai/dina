@@ -6,6 +6,10 @@
  * Source: core/test/pairing_test.go
  */
 
+import { resetCallerTypeState } from '../../src/auth/caller_type';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { resetDeviceRegistry } from '../../src/devices/registry';
+import { publicKeyToMultibase } from '../../src/identity/did';
 import {
   generatePairingCode,
   completePairing,
@@ -17,10 +21,6 @@ import {
   verifyPairingIdentityBinding,
   deriveAlphanumericCode,
 } from '../../src/pairing/ceremony';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { publicKeyToMultibase } from '../../src/identity/did';
-import { resetDeviceRegistry } from '../../src/devices/registry';
-import { resetCallerTypeState } from '../../src/auth/caller_type';
 
 // Generate real Ed25519 multibase keys for testing
 const testSeed1 = new Uint8Array(32).fill(0x01);

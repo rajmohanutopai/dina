@@ -7,6 +7,7 @@
  * so drift between the two stacks surfaces here.
  */
 
+import { PERSONA_CLASSIFY_RESPONSE_SCHEMA } from '../../src/llm/prompts';
 import {
   buildClassificationUserMessage,
   createGeminiClassifier,
@@ -14,7 +15,7 @@ import {
   parseClassificationResponse,
   parseClassificationResponseRich,
 } from '../../src/routing/gemini_classify';
-import { PERSONA_CLASSIFY_RESPONSE_SCHEMA } from '../../src/llm/prompts';
+
 import type { LLMProvider } from '../../src/llm/adapters/provider';
 
 function mockProvider(content: string): LLMProvider {

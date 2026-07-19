@@ -7,10 +7,12 @@
  * Source: core/internal/service/transport.go
  */
 
+import { base64 } from '@scure/base';
+
 import { sealEncrypt, sealDecrypt } from '../crypto/nacl';
+
 import { signMessage } from './signature';
 import { buildMessage, parseMessage, type DinaMessage } from './wire';
-import { base64 } from '@scure/base';
 
 // Re-exported from `wire.ts` to keep the old import paths working
 // (`buildMessage` / `parseMessage` / `DinaMessage` from './envelope').

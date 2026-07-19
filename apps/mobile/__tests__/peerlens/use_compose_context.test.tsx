@@ -8,8 +8,8 @@
  * Injects the LLM provider via the `llmProvider` option (no need to
  * mock the keychain or the BYOK plumbing).
  */
-import React from 'react';
 import { render, act } from '@testing-library/react-native';
+import React from 'react';
 import { Text } from 'react-native';
 
 jest.mock('@dina/core', () => ({
@@ -19,7 +19,9 @@ jest.mock('@dina/core', () => ({
 }));
 
 import * as vaultCrud from '@dina/core';
+
 import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
+
 import type { ComposeContextResult } from '../../src/peerlens/compose_context';
 import type {
   ChatMessage,
@@ -95,7 +97,7 @@ function ComposeProbe(props: ProbeProps): React.ReactElement {
   );
 }
 
-function readProbe(node: { children: ReadonlyArray<unknown> | string }): {
+function readProbe(node: { children: readonly unknown[] | string }): {
   loading: boolean;
   result: ComposeContextResult | null;
 } {

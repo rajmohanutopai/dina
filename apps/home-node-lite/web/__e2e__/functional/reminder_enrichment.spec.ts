@@ -8,8 +8,8 @@
  * reminder card. Live tier.
  */
 
-import { expectJudgePass } from '../fixtures/judge';
 import { expect, test } from '../fixtures/human_session';
+import { expectJudgePass } from '../fixtures/judge';
 
 test.describe('MRS-03 — Reminder enrichment (with vs without)', () => {
   test('a dated fact creates an enriched reminder card; a plain preference does not', async ({

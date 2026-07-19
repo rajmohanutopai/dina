@@ -11,12 +11,13 @@
  * Source: ARCHITECTURE.md Section 19.1
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { randomBytes } from '@noble/ciphers/utils.js';
-import { sign } from '../crypto/ed25519';
+
 import { toRFC3339 } from '../auth/timestamp';
 import { MSGBOX_FORWARD_SUFFIX } from '../constants';
+import { sign } from '../crypto/ed25519';
 import { defaultFetch } from '../runtime/fetch';
 
 export interface ForwardHeaders {

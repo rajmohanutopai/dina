@@ -23,6 +23,7 @@ import {
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
 } from '../src';
+
 import type { D2DScenario, D2DMessageType } from '../src';
 
 describe('@dina/protocol constants', () => {

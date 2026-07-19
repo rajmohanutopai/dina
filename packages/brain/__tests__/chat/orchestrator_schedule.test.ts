@@ -37,7 +37,7 @@ describe('Chat orchestrator — /schedule (contact-scoped routing, seam 2)', () 
   });
 
   it('routes a scheduling intent to the thread contact (explicit contactDID)', async () => {
-    const calls: Array<{ contactDID: string; capability: string; intent: string }> = [];
+    const calls: { contactDID: string; capability: string; intent: string }[] = [];
     const handler: ContactServiceHandler = async (args) => {
       calls.push(args);
       return { ack: 'sent', dispatched: true };
@@ -56,7 +56,7 @@ describe('Chat orchestrator — /schedule (contact-scoped routing, seam 2)', () 
   });
 
   it('infers the contact from a did:-shaped threadId when no explicit context is given', async () => {
-    const calls: Array<{ contactDID: string }> = [];
+    const calls: { contactDID: string }[] = [];
     setContactServiceHandler(async (args) => {
       calls.push(args);
       return { ack: 'sent', dispatched: true };

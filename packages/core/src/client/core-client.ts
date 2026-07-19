@@ -859,7 +859,7 @@ export interface PIIRehydrateResult {
 
 // ─── Notify method types (task 1.29d) ────────────────────────────────────
 
-import type { NotifyPriority } from '@dina/protocol';
+import type { NotifyPriority , ServiceConfig } from '@dina/protocol';
 export type { NotifyPriority };
 
 export interface NotifyRequest {
@@ -923,7 +923,6 @@ export interface PersonaUnlockResult {
 
 // ─── Service config + query method types (task 1.29f) ────────────────────
 
-import type { ServiceConfig } from '@dina/protocol';
 export type { ServiceConfig };
 
 /**
@@ -1234,6 +1233,7 @@ export interface FailWorkflowEventOptions {
  *  deep-importing into `workflow/service` or `workflow/repository`. */
 import type { WorkflowTask } from '../workflow/domain';
 import type { CreateWorkflowTaskInput } from '../workflow/service';
+
 import {
   WorkflowConflictError,
   WorkflowValidationError,

@@ -186,9 +186,9 @@ export function detectEUPII(text: string): PatternMatch[] {
 export function applySyntheticReplacement(
   text: string,
   matches: PatternMatch[],
-): { replaced: string; mappings: Array<{ original: string; synthetic: string }> } {
+): { replaced: string; mappings: { original: string; synthetic: string }[] } {
   const sorted = [...matches].sort((a, b) => b.start - a.start);
-  const mappings: Array<{ original: string; synthetic: string }> = [];
+  const mappings: { original: string; synthetic: string }[] = [];
   let result = text;
   for (const match of sorted) {
     const synth = generateSynthetic(match.entity_type, mappings.length);

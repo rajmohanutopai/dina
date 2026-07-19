@@ -45,7 +45,7 @@ describe('mobile score_helpers — facade re-exports (TN-MOB-002/003)', () => {
 
 describe('bandDisplayName (mobile-specific UX)', () => {
   it('returns capitalised, human-friendly labels for every band', () => {
-    const cases: Array<[PeerlensBand, string]> = [
+    const cases: [PeerlensBand, string][] = [
       ['high', 'High trust'],
       ['moderate', 'Moderate trust'],
       ['low', 'Low trust'],

@@ -37,6 +37,7 @@ import {
   SQLitePushSubscriptionRepository,
   setClassificationJobRepository,
   setCommandReceiptRepository,
+  setCommandTxRunner,
   setCompletionReceiptRepository,
   setD2DOutboxRepository,
   setPushSubscriptionRepository,
@@ -242,8 +243,12 @@ export async function initializeStorage(
   setClassificationJobRepository(new SQLiteClassificationJobRepository(identityDB));
   // Completion-receipt store — two-step idempotent-CAS advancement (§6.2).
   setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(identityDB));
-  // Durable owner-command idempotency receipts (§12.5).
+  // Durable owner-command idempotency receipts (§12.5). The tx runner makes each
+  // owner command's mutation + its receipt write ONE atomic identity.sqlite
+  // commit (§5), so a crash can never lose a receipt and let a replayed old
+  // command re-execute.
   setCommandReceiptRepository(new SQLiteCommandReceiptRepository(identityDB));
+  setCommandTxRunner((fn) => identityDB.transaction(fn));
   // Push subscription store — the default-deny authorization gate + rate/cry-wolf
   // counters (PUSH_SERVICES_ARCHITECTURE.md §6/§15).
   setPushSubscriptionRepository(new SQLitePushSubscriptionRepository(identityDB));

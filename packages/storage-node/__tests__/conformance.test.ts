@@ -15,9 +15,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { STORAGE_CASES, assertExtends, type ConformanceDatabaseAdapter } from '@dina/adapter-conformance';
-import type { DatabaseAdapter } from '@dina/core';
 
 import { NodeSQLiteAdapter } from '../src/adapter';
+
+import type { DatabaseAdapter } from '@dina/core';
+
 
 // Drift-guard: the kit defines its `ConformanceDatabaseAdapter` shape locally
 // (to stay zero-dep / RN-pure). This binds it to the REAL `@dina/core`

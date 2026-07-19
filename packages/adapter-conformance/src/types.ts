@@ -13,7 +13,7 @@
 /** The `DatabaseAdapter` surface the storage cases call. Synchronous, per the contract. */
 export interface ConformanceDatabaseAdapter {
   execute(sql: string, params?: unknown[]): void;
-  query(sql: string, params?: unknown[]): Array<Record<string, unknown>>;
+  query(sql: string, params?: unknown[]): Record<string, unknown>[];
   run(sql: string, params?: unknown[]): number;
   transaction(fn: () => void): void;
   close(): void;

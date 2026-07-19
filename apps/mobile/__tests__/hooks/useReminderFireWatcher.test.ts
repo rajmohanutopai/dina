@@ -14,16 +14,16 @@
  *   - `threadId` arg routes correctly
  */
 
-import { fireRemindersToThread } from '../../src/hooks/useReminderFireWatcher';
-import {
-  createReminder,
-  resetReminderState,
-} from '../../../../packages/core/src/reminders/service';
 import { getThread, resetThreads } from '../../../../packages/brain/src/chat/thread';
 import {
   listNotifications,
   resetNotifications,
 } from '../../../../packages/brain/src/notifications/inbox';
+import {
+  createReminder,
+  resetReminderState,
+} from '../../../../packages/core/src/reminders/service';
+import { fireRemindersToThread } from '../../src/hooks/useReminderFireWatcher';
 
 const NOW = 1_700_000_000_000; // arbitrary fixed clock
 

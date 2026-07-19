@@ -8,8 +8,11 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import * as os from 'os';
+import * as path from 'path';
+
+import { TEST_MESSAGE, bytesToHex } from '@dina/test-harness';
+
 import {
   generateKeypair,
   keypairToPEM,
@@ -18,7 +21,7 @@ import {
   verifyWithIdentity,
 } from '../../src/identity/keypair';
 import { writeServiceKey, loadServiceKey } from '../../src/identity/keypair_node';
-import { TEST_MESSAGE, bytesToHex } from '@dina/test-harness';
+
 
 describe('Ed25519 Keypair Management', () => {
   describe('generateKeypair', () => {

@@ -16,11 +16,12 @@ import {
   tearDownDataScope,
 } from '../../src/scope/cleanup_wiring';
 import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
+
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
 /** Minimal fake adapter that honours `… WHERE data_scope = ?` count + delete. */
 function fakeDb() {
-  const tables = new Map<string, Array<{ data_scope: string }>>();
+  const tables = new Map<string, { data_scope: string }[]>();
   const tableOf = (sql: string): string => /FROM\s+(\w+)/i.exec(sql)?.[1] ?? '';
   const db = {
     query: (sql: string, params?: unknown[]): unknown[] => {

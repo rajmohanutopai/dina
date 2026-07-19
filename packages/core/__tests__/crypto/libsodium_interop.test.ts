@@ -5,8 +5,8 @@
  * X25519 keys.
  */
 
-import { x25519 } from '@noble/curves/ed25519.js';
 import { xsalsa20poly1305, hsalsa } from '@noble/ciphers/salsa.js';
+import { x25519 } from '@noble/curves/ed25519.js';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 

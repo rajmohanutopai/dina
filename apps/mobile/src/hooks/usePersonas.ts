@@ -149,11 +149,11 @@ export function getPersonaCounts(): { total: number; open: number; closed: numbe
 /**
  * Get available tier options for the create form.
  */
-export function getTierOptions(): Array<{
+export function getTierOptions(): {
   value: PersonaTier;
   label: string;
   description: string;
-}> {
+}[] {
   return [
     { value: 'standard', label: 'Standard', description: 'Opens automatically on boot' },
     { value: 'sensitive', label: 'Sensitive', description: 'Requires your approval to open' },

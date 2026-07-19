@@ -22,6 +22,7 @@ import {
   rerankByContacts,
   type RerankableCard,
 } from '../../src/peerlens/contact_rerank';
+
 import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -170,7 +171,7 @@ describe('compareCards', () => {
 // ─── rerankByContacts ──────────────────────────────────────────────────────
 describe('rerankByContacts', () => {
   it('returns input identity for empty array (allows useMemo keying)', () => {
-    const empty: ReadonlyArray<RerankableCard> = [];
+    const empty: readonly RerankableCard[] = [];
     expect(rerankByContacts(empty)).toBe(empty);
   });
 
@@ -186,7 +187,7 @@ describe('rerankByContacts', () => {
   });
 
   it('does not mutate the input array', () => {
-    const input: ReadonlyArray<RerankableCard> = [
+    const input: readonly RerankableCard[] = [
       makeCard('s1', { reviewCount: 5, friendsCount: 0 }),
       makeCard('s2', { reviewCount: 1, friendsCount: 1 }),
     ];

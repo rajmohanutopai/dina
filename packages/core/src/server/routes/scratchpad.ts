@@ -18,9 +18,11 @@
  * service directly.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { SCRATCHPAD } from './paths';
 import { checkpoint, clear, resume } from '../../scratchpad/service';
+
+import { SCRATCHPAD } from './paths';
+
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 /** Upper bound on the checkpoint body — the context JSON can be
  *  chunky (accumulated reasoning state) but pathological payloads

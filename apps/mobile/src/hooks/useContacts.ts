@@ -130,7 +130,7 @@ export function getContactCount(): number {
 /**
  * Get available trust level options for filter/create.
  */
-export function getTrustLevelOptions(): Array<{ value: TrustLevel; label: string }> {
+export function getTrustLevelOptions(): { value: TrustLevel; label: string }[] {
   return [
     { value: 'trusted', label: 'Trusted' },
     { value: 'verified', label: 'Verified' },

@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Task 4.13
  */
 
+import { resetThreads, getThread } from '../../../brain/src/chat/thread';
 import {
   emitSystemEvent,
   formatEvent,
@@ -17,7 +18,6 @@ import {
   getEventHistory,
   resetSystemMessages,
 } from '../../src/hooks/useChatSystemMessages';
-import { resetThreads, getThread } from '../../../brain/src/chat/thread';
 
 describe('Chat System Messages Hook (4.13)', () => {
   beforeEach(() => {

@@ -34,8 +34,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4h task 4.65.
  */
 
-import type { DeviceTokenRegistry, DeviceTokenRecord } from '../pair/device_tokens';
 import { extractBearerToken } from './client_token';
+
+import type { DeviceTokenRegistry, DeviceTokenRecord } from '../pair/device_tokens';
 
 export interface DeviceTokenValidatorOptions {
   /**

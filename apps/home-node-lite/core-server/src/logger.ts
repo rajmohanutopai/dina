@@ -28,6 +28,7 @@
  */
 
 import { pino, type Logger, type LoggerOptions } from 'pino';
+
 import type { CoreServerConfig } from './config';
 
 export type { Logger };

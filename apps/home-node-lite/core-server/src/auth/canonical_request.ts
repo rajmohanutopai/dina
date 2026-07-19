@@ -28,8 +28,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4c task 4.20.
  */
 
-import { buildCanonicalPayload } from '@dina/protocol';
 import { Crypto } from '@dina/adapters-node';
+import { buildCanonicalPayload } from '@dina/protocol';
 
 export interface CanonicalRequestInput {
   method: string;

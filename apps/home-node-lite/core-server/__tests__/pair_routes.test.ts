@@ -7,11 +7,13 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
-import { PairingCodeRegistry } from '../src/pair/pairing_codes';
+
 import { DeviceTokenRegistry } from '../src/pair/device_tokens';
+import { PairingCodeRegistry } from '../src/pair/pairing_codes';
 import { registerPairRoutes } from '../src/pair/routes';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {
@@ -339,14 +341,14 @@ describe('GET /v1/pair/devices (task 4.67)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/pair/devices' });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
-      devices: Array<{
+      devices: {
         device_id: string;
         name: string;
         role: string;
         created_at: number;
         last_seen: number;
         revoked: boolean;
-      }>;
+      }[];
     };
     expect(body.devices.map((d) => d.device_id)).toEqual([a.deviceId, b.deviceId, c.deviceId]);
     const revokedRow = body.devices.find((d) => d.device_id === b.deviceId)!;
@@ -363,7 +365,7 @@ describe('GET /v1/pair/devices (task 4.67)', () => {
     const { app, deviceTokens } = await buildApp({ tokenSeeds: [seed(32, 0xf1)] });
     deviceTokens.issue({ deviceName: 'phone' });
     const res = await app.inject({ method: 'GET', url: '/v1/pair/devices' });
-    const body = res.json() as { devices: Array<Record<string, unknown>> };
+    const body = res.json() as { devices: Record<string, unknown>[] };
     expect(body.devices[0]).toBeDefined();
     expect(Object.keys(body.devices[0]!).sort()).toEqual(
       ['created_at', 'device_id', 'last_seen', 'name', 'revoked', 'role'].sort(),
@@ -395,7 +397,7 @@ describe('End-to-end pair → list', () => {
     const { device_id } = complete.json() as { device_id: string };
 
     const list = await app.inject({ method: 'GET', url: '/v1/pair/devices' });
-    const body = list.json() as { devices: Array<{ device_id: string }> };
+    const body = list.json() as { devices: { device_id: string }[] };
     expect(body.devices.map((d) => d.device_id)).toEqual([device_id]);
     await app.close();
   });
@@ -454,7 +456,7 @@ describe('DELETE /v1/pair/devices/:deviceId (task 4.66)', () => {
     });
     const list = await app.inject({ method: 'GET', url: '/v1/pair/devices' });
     const body = list.json() as {
-      devices: Array<{ device_id: string; revoked: boolean }>;
+      devices: { device_id: string; revoked: boolean }[];
     };
     const entries = Object.fromEntries(
       body.devices.map((d) => [d.device_id, d.revoked]),

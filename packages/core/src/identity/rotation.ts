@@ -13,9 +13,10 @@
  * Source: ARCHITECTURE.md Section 10.1 (key rotation)
  */
 
-import { deriveRootSigningKey } from '../crypto/slip0010';
-import { sign, verify } from '../crypto/ed25519';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { sign, verify } from '../crypto/ed25519';
+import { deriveRootSigningKey } from '../crypto/slip0010';
 
 export interface KeyGeneration {
   generation: number;

@@ -52,7 +52,7 @@ export class HNSWIndex {
   private readonly dimensions: number;
   private readonly mL: number; // normalization factor for layer selection
 
-  private readonly nodes: Map<string, HNSWNode> = new Map();
+  private readonly nodes = new Map<string, HNSWNode>();
   private entryPointId: string | null = null;
   private maxLayer = -1;
 
@@ -273,13 +273,13 @@ export class HNSWIndex {
   /** Search a layer with ef candidates — returns the ef closest IDs. */
   private searchLayer(query: Float32Array, startId: string, ef: number, layer: number): string[] {
     const visited = new Set<string>([startId]);
-    const candidates: Array<{ id: string; dist: number }> = [
+    const candidates: { id: string; dist: number }[] = [
       {
         id: startId,
         dist: this.cosineDistance(query, this.nodes.get(startId)!.vector),
       },
     ];
-    const results: Array<{ id: string; dist: number }> = [...candidates];
+    const results: { id: string; dist: number }[] = [...candidates];
 
     while (candidates.length > 0) {
       // Get closest candidate

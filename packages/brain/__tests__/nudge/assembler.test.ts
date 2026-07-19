@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Task 3.24
  */
 
+import { storeItem, clearVaults , DEFAULT_TEST_PERSONAS } from '@dina/core';
+import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
 import {
   assembleNudge,
   isPromise,
@@ -11,9 +14,6 @@ import {
   recordNudgeSent,
   resetNudgeFrequency,
 } from '../../src/nudge/assembler';
-import { storeItem, clearVaults } from '@dina/core';
-import { DEFAULT_TEST_PERSONAS } from '@dina/core';
-import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 describe('Nudge Assembler', () => {
   beforeEach(() => {

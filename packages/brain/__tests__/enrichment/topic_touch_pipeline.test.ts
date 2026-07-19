@@ -21,6 +21,8 @@
  *   - Preference binding: no extractor / resolver → skipped silently.
  */
 
+import { PreferenceExtractor } from '../../src/enrichment/preference_extractor';
+import { TopicExtractor, type TopicExtractionResult } from '../../src/enrichment/topic_extractor';
 import {
   touchTopicsForItem,
   type TopicTouchCoreClient,
@@ -28,8 +30,6 @@ import {
   type ContactResolver,
   type ResolvedContact,
 } from '../../src/enrichment/topic_touch_pipeline';
-import { TopicExtractor, type TopicExtractionResult } from '../../src/enrichment/topic_extractor';
-import { PreferenceExtractor } from '../../src/enrichment/preference_extractor';
 
 function stubExtractor(result: TopicExtractionResult): TopicExtractor {
   const ex = new TopicExtractor({ llm: async () => '{}' });
@@ -39,14 +39,14 @@ function stubExtractor(result: TopicExtractionResult): TopicExtractor {
 
 interface CoreCapture {
   core: TopicTouchCoreClient;
-  touchCalls: Array<Record<string, unknown>>;
-  updateCalls: Array<{ did: string; preferredFor?: string[] }>;
+  touchCalls: Record<string, unknown>[];
+  updateCalls: { did: string; preferredFor?: string[] }[];
   nextUpdateError?: Error;
 }
 
 function stubCore(opts: { onUpdateError?: Error } = {}): CoreCapture {
-  const touchCalls: Array<Record<string, unknown>> = [];
-  const updateCalls: Array<{ did: string; preferredFor?: string[] }> = [];
+  const touchCalls: Record<string, unknown>[] = [];
+  const updateCalls: { did: string; preferredFor?: string[] }[] = [];
   const capture: CoreCapture = {
     core: {
       async memoryTouch(req) {
@@ -124,7 +124,7 @@ describe('touchTopicsForItem — topic touches', () => {
 
   it('per-topic try/catch: one failed touch does not stop the batch', async () => {
     const extractor = stubExtractor({ entities: ['A', 'B'], themes: ['c'] });
-    const touchCalls: Array<Record<string, unknown>> = [];
+    const touchCalls: Record<string, unknown>[] = [];
     const core: TopicTouchCoreClient = {
       async memoryTouch(req) {
         touchCalls.push(req as unknown as Record<string, unknown>);
@@ -135,7 +135,7 @@ describe('touchTopicsForItem — topic touches', () => {
         /* unused */
       },
     };
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const res = await touchTopicsForItem(baseItem, {
       extractor,
       core,
@@ -150,7 +150,7 @@ describe('touchTopicsForItem — topic touches', () => {
 
   it('logs a skipped status but counts it as touched', async () => {
     const extractor = stubExtractor({ entities: ['Alpha'], themes: [] });
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const core: TopicTouchCoreClient = {
       async memoryTouch() {
         return { status: 'skipped', reason: 'persona not open' };
@@ -175,7 +175,7 @@ describe('touchTopicsForItem — topic touches', () => {
       throw new Error('extractor boom');
     };
     const { core, touchCalls, updateCalls } = stubCore();
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const res = await touchTopicsForItem(baseItem, {
       extractor,
       core,
@@ -289,7 +289,7 @@ describe('touchTopicsForItem — preference bindings', () => {
     const preferenceExtractor = new PreferenceExtractor();
     const { core, updateCalls } = stubCore();
     const resolveContact = resolverFrom({});
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const res = await touchTopicsForItem(
       { ...baseItem, body: 'my dentist Dr Carl is on April 19' },
       {
@@ -316,7 +316,7 @@ describe('touchTopicsForItem — preference bindings', () => {
     const resolveContact = resolverFrom({
       'Dr Carl': { did: 'did:plc:drcarl', preferredFor: [] },
     });
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const res = await touchTopicsForItem(
       { ...baseItem, body: 'my dentist Dr Carl' },
       {

@@ -5,6 +5,9 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+import { validateMnemonic, mnemonicToSeed } from '@dina/core';
+
 import {
   loadOrGenerateSeed,
   KEYFILE_MODE,
@@ -12,7 +15,6 @@ import {
   WRAPPED_SEED_NAME,
   SEED_LEN_BYTES,
 } from '../src/identity/master_seed';
-import { validateMnemonic, mnemonicToSeed } from '@dina/core';
 
 async function mkTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'seed-test-'));

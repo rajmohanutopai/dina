@@ -1,7 +1,8 @@
+import { buildHomeNodeAskRuntime } from '../ask-runtime';
+
 import type { AppViewClient, LLMProvider } from '@dina/brain';
 import type { CoreClient } from '@dina/core';
 
-import { buildHomeNodeAskRuntime } from '../ask-runtime';
 
 describe('@dina/home-node/ask-runtime', () => {
   it('builds the shared Pattern A ask coordinator from injected Core, AppView, and LLM handles', async () => {

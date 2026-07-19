@@ -22,7 +22,7 @@ export function scrubTier1(text: string): ScrubResult {
  */
 export function rehydrate(
   scrubbed: string,
-  entities: Array<{ token: string; value: string }>,
+  entities: { token: string; value: string }[],
 ): string {
   return rehydratePII(scrubbed, entities);
 }

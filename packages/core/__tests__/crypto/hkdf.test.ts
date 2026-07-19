@@ -13,7 +13,6 @@
  * Source: core/internal/adapter/crypto/keyderiver.go
  */
 
-import { derivePersonaDEK, deriveBackupKey, deriveDEKHash } from '../../src/crypto/hkdf';
 import {
   TEST_MNEMONIC_SEED,
   TEST_USER_SALT,
@@ -23,6 +22,8 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { derivePersonaDEK, deriveBackupKey, deriveDEKHash } from '../../src/crypto/hkdf';
 
 describe('HKDF-SHA256 DEK Derivation', () => {
   const masterSeed = TEST_MNEMONIC_SEED.slice(0, 32);

@@ -43,9 +43,9 @@ export interface PlcUpdateInput {
   /** New rotation-key set. Must be non-empty. */
   rotationKeys: string[];
   /** Optional new verification methods. When absent, inherits from prev. */
-  verificationMethods?: Array<Record<string, unknown>>;
+  verificationMethods?: Record<string, unknown>[];
   /** Optional new services. When absent, inherits from prev. */
-  services?: Array<Record<string, unknown>>;
+  services?: Record<string, unknown>[];
   /** Optional new handles (`at://…`). When absent, inherits from prev. */
   handles?: string[];
   /** Public key used to sign this op. MUST be in `prev.rotationKeys`. */

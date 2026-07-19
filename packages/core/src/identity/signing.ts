@@ -10,8 +10,9 @@
  * Source: tests/test_signing.py
  */
 
-import { sign, verify } from '../crypto/ed25519';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { sign, verify } from '../crypto/ed25519';
 
 /**
  * Canonicalize a JSON-serializable object for signing.

@@ -6,6 +6,7 @@
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { type Contact } from '@dina/core';
 import { MockCoreClient } from '@dina/test-harness';
 

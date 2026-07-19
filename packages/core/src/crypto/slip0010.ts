@@ -9,12 +9,15 @@
  * SLIP-0010 spec: https://github.com/satoshilabs/slips/blob/master/slip-0010.md
  */
 
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { secp256k1 } from '@noble/curves/secp256k1.js';
-import { getPublicKey } from './ed25519';
+
 import { HARDENED_OFFSET as HARDENED } from '../constants';
+
+import { getPublicKey } from './ed25519';
+
 
 export interface DerivedKey {
   privateKey: Uint8Array; // 32 bytes

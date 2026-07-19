@@ -192,7 +192,7 @@ describe('runAskPreFlightRetrieval', () => {
   };
 
   it('runs all searches in parallel and produces a context block', async () => {
-    const vaultSearchCalls: Array<{ persona: string; query: string }> = [];
+    const vaultSearchCalls: { persona: string; query: string }[] = [];
     const personMatch: RetrievedPersonMatch = {
       canonicalName: 'Emma',
       relationshipHint: 'daughter',
@@ -231,7 +231,7 @@ describe('runAskPreFlightRetrieval', () => {
     // sensitive ones, for an external agent — leaking vault content with
     // no approval. With a filter that blocks 'finance', vaultSearch must
     // never be called for it; 'general' (allowed) still runs.
-    const vaultSearchCalls: Array<{ persona: string; query: string }> = [];
+    const vaultSearchCalls: { persona: string; query: string }[] = [];
     const result = await runAskPreFlightRetrieval(
       plan,
       {

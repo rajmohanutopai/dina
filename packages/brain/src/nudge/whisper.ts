@@ -8,7 +8,7 @@
  */
 
 export interface WhisperContext {
-  items: Array<{ summary: string; source: string }>;
+  items: { summary: string; source: string }[];
   contactName?: string;
   lastInteraction?: number;
 }

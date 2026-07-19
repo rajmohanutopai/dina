@@ -15,12 +15,13 @@
  * Source: ARCHITECTURE.md Task 3.25
  */
 
-import { assembleContext, type AssembledContext } from '../vault_context/assembly';
-import { checkCloudGate, rehydrateResponse } from '../llm/cloud_gate';
-import { scanResponse, stripViolations } from '../guardian/guard_scan';
-import { preScreenMessage } from '../guardian/anti_her_classify';
 import { generateHumanRedirect } from '../guardian/anti_her';
+import { preScreenMessage } from '../guardian/anti_her_classify';
 import { analyzeDensity, applyDisclosure, type DensityTier } from '../guardian/density';
+import { scanResponse, stripViolations } from '../guardian/guard_scan';
+import { checkCloudGate, rehydrateResponse } from '../llm/cloud_gate';
+import { assembleContext, type AssembledContext } from '../vault_context/assembly';
+
 import { TraceBuilder, type ReasoningTrace } from './reasoning_trace';
 
 export interface ReasoningRequest {

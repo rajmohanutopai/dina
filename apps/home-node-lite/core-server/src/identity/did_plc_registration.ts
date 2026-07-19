@@ -34,7 +34,9 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+
 import { createDIDPLC, type PLCCreateParams, type PLCCreateResult } from '@dina/core';
+
 import type { IdentityDerivations } from './derivations';
 
 export const DID_FILE_NAME = 'did.txt';

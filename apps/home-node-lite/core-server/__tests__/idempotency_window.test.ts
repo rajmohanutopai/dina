@@ -10,6 +10,7 @@
  *     (prevents drift between the minutes spec and the ms wiring).
  */
 
+import { TIMESTAMP_WINDOW_MS } from '../src/auth/timestamp_window';
 import {
   DEFAULT_IDEMPOTENCY_MAX_ENTRIES,
   DEFAULT_IDEMPOTENCY_TTL_MS,
@@ -17,7 +18,6 @@ import {
   IdempotencyCache,
   MIN_IDEMPOTENCY_TTL_MS,
 } from '../src/msgbox/idempotency_cache';
-import { TIMESTAMP_WINDOW_MS } from '../src/auth/timestamp_window';
 
 describe('idempotency replay window (task 4.83)', () => {
   describe('explicit-minutes spec', () => {

@@ -23,13 +23,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4l task 4.85.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { MetricsRegistry } from './registry';
 import {
   PROMETHEUS_CONTENT_TYPE,
   renderPrometheusText,
   type RenderPrometheusTextOptions,
 } from './exporter';
+
+import type { MetricsRegistry } from './registry';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export const DEFAULT_METRICS_PATH = '/metrics';
 

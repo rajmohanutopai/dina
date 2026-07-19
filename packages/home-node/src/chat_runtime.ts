@@ -30,8 +30,6 @@
  * surface plug it in to enrich the reply.
  */
 
-import type { StagingDrainScheduler } from '@dina/brain';
-import type { CoreClient } from '@dina/core';
 import {
   setRememberCoreClient,
   setRememberDrainHook,
@@ -39,6 +37,9 @@ import {
   resetRememberDrainHook,
   type RememberDrainResult,
 } from '@dina/brain/chat';
+
+import type { StagingDrainScheduler } from '@dina/brain';
+import type { CoreClient } from '@dina/core';
 
 export interface WireChatRememberRuntimeOptions {
   /** Transport handle the orchestrator hands to `stagingIngest`. Mobile

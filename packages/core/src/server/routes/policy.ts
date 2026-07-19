@@ -12,11 +12,12 @@
  * mobile UI always sees all known actions with their effective risk.
  */
 
-import type { CoreRouter } from '../router';
-import { kvGet, kvSet } from '../../kv/store';
 import { DEFAULT_POLICY, BRAIN_DENIED } from '../../gatekeeper/intent';
+import { kvGet, kvSet } from '../../kv/store';
+
 // BRAIN_DENIED used only by PUT/DELETE guards — not included in GET response (internal ops, not operator-facing)
 import type { RiskLevel } from '../../gatekeeper/intent';
+import type { CoreRouter } from '../router';
 
 const POLICY_KV_KEY = 'policy:action_risk';
 const ADMIN_POLICY_KV_KEY = 'admin:action_risk_policy';

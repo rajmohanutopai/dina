@@ -244,7 +244,7 @@ describe('buildPlaceSubjectRef — validation', () => {
 describe('transitionCaptureMode — valid transitions', () => {
   // Coverage matrix from the state-machine table. A test per declared
   // (from, event) → to entry plus a few cross-cutting invariants.
-  const validTransitions: Array<[CaptureMode, Parameters<typeof transitionCaptureMode>[1], CaptureMode]> = [
+  const validTransitions: [CaptureMode, Parameters<typeof transitionCaptureMode>[1], CaptureMode][] = [
     ['idle', 'start_locating', 'locating'],
     ['idle', 'start_manual', 'manual'],
     ['locating', 'success', 'ready'],

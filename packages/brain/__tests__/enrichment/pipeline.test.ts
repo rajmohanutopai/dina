@@ -4,12 +4,12 @@
  * Tests the full orchestrator with mock LLM and embedding providers.
  */
 
+import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
 import {
   enrichItem,
   registerEnrichmentLLM,
   resetEnrichmentPipeline,
 } from '../../src/enrichment/pipeline';
-import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
 
 describe('Enrichment Pipeline E2E', () => {
   beforeEach(() => {

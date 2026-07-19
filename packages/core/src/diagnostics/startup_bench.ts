@@ -36,7 +36,7 @@ const DEFAULT_BUDGET_MS = 3000; // 3 seconds
 export class StartupBenchmark {
   private readonly steps: TimingEntry[] = [];
   private readonly budgetMs: number;
-  private startTime: number = 0;
+  private startTime = 0;
   private currentStep: { name: string; startMs: number } | null = null;
 
   constructor(budgetMs?: number) {
@@ -105,7 +105,7 @@ export class StartupBenchmark {
   }
 
   /** Get step durations as a sorted breakdown. */
-  getBreakdown(): Array<{ name: string; durationMs: number; percentage: number }> {
+  getBreakdown(): { name: string; durationMs: number; percentage: number }[] {
     const result = this.finish();
     return result.steps
       .map((s) => ({

@@ -14,9 +14,10 @@
  * Source: brain/src/prompts.py PERSONA_CLASSIFY_RESPONSE_SCHEMA
  */
 
-import type { LLMProvider } from '../llm/adapters/provider';
-import type { PersonaSelectorProvider } from './persona_selector';
 import { createGeminiClassifier, createGenericClassifier } from './gemini_classify';
+
+import type { PersonaSelectorProvider } from './persona_selector';
+import type { LLMProvider } from '../llm/adapters/provider';
 
 /**
  * Create the best persona classifier for the given LLM provider.

@@ -158,11 +158,11 @@ export function getConnectorCounts(): {
 /**
  * Get available connector types for the "Add" screen.
  */
-export function getAvailableTypes(): Array<{
+export function getAvailableTypes(): {
   type: ConnectorType;
   label: string;
   description: string;
-}> {
+}[] {
   return [
     { type: 'gmail', label: 'Gmail', description: 'Sync emails via Google OAuth' },
     {

@@ -13,6 +13,7 @@ import {
   buildAuthResponse,
   buildPing,
 } from '../../src/ws/framing';
+
 import type { WSMessage, WSMessageType } from '../../src/ws/framing';
 
 describe('WebSocket Message Framing', () => {

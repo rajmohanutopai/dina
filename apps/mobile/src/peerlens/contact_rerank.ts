@@ -82,7 +82,7 @@ export interface RerankableCard {
  * so callers can `useMemo`-key off the reference).
  */
 export function rerankByContacts(
-  cards: ReadonlyArray<RerankableCard>,
+  cards: readonly RerankableCard[],
 ): readonly RerankableCard[] {
   if (cards.length === 0) return cards;
   const sorted = [...cards];

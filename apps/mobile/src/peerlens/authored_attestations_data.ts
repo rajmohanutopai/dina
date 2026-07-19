@@ -99,7 +99,7 @@ export interface AuthoredAttestationRow {
  * when fetched via `searchAttestationsByAuthor`'s `sort=recent`).
  */
 export function deriveAuthoredAttestationRows(
-  hits: ReadonlyArray<SearchAttestationHit>,
+  hits: readonly SearchAttestationHit[],
 ): AuthoredAttestationRow[] {
   const out: AuthoredAttestationRow[] = [];
   for (const hit of hits) {
@@ -135,7 +135,7 @@ export function deriveAuthoredAttestationRows(
 }
 
 function pickFirstNonEmpty(
-  ...candidates: Array<string | undefined>
+  ...candidates: (string | undefined)[]
 ): string | null {
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim().length > 0) return c;

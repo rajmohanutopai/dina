@@ -2,13 +2,15 @@
  * Task 4.60 — PLC update operation tests.
  */
 
+import { base58 } from '@scure/base';
+
 import {
   deriveRotationKey,
   publicKeyToMultibase,
   generateMnemonic,
   mnemonicToSeed,
 } from '@dina/core';
-import { base58 } from '@scure/base';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import {
   buildUpdateOperation,
@@ -203,7 +205,7 @@ describe('updateDIDPLC (task 4.60)', () => {
 
   it('POSTs to PLC directory when config.fetch is wired', async () => {
     const rotSeed = sampleSeed();
-    const posts: Array<{ url: string; body: unknown }> = [];
+    const posts: { url: string; body: unknown }[] = [];
     const fakeFetch: typeof globalThis.fetch = async (url, init) => {
       posts.push({
         url: String(url),

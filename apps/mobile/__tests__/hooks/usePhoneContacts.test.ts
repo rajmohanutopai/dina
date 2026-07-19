@@ -4,6 +4,14 @@
  * Source: ARCHITECTURE.md Task 6.18
  */
 
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import {
+  addContact,
+  listContacts,
+  resetContactDirectory,
+} from '../../../core/src/contacts/directory';
+import { setPeopleRepository } from '../../../core/src/people/repository';
 import {
   configurePhoneContacts,
   requestPermission,
@@ -15,13 +23,7 @@ import {
   resetPhoneContacts,
   type PhoneContact,
 } from '../../src/hooks/usePhoneContacts';
-import {
-  addContact,
-  listContacts,
-  resetContactDirectory,
-} from '../../../core/src/contacts/directory';
-import { setPeopleRepository } from '../../../core/src/people/repository';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+
 
 const PHONE_CONTACTS: PhoneContact[] = [
   { id: 'p1', name: 'Alice Johnson', phones: ['+1-555-0101'], emails: ['alice@example.com'] },

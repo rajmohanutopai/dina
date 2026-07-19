@@ -1,11 +1,17 @@
 /**
- * PSVC-4 — `useSubscriptions` data hook. Drives the pure list/steer functions
- * against a wired in-process `WatchService` (the same singleton mobile boot
- * registers), so the subscription screen's data path is pinned without
- * `@testing-library/react-native`.
+ * PSVC-4 — `useSubscriptions` data hook. Drives the list/steer functions through
+ * the owner-only control client (InProcessOwnerRunClient → /v1/watch/* route
+ * guards), the same owner-marked dispatch mobile boot registers via
+ * `setOwnerRunClient` — NOT the raw `getWatchService()` global (§20).
  */
 
-import { WatchService, setWatchService, InMemoryWorkflowRepository } from '@dina/core';
+import {
+  WatchService,
+  setWatchService,
+  InMemoryWorkflowRepository,
+  InProcessOwnerRunClient,
+  createCoreRouter,
+} from '@dina/core';
 
 import {
   getActiveSubscriptions,
@@ -13,12 +19,15 @@ import {
   resumeSubscription,
   cancelSubscription,
 } from '../../src/hooks/useSubscriptions';
+import { setOwnerRunClient } from '../../src/services/owner_run_client';
 
 const NOW = 1_700_000_000_000;
 
 function wireWatch(): WatchService {
   const svc = new WatchService({ repository: new InMemoryWorkflowRepository(), nowMsFn: () => NOW });
   setWatchService(svc);
+  // The owner UI reaches watches ONLY through this owner-marked dispatch.
+  setOwnerRunClient(new InProcessOwnerRunClient(createCoreRouter({ ownerCapability: 'test-owner-cap' }), 'test-owner-cap'));
   return svc;
 }
 
@@ -34,11 +43,14 @@ function makeWatch(svc: WatchService, sub: string, intervalSec = 300): string {
   }).id;
 }
 
-afterEach(() => setWatchService(null));
+afterEach(() => {
+  setWatchService(null);
+  setOwnerRunClient(null);
+});
 
 describe('useSubscriptions', () => {
-  it('returns [] when no watch service is wired', async () => {
-    setWatchService(null);
+  it('returns [] when no owner client is wired', async () => {
+    setOwnerRunClient(null);
     expect(await getActiveSubscriptions()).toEqual([]);
   });
 
@@ -72,8 +84,8 @@ describe('useSubscriptions', () => {
     expect(items).toHaveLength(0);
   });
 
-  it('steering with no service wired is a safe no-op (false)', async () => {
-    setWatchService(null);
+  it('steering with no owner client wired is a safe no-op (false)', async () => {
+    setOwnerRunClient(null);
     expect(await pauseSubscription('x')).toBe(false);
     expect(await resumeSubscription('x')).toBe(false);
     expect(await cancelSubscription('x')).toBe(false);

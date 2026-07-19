@@ -20,7 +20,6 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 import { colors, spacing, radius, textStyles } from '../../theme';
-
 import { deriveCardSubtitle } from '../subject_card';
 
 /**

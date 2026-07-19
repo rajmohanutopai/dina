@@ -12,8 +12,9 @@
  * Source: cli/tests/test_signing.py
  */
 
-import { generateKeypair } from '../identity/keypair';
 import { deriveDIDKey, publicKeyToMultibase } from '../identity/did';
+import { generateKeypair } from '../identity/keypair';
+
 import { signRequest, verifyRequest } from './canonical';
 
 export interface CLIKeypair {

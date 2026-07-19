@@ -37,7 +37,13 @@
  * agentic loop needs an LLM round-trip.
  */
 
-import { evaluateIntent } from '@dina/core';
+import { evaluateIntent , clearVaults ,
+  resetStagingState,
+  stagingGetItem as getStagingItem,
+
+  createPersona,
+  openPersona,
+  resetPersonaState, configureRateLimiter , createCoreRouter , InProcessTransport } from '@dina/core';
 
 import {
   handleChat,
@@ -62,19 +68,6 @@ import {
   setAccessiblePersonas,
 } from '../../src/vault_context/assembly';
 
-import { clearVaults } from '@dina/core';
-import {
-  resetStagingState,
-  stagingGetItem as getStagingItem,
-} from '@dina/core';
-import {
-  createPersona,
-  openPersona,
-  resetPersonaState,
-} from '@dina/core';
-import { configureRateLimiter } from '@dina/core';
-import { createCoreRouter } from '@dina/core';
-import { InProcessTransport } from '@dina/core';
 
 import {
   closeSQLiteVault,
@@ -252,7 +245,7 @@ describeReal('OpenClaw `dina ask` (CAPABILITIES.md bank-account recall)', () => 
       const haystack = ask.response.toLowerCase();
       const recalled = haystack.includes('barclay') || haystack.includes('0102');
       if (!recalled) {
-        // eslint-disable-next-line no-console
+         
         console.log(`[openclaw-ask] response did not recall bank fact:\n  ${ask.response}`);
       }
       expect(recalled).toBe(true);

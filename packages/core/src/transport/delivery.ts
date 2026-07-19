@@ -13,11 +13,14 @@
  * Source: core/test/transport_test.go
  */
 
-import { isDiscoverableURL } from './ssrf';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { getPublicKey } from '../crypto/ed25519';
 import { buildForwardHeaders } from '../relay/msgbox_forward';
 import { defaultFetch } from '../runtime/fetch';
-import { getPublicKey } from '../crypto/ed25519';
-import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { isDiscoverableURL } from './ssrf';
+
 
 export interface DeliveryResult {
   delivered: boolean;

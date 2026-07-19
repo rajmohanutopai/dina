@@ -5,6 +5,7 @@
  * for self-hosting, test environments, and recovery from a bad URL.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,6 +17,9 @@ import {
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+
+import { IdentityModal } from '../src/components/identity/identity_modal';
+import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import {
   DEFAULT_APPVIEW_URL,
   DEFAULT_PDS_URL,
@@ -26,9 +30,6 @@ import {
 } from '../src/services/infra_preferences';
 import { reloadApp } from '../src/services/reload_app';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { IdentityModal } from '../src/components/identity/identity_modal';
-import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 
 export default function InfrastructureScreen(): React.ReactElement {
   const [loading, setLoading] = useState(true);

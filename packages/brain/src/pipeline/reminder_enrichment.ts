@@ -14,12 +14,13 @@
  */
 
 import { queryVault } from '@dina/core';
+
 import type { Reminder } from '@dina/core/reminders';
 
 export interface EnrichedReminder {
   originalMessage: string;
   enrichedMessage: string;
-  contextItems: Array<{ id: string; summary: string; relevance: string }>;
+  contextItems: { id: string; summary: string; relevance: string }[];
   persona: string;
 }
 

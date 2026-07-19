@@ -261,7 +261,7 @@ export class SessionTokenStore {
  * Core `identity.sqlite` kv-adapter.
  */
 export class InMemoryKeystoreAdapter implements KeystoreAdapter {
-  private readonly store: Map<string, string> = new Map();
+  private readonly store = new Map<string, string>();
 
   async get(key: string): Promise<string | null> {
     return this.store.get(key) ?? null;

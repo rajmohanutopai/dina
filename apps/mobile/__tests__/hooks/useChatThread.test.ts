@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Task 4.6
  */
 
+import { resetChatDefaults } from '../../../brain/src/chat/orchestrator';
+import { resetThreads } from '../../../brain/src/chat/thread';
+import { resetStagingState } from '../../../core/src/staging/service';
 import {
   getThreadState,
   getRecentChatMessages,
@@ -16,9 +19,6 @@ import {
   getTotalMessageCount,
   resetChatState,
 } from '../../src/hooks/useChatThread';
-import { resetThreads } from '../../../brain/src/chat/thread';
-import { resetChatDefaults } from '../../../brain/src/chat/orchestrator';
-import { resetStagingState } from '../../../core/src/staging/service';
 
 describe('Chat Thread Hook (4.6)', () => {
   beforeEach(() => {

@@ -13,8 +13,8 @@ import {
 import { validateAgainstSchema } from '../../src/plugins/schema_validate';
 import { parsePluginEnvelope } from '../../src/workflow/plugin_envelope';
 
-import type { PluginInstall } from '../../src/plugins/registry';
 import type { PluginIntentDecision } from '../../src/gatekeeper/intent';
+import type { PluginInstall } from '../../src/plugins/registry';
 import type { PluginCapabilityDecl, PluginManifest, PluginTrustAnchor } from '@dina/protocol';
 
 function intent(overrides: Partial<PluginIntentDecision> = {}): PluginIntentDecision {

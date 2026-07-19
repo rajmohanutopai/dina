@@ -35,9 +35,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { NodeSQLiteAdapter } from './adapter';
+
 import type { DBProvider, DatabaseAdapter } from '@dina/core';
 
-import { NodeSQLiteAdapter } from './adapter';
 
 const PERSONA_NAME_REGEX = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const IDENTITY_FILENAME = 'identity.sqlite';

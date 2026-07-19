@@ -19,13 +19,14 @@ import {
   toggleArrayValue,
   type MultiSelectOption,
 } from '../../src/peerlens/preferences/multi_select_screen';
+
 import type { DietaryTag } from '../../src/services/user_preferences';
 
 // Order: most-restrictive at top (vegan > vegetarian > flexitarian
 // allergies). Allergy-only entries grouped together. Each description
 // is short — these are well-known terms; long explanations would just
 // add noise.
-const OPTIONS: ReadonlyArray<MultiSelectOption<DietaryTag>> = [
+const OPTIONS: readonly MultiSelectOption<DietaryTag>[] = [
   { value: 'vegan', label: 'Vegan', description: 'No animal products' },
   { value: 'vegetarian', label: 'Vegetarian', description: 'No meat or fish' },
   { value: 'halal', label: 'Halal', description: 'Permitted under Islamic dietary law' },

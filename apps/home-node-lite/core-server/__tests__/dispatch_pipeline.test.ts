@@ -7,14 +7,17 @@
  */
 
 import { pino } from 'pino';
+
 import {
   RPC_REQUEST_TYPE,
   RPC_RESPONSE_TYPE,
   type CoreRPCRequest,
 } from '@dina/protocol';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
+
 import { dispatchTunneledRequest } from '../src/msgbox/dispatch_pipeline';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(overrides: Partial<CoreServerConfig> = {}): CoreServerConfig {
   return {

@@ -128,7 +128,7 @@ const NAME_WITH_TITLE = new RegExp(
  * before `direct` so overlapping direct matches collapse into the
  * specific form during dedup.
  */
-const ANCHORS: ReadonlyArray<RegExp> = [
+const ANCHORS: readonly RegExp[] = [
   new RegExp(`\\bmy\\s+(${ROLE_ALTERNATION})\\s+is\\s+`, 'g'),
   new RegExp(`\\bmy\\s+(${ROLE_ALTERNATION})\\s+[a-z]+(?:\\s+[a-z]+){0,3}?\\s+with\\s+`, 'g'),
   new RegExp(`\\bmy\\s+(${ROLE_ALTERNATION})\\s+`, 'g'),

@@ -14,9 +14,11 @@
  * Source: brain/src/prompts.py PROMPT_ANTI_HER_CLASSIFY_SYSTEM
  */
 
-import { detectEmotionalDependency, isCompanionSeeking } from './anti_her';
-import { ANTI_HER_CLASSIFY } from '../llm/prompts';
 import { scrubPII } from '@dina/core';
+
+import { ANTI_HER_CLASSIFY } from '../llm/prompts';
+
+import { detectEmotionalDependency, isCompanionSeeking } from './anti_her';
 
 // ---------------------------------------------------------------
 // Types

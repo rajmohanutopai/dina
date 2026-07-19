@@ -109,7 +109,31 @@ export {
   SQLiteCompletionReceiptRepository,
   setCompletionReceiptRepository,
 } from './src/run/completion';
-export { SQLiteCommandReceiptRepository, setCommandReceiptRepository } from './src/run/command_receipt';
+export {
+  SQLiteCommandReceiptRepository,
+  setCommandReceiptRepository,
+  setCommandTxRunner,
+} from './src/run/command_receipt';
+// ISVC-10 — compose the interactive-run drivers into a live loop (both boots).
+export { wireRunPlane } from './src/run/plane';
+export type { RunPlane, RunPlaneDeps } from './src/run/plane';
+export type { EmitQueryEffect, EmitDelegationEffect } from './src/run/engine';
+export type { VerifiedRunMessage, PullIngestOutcome } from './src/run/ingest';
+export type { IngestCompletionInput } from './src/run/completion';
+export type { PersonaCipher } from './src/run/payload_store';
+// ISVC-10 — the run-response trust boundary + the persona-DEK cipher functions
+// the boot adapts into a PersonaCipher for the payload store (§6.2/§13).
+export { verifyRunMessage } from './src/run/verify';
+export type {
+  SignedRunMessageWire,
+  ExpectedRunBinding,
+  ResolveRuntimeKey,
+  VerifyRunMessageResult,
+} from './src/run/verify';
+export { hasDEK, wrapWithPersonaDEK, unwrapWithPersonaDEK } from './src/persona/orchestrator';
+// ISVC-10 — the boot assembly (egress + PersonaCipher + plane + receive hook).
+export { wireRunPlaneNode } from './src/run/plane_node';
+export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './src/run/plane_node';
 export { InProcessOwnerRunClient } from './src/client/owner-run-client';
 export type { OwnerRunClient } from './src/client/owner-run-client';
 // Poll-mode watches (PSVC-0)

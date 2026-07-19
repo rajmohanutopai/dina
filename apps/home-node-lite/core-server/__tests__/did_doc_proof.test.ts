@@ -2,10 +2,9 @@
  * Task 4.58 — self-certify + verify DID doc tests.
  */
 
-import type { DIDDocument } from '@dina/core';
 import { generateMnemonic, mnemonicToSeed } from '@dina/core';
+
 import { deriveIdentity } from '../src/identity/derivations';
-import { buildHomeNodeDIDDocument } from '../src/identity/home_node_did_document';
 import {
   PROOF_TYPE,
   PROOF_PURPOSE_ASSERTION,
@@ -15,6 +14,9 @@ import {
   verifyDIDDocProof,
   type DIDProof,
 } from '../src/identity/did_doc_proof';
+import { buildHomeNodeDIDDocument } from '../src/identity/home_node_did_document';
+
+import type { DIDDocument } from '@dina/core';
 
 function freshIdentity() {
   return deriveIdentity({ masterSeed: mnemonicToSeed(generateMnemonic()) });

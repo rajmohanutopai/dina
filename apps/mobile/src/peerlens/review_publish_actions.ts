@@ -5,9 +5,10 @@
  * dead-letter and drains immediately.
  */
 
+import { getReviewPublishRepository } from '@dina/core';
+
 import { getBootedNode } from '../hooks/useNodeBootstrap';
 
-import { getReviewPublishRepository } from '@dina/core';
 
 import { canDrainReviewPublish, drainReviewPublishNow } from './review_publish_autodrain';
 

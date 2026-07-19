@@ -20,12 +20,10 @@ import {
   type Contact,
   type TrustLevel,
   type SharingTier,
-} from '@dina/core';
-import {
+
   getSharingTier,
   setSharingPolicy,
-  type SharingTier as PolicyTier,
-} from '@dina/core';
+  type SharingTier as PolicyTier} from '@dina/core';
 
 export interface ContactDetailState {
   did: string;
@@ -159,7 +157,7 @@ export function getSharingCategories(): string[] {
 /**
  * Get sharing tier options for the picker.
  */
-export function getSharingTierOptions(): Array<{ value: PolicyTier; label: string }> {
+export function getSharingTierOptions(): { value: PolicyTier; label: string }[] {
   return [
     { value: 'none', label: 'None. No data shared.' },
     { value: 'summary', label: 'Summary. Headlines only.' },

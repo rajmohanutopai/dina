@@ -2,13 +2,14 @@
  * DEF-6.2 (scanner composition + concrete scanners) — tests.
  */
 
-import type { DinaMessage } from '@dina/test-harness';
 import {
   composeScanners,
   createAllowListScanner,
   createBodySizeScanner,
 } from '../../src/guardian/d2d_scanners';
+
 import type { D2DBody, D2DScanner } from '../../src/guardian/d2d_dispatcher';
+import type { DinaMessage } from '@dina/test-harness';
 
 function raw(type: string): DinaMessage {
   return {

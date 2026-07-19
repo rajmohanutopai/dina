@@ -6,6 +6,17 @@
  * dina-mobile runs under Expo managed and never ships an HTTP server.
  */
 
+import { createInProcessDispatch } from '../server/in_process_dispatch';
+import { setWSDeliverFn } from '../transport/delivery';
+
+import {
+  handleInboundD2D,
+  handleInboundRPC,
+  handleRPCCancel,
+  setRPCRouter,
+  sendD2DViaWS,
+  type RPCRouterFn,
+} from './msgbox_handlers';
 import {
   setIdentity,
   setWSFactory,
@@ -15,17 +26,9 @@ import {
   onRPCCancel,
   type WSFactory,
 } from './msgbox_ws';
-import {
-  handleInboundD2D,
-  handleInboundRPC,
-  handleRPCCancel,
-  setRPCRouter,
-  sendD2DViaWS,
-  type RPCRouterFn,
-} from './msgbox_handlers';
-import { setWSDeliverFn } from '../transport/delivery';
+
 import type { CoreRouter } from '../server/router';
-import { createInProcessDispatch } from '../server/in_process_dispatch';
+
 
 export interface MsgBoxBootConfig {
   /** Home node DID (did:key:z...) */

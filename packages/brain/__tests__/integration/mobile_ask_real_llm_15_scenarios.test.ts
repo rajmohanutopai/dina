@@ -39,30 +39,28 @@
  */
 
 
-import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
-import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import { ToolRegistry } from '../../src/reasoning/tool_registry';
-import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
-import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
+import { InProcessTransport , createCoreRouter , clearVaults , resetStagingState ,
+  configureRateLimiter,
+  registerPublicKeyResolver,
+} from '@dina/core';
+
 import {
   handleChat,
   resetAskCommandHandler,
   setAskCommandHandler,
 } from '../../src/chat/orchestrator';
+import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
+import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
+import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
+import { ToolRegistry } from '../../src/reasoning/tool_registry';
+import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
+import { StagingDrainScheduler } from '../../src/staging/scheduler';
 import {
   resetReasoningProvider,
   setAccessiblePersonas,
 } from '../../src/vault_context/assembly';
-import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import { InProcessTransport } from '@dina/core';
 
-import { createCoreRouter } from '@dina/core';
-import { clearVaults } from '@dina/core';
-import { resetStagingState } from '@dina/core';
-import {
-  configureRateLimiter,
-  registerPublicKeyResolver,
-} from '@dina/core';
+
 
 import {
   closeSQLiteVault,
@@ -353,7 +351,7 @@ describeReal(
           haystack.includes(needle.toLowerCase()),
         );
         if (!hit) {
-          // eslint-disable-next-line no-console
+           
           console.log(
             `[${scenario.label}] remember="${scenario.remember}"\n  ask=${scenario.ask}\n  response=${askResp.response}\n  expectedAny=${JSON.stringify(scenario.mustContainAny)}`,
           );

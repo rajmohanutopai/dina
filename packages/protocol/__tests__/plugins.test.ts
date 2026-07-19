@@ -613,7 +613,7 @@ describe('validatePluginManifest — golden paths', () => {
 });
 
 describe('validatePluginManifest — rejections (never first-match-wins)', () => {
-  const cases: Array<[string, PluginManifest, string]> = [
+  const cases: [string, PluginManifest, string][] = [
     [
       'unknown top-level field fails closed (§14)',
       mutate(runnerManifest(), (m) => {

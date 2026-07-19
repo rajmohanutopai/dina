@@ -11,6 +11,7 @@ import {
   type BuildProfileFn,
   type ConfigSnapshotReader,
 } from '../src/appview/profile_auto_republisher';
+
 import type {
   BuildProfileInput,
   ServiceProfileRecord,
@@ -77,7 +78,7 @@ function stubPublisher(
 }
 
 function mockScheduler() {
-  const queue: Array<{ fn: () => void; fireAt: number; handle: number }> = [];
+  const queue: { fn: () => void; fireAt: number; handle: number }[] = [];
   let nextHandle = 1;
   let now = 0;
   return {

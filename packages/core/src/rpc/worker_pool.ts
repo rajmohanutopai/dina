@@ -36,7 +36,7 @@ export class RPCWorkerPool {
   /** Live job by key. Promise never rejects into the pool — callers get it raw. */
   private readonly inFlight = new Map<string, Promise<unknown>>();
   /** Queue of jobs waiting for a slot. */
-  private readonly queue: Array<() => void> = [];
+  private readonly queue: (() => void)[] = [];
   private running = 0;
 
   constructor(options: RPCWorkerPoolOptions) {

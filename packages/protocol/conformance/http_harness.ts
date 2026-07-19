@@ -42,8 +42,8 @@
  * callers opt into. Keeps the Jest test importable without eating a port.
  */
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 
 import { formatReport, runConformance, type ConformanceReport } from './suite';
@@ -51,13 +51,13 @@ import { formatReport, runConformance, type ConformanceReport } from './suite';
 interface Index {
   version: string;
   updated: string;
-  vectors: Array<{
+  vectors: {
     name: string;
     slot: string;
     level: string;
     task: string;
     status: string;
-  }>;
+  }[];
 }
 
 export interface HarnessOptions {

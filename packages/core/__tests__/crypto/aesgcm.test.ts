@@ -9,10 +9,9 @@
  * Source: core/test/crypto_test.go (TestCrypto_5_*)
  */
 
-import { wrapSeed, unwrapSeed, changePassphrase, WrappedSeed } from '../../src/crypto/aesgcm';
-import { deriveKEK, ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
 import { gcm } from '@noble/ciphers/aes.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
+
 import {
   TEST_PASSPHRASE,
   TEST_PASSPHRASE_WRONG,
@@ -22,6 +21,9 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import { wrapSeed, unwrapSeed, changePassphrase, WrappedSeed } from '../../src/crypto/aesgcm';
+import { deriveKEK, ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
 
 // Each test involves Argon2id (128MB WASM) — allow time
 jest.setTimeout(60_000);

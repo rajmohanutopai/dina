@@ -18,6 +18,7 @@ import {
   formatTimestamp,
   buildEnrichmentVersion,
 } from '../../src/enrichment/l0_deterministic';
+
 import type { L0Input } from '../../src/enrichment/l0_deterministic';
 
 describe('L0 Deterministic Generation', () => {

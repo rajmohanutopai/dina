@@ -6,11 +6,12 @@
  * behaviour is out of scope (covered by integration runs).
  */
 
-import { resetReminderState, listByPersona } from '@dina/core/reminders';
 import { clearVaults, storeItem } from '@dina/core';
+import { resetReminderState, listByPersona } from '@dina/core/reminders';
 
-import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 import { buildRememberRuntime } from '../../src/composition/remember_runtime';
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
+
 import type {
   ChatOptions,
   ChatResponse,
@@ -18,7 +19,7 @@ import type {
   ToolCall,
 } from '../../src/llm/adapters/provider';
 
-function scripted(script: Array<Partial<ChatResponse>>): {
+function scripted(script: Partial<ChatResponse>[]): {
   provider: LLMProvider;
   systemPromptSeen: string[];
 } {
@@ -218,14 +219,14 @@ describe('buildRememberRuntime', () => {
     // Capture every message the provider sees so we can prove the
     // vault_search result (the dinosaur fact) gets fed back into the loop
     // — i.e. the recall tool is registered AND surfaces prior memories.
-    const messagesSeen: Array<{ role: string; content: unknown }> = [];
+    const messagesSeen: { role: string; content: unknown }[] = [];
     let i = 0;
     const provider: LLMProvider = {
       name: 'test',
       supportsStreaming: false,
       supportsToolCalling: true,
       supportsEmbedding: false,
-      async chat(messages: Array<{ role: string; content: unknown }>) {
+      async chat(messages: { role: string; content: unknown }[]) {
         messagesSeen.push(...messages);
         const step = i++;
         if (step === 0) {
@@ -282,7 +283,7 @@ describe('buildRememberRuntime', () => {
       supportsStreaming: false,
       supportsToolCalling: true,
       supportsEmbedding: false,
-      async chat(messages: Array<{ role: string; content: unknown }>) {
+      async chat(messages: { role: string; content: unknown }[]) {
         const user = messages.find((m) => m.role === 'user');
         if (user !== undefined && typeof user.content === 'string') userMsgSeen += user.content;
         if (i++ === 0) {
@@ -363,7 +364,7 @@ describe('buildRememberRuntime', () => {
       supportsStreaming: false,
       supportsToolCalling: true,
       supportsEmbedding: false,
-      async chat(messages: Array<{ role: string; content: unknown }>) {
+      async chat(messages: { role: string; content: unknown }[]) {
         const user = messages.find((m) => m.role === 'user');
         if (user !== undefined && typeof user.content === 'string') {
           userMessageSeen = user.content;
@@ -410,7 +411,7 @@ describe('buildRememberRuntime', () => {
       supportsStreaming: false,
       supportsToolCalling: true,
       supportsEmbedding: false,
-      async chat(messages: Array<{ role: string; content: unknown }>) {
+      async chat(messages: { role: string; content: unknown }[]) {
         const user = messages.find((m) => m.role === 'user');
         if (user !== undefined && typeof user.content === 'string') userMessageSeen = user.content;
         return {

@@ -8,8 +8,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import type { WrappedSeed } from '../crypto/aesgcm';
 import { serializeWrappedSeed, deserializeWrappedSeed } from './seed_file';
+
+import type { WrappedSeed } from '../crypto/aesgcm';
 
 /**
  * Write a WrappedSeed to a file.

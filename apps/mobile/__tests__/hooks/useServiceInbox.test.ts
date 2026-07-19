@@ -26,6 +26,7 @@ import {
   setInboxCoreClient,
   type InboxCoreClient,
 } from '../../src/hooks/useServiceInbox';
+
 import type { WorkflowTask } from '@dina/core';
 
 function makeTask(overrides: Partial<WorkflowTask> & { id: string }): WorkflowTask {
@@ -60,15 +61,15 @@ function stubClient(init: {
   calls: {
     list: number;
     approved: string[];
-    cancelled: Array<{ id: string; reason: string }>;
-    responded: Array<{ id: string; body: unknown }>;
+    cancelled: { id: string; reason: string }[];
+    responded: { id: string; body: unknown }[];
   };
 } {
   const calls = {
     list: 0,
     approved: [] as string[],
-    cancelled: [] as Array<{ id: string; reason: string }>,
-    responded: [] as Array<{ id: string; body: unknown }>,
+    cancelled: [] as { id: string; reason: string }[],
+    responded: [] as { id: string; body: unknown }[],
   };
   const client: InboxCoreClient = {
     async listWorkflowTasks() {
@@ -112,9 +113,9 @@ function stubResolvedClient(
   opts: { errorStates?: string[] } = {},
 ): {
   client: InboxCoreClient;
-  calls: { filters: Array<{ kind: string; state: string; limit?: number }> };
+  calls: { filters: { kind: string; state: string; limit?: number }[] };
 } {
-  const calls = { filters: [] as Array<{ kind: string; state: string; limit?: number }> };
+  const calls = { filters: [] as { kind: string; state: string; limit?: number }[] };
   const client = {
     async listWorkflowTasks(filter: { kind: string; state: string; limit?: number }) {
       calls.filters.push(filter);

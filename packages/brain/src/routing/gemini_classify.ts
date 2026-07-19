@@ -24,15 +24,16 @@ import {
   PERSONA_CLASSIFY,
   PERSONA_CLASSIFY_RESPONSE_SCHEMA,
 } from '../llm/prompts';
-import { resolveAlias } from '../persona/registry';
-import type { ChatOptions, LLMProvider } from '../llm/adapters/provider';
 import { getProviderTiers, type ProviderName } from '../llm/provider_config';
+import { resolveAlias } from '../persona/registry';
+
 import type {
   ClassificationInput,
   MentionedContact,
   AttributionCandidate,
 } from './domain';
 import type { PersonaSelectorProvider } from './persona_selector';
+import type { ChatOptions, LLMProvider } from '../llm/adapters/provider';
 
 /**
  * Installed-persona descriptor the classifier surfaces to the LLM.
@@ -61,7 +62,7 @@ export interface RichClassificationResult {
   reason: string;
   has_event: boolean;
   event_hint: string;
-  attribution_corrections: Array<{ id: number; corrected_bucket?: string; reason?: string }>;
+  attribution_corrections: { id: number; corrected_bucket?: string; reason?: string }[];
 }
 
 const CLASSIFY_TEMPERATURE = 0.1;
@@ -226,7 +227,7 @@ export function buildClassificationUserMessage(
 /** Python sends `mentioned_contacts` as a plain list of dicts — do the
  *  same here, preserving the exact field names the prompt references
  *  (`name`, `relationship`, `data_responsibility`). */
-function serializeMentionedContacts(contacts: MentionedContact[]): Array<Record<string, string>> {
+function serializeMentionedContacts(contacts: MentionedContact[]): Record<string, string>[] {
   return contacts.map((c) => {
     const out: Record<string, string> = { name: c.name };
     if (c.relationship !== undefined) out.relationship = c.relationship;

@@ -114,7 +114,7 @@ export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubs
   // resume, but pinning here means a Settings change made WHILE
   // backgrounded doesn't retroactively seal a session that the user
   // had already armed under a longer timeout.
-  let armedTimeoutMs: number = 0;
+  let armedTimeoutMs = 0;
 
   const cancelPending = (): void => {
     if (pendingTimer !== null) {

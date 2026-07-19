@@ -33,10 +33,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
 import { pino } from 'pino';
+
 import { createServer, type ReadinessCheck } from '../src/server';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 const FIXTURE_DIR = path.resolve(__dirname, '../fixtures/wire_format');
 
@@ -53,7 +56,7 @@ interface WireFixture {
   };
 }
 
-function loadFixtures(): Array<[string, WireFixture]> {
+function loadFixtures(): [string, WireFixture][] {
   const files = fs
     .readdirSync(FIXTURE_DIR)
     .filter((f) => f.endsWith('.json'))

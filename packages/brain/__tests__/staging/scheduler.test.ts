@@ -5,10 +5,11 @@
 import { makeStubRememberRuntime } from '@dina/test-harness';
 
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
+
 import type { StagingDrainCoreClient } from '../../src/staging/drain';
 
 function coreWith(items: unknown[]): StagingDrainCoreClient {
-  const resolves: Array<{ id: string; persona: string | string[] }> = [];
+  const resolves: { id: string; persona: string | string[] }[] = [];
   return {
     async stagingClaim() {
       return { items, count: items.length };
@@ -27,7 +28,7 @@ function coreWith(items: unknown[]): StagingDrainCoreClient {
     // Test-only handle for assertions; excluded from the structural type.
     resolves,
   } as StagingDrainCoreClient & {
-    resolves: Array<{ id: string; persona: string | string[] }>;
+    resolves: { id: string; persona: string | string[] }[];
   };
 }
 
@@ -48,8 +49,8 @@ describe('StagingDrainScheduler', () => {
     const core = coreWith([
       { id: 'a', type: 'email', source: 'clinic', subject: 'diagnosis', body: '' },
     ]);
-    const ticks: Array<{ claimed: number; stored: number }> = [];
-    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const ticks: { claimed: number; stored: number }[] = [];
+    const timers: { fn: () => void; ms: number }[] = [];
     const scheduler = new StagingDrainScheduler({
       core,
       drain: { rememberRuntime: makeStubRememberRuntime('general') },
@@ -77,7 +78,7 @@ describe('StagingDrainScheduler', () => {
 
   it('start() is idempotent (second call does not register a second timer)', async () => {
     const core = coreWith([]);
-    const timers: Array<() => void> = [];
+    const timers: (() => void)[] = [];
     const scheduler = new StagingDrainScheduler({
       core,
       setInterval: (fn) => {
@@ -151,7 +152,7 @@ describe('StagingDrainScheduler', () => {
     // prove the class doesn't swallow unexpected throws from deeper down.
     // Instead: assert the tick resolves and the inner logger captured
     // the claim failure via drain's `staging.drain.claim_failed` event.
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const s2 = new StagingDrainScheduler({
       core: brokenCore,
       logger: (e) => logs.push(e),

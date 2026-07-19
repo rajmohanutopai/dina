@@ -10,8 +10,9 @@
  * Source: core/test/gatekeeper_test.go (brain-denied section)
  */
 
-import { isBrainDenied } from '../../src/gatekeeper/intent';
 import { BRAIN_DENIED_ACTIONS } from '@dina/test-harness';
+
+import { isBrainDenied } from '../../src/gatekeeper/intent';
 
 describe('Brain-Denied Actions', () => {
   describe('isBrainDenied', () => {

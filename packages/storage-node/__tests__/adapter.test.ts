@@ -11,9 +11,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { NodeSQLiteAdapter, NodeSQLiteAdapterError } from '../src/adapter';
+
 import type { DatabaseAdapter } from '@dina/core';
 
-import { NodeSQLiteAdapter, NodeSQLiteAdapterError } from '../src/adapter';
 
 /** 32-byte test key — all zeros by default, or supply a hex override. */
 const KEY_A = '0'.repeat(64);

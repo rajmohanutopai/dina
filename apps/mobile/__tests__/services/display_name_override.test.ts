@@ -9,6 +9,9 @@
  *   - clear cleanly on the wipe path
  */
 
+import * as Keychain from 'react-native-keychain';
+
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   hydrateDisplayNameOverride,
   setDisplayNameOverride,
@@ -17,8 +20,6 @@ import {
   subscribeDisplayNameOverride,
   resetDisplayNameOverrideForTest,
 } from '../../src/services/display_name_override';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
-import * as Keychain from 'react-native-keychain';
 
 beforeEach(() => {
   resetKeychainMock();

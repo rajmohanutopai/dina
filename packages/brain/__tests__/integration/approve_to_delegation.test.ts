@@ -23,9 +23,9 @@ import {
 import { resetThreads } from '../../src/chat/thread';
 import { makeServiceApproveHandler } from '../../src/service/approve_command';
 import { ServiceHandler } from '../../src/service/service_handler';
+
 import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import type { ServiceConfig } from '@dina/core';
-import type { WorkflowTask } from '@dina/core';
+import type { ServiceConfig , WorkflowTask } from '@dina/core';
 
 // ---------------------------------------------------------------------------
 // Shared stub coreClient — records every call, returns mostly-success.
@@ -47,11 +47,11 @@ function buildStubCore(): {
   };
   createCalls: CreateCall[];
   approveCalls: string[];
-  cancelCalls: Array<{ id: string; reason?: string }>;
+  cancelCalls: { id: string; reason?: string }[];
 } {
   const createCalls: CreateCall[] = [];
   const approveCalls: string[] = [];
-  const cancelCalls: Array<{ id: string; reason?: string }> = [];
+  const cancelCalls: { id: string; reason?: string }[] = [];
 
   const client = {
     async createWorkflowTask(input: CreateCall) {

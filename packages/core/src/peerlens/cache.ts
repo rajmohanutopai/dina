@@ -18,8 +18,8 @@
  * Source: ARCHITECTURE.md Task 9.2
  */
 
-import { kvGet, kvSet, kvDelete } from '../kv/store';
 import { TRUST_CACHE_TTL_MS } from '../constants';
+import { kvGet, kvSet, kvDelete } from '../kv/store';
 
 const CACHE_NAMESPACE = 'trust_cache';
 const DEFAULT_TTL_MS = TRUST_CACHE_TTL_MS;

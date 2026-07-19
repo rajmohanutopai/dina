@@ -7,6 +7,7 @@ import {
   mnemonicToSeed,
   publicKeyToMultibase,
 } from '@dina/core';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import {
   PlcProbeError,

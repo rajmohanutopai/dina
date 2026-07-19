@@ -11,7 +11,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 export interface PIISessionData {
-  entities: Array<{ token: string; type: string; value: string }>;
+  entities: { token: string; type: string; value: string }[];
 }
 
 const sessions = new Map<string, PIISessionData>();

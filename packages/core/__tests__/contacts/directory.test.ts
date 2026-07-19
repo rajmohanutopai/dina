@@ -32,24 +32,24 @@ import {
   setPreferredFor,
   type Contact,
 } from '../../src/contacts/directory';
+import { rebuildContactProjections, mergeContactPersons } from '../../src/contacts/directory';
 import {
   setContactRepository,
   SQLiteContactRepository,
   type ContactRepository,
 } from '../../src/contacts/repository';
 import {
-  setPeopleRepository,
-  getPeopleRepository,
-  SQLitePeopleRepository,
-  type PeopleRepository,
-} from '../../src/people/repository';
-import {
   checkContactGate,
   clearGatesState,
   addContact as addEgressGateContact,
 } from '../../src/d2d/gates';
 import { isContactRing1, clearKnownContacts } from '../../src/peerlens/source_trust';
-import { rebuildContactProjections, mergeContactPersons } from '../../src/contacts/directory';
+import {
+  setPeopleRepository,
+  getPeopleRepository,
+  SQLitePeopleRepository,
+  type PeopleRepository,
+} from '../../src/people/repository';
 import {
   InMemoryVaultRepository,
   setVaultRepository,
@@ -837,9 +837,9 @@ describe('Contact Directory', () => {
       add: string[]; // dids added
       update: string[]; // dids updated
       remove: string[]; // dids removed
-      addAlias: Array<{ did: string; alias: string }>;
+      addAlias: { did: string; alias: string }[];
       removeAlias: string[]; // aliases removed
-      setPreferredFor: Array<{ did: string; categories: readonly string[] }>;
+      setPreferredFor: { did: string; categories: readonly string[] }[];
     }
 
     /**
@@ -878,7 +878,7 @@ describe('Contact Directory', () => {
     }
 
     function makeSpyPeopleRepo(
-      sink: Array<{ did: string; displayName: string }>,
+      sink: { did: string; displayName: string }[],
     ): PeopleRepository {
       return makeStubPeopleRepo({
         upsertContactPerson: (did: string, displayName: string) => {
@@ -994,7 +994,7 @@ describe('Contact Directory', () => {
     it('addContact → people repo.upsertContactPerson (when wired, non-blocked)', () => {
       const { repo: contactRepo } = makeSpyRepo();
       setContactRepository(contactRepo);
-      const peopleSpy: Array<{ did: string; displayName: string }> = [];
+      const peopleSpy: { did: string; displayName: string }[] = [];
       const peopleRepo = makeSpyPeopleRepo(peopleSpy);
       setPeopleRepository(peopleRepo);
 
@@ -1011,7 +1011,7 @@ describe('Contact Directory', () => {
       // people mirror for blocked" optimisation no longer applies.
       const { repo: contactRepo } = makeSpyRepo();
       setContactRepository(contactRepo);
-      const peopleSpy: Array<{ did: string; displayName: string }> = [];
+      const peopleSpy: { did: string; displayName: string }[] = [];
       setPeopleRepository(makeSpyPeopleRepo(peopleSpy));
 
       addContact('did:plc:bad', 'Bad Actor', 'blocked');

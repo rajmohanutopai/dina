@@ -12,6 +12,7 @@
  */
 
 import { buildCanonicalPayload } from '@dina/protocol';
+
 import {
   buildCanonicalRequest,
   splitUrl,

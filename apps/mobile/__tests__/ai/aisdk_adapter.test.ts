@@ -11,13 +11,14 @@
  *     'stop' to 'tool_use', etc.
  */
 
-import type { LanguageModel } from 'ai';
 import { AISDKAdapter } from '@dina/brain/llm';
+
+import type { LanguageModel } from 'ai';
 
 function makeMock(opts: {
   onCall?: (prompt: unknown) => void;
   finishReason?: string;
-  toolCalls?: Array<{
+  toolCalls?: {
     toolCallId: string;
     toolName: string;
     input: Record<string, unknown>;
@@ -25,10 +26,10 @@ function makeMock(opts: {
      *  thinking models stamp `thoughtSignature` here; the adapter
      *  preserves the field on the Brain-side ToolCall. */
     providerMetadata?: Record<string, Record<string, unknown>>;
-  }>;
+  }[];
   text?: string;
 }): LanguageModel {
-  const contentParts: Array<Record<string, unknown>> = [];
+  const contentParts: Record<string, unknown>[] = [];
   if (opts.text !== undefined) contentParts.push({ type: 'text', text: opts.text });
   for (const tc of opts.toolCalls ?? []) {
     const part: Record<string, unknown> = {
@@ -94,13 +95,13 @@ describe('AISDKAdapter — multiple system messages are joined, not discarded (#
     // threaded through as the first entry (role: 'system') built from
     // the joined system string.
     expect(calls).toHaveLength(1);
-    const prompt = calls[0] as Array<{ role: string; content: string | Array<{ text?: string }> }>;
+    const prompt = calls[0] as { role: string; content: string | { text?: string }[] }[];
     const system = prompt.find((m) => m.role === 'system');
     expect(system).toBeDefined();
     const sys =
       typeof system!.content === 'string'
         ? system!.content
-        : (system!.content as Array<{ text?: string }>).map((p) => p.text ?? '').join('');
+        : (system!.content as { text?: string }[]).map((p) => p.text ?? '').join('');
     // Both blocks are present; the second wasn't dropped.
     expect(sys).toContain('block A');
     expect(sys).toContain('block B');
@@ -119,12 +120,12 @@ describe('AISDKAdapter — multiple system messages are joined, not discarded (#
       ],
       { systemPrompt: 'top-level instruction' },
     );
-    const prompt = calls[0] as Array<{ role: string; content: string | Array<{ text?: string }> }>;
+    const prompt = calls[0] as { role: string; content: string | { text?: string }[] }[];
     const system = prompt.find((m) => m.role === 'system');
     const sys =
       typeof system!.content === 'string'
         ? system!.content
-        : (system!.content as Array<{ text?: string }>).map((p) => p.text ?? '').join('');
+        : (system!.content as { text?: string }[]).map((p) => p.text ?? '').join('');
     expect(sys).toContain('top-level instruction');
     expect(sys).toContain('pipeline-layer note');
   });
@@ -243,10 +244,10 @@ describe('AISDKAdapter — providerMetadata round-trip (Gemini thoughtSignature)
 
     // Locate the re-sent assistant tool-call part in the prompt the
     // SDK forwarded to `doGenerate`.
-    const prompt = capturedPrompt as Array<{ role: string; content: unknown }>;
+    const prompt = capturedPrompt as { role: string; content: unknown }[];
     const assistantMsg = prompt.find((m) => m.role === 'assistant');
     expect(assistantMsg).toBeDefined();
-    const parts = assistantMsg!.content as Array<Record<string, unknown>>;
+    const parts = assistantMsg!.content as Record<string, unknown>[];
     const toolCallPart = parts.find((p) => p.type === 'tool-call');
     expect(toolCallPart).toBeDefined();
     expect(toolCallPart!.providerOptions).toEqual({

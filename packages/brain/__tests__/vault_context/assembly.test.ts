@@ -6,6 +6,10 @@
  * Source: brain/tests/test_vault_context.py
  */
 
+import { storeItem, clearVaults , DEFAULT_TEST_PERSONAS , createPersona, resetPersonaState, openPersona , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import { createReminder, resetReminderState } from '@dina/core/reminders';
+import { makeVaultItem, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
+
 import {
   assembleContext,
   executeToolSearch,
@@ -17,13 +21,8 @@ import {
   resetReasoningProvider,
   setContactReadBackend,
 } from '../../src/vault_context/assembly';
+
 import type { LLMMessage } from '../../src/vault_context/assembly';
-import { storeItem, clearVaults } from '@dina/core';
-import { DEFAULT_TEST_PERSONAS } from '@dina/core';
-import { createPersona, resetPersonaState, openPersona } from '@dina/core';
-import { addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
-import { createReminder, resetReminderState } from '@dina/core/reminders';
-import { makeVaultItem, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
 describe('Vault Context Assembly', () => {
   beforeEach(() => {
@@ -281,7 +280,7 @@ describe('Vault Context Assembly', () => {
       const ctx = { items: [], tokenEstimate: 0, personas: ['general'] };
       await runReasoningAgent('List my personas', ctx);
       expect(Array.isArray(toolResult)).toBe(true);
-      const personas = toolResult as Array<{ name: string; tier: string; accessible: boolean }>;
+      const personas = toolResult as { name: string; tier: string; accessible: boolean }[];
       expect(personas.find((p) => p.name === 'general')).toBeDefined();
       expect(personas.find((p) => p.name === 'health')).toBeDefined();
     });

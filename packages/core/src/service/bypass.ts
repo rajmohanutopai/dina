@@ -25,6 +25,7 @@
  */
 
 import { parseServiceListingUri, resolveSearchableCapability } from '@dina/protocol';
+
 import { MsgTypeServiceQuery, MsgTypeServiceResponse } from '../d2d/families';
 import {
   validateServiceQueryBody,

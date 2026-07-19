@@ -9,6 +9,7 @@
  */
 
 import { scrubPII, rehydratePII, type ScrubResult } from '@dina/core';
+
 import { detectTier2, type PatternMatch } from './tier2_patterns';
 
 export interface EntityVaultEntry {
@@ -18,7 +19,7 @@ export interface EntityVaultEntry {
 }
 
 export class EntityVault {
-  private readonly map: Map<string, EntityVaultEntry> = new Map();
+  private readonly map = new Map<string, EntityVaultEntry>();
   /** Per-type counters for sequential token numbering across both tiers. */
   private readonly typeCounts: Record<string, number> = {};
 

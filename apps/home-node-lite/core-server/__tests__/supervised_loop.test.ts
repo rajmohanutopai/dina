@@ -15,7 +15,7 @@ import {
 
 /** A simple ordered list of pending timers. Fires oldest first. */
 function mockScheduler() {
-  type Entry = { fn: () => void; delayMs: number; cancelled: boolean };
+  interface Entry { fn: () => void; delayMs: number; cancelled: boolean }
   const pending: Entry[] = [];
   return {
     setTimerFn: (fn: () => void, delayMs: number) => {

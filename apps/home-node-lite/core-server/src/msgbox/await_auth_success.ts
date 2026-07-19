@@ -27,8 +27,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.43.
  */
 
-import type { AuthFrame } from '@dina/protocol';
 import { AUTH_SUCCESS } from '@dina/protocol';
+
+import type { AuthFrame } from '@dina/protocol';
 
 /** Default wait budget. 5 seconds is generous for a single
  *  round-trip on broadband + modest packet loss; MsgBox relay

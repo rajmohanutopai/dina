@@ -30,13 +30,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4j task 4.77.
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isTopicKind } from '@dina/core';
+
 import type {
   MemoryService,
   TopicKind,
   TopicRepositoryResolver,
 } from '@dina/core';
-import { isTopicKind } from '@dina/core';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Default limit when the client omits it. */
 export const DEFAULT_MEMORY_TOC_LIMIT = 20;

@@ -4,13 +4,16 @@
  * Source: brain/src/prompts.py PERSONA_CLASSIFY_RESPONSE_SCHEMA
  */
 
+import { createPersona, resetPersonaState } from '@dina/core';
+
+import { PERSONA_CLASSIFY_RESPONSE_SCHEMA } from '../../src/llm/prompts';
 import {
   createClassifierForProvider,
   configureClassification,
 } from '../../src/routing/classify_factory';
-import { PERSONA_CLASSIFY_RESPONSE_SCHEMA } from '../../src/llm/prompts';
+
 import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
-import { createPersona, resetPersonaState } from '@dina/core';
+
 
 function mockProvider(name: string, content: string): LLMProvider {
   return {

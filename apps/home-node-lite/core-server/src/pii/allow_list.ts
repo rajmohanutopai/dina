@@ -48,9 +48,7 @@ export interface AllowListAddOptions {
   type?: string;
 }
 
-export interface AllowListFileShape {
-  [category: string]: string[];
-}
+export type AllowListFileShape = Record<string, string[]>;
 
 export class AllowList {
   /**

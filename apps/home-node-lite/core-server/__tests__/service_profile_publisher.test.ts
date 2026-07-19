@@ -11,6 +11,7 @@ import {
   type PutRecordFn,
   type ServiceProfilePublisherEvent,
 } from '../src/appview/service_profile_publisher';
+
 import type { ServiceProfileRecord } from '../src/appview/profile_builder';
 
 function validProfile(): ServiceProfileRecord {
@@ -258,8 +259,8 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
   // Default stays 'self' (single-listing); a supplied rkey mints a sibling
   // record at `…/com.dinakernel.service.profile/<rkey>`.
   describe('multi-listing rkey', () => {
-    function capture(): { fn: PutRecordFn; calls: Array<{ collection: string; rkey: string }> } {
-      const calls: Array<{ collection: string; rkey: string }> = [];
+    function capture(): { fn: PutRecordFn; calls: { collection: string; rkey: string }[] } {
+      const calls: { collection: string; rkey: string }[] = [];
       const fn: PutRecordFn = async (input) => {
         calls.push({ collection: input.collection, rkey: input.rkey });
         return { cid: 'c', uri: `at://did:plc:sftransit/${input.collection}/${input.rkey}` };

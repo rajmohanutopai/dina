@@ -14,11 +14,12 @@
  * Source: ARCHITECTURE.md Task 3.26
  */
 
+import { mapTierToPriority, shouldInterrupt } from '@dina/core';
+
 import {
   classifyDeterministic,
   type ClassificationResult as SilenceResult,
 } from '../guardian/silence';
-import { mapTierToPriority, shouldInterrupt } from '@dina/core';
 import { assembleNudge } from '../nudge/assembler';
 import {
   writeCheckpoint,
@@ -272,7 +273,7 @@ async function handleD2DReceived(input: EventInput): Promise<EventResult> {
   // D2D would be quarantined upstream (see the D2D Scenario 3 test),
   // so reaching this path with no sender_did is the "arrived but
   // unauthenticated" edge. Surface the raw summary instead.
-  let nudgeSummary: string = String(summary ?? 'Message received');
+  let nudgeSummary = String(summary ?? 'Message received');
   let nudgeItemCount = 0;
   if (typeof sender_did === 'string' && sender_did !== '') {
     try {

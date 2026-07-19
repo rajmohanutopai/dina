@@ -6,6 +6,17 @@
  * Source: MsgBox Protocol — Home Node Implementation Guide
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { registerDevice, resetCallerTypeState } from '../../src/auth/caller_type';
+import { sign, getPublicKey } from '../../src/crypto/ed25519';
+import { sealEncrypt } from '../../src/crypto/nacl';
+import { sealMessage, buildMessage } from '../../src/d2d/envelope';
+import { deriveDIDKey } from '../../src/identity/did';
 import {
   handleInboundD2D,
   handleInboundRPC,
@@ -25,15 +36,7 @@ import {
   type WSLike,
   type MsgBoxEnvelope,
 } from '../../src/relay/msgbox_ws';
-import { sign, getPublicKey } from '../../src/crypto/ed25519';
-import { sealEncrypt } from '../../src/crypto/nacl';
-import { deriveDIDKey } from '../../src/identity/did';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { randomBytes } from '@noble/ciphers/utils.js';
-import { registerDevice, resetCallerTypeState } from '../../src/auth/caller_type';
-import { sealMessage, buildMessage } from '../../src/d2d/envelope';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 // Second key pair for sender simulation
 const SENDER_SEED = new Uint8Array(32);
@@ -330,7 +333,7 @@ describe('MsgBox Envelope Handlers', () => {
       // Register CLI device and set up a slow router
       registerDevice(SENDER_DID, 'cli');
 
-      type RouterResult = { status: number; headers: Record<string, string>; body: string };
+      interface RouterResult { status: number; headers: Record<string, string>; body: string }
       const resolveRef: { fn: ((v: RouterResult) => void) | null } = { fn: null };
       const slowRouter: RPCRouterFn = jest.fn(
         () =>
@@ -424,7 +427,7 @@ describe('MsgBox Envelope Handlers', () => {
       // `ws.send(string)` the relay would drop every outbound envelope and
       // every CLI/peer would see frames_seen=0 timeouts. Pinning the wire
       // type here so a regression fails loudly rather than silently.
-      const sentRaw: Array<string | Uint8Array | ArrayBuffer> = [];
+      const sentRaw: (string | Uint8Array | ArrayBuffer)[] = [];
       const ws: WSLike = {
         send: jest.fn((data: string | Uint8Array | ArrayBuffer) => {
           sentRaw.push(data);

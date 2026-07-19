@@ -3,9 +3,10 @@
  * Issue #5 / #6.
  */
 
-import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { LocalDelegationRunner } from '../../src/workflow/local_delegation_runner';
+import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';
+
 import type { WorkflowTask } from '../../src/workflow/domain';
 
 const NOW_MS = 1_700_000_000_000;
@@ -81,7 +82,7 @@ describe('LocalDelegationRunner', () => {
   it('claims + executes and completes via WorkflowService (issue #6: bridge fires)', async () => {
     const { repo, service } = makeFixture();
     // Spy the Response Bridge — production wires this to sendD2D.
-    const bridgeCalls: Array<{ queryId: string; resultJSON: string }> = [];
+    const bridgeCalls: { queryId: string; resultJSON: string }[] = [];
     (service as unknown as { responseBridgeSender: unknown }).responseBridgeSender = (ctx: {
       queryId: string;
       resultJSON: string;
@@ -97,7 +98,7 @@ describe('LocalDelegationRunner', () => {
       query_id: 'q-1',
       ttl_seconds: 60,
     });
-    const calls: Array<{ cap: string; params: unknown }> = [];
+    const calls: { cap: string; params: unknown }[] = [];
     const runner = new LocalDelegationRunner({
       repository: repo,
       workflowService: service,
@@ -120,7 +121,7 @@ describe('LocalDelegationRunner', () => {
 
   it('failure fires the bridge with an error envelope (issue #7)', async () => {
     const { repo, service } = makeFixture();
-    const bridgeCalls: Array<{ queryId: string; resultJSON: string }> = [];
+    const bridgeCalls: { queryId: string; resultJSON: string }[] = [];
     (service as unknown as { responseBridgeSender: unknown }).responseBridgeSender = (ctx: {
       queryId: string;
       resultJSON: string;
@@ -232,7 +233,7 @@ describe('LocalDelegationRunner', () => {
   it('fails the task when the result is not JSON-serializable (issue #15)', async () => {
     const { repo, service } = makeFixture();
     seedDelegation(repo, 'd-cyclic', { capability: 'eta_query', params: {} });
-    type Cyclic = { self?: Cyclic };
+    interface Cyclic { self?: Cyclic }
     const cyclic: Cyclic = {};
     cyclic.self = cyclic;
     const runner = new LocalDelegationRunner({
@@ -269,7 +270,7 @@ describe('LocalDelegationRunner', () => {
     const { repo, service } = makeFixture();
     seedDelegation(repo, 'd-4', { capability: 'eta_query', params: {} });
     const claimed: string[] = [];
-    const completed: Array<{ id: string; result: unknown }> = [];
+    const completed: { id: string; result: unknown }[] = [];
     const runner = new LocalDelegationRunner({
       repository: repo,
       workflowService: service,

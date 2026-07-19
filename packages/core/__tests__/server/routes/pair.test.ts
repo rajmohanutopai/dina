@@ -12,6 +12,10 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 
 import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../../src/agent/grant_repository';
+import {
   resetCallerTypeState,
   registerService,
   resolveCallerType,
@@ -19,21 +23,16 @@ import {
   isDevice,
 } from '../../../src/auth/caller_type';
 import { signRequest } from '../../../src/auth/canonical';
-import {
-  InMemoryAgentGrantRepository,
-  setAgentGrantRepository,
-} from '../../../src/agent/grant_repository';
 import { registerPublicKeyResolver, resetMiddlewareState } from '../../../src/auth/middleware';
 import { getPublicKey } from '../../../src/crypto/ed25519';
 import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
 import { setDeviceRepository } from '../../../src/devices/repository';
-
-import type { DeviceRepository } from '../../../src/devices/repository';
-import type { PairedDevice } from '../../../src/devices/registry';
 import { deriveDIDKey, publicKeyToMultibase } from '../../../src/identity/did';
 import { setNodeDID, clearPairingState } from '../../../src/pairing/ceremony';
 import { createCoreRouter } from '../../../src/server/core_server';
 
+import type { PairedDevice } from '../../../src/devices/registry';
+import type { DeviceRepository } from '../../../src/devices/repository';
 import type { CoreRequest } from '../../../src/server/router';
 
 const NODE_DID = 'did:plc:test-node';

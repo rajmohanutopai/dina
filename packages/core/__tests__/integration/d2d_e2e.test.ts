@@ -8,23 +8,25 @@
  * Source: ARCHITECTURE.md Tasks 6.3–6.12 combined
  */
 
-import { sendD2D } from '../../src/d2d/send';
-import { receiveD2D } from '../../src/d2d/receive_pipeline';
-import { sealMessage, unsealMessage, type DinaMessage } from '../../src/d2d/envelope';
-import { signMessage, verifyMessage } from '../../src/d2d/signature';
-import { addContact, setScenarioDeny, clearGatesState } from '../../src/d2d/gates';
-import { getItem as getStagingItem, resetStagingState } from '../../src/staging/service';
-import { clearOutbox, outboxCount } from '../../src/transport/outbox';
-import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { resetAuditState, queryAudit, auditCount } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { sealMessage, unsealMessage, type DinaMessage } from '../../src/d2d/envelope';
+import { addContact, setScenarioDeny, clearGatesState } from '../../src/d2d/gates';
 import {
   resetQuarantineState,
   quarantineSize,
   listQuarantined,
   unquarantineSender,
 } from '../../src/d2d/quarantine';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { sendD2D } from '../../src/d2d/send';
+import { signMessage, verifyMessage } from '../../src/d2d/signature';
+import { getItem as getStagingItem, resetStagingState } from '../../src/staging/service';
+import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
+import { clearOutbox, outboxCount } from '../../src/transport/outbox';
+
 
 // Alice (sender) and Bob (recipient) key pairs
 const alicePriv = TEST_ED25519_SEED;

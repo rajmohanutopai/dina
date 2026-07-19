@@ -6,17 +6,19 @@
  * Source: tests/integration/test_didcomm.py (portable parts)
  */
 
-import { ed25519PubToX25519, ed25519SecToX25519 } from '../../src/crypto/nacl';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { sealEncrypt, sealDecrypt } from '../../src/crypto/nacl';
 import { x25519 } from '@noble/curves/ed25519.js';
+
+import { bytesToHex } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { ed25519PubToX25519, ed25519SecToX25519 , sealEncrypt, sealDecrypt } from '../../src/crypto/nacl';
 import {
   checkEgressGates,
   addContact,
   setSharingRestrictions,
   clearGatesState,
 } from '../../src/d2d/gates';
-import { bytesToHex } from '@dina/test-harness';
+
 
 describe('DIDComm Portable', () => {
   beforeEach(() => clearGatesState());

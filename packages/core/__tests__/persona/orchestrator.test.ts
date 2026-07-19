@@ -7,6 +7,9 @@
  * Source: ARCHITECTURE.md Tasks 2.34, 2.35
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { destroyAllIndexes, hasIndex, indexSize } from '../../src/embedding/persona_index';
 import {
   unlockPersona,
   lockPersona,
@@ -24,8 +27,6 @@ import {
   isPersonaOpen,
   getPersona,
 } from '../../src/persona/service';
-import { destroyAllIndexes, hasIndex, indexSize } from '../../src/embedding/persona_index';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 const userSalt = new Uint8Array(16).fill(0xab);
 
@@ -138,7 +139,7 @@ describe('Persona Orchestrator', () => {
     });
 
     it('calls vault opener with DEK', async () => {
-      const opened: Array<{ persona: string; dekLen: number }> = [];
+      const opened: { persona: string; dekLen: number }[] = [];
       setVaultOpener(async (persona, dek) => {
         opened.push({ persona, dekLen: dek.length });
         return 42; // 42 items in vault

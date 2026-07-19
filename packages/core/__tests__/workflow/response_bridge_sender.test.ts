@@ -6,13 +6,14 @@
  * composition with a real `WorkflowService`.
  */
 
+import { WorkflowTaskKind } from '../../src/workflow/domain';
+import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import {
   makeServiceResponseBridgeSender,
   type ResponseBridgeD2DSender,
 } from '../../src/workflow/response_bridge_sender';
-import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, type ServiceQueryBridgeContext } from '../../src/workflow/service';
-import { WorkflowTaskKind } from '../../src/workflow/domain';
+
 import type { ServiceResponseBody } from '../../src/d2d/service_bodies';
 
 interface SendCall {
@@ -205,7 +206,7 @@ describe('makeServiceResponseBridgeSender — provider-authored card passthrough
 describe('makeServiceResponseBridgeSender — error paths', () => {
   it('on unparseable JSON: fires onMalformedResult AND sends an error service.response (issue #16)', async () => {
     const calls: SendCall[] = [];
-    const malformed: Array<{ ctx: ServiceQueryBridgeContext; err: Error }> = [];
+    const malformed: { ctx: ServiceQueryBridgeContext; err: Error }[] = [];
     const bridge = makeServiceResponseBridgeSender({
       sendResponse: makeSender({ calls }),
       onMalformedResult: (ctx, err) => malformed.push({ ctx, err }),
@@ -226,7 +227,7 @@ describe('makeServiceResponseBridgeSender — error paths', () => {
     // failure so `WorkflowService.bridgeServiceQueryCompletion` can
     // distinguish "delivered — clear the stash" from "failed — leave
     // for retry." The observability hook still fires for telemetry.
-    const errors: Array<{ ctx: ServiceQueryBridgeContext; err: Error }> = [];
+    const errors: { ctx: ServiceQueryBridgeContext; err: Error }[] = [];
     const bridge = makeServiceResponseBridgeSender({
       sendResponse: makeSender({ error: new Error('ECONNRESET') }),
       onSendError: (ctx, err) => errors.push({ ctx, err }),
@@ -368,7 +369,7 @@ describe('makeServiceResponseBridgeSender — GAP-SH-05 result validation', () =
 
   it('converts a schema violation into a result_schema_violation error response', async () => {
     const calls: SendCall[] = [];
-    const failures: Array<{ error: string }> = [];
+    const failures: { error: string }[] = [];
     const bridge = makeServiceResponseBridgeSender({
       sendResponse: makeSender({ calls }),
       validateResult: fakeValidator,

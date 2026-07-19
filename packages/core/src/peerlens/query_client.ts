@@ -39,10 +39,11 @@
  *         appview/src/api/xrpc/get-profile.ts (wire contract).
  */
 
-import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
-import type { TrustScore } from './cache';
 import { DEFAULT_APPVIEW_URL as APPVIEW_URL } from '../constants';
 import { defaultFetch } from '../runtime/fetch';
+
+import type { TrustScore } from './cache';
+import type { Confidence, Sentiment, SubjectType } from '@dina/protocol';
 
 const DEFAULT_APPVIEW_URL = APPVIEW_URL;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -247,7 +248,7 @@ export class PeerlensQueryClient {
       });
 
       if (response.ok) {
-        const data = (await response.json()) as { profiles: Array<Record<string, unknown>> };
+        const data = (await response.json()) as { profiles: Record<string, unknown>[] };
         for (const raw of data.profiles ?? []) {
           const profile = parseProfile(raw);
           results.set(profile.did, { success: true, profile });
@@ -452,7 +453,7 @@ function parseScore(raw: unknown): number | null {
  * — important so that downstream cache keys hash consistently.
  */
 function buildSearchQueryString(params: AttestationSearchParams): string {
-  const entries: Array<[string, string]> = [];
+  const entries: [string, string][] = [];
   const push = (key: string, value: string | number | undefined): void => {
     if (value === undefined) return;
     if (typeof value === 'string' && value.length === 0) return;

@@ -8,9 +8,9 @@
  */
 
 import { InProcessTransport } from '../../../src/client/in-process-transport';
+import { resetReminderState } from '../../../src/reminders/service';
 import { CoreRouter } from '../../../src/server/router';
 import { registerReminderRoutes } from '../../../src/server/routes/reminders';
-import { resetReminderState } from '../../../src/reminders/service';
 
 function build(): InProcessTransport {
   const router = new CoreRouter();

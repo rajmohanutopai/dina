@@ -6,13 +6,13 @@
  * Source: tests/integration/test_delegation.py
  */
 
-import { evaluateIntent } from '../../src/gatekeeper/intent';
 import {
   evaluateDelegation,
   isToolAllowed,
   validateConstraints,
   clearBlacklist,
 } from '../../../brain/src/mcp/delegation';
+import { evaluateIntent } from '../../src/gatekeeper/intent';
 
 describe('Agent Delegation Integration', () => {
   beforeEach(() => clearBlacklist());

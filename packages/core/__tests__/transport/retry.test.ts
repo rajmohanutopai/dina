@@ -9,13 +9,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import {
-  drainOutbox,
-  recoverOutboxOnBoot,
-  resetRetryState,
-  setOutboxRedeliverFn,
-  type OutboxRedeliverFn,
-} from '../../src/transport/retry';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
+import { queryAudit, resetAuditState } from '../../src/audit/service';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   claimDue,
   clearOutbox,
@@ -27,10 +25,13 @@ import {
   setD2DOutboxRepository,
   SQLiteD2DOutboxRepository,
 } from '../../src/transport/outbox_repository';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { NodeSQLiteAdapter } from '@dina/storage-node';
-import { queryAudit, resetAuditState } from '../../src/audit/service';
+import {
+  drainOutbox,
+  recoverOutboxOnBoot,
+  resetRetryState,
+  setOutboxRedeliverFn,
+  type OutboxRedeliverFn,
+} from '../../src/transport/retry';
 
 beforeEach(() => {
   setD2DOutboxRepository(null);

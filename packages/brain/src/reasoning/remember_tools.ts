@@ -34,35 +34,35 @@ export interface RememberSideEffects {
    * the drain defaults to `general`. Multi-entry is a logic bug; the
    * drain logs and uses the first.
    */
-  routes: Array<{ primary: string; secondary: string[] }>;
+  routes: { primary: string; secondary: string[] }[];
 
   /** Reminder requests — zero or more. */
-  reminders: Array<{
+  reminders: {
     message: string;
     dueAt: string;
     persona?: string;
-  }>;
+  }[];
 
   /**
    * People-graph entries — one per distinct person the item mentions.
    * Drain composes these into a single `ExtractionResult` for
    * `applyPeopleGraphExtraction` (one network call, not N).
    */
-  people: Array<{
+  people: {
     canonicalName: string;
     surface: string;
     surfaceType: 'name' | 'nickname' | 'role_phrase';
     relationshipHint: string;
     sourceExcerpt: string;
-  }>;
+  }[];
 
   /** Preferences the user stated about a person / category / self. */
-  preferences: Array<{
+  preferences: {
     subjectKind: 'person' | 'self' | 'category';
     subject: string;
     preference: string;
     sourceExcerpt: string;
-  }>;
+  }[];
 }
 
 /** Build an empty collector. Drain calls this once per item. */

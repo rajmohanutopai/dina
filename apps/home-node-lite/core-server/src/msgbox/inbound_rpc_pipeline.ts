@@ -37,12 +37,13 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.41.
  */
 
-import type { CancelRegistry } from './cancel_registry';
-import type { IdempotencyCache } from './idempotency_cache';
-import type { DispatchAppShape } from './dispatch_pipeline';
 import { dispatchTunneledRequest } from './dispatch_pipeline';
 import { unsealInboundRpc } from './rpc_inbound';
 import { sealOutboundRpc } from './rpc_outbound';
+
+import type { CancelRegistry } from './cancel_registry';
+import type { DispatchAppShape } from './dispatch_pipeline';
+import type { IdempotencyCache } from './idempotency_cache';
 
 export interface InboundRpcContext {
   /** This Core's DID — emitted as `from` on the sealed response. */

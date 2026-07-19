@@ -308,7 +308,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
 
   describe('events', () => {
     it('fires resolved event with outcome kind', async () => {
-      type Ev = { kind: 'resolved'; outcome: string };
+      interface Ev { kind: 'resolved'; outcome: string }
       const events: Ev[] = [];
       const r = new CachingPlcResolver({
         fetchFn: fetchOk(),
@@ -321,7 +321,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
     });
 
     it('fires resolved with outcome=invalid_did for bad input', async () => {
-      type Ev = { kind: 'resolved'; outcome: string };
+      interface Ev { kind: 'resolved'; outcome: string }
       const events: Ev[] = [];
       const r = new CachingPlcResolver({
         fetchFn: fetchOk(),

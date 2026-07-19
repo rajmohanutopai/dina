@@ -14,6 +14,7 @@
  * fallback today; adding a third tier here just clutters the UI.
  */
 
+import { generateText } from 'ai';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,17 +27,17 @@ import {
   View,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import { generateText } from 'ai';
 
-import { PROVIDERS, createModel } from '../ai/provider';
-import { getModelDisplayName, getModelOptions } from '../ai/models_catalog';
+import { getProviderTiers } from '@dina/brain/llm';
+
+import { swapAgenticActiveProvider } from '../ai/agentic_swap';
 import {
   peekModelOverride,
   setModelOverride,
   clearModelOverride,
 } from '../ai/model_overrides';
-import { swapAgenticActiveProvider } from '../ai/agentic_swap';
-import { getProviderTiers } from '@dina/brain/llm';
+import { getModelDisplayName, getModelOptions } from '../ai/models_catalog';
+import { PROVIDERS, createModel } from '../ai/provider';
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
 
 import type { LLMTier, ProviderType } from '../ai/provider';

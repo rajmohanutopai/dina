@@ -36,9 +36,10 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import { quarantineMessage, type CoreRouter, type CoreRequest } from '@dina/core';
-import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Logger } from '../logger';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 
 /**
  * Minimal structural type for the Fastify app — avoids the

@@ -13,6 +13,7 @@ import {
   isCheckpointStale,
   clearCheckpoints,
 } from '../../src/scratchpad/lifecycle';
+
 import type { Checkpoint } from '../../src/scratchpad/lifecycle';
 
 describe('Scratchpad Lifecycle', () => {

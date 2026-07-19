@@ -32,18 +32,18 @@ export interface PlcLookupResult {
   /** All `alsoKnownAs` entries verbatim (still includes the `at://` prefix). */
   alsoKnownAs: string[];
   /** Verification methods (signing keys) as published. */
-  verificationMethods: Array<{
+  verificationMethods: {
     id: string;
     type: string;
     controller: string;
     publicKeyMultibase?: string;
-  }>;
+  }[];
   /** Service endpoints (MsgBox, direct HTTPS, etc) as published. */
-  services: Array<{
+  services: {
     id: string;
     type: string;
     serviceEndpoint: string;
-  }>;
+  }[];
   /** ISO 8601 PLC creation timestamp when the directory exposes it. */
   created: string | null;
 }

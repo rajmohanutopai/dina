@@ -6,8 +6,9 @@
  * Source: tests/release/test_rel_003_vault_persistence.py
  */
 
-import { storeItem, queryVault, getItem, clearVaults } from '../../src/vault/crud';
 import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
+
+import { storeItem, queryVault, getItem, clearVaults } from '../../src/vault/crud';
 
 describe('Vault Persistence (Release Verification)', () => {
   beforeEach(() => {

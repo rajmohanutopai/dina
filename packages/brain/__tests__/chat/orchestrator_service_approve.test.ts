@@ -16,10 +16,10 @@ import {
   resetServiceApproveCommandHandler,
 } from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
-import { makeServiceApproveHandler } from '../../src/service/approve_command';
 import { CoreHttpError } from '../../src/errors';
-import type { CoreClient } from '@dina/core';
-import type { WorkflowTask } from '@dina/core';
+import { makeServiceApproveHandler } from '../../src/service/approve_command';
+
+import type { CoreClient , WorkflowTask } from '@dina/core';
 
 describe('Chat orchestrator — /service_approve', () => {
   beforeEach(() => {

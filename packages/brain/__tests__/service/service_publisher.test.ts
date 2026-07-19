@@ -5,6 +5,7 @@
  */
 
 import { PDSPublisher, PDSPublisherError } from '../../src/pds/publisher';
+import { computeSchemaHash } from '../../src/service/capabilities/registry';
 import {
   PublisherConfigError,
   PublisherIdentityMismatchError,
@@ -15,7 +16,6 @@ import {
   ServicePublisherConfig,
   buildRecord,
 } from '../../src/service/service_publisher';
-import { computeSchemaHash } from '../../src/service/capabilities/registry';
 
 type FetchFn = typeof globalThis.fetch;
 
@@ -31,7 +31,7 @@ interface Recorded {
   body: unknown;
 }
 
-function makeFetch(responses: Array<Response | Error>): {
+function makeFetch(responses: (Response | Error)[]): {
   fetchFn: FetchFn;
   calls: Recorded[];
 } {
@@ -186,7 +186,7 @@ describe('ServicePublisher', () => {
       const params = { type: 'object', required: ['location'] };
       const result = { type: 'object', required: ['eta_minutes'] };
       const canonical = computeSchemaHash({ params, result, description: '' });
-      const entries: Array<Record<string, unknown>> = [];
+      const entries: Record<string, unknown>[] = [];
       const rec = buildRecord(
         {
           ...validPublishConfig,
@@ -210,7 +210,7 @@ describe('ServicePublisher', () => {
       const params = { type: 'object', required: ['location'] };
       const result = { type: 'object', required: ['eta_minutes'] };
       const canonical = computeSchemaHash({ params, result, description: '' });
-      const entries: Array<Record<string, unknown>> = [];
+      const entries: Record<string, unknown>[] = [];
       buildRecord(
         {
           ...validPublishConfig,
@@ -231,7 +231,7 @@ describe('ServicePublisher', () => {
 
     it('WM-BRAIN-06c: empty supplied hash is silent (no warning, still overrides)', () => {
       // Empty string = "no cache available yet." Not an error.
-      const entries: Array<Record<string, unknown>> = [];
+      const entries: Record<string, unknown>[] = [];
       const rec = buildRecord(
         {
           ...validPublishConfig,

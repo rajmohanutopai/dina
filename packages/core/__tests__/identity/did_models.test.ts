@@ -12,6 +12,7 @@ import {
   deserializeDIDDocument,
   verifyJsonRoundtrip,
 } from '../../src/identity/did_models';
+
 import type { DIDDocument } from '../../src/identity/did_document';
 
 describe('DID Document Models (Python vectors)', () => {

@@ -7,6 +7,7 @@ import {
   generateMnemonic,
   publicKeyToMultibase,
 } from '@dina/core';
+
 import { deriveIdentity, PERSONA_INDEX } from '../src/identity/derivations';
 import {
   buildHomeNodeDIDDocument,

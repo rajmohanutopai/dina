@@ -33,10 +33,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { colors, spacing, radius, textStyles } from '../../src/theme';
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
-import { SubjectCardView } from '../../src/peerlens/components/subject_card_view';
 import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
+import { SubjectCardView } from '../../src/peerlens/components/subject_card_view';
 import { ViewerFilterChipsView } from '../../src/peerlens/components/viewer_filter_chips_view';
 import {
   applicableFilters,
@@ -44,9 +43,10 @@ import {
   type ViewerFilterId,
 } from '../../src/peerlens/preferences/viewer_filters';
 import { useTrustSearch } from '../../src/peerlens/runners/use_trust_search';
+import { colors, spacing, radius, textStyles } from '../../src/theme';
 
-import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 import type { FacetBar } from '../../src/peerlens/facets';
+import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 
 /** One result entry — `{subjectId, display}`. The wrapper derives display via `deriveSubjectCard`. */
 export interface SearchResult {

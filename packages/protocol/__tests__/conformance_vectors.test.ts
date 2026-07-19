@@ -28,9 +28,6 @@ import { base58 } from '@scure/base';
 import sodium from 'libsodium-wrappers';
 
 import { buildCanonicalPayload } from '../src/canonical_sign';
-import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
-import type { DIDDocument } from '../src/types/plc_document';
-import { buildAuthSignedPayload } from '../src/types/auth_frames';
 import {
   AUTH_CHALLENGE,
   AUTH_RESPONSE,
@@ -41,6 +38,10 @@ import {
   MULTIKEY_CONTEXT,
   SERVICE_TYPE_MSGBOX,
 } from '../src/constants';
+import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
+import { buildAuthSignedPayload } from '../src/types/auth_frames';
+
+import type { DIDDocument } from '../src/types/plc_document';
 
 const VECTORS_DIR = path.resolve(__dirname, '..', 'conformance', 'vectors');
 
@@ -762,7 +763,7 @@ describe('conformance vectors — manifest hygiene', () => {
   it('index.json references every non-pending .json vector in the directory', () => {
     const indexPath = path.join(VECTORS_DIR, 'index.json');
     const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
-      vectors: Array<{ slot: string; status: string }>;
+      vectors: { slot: string; status: string }[];
     };
 
     for (const entry of index.vectors) {
@@ -775,7 +776,7 @@ describe('conformance vectors — manifest hygiene', () => {
   it('every *.json file in the directory is referenced by index.json (no orphans)', () => {
     const indexPath = path.join(VECTORS_DIR, 'index.json');
     const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
-      vectors: Array<{ slot: string }>;
+      vectors: { slot: string }[];
     };
     const indexed = new Set(index.vectors.map((v) => v.slot));
     indexed.add('index.json'); // the index itself

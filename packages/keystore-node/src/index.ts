@@ -155,7 +155,7 @@ interface KeytarLike {
   deletePassword(service: string, account: string): Promise<boolean>;
   findCredentials(
     service: string,
-  ): Promise<Array<{ account: string; password: string }>>;
+  ): Promise<{ account: string; password: string }[]>;
 }
 
 /**

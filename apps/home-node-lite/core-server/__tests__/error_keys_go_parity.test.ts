@@ -15,9 +15,11 @@
  */
 
 import { pino } from 'pino';
+
 import { createServer } from '../src/server';
-import type { Logger } from '../src/logger';
+
 import type { CoreServerConfig } from '../src/config';
+import type { Logger } from '../src/logger';
 
 function configFor(rateLimitPerMinute = 60): CoreServerConfig {
   return {

@@ -7,12 +7,13 @@
  * Source: core/test/brainclient_test.go
  */
 
-import { CoreHTTPClient, CoreHTTPError } from '../../src/brain_client/http';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { CoreHTTPClient, CoreHTTPError } from '../../src/brain_client/http';
 
 /** Create a mock fetch that returns a sequence of responses. */
 function mockFetch(
-  ...responses: Array<{ status: number; body?: unknown; delay?: number }>
+  ...responses: { status: number; body?: unknown; delay?: number }[]
 ): jest.Mock {
   let callIndex = 0;
   return jest.fn(async (_url: string, _opts?: RequestInit) => {

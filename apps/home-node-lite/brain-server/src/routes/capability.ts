@@ -18,6 +18,7 @@
  */
 
 import { makeTier1CapabilityRunner } from '@dina/brain';
+
 import type { LLMProvider } from '@dina/brain';
 import type { CoreClient, VaultItemInput, WorkflowTask } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';

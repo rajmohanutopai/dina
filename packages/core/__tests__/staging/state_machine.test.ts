@@ -14,11 +14,12 @@ import {
   isLeaseExpired,
   isItemExpired,
 } from '../../src/staging/state_machine';
+
 import type { StagingStatus } from '../../src/staging/state_machine';
 
 describe('Staging State Machine', () => {
   describe('isValidTransition', () => {
-    const validCases: Array<[StagingStatus, StagingStatus]> = [
+    const validCases: [StagingStatus, StagingStatus][] = [
       ['received', 'classifying'],
       ['classifying', 'stored'],
       ['classifying', 'pending_unlock'],
@@ -35,7 +36,7 @@ describe('Staging State Machine', () => {
       });
     }
 
-    const invalidCases: Array<[StagingStatus, StagingStatus]> = [
+    const invalidCases: [StagingStatus, StagingStatus][] = [
       ['received', 'stored'],
       ['received', 'pending_unlock'],
       ['received', 'failed'],

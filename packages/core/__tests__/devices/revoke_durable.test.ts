@@ -15,9 +15,16 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+
+import {
+  InMemoryAgentGrantRepository,
+  SQLiteAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../src/agent/grant_repository';
+import { resetAuditState } from '../../src/audit/service';
+import { resolveCallerType, resetCallerTypeState } from '../../src/auth/caller_type';
 import {
   registerDevice,
   revokeDeviceDurable,
@@ -33,23 +40,17 @@ import {
   setDeviceRepository,
   type DeviceRepository,
 } from '../../src/devices/repository';
-import { resolveCallerType, resetCallerTypeState } from '../../src/auth/caller_type';
-import {
-  InMemoryAgentGrantRepository,
-  SQLiteAgentGrantRepository,
-  setAgentGrantRepository,
-} from '../../src/agent/grant_repository';
-import { resetAuditState } from '../../src/audit/service';
-import {
-  SQLitePluginInstallRepository,
-  setPluginInstallRepository,
-} from '../../src/plugins/registry';
-import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import {
   SQLitePluginDecisionRepository,
   setPluginDecisionRepository,
 } from '../../src/plugins/decisions';
-import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
+import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 const PASSHEX = randomBytes(32).toString('hex');
 

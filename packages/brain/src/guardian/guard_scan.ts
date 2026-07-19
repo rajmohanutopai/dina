@@ -25,9 +25,11 @@
  * Source: brain/tests/test_guardian.py (guard scan section)
  */
 
-import { isTherapyStyle, isEngagementHook, isIntimacySimulation } from './anti_her';
 import { detectPII, scrubPII } from '@dina/core';
+
 import { GUARD_SCAN } from '../llm/prompts';
+
+import { isTherapyStyle, isEngagementHook, isIntimacySimulation } from './anti_her';
 import { trustToolUsed } from './peerlens_tools';
 
 // ---------------------------------------------------------------

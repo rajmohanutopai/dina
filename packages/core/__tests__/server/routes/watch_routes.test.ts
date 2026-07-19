@@ -9,6 +9,7 @@ import { WatchService, setWatchService } from '../../../src/watch/service';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
 
 const NOW = 1_700_000_000_000;
+const OWNER_CAP = 'test-owner-capability-secret';
 
 function req(
   method: CoreRequest['method'],
@@ -26,6 +27,8 @@ function req(
     params: {},
     trustedInProcess: true,
     ...(callerType !== undefined ? { callerType, callerDID: 'did:key:caller' } : {}),
+    // Only the genuine owner holds the boot-minted capability (F15).
+    ...(callerType === 'owner' ? { ownerCapability: OWNER_CAP } : {}),
   };
 }
 
@@ -52,7 +55,7 @@ describe('/v1/watch/* — owner boundary + management', () => {
     svc = new WatchService({ repository: new InMemoryWorkflowRepository(), nowMsFn: () => NOW });
     setWatchService(svc);
     router = new CoreRouter();
-    registerWatchRoutes(router);
+    registerWatchRoutes(router, OWNER_CAP);
   });
 
   afterEach(() => setWatchService(null));

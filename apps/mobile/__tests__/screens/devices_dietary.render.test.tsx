@@ -12,9 +12,10 @@
  *   - Rapid taps compose (race-safety pinned end-to-end via the screen).
  */
 
-import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import React from 'react';
 
+import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import DevicesScreen from '../../app/peerlens-preferences/devices';
 import DietaryScreen from '../../app/peerlens-preferences/dietary';
 import {
@@ -22,7 +23,6 @@ import {
   resetUserPreferencesForTest,
   saveUserPreferences,
 } from '../../src/services/user_preferences';
-import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 
 const ORIGINAL_INTL = global.Intl;
 

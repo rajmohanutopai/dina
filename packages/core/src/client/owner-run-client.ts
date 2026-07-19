@@ -8,6 +8,7 @@
  * marked owner; the `/v1/run/*` handlers reject any other caller.
  */
 
+import type { RunListItem } from '../run/list';
 import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
 import type { WatchListItem } from '../watch/list';
 
@@ -20,6 +21,9 @@ export interface RunStartRequest {
   expires_at?: number;
   transport?: string;
   provider_grant_id?: string;
+  /** The bound grant's expiry (unix seconds) — persisted so the pacer can
+   *  fetch-pause a lapsed grant (§10). `null`/omitted = non-expiring. */
+  provider_grant_expires_at_sec?: number | null;
   interval_ms?: number;
   queue_cap?: number;
   action_risk_ceiling?: string;
@@ -48,15 +52,29 @@ export interface RunUpdateRequest {
   muted?: boolean;
   priority_ceiling?: string;
   provider_grant_id?: string | null;
+  /** The REPLACEMENT grant's expiry (unix seconds) on a rebind (§10) — carried
+   *  with the id so Core revalidates against the new binding, not a stale one.
+   *  Explicit `null` = intentionally non-expiring; omitting it while rebinding a
+   *  real grant is rejected (must be explicit). */
+  provider_grant_expires_at_sec?: number | null;
+  /** Optional durable-idempotency token (§12.5): a replayed update with the same
+   *  key returns the stored response instead of a spurious config_version 409. */
+  idempotency_key?: string;
 }
 
 export interface RunDecideRequest {
   message_id: string;
   decision: 'approve' | 'deny' | 'acknowledge';
+  /** REQUIRED optimistic-concurrency token (§12.5): the `decision_revision` the
+   *  owner UI rendered (carried in the `/status` pending card). A stale card whose
+   *  revision moved on is rejected, so an obsolete decision can never authorize a
+   *  message. */
+  decision_revision: number;
 }
 
 /** The owner-only run-control surface. */
 export interface OwnerRunClient {
+  runList(): Promise<{ runs: RunListItem[] }>;
   runStart(req: RunStartRequest): Promise<RunStartResult>;
   runPause(runId: string): Promise<{ state: string }>;
   runResume(runId: string): Promise<{ state: string }>;
@@ -81,7 +99,7 @@ export class OwnerRunHttpError extends Error {
   }
 }
 
-function ownerRequest(overrides: Partial<CoreRequest>): CoreRequest {
+function buildOwnerReq(overrides: Partial<CoreRequest>): CoreRequest {
   return {
     method: 'GET',
     path: '/',
@@ -92,7 +110,9 @@ function ownerRequest(overrides: Partial<CoreRequest>): CoreRequest {
     params: {},
     // The owner marker — set ONLY by this dedicated dispatch. Combined with
     // trustedInProcess (so the auth pipeline is skipped in-process), the
-    // /v1/run/* handlers admit it and reject every other caller (§12.5).
+    // /v1/run/* handlers admit it. The unforgeable `ownerCapability` (stamped by
+    // the client's `stampReq`) is what the route guard actually verifies (§12.5,
+    // F15) — `callerType:'owner'` alone is forgeable by co-resident code.
     trustedInProcess: true,
     callerType: 'owner',
     ...overrides,
@@ -110,33 +130,71 @@ function expectOk<T>(res: CoreResponse, ctx: string): T {
 /** In-process implementation — dispatches owner-marked requests through the
  *  CoreRouter. Wired only to the owner UI. */
 export class InProcessOwnerRunClient implements OwnerRunClient {
-  constructor(private readonly router: CoreRouter) {}
+  private seq = 0;
+  private readonly boot: string;
+  /**
+   * @param router  the Core router (shared with Brain's in-process transport)
+   * @param ownerCapability  the boot-minted owner secret (F15). The app mints it,
+   *   passes the SAME value to `createCoreRouter({ ownerCapability })`, and holds it
+   *   only here + in that closure. Brain, lacking the secret, cannot forge an owner
+   *   call even though it can construct this class. A missing/empty capability makes
+   *   every request fail the (fail-closed) route guard.
+   */
+  constructor(
+    private readonly router: CoreRouter,
+    private readonly ownerCapability: string,
+  ) {
+    // A per-instance prefix so keys are unique across app launches; the monotonic
+    // counter makes each command's key distinct. Every owner MUTATION carries one
+    // so it is durably receipted (§12.5) — the route rejects a keyless mutation.
+    this.boot = Date.now().toString(36);
+  }
+  private nextKey(): string {
+    return `owner-${this.boot}-${(++this.seq).toString(36)}`;
+  }
+  /** Build an owner request with the unforgeable capability stamped on (F15). */
+  private stampReq(overrides: Partial<CoreRequest>): CoreRequest {
+    return buildOwnerReq({ ...overrides, ownerCapability: this.ownerCapability });
+  }
 
+  async runList(): Promise<{ runs: RunListItem[] }> {
+    const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/run/list' }));
+    return expectOk<{ runs: RunListItem[] }>(res, 'runList');
+  }
   async runStart(req: RunStartRequest): Promise<RunStartResult> {
-    const res = await this.router.handle(ownerRequest({ method: 'POST', path: '/v1/run/start', body: req }));
+    // `start` already carries the run's `idempotency_key` — it IS the command key.
+    const res = await this.router.handle(this.stampReq({ method: 'POST', path: '/v1/run/start', body: req }));
     return expectOk<RunStartResult>(res, 'runStart');
   }
   async runPause(runId: string): Promise<{ state: string }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/run/${runId}/pause`, body: {} }),
+      this.stampReq({ method: 'POST', path: `/v1/run/${runId}/pause`, body: { idempotency_key: this.nextKey() } }),
     );
     return expectOk<{ state: string }>(res, 'runPause');
   }
   async runResume(runId: string): Promise<{ state: string }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/run/${runId}/resume`, body: {} }),
+      this.stampReq({ method: 'POST', path: `/v1/run/${runId}/resume`, body: { idempotency_key: this.nextKey() } }),
     );
     return expectOk<{ state: string }>(res, 'runResume');
   }
   async runStop(runId: string, onStop?: string): Promise<{ state: string }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/run/${runId}/stop`, body: onStop !== undefined ? { on_stop: onStop } : {} }),
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/stop`,
+        body: { idempotency_key: this.nextKey(), ...(onStop !== undefined ? { on_stop: onStop } : {}) },
+      }),
     );
     return expectOk<{ state: string }>(res, 'runStop');
   }
   async runUpdate(runId: string, req: RunUpdateRequest): Promise<{ config_version: number }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/run/${runId}/update`, body: req }),
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/update`,
+        body: { idempotency_key: this.nextKey(), ...req },
+      }),
     );
     return expectOk<{ config_version: number }>(res, 'runUpdate');
   }
@@ -145,37 +203,48 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
     req: RunDecideRequest,
   ): Promise<{ state: string; decision_revision: number }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/run/${runId}/decide`, body: req }),
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/decide`,
+        body: { idempotency_key: this.nextKey(), ...req },
+      }),
     );
     return expectOk<{ state: string; decision_revision: number }>(res, 'runDecide');
   }
   async runStatus(runId: string): Promise<Record<string, unknown>> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'GET', path: `/v1/run/${runId}/status` }),
+      this.stampReq({ method: 'GET', path: `/v1/run/${runId}/status` }),
     );
     return expectOk<Record<string, unknown>>(res, 'runStatus');
   }
 
   async watchList(): Promise<{ watches: WatchListItem[] }> {
-    const res = await this.router.handle(ownerRequest({ method: 'GET', path: '/v1/watch/list' }));
+    const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/watch/list' }));
     return expectOk<{ watches: WatchListItem[] }>(res, 'watchList');
   }
   async watchPause(watchId: string): Promise<{ ok: boolean }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/watch/${watchId}/pause`, body: {} }),
+      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/pause`, body: {} }),
     );
     return expectOk<{ ok: boolean }>(res, 'watchPause');
   }
   async watchResume(watchId: string): Promise<{ ok: boolean }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/watch/${watchId}/resume`, body: {} }),
+      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/resume`, body: {} }),
     );
     return expectOk<{ ok: boolean }>(res, 'watchResume');
   }
   async watchCancel(watchId: string): Promise<{ ok: boolean }> {
     const res = await this.router.handle(
-      ownerRequest({ method: 'POST', path: `/v1/watch/${watchId}/cancel`, body: {} }),
+      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/cancel`, body: {} }),
     );
     return expectOk<{ ok: boolean }>(res, 'watchCancel');
   }
 }
+
+// NOTE: there is deliberately NO owner-client singleton in `@dina/core` (R2-08).
+// A module-global getter here would be importable by Brain on the shared mobile
+// JS VM, handing it an owner-stamping dispatcher and defeating the owner boundary.
+// The instance is held at the trusted app edge instead
+// (`apps/mobile/src/services/owner_run_client.ts`); constructing this class needs
+// the raw CoreRouter, which Brain never receives.

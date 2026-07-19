@@ -5,6 +5,7 @@
  * retrieval_policy enum, enrichment_status enum, body size limit.
  */
 
+import { storeItem, clearVaults } from '../../src/vault/crud';
 import {
   VALID_VAULT_ITEM_TYPES,
   VALID_SENDER_TRUST,
@@ -14,7 +15,6 @@ import {
   MAX_VAULT_ITEM_SIZE,
   validateVaultItem,
 } from '../../src/vault/validation';
-import { storeItem, clearVaults } from '../../src/vault/crud';
 
 describe('Vault Domain Validation', () => {
   describe('validation sets', () => {

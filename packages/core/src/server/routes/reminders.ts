@@ -27,8 +27,6 @@
  * signed-auth middleware fires before the handler.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { REMINDERS_ROOT, REMINDERS_PENDING } from './paths';
 import {
   createReminderDurable as createReminderDurableImpl,
   listByPersona as listByPersonaImpl,
@@ -41,6 +39,10 @@ import {
   type Reminder,
   type RecurringFrequency,
 } from '../../reminders/service';
+
+import { REMINDERS_ROOT, REMINDERS_PENDING } from './paths';
+
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 /** Body cap — a create payload is a few short strings; 16 KiB is generous. */
 const CREATE_BODY_MAX_BYTES = 16 * 1024;

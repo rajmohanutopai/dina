@@ -8,14 +8,6 @@
  */
 
 import {
-  derivePath,
-  derivePathSecp256k1,
-  deriveRootSigningKey,
-  derivePersonaSigningKey,
-  deriveRotationKey,
-  deriveNamespaceKey,
-} from '../../src/crypto/slip0010';
-import {
   TEST_MNEMONIC_SEED,
   DINA_ROOT_KEY_PATH,
   DINA_PERSONA_PATHS,
@@ -27,6 +19,15 @@ import {
   hexToBytes,
   bytesToHex,
 } from '@dina/test-harness';
+
+import {
+  derivePath,
+  derivePathSecp256k1,
+  deriveRootSigningKey,
+  derivePersonaSigningKey,
+  deriveRotationKey,
+  deriveNamespaceKey,
+} from '../../src/crypto/slip0010';
 
 describe('SLIP-0010 Key Derivation', () => {
   const seed = TEST_MNEMONIC_SEED;

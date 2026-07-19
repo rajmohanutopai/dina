@@ -50,29 +50,24 @@
  *     in-process two-node setups infeasible without process forks).
  */
 
-import { ServiceHandler } from '../../src/service/service_handler';
-import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import { validateAgainstSchema } from '../../src/service/capabilities/schema_validator';
 
-import type { ServiceQueryBody, ServiceResponseBody } from '@dina/core';
-import type { ServiceConfig } from '@dina/protocol';
-import type { WorkflowTask, WorkflowTaskState } from '@dina/core';
 
 import {
   WorkflowService,
   setWorkflowService,
-} from '@dina/core';
-import {
+
   InMemoryWorkflowRepository,
-  setWorkflowRepository,
-} from '@dina/core';
-import { LocalDelegationRunner } from '@dina/core';
-import {
+  setWorkflowRepository, LocalDelegationRunner ,
   setServiceConfig,
   getServiceConfig,
-  resetServiceConfigState,
-} from '@dina/core';
-import { makeServiceResponseBridgeSender } from '@dina/core';
+  resetServiceConfigState, makeServiceResponseBridgeSender } from '@dina/core';
+
+import { validateAgainstSchema } from '../../src/service/capabilities/schema_validator';
+import { ServiceHandler } from '../../src/service/service_handler';
+
+import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
+import type { WorkflowTask, WorkflowTaskState , ServiceQueryBody, ServiceResponseBody } from '@dina/core';
+import type { ServiceConfig } from '@dina/protocol';
 
 const ALONSO_DID = 'did:plc:alonso-test';
 const DEMO_PROVIDER_DID = 'did:plc:demo-provider-test';
@@ -122,7 +117,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
   let workflowRepo: InMemoryWorkflowRepository;
   let workflowService: WorkflowService;
   let runner: LocalDelegationRunner;
-  let capturedResponses: Array<{ to: string; body: ServiceResponseBody }>;
+  let capturedResponses: { to: string; body: ServiceResponseBody }[];
 
   /**
    * Stub `dina-agent` capability runner. Acts as the OpenClaw side —
@@ -322,7 +317,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
   });
 
   it('schema-hash mismatch on inbound query → error response, no task created', async () => {
-    const handlerCalls: Array<{ to: string; body: unknown }> = [];
+    const handlerCalls: { to: string; body: unknown }[] = [];
     const handler = new ServiceHandler({
       coreClient: buildHandlerCoreClient(),
       readConfig: () => getServiceConfig(),
@@ -364,7 +359,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
   });
 
   it('invalid params (route_id missing) → error response, no task created', async () => {
-    const handlerCalls: Array<{ to: string; body: unknown }> = [];
+    const handlerCalls: { to: string; body: unknown }[] = [];
     const handler = new ServiceHandler({
       coreClient: buildHandlerCoreClient(),
       readConfig: () => getServiceConfig(),

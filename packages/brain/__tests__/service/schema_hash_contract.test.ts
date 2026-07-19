@@ -12,12 +12,12 @@
  * side drifts.
  */
 
+import { computeSchemaHash, getCapability } from '../../src/service/capabilities/registry';
+import { toPublisherConfig } from '../../src/service/config_sync';
 import {
   canonicalCapabilitySchemaHash,
   buildRecord,
 } from '../../src/service/service_publisher';
-import { toPublisherConfig } from '../../src/service/config_sync';
-import { computeSchemaHash, getCapability } from '../../src/service/capabilities/registry';
 
 import type { ServiceConfig } from '@dina/protocol';
 

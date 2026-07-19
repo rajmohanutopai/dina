@@ -38,8 +38,8 @@
  * under plain Jest without any RN renderer.
  */
 
-import { FEATURE_NAMES } from '@dina/core';
 import { getSecret, setSecret, deleteSecret } from '@dina/adapters-expo';
+import { FEATURE_NAMES } from '@dina/core';
 
 /**
  * Keystore service name. Stable across versions — changing it would

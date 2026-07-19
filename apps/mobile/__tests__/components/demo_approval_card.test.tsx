@@ -7,9 +7,11 @@ import { render, screen, fireEvent } from '@testing-library/react-native';
 import React from 'react';
 
 import { getApprovalManager, resetApprovalManager } from '@dina/core';
-import type { ChatMessage } from '@dina/brain/chat';
 
 import { InlineDemoApprovalCard } from '../../src/components/InlineDemoApprovalCard';
+
+import type { ChatMessage } from '@dina/brain/chat';
+
 
 const APPROVAL_ID = 'guided-demo-approval-42';
 

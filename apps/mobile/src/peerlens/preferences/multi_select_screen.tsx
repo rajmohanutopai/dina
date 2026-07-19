@@ -56,9 +56,9 @@ export interface MultiSelectScreenProps<T extends string> {
    */
   readonly description?: string;
   /** Fixed option list — order is the render order. */
-  readonly options: ReadonlyArray<MultiSelectOption<T>>;
+  readonly options: readonly MultiSelectOption<T>[];
   /** Currently-selected values from the profile. */
-  readonly selected: ReadonlyArray<T>;
+  readonly selected: readonly T[];
   /**
    * Toggle callback. Called with the value the user tapped — the
    * caller is responsible for either adding or removing it from
@@ -164,9 +164,9 @@ export function MultiSelectScreen<T extends string>(
 }
 
 function filterOptions<T extends string>(
-  options: ReadonlyArray<MultiSelectOption<T>>,
+  options: readonly MultiSelectOption<T>[],
   query: string,
-): ReadonlyArray<MultiSelectOption<T>> {
+): readonly MultiSelectOption<T>[] {
   const trimmed = query.trim();
   if (trimmed.length === 0) return options;
   const needle = trimmed.toLowerCase();
@@ -234,7 +234,7 @@ function Row<T extends string>(props: RowProps<T>): React.ReactElement {
  * contract holds).
  */
 export function toggleArrayValue<T extends string>(
-  arr: ReadonlyArray<T>,
+  arr: readonly T[],
   value: T,
 ): T[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];

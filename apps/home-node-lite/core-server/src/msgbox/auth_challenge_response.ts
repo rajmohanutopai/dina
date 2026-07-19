@@ -32,11 +32,12 @@
  */
 
 import { sign as ed25519Sign } from '@dina/core';
+import { AUTH_RESPONSE } from '@dina/protocol';
+
 import type {
   AuthChallengeFrame,
   AuthResponseFrame,
 } from '@dina/protocol';
-import { AUTH_RESPONSE } from '@dina/protocol';
 
 /** Prefix pinned per `packages/protocol/src/types/auth_frames.ts`. */
 export const AUTH_RELAY_PREFIX = 'AUTH_RELAY';

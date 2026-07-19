@@ -34,6 +34,8 @@ import {
   type Part,
 } from '@google/genai';
 
+import { DEFAULT_GEMINI_MODEL, DEFAULT_MAX_TOKENS } from '../../constants';
+
 import type {
   ChatMessage,
   ChatOptions,
@@ -45,7 +47,6 @@ import type {
   ToolCall,
   ToolDefinition,
 } from './provider';
-import { DEFAULT_GEMINI_MODEL, DEFAULT_MAX_TOKENS } from '../../constants';
 
 /**
  * Shape of our `ToolCall.providerMetadata` when this adapter is in play.
@@ -251,11 +252,11 @@ function toGeminiContents(messages: ChatMessage[]): Content[] {
  * Search, no code-execution, etc.).
  */
 function toFunctionDeclarations(defs: ToolDefinition[]): {
-  functionDeclarations: Array<{
+  functionDeclarations: {
     name: string;
     description: string;
     parametersJsonSchema: Record<string, unknown>;
-  }>;
+  }[];
 } {
   return {
     functionDeclarations: defs.map((t) => ({

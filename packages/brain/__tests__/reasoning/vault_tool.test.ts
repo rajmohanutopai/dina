@@ -3,6 +3,11 @@
  * `list_personas`, `browse_vault`, `get_full_content`.
  */
 
+import { clearVaults, storeItem ,
+  createPersona,
+  resetPersonaState,
+} from '@dina/core';
+
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -13,11 +18,6 @@ import {
   setAccessiblePersonas,
   resetReasoningProvider,
 } from '../../src/vault_context/assembly';
-import { clearVaults, storeItem } from '@dina/core';
-import {
-  createPersona,
-  resetPersonaState,
-} from '@dina/core';
 
 describe('createVaultSearchTool', () => {
   beforeEach(() => {
@@ -39,7 +39,7 @@ describe('createVaultSearchTool', () => {
       persona: string;
       query: string;
       accessible: boolean;
-      results: Array<{ id: string; content_l0: string; score: number; persona: string }>;
+      results: { id: string; content_l0: string; score: number; persona: string }[];
     };
 
     // Default (no persona arg) is fan-out across all unlocked personas.
@@ -68,14 +68,14 @@ describe('createVaultSearchTool', () => {
     const healthOnly = (await tool.execute({
       query: 'allergy',
       persona: 'health',
-    })) as { results: Array<{ id: string }> };
+    })) as { results: { id: string }[] };
     expect(healthOnly.results.length).toBeGreaterThanOrEqual(1);
 
     // Query that's only in `general` — scoping to `health` returns 0.
     const scoped = (await tool.execute({
       query: 'ferrets',
       persona: 'health',
-    })) as { results: Array<{ id: string }> };
+    })) as { results: { id: string }[] };
     expect(scoped.results.length).toBe(0);
   });
 
@@ -137,7 +137,7 @@ describe('createVaultSearchTool', () => {
       persona: string;
       personas_searched: string[];
       accessible: boolean;
-      results: Array<{ id: string; persona: string }>;
+      results: { id: string; persona: string }[];
     };
 
     expect(result.persona).toBe('all');
@@ -168,7 +168,7 @@ describe('createVaultSearchTool', () => {
     })) as {
       persona: string;
       personas_searched: string[];
-      results: Array<{ persona: string }>;
+      results: { persona: string }[];
     };
     expect(result.persona).toBe('health');
     expect(result.personas_searched).toEqual(['health']);
@@ -228,13 +228,13 @@ describe('createListPersonasTool', () => {
     const tool = createListPersonasTool();
     const raw = await tool.execute({});
     const result = raw as {
-      personas: Array<{
+      personas: {
         name: string;
         item_count?: number;
         types?: string[];
         recent_summaries?: string[];
         status?: string;
-      }>;
+      }[];
     };
 
     expect(result.personas.length).toBe(3);
@@ -251,7 +251,7 @@ describe('createListPersonasTool', () => {
     const tool = createListPersonasTool();
     const raw = await tool.execute({});
     const result = raw as {
-      personas: Array<{ name: string; status?: string; item_count?: number }>;
+      personas: { name: string; status?: string; item_count?: number }[];
     };
     const locked = result.personas.find((p) => p.name === 'financial');
     expect(locked?.status).toBe('locked');
@@ -283,7 +283,7 @@ describe('createBrowseVaultTool', () => {
     const tool = createBrowseVaultTool();
     const result = (await tool.execute({ persona: 'general' })) as {
       persona: string;
-      items: Array<Record<string, string>>;
+      items: Record<string, string>[];
     };
     expect(result.persona).toBe('general');
     expect(result.items.length).toBe(1);
@@ -673,7 +673,7 @@ describe('createVaultSearchTool — allowedPersonas hard scope (Tier 1 security 
     const tool = createVaultSearchTool({ allowedPersonas: () => ['general'] });
     const result = (await tool.execute({ query: 'salon' })) as {
       personas_searched: string[];
-      results: Array<{ persona: string; content_l0: string }>;
+      results: { persona: string; content_l0: string }[];
     };
     expect(result.personas_searched).toEqual(['general']);
     expect(result.results.length).toBeGreaterThanOrEqual(1);

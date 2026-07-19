@@ -4,6 +4,12 @@
  * Source: ARCHITECTURE.md Section 19.1
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { verify, getPublicKey } from '../../src/crypto/ed25519';
 import {
   buildForwardHeaders,
   buildForwardCanonical,
@@ -11,10 +17,6 @@ import {
   setFetchFn,
   resetFetchFn,
 } from '../../src/relay/msgbox_forward';
-import { verify, getPublicKey } from '../../src/crypto/ed25519';
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 describe('MsgBox POST /forward', () => {
   const senderDID = 'did:key:z6MkSender';

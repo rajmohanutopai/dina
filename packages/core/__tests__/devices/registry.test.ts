@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Section 2.63
  */
 
+import { isDevice, resetCallerTypeState } from '../../src/auth/caller_type';
 import {
   registerDevice,
   listDevices,
@@ -21,7 +22,6 @@ import {
   type PairedDevice,
 } from '../../src/devices/registry';
 import { setDeviceRepository, type DeviceRepository } from '../../src/devices/repository';
-import { isDevice, resetCallerTypeState } from '../../src/auth/caller_type';
 
 describe('Device Registry', () => {
   beforeEach(() => resetDeviceRegistry());

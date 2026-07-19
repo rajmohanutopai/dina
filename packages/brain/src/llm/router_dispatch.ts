@@ -29,6 +29,22 @@
  * by binding a task_type at construction.
  */
 
+import { CloudConsentError } from '@dina/core';
+import {
+  scrubPII,
+  rehydratePII,
+  type PIIMatch,
+} from '@dina/core';
+
+import { getProviderTiers } from './provider_config';
+import {
+  isFTSOnly,
+  isLightweightTask,
+  type ProviderName,
+  type RouterConfig,
+  type TaskType,
+} from './router';
+
 import type {
   ChatMessage,
   ChatOptions,
@@ -39,20 +55,6 @@ import type {
   StreamChunk,
   ToolCall,
 } from './adapters/provider';
-import {
-  isFTSOnly,
-  isLightweightTask,
-  type ProviderName,
-  type RouterConfig,
-  type TaskType,
-} from './router';
-import { getProviderTiers } from './provider_config';
-import { CloudConsentError } from '@dina/core';
-import {
-  scrubPII,
-  rehydratePII,
-  type PIIMatch,
-} from '@dina/core';
 
 export interface LLMRouterOptions {
   /**
@@ -265,7 +267,7 @@ export class LLMRouter {
 
 export function rehydrateResponse(
   response: ChatResponse,
-  entities: Array<{ token: string; value: string }>,
+  entities: { token: string; value: string }[],
 ): ChatResponse {
   const content = response.content === '' ? response.content : rehydratePII(response.content, entities);
   const toolCalls: ToolCall[] = response.toolCalls.map((tc) => ({
@@ -277,7 +279,7 @@ export function rehydrateResponse(
 
 function rehydrateRecord(
   value: Record<string, unknown>,
-  entities: Array<{ token: string; value: string }>,
+  entities: { token: string; value: string }[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
@@ -288,7 +290,7 @@ function rehydrateRecord(
 
 function rehydrateValue(
   value: unknown,
-  entities: Array<{ token: string; value: string }>,
+  entities: { token: string; value: string }[],
 ): unknown {
   if (typeof value === 'string') return rehydratePII(value, entities);
   if (Array.isArray(value)) return value.map((v) => rehydrateValue(v, entities));

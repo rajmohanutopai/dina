@@ -108,7 +108,7 @@ export interface VaultRepository {
  *
  * Jest + Node-side tests are unaffected (single module instance).
  */
-type VaultRepoGlobals = { repos: Map<string, VaultRepository> };
+interface VaultRepoGlobals { repos: Map<string, VaultRepository> }
 const globalWithVaultRepos = globalThis as unknown as {
   __dinaVaultRepos?: VaultRepoGlobals;
 };
@@ -466,7 +466,7 @@ export class InMemoryVaultRepository implements VaultRepository {
       .filter((t) => t.length > 0 && !/^(and|or|not|near)$/i.test(t));
     if (terms.length === 0) return [];
 
-    type Scored = { item: VaultItem; score: number };
+    interface Scored { item: VaultItem; score: number }
     const scored: Scored[] = [];
     for (const item of this.items.values()) {
       if (item.deleted) continue;
@@ -531,7 +531,7 @@ export class InMemoryVaultRepository implements VaultRepository {
   // carries its OWN scope (set at link time), matching the SQLite repo's
   // vault_item_subjects.data_scope column — NOT derived from the item, so a
   // link to a not-yet-stored item ("ghost" link) still belongs to a scope.
-  private readonly subjects = new Map<string, Array<{ itemId: string; scope: DataScope }>>();
+  private readonly subjects = new Map<string, { itemId: string; scope: DataScope }[]>();
 
   async linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void> {
     this.linkSubjectSync(itemId, personId, opts);
@@ -584,7 +584,7 @@ export class InMemoryVaultRepository implements VaultRepository {
     const toList = this.subjects.get(toPersonId) ?? [];
     // Only repoint in-scope links (parity with the SQLite repo's scoped
     // UPDATE/DELETE); leave other-scope links on the source person.
-    const remaining: Array<{ itemId: string; scope: DataScope }> = [];
+    const remaining: { itemId: string; scope: DataScope }[] = [];
     for (const link of fromList) {
       if (link.scope === scope) {
         if (!toList.some((l) => l.itemId === link.itemId)) toList.push(link);

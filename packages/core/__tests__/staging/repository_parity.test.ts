@@ -16,9 +16,10 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { SQLiteStagingRepository, InMemoryStagingRepository } from '../../src/staging/repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { SQLiteStagingRepository, InMemoryStagingRepository } from '../../src/staging/repository';
+
 import type { StagingItem } from '../../src/staging/service';
 
 function makeItem(): StagingItem {

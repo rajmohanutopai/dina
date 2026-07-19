@@ -31,15 +31,15 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
-  InMemoryWorkflowRepository,
-  SQLiteWorkflowRepository,
-  type WorkflowRepository,
-} from '../../src/workflow/repository';
-import {
   PLUGIN_INVOCATION_PAYLOAD_TYPE,
   PLUGIN_RETRY,
   parsePluginEnvelope,
 } from '../../src/workflow/plugin_envelope';
+import {
+  InMemoryWorkflowRepository,
+  SQLiteWorkflowRepository,
+  type WorkflowRepository,
+} from '../../src/workflow/repository';
 
 import type { WorkflowTask } from '../../src/workflow/domain';
 

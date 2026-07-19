@@ -18,6 +18,7 @@
  */
 
 import { RPC_REQUEST_TYPE } from './constants';
+
 import type { CoreRPCRequest } from './types/core_rpc';
 
 // ---------------------------------------------------------------------------

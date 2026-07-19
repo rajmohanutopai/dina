@@ -32,9 +32,10 @@
  * the right shape for the app tier.
  */
 
+import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import * as fs from 'node:fs/promises';
+
 import {
   FileSystem,
   FileKeystore,

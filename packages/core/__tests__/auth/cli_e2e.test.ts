@@ -7,6 +7,8 @@
  * Source: tests/e2e/test_suite_15_cli_signing.py
  */
 
+import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
+
 import { generateCLIKeypair, signCLIRequest, verifyCLIRequest } from '../../src/auth/cli_signing';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { publicKeyToMultibase, multibaseToPublicKey } from '../../src/identity/did';
@@ -16,7 +18,6 @@ import {
   setNodeDID,
   clearPairingState,
 } from '../../src/pairing/ceremony';
-import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
 
 describe('CLI Signing E2E (Suite 15)', () => {
   beforeEach(() => {

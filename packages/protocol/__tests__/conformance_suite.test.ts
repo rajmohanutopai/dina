@@ -121,7 +121,7 @@ describe('runConformance — end-to-end runner (task 10.14)', () => {
     // known markers.
     const resultLines = text.split('\n').filter((l) => l.startsWith('  '));
     for (const l of resultLines) {
-      expect(/^(?:  PASS|  FAIL|  SKIP|  N\/I) /.test(l)).toBe(true);
+      expect(/^(?: {2}PASS| {2}FAIL| {2}SKIP| {2}N\/I) /.test(l)).toBe(true);
     }
   });
 });

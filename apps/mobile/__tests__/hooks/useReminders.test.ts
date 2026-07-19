@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Task 5.6
  */
 
+import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
 import {
   getUpcomingReminders,
   getOverdueReminders,
@@ -16,7 +17,6 @@ import {
   getReminderCounts,
   resetReminders,
 } from '../../src/hooks/useReminders';
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
 
 // Anchor NOW to noon local time so `NOW + HOUR` always stays on the
 // same day regardless of when the test happens to run. Using

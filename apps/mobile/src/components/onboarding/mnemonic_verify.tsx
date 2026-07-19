@@ -9,10 +9,12 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { OnboardingShell } from './shell';
-import { locateStep, type Step } from '../../onboarding/state';
+
 import { createVerificationChallenge, verifyMnemonicAnswers } from '../../hooks/useOnboarding';
+import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
+
+import { OnboardingShell } from './shell';
 
 export interface MnemonicVerifyProps {
   mnemonic: string[];

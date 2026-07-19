@@ -11,20 +11,20 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { PLUGIN_NSIDS, pluginLane, type PluginManifest } from '@dina/protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import {
   SQLitePluginInstallRepository,
   setPluginInstallRepository,
 } from '../../src/plugins/registry';
-import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import { CoreRouter, type CoreRequest, type CoreResponse } from '../../src/server/router';
 import { registerWorkflowRoutes } from '../../src/server/routes/workflow';
-import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../src/workflow/plugin_envelope';
+import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import {
   WorkflowService,
   setWorkflowService,

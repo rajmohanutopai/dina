@@ -9,6 +9,7 @@
  * Source: ARCHITECTURE.md Task 9.2
  */
 
+import { resetKVStore } from '../../src/kv/store';
 import {
   getCachedTrust,
   cacheTrustScore,
@@ -23,8 +24,8 @@ import {
   MAX_TRUST_CACHE_ENTRIES,
   MEMORY_WARNING_TARGET,
 } from '../../src/peerlens/cache';
+
 import type { TrustScore } from '../../src/peerlens/cache';
-import { resetKVStore } from '../../src/kv/store';
 
 describe('Trust Cache', () => {
   beforeEach(() => {

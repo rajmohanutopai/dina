@@ -14,6 +14,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import { createClassifyIntentTool } from '../../src/reasoning/classify_intent_tool';
+
 import type { IntentClassification, IntentClassifier } from '../../src/reasoning/intent_classifier';
 
 function fakeClassifier(result: IntentClassification): IntentClassifier {

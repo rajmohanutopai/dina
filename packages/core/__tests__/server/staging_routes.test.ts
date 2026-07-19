@@ -8,12 +8,12 @@
 
 import { InProcessTransport } from '../../src/client/in-process-transport';
 import { createCoreRouter } from '../../src/server/core_server';
+import { InMemoryStagingRepository, setStagingRepository } from '../../src/staging/repository';
 import {
   getItem,
   hydrateStagingFromRepository,
   resetStagingState,
 } from '../../src/staging/service';
-import { InMemoryStagingRepository, setStagingRepository } from '../../src/staging/repository';
 import { getItem as getVaultItem } from '../../src/vault/crud';
 import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
 import {

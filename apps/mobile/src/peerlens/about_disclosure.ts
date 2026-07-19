@@ -33,6 +33,7 @@
  */
 
 import { FEATURE_NAMES } from '@dina/core';
+
 import { FIRST_RUN_MODAL_COPY } from './first_run';
 
 // ─── Public types ─────────────────────────────────────────────────────────

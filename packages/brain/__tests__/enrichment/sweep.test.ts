@@ -4,16 +4,16 @@
  * Source: brain/src/service/enrichment.py — enrich_pending()
  */
 
-import { sweepEnrichment, enrichSingleItem } from '../../src/enrichment/sweep';
-import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 import {
   storeItem,
   clearVaults,
   getItem,
   queryByEnrichmentStatus,
-} from '@dina/core';
-import { createPersona, resetPersonaState, openPersona } from '@dina/core';
+ createPersona, resetPersonaState, openPersona } from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
+import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
+import { sweepEnrichment, enrichSingleItem } from '../../src/enrichment/sweep';
 
 describe('Enrichment Batch Sweep', () => {
   beforeEach(() => {

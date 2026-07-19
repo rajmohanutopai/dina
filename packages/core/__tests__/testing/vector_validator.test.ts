@@ -8,6 +8,10 @@
  */
 
 import * as path from 'path';
+
+import { hexToBytes, bytesToHex } from '@noble/hashes/utils.js';
+
+import { getPublicKey, sign, verify } from '../../src/crypto/ed25519';
 import {
   validateVector,
   validateFixture,
@@ -16,8 +20,6 @@ import {
   type VectorFile,
 } from '../../src/testing/vector_validator';
 import { loadFixtures, loadFixture } from '../../src/testing/vector_validator_node';
-import { getPublicKey, sign, verify } from '../../src/crypto/ed25519';
-import { hexToBytes, bytesToHex } from '@noble/hashes/utils.js';
 
 const FIXTURES_DIR = path.resolve(__dirname, '../../../fixtures/crypto');
 

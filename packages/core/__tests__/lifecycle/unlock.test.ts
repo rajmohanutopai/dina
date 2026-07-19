@@ -4,13 +4,15 @@
  * Source: ARCHITECTURE.md Task 1.52
  */
 
-import { fullUnlock, verifyPassphrase } from '../../src/lifecycle/unlock';
+import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
+
 import { wrapSeed } from '../../src/crypto/aesgcm';
 import { mnemonicToSeed, generateMnemonic } from '../../src/crypto/bip39';
-import { resetPersonaState, listPersonas, isPersonaOpen } from '../../src/persona/service';
 import { resetRotationState, getCurrentGeneration } from '../../src/identity/rotation';
 import { resetLifecycleState, areSecretsZeroed } from '../../src/lifecycle/sleep_wake';
-import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
+import { fullUnlock, verifyPassphrase } from '../../src/lifecycle/unlock';
+import { resetPersonaState, listPersonas, isPersonaOpen } from '../../src/persona/service';
+
 
 describe('Full Unlock Flow', () => {
   let wrappedSeed: Awaited<ReturnType<typeof wrapSeed>>;

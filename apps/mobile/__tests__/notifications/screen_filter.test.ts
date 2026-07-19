@@ -3,6 +3,7 @@
  */
 
 import { applyNotificationFilter } from '../../src/notifications/screen_filter';
+
 import type { NotificationItem } from '@dina/brain';
 
 function mk(

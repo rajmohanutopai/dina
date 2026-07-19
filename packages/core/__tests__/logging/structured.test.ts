@@ -153,7 +153,7 @@ describe('Structured Logging', () => {
 
   describe('log sink', () => {
     it('custom sink receives entries', () => {
-      const captured: Array<Record<string, unknown>> = [];
+      const captured: Record<string, unknown>[] = [];
       const { setLogSink } = require('../../src/logging/structured');
       setLogSink((entry: Record<string, unknown>) => {
         captured.push(entry);

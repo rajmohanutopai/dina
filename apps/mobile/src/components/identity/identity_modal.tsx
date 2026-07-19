@@ -25,6 +25,7 @@
  * empty during the round-trip.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,10 +37,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing, textStyles } from '../../theme';
-import { lookupPlc, type PlcLookupResult } from '../../services/plc_lookup';
+
 import { buildContactCard } from '../../services/contact_card';
+import { lookupPlc, type PlcLookupResult } from '../../services/plc_lookup';
+import { colors, radius, spacing, textStyles } from '../../theme';
 
 export interface IdentityModalProps {
   visible: boolean;

@@ -11,12 +11,14 @@ import {
   openPersona,
   resetPersonaState,
 } from '@dina/core';
-import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
+
 import {
   approvalIdFor,
   createPersonaGuard,
   type VaultApprovalWorkflowClient,
 } from '../../src/composition/persona_guard';
+
+import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 const REQUESTER = 'did:key:z6MkAlonsoTester';
 const ASK_ID = 'ask-1';

@@ -7,6 +7,7 @@
  * Source: ARCHITECTURE.md Task 2.48
  */
 
+import { GENESIS_MARKER } from '../../src/audit/hash_chain';
 import {
   appendAudit,
   appendAuditWithDetail,
@@ -21,7 +22,6 @@ import {
   buildAuditDetail,
   parseAuditDetail,
 } from '../../src/audit/service';
-import { GENESIS_MARKER } from '../../src/audit/hash_chain';
 
 describe('Audit Service', () => {
   beforeEach(() => resetAuditState());

@@ -36,6 +36,21 @@ export interface ClassificationJobRepository {
   getByMessage(messageId: string): ClassificationJobRecord | null;
   /** Pending jobs whose lease is free or expired (candidates for acquire). */
   listAcquirable(nowMs: number, limit?: number): ClassificationJobRecord[];
+  /** ALL still-`pending` jobs (leased or not), oldest first — the classify-timeout
+   *  sweep scans these to finalize any past its run's `classify_timeout_ms` (§9.1,
+   *  F12), so Brain being slow/absent is never load-bearing. */
+  listPending(limit?: number): ClassificationJobRecord[];
+  /** A keyset PAGE of still-`pending` jobs strictly after the `(created_at,
+   *  message_id)` cursor, oldest first. The sweep pages the ENTIRE pending set
+   *  through this so a due job is never starved behind >`limit` earlier
+   *  not-yet-due jobs (F12) — a single `listPending(limit)` window could hide
+   *  due jobs beyond the first page behind long-timeout jobs that are not yet
+   *  due. Pass `(-1, '')` for the first page. */
+  listPendingAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit?: number,
+  ): ClassificationJobRecord[];
   /** CAS a lease onto a `pending` job (lease free or expired). */
   acquire(messageId: string, leaseToken: string, leaseExpiresAt: number, nowMs: number): boolean;
   /** CAS a candidate onto a leased `pending` job → `classified`. */
@@ -98,6 +113,28 @@ export class SQLiteClassificationJobRepository implements ClassificationJobRepos
     return rows.length > 0 ? rowToJob(rows[0]) : null;
   }
 
+  listPending(limit = 200): ClassificationJobRecord[] {
+    return this.db
+      .query(
+        "SELECT * FROM run_classification_jobs WHERE state = 'pending' ORDER BY created_at ASC LIMIT ?",
+        [limit],
+      )
+      .map(rowToJob);
+  }
+
+  listPendingAfter(afterCreatedAt: number, afterMessageId: string, limit = 200): ClassificationJobRecord[] {
+    return this.db
+      .query(
+        `SELECT * FROM run_classification_jobs
+          WHERE state = 'pending'
+            AND (created_at > ? OR (created_at = ? AND message_id > ?))
+          ORDER BY created_at ASC, message_id ASC
+          LIMIT ?`,
+        [afterCreatedAt, afterCreatedAt, afterMessageId, limit],
+      )
+      .map(rowToJob);
+  }
+
   listAcquirable(nowMs: number, limit = 32): ClassificationJobRecord[] {
     return this.db
       .query(
@@ -128,12 +165,16 @@ export class SQLiteClassificationJobRepository implements ClassificationJobRepos
     tierCandidate: number,
     nowMs: number,
   ): boolean {
+    // The lease must still be UNEXPIRED (§12.6): a report on a lapsed lease is
+    // rejected even if the token still matches (the job was not re-acquired), so
+    // stale Brain work can never finalize a tier after the lease window closed.
     return (
       this.db.run(
         `UPDATE run_classification_jobs
            SET state = 'classified', tier_candidate = ?, updated_at = ?
-         WHERE message_id = ? AND state = 'pending' AND message_revision = ? AND lease_token = ?`,
-        [tierCandidate, nowMs, messageId, messageRevision, leaseToken],
+         WHERE message_id = ? AND state = 'pending' AND message_revision = ? AND lease_token = ?
+           AND lease_expires_at IS NOT NULL AND lease_expires_at >= ?`,
+        [tierCandidate, nowMs, messageId, messageRevision, leaseToken, nowMs],
       ) > 0
     );
   }
@@ -171,6 +212,25 @@ export class InMemoryClassificationJobRepository implements ClassificationJobRep
     const j = this.jobs.get(messageId);
     return j ? { ...j } : null;
   }
+  listPending(limit = 200): ClassificationJobRecord[] {
+    return [...this.jobs.values()]
+      .filter((j) => j.state === 'pending')
+      .sort((a, b) => a.created_at - b.created_at)
+      .slice(0, limit)
+      .map((j) => ({ ...j }));
+  }
+  listPendingAfter(afterCreatedAt: number, afterMessageId: string, limit = 200): ClassificationJobRecord[] {
+    return [...this.jobs.values()]
+      .filter(
+        (j) =>
+          j.state === 'pending' &&
+          (j.created_at > afterCreatedAt ||
+            (j.created_at === afterCreatedAt && j.message_id > afterMessageId)),
+      )
+      .sort((a, b) => a.created_at - b.created_at || (a.message_id < b.message_id ? -1 : 1))
+      .slice(0, limit)
+      .map((j) => ({ ...j }));
+  }
   listAcquirable(nowMs: number, limit = 32): ClassificationJobRecord[] {
     return [...this.jobs.values()]
       .filter((j) => j.state === 'pending' && (j.lease_expires_at === null || j.lease_expires_at < nowMs))
@@ -198,6 +258,8 @@ export class InMemoryClassificationJobRepository implements ClassificationJobRep
     if (!j || j.state !== 'pending' || j.message_revision !== messageRevision || j.lease_token !== leaseToken) {
       return false;
     }
+    // Reject a report on a lapsed lease (§12.6) — mirrors the SQLite CAS.
+    if (j.lease_expires_at === null || j.lease_expires_at < nowMs) return false;
     j.state = 'classified';
     j.tier_candidate = tierCandidate;
     j.updated_at = nowMs;
@@ -265,6 +327,12 @@ export interface RunClassifyServiceOptions {
    *  card). Default returns empty display text (payload wiring is composed in). */
   buildClassificationView?: (message: MessageRecord) => { title: string; body: string; content_digest: string };
   leaseMs?: number;
+  /** Runs a classify mutation atomically (rollback on throw). Default is a
+   *  passthrough; boot passes the SQLite `db.transaction` so the paired
+   *  `classification_pending → classified` + `setTier` writes commit as ONE step
+   *  (§6.3 "atomically transitions ... at the fallback tier") and a crash can
+   *  never strand a message `classified` with a null `final_tier`. */
+  tx?: (fn: () => void) => void;
 }
 
 export class RunClassifyService {
@@ -276,6 +344,7 @@ export class RunClassifyService {
   private readonly personaOpen: (persona: string) => boolean;
   private readonly viewOf: (m: MessageRecord) => { title: string; body: string; content_digest: string };
   private readonly leaseMs: number;
+  private readonly tx: (fn: () => void) => void;
   private seq = 0;
 
   constructor(opts: RunClassifyServiceOptions = {}) {
@@ -293,6 +362,7 @@ export class RunClassifyService {
     this.personaOpen = opts.isPersonaOpen ?? (() => true);
     this.viewOf = opts.buildClassificationView ?? (() => ({ title: '', body: '', content_digest: '' }));
     this.leaseMs = opts.leaseMs ?? 30_000;
+    this.tx = opts.tx ?? ((fn) => fn());
   }
 
   /**
@@ -307,38 +377,43 @@ export class RunClassifyService {
     if (run === null) return;
     const nowMs = this.now();
 
-    if (!this.messages.transition(messageId, 'enqueued', 'classification_pending', nowMs)) return;
+    // One atomic step: the entry transition + (action: classified + tier | info:
+    // job create). A crash can never leave the message classification_pending
+    // with neither a tier nor a job, or classified with a null tier (§6.3).
+    this.tx(() => {
+      if (!this.messages.transition(messageId, 'enqueued', 'classification_pending', nowMs)) return;
 
-    if (msg.kind === 'action') {
-      // Core assigns the action Tier-2 base + owner ceiling clamp, then marks
-      // classified without ever consulting Brain (§9.1).
-      const result = computeFinalTier({
-        kind: 'action',
-        brainCandidate: null,
-        priorityCeiling: run.priority_ceiling,
-        timedOut: false,
-      });
-      this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
-      if (result !== null) {
-        this.messages.setTier(
-          messageId,
-          { final_tier: result.tier, tier_source: result.tier_source },
-          nowMs,
-        );
+      if (msg.kind === 'action') {
+        // Core assigns the action Tier-2 base + owner ceiling clamp, then marks
+        // classified without ever consulting Brain (§9.1).
+        const result = computeFinalTier({
+          kind: 'action',
+          brainCandidate: null,
+          priorityCeiling: run.priority_ceiling,
+          timedOut: false,
+        });
+        this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
+        if (result !== null) {
+          this.messages.setTier(
+            messageId,
+            { final_tier: result.tier, tier_source: result.tier_source },
+            nowMs,
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    // Informational → a durable classification job Brain will pull.
-    this.jobs.create({
-      message_id: messageId,
-      message_revision: 1,
-      state: 'pending',
-      lease_token: null,
-      lease_expires_at: null,
-      tier_candidate: null,
-      created_at: nowMs,
-      updated_at: nowMs,
+      // Informational → a durable classification job Brain will pull.
+      this.jobs.create({
+        message_id: messageId,
+        message_revision: 1,
+        state: 'pending',
+        lease_token: null,
+        lease_expires_at: null,
+        tier_candidate: null,
+        created_at: nowMs,
+        updated_at: nowMs,
+      });
     });
   }
 
@@ -388,27 +463,40 @@ export class RunClassifyService {
     if (msg === null || msg.state !== 'classification_pending' || msg.kind !== 'informational') {
       return 'rejected';
     }
-    if (!this.jobs.report(messageId, messageRevision, leaseToken, tierCandidate, nowMs)) {
+    const run = this.runs.getById(msg.run_id);
+    // Recheck run eligibility + persona-open at REPORT time (§12.6 fence-aware,
+    // non-load-bearing): a fenced / past-deadline run, or a persona that locked
+    // after the job was acquired, must not let stale Brain work finalize a tier —
+    // the classify_timeout fallback / fence path owns the message from here.
+    if (run === null || !this.runEligible(run, nowMs) || !this.personaOpen(run.persona)) {
       return 'rejected';
     }
-    const run = this.runs.getById(msg.run_id);
-    const ceiling: PriorityCeiling = run?.priority_ceiling ?? 'solicited';
+    const ceiling: PriorityCeiling = run.priority_ceiling;
     const result = computeFinalTier({
       kind: 'informational',
       brainCandidate: tierCandidate,
       priorityCeiling: ceiling,
       timedOut: false,
     });
-    this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
-    this.messages.setTier(
-      messageId,
-      {
-        tier_candidate: tierCandidate,
-        ...(result !== null ? { final_tier: result.tier, tier_source: result.tier_source } : {}),
-      },
-      nowMs,
-    );
-    return 'ok';
+
+    // The job-report CAS + the classified transition + the tier write commit as
+    // ONE step (§6.3): a crash can never record the candidate but leave the
+    // message classification_pending, or mark it classified with a null tier.
+    let outcome: 'ok' | 'rejected' = 'rejected';
+    this.tx(() => {
+      if (!this.jobs.report(messageId, messageRevision, leaseToken, tierCandidate, nowMs)) return;
+      this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
+      this.messages.setTier(
+        messageId,
+        {
+          tier_candidate: tierCandidate,
+          ...(result !== null ? { final_tier: result.tier, tier_source: result.tier_source } : {}),
+        },
+        nowMs,
+      );
+      outcome = 'ok';
+    });
+    return outcome;
   }
 
   /**
@@ -421,17 +509,70 @@ export class RunClassifyService {
     if (msg === null || msg.state !== 'classification_pending') return;
     const run = this.runs.getById(msg.run_id);
     const ceiling: PriorityCeiling = run?.priority_ceiling ?? 'solicited';
-    this.jobs.timeout(messageId, nowMs);
     const result = computeFinalTier({
       kind: 'informational',
       brainCandidate: null,
       priorityCeiling: ceiling,
       timedOut: true,
     });
-    this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
-    if (result !== null) {
-      this.messages.setTier(messageId, { final_tier: result.tier, tier_source: result.tier_source }, nowMs);
+    // The job timeout + the classified transition + the tier write commit as ONE
+    // step (§6.3 "classify_timeout atomically transitions ... at the fallback
+    // tier"): a crash can never leave the message classified with a null tier.
+    this.tx(() => {
+      this.jobs.timeout(messageId, nowMs);
+      this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
+      if (result !== null) {
+        this.messages.setTier(messageId, { final_tier: result.tier, tier_source: result.tier_source }, nowMs);
+      }
+    });
+  }
+
+  /**
+   * Drive the classify-timeout fallback (§9.1/§12.6, F12) — the piece that makes
+   * Brain NON-load-bearing. Scans still-`pending` jobs and finalizes every message
+   * whose classification window (`run.classify_timeout_ms` from the job's
+   * `created_at`) has elapsed, at the fallback (ceiling) tier. Deterministic; the
+   * boot loop / sweeper calls this on a cadence. Without it an absent or failing
+   * Brain would strand informational messages `classification_pending` forever.
+   * Returns the number finalized.
+   */
+  sweepTimeouts(pageLimit = 200): number {
+    const nowMs = this.now();
+    let finalized = 0;
+    // Page the ENTIRE pending set by the (created_at, message_id) keyset (F12).
+    // A single `listPending(limit)` window could hide a DUE job behind >limit
+    // earlier jobs whose longer `classify_timeout_ms` has not elapsed (7 max-cap
+    // runs can hold >200 pending jobs); the keyset advances past every scanned
+    // row — due or not — so one call finalizes every currently-due job. Finalizing
+    // removes a job from `pending`, so the cursor never revisits it.
+    let cursorCreatedAt = -1;
+    let cursorMessageId = '';
+    for (;;) {
+      const page = this.jobs.listPendingAfter(cursorCreatedAt, cursorMessageId, pageLimit);
+      if (page.length === 0) break;
+      for (const job of page) {
+        cursorCreatedAt = job.created_at;
+        cursorMessageId = job.message_id;
+        const msg = this.messages.getById(job.message_id);
+        if (msg === null || msg.state !== 'classification_pending') continue;
+        const run = this.runs.getById(msg.run_id);
+        if (run === null) continue;
+        // The window opened when the job was created (enqueue-commit → begin classify).
+        if (nowMs > job.created_at + run.classify_timeout_ms) {
+          // §18 hard bounds: NEVER classify content past the run's eligibility
+          // (terminal / past hard-TTL / fencing-draining) or past the message's
+          // own signed `expires_at`. Such work is fenced → `expired` by the
+          // run-TTL barrier (RunSweeper) + termination, which cancels this job;
+          // the timeout fallback must not surface stale content as a fresh
+          // `classified` decision (§6.3/§18, INTERACTIVE:223,473).
+          if (!this.runEligible(run, nowMs) || nowMs >= msg.expires_at) continue;
+          this.finalizeTimeout(job.message_id);
+          finalized++;
+        }
+      }
+      if (page.length < pageLimit) break;
     }
+    return finalized;
   }
 
   /** Fence a message's classification job (barrier, §5.1/§12.6) so no fenced
@@ -445,7 +586,11 @@ export class RunClassifyService {
     if (nowMs >= run.expires_at) return false;
     // active, or a permissive drain (a fencing drain cancels the job, §12.6).
     if (run.state === 'active') return true;
-    if (run.state === 'draining' && run.drain_strength === 'permissive') return true;
+    if (run.state === 'draining' && run.drain_strength === 'permissive') {
+      // A permissive drain past its `drain_deadline_at` is shedding — no new
+      // classification is offered (§18 "hard bounds in guards").
+      return run.drain_deadline_at === null || nowMs < run.drain_deadline_at;
+    }
     return false;
   }
 }

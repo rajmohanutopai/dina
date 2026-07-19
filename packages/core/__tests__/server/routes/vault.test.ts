@@ -5,7 +5,13 @@
  * here (the per-transport tests use fake routers and can't catch that).
  */
 
+import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../../src/agent/grant_repository';
+import { resetAuditState } from '../../../src/audit/service';
 import { InProcessTransport } from '../../../src/client/in-process-transport';
+import { createPersona, resetPersonaState } from '../../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerVaultRoutes } from '../../../src/server/routes/vault';
 import {
@@ -13,14 +19,8 @@ import {
   setVaultRepository,
   resetVaultRepositories,
 } from '../../../src/vault/repository';
-import { createPersona, resetPersonaState } from '../../../src/persona/service';
-import { resetAuditState } from '../../../src/audit/service';
-import { WorkflowService, setWorkflowService } from '../../../src/workflow/service';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
-import {
-  InMemoryAgentGrantRepository,
-  setAgentGrantRepository,
-} from '../../../src/agent/grant_repository';
+import { WorkflowService, setWorkflowService } from '../../../src/workflow/service';
 
 function build(): InProcessTransport {
   const router = new CoreRouter();
@@ -81,7 +81,7 @@ describe('vault routes ⇄ CoreClient contract', () => {
     // no-op: the client advertised it, the server ignored it).
     const notes = await t.vaultList('general', { type: 'note' });
     expect(notes.count).toBe(2);
-    expect((notes.items as Array<{ type: string }>).every((i) => i.type === 'note')).toBe(true);
+    expect((notes.items as { type: string }[]).every((i) => i.type === 'note')).toBe(true);
 
     const emails = await t.vaultList('general', { type: 'email' });
     expect(emails.count).toBe(1);

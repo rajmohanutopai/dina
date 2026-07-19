@@ -36,8 +36,8 @@ import {
 import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
-import { buildContactCard } from '../src/services/contact_card';
 import { confirmDecision } from '../src/services/confirm_decision';
+import { buildContactCard } from '../src/services/contact_card';
 import { deleteContact, loadContacts } from '../src/services/contacts_source';
 import { getDisplayNameOverride } from '../src/services/display_name_override';
 import { loadInfraPreferences } from '../src/services/infra_preferences';

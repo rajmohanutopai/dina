@@ -10,7 +10,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   applyMigrations,
   IDENTITY_MIGRATIONS,
@@ -20,6 +19,8 @@ import {
   type ArchivePersonaSource,
   type DatabaseAdapter,
 } from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
   configureRestore,
   resetRestore,

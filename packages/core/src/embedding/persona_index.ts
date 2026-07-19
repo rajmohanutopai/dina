@@ -10,8 +10,9 @@
  * Source: ARCHITECTURE.md Tasks 8.6, 8.7
  */
 
-import { HNSWIndex, type SearchResult } from './hnsw';
 import { DEFAULT_EMBEDDING_DIMENSIONS } from '../constants';
+
+import { HNSWIndex, type SearchResult } from './hnsw';
 
 const DEFAULT_DIMENSIONS = DEFAULT_EMBEDDING_DIMENSIONS;
 
@@ -25,7 +26,7 @@ const indexes = new Map<string, HNSWIndex>();
  */
 export function buildIndex(
   persona: string,
-  items: Array<{ id: string; embedding: Uint8Array | Float32Array }>,
+  items: { id: string; embedding: Uint8Array | Float32Array }[],
   dimensions?: number,
 ): number {
   const dims = dimensions ?? DEFAULT_DIMENSIONS;

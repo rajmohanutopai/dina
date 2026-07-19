@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Tasks 4.2, 4.3
  */
 
+import { unwrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
+import { validateMnemonic } from '../../../core/src/crypto/bip39';
+import { personaExists } from '../../../core/src/persona/service';
 import {
   generateNewMnemonic,
   createVerificationChallenge,
@@ -15,9 +18,6 @@ import {
   verifyRecoveredDID,
   resetOnboarding,
 } from '../../src/hooks/useOnboarding';
-import { validateMnemonic } from '../../../core/src/crypto/bip39';
-import { unwrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
-import { personaExists } from '../../../core/src/persona/service';
 
 describe('Onboarding — Create Identity (4.2)', () => {
   beforeEach(() => resetOnboarding());

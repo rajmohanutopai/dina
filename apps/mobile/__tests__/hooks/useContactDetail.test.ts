@@ -4,6 +4,11 @@
  * Source: ARCHITECTURE.md Task 6.17
  */
 
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
+import { clearSharingPolicies } from '../../../core/src/gatekeeper/sharing';
+import { setPeopleRepository } from '../../../core/src/people/repository';
 import {
   loadContactDetail,
   updateSharingPolicy,
@@ -16,10 +21,7 @@ import {
   getSharingTierOptions,
   resetContactDetail,
 } from '../../src/hooks/useContactDetail';
-import { addContact, resetContactDirectory } from '../../../core/src/contacts/directory';
-import { setPeopleRepository } from '../../../core/src/people/repository';
-import { clearSharingPolicies } from '../../../core/src/gatekeeper/sharing';
-import { makeFakePeopleRepo } from '@dina/test-harness';
+
 
 const DID = 'did:key:z6MkAlice000000000000000000000000000000000000';
 

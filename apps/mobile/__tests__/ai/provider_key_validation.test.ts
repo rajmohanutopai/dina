@@ -129,7 +129,7 @@ describe('saveApiKey / removeApiKey / getApiKey — sticky-remove vs dev-env fal
   });
 
   it('falls back to dev env on fresh install (no keychain entry)', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     jest.isolateModules(() => {
       const { getApiKey } = require('../../src/ai/provider');
       return expect(getApiKey('gemini')).resolves.toBe('AIza-dev-fallback-9999');
@@ -140,7 +140,7 @@ describe('saveApiKey / removeApiKey / getApiKey — sticky-remove vs dev-env fal
     // The actual bug: user taps Remove on the Gemini tile but the
     // dev-env value resurrected the key, leaving the tile stuck on
     // "configured". `removeApiKey` must now make the remove sticky.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     await jest.isolateModulesAsync(async () => {
       const { saveApiKey, removeApiKey, getApiKey } = require('../../src/ai/provider');
       await saveApiKey('gemini', 'AIza-user-saved-key-1234567890abcdef');

@@ -5,6 +5,14 @@
  * brain/src/service/capabilities/eta_query.py.
  */
 
+import { isOfficialCapability } from '@dina/protocol';
+
+import {
+  EtaQueryParamsSchema,
+  EtaQueryResultSchema,
+  validateEtaQueryParams,
+  validateEtaQueryResult,
+} from '../../../src/service/capabilities/eta_query';
 import {
   canonicalJSON,
   computeSchemaHash,
@@ -14,13 +22,6 @@ import {
   listCapabilities,
   SUPPORTED_CAPABILITIES,
 } from '../../../src/service/capabilities/registry';
-import {
-  EtaQueryParamsSchema,
-  EtaQueryResultSchema,
-  validateEtaQueryParams,
-  validateEtaQueryResult,
-} from '../../../src/service/capabilities/eta_query';
-import { isOfficialCapability } from '@dina/protocol';
 
 describe('capabilities registry', () => {
   describe('SUPPORTED_CAPABILITIES', () => {

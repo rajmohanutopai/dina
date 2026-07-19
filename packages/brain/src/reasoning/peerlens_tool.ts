@@ -28,13 +28,13 @@
  * `search_provider_services` uses).
  */
 
-import type { SubjectType } from '@dina/protocol';
 import type { AgentTool } from './tool_registry';
 import type {
   AppViewClient,
   ResolvePeerlensResponse,
   SearchPeerlensResponse,
 } from '../appview_client/http';
+import type { SubjectType } from '@dina/protocol';
 
 /** Minimum AppView surface the tool needs — lets tests swap a stub in
  *  without building the full `AppViewClient`. */

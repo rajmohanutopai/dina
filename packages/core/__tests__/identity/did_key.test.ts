@@ -7,6 +7,9 @@
  * Source: tests/test_did_key.py
  */
 
+import { TEST_ED25519_SEED, TEST_DID_KEY_PREFIX, bytesToHex } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
 import {
   deriveDIDKey,
   extractPublicKey,
@@ -18,8 +21,6 @@ import {
   validateDIDDocument,
   getMessagingService,
 } from '../../src/identity/did_document';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED, TEST_DID_KEY_PREFIX, bytesToHex } from '@dina/test-harness';
 
 describe('did:key Format', () => {
   const publicKey = getPublicKey(TEST_ED25519_SEED);

@@ -14,8 +14,10 @@
  */
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+
 import { getThread, hydrateThread, subscribeToThread, type ChatMessage } from '@dina/brain/chat';
 import { getContact, getTrustLevel, type TrustLevel } from '@dina/core';
+
 import { sendChatMessage, ChatSendError } from '../services/chat_d2d';
 
 export interface UseD2DChatResult {

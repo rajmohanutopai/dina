@@ -25,13 +25,13 @@ jest.mock('../../src/ai/active_provider', () => ({
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
-import { AiProviderSet } from '../../src/components/onboarding/ai_provider_set';
+import { saveActiveProvider } from '../../src/ai/active_provider';
 import {
   getConfiguredProviders,
   saveApiKey,
   verifyKey,
 } from '../../src/ai/provider';
-import { saveActiveProvider } from '../../src/ai/active_provider';
+import { AiProviderSet } from '../../src/components/onboarding/ai_provider_set';
 
 const LOC = { current: 6, total: 7, label: 'Connect AI' };
 

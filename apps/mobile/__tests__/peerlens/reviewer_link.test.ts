@@ -276,7 +276,7 @@ describe('parseReviewerProfileDeepLink — graceful degradation', () => {
 // ─── Round trip ──────────────────────────────────────────────────────────
 
 describe('build ↔ parse round-trip', () => {
-  const cases: Array<{ did: string; namespace?: string | null }> = [
+  const cases: { did: string; namespace?: string | null }[] = [
     { did: VALID_DID, namespace: null },
     { did: VALID_DID, namespace: VALID_NAMESPACE },
     { did: VALID_DID_WEB, namespace: null },

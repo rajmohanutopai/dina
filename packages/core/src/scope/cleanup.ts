@@ -25,7 +25,7 @@ export interface DeleteDataScopeResult {
   scope: DataScope;
   /** table label → rows deleted. */
   deleted: Record<string, number>;
-  errors: Array<{ table: string; error: string }>;
+  errors: { table: string; error: string }[];
 }
 
 export interface ScopedCleanup {

@@ -12,6 +12,8 @@
  *   expect(mock.signCalls).toHaveLength(1);
  */
 
+import { NotFoundError, PersonaLockedError } from '../errors';
+
 import type {
   Signer,
   HDKeyDeriver,
@@ -72,7 +74,6 @@ import type {
 } from '../ports';
 
 // Sentinel errors re-exported from shared errors module
-import { NotFoundError, PersonaLockedError } from '../errors';
 export { NotImplementedError, PersonaLockedError, NotFoundError, ForbiddenError } from '../errors';
 
 // ---------------------------------------------------------------------------
@@ -91,8 +92,8 @@ export class MockSigner implements Signer {
   verifyError?: Error;
 
   generateCalls: Uint8Array[] = [];
-  signCalls: Array<{ privateKey: Uint8Array; message: Uint8Array }> = [];
-  verifyCalls: Array<{ publicKey: Uint8Array; message: Uint8Array; signature: Uint8Array }> = [];
+  signCalls: { privateKey: Uint8Array; message: Uint8Array }[] = [];
+  verifyCalls: { publicKey: Uint8Array; message: Uint8Array; signature: Uint8Array }[] = [];
 
   async generateFromSeed(seed: Uint8Array) {
     this.generateCalls.push(seed);
@@ -117,7 +118,7 @@ export class MockHDKeyDeriver implements HDKeyDeriver {
     privateKey: new Uint8Array(32),
   };
   error?: Error;
-  calls: Array<{ seed: Uint8Array; path: string }> = [];
+  calls: { seed: Uint8Array; path: string }[] = [];
 
   async derivePath(seed: Uint8Array, path: string) {
     this.calls.push({ seed, path });
@@ -129,7 +130,7 @@ export class MockHDKeyDeriver implements HDKeyDeriver {
 export class MockVaultDEKDeriver implements VaultDEKDeriver {
   result: Uint8Array = new Uint8Array(32);
   error?: Error;
-  calls: Array<{ masterSeed: Uint8Array; personaID: string; userSalt: Uint8Array }> = [];
+  calls: { masterSeed: Uint8Array; personaID: string; userSalt: Uint8Array }[] = [];
 
   async deriveVaultDEK(masterSeed: Uint8Array, personaID: string, userSalt: Uint8Array) {
     this.calls.push({ masterSeed, personaID, userSalt });
@@ -144,12 +145,12 @@ export class MockEncryptor implements Encryptor {
   openResult: Uint8Array = new Uint8Array([0xde, 0xad]);
   openError?: Error;
 
-  sealCalls: Array<{ plaintext: Uint8Array; recipientPub: Uint8Array }> = [];
-  openCalls: Array<{
+  sealCalls: { plaintext: Uint8Array; recipientPub: Uint8Array }[] = [];
+  openCalls: {
     ciphertext: Uint8Array;
     recipientPub: Uint8Array;
     recipientPriv: Uint8Array;
-  }> = [];
+  }[] = [];
 
   async sealAnonymous(plaintext: Uint8Array, recipientPub: Uint8Array) {
     this.sealCalls.push({ plaintext, recipientPub });
@@ -341,7 +342,7 @@ export class MockGatekeeper implements Gatekeeper {
  */
 export class MockSignatureValidator implements SignatureValidator {
   verifyError?: Error;
-  verifyCalls: Array<{ did: string; method: string; path: string }> = [];
+  verifyCalls: { did: string; method: string; path: string }[] = [];
 
   /** Registered DID → identity mappings. Checked before fallback. */
   private registrations = new Map<string, { kind: TokenType; identity: string }>();
@@ -418,7 +419,7 @@ export class MockPIIScrubber implements PIIScrubber {
 // ---------------------------------------------------------------------------
 
 export class MockBrainClient implements BrainClient {
-  processEvents: Array<Record<string, unknown>> = [];
+  processEvents: Record<string, unknown>[] = [];
   reasonResult = { answer: 'mock answer', sources: [] as string[] };
   healthy = true;
   scrubResult: ScrubResult = { scrubbed: '', entities: [] };
@@ -532,7 +533,7 @@ export class MockTaskQueue implements TaskQueue {
 // ---------------------------------------------------------------------------
 
 export class MockCrashLogger implements CrashLogger {
-  entries: Array<{ id: number; ts: number; component: string; message: string }> = [];
+  entries: { id: number; ts: number; component: string; message: string }[] = [];
   private seq = 0;
 
   async store(entry: { component: string; message: string; stack_hash: string }) {
@@ -581,7 +582,7 @@ export class MockTrustCache implements TrustCache {
 export class MockWSHub implements WSHub {
   clients = new Map<string, unknown>();
   broadcasts: Uint8Array[] = [];
-  sent: Array<{ clientID: string; message: Uint8Array }> = [];
+  sent: { clientID: string; message: Uint8Array }[] = [];
 
   register(clientID: string, conn: unknown) {
     this.clients.set(clientID, conn);
@@ -609,8 +610,8 @@ export class MockKeyWrapper implements KeyWrapper {
   wrapError?: Error;
   unwrapResult: Uint8Array = new Uint8Array(32);
   unwrapError?: Error;
-  wrapCalls: Array<{ dek: Uint8Array; kek: Uint8Array }> = [];
-  unwrapCalls: Array<{ wrapped: Uint8Array; kek: Uint8Array }> = [];
+  wrapCalls: { dek: Uint8Array; kek: Uint8Array }[] = [];
+  unwrapCalls: { wrapped: Uint8Array; kek: Uint8Array }[] = [];
 
   async wrap(dek: Uint8Array, kek: Uint8Array) {
     this.wrapCalls.push({ dek, kek });
@@ -627,7 +628,7 @@ export class MockKeyWrapper implements KeyWrapper {
 export class MockKEKDeriver implements KEKDeriver {
   result: Uint8Array = new Uint8Array(32);
   error?: Error;
-  calls: Array<{ passphrase: string; salt: Uint8Array }> = [];
+  calls: { passphrase: string; salt: Uint8Array }[] = [];
 
   async deriveKEK(passphrase: string, salt: Uint8Array) {
     this.calls.push({ passphrase, salt });

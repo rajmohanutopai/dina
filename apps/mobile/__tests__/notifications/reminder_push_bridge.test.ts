@@ -6,22 +6,23 @@
  * detaches.
  */
 
+import * as NotificationsMock from 'expo-notifications';
+
+import { resetKVStore } from '../../../../packages/core/src/kv/store';
 import {
   createReminder,
   resetReminderState,
 } from '../../../../packages/core/src/reminders/service';
-import { installReminderPushBridge } from '../../src/notifications/reminder_push_bridge';
-import {
-  getScheduled,
-  resetNotifications,
-} from '../../src/notifications/local';
-import * as NotificationsMock from 'expo-notifications';
-import { resetKVStore } from '../../../../packages/core/src/kv/store';
 import {
   newGuidedDemoScope,
   resetDataScope,
   setCurrentDataScope,
 } from '../../../../packages/core/src/scope/data_scope';
+import {
+  getScheduled,
+  resetNotifications,
+} from '../../src/notifications/local';
+import { installReminderPushBridge } from '../../src/notifications/reminder_push_bridge';
 
 const Mock = NotificationsMock as unknown as typeof NotificationsMock & {
   __resetNotificationsMock: () => void;

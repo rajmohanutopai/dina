@@ -16,8 +16,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter } from '../storage/db_adapter';
 import type { KVEntry } from './store';
+import type { DatabaseAdapter } from '../storage/db_adapter';
 
 export interface KVRepository {
   get(key: string): Promise<KVEntry | null>;

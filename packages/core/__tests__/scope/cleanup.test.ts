@@ -9,6 +9,7 @@ import {
   registeredCleanupTables,
   type ScopedCleanup,
 } from '../../src/scope/cleanup';
+
 import type { DataScope } from '../../src/scope/data_scope';
 
 /** An in-memory scoped table for testing cleanup behavior. */

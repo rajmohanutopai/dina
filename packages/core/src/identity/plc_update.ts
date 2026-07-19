@@ -33,10 +33,12 @@
  * apps boundary.
  */
 
+import { base58 } from '@scure/base';
+
 import { deriveRotationKey } from '../crypto/slip0010';
+
 import { publicKeyToMultibase } from './did';
 import { signOperation, type PLCDirectoryConfig } from './directory';
-import { base58 } from '@scure/base';
 
 /** Default PLC directory — mirrors `DEFAULT_PLC_DIRECTORY` in `../constants`. */
 const DEFAULT_PLC_URL = 'https://plc.directory';

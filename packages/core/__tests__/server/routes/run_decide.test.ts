@@ -25,22 +25,34 @@ import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerRunRoutes } from '../../../src/server/routes/run';
 
 const NOW = 1_700_000_000_000;
+const OWNER_CAP = 'test-owner-capability-secret';
 // The decide route reads real `Date.now()` for the message-expiry check (§6.3),
 // so message `expires_at` must be relative to the real clock, not the fixed
 // `NOW` used for the run's own (unchecked-at-decide) clock.
 const FAR_FUTURE = Date.now() + 3_600_000;
 
+let ownerKeySeq = 0;
 function ownerReq(path: string, body: Record<string, unknown>): CoreRequest {
+  // Every owner mutation now REQUIRES a durable idempotency_key, and /decide
+  // requires decision_revision (§12.5). Inject sensible defaults so each test
+  // only states the fields it cares about; a test overrides them in `body`.
+  const isDecide = path.endsWith('/decide');
+  const withDefaults: Record<string, unknown> = {
+    idempotency_key: `k-${++ownerKeySeq}`,
+    ...(isDecide ? { decision_revision: 0 } : {}),
+    ...body,
+  };
   return {
     method: 'POST',
     path,
     query: {},
     headers: {},
-    body,
+    body: withDefaults,
     rawBody: new Uint8Array(),
     params: {},
     trustedInProcess: true,
     callerType: 'owner',
+    ownerCapability: OWNER_CAP,
     callerDID: 'did:key:owner',
   };
 }
@@ -82,7 +94,10 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
       provider_did: 'did:plc:prov',
       persona: 'general',
       idempotency_key: `idem-${Math.random()}`,
-      expires_at: NOW + 3_600_000,
+      // The decide route rechecks the run's hard TTL against real `Date.now()`
+      // (§5.1/§8), so the run must expire in the real-clock future — not relative
+      // to the fixed `NOW` used for the run service's own clock.
+      expires_at: FAR_FUTURE,
       ...over,
     });
     return run.run_id;
@@ -102,7 +117,7 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
     svcRef = new RunService({ repository: runs, nowMsFn: () => NOW });
     setRunService(svcRef);
     router = new CoreRouter();
-    registerRunRoutes(router);
+    registerRunRoutes(router, OWNER_CAP);
   });
 
   afterEach(() => {
@@ -121,6 +136,103 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
     expect(resp.status).toBe(200);
     expect((resp.body as { state: string }).state).toBe('acknowledged');
     expect((resp.body as { decision_revision: number }).decision_revision).toBe(1);
+  });
+
+  it('persists provider grant expiry through /start and a rebinding /update (F9, §10)', async () => {
+    // §10: "the locally-known grant binding + expiry are persisted"; "the owner
+    // rebinds a replacement via the versioned /update route; Core auto-revalidates
+    // and resumes." Drives the REAL owner routes (not updateConfig directly) so a
+    // route that copies only the grant id — leaving a stale/absent expiry that the
+    // pacer's providerGrantValid can never trip or refresh — is caught.
+    const nowSec = Math.floor(NOW / 1000);
+    const startResp = await router.handle(
+      ownerReq('/v1/run/start', {
+        service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+        provider_did: 'did:plc:prov',
+        persona: 'general',
+        expires_at: FAR_FUTURE,
+        provider_grant_id: 'g1',
+        provider_grant_expires_at_sec: nowSec + 3_600,
+      }),
+    );
+    expect(startResp.status).toBe(201);
+    const runId = (startResp.body as { run_id: string }).run_id;
+    // /start persisted the grant's expiry (not just its id).
+    expect(runs.getById(runId)?.provider_grant_expires_at_sec).toBe(nowSec + 3_600);
+
+    const cfgV = (startResp.body as { config_version: number }).config_version;
+    const updResp = await router.handle(
+      ownerReq(`/v1/run/${runId}/update`, {
+        provider_grant_id: 'g2',
+        provider_grant_expires_at_sec: nowSec + 7_200,
+        config_version: cfgV,
+      }),
+    );
+    expect(updResp.status).toBe(200);
+    const run = runs.getById(runId);
+    // The rebind carried the REPLACEMENT's expiry — a stale/old timestamp here
+    // would leave a fetch-paused run unable to resume.
+    expect(run?.provider_grant_id).toBe('g2');
+    expect(run?.provider_grant_expires_at_sec).toBe(nowSec + 7_200);
+  });
+
+  it('a same-key /update with a DIFFERENT grant expiry conflicts, never silently replays (F9/§352)', async () => {
+    const runId = startRun({ provider_grant_id: 'g1', provider_grant_expires_at_sec: Math.floor(NOW / 1000) + 100 });
+    const key = 'grant-rebind-key';
+    const r1 = await router.handle(
+      ownerReq(`/v1/run/${runId}/update`, {
+        provider_grant_id: 'g2',
+        provider_grant_expires_at_sec: 5_000,
+        config_version: 0,
+        idempotency_key: key,
+      }),
+    );
+    expect(r1.status).toBe(200);
+    expect(runs.getById(runId)?.provider_grant_expires_at_sec).toBe(5_000);
+
+    // Same key + id + version but a DIFFERENT replacement expiry → the receipt hash
+    // now differs (§352), so this CONFLICTS instead of replaying r1's 200 and
+    // silently dropping the new expiry.
+    const r2 = await router.handle(
+      ownerReq(`/v1/run/${runId}/update`, {
+        provider_grant_id: 'g2',
+        provider_grant_expires_at_sec: 9_999,
+        config_version: 0,
+        idempotency_key: key,
+      }),
+    );
+    expect(r2.status).toBe(409);
+    expect(runs.getById(runId)?.provider_grant_expires_at_sec).toBe(5_000); // first expiry stands
+
+    // Same key + SAME expiry → benign durable replay (stored 200).
+    const r3 = await router.handle(
+      ownerReq(`/v1/run/${runId}/update`, {
+        provider_grant_id: 'g2',
+        provider_grant_expires_at_sec: 5_000,
+        config_version: 0,
+        idempotency_key: key,
+      }),
+    );
+    expect(r3.status).toBe(200);
+  });
+
+  it('R2-07: decide REQUIRES decision_revision and idempotency_key (400 each)', async () => {
+    const runId = startRun();
+    messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'informational' }));
+    // Missing decision_revision (helper default suppressed with undefined-safe override).
+    const noRev = await router.handle(
+      ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge', decision_revision: undefined }),
+    );
+    expect(noRev.status).toBe(400);
+    expect((noRev.body as { field: string }).field).toBe('decision_revision');
+    // Missing idempotency_key.
+    const noKey = await router.handle(
+      ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge', idempotency_key: '' }),
+    );
+    expect(noKey.status).toBe(400);
+    expect((noKey.body as { field: string }).field).toBe('idempotency_key');
+    // The message was never decided.
+    expect(messages.getById('m1')?.state).toBe('classified');
   });
 
   it('#6 a replayed decide returns the stored response, does NOT re-decide', async () => {
@@ -193,12 +305,30 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
   it('#8 a PERMISSIVE drain still admits a decision', async () => {
     const runId = startRun();
     messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'informational' }));
-    runs.applyBarrier(runId, 'count', 'permissive', NOW + 30_000, NOW);
+    // The decide route checks the drain deadline against the REAL clock (§18
+    // "hard bounds in guards"), so a permissive drain that is NOT past its
+    // deadline uses a real-clock-future `drain_deadline_at`.
+    runs.applyBarrier(runId, 'count', 'permissive', Date.now() + 30_000, NOW);
 
     const resp = await router.handle(
       ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge' }),
     );
     expect(resp.status).toBe(200);
+  });
+
+  it('#8b a PERMISSIVE drain PAST its drain_deadline_at no longer admits (§18 hard bound)', async () => {
+    const runId = startRun();
+    messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'informational' }));
+    // Deadline already elapsed on the real clock — the delayed sweeper has not
+    // force-terminated yet, but the decide guard must fail closed.
+    runs.applyBarrier(runId, 'count', 'permissive', Date.now() - 1000, NOW);
+
+    const resp = await router.handle(
+      ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge' }),
+    );
+    expect(resp.status).toBe(409);
+    expect((resp.body as { reason: string }).reason).toMatch(/drain deadline/);
+    expect(messages.getById('m1')?.state).toBe('classified'); // not decided
   });
 
   it('#10 a decided-basis count barrier opens when decided_count hits max_count', async () => {

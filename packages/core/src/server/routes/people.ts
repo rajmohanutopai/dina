@@ -15,12 +15,14 @@
  * a device key with full access) reach this handler.
  */
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
-import { PEOPLE_APPLY_EXTRACTION, PEOPLE_BY_DID, PEOPLE_FIND, PEOPLE_LIST } from './paths';
+import { log } from '../../logging/structured';
 import { getPeopleRepository, type PeopleRepository } from '../../people/repository';
 import { getVaultRepository } from '../../vault/repository';
-import { log } from '../../logging/structured';
+
+import { PEOPLE_APPLY_EXTRACTION, PEOPLE_BY_DID, PEOPLE_FIND, PEOPLE_LIST } from './paths';
+
 import type { ExtractionResult, ApplyExtractionResponse, Person } from '../../people/domain';
+import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 /** Body size cap — 256 KiB is generous for a single extraction. */
 const APPLY_EXTRACTION_BODY_MAX_BYTES = 256 * 1024;

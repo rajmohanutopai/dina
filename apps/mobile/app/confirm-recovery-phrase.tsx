@@ -19,14 +19,16 @@
  * defer here would loop forever.
  */
 
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+
 import { entropyToMnemonic, unwrapSeed } from '@dina/core';
+
 import { MnemonicVerify } from '../src/components/onboarding/mnemonic_verify';
 import { PassphraseField } from '../src/components/PassphraseField';
-import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
 import { markVerified } from '../src/services/verification_status';
+import { loadWrappedSeed } from '../src/services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../src/theme';
 
 type Mode = 'gate' | 'unlocking' | 'verify';

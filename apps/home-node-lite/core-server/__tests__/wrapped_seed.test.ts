@@ -5,13 +5,14 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+import { WRAPPED_SEED_NAME } from '../src/identity/master_seed';
 import {
   writeWrappedSeed,
   readWrappedSeed,
   WRAPPED_SEED_FILE_MODE,
   WRAPPED_SEED_FILE_VERSION,
 } from '../src/identity/wrapped_seed';
-import { WRAPPED_SEED_NAME } from '../src/identity/master_seed';
 
 async function mkTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'wrapped-test-'));

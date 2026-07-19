@@ -2,8 +2,9 @@
  * Task 4.27 — VerifyPairingIdentityBinding tests.
  */
 
-import { deriveDIDKey, publicKeyToMultibase } from '@dina/core';
 import { Crypto } from '@dina/adapters-node';
+import { deriveDIDKey, publicKeyToMultibase } from '@dina/core';
+
 import { verifyPairingIdentityBinding } from '../src/auth/pairing_identity_binding';
 
 async function derivedKeypair() {

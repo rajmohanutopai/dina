@@ -27,7 +27,7 @@ interface Recorded {
   body: unknown;
 }
 
-function makeFetch(responses: Array<Response | Error | ((req: Recorded) => Response | Error)>): {
+function makeFetch(responses: (Response | Error | ((req: Recorded) => Response | Error))[]): {
   fetchFn: FetchFn;
   calls: Recorded[];
 } {
@@ -165,7 +165,7 @@ describe('PDSPublisher', () => {
     });
 
     it('collapses concurrent callers into one login', async () => {
-      let sessionResolvers: Array<(r: Response) => void> = [];
+      const sessionResolvers: ((r: Response) => void)[] = [];
       let sessionCalls = 0;
       const fetchFn: FetchFn = async (input) => {
         const url = String(input);

@@ -51,12 +51,14 @@
  *   CAPABILITIES.md "She Guards Your Agents"
  */
 
-import type { CoreRouter } from '../router';
-import { evaluateIntent } from '../../gatekeeper/intent';
-import { getWorkflowRepository } from '../../workflow/repository';
-import type { WorkflowTask } from '../../workflow/domain';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { evaluateIntent } from '../../gatekeeper/intent';
+import { getWorkflowRepository } from '../../workflow/repository';
+
+import type { WorkflowTask } from '../../workflow/domain';
+import type { CoreRouter } from '../router';
 
 /** Default TTL for an intent-validation approval task (seconds). */
 const DEFAULT_TTL_SEC = 30 * 60; // 30 min — matches Python ActionRiskPolicy

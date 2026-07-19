@@ -12,12 +12,17 @@
  */
 
 import { CoreRouter } from './router';
-import { registerVaultRoutes } from './routes/vault';
-import { registerStagingRoutes } from './routes/staging';
-import { registerPIIRoutes } from './routes/pii';
-import { registerDevicesRoutes } from './routes/devices';
+import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
+import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
+import { registerDevicesRoutes } from './routes/devices';
+import { registerIntentRoutes } from './routes/intent';
+import { registerMemoryRoutes } from './routes/memory';
+import { registerPeopleRoutes } from './routes/people';
+import { registerPIIRoutes } from './routes/pii';
+import { registerStagingRoutes } from './routes/staging';
+import { registerVaultRoutes } from './routes/vault';
 import { registerServiceConfigRoutes } from './routes/service_config';
 import { registerRunRoutes } from './routes/run';
 import { registerWatchRoutes } from './routes/watch';
@@ -27,21 +32,16 @@ import {
   registerServiceRespondRoutes,
   type ServiceRespondRouteOptions,
 } from './routes/service_respond';
-import { registerMemoryRoutes } from './routes/memory';
-import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
-import { registerContactsRoutes } from './routes/contacts';
 import { registerReminderRoutes } from './routes/reminders';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
-import { registerIntentRoutes } from './routes/intent';
 import { registerSessionRoutes } from './routes/session';
-import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
 import { registerPolicyRoutes } from './routes/policy';
+
 export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver } from '../auth/caller_type';
 import { getDeviceByDID } from '../devices/registry';
-
 import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
 export const HEALTHZ_PATH = '/healthz';
@@ -51,6 +51,12 @@ export interface CoreRouterOptions {
   serviceRespond?: ServiceRespondRouteOptions;
   /** Injectable ask handler (Brain's AskCoordinator). When absent, /api/v1/ask returns 503. */
   ask?: AskRouteOptions;
+  /** Boot-minted owner control-plane capability (INTERACTIVE_SERVICES §12.5, F15).
+   *  The composition root mints a secret, holds it ONLY in an app-layer closure,
+   *  and passes it here so the /v1/run|watch guards can verify owner requests. When
+   *  omitted, those routes FAIL CLOSED (no owner surface — e.g. the server split,
+   *  or a router Brain built for itself). */
+  ownerCapability?: string;
 }
 
 /**
@@ -82,8 +88,8 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // Owner-only interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md
   // §12.5). Guarded by the authz matrix (/v1/run → owner) + an in-handler
   // owner guard; reads the module-global RunService wired at bootstrap.
-  registerRunRoutes(router);
-  registerWatchRoutes(router);
+  registerRunRoutes(router, options.ownerCapability);
+  registerWatchRoutes(router, options.ownerCapability);
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

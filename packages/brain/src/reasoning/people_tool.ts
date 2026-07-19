@@ -21,9 +21,12 @@
  * at boot.
  */
 
-import { type AgentTool } from './tool_registry';
-import { getPeopleReadBackend } from '../vault_context/assembly';
 import { getPeopleRepository } from '@dina/core';
+
+import { getPeopleReadBackend } from '../vault_context/assembly';
+
+import { type AgentTool } from './tool_registry';
+
 import type { Person } from '@dina/core';
 
 export interface FindPersonToolOptions {

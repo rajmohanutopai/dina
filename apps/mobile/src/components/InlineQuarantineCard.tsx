@@ -21,11 +21,14 @@
 
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import type { ChatMessage } from '@dina/brain/chat';
+
 
 import { acceptQuarantine, blockQuarantine } from '../hooks/quarantine_actions';
 import { colors, radius, spacing, textStyles } from '../theme';
+
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { ChatMessage } from '@dina/brain/chat';
 
 export interface InlineQuarantineCardProps {
   message: ChatMessage;

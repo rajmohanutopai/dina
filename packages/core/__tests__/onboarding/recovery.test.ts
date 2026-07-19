@@ -4,11 +4,12 @@
  * Source: ARCHITECTURE.md Task 4.3
  */
 
-import { recoverFromMnemonic, validateRecoveryMnemonic } from '../../src/onboarding/recovery';
-import { runOnboarding } from '../../src/onboarding/portable';
 import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
-import { deserializeWrappedSeed } from '../../src/storage/seed_file';
+
 import { unwrapSeed } from '../../src/crypto/aesgcm';
+import { runOnboarding } from '../../src/onboarding/portable';
+import { recoverFromMnemonic, validateRecoveryMnemonic } from '../../src/onboarding/recovery';
+import { deserializeWrappedSeed } from '../../src/storage/seed_file';
 
 describe('Identity Recovery from Mnemonic', () => {
   // Generate a real mnemonic to test recovery

@@ -40,29 +40,8 @@
  * loose substring matches; the LLM phrasing varies between runs.
  */
 
-import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
-import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
-import {
-  handleChat,
-  resetAskCommandHandler,
-  setAskCommandHandler,
-} from '../../src/chat/orchestrator';
-import { buildAgenticAskPipeline } from '../../src/composition/agentic_ask';
-import {
-  buildAskRetrievalPlannerCall,
-  planAskRetrieval,
-  runAskPreFlightRetrieval,
-  type InstalledPersona,
-} from '../../src/composition/ask_retrieval_planner';
-import {
-  executeToolSearch,
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
-import { getPeopleRepository, setVaultRepository } from '@dina/core';
-
 import { AppViewClient } from '@dina/brain';
+import { getPeopleRepository, setVaultRepository } from '@dina/core';
 import {
   clearVaults,
   configureRateLimiter,
@@ -75,6 +54,28 @@ import {
   type ExtractionResult,
   type PeopleRepository,
 } from '@dina/core';
+
+import {
+  handleChat,
+  resetAskCommandHandler,
+  setAskCommandHandler,
+} from '../../src/chat/orchestrator';
+import { buildAgenticAskPipeline } from '../../src/composition/agentic_ask';
+import {
+  buildAskRetrievalPlannerCall,
+  planAskRetrieval,
+  runAskPreFlightRetrieval,
+  type InstalledPersona,
+} from '../../src/composition/ask_retrieval_planner';
+import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
+import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
+import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
+import {
+  executeToolSearch,
+  resetReasoningProvider,
+  setAccessiblePersonas,
+} from '../../src/vault_context/assembly';
+
 
 import {
   closeSQLiteVault,
@@ -432,7 +433,7 @@ describeReal(
         // about: what plan came out, how many hits per persona, did
         // the planner produce a non-empty block? Kept terse so it
         // doesn't drown out the answer print below.
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `[planner] hits=${JSON.stringify(result.hits)} blockLen=${result.block.length} intent="${result.plan.intent}"`,
         );
@@ -495,7 +496,7 @@ describeReal(
         // Always print the answer so an operator iterating on the
         // prompt can see what shifted. Compact one-liner — full
         // answer + the keywords we looked for + pass/fail.
-        // eslint-disable-next-line no-console
+         
         console.warn(
           `\n[cross-domain ${matched !== undefined ? 'PASS' : 'MISS'}] ${scenario.label}\n  ask: ${scenario.ask}\n  needed one of: ${JSON.stringify(scenario.mustContainAny)}\n  answer:\n    ${(resp.response ?? '').split('\n').join('\n    ')}\n`,
         );

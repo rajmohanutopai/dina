@@ -24,14 +24,14 @@ let entries: MockEntry[] = [];
 let deleted: string[] = [];
 let exists = true;
 let throwOnList = false;
-let throwOnDelete: Set<string> = new Set();
+let throwOnDelete = new Set<string>();
 
 // In-memory file-system for the `File` API. Keyed by the same name the
 // production code passes (e.g. `.dina_install`). Tests can pre-populate
 // or assert on contents through the `__set*` helpers below.
-const fileContents: Map<string, string> = new Map();
+const fileContents = new Map<string, string>();
 let throwOnFileExists = false;
-let throwOnFileWrite: Set<string> = new Set();
+let throwOnFileWrite = new Set<string>();
 
 function makeEntry(name: string): MockEntry {
   return {

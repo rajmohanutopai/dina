@@ -22,14 +22,15 @@ import {
   markGuidedDemoEntrySeen,
 } from '@dina/core';
 
-import { useGuidedDemoGate } from '../../src/guided_demo/useGuidedDemoGate';
-import type { GuidedDemoSeams } from '../../src/guided_demo/runner';
+import { resetKVStore } from '../../../core/src/kv/store';
 import { DEMO_STEPS } from '../../src/guided_demo/content';
 import {
   requestGuidedDemoReplay,
   resetGuidedDemoReplayForTest,
 } from '../../src/guided_demo/replay_request';
-import { resetKVStore } from '../../../core/src/kv/store';
+import { useGuidedDemoGate } from '../../src/guided_demo/useGuidedDemoGate';
+
+import type { GuidedDemoSeams } from '../../src/guided_demo/runner';
 
 /** Fake runner seams so the gate's advance/teardown can be asserted without
  *  touching the real composer / approval manager. */

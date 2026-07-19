@@ -23,9 +23,7 @@
 // Shape we pull from Fastify's req.headers (or any HTTP lib, for
 // testability). Header values may be string | string[] | undefined;
 // Fastify lowercases incoming header names.
-export type HeaderBag = {
-  [name: string]: string | string[] | undefined;
-};
+export type HeaderBag = Record<string, string | string[] | undefined>;
 
 export interface ExtractedSignedHeaders {
   did: string;

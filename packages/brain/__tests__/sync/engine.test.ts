@@ -14,6 +14,7 @@ import {
   registerIngestHandler,
   resetSyncProviders,
 } from '../../src/sync/engine';
+
 import type { EmailRecord, TriageDecision } from '../../src/sync/engine';
 
 describe('Sync Engine', () => {
@@ -159,7 +160,7 @@ describe('Sync Engine', () => {
     });
 
     it('calls ingest handler for non-skipped emails', async () => {
-      const ingested: Array<{ email: EmailRecord; decision: TriageDecision }> = [];
+      const ingested: { email: EmailRecord; decision: TriageDecision }[] = [];
       registerDataSource(async () => ({
         emails: [
           makeEmail({ subject: 'Important meeting' }),

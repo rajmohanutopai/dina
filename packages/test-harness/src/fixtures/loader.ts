@@ -28,7 +28,7 @@ export interface FixtureFile<TInput, TExpected> {
   version: number;
   generated_from: string;
   generated_at: string;
-  vectors: Array<FixtureVector<TInput, TExpected>>;
+  vectors: FixtureVector<TInput, TExpected>[];
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ export function loadFixture<TInput, TExpected>(
  */
 export function loadVectors<TInput, TExpected>(
   relativePath: string,
-): Array<FixtureVector<TInput, TExpected>> {
+): FixtureVector<TInput, TExpected>[] {
   return loadFixture<TInput, TExpected>(relativePath).vectors;
 }
 
@@ -275,7 +275,7 @@ export interface PIIPatternInput {
 
 export interface PIIPatternExpected {
   scrubbed: string;
-  entities: Array<{ type: string; value: string; start: number; end: number }>;
+  entities: { type: string; value: string; start: number; end: number }[];
 }
 
 export interface GatekeeperIntentInput {
@@ -302,12 +302,12 @@ export interface StagingTransitionExpected {
 }
 
 export interface AuditChainInput {
-  entries: Array<{
+  entries: {
     actor: string;
     action: string;
     resource: string;
     detail: string;
-  }>;
+  }[];
 }
 
 export interface AuditChainExpected {

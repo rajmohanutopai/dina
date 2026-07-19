@@ -4,6 +4,12 @@
  */
 
 import {
+  addContact,
+  addAlias,
+  deleteContact,
+  resetContactDirectory,
+} from '../../src/contacts/directory';
+import {
   VALID_RELATIONSHIPS,
   VALID_DATA_RESPONSIBILITY,
   RESERVED_ALIASES,
@@ -13,12 +19,6 @@ import {
   validateRelationship,
   validateDataResponsibility,
 } from '../../src/contacts/validation';
-import {
-  addContact,
-  addAlias,
-  deleteContact,
-  resetContactDirectory,
-} from '../../src/contacts/directory';
 import { setPeopleRepository } from '../../src/people/repository';
 import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 

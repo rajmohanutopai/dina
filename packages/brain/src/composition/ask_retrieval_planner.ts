@@ -36,8 +36,9 @@
  * — that suite is the empirical oracle for changes here.
  */
 
-import type { LLMRouter } from '../llm/router_dispatch';
 import { ASK_RETRIEVAL_PLAN, renderPrompt } from '../llm/prompts';
+
+import type { LLMRouter } from '../llm/router_dispatch';
 
 // ---------------------------------------------------------------
 // Public types
@@ -435,7 +436,7 @@ export async function runAskPreFlightRetrieval(
     }
   }
 
-  const vaultTasks: Array<{ persona: string; query: string }> = [];
+  const vaultTasks: { persona: string; query: string }[] = [];
   for (const pick of picks) {
     for (const q of pick.queries) {
       vaultTasks.push({ persona: pick.persona, query: q });
@@ -455,7 +456,7 @@ export async function runAskPreFlightRetrieval(
       }),
     ),
     fetchers.findPerson === undefined
-      ? Promise.resolve([] as Array<readonly RetrievedPersonMatch[]>)
+      ? Promise.resolve([] as (readonly RetrievedPersonMatch[])[])
       : Promise.all(
           personTasks.map(async (name) => {
             try {
@@ -501,7 +502,7 @@ export async function runAskPreFlightRetrieval(
 interface FormatRetrievalContextBlockInput {
   plan: AskRetrievalPlan;
   grouped: Map<string, RetrievedVaultItem[]>;
-  personMatches: Array<{ name: string; matches: readonly RetrievedPersonMatch[] }>;
+  personMatches: { name: string; matches: readonly RetrievedPersonMatch[] }[];
 }
 
 /**
@@ -571,7 +572,7 @@ export function formatRetrievalContextBlock(
 }
 
 function formatPeopleLines(
-  matches: Array<{ name: string; matches: readonly RetrievedPersonMatch[] }>,
+  matches: { name: string; matches: readonly RetrievedPersonMatch[] }[],
 ): string[] {
   const out: string[] = [];
   for (const { name, matches: hits } of matches) {

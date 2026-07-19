@@ -6,11 +6,13 @@
  * Source: ARCHITECTURE.md Task 6.1
  */
 
-import { DIDResolver, type ResolvedDID } from '../../src/d2d/resolver';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { getPublicKey } from '../../src/crypto/ed25519';
+import { DIDResolver, type ResolvedDID } from '../../src/d2d/resolver';
 import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
 import { buildDIDDocument } from '../../src/identity/did_document';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const testDID = deriveDIDKey(pubKey);

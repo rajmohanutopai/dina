@@ -4,6 +4,9 @@
  * Source: brain/tests/test_auth.py
  */
 
+import { signRequest , getPublicKey } from '@dina/core';
+import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
+
 import {
   verifyServiceAuth,
   isRegisteredService,
@@ -13,9 +16,6 @@ import {
   registerUIDevice,
   clearRegistries,
 } from '../../src/auth/service_key';
-import { signRequest } from '@dina/core';
-import { getPublicKey } from '@dina/core';
-import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
 
 describe('Brain Service Key Auth', () => {
   const corePub = getPublicKey(TEST_ED25519_SEED);

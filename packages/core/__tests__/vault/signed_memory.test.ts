@@ -7,8 +7,9 @@
  * Source: tests/test_memory_integration.py
  */
 
-import { storeItem, queryVault, getItem, clearVaults } from '../../src/vault/crud';
 import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
+
+import { storeItem, queryVault, getItem, clearVaults } from '../../src/vault/crud';
 
 describe('Signed Memory Integration (Python vectors)', () => {
   beforeEach(() => {

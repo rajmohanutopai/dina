@@ -34,8 +34,9 @@
  *   - 3.14 Crash-safety config — `synchronous=NORMAL` tuning
  */
 
-import type { DBRow, DatabaseAdapter } from '@dina/core';
 import Database, { type Database as BSMCDatabase } from 'better-sqlite3-multiple-ciphers';
+
+import type { DBRow, DatabaseAdapter } from '@dina/core';
 
 const HEX_KEY_REGEX = /^[0-9a-fA-F]{64}$/;
 

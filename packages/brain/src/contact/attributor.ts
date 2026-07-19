@@ -25,7 +25,7 @@ export interface SubjectAttribution {
 }
 
 export interface AttributorContext {
-  contacts: Array<{ name: string; did: string; relationship?: string }>;
+  contacts: { name: string; did: string; relationship?: string }[];
   householdMembers?: string[];
 }
 

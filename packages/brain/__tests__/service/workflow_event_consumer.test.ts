@@ -7,6 +7,7 @@ import {
   type WorkflowEventConsumerCoreClient,
   type WorkflowEventDeliverer,
 } from '../../src/service/workflow_event_consumer';
+
 import type { WorkflowEvent, WorkflowTask } from '@dina/core';
 
 function fakeScheduler() {
@@ -42,7 +43,7 @@ function fakeScheduler() {
 }
 
 interface StubState {
-  listCalls: Array<{ since?: number; limit?: number; needsDeliveryOnly?: boolean }>;
+  listCalls: { since?: number; limit?: number; needsDeliveryOnly?: boolean }[];
   ackCalls: number[];
   getCalls: string[];
   listResult: WorkflowEvent[];
@@ -203,7 +204,7 @@ describe('WorkflowEventConsumer.runTick', () => {
       listResult: [completedEvent()],
       tasks: new Map([['svc-q-1', task]]),
     });
-    const delivered: Array<{ text: string; taskId: string }> = [];
+    const delivered: { text: string; taskId: string }[] = [];
     const c = new WorkflowEventConsumer({
       coreClient: client,
       deliver: ({ text, task: t }) => {
@@ -544,7 +545,7 @@ describe('WorkflowEventConsumer.runTick', () => {
         ['appr-1', apprTask],
       ]),
     });
-    const events: Array<{ id: number; outcome: string }> = [];
+    const events: { id: number; outcome: string }[] = [];
     const c = new WorkflowEventConsumer({
       coreClient: client,
       deliver: noopDeliver,
@@ -607,7 +608,7 @@ describe('WorkflowEventConsumer.onApproved', () => {
       listResult: [approvedEvent()],
       tasks: new Map([['appr-1', task]]),
     });
-    const seen: Array<{ taskId: string; from: string; capability: string }> = [];
+    const seen: { taskId: string; from: string; capability: string }[] = [];
     const c = new WorkflowEventConsumer({
       coreClient: client,
       deliver: noopDeliver,

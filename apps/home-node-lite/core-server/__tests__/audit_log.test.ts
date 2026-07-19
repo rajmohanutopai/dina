@@ -6,8 +6,9 @@
  * keeps ts values deterministic.
  */
 
-import { AuditLog, type AuditLogEvent } from '../src/audit/audit_log';
 import { GENESIS_MARKER } from '@dina/core';
+
+import { AuditLog, type AuditLogEvent } from '../src/audit/audit_log';
 
 function mockClock(startMs = 1_700_000_000_000) {
   let now = startMs;

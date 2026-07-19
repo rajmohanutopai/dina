@@ -77,17 +77,17 @@ describe('BSMC feature verification — WAL journal mode', () => {
     try {
       // `PRAGMA journal_mode = WAL` returns the mode that ended up active.
       // sqlite-mc keeps the WAL pragma result shaped as { journal_mode: 'wal' }.
-      const result = db.pragma('journal_mode = WAL') as Array<{ journal_mode: string }>;
+      const result = db.pragma('journal_mode = WAL') as { journal_mode: string }[];
       expect(result).toHaveLength(1);
       expect(result[0]!.journal_mode).toBe('wal');
 
       // Sanity: a second read without argument reports 'wal' back.
-      const readback = db.pragma('journal_mode') as Array<{ journal_mode: string }>;
+      const readback = db.pragma('journal_mode') as { journal_mode: string }[];
       expect(readback[0]!.journal_mode).toBe('wal');
 
       // Crash-safety companion setting (task 3.14).
       db.pragma('synchronous = NORMAL');
-      const sync = db.pragma('synchronous') as Array<{ synchronous: number }>;
+      const sync = db.pragma('synchronous') as { synchronous: number }[];
       // synchronous = NORMAL = 1.
       expect(sync[0]!.synchronous).toBe(1);
     } finally {
@@ -102,7 +102,7 @@ describe('BSMC feature verification — WAL journal mode', () => {
       // Attempting WAL on :memory: silently falls back to 'memory' — this is
       // SQLite behaviour, documented here so nobody misreads a later failure
       // as a BSMC bug. Our real adapter only uses WAL on file-backed DBs.
-      const result = db.pragma('journal_mode = WAL') as Array<{ journal_mode: string }>;
+      const result = db.pragma('journal_mode = WAL') as { journal_mode: string }[];
       expect(result[0]!.journal_mode).toBe('memory');
     } finally {
       db.close();

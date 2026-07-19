@@ -12,6 +12,7 @@ import {
   type OpenAIChatResponse,
   type OpenAIEmbedResponse,
 } from '../../../src/llm/adapters/openai';
+
 import type { StreamChunk, ToolDefinition } from '../../../src/llm/adapters/provider';
 
 function createMockClient(

@@ -315,7 +315,9 @@ export interface CreateRunParams {
   classify_timeout_ms?: number;
   muted?: boolean;
   on_stop?: OnStop;
-  erasure_mode?: ErasureMode;
+  // NOTE: `erasure_mode` is NOT a caller input — RunService.create probes the
+  // platform backend and freezes the real guarantee (§13/§20). A caller must not
+  // be able to claim backup_resistant without a conforming backend.
   stop_on_command?: boolean;
   max_count?: number | null;
   max_count_basis?: MaxCountBasis;
@@ -448,7 +450,9 @@ export function validateCreateParams(
     throw new RunValidationError('on_stop', `invalid on_stop "${on_stop}"`);
   }
 
-  const erasure_mode = params.erasure_mode ?? 'logical_deletion';
+  // Seed default only; RunService.create OVERRIDES this with the probed platform
+  // mode (§13). Never sourced from caller input.
+  const erasure_mode: ErasureMode = 'logical_deletion';
 
   return {
     idempotency_key: params.idempotency_key,

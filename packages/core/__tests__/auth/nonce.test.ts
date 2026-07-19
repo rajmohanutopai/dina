@@ -7,8 +7,9 @@
  * Source: core/test/signature_test.go (nonce replay)
  */
 
-import { NonceCache } from '../../src/auth/nonce';
 import { hasFixture, loadVectors } from '@dina/test-harness';
+
+import { NonceCache } from '../../src/auth/nonce';
 
 describe('Nonce Replay Cache', () => {
   it('constructs without error', () => {

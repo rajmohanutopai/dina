@@ -23,11 +23,12 @@
  * extra layer of indirection for no testability gain.
  */
 
+import { WorkflowTaskState } from '@dina/core';
+
 import { addMessage, getThread } from '../chat/thread';
 
 import { appendNotification } from './inbox';
 
-import { WorkflowTaskState } from '@dina/core';
 import type {
   ApprovalManager,
   ApprovalRequest,

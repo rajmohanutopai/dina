@@ -29,7 +29,7 @@ describe('withPanicRecovery', () => {
   });
 
   it('converts synchronous throw into a 500 inner response', async () => {
-    const seen: Array<{ msg: string; reason: string }> = [];
+    const seen: { msg: string; reason: string }[] = [];
     const res = await withPanicRecovery(
       () => {
         throw new Error('sync boom');
@@ -45,7 +45,7 @@ describe('withPanicRecovery', () => {
   });
 
   it('converts async rejection into a 500 inner response', async () => {
-    const seen: Array<{ msg: string; reason: string }> = [];
+    const seen: { msg: string; reason: string }[] = [];
     const res = await withPanicRecovery(
       async () => {
         throw new Error('async boom');
@@ -62,7 +62,7 @@ describe('withPanicRecovery', () => {
 
   it('coerces non-Error throws into Error', async () => {
     const res = await withPanicRecovery(() => {
-      throw 'string rejection'; // eslint-disable-line no-throw-literal
+      throw 'string rejection';  
     });
     expect(res.status).toBe(500);
     expect(decode(res.body).detail).toBe('string rejection');

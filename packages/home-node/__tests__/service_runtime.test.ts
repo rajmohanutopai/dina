@@ -1,7 +1,8 @@
+import { buildHomeNodeServiceRuntime } from '../service-runtime';
+
 import type { CoreClient } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
-import { buildHomeNodeServiceRuntime } from '../service-runtime';
 
 const REQUESTER = 'did:plc:requester';
 

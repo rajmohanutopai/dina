@@ -6,6 +6,8 @@
  * Source: core/test/crypto_test.go (TestCrypto_1_*)
  */
 
+import { bytesToHex } from '@dina/test-harness';
+
 import {
   entropyToMnemonic,
   generateMnemonic,
@@ -13,7 +15,6 @@ import {
   mnemonicToSeed,
   validateMnemonic,
 } from '../../src/crypto/bip39';
-import { bytesToHex } from '@dina/test-harness';
 
 describe('BIP-39 Mnemonic', () => {
   describe('generateMnemonic', () => {

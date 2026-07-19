@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
+
 import { spacing, textStyles } from '../theme';
 
 export interface MessageTimestampProps {

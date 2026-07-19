@@ -8,7 +8,9 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
 import { mnemonicToSeed, generateMnemonic } from '@dina/core';
+
 import { deriveIdentity } from '../src/identity/derivations';
 import {
   ensureDIDPLC,
@@ -29,9 +31,9 @@ function fixedIdentity() {
 
 function stubCreateFn(did = 'did:plc:stub123'): {
   fn: PLCCreateFn;
-  calls: Array<Parameters<PLCCreateFn>[0]>;
+  calls: Parameters<PLCCreateFn>[0][];
 } {
-  const calls: Array<Parameters<PLCCreateFn>[0]> = [];
+  const calls: Parameters<PLCCreateFn>[0][] = [];
   const fn: PLCCreateFn = async (params) => {
     calls.push(params);
     return {

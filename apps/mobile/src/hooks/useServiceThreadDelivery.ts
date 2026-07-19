@@ -13,13 +13,14 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md MOBILE-009.
  */
 
-import type { CoreClient } from '@dina/core';
 import {
   WorkflowEventConsumer,
   type WorkflowEventDeliverer,
   type WorkflowEventTickResult,
 } from '@dina/brain';
 import { addDinaResponse, type ChatMessage } from '@dina/brain/chat';
+
+import type { CoreClient } from '@dina/core';
 
 export type DeliveryCoreClient = Pick<
   CoreClient,

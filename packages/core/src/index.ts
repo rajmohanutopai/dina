@@ -364,6 +364,38 @@ export type {
   RunSweeperOptions,
   RunSweepReport,
 } from './run/termination';
+// Interactive-run active-engine driver (INTERACTIVE_SERVICES §7/§8/§11 — ISVC-10).
+export { RunEngine } from './run/engine';
+export type {
+  RunEngineOptions,
+  EmitQueryEffect,
+  EmitDelegationEffect,
+  PacerReport,
+  DispatchReport,
+  EngineTickReport,
+} from './run/engine';
+export { RunResponseIngest } from './run/ingest';
+export type {
+  RunResponseIngestOptions,
+  VerifiedRunMessage,
+  PullIngestOutcome,
+} from './run/ingest';
+// ISVC-10 — the composition that turns the drivers into a live loop (both boots).
+export { wireRunPlane } from './run/plane';
+export type { RunPlane, RunPlaneDeps } from './run/plane';
+// ISVC-10 — the run-response trust boundary (§6.2): verify a provider's signed
+// RunMessage before its content enters the lifecycle.
+export { verifyRunMessage } from './run/verify';
+export type {
+  SignedRunMessageWire,
+  ExpectedRunBinding,
+  ResolveRuntimeKey,
+  VerifyRunMessageResult,
+} from './run/verify';
+// ISVC-10 — the boot assembly that makes the pull loop run (both boots): egress
+// effects + PersonaCipher + the run plane + the D2D receive hook.
+export { wireRunPlaneNode } from './run/plane_node';
+export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './run/plane_node';
 // Push services (PUSH_SERVICES_ARCHITECTURE.md §6/§8/§9)
 export {
   classifyPushTier,
@@ -398,6 +430,7 @@ export {
   InMemoryCommandReceiptRepository,
   setCommandReceiptRepository,
   getCommandReceiptRepository,
+  setCommandTxRunner,
   recordOrReplayCommand,
   commandReceiptKey,
   hashRequest,
@@ -1153,6 +1186,9 @@ export {
 
 export { InProcessTransport } from './client/in-process-transport';
 export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
+// NOTE: no owner-client singleton getter/setter is exported (R2-08) — the
+// instance is held at the app edge so Brain cannot acquire an owner-stamping
+// dispatcher. Only the class (which needs the raw router to construct) is public.
 export { InProcessOwnerRunClient, OwnerRunHttpError } from './client/owner-run-client';
 export type {
   OwnerRunClient,

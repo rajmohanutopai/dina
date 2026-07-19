@@ -25,6 +25,7 @@ import {
   listPersonas,
   resetPersonaState,
 } from '../persona/service';
+
 import { markSecretsRestored } from './sleep_wake';
 
 export interface UnlockResult {
@@ -37,7 +38,7 @@ export interface UnlockResult {
 export interface UnlockInput {
   passphrase: string;
   wrappedSeed: WrappedSeed;
-  personas?: Array<{ name: string; tier: 'default' | 'standard' | 'sensitive' | 'locked' }>;
+  personas?: { name: string; tier: 'default' | 'standard' | 'sensitive' | 'locked' }[];
 }
 
 /**

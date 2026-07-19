@@ -13,12 +13,12 @@ import {
   AppointmentAvailabilityResultSchema,
   AppointmentBookResultSchema,
 } from '../../src/service/capabilities/appointment';
+import { getVaultFactBuilder } from '../../src/service/capabilities/vault_facts';
 import {
   buildCapabilityRuntime,
   renderInstructionAge,
   extractJSONObject,
  defaultTier1PersonaScope } from '../../src/service/capability_runtime';
-import { getVaultFactBuilder } from '../../src/service/capabilities/vault_facts';
 import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
 import type { ChatOptions, ChatResponse, LLMProvider , ToolCall } from '../../src/llm/adapters/provider';

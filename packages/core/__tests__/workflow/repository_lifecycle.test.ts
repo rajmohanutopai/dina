@@ -3,13 +3,13 @@
  * delivery) tests.
  */
 
-import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
   WorkflowTaskState,
   type WorkflowTask,
 } from '../../src/workflow/domain';
+import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
 
 function baseTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
   return {

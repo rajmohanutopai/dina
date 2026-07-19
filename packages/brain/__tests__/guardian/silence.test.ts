@@ -8,6 +8,13 @@
  */
 
 import {
+  makeFiduciaryEvent,
+  makeSolicitedEvent,
+  makeEngagementEvent,
+  makeEvent,
+} from '@dina/test-harness';
+
+import {
   classifyPriority,
   classifyDeterministic,
   matchesFiduciaryKeywords,
@@ -25,12 +32,6 @@ import {
   resetBatchingState,
   resetUserOverrides,
 } from '../../src/guardian/silence';
-import {
-  makeFiduciaryEvent,
-  makeSolicitedEvent,
-  makeEngagementEvent,
-  makeEvent,
-} from '@dina/test-harness';
 
 describe('Guardian Silence Classification', () => {
   describe('classifyPriority (async, falls back to deterministic)', () => {

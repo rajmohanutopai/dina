@@ -23,6 +23,7 @@
  */
 
 import { resolveCanonicalCapability } from '@dina/protocol';
+
 import type { ServiceProfile } from '../appview_client/http';
 
 /**

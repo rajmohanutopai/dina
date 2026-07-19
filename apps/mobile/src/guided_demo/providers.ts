@@ -20,9 +20,9 @@
  * Source: docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md § Phase 5.
  */
 
+import { router } from 'expo-router';
 import { Alert } from 'react-native';
 
-import { router } from 'expo-router';
 
 import { addLifecycleMessage, addMessage, clearThreadMessages } from '@dina/brain/chat';
 import {

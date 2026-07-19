@@ -174,6 +174,53 @@ describe('workerAcquire / workerReport (§12.6)', () => {
     expect(svc.workerReport('i', acq.message_revision, 'wrong-lease', 3)).toBe('rejected');
   });
 
+  it('rejects a report on an EXPIRED lease even with the correct token (F11/§12.6)', () => {
+    const messages = new InMemoryMessageRepository();
+    const jobs = new InMemoryClassificationJobRepository();
+    const runs = new InMemoryRunRepository();
+    runs.create(makeRun({ state: 'active' }));
+    let now = NOW;
+    const svc = new RunClassifyService({
+      messageRepo: messages,
+      jobRepo: jobs,
+      runRepo: runs,
+      nowMsFn: () => now,
+      idFn: () => 'lease-exp',
+      leaseMs: 30_000,
+    });
+    messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    svc.beginClassification('i');
+    const acq = svc.workerAcquire();
+    if (acq === null) throw new Error('acquire failed');
+    now = NOW + 40_000; // past the 30s lease window
+    expect(svc.workerReport('i', acq.message_revision, acq.lease_token, 3)).toBe('rejected');
+    // Stale Brain work never finalizes the tier — the fallback/fence owns it now.
+    expect(messages.getById('i')?.state).toBe('classification_pending');
+  });
+
+  it('rejects a report when the persona LOCKED after acquire (F11/§12.6)', () => {
+    const messages = new InMemoryMessageRepository();
+    const jobs = new InMemoryClassificationJobRepository();
+    const runs = new InMemoryRunRepository();
+    runs.create(makeRun({ state: 'active' }));
+    let open = true;
+    const svc = new RunClassifyService({
+      messageRepo: messages,
+      jobRepo: jobs,
+      runRepo: runs,
+      nowMsFn: () => NOW,
+      idFn: () => 'lease-lock',
+      isPersonaOpen: () => open,
+    });
+    messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    svc.beginClassification('i');
+    const acq = svc.workerAcquire();
+    if (acq === null) throw new Error('acquire failed');
+    open = false; // persona locks between acquire and report
+    expect(svc.workerReport('i', acq.message_revision, acq.lease_token, 3)).toBe('rejected');
+    expect(messages.getById('i')?.state).toBe('classification_pending');
+  });
+
   it('does not offer jobs when the persona is locked or the run is fencing-draining', () => {
     const locked = setup({ personaOpen: false });
     locked.messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
@@ -207,5 +254,174 @@ describe('classify timeout + fence (§9.1/§12.6)', () => {
     svc.fenceJob('i', 'cancelled');
     expect(jobs.getByMessage('i')?.state).toBe('cancelled');
     expect(svc.workerAcquire()).toBeNull();
+  });
+
+  it('sweepTimeouts finalizes messages past classify_timeout when Brain never reports (F12/§9.1)', () => {
+    const messages = new InMemoryMessageRepository();
+    const jobs = new InMemoryClassificationJobRepository();
+    const runs = new InMemoryRunRepository();
+    runs.create(makeRun({ state: 'active', classify_timeout_ms: 15_000 }));
+    let now = NOW;
+    const svc = new RunClassifyService({
+      messageRepo: messages,
+      jobRepo: jobs,
+      runRepo: runs,
+      nowMsFn: () => now,
+    });
+    messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    svc.beginClassification('i'); // pending job created at NOW
+
+    // Not yet elapsed → the sweep finalizes nothing.
+    now = NOW + 10_000;
+    expect(svc.sweepTimeouts()).toBe(0);
+    expect(messages.getById('i')?.state).toBe('classification_pending');
+
+    // Past classify_timeout, Brain never acquired/reported → the sweep is the
+    // fallback that finalizes it at the ceiling (Brain is NOT load-bearing).
+    now = NOW + 20_000;
+    expect(svc.sweepTimeouts()).toBe(1);
+    const m = messages.getById('i');
+    expect(m?.state).toBe('classified');
+    expect(m?.final_tier).not.toBeNull();
+    expect(jobs.getByMessage('i')?.state).toBe('timed_out');
+    // Idempotent: nothing left to finalize.
+    expect(svc.sweepTimeouts()).toBe(0);
+  });
+
+  it('sweepTimeouts drains DUE jobs hidden beyond the 200-scan window behind not-yet-due jobs (F12 backlog, §9.1)', () => {
+    // Regression for the real starvation: a single `listPending(200)` scan can
+    // hide DUE work behind >200 EARLIER jobs whose longer `classify_timeout_ms`
+    // has NOT elapsed. Here 205 not-yet-due jobs (created first, so oldest) fill
+    // and exceed the page window; the 5 genuinely-due jobs sort AFTER them. The
+    // old single-window sweep would return 0 (all it sees are not-due); the
+    // keyset-paged sweep must page past them and finalize every due job — incl.
+    // one a Brain worker leased then died on (still `pending`, lease expired).
+    const messages = new InMemoryMessageRepository();
+    const jobs = new InMemoryClassificationJobRepository();
+    const runs = new InMemoryRunRepository();
+    let now = NOW;
+    const svc = new RunClassifyService({
+      messageRepo: messages,
+      jobRepo: jobs,
+      runRepo: runs,
+      nowMsFn: () => now,
+    });
+
+    // A run whose classify window is far in the future → its jobs are NEVER due
+    // in this test. Created at NOW so they are the OLDEST (fill the scan window).
+    runs.create(
+      makeRun({ run_id: 'run-nd', idempotency_key: 'k-nd', classify_timeout_ms: 10_000_000 }),
+    );
+    const ND = 205; // strictly greater than the 200 page limit
+    now = NOW;
+    for (let i = 0; i < ND; i++) {
+      messages.create(makeMsg({ message_id: `nd-${i}`, run_id: 'run-nd', dedup_key: `dnd-${i}` }));
+      svc.beginClassification(`nd-${i}`);
+    }
+
+    // A run with a short window → its jobs ARE due. Created LATER (created_at =
+    // NOW + 1000) so every one sorts AFTER all 205 not-due jobs — i.e. beyond the
+    // first 200-row page.
+    runs.create(
+      makeRun({ run_id: 'run-due', idempotency_key: 'k-due', classify_timeout_ms: 15_000 }),
+    );
+    const DUE = 5;
+    now = NOW + 1_000;
+    for (let i = 0; i < DUE; i++) {
+      // Long message TTL so the sweep at NOW+100_000 finalizes them on the
+      // classify-timeout path — NOT skipped as past-expiry (§18 hard bound).
+      messages.create(
+        makeMsg({
+          message_id: `due-${i}`,
+          run_id: 'run-due',
+          dedup_key: `ddue-${i}`,
+          expires_at: NOW + 10_000_000,
+        }),
+      );
+      svc.beginClassification(`due-${i}`);
+    }
+    // A dead-worker lease on a due job (still `pending`; lease expires before sweep).
+    expect(jobs.acquire('due-2', 'tok', NOW + 1_000 + 5_000, NOW + 1_000)).toBe(true);
+
+    // Past the due window (created NOW+1000, timeout 15s ⇒ due at NOW+16000) and
+    // past the lease — but NOT past the not-due window (10_000_000 ms).
+    now = NOW + 100_000;
+
+    // The keyset sweep pages past the 205 not-due jobs and finalizes all 5 due.
+    expect(svc.sweepTimeouts()).toBe(DUE);
+    for (let i = 0; i < DUE; i++) {
+      expect(messages.getById(`due-${i}`)?.state).toBe('classified');
+      expect(jobs.getByMessage(`due-${i}`)?.state).toBe('timed_out');
+    }
+    // The not-due jobs are untouched (still pending), including the leased one's peers.
+    expect(messages.getById('nd-0')?.state).toBe('classification_pending');
+    expect(jobs.getByMessage('nd-204')?.state).toBe('pending');
+    // Idempotent: a second sweep finalizes nothing new.
+    expect(svc.sweepTimeouts()).toBe(0);
+  });
+});
+
+describe('classify atomicity — the transition + tier writes are one tx unit (§6.3)', () => {
+  // A tx that SKIPS its body models a rolled-back transaction: if every mutation
+  // is inside the tx, skipping it must leave NO partial state (no message marked
+  // classified with a null tier, no job report without the paired transition).
+  const skipTx = (_fn: () => void) => {
+    /* rolled back — run nothing */
+  };
+
+  function makeSvc(tx: (fn: () => void) => void) {
+    const messages = new InMemoryMessageRepository();
+    const jobs = new InMemoryClassificationJobRepository();
+    const runs = new InMemoryRunRepository();
+    runs.create(makeRun());
+    const svc = new RunClassifyService({
+      messageRepo: messages,
+      jobRepo: jobs,
+      runRepo: runs,
+      nowMsFn: () => NOW,
+      idFn: () => 'lease-1',
+      tx,
+    });
+    return { messages, jobs, runs, svc };
+  }
+
+  it('beginClassification: a rolled-back tx leaves an ACTION message enqueued (no half-classified)', () => {
+    const { messages, svc } = makeSvc(skipTx);
+    messages.create(makeMsg({ message_id: 'a', kind: 'action' }));
+    svc.beginClassification('a');
+    // every write was inside the tx → nothing applied
+    expect(messages.getById('a')?.state).toBe('enqueued');
+    expect(messages.getById('a')?.final_tier).toBeNull();
+  });
+
+  it('beginClassification: a committed tx fully classifies the ACTION message with a tier', () => {
+    const { messages, svc } = makeSvc((fn) => fn());
+    messages.create(makeMsg({ message_id: 'a', kind: 'action' }));
+    svc.beginClassification('a');
+    expect(messages.getById('a')?.state).toBe('classified');
+    expect(messages.getById('a')?.final_tier).not.toBeNull();
+  });
+
+  it('workerReport: a rolled-back tx applies NOTHING and reports rejected (no orphan job report)', () => {
+    // First classify with a real tx so a pending job exists.
+    const real = makeSvc((fn) => fn());
+    real.messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    real.svc.beginClassification('i');
+    const acq = real.svc.workerAcquire();
+    if (acq === null) throw new Error('expected an acquirable job');
+
+    // Now report through a service whose tx rolls back — outcome is rejected and
+    // the message stays classification_pending (transition + tier never applied).
+    const rolled = new RunClassifyService({
+      messageRepo: real.messages,
+      jobRepo: real.jobs,
+      runRepo: real.runs,
+      nowMsFn: () => NOW,
+      tx: skipTx,
+    });
+    const outcome = rolled.workerReport('i', acq.message_revision, acq.lease_token, 3);
+    expect(outcome).toBe('rejected');
+    expect(real.messages.getById('i')?.state).toBe('classification_pending');
+    expect(real.messages.getById('i')?.final_tier).toBeNull();
   });
 });

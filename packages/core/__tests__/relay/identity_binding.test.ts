@@ -5,15 +5,18 @@
  * Source: ARCHITECTURE.md Section 19.3.
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
 import {
   verifyEnvelopeBinding,
   verifyDIDDerivesFromKey,
   validateIdentityBinding,
 } from '../../src/relay/identity_binding';
-import { deriveDIDKey } from '../../src/identity/did';
-import { getPublicKey } from '../../src/crypto/ed25519';
+
 import type { CoreRPCRequest } from '../../src/relay/rpc_envelope';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 describe('Core RPC Identity Binding', () => {
   const pubKey = getPublicKey(TEST_ED25519_SEED);

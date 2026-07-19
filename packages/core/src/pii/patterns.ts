@@ -22,7 +22,7 @@ export interface PIIMatch {
 
 export interface ScrubResult {
   scrubbed: string;
-  entities: Array<PIIMatch & { token: string }>;
+  entities: (PIIMatch & { token: string })[];
 }
 
 // ---------------------------------------------------------------
@@ -189,7 +189,7 @@ export function scrubPII(text: string): ScrubResult {
 
   // Assign tokens: per-type sequential numbering
   const typeCounts: Record<string, number> = {};
-  const entities: Array<PIIMatch & { token: string }> = [];
+  const entities: (PIIMatch & { token: string })[] = [];
 
   for (const match of matches) {
     const count = (typeCounts[match.type] || 0) + 1;
@@ -217,7 +217,7 @@ export function scrubPII(text: string): ScrubResult {
  */
 export function rehydratePII(
   scrubbed: string,
-  entities: Array<{ token: string; value: string }>,
+  entities: { token: string; value: string }[],
 ): string {
   // Sort by token length descending to prevent partial matches
   // (e.g. [EMAIL_10] should be replaced before [EMAIL_1])

@@ -48,29 +48,29 @@ export type GeminiRequestPart =
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
 export interface GeminiRequest {
-  contents: Array<{ role: 'user' | 'model'; parts: GeminiRequestPart[] }>;
+  contents: { role: 'user' | 'model'; parts: GeminiRequestPart[] }[];
   generationConfig?: {
     maxOutputTokens?: number;
     temperature?: number;
     responseMimeType?: string;
     responseSchema?: Record<string, unknown>;
   };
-  tools?: Array<{
-    functionDeclarations: Array<{
+  tools?: {
+    functionDeclarations: {
       name: string;
       description: string;
       parameters: Record<string, unknown>;
-    }>;
-  }>;
+    }[];
+  }[];
 }
 
 export interface GeminiResult {
   response: {
     text(): string;
-    candidates?: Array<{
-      content: { parts: Array<GeminiPart> };
+    candidates?: {
+      content: { parts: GeminiPart[] };
       finishReason: 'STOP' | 'MAX_TOKENS' | 'SAFETY' | 'OTHER';
-    }>;
+    }[];
     usageMetadata?: {
       promptTokenCount: number;
       candidatesTokenCount: number;
@@ -84,7 +84,7 @@ export type GeminiPart =
   | { text?: undefined; functionCall: { name: string; args: Record<string, unknown> } };
 
 export interface GeminiEmbedRequest {
-  content: { parts: Array<{ text: string }> };
+  content: { parts: { text: string }[] };
 }
 
 export interface GeminiEmbedResult {
@@ -92,6 +92,7 @@ export interface GeminiEmbedResult {
 }
 
 import { DEFAULT_GEMINI_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
+
 import { safeCall, GEMINI_TIMEOUT_MS } from './safety';
 
 const DEFAULT_CHAT_MODEL = DEFAULT_GEMINI_MODEL;

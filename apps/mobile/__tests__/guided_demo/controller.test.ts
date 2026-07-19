@@ -23,6 +23,7 @@ import {
   registerScopedCleanup,
 } from '@dina/core';
 
+import { resetKVStore } from '../../../core/src/kv/store';
 import {
   beginGuidedDemo,
   beginEmpty,
@@ -32,7 +33,6 @@ import {
   refreshCachesForCurrentScope,
   rehydrateUserScopeCaches,
 } from '../../src/guided_demo/rehydrate';
-import { resetKVStore } from '../../../core/src/kv/store';
 
 describe('guided demo controller', () => {
   beforeEach(() => {

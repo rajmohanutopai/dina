@@ -11,8 +11,9 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
-import type { BriefingItem } from './assembly';
 import { stagingListByStatus, browseRecent, listPersonas } from '@dina/core';
+
+import type { BriefingItem } from './assembly';
 
 // ---------------------------------------------------------------
 // Constants

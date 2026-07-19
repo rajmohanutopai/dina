@@ -3,10 +3,12 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
-import { MetricsRegistry } from '../src/metrics/registry';
+
 import { installMetricsHook } from '../src/metrics/hook';
+import { MetricsRegistry } from '../src/metrics/registry';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

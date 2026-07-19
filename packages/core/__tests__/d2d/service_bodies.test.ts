@@ -6,17 +6,17 @@
  */
 
 import {
+  MAX_SERVICE_TTL,
+  MsgTypeServiceQuery,
+  MsgTypeServiceResponse,
+} from '../../src/d2d/families';
+import {
   ServiceQueryBody,
   ServiceResponseBody,
   validateServiceQueryBody,
   validateServiceResponseBody,
   validateFutureSkew,
 } from '../../src/d2d/service_bodies';
-import {
-  MAX_SERVICE_TTL,
-  MsgTypeServiceQuery,
-  MsgTypeServiceResponse,
-} from '../../src/d2d/families';
 
 describe('D2D service body validation', () => {
   describe('constants', () => {

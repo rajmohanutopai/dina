@@ -9,15 +9,15 @@
  */
 
 import {
+  getAccessiblePersonas,
+  setAccessiblePersonas,
+} from '@dina/brain';
+import {
   createPersona,
   getPersona,
   listPersonas,
   resetPersonaState,
 } from '@dina/core';
-import {
-  getAccessiblePersonas,
-  setAccessiblePersonas,
-} from '@dina/brain';
 
 import { openAllPersonasForInAppUser } from '../src/persona_lifecycle';
 
@@ -103,7 +103,7 @@ describe('openAllPersonasForInAppUser', () => {
     createPersona('work', 'standard', 'work');
     createPersona('health', 'sensitive', 'health');
 
-    const errors: Array<{ persona: string; err: unknown }> = [];
+    const errors: { persona: string; err: unknown }[] = [];
     const succeeded: string[] = [];
 
     const opened = await openAllPersonasForInAppUser({

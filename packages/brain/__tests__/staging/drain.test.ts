@@ -6,12 +6,12 @@
  * of only covering the direct in-memory processor.
  */
 
-import { runStagingDrainTick, type StagingDrainCoreClient } from '../../src/staging/drain';
+import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
 import {
   registerEnrichmentLLM,
   resetEnrichmentPipeline,
 } from '../../src/enrichment/pipeline';
-import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
+import { runStagingDrainTick, type StagingDrainCoreClient } from '../../src/staging/drain';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 interface ResolveCall {
@@ -27,7 +27,7 @@ function makeCore(overrides: {
   claimError?: Error;
   resolveError?: Error;
   resolveCalls?: ResolveCall[];
-  failCalls?: Array<{ id: string; reason: string }>;
+  failCalls?: { id: string; reason: string }[];
 }): StagingDrainCoreClient {
   return {
     async stagingClaim() {
@@ -236,7 +236,7 @@ describe('runStagingDrainTick', () => {
 
   it('does not run post-resolve hooks when Core returns pending_unlock', async () => {
     setAccessiblePersonas([]);
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     let topicTouches = 0;
     const core = {
       async stagingClaim() {
@@ -297,7 +297,7 @@ describe('runStagingDrainTick', () => {
   });
 
   it('claim-level failure logs and returns a zero-item tick (scheduler decides retry)', async () => {
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const core = makeCore({ claimError: new Error('core down') });
     const tick = await runStagingDrainTick(core, { logger: (e) => logs.push(e) });
     expect(tick.claimed).toBe(0);
@@ -306,7 +306,7 @@ describe('runStagingDrainTick', () => {
 
   it('per-item resolve failure marks the item failed via failStagingItem + continues the batch', async () => {
     const resolveCalls: ResolveCall[] = [];
-    const failCalls: Array<{ id: string; reason: string }> = [];
+    const failCalls: { id: string; reason: string }[] = [];
     const items = [
       { id: 'a', type: 'email', source: 'clinic', subject: 'diagnosis', body: '' },
       { id: 'b', type: 'email', source: 'bank', subject: 'invoice', body: '' },
@@ -347,7 +347,7 @@ describe('runStagingDrainTick', () => {
   it('GAP-RT-02 wire-point: topicTouch hook fires with personas + enriched content for stored items', async () => {
     // Use a dead-simple stub that captures what the drain handed into
     // the topic pipeline. The pipeline itself is separately tested.
-    const touchArgs: Array<{ id: string; personas: string[] }> = [];
+    const touchArgs: { id: string; personas: string[] }[] = [];
     const core = makeCore({
       items: [{ id: 'ok-1', type: 'email', source: 'clinic', subject: 'diagnosis', body: '' }],
       resolveCalls: [],
@@ -380,7 +380,7 @@ describe('runStagingDrainTick', () => {
   });
 
   it('logs a per-tick summary for telemetry', async () => {
-    const logs: Array<Record<string, unknown>> = [];
+    const logs: Record<string, unknown>[] = [];
     const core = makeCore({
       items: [{ id: 'a', type: 'email', source: 'clinic', subject: 'diagnosis', body: '' }],
       resolveCalls: [],

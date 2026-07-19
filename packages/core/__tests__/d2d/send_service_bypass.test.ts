@@ -7,20 +7,23 @@
  * (regression coverage).
  */
 
-import { sendD2D } from '../../src/d2d/send';
-import { addContact, clearGatesState } from '../../src/d2d/gates';
-import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
-import { clearOutbox } from '../../src/transport/outbox';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 import { resetAuditState } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
+import { addContact, clearGatesState } from '../../src/d2d/gates';
+import { sendD2D } from '../../src/d2d/send';
 import {
   providerWindow,
   resetServiceWindows,
   setProviderWindow,
   requesterWindow,
 } from '../../src/service/windows';
+import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
+import { clearOutbox } from '../../src/transport/outbox';
+
 import type { ProviderServiceResolver } from '../../src/service/bypass';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const senderPriv = TEST_ED25519_SEED;
 const senderDID = 'did:plc:sender';

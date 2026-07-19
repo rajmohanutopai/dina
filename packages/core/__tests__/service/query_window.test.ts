@@ -98,7 +98,7 @@ describe('QueryWindow', () => {
       // query_id with a different capability would silently blow away
       // the earlier window. The key now includes capability so both
       // windows coexist and are independently consumable.
-      let now = 1_700_000_000_000;
+      const now = 1_700_000_000_000;
       const qw = new QueryWindow({ nowFn: () => now });
       qw.open('did:plc:bus42', 'q-003', 'eta_query', 60_000);
       qw.open('did:plc:bus42', 'q-003', 'route_info', 60_000);

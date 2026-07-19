@@ -13,11 +13,10 @@
 import {
   setWorkflowService,
   WorkflowService,
-} from '@dina/core';
-import {
+
   setWorkflowRepository,
-  InMemoryWorkflowRepository,
-} from '@dina/core';
+  InMemoryWorkflowRepository} from '@dina/core';
+
 import {
   createDemoServiceResponder,
   DEMO_DEMO_PROVIDER_DID,
@@ -70,7 +69,7 @@ describe('demo service loopback responder', () => {
     jest.useFakeTimers();
     const { repo, teardown } = setupWorkflow();
     try {
-      const realSends: Array<{ to: string; type: string }> = [];
+      const realSends: { to: string; type: string }[] = [];
       const realSendD2D = async (to: string, type: string) => {
         realSends.push({ to, type });
       };
@@ -120,7 +119,7 @@ describe('demo service loopback responder', () => {
     jest.useFakeTimers();
     const { teardown } = setupWorkflow();
     try {
-      const realSends: Array<{ to: string; type: string }> = [];
+      const realSends: { to: string; type: string }[] = [];
       const realSendD2D = async (to: string, type: string) => {
         realSends.push({ to, type });
       };
@@ -151,7 +150,7 @@ describe('demo service loopback responder', () => {
     jest.useFakeTimers();
     const { teardown } = setupWorkflow();
     try {
-      const log: Array<Record<string, unknown>> = [];
+      const log: Record<string, unknown>[] = [];
       const realSendD2D = async () => {};
       const wrapped = createDemoServiceResponder({ log: (e) => log.push(e) }).wrap(realSendD2D);
 

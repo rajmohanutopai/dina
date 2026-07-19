@@ -4,6 +4,9 @@
  * Source: ARCHITECTURE.md Task 4.15
  */
 
+import { wrapSeed } from '../../../core/src/crypto/aesgcm';
+import { resetLifecycleState } from '../../../core/src/lifecycle/sleep_wake';
+import { resetPersonaState, createPersona, openPersona } from '../../../core/src/persona/service';
 import {
   initSecurity,
   getSecurityStatus,
@@ -16,9 +19,6 @@ import {
   getTimeoutPresets,
   resetSecurityHook,
 } from '../../src/hooks/useSecurity';
-import { wrapSeed } from '../../../core/src/crypto/aesgcm';
-import { resetPersonaState, createPersona, openPersona } from '../../../core/src/persona/service';
-import { resetLifecycleState } from '../../../core/src/lifecycle/sleep_wake';
 
 describe('Security Settings Hook (4.15)', () => {
   beforeEach(() => {

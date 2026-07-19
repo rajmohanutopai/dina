@@ -11,13 +11,14 @@
  * null in tests), and AppView network calls are stubbed explicitly.
  */
 
-import { buildBootInputs, resolveStagingEnrichmentLLM } from '../../src/services/boot_capabilities';
-import type { RoutedLLMProvider } from '@dina/brain/runtime';
-import { savePersistedDid, clearPersistedDid } from '../../src/services/identity_record';
-import { saveRolePreference } from '../../src/services/role_preference';
-import { clearIdentitySeeds } from '../../src/services/identity_store';
-import { AppViewStub } from '../../src/services/appview_stub';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
+import { AppViewStub } from '../../src/services/appview_stub';
+import { buildBootInputs, resolveStagingEnrichmentLLM } from '../../src/services/boot_capabilities';
+import { savePersistedDid, clearPersistedDid } from '../../src/services/identity_record';
+import { clearIdentitySeeds } from '../../src/services/identity_store';
+import { saveRolePreference } from '../../src/services/role_preference';
+
+import type { RoutedLLMProvider } from '@dina/brain/runtime';
 
 const originalFetch = globalThis.fetch;
 const originalEndpointMode = process.env.EXPO_PUBLIC_DINA_ENDPOINT_MODE;

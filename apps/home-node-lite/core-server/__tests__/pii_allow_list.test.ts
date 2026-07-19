@@ -2,8 +2,9 @@
  * Task 4.81 — allow-list filter tests.
  */
 
-import type { PIIMatch } from '@dina/core';
 import { AllowList, filterMatches } from '../src/pii/allow_list';
+
+import type { PIIMatch } from '@dina/core';
 
 function match(type: string, value: string, start = 0): PIIMatch {
   return { type, value, start, end: start + value.length };

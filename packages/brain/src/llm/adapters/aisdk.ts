@@ -19,9 +19,8 @@
  * back (review finding #7).
  */
 
-import type { LanguageModel, ModelMessage, ToolCallPart, ToolSet } from 'ai';
-import type { ReasoningPart as AIReasoningPart } from '@ai-sdk/provider-utils';
 import { generateText, tool as defineTool, jsonSchema } from 'ai';
+
 import type {
   LLMProvider,
   ChatMessage,
@@ -34,6 +33,8 @@ import type {
   EmbedOptions,
   EmbedResponse,
 } from './provider';
+import type { ReasoningPart as AIReasoningPart } from '@ai-sdk/provider-utils';
+import type { LanguageModel, ModelMessage, ToolCallPart, ToolSet } from 'ai';
 
 export interface AISDKAdapterOptions {
   /** Model handle from `@ai-sdk/openai` or `@ai-sdk/google`. */

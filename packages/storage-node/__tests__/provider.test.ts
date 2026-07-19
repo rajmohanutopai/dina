@@ -10,9 +10,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { NodeDBProvider, NodeDBProviderError } from '../src/provider';
+
 import type { DBProvider } from '@dina/core';
 
-import { NodeDBProvider, NodeDBProviderError } from '../src/provider';
 
 const IDENTITY_KEY = '0'.repeat(64);
 const PERSONA_KEY = 'a'.repeat(64);

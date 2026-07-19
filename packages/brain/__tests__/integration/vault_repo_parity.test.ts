@@ -28,8 +28,8 @@ import {
   InMemoryVaultRepository,
   setVaultRepository,
   resetVaultRepositories,
-} from '@dina/core';
-import { queryVault, storeItem, clearVaults } from '@dina/core';
+ queryVault, storeItem, clearVaults } from '@dina/core';
+
 import { openSQLiteVault, closeSQLiteVault, type SQLiteVaultHandle } from './helpers/sqlite_vault_harness';
 
 interface Backend {

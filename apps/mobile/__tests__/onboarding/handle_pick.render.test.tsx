@@ -10,8 +10,9 @@
  * 350ms; tests advance fake timers past it to flush the check.
  */
 
-import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
+import React from 'react';
+
 import { HandlePicker } from '../../src/components/onboarding/handle_pick';
 
 const PDS_HOST = 'test-pds.dinakernel.com';

@@ -24,9 +24,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
+import type { AskCoordinator } from '@dina/brain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import type { AskCoordinator } from '@dina/brain';
 
 export interface RegisterAskRoutesOptions {
   coordinator: AskCoordinator;

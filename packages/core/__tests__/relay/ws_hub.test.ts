@@ -7,7 +7,7 @@
 import { WebSocketHub, type AuthChecker, type HubConfig } from '../../src/relay/ws_hub';
 
 function createHub(overrides?: Partial<HubConfig>): WebSocketHub {
-  const sentMessages: Array<{ clientId: string; message: string }> = [];
+  const sentMessages: { clientId: string; message: string }[] = [];
   return new WebSocketHub({
     authChecker: (creds) => creds.deviceId ?? null,
     messageSender: (clientId, message) => {
@@ -67,7 +67,7 @@ describe('WebSocket Hub (10.7)', () => {
 
   describe('broadcast', () => {
     it('broadcasts event to all connected clients', () => {
-      const sent: Array<{ clientId: string; message: string }> = [];
+      const sent: { clientId: string; message: string }[] = [];
       const hub = new WebSocketHub({
         authChecker: (c) => c.deviceId ?? null,
         messageSender: (cid, msg) => {

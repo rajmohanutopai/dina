@@ -13,22 +13,28 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { parseServiceListingUri } from '@dina/protocol';
-import type { CoreRouter } from '../router';
-import { MAX_SERVICE_TTL } from '../../d2d/families';
-import type { ServiceQueryBody } from '../../d2d/service_bodies';
-import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/repository';
-import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
-import { getWorkflowService } from '../../workflow/service';
+
+import { isContact } from '../../contacts/directory';
 import {
   getServiceOfferRepository,
   type ServiceOffer,
 } from '../../contacts/service_offers_repository';
-import { getServiceGrantRepository } from '../../service/service_grant_repository';
-import { issueServiceOffer } from '../../service/issue_offer';
-import { isContact } from '../../contacts/directory';
-import { getD2DSender } from './d2d_msg';
+import { MAX_SERVICE_TTL } from '../../d2d/families';
 import { getNodeDID } from '../../pairing/ceremony';
+import { issueServiceOffer } from '../../service/issue_offer';
+import { getServiceGrantRepository } from '../../service/service_grant_repository';
+import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
+import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/repository';
+import { getWorkflowService } from '../../workflow/service';
+
+import { getD2DSender } from './d2d_msg';
+import type { ServiceQueryBody } from '../../d2d/service_bodies';
+
+
+
+import type { CoreRouter } from '../router';
 
 /** Inject-time sender contract. Wiring provides this; handler stays pure. */
 export type ServiceQuerySender = (

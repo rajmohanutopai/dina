@@ -327,7 +327,7 @@ describe('createContactResolveClient (task 6.14)', () => {
     });
 
     it('fires resolved event with contact count', async () => {
-      type Ev = { kind: 'resolved'; query: string; contactCount: number };
+      interface Ev { kind: 'resolved'; query: string; contactCount: number }
       const events: Ev[] = [];
       const resolve = createContactResolveClient({
         fetchFn: stubFetch(okBody([contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' })])),

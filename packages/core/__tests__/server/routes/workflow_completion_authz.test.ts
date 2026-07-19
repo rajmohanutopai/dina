@@ -9,8 +9,8 @@
 
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerWorkflowRoutes, sanitizeStatusText } from '../../../src/server/routes/workflow';
-import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
 import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../../src/workflow/plugin_envelope';
+import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../../src/workflow/service';
 
 describe('round-9 #22: sanitizeStatusText caps + single-lines owner-facing runner text', () => {

@@ -27,7 +27,6 @@
  * still works). The caller passes our identity in as a closure.
  */
 
-import type { WSFactory, WSLike } from '@dina/core/d2d';
 import {
   makeResolveSender,
   resolveHostedDinaEndpoints,
@@ -35,6 +34,8 @@ import {
 } from '@dina/home-node';
 
 import { mobileHostedEndpoints } from './hosted_endpoints';
+
+import type { WSFactory, WSLike } from '@dina/core/d2d';
 
 /** Default shared Dina mailbox for greenfield test installs. */
 export const DEFAULT_MSGBOX_URL = resolveHostedDinaEndpoints('test').msgboxWsUrl;

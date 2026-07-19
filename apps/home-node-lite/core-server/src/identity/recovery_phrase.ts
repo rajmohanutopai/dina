@@ -210,7 +210,7 @@ function hasUnknownWord(words: string[]): boolean {
 // wordlist is a 2048-entry Set; we construct it once + memoise.
 let BIP39_ENGLISH_WORDS: ReadonlySet<string> = new Set();
 (function () {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const { wordlist } = require('@scure/bip39/wordlists/english.js') as {
     wordlist: string[];
   };

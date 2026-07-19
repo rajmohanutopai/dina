@@ -135,12 +135,12 @@ export function isDevice(did: string): boolean {
 }
 
 /** List all registered services. */
-export function listServices(): Array<{ did: string; name: string }> {
+export function listServices(): { did: string; name: string }[] {
   return [...serviceDIDs.entries()].map(([did, name]) => ({ did, name }));
 }
 
 /** List all registered devices. */
-export function listDevices(): Array<{ did: string; name: string }> {
+export function listDevices(): { did: string; name: string }[] {
   return [...deviceDIDs.entries()].map(([did, name]) => ({ did, name }));
 }
 

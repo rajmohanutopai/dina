@@ -12,6 +12,7 @@
  * transport makes and returns canned responses. Task 1.31 scaffold.
  */
 
+import { WorkflowConflictError } from '../../src';
 import {
   HttpCoreTransport,
   type HttpClient,
@@ -19,7 +20,6 @@ import {
   type HttpResponse,
   type CanonicalRequestSigner,
 } from '../../src/client/http-transport';
-import { WorkflowConflictError } from '../../src';
 
 interface RecordedCall {
   url: string;
@@ -41,7 +41,7 @@ function makeStubClient(responder: (call: RecordedCall) => HttpResponse): {
   return { client, calls };
 }
 
-type SignerArgs = { method: string; path: string; query: string; body: Uint8Array };
+interface SignerArgs { method: string; path: string; query: string; body: Uint8Array }
 
 /** Deterministic signer — returns fixed headers + captures last inputs. */
 function makeStubSigner(): {

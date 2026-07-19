@@ -13,14 +13,16 @@
  */
 
 import { useEffect, useState } from 'react';
+
 import {
   subjectGet,
   type SubjectGetReviewer,
   type SubjectGetResponse,
 } from '../appview_runtime';
 import { displayName } from '../handle_display';
-import type { SubjectDetailInput } from '../subject_detail_data';
+
 import type { SubjectReview } from '../subject_card';
+import type { SubjectDetailInput } from '../subject_detail_data';
 
 export interface SubjectDetailState {
   data: SubjectDetailInput | null;

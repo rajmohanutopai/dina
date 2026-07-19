@@ -41,22 +41,22 @@ export interface OpenAIClient {
 
 export interface OpenAIChatParams {
   model: string;
-  messages: Array<{
+  messages: {
     role: 'system' | 'user' | 'assistant' | 'tool';
     content: string;
     tool_call_id?: string;
-    tool_calls?: Array<{
+    tool_calls?: {
       id: string;
       type: 'function';
       function: { name: string; arguments: string };
-    }>;
-  }>;
+    }[];
+  }[];
   max_tokens?: number;
   temperature?: number;
-  tools?: Array<{
+  tools?: {
     type: 'function';
     function: { name: string; description: string; parameters: Record<string, unknown> };
-  }>;
+  }[];
   stream?: boolean;
   /** Structured output: { type: "json_object" } forces valid JSON responses. */
   response_format?: { type: 'json_object' | 'text' };
@@ -65,18 +65,18 @@ export interface OpenAIChatParams {
 export interface OpenAIChatResponse {
   id: string;
   model: string;
-  choices: Array<{
+  choices: {
     message: {
       role: 'assistant';
       content: string | null;
-      tool_calls?: Array<{
+      tool_calls?: {
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      }>;
+      }[];
     };
     finish_reason: 'stop' | 'tool_calls' | 'length' | null;
-  }>;
+  }[];
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
@@ -88,16 +88,18 @@ export interface OpenAIEmbedParams {
 
 export interface OpenAIEmbedResponse {
   model: string;
-  data: Array<{ embedding: number[]; index: number }>;
+  data: { embedding: number[]; index: number }[];
   usage: { prompt_tokens: number; total_tokens: number };
 }
+
+import { DEFAULT_EMBEDDING_DIMENSIONS } from '@dina/core';
 
 import {
   DEFAULT_OPENAI_MODEL,
   DEFAULT_EMBED_MODEL as EMBED_MODEL,
   DEFAULT_MAX_TOKENS as MAX_TOKENS,
 } from '../../constants';
-import { DEFAULT_EMBEDDING_DIMENSIONS } from '@dina/core';
+
 import { safeCall } from './safety';
 
 const DEFAULT_CHAT_MODEL = DEFAULT_OPENAI_MODEL;
@@ -129,16 +131,16 @@ export class OpenAIAdapter implements LLMProvider {
     // Tool-role messages become `role: 'tool'` entries with `tool_call_id`.
     // Assistant messages with prior toolCalls carry a `tool_calls` field so
     // OpenAI sees the prior invocation before the tool response.
-    const apiMessages: Array<{
+    const apiMessages: {
       role: 'system' | 'user' | 'assistant' | 'tool';
       content: string;
       tool_call_id?: string;
-      tool_calls?: Array<{
+      tool_calls?: {
         id: string;
         type: 'function';
         function: { name: string; arguments: string };
-      }>;
-    }> = [];
+      }[];
+    }[] = [];
 
     if (options?.systemPrompt) {
       apiMessages.push({ role: 'system', content: options.systemPrompt });

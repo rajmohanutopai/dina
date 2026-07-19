@@ -11,23 +11,31 @@
  * inner `resetDBProvider` handles a null provider).
  */
 
-import { shutdownAllPersistence } from '../../src/storage/init';
-import {
-  setMemoryService,
-  getMemoryService,
-  MemoryService,
-} from '../../../core/src/memory/service';
-import {
-  setTopicRepository,
-  getTopicRepository,
-  InMemoryTopicRepository,
-} from '../../../core/src/memory/repository';
-import { setVaultRepository, getVaultRepository } from '../../../core/src/vault/repository';
+import { addMessage, getThread } from '../../../brain/src/chat/thread';
 import {
   setChatMessageRepository,
   getChatMessageRepository,
   InMemoryChatMessageRepository,
 } from '../../../core/src/chat/repository';
+import {
+  hydrateContactDirectory,
+  listContacts,
+} from '../../../core/src/contacts/directory';
+import {
+  type ContactRepository,
+  setContactRepository,
+  getContactRepository,
+} from '../../../core/src/contacts/repository';
+import {
+  setTopicRepository,
+  getTopicRepository,
+  InMemoryTopicRepository,
+} from '../../../core/src/memory/repository';
+import {
+  setMemoryService,
+  getMemoryService,
+  MemoryService,
+} from '../../../core/src/memory/service';
 import {
   type ServiceConfig,
   setServiceConfig,
@@ -38,16 +46,8 @@ import {
   setServiceConfigRepository,
   getServiceConfigRepository,
 } from '../../../core/src/service/service_config_repository';
-import {
-  hydrateContactDirectory,
-  listContacts,
-} from '../../../core/src/contacts/directory';
-import {
-  type ContactRepository,
-  setContactRepository,
-  getContactRepository,
-} from '../../../core/src/contacts/repository';
-import { addMessage, getThread } from '../../../brain/src/chat/thread';
+import { setVaultRepository, getVaultRepository } from '../../../core/src/vault/repository';
+import { shutdownAllPersistence } from '../../src/storage/init';
 
 describe('shutdownAllPersistence — memory teardown', () => {
   it('drops the module-global MemoryService', async () => {

@@ -72,7 +72,7 @@ export interface MockPdsTransportOptions {
  * produced `fetchFn` into the SessionManager / RecordCrudClient.
  */
 export class MockPdsTransport {
-  private readonly handlers: Map<PdsMethodName, PdsHandler> = new Map();
+  private readonly handlers = new Map<PdsMethodName, PdsHandler>();
   private readonly defaultHandler?: PdsHandler;
   private readonly _calls: PdsRequestCall[] = [];
 
@@ -98,7 +98,7 @@ export class MockPdsTransport {
   }
 
   /** Every request observed, in order. Safe to snapshot + assert on. */
-  get calls(): ReadonlyArray<PdsRequestCall> {
+  get calls(): readonly PdsRequestCall[] {
     return this._calls;
   }
 
@@ -152,7 +152,7 @@ export interface PlcFetchWithHeadersResult {
 }
 
 export class MockPlcTransport {
-  private readonly docs: Map<string, Record<string, unknown>> = new Map();
+  private readonly docs = new Map<string, Record<string, unknown>>();
   private readonly defaultCacheControl: string | null;
   private readonly _calls: PlcRequestCall[] = [];
 
@@ -177,7 +177,7 @@ export class MockPlcTransport {
     return this;
   }
 
-  get calls(): ReadonlyArray<PlcRequestCall> {
+  get calls(): readonly PlcRequestCall[] {
     return this._calls;
   }
 
@@ -239,7 +239,7 @@ export interface MockAppViewTransportOptions {
 }
 
 export class MockAppViewTransport {
-  private readonly handlers: Map<AppViewMethodName, AppViewHandler> = new Map();
+  private readonly handlers = new Map<AppViewMethodName, AppViewHandler>();
   private readonly defaultHandler?: AppViewHandler;
   private readonly _calls: AppViewRequestCall[] = [];
 
@@ -262,7 +262,7 @@ export class MockAppViewTransport {
     return this;
   }
 
-  get calls(): ReadonlyArray<AppViewRequestCall> {
+  get calls(): readonly AppViewRequestCall[] {
     return this._calls;
   }
 

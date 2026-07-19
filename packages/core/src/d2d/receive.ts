@@ -12,8 +12,9 @@
  * Source: ARCHITECTURE.md Tasks 6.10–6.12
  */
 
-import { mapToVaultItemType, shouldStore, alwaysPasses } from './families';
 import { ingest } from '../staging/service';
+
+import { mapToVaultItemType, shouldStore, alwaysPasses } from './families';
 
 export type ReceiveAction = 'staged' | 'quarantined' | 'dropped' | 'ephemeral';
 
@@ -56,7 +57,7 @@ export function receiveAndStage(
   senderTrust: string,
   body: string,
   messageId: string,
-  isContact: boolean = false,
+  isContact = false,
 ): ReceiveResult {
   // 1. Check if message type should be stored at all
   if (!shouldStore(messageType)) {

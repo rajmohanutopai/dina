@@ -14,9 +14,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   InMemoryD2DOutboxRepository,
   SQLiteD2DOutboxRepository,
@@ -65,7 +66,7 @@ function ins(over: Partial<D2DOutboxInsert> = {}): D2DOutboxInsert {
 
 // ── Contract run against both implementations ──────────────────────────
 
-type Factory = { name: string; make: () => { repo: D2DOutboxRepository; cleanup: () => void } };
+interface Factory { name: string; make: () => { repo: D2DOutboxRepository; cleanup: () => void } }
 
 const factories: Factory[] = [
   {

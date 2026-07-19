@@ -15,8 +15,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { AuditEntry } from './hash_chain';
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface AuditRepository {
   append(entry: AuditEntry): Promise<void>;

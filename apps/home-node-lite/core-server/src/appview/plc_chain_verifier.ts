@@ -100,7 +100,7 @@ export type PlcChainVerifyFailure =
  * genesis op and `ops[n-1]` is the current head.
  */
 export async function verifyPlcChain(
-  ops: ReadonlyArray<PlcOperation>,
+  ops: readonly PlcOperation[],
   opts: VerifyPlcChainOptions,
 ): Promise<PlcChainVerifyResult> {
   if (typeof opts?.cidFn !== 'function') {

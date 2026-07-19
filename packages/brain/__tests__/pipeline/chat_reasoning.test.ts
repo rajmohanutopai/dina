@@ -4,10 +4,12 @@
  * Source: ARCHITECTURE.md Task 3.25
  */
 
-import { reason, registerReasoningLLM, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
 import { storeItem, clearVaults } from '@dina/core';
-import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
+
+import { reason, registerReasoningLLM, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
+import { setAccessiblePersonas } from '../../src/vault_context/assembly';
+
 
 describe('Chat Reasoning Pipeline', () => {
   beforeEach(() => {

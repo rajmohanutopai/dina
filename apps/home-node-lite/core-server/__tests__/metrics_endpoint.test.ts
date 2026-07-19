@@ -3,15 +3,17 @@
  */
 
 import { pino } from 'pino';
-import { createServer } from '../src/server';
-import type { CoreServerConfig } from '../src/config';
-import { MetricsRegistry } from '../src/metrics/registry';
+
+import { PROMETHEUS_CONTENT_TYPE } from '../src/metrics/exporter';
 import { installMetricsHook } from '../src/metrics/hook';
+import { MetricsRegistry } from '../src/metrics/registry';
 import {
   DEFAULT_METRICS_PATH,
   registerMetricsRoutes,
 } from '../src/metrics/routes';
-import { PROMETHEUS_CONTENT_TYPE } from '../src/metrics/exporter';
+import { createServer } from '../src/server';
+
+import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {
   return {

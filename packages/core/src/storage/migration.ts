@@ -138,11 +138,11 @@ function splitSQL(sql: string): string[] {
 /**
  * List all applied migrations.
  */
-export function listAppliedMigrations(db: DatabaseAdapter): Array<{
+export function listAppliedMigrations(db: DatabaseAdapter): {
   version: number;
   name: string;
   applied_at: number;
-}> {
+}[] {
   ensureVersionTable(db);
   return db.query('SELECT version, name, applied_at FROM schema_version ORDER BY version ASC');
 }

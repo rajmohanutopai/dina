@@ -23,11 +23,19 @@ function j(status: number, body: unknown): CoreResponse {
   return { status, body };
 }
 
-function ownerOnlyGuard(req: CoreRequest): CoreResponse | null {
-  if (req.callerType !== 'owner') {
-    return j(403, { error: 'access_denied', reason: 'only the owner may list or steer a watch' });
-  }
-  return null;
+/** Owner guard bound to the boot-minted capability (§12.5, F15) — closure-held,
+ *  fail-closed when unconfigured. See run.ts `makeOwnerGuard`. */
+type OwnerGuard = (req: CoreRequest) => CoreResponse | null;
+function makeOwnerGuard(expectedCapability: string | undefined): OwnerGuard {
+  return (req) => {
+    if (expectedCapability === undefined || expectedCapability === '') {
+      return j(403, { error: 'access_denied', reason: 'owner control plane not configured' });
+    }
+    if (req.callerType !== 'owner' || req.ownerCapability !== expectedCapability) {
+      return j(403, { error: 'access_denied', reason: 'only the owner may list or steer a watch' });
+    }
+    return null;
+  };
 }
 
 function requireService(): WatchService | CoreResponse {
@@ -36,7 +44,8 @@ function requireService(): WatchService | CoreResponse {
   return svc;
 }
 
-export function registerWatchRoutes(router: CoreRouter): void {
+export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string): void {
+  const ownerOnlyGuard = makeOwnerGuard(ownerCapability);
   // GET /v1/watch/list — the owner's active (running) watches.
   router.get('/v1/watch/list', async (req) => {
     const denied = ownerOnlyGuard(req);
@@ -52,13 +61,17 @@ export function registerWatchRoutes(router: CoreRouter): void {
     return j(200, { watches: items });
   });
 
-  router.post('/v1/watch/:id/pause', async (req) => steer(req, 'pause'));
-  router.post('/v1/watch/:id/resume', async (req) => steer(req, 'resume'));
-  router.post('/v1/watch/:id/cancel', async (req) => steer(req, 'cancel'));
+  router.post('/v1/watch/:id/pause', async (req) => steer(req, 'pause', ownerOnlyGuard));
+  router.post('/v1/watch/:id/resume', async (req) => steer(req, 'resume', ownerOnlyGuard));
+  router.post('/v1/watch/:id/cancel', async (req) => steer(req, 'cancel', ownerOnlyGuard));
 }
 
 /** Shared pause/resume/cancel handler (owner-only, state-gated in the service). */
-function steer(req: CoreRequest, command: 'pause' | 'resume' | 'cancel'): CoreResponse {
+function steer(
+  req: CoreRequest,
+  command: 'pause' | 'resume' | 'cancel',
+  ownerOnlyGuard: OwnerGuard,
+): CoreResponse {
   const denied = ownerOnlyGuard(req);
   if (denied !== null) return denied;
   const svc = requireService();

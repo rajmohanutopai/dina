@@ -67,6 +67,14 @@ export interface AdmissionServiceOptions {
   /** Reservation lease window (ms). Lease-expired `reserved` rows are reclaimed
    *  by the sweeper (ISVC-7); `held_by_lock` is never lease-reclaimed (§7). */
   leaseMs?: number;
+  /** Invoked IN THE COMMIT TRANSACTION the moment the produced-basis count
+   *  barrier is set (§5.1). Like every barrier, it must atomically invalidate
+   *  every remaining OPEN (fetch-ahead) reservation + crypto-shred its staged
+   *  ciphertext — the just-committed slot is already `committed`, so it is not
+   *  touched. The composition wires this to RunTerminationService.onBarrier;
+   *  unwired, the barrier row is still set (admission stops via the count gate),
+   *  only the fetch-ahead invalidation is skipped. */
+  onBarrier?: (run: RunRecord) => void;
 }
 
 const ABORT = Symbol('admission-abort');
@@ -80,6 +88,7 @@ export class AdmissionService {
   private readonly now: () => number;
   private readonly nextId: () => string;
   private readonly leaseMs: number;
+  private onBarrier?: (run: RunRecord) => void;
   private seq = 0;
 
   constructor(opts: AdmissionServiceOptions = {}) {
@@ -96,6 +105,13 @@ export class AdmissionService {
     this.now = opts.nowMsFn ?? (() => Date.now());
     this.nextId = opts.idFn ?? (() => `res-${(++this.seq).toString(36)}-${this.now().toString(36)}`);
     this.leaseMs = opts.leaseMs ?? 120_000;
+    this.onBarrier = opts.onBarrier;
+  }
+
+  /** Wire the produced-count barrier hook after construction (breaks the
+   *  AdmissionService ↔ RunTerminationService cycle at composition time). */
+  setOnBarrier(fn: ((run: RunRecord) => void) | undefined): void {
+    this.onBarrier = fn;
   }
 
   /** `outstanding` (§7), re-derivable on restart. */
@@ -129,11 +145,27 @@ export class AdmissionService {
     if (!this.personaOpen(run.persona)) return { ok: false, reason: 'persona_locked' };
     if (!this.providerGrantValid(run, nowMs)) return { ok: false, reason: 'grant_unavailable' };
 
+    // DISTINCT cursor per open reservation (§7 single-flight-per-cursor): the
+    // run's `fetch_cursor` only advances at COMMIT, so under fetch-ahead every
+    // open reservation would otherwise snapshot the SAME cursor and fetch the
+    // same provider position twice. Allocate the LOWEST FREE cursor at/above the
+    // run cursor — filling any hole left by a released out-of-order reservation
+    // (so `fetch_cursor + open` can never re-hand an occupied cursor, and the
+    // in-order commit CAS never deadlocks on a gap). Commit advances the run
+    // cursor in strict order (the CAS below).
+    const openCursors = new Set(
+      this.resRepo
+        .listByRun(runId)
+        .filter((r) => r.state === 'reserved' || r.state === 'held_by_lock')
+        .map((r) => r.cursor),
+    );
+    let cursor = run.fetch_cursor ?? 0;
+    while (openCursors.has(cursor)) cursor++;
     const reservationId = this.nextId();
     this.resRepo.create({
       reservation_id: reservationId,
       run_id: runId,
-      cursor: run.fetch_cursor ?? 0,
+      cursor,
       state: 'reserved',
       message_id: null,
       dedup_key: null,
@@ -146,7 +178,7 @@ export class AdmissionService {
       created_at: nowMs,
       updated_at: nowMs,
     });
-    return { ok: true, reservation_id: reservationId, cursor: run.fetch_cursor ?? 0 };
+    return { ok: true, reservation_id: reservationId, cursor };
   }
 
   /**
@@ -154,8 +186,15 @@ export class AdmissionService {
    * advances the run's produced_count + fetch_cursor + next_fetch_at atomically.
    * A barrier/TTL that landed in-flight makes the CAS fail: the transaction
    * rolls back and the slot is released — no message admitted, no cursor advance.
+   *
+   * `onCommitted` (F2/§8) runs INSIDE this transaction, immediately after the
+   * reservation CAS succeeds, so the caller's message-lifecycle enqueue +
+   * classification + payload-publish commit as ONE Tier-0 transaction with the
+   * cursor/count/barrier advance. If it throws, the ENTIRE commit rolls back
+   * (cursor unmoved, reservation released) — a crash can never leave an advanced
+   * cursor with no message, nor a published payload with no lifecycle row.
    */
-  commit(reservationId: string, input: CommitReservationInput): CommitResult {
+  commit(reservationId: string, input: CommitReservationInput, onCommitted?: () => void): CommitResult {
     const res = this.resRepo.getById(reservationId);
     if (res === null || res.state !== 'reserved') {
       return { committed: false, reason: 'reservation_not_open' };
@@ -171,10 +210,16 @@ export class AdmissionService {
         // throw before touching the reservation, so the (single-threaded)
         // passthrough-tx default leaves the reservation `reserved` (release()
         // then works). With a real tx both orderings roll back cleanly (VERIF #2).
-        if (!this.runRepo.incrementProducedAndAdvance(res.run_id, nowMs, run.interval_ms ?? 0)) {
+        // In-order commit CAS on the reservation's own cursor (§7): a fetch-ahead
+        // reservation may only commit when the run cursor has reached its position,
+        // so each position advances exactly once and none is skipped/doubled.
+        if (!this.runRepo.incrementProducedAndAdvance(res.run_id, nowMs, run.interval_ms ?? 0, res.cursor)) {
           throw ABORT;
         }
         if (!this.resRepo.commit(reservationId, input, nowMs)) throw ABORT;
+        // Caller's lifecycle enqueue + classify + payload-publish, atomic with the
+        // CAS above (F2). A throw here aborts the whole transaction.
+        if (onCommitted !== undefined) onCommitted();
         // Produced-basis count barrier (§5.1): the transaction taking
         // produced_count to max_count sets the (permissive) `count` barrier
         // atomically — the final in-budget message still classifies/decides but
@@ -186,7 +231,28 @@ export class AdmissionService {
           updated.max_count !== null &&
           updated.produced_count >= updated.max_count
         ) {
-          this.runRepo.applyBarrier(res.run_id, 'count', 'permissive', nowMs + updated.drain_deadline_ms, nowMs);
+          const applied = this.runRepo.applyBarrier(
+            res.run_id,
+            'count',
+            'permissive',
+            nowMs + updated.drain_deadline_ms,
+            nowMs,
+          );
+          // Every barrier atomically invalidates the remaining OPEN (fetch-ahead)
+          // reservations + crypto-shreds their staged ciphertext (§5.1/R2-02),
+          // routed through the SAME hook as owner/expiry barriers so the path is
+          // uniform. The slot committed just above is `committed`, so the hook never
+          // touches it; a permissive count barrier leaves the undecided set to
+          // finish. Runs in THIS commit tx so barrier + invalidation land atomically.
+          //   Invariant: the produced-budget gate (`produced_count + open <
+          // max_count`, held_by_lock included) means a commit reaching max_count has
+          // NO open sibling — the invalidation set is normally empty. The hook is
+          // defense-in-depth: it keeps this barrier uniform with the others and can
+          // never leave a slot live past the cap if the budget logic ever changes.
+          if (applied && this.onBarrier !== undefined) {
+            const barred = this.runRepo.getById(res.run_id);
+            if (barred !== null) this.onBarrier(barred);
+          }
         }
         ok = true;
       });

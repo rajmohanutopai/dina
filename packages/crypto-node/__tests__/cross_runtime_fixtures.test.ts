@@ -22,7 +22,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
 import { getPublicKey as edGetPublicKey } from '@noble/ed25519';
+
 import { NodeCryptoAdapter } from '../src';
 
 // ---------------------------------------------------------------------------
@@ -44,7 +46,7 @@ interface FixtureVector<TIn, TExp> {
 interface FixtureFile<TIn, TExp> {
   domain: string;
   version: number;
-  vectors: Array<FixtureVector<TIn, TExp>>;
+  vectors: FixtureVector<TIn, TExp>[];
 }
 
 function fixturePath(relativePath: string): string {
@@ -55,7 +57,7 @@ function hasFixture(relativePath: string): boolean {
   return fs.existsSync(fixturePath(relativePath));
 }
 
-function loadVectors<TIn, TExp>(relativePath: string): Array<FixtureVector<TIn, TExp>> {
+function loadVectors<TIn, TExp>(relativePath: string): FixtureVector<TIn, TExp>[] {
   const raw = fs.readFileSync(fixturePath(relativePath), 'utf-8');
   const parsed = JSON.parse(raw) as FixtureFile<TIn, TExp>;
   return parsed.vectors;

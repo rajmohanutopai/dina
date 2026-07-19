@@ -7,6 +7,10 @@
  * Source: ARCHITECTURE.md Section 19 + msgbox/internal/auth.go.
  */
 
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { verify, getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
 import {
   connectToMsgBox,
   completeHandshake,
@@ -22,9 +26,7 @@ import {
   type WSLike,
   type MsgBoxEnvelope,
 } from '../../src/relay/msgbox_ws';
-import { verify, getPublicKey } from '../../src/crypto/ed25519';
-import { deriveDIDKey } from '../../src/identity/did';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 /** Mock WebSocket for testing. */
 function createMockWS(): WSLike {

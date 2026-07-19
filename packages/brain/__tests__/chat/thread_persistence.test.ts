@@ -9,6 +9,11 @@
  */
 
 import {
+  InMemoryChatMessageRepository,
+  setChatMessageRepository,
+} from '@dina/core';
+
+import {
   addMessage,
   addUserMessage,
   addDinaResponse,
@@ -20,10 +25,6 @@ import {
   getThread,
   subscribeToThread,
 } from '../../src/chat/thread';
-import {
-  InMemoryChatMessageRepository,
-  setChatMessageRepository,
-} from '@dina/core';
 
 describe('thread persistence dual-write (#14)', () => {
   let repo: InMemoryChatMessageRepository;

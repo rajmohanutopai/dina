@@ -5,6 +5,7 @@
  */
 
 import { createSearchPeerlensTool } from '../../src/reasoning/peerlens_tool';
+
 import type { PeerlensAppViewClient } from '../../src/reasoning/peerlens_tool';
 
 function stubClient(overrides?: Partial<PeerlensAppViewClient>): PeerlensAppViewClient {

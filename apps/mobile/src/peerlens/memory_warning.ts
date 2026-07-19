@@ -20,6 +20,7 @@
  */
 
 import { AppState } from 'react-native';
+
 import { evictTrustCacheTo, MEMORY_WARNING_TARGET } from '@dina/core';
 
 /** What `AppState.addEventListener` returns — a tiny disposable. */

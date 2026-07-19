@@ -48,6 +48,7 @@
  */
 
 import { parseServiceListingUri, classifyCapability } from '@dina/protocol';
+
 import type { XrpcFetchResult } from './peerlens_resolve_client';
 
 export interface GeoLocation {
@@ -297,8 +298,8 @@ function normaliseInput(input: ServiceSearchRequest): ServiceSearchRequest {
   };
 }
 
-type ParseOk = { ok: true; response: ServiceSearchResponse };
-type ParseFail = { ok: false; reason: 'malformed_response'; detail: string };
+interface ParseOk { ok: true; response: ServiceSearchResponse }
+interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.services)) {

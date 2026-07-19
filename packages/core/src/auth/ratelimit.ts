@@ -25,7 +25,7 @@ interface Bucket {
 
 export class PerDIDRateLimiter {
   private readonly config: RateLimitConfig;
-  private readonly buckets: Map<string, Bucket> = new Map();
+  private readonly buckets = new Map<string, Bucket>();
 
   constructor(config: RateLimitConfig = { maxRequests: 50, windowSeconds: 60 }) {
     this.config = config;

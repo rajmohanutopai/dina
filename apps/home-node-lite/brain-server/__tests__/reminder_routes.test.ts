@@ -6,6 +6,7 @@
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
+
 import { MockCoreClient } from '@dina/test-harness';
 
 import { registerReminderApiRoutes, startReminderFireLoop } from '../src/routes/reminders';

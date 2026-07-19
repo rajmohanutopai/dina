@@ -20,8 +20,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import type { VaultItem, SearchQuery } from '@dina/test-harness';
-import { searchIndex, hasIndex } from '../embedding/persona_index';
+
 import {
   VAULT_QUERY_DEFAULT_LIMIT,
   VAULT_QUERY_MAX_LIMIT,
@@ -31,7 +30,8 @@ import {
   TRUST_RERANK_TRUSTED,
   TRUST_RERANK_LOW_CONFIDENCE,
 } from '../constants';
-import { validateVaultItem, SEARCHABLE_RETRIEVAL_POLICIES } from './validation';
+import { searchIndex, hasIndex } from '../embedding/persona_index';
+
 import {
   getVaultRepository,
   setVaultRepository,
@@ -39,6 +39,9 @@ import {
   InMemoryVaultRepository,
   type VaultRepository,
 } from './repository';
+import { validateVaultItem, SEARCHABLE_RETRIEVAL_POLICIES } from './validation';
+
+import type { VaultItem, SearchQuery } from '@dina/test-harness';
 
 const MAX_BATCH_SIZE = 100;
 
@@ -371,7 +374,7 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
   }
 
   // Fallback: brute-force scan (O(n))
-  const results: Array<{ item: VaultItem; score: number }> = [];
+  const results: { item: VaultItem; score: number }[] = [];
 
   for (const item of repo.valuesSync()) {
     if (!isSearchable(item)) continue;
@@ -636,7 +639,7 @@ export function listRecentItems(persona: string, limit: number, type?: string): 
 export function queryByEnrichmentStatus(
   persona: string,
   status: string,
-  limit: number = 50,
+  limit = 50,
 ): VaultItem[] {
   const results: VaultItem[] = [];
   for (const item of requireRepo(persona).valuesSync()) {
@@ -699,7 +702,7 @@ export function browseRecent(
   persona: string,
   after: number,
   before: number,
-  limit: number = 20,
+  limit = 20,
 ): VaultItem[] {
   if (after > before) return [];
   const results: VaultItem[] = [];

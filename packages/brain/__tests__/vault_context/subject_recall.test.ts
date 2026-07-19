@@ -63,7 +63,7 @@ describe('recallSenderSubjectMemories', () => {
           : null,
     });
 
-    const calls: Array<{ persona: string; personId: string }> = [];
+    const calls: { persona: string; personId: string }[] = [];
     setVaultReadBackend({
       vaultQuery: async () => ({ items: [], count: 0 }),
       vaultItemsForPerson: async (persona, pid) => {

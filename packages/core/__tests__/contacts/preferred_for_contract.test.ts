@@ -13,7 +13,6 @@
  * preferred-contacts feature at a glance.
  */
 
-import type { CoreRequest } from '../../src/server/router';
 import {
   addContact,
   getContact,
@@ -27,6 +26,8 @@ import { setContactRepository } from '../../src/contacts/repository';
 import { setPeopleRepository } from '../../src/people/repository';
 import { makeContactsHandlers } from '../../src/server/routes/contacts';
 import { makeFakePeopleRepo } from '../_support/fake_people_repo';
+
+import type { CoreRequest } from '../../src/server/router';
 
 function req(partial: Partial<CoreRequest>): CoreRequest {
   return {
@@ -187,7 +188,7 @@ describe('Preferred-for contract (PC-TEST-03)', () => {
       }),
     );
     expect(res.status).toBe(200);
-    const body = res.body as { contacts: Array<{ did: string }>; count: number };
+    const body = res.body as { contacts: { did: string }[]; count: number };
     expect(body.contacts.map((c) => c.did)).toEqual(['did:plc:alice']);
     expect(body.count).toBe(1);
   });

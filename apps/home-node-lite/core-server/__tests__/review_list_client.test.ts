@@ -366,7 +366,7 @@ describe('createReviewListClient (task 6.15)', () => {
     });
 
     it('fires listed event with count + hasMore', async () => {
-      type Ev = { kind: 'listed'; count: number; hasMore: boolean };
+      interface Ev { kind: 'listed'; count: number; hasMore: boolean }
       const events: Ev[] = [];
       const list = createReviewListClient({
         fetchFn: stubFetch(okBody([review()], 'cursor')),

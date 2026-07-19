@@ -5,7 +5,9 @@
  */
 
 import { pino } from 'pino';
+
 import { createServer, type ReadinessCheck } from '../src/server';
+
 import type { CoreServerConfig } from '../src/config';
 
 function baseConfig(): CoreServerConfig {

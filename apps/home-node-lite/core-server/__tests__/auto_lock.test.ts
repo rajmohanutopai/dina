@@ -14,7 +14,7 @@ import {
 /** Controllable clock + timer mock driven manually by the tests. */
 function mockEnv() {
   let now = 1_000_000;
-  const timers: Array<{ fire: () => void; fireAt: number }> = [];
+  const timers: { fire: () => void; fireAt: number }[] = [];
 
   return {
     nowMsFn: () => now,

@@ -64,7 +64,7 @@ const DEFAULT_INITIAL_BACKOFF_MS = MS_SECOND;
 const DEFAULT_MAX_BACKOFF_MS = 30 * MS_SECOND;
 
 export class ProcessSupervisor {
-  private readonly processes: Map<string, ManagedProcess> = new Map();
+  private readonly processes = new Map<string, ManagedProcess>();
   private readonly callbacks: SupervisorCallbacks;
 
   /** Injectable fetch for health checks. */

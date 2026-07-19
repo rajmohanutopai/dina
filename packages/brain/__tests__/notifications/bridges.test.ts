@@ -8,26 +8,26 @@
  *   - briefing-history → inbox
  */
 
-import {
-  installApprovalInboxBridge,
-  installWorkflowApprovalChatBridge,
-  installWorkflowApprovalInboxBridge,
-  subscribeBriefingEvents,
-} from '../../src/notifications/bridges';
-import { deleteThread, getThread } from '../../src/chat/thread';
-import {
-  appendNotification,
-  listNotifications,
-  resetNotifications,
-} from '../../src/notifications/inbox';
-import { ApprovalManager } from '@dina/core';
-import { InMemoryWorkflowRepository } from '@dina/core';
+import { ApprovalManager , InMemoryWorkflowRepository } from '@dina/core';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
   WorkflowTaskState,
   type WorkflowTask,
 } from '@dina/core';
+
+import { deleteThread, getThread } from '../../src/chat/thread';
+import {
+  installApprovalInboxBridge,
+  installWorkflowApprovalChatBridge,
+  installWorkflowApprovalInboxBridge,
+  subscribeBriefingEvents,
+} from '../../src/notifications/bridges';
+import {
+  appendNotification,
+  listNotifications,
+  resetNotifications,
+} from '../../src/notifications/inbox';
 
 function approvalTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
   const now = 1_700_000_000_000;

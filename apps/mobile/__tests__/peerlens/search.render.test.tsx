@@ -16,13 +16,14 @@
  *      `isLoading=true` AND `results.length > 0`.
  */
 
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
+import React from 'react';
 
 import SearchScreen from '../../app/peerlens/search';
+
 import type { SearchResult } from '../../app/peerlens/search';
-import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 import type { FacetBar } from '../../src/peerlens/facets';
+import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 
 function makeDisplay(title: string): SubjectCardDisplay {
   return {

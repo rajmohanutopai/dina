@@ -6,6 +6,9 @@
  * in-memory because no `setKVRepository` is wired in `beforeEach`.
  */
 
+import * as NotificationsMock from 'expo-notifications';
+
+import { resetKVStore } from '../../../../packages/core/src/kv/store';
 import {
   cancelAllNotifications,
   cancelNotification,
@@ -19,14 +22,12 @@ import {
   scheduleNotification,
   tierToChannel,
 } from '../../src/notifications/local';
-import * as NotificationsMock from 'expo-notifications';
-import { resetKVStore } from '../../../../packages/core/src/kv/store';
 
 // Cast to the mock's broader surface (test helpers prefixed `__`).
 const Mock = NotificationsMock as unknown as typeof NotificationsMock & {
   __setPermissionResult: (r: { granted: boolean; canAskAgain?: boolean }) => void;
   __resetNotificationsMock: () => void;
-  __getScheduled: () => Array<{ identifier: string }>;
+  __getScheduled: () => { identifier: string }[];
 };
 
 beforeEach(async () => {
@@ -95,9 +96,9 @@ describe('scheduleNotification (5.60)', () => {
       channel: 'solicited',
       triggerAt: Date.now() - 5000,
     });
-    const osEntries = Mock.__getScheduled() as unknown as Array<{
+    const osEntries = Mock.__getScheduled() as unknown as {
       trigger: { seconds: number };
-    }>;
+    }[];
     expect(osEntries[0]!.trigger.seconds).toBeGreaterThanOrEqual(1);
   });
 });

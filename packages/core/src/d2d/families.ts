@@ -45,15 +45,15 @@ import {
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
   MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
   MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
-} from '@dina/protocol';
-import { D2D_SCENARIOS } from '@dina/protocol';
+ D2D_SCENARIOS } from '@dina/protocol';
+
+import type { VaultItemType } from '../vault/validation';
 import type {
   D2DMessageType,
   EphemeralD2DType,
   StorableD2DType,
   D2DScenario,
 } from '@dina/protocol';
-import type { VaultItemType } from '../vault/validation';
 
 // Re-export the protocol-owned scenario types so existing core consumers
 // (and the test harness) keep working without changing their imports.

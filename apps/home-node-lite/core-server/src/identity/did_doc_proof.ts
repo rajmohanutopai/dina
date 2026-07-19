@@ -37,7 +37,9 @@
  */
 
 import { createHash } from 'node:crypto';
+
 import { sign as ed25519Sign, verify as ed25519Verify } from '@dina/core';
+
 import type { DIDDocument } from '@dina/core';
 
 export const PROOF_TYPE = 'Ed25519Signature2020';

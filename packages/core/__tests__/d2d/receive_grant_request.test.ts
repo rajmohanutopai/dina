@@ -7,15 +7,17 @@
  * behaviour is covered by grant_request_handler.test.ts.
  */
 
-import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
+
+import { resetAuditState } from '../../src/audit/service';
+import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { clearGatesState } from '../../src/d2d/gates';
-import { resetStagingState } from '../../src/staging/service';
-import { resetAuditState } from '../../src/audit/service';
 import { resetQuarantineState } from '../../src/d2d/quarantine';
+import { receiveD2D } from '../../src/d2d/receive_pipeline';
+import { resetStagingState } from '../../src/staging/service';
 import { clearReplayCache } from '../../src/transport/adversarial';
-import { getPublicKey } from '../../src/crypto/ed25519';
-import { TEST_ED25519_SEED } from '@dina/test-harness';
+
 
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);

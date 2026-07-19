@@ -11,10 +11,12 @@
  * Auth: `/v1/personas` already sits in the brain/admin/device allowlist
  * (see `auth/authz.ts`); signed auth is applied by the router.
  */
-import type { CoreResponse, CoreRouter } from '../router';
-import { PERSONAS_LIST } from './paths';
 import { listPersonas } from '../../persona/service';
+
+import { PERSONAS_LIST } from './paths';
+
 import type { PersonaState } from '../../persona/service';
+import type { CoreResponse, CoreRouter } from '../router';
 
 export interface PersonasRouteOptions {
   /** Persona-list resolver. Defaults to `listPersonas()` — tests inject their own. */

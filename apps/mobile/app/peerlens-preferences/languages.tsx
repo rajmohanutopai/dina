@@ -18,12 +18,12 @@
 import React, { useCallback, useMemo } from 'react';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
+import { buildLanguageList } from '../../src/peerlens/preferences/language_list';
 import {
   MultiSelectScreen,
   toggleArrayValue,
   type MultiSelectOption,
 } from '../../src/peerlens/preferences/multi_select_screen';
-import { buildLanguageList } from '../../src/peerlens/preferences/language_list';
 
 export default function LanguagesScreen(): React.ReactElement {
   const { profile, mutate } = useViewerPreferences();
@@ -33,7 +33,7 @@ export default function LanguagesScreen(): React.ReactElement {
   // localisation is a UI concern; a Spanish-locale device should see
   // Spanish-named entries even if the user hasn't set Spanish as one
   // of their preferences.
-  const options = useMemo<ReadonlyArray<MultiSelectOption<string>>>(() => {
+  const options = useMemo<readonly MultiSelectOption<string>[]>(() => {
     const list = buildLanguageList();
     return list.map((entry) => ({
       value: entry.tag,

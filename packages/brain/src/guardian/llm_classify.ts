@@ -12,8 +12,9 @@
  * Source: ARCHITECTURE.md Task 3.21
  */
 
-import { classifyDeterministic, type ClassificationResult, type PriorityTier } from './silence';
 import { parseSilence } from '../llm/output_parser';
+
+import { classifyDeterministic, type ClassificationResult, type PriorityTier } from './silence';
 
 /** Confidence threshold — LLM consulted below this. */
 const REFINEMENT_THRESHOLD = 0.75;

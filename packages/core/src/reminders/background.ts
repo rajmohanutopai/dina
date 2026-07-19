@@ -13,6 +13,7 @@
  */
 
 import { registerTimer } from '../background/timers';
+
 import { tick } from './scheduler';
 
 /** Default tick interval: 30 seconds. */

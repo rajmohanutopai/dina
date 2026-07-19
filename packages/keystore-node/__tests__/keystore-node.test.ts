@@ -135,7 +135,7 @@ describe('FileKeystore', () => {
   it('preserves exact byte content on round-trip (no BOM / whitespace munging)', async () => {
     // Secrets may be JSON blobs or hex strings — any mangling breaks
     // them. Check a few edge cases.
-    const cases: Array<[string, string]> = [
+    const cases: [string, string][] = [
       ['hex', 'deadbeef'],
       ['leading-spaces', '  leading-spaces'],
       ['trailing-spaces', 'trailing-spaces  '],
@@ -152,7 +152,7 @@ describe('FileKeystore', () => {
 });
 
 describe('KeytarKeystore (mocked)', () => {
-  type Row = { service: string; account: string; password: string };
+  interface Row { service: string; account: string; password: string }
 
   /** Stand-in for the native `keytar` module. */
   function mockKeytar(): {
@@ -163,7 +163,7 @@ describe('KeytarKeystore (mocked)', () => {
       deletePassword: (service: string, account: string) => Promise<boolean>;
       findCredentials: (
         service: string,
-      ) => Promise<Array<{ account: string; password: string }>>;
+      ) => Promise<{ account: string; password: string }[]>;
     };
   } {
     const rows: Row[] = [];

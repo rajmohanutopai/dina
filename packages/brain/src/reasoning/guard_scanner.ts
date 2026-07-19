@@ -27,9 +27,10 @@
  * labels in the numbered response block.
  */
 
-import { GUARD_SCAN } from '../llm/prompts';
-import type { LLMProvider } from '../llm/adapters/provider';
 import { isTrustTool } from '../guardian/peerlens_tools';
+import { GUARD_SCAN } from '../llm/prompts';
+
+import type { LLMProvider } from '../llm/adapters/provider';
 
 export interface GuardScanViolations {
   anti_her_sentences: number[];

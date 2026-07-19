@@ -13,8 +13,8 @@
  * through here so all passphrase-shaped inputs look identical.
  */
 
-import React, { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -25,6 +25,7 @@ import {
   type ViewStyle,
   type StyleProp,
 } from 'react-native';
+
 import { colors, radius, spacing, textStyles } from '../theme';
 
 export interface PassphraseFieldProps

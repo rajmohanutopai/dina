@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Task 4.11
  */
 
+import { resetThreads } from '../../../brain/src/chat/thread';
 import {
   createApprovalCard,
   approveCard,
@@ -17,7 +18,6 @@ import {
   registerDIDLabel,
   resetApprovalCards,
 } from '../../src/hooks/useChatApprovals';
-import { resetThreads } from '../../../brain/src/chat/thread';
 
 const BRAIN_DID = 'did:key:z6MkBrainTest';
 const USER_DID = 'did:key:z6MkUserDevice';

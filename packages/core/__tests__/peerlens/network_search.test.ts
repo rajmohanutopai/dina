@@ -4,6 +4,7 @@
  * Source: ARCHITECTURE.md Task 9.3
  */
 
+import { addContact, resetContactDirectory } from '../../src/contacts/directory';
 import {
   searchTrustNetwork,
   registerTrustQueryClient,
@@ -11,13 +12,12 @@ import {
   resetSearchCache,
   type PeerlensSearchResult,
 } from '../../src/peerlens/network_search';
-import { addContact, resetContactDirectory } from '../../src/contacts/directory';
-import { setPeopleRepository } from '../../src/people/repository';
 import {
   PeerlensQueryClient,
   type PeerlensProfile,
   type QueryResult,
 } from '../../src/peerlens/query_client';
+import { setPeopleRepository } from '../../src/people/repository';
 import { makeFakePeopleRepo } from '../_support/fake_people_repo';
 
 describe('PeerLens Search', () => {
