@@ -107,15 +107,19 @@ function setup() {
     sent.push({ to, type, body });
   };
 
+  const resolveCalls = { count: 0 };
   const node = wireRunPlaneNode({
     db: adapter,
     sendD2D,
-    resolveVerificationKey: async (did) => (did === PROVIDER_DID ? providerPub : null),
+    resolveVerificationKey: async (did) => {
+      resolveCalls.count += 1;
+      return did === PROVIDER_DID ? providerPub : null;
+    },
     personaCipher: cipher,
     isPersonaOpen: (p) => cipher.isOpen(p),
     nowMsFn: now,
   });
-  return { node, runs, messages, receipts, sent, now, setNow };
+  return { node, runs, messages, receipts, sent, now, setNow, cipher, resolveCalls };
 }
 
 afterEach(() => {
@@ -492,5 +496,149 @@ describe('wireRunPlaneNode — boot-level pull loop end-to-end (ISVC-10)', () =>
     expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
     expect(t.receipts.getByDelegationId(delegationId)?.result_card_ref ?? null).toBeNull();
     expect(t.messages.getById(messageId)?.state).toBe('completed');
+  });
+
+  it('rejects a completion whose signed message_id does not bind to the delegation (81B-04b)', async () => {
+    const t = setup();
+    const run = t.node.plane.runService.create(pullRun());
+    const delegationId = 'del-mm';
+    const realMessageId = 'msg-mm';
+    seedDispatched(t.messages, run.run_id, realMessageId, delegationId);
+
+    // Provider signs a completion for the real delegation but names a DIFFERENT
+    // (unknown) message_id → the binding gate rejects BEFORE any card is stored,
+    // and the real message never advances.
+    const handled = await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, 'other-msg'),
+    );
+    expect(handled).toBe(true);
+    expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
+    expect(t.receipts.getByDelegationId(delegationId) ?? null).toBeNull();
+    expect(t.messages.getById(realMessageId)?.state).toBe('dispatched');
+  });
+
+  it('a pre-binding completion cannot poison a later valid completion (81B-04b)', async () => {
+    const t = setup();
+    const run = t.node.plane.runService.create(pullRun());
+    const delegationId = 'del-pz';
+    const realMessageId = 'msg-pz';
+    seedDispatched(t.messages, run.run_id, realMessageId, delegationId);
+
+    const cardA = JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'CARD-A' }] });
+    const cardB = JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'CARD-B' }] });
+
+    // 1) A signed completion for the delegation but a MISMATCHED message_id carrying
+    //    card A — must be rejected and store NOTHING under result-<delegation>.
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, 'wrong-msg', { cardStr: cardA }),
+    );
+    expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
+
+    // 2) The genuine completion (correct message_id) carrying card B now records
+    //    CARD B's ref — never card A's — proving no poisoning via putPayload reuse.
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, realMessageId, { cardStr: cardB }),
+    );
+    const contentId = t.node.plane.payloads.contentId(`result-${delegationId}`);
+    expect(contentId).toMatch(/^[0-9a-f]{64}$/);
+    // The stored ciphertext decrypts to card B (the genuine completion's card).
+    const plaintext = t.node.plane.payloads.getPayload(`result-${delegationId}`, run.persona);
+    expect(plaintext).not.toBeNull();
+    expect(new TextDecoder().decode(plaintext as Uint8Array)).toBe(cardB);
+    expect(t.receipts.getByDelegationId(delegationId)?.result_card_ref).toBe(contentId);
+    expect(t.messages.getById(realMessageId)?.state).toBe('completed');
+  });
+
+  it('locked-persona completion advances null, then attaches the card on unlock re-send (R2-01)', async () => {
+    const t = setup();
+    // 'health' is NOT opened by setup → the persona is locked.
+    const run = t.node.plane.runService.create(pullRun({ persona: 'health' }));
+    const delegationId = 'del-lk';
+    const messageId = 'msg-lk';
+    seedDispatched(t.messages, run.run_id, messageId, delegationId);
+    const completion = providerCompletion(run.run_id, delegationId, messageId, {
+      cardStr: JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'Booked' }] }),
+    });
+
+    // 1) Locked → the card can't be wrapped; the outcome still advances (ref null).
+    await t.node.handleServiceResponse(PROVIDER_DID, completion);
+    expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
+    expect(t.receipts.getByDelegationId(delegationId)?.result_card_ref ?? null).toBeNull();
+    expect(t.messages.getById(messageId)?.state).toBe('completed');
+
+    // 2) Unlock + the provider's idempotent re-send → the card is now stored and the
+    //    receipt ref upgraded null→non-null (no loss, no orphan).
+    t.cipher.open('health');
+    await t.node.handleServiceResponse(PROVIDER_DID, completion);
+    const contentId = t.node.plane.payloads.contentId(`result-${delegationId}`);
+    expect(contentId).toMatch(/^[0-9a-f]{64}$/);
+    expect(t.receipts.getByDelegationId(delegationId)?.result_card_ref).toBe(contentId);
+  });
+
+  it('a conflicting completion cannot poison the delegation via the null→non-null upgrade (R3-01)', async () => {
+    const t = setup();
+    // 'health' is locked → completion A advances with a null card ref.
+    const run = t.node.plane.runService.create(pullRun({ persona: 'health' }));
+    const delegationId = 'del-poison';
+    const messageId = 'msg-poison';
+    seedDispatched(t.messages, run.run_id, messageId, delegationId);
+    const cardA = JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'CARD-A' }] });
+    const cardB = JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'CARD-B' }] });
+
+    // 1) Locked completion A → advances, card dropped (ref null), digest A bound.
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, messageId, { cardStr: cardA }),
+    );
+    expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
+
+    // 2) A CONFLICTING completion B (different signed card/digest, same delegation) →
+    //    rejected before any card write; B is never published.
+    t.cipher.open('health');
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, messageId, { cardStr: cardB }),
+    );
+    expect(t.node.plane.payloads.contentId(`result-${delegationId}`)).toBeNull();
+
+    // 3) The genuine re-send of A (matching digest) → attaches card A, never B.
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, messageId, { cardStr: cardA }),
+    );
+    const plaintext = t.node.plane.payloads.getPayload(`result-${delegationId}`, run.persona);
+    expect(plaintext).not.toBeNull();
+    expect(new TextDecoder().decode(plaintext as Uint8Array)).toBe(cardA);
+  });
+
+  it('never resolves a DID key for a malformed/cross-provider completion (R2-02)', async () => {
+    const t = setup();
+    const run = t.node.plane.runService.create(pullRun());
+    const delegationId = 'del-spy';
+    const messageId = 'msg-spy';
+    seedDispatched(t.messages, run.run_id, messageId, delegationId);
+    const before = t.resolveCalls.count;
+
+    // (a) missing signature → rejected pre-resolution.
+    const noSig = providerCompletion(run.run_id, delegationId, messageId);
+    delete (noSig.result as Record<string, unknown>).signature;
+    await t.node.handleServiceResponse(PROVIDER_DID, noSig);
+
+    // (b) a well-typed issuer that is NOT the run's provider → rejected pre-resolution.
+    const crossIssuer = providerCompletion(run.run_id, delegationId, messageId);
+    (crossIssuer.result as Record<string, unknown>).runtime_issuer_did = 'did:plc:attacker';
+    await t.node.handleServiceResponse(PROVIDER_DID, crossIssuer);
+
+    expect(t.resolveCalls.count).toBe(before); // zero external DID lookups
+
+    // Control: a well-formed completion DOES resolve — proves the spy is live.
+    await t.node.handleServiceResponse(
+      PROVIDER_DID,
+      providerCompletion(run.run_id, delegationId, messageId),
+    );
+    expect(t.resolveCalls.count).toBeGreaterThan(before);
   });
 });

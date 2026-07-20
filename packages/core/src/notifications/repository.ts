@@ -13,19 +13,15 @@
  * rows older than the cutoff (preferring explicit `expiresAt` when
  * present). reset wipes for tests + identity reset.
  *
- * **Guided-demo scoping gap (forward-guard, not a live bug).** This
- * interface has no `data_scope` field, and the inbox's in-memory item
- * DOES (`NotificationItem.dataScope`, dropped on demo teardown via
- * `dropGuidedDemoNotifications`). That asymmetry is safe ONLY because no
- * host wires a persistence layer here today (`setNotificationLogRepository`
- * is never called in source), and the only producer of demo-scoped
- * notifications — the mobile guided demo — runs entirely on the in-memory
- * store. If a persistent log is ever wired on a host that runs the guided
- * demo, this MUST gain a `data_scope` column (reminders-v12 pattern), the
- * inbox's `storedToItem` must carry it instead of defaulting to `'user'`,
- * and `dropGuidedDemoNotifications` must also purge persisted demo rows —
- * otherwise a demo approval would survive teardown in the persistent log.
+ * **Guided-demo scoping (now carried, R4-03).** The stored row carries
+ * `dataScope` and the SQLite table a `data_scope` column, so a persisted
+ * notification keeps its scope. `purgeByScopePrefix('guided_demo:')` lets the
+ * inbox's `dropGuidedDemoNotifications` drop persisted demo rows on teardown —
+ * a demo notification never survives the demo in the durable log. The inbox's
+ * `storedToItem` carries `dataScope` back instead of defaulting to `'user'`.
  */
+
+import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export type NotificationKind =
   | 'reminder'
@@ -51,6 +47,67 @@ export interface StoredNotificationItem {
   /** Optional explicit TTL — when null, the periodic sweeper falls back
    *  to `cleanupPeriodDays` from settings. */
   expiresAt: number | null;
+  /** Data scope (`'user'` or `'guided_demo:<run_id>'`). Persisted so a demo
+   *  notification stays scoped and can be purged on demo teardown (R4-03). */
+  dataScope: string;
+}
+
+/**
+ * R5-08 — the snake_case WIRE shape for a notification crossing an HTTP/SSE
+ * boundary. Internal code keeps camelCase (`StoredNotificationItem`); every wire
+ * hop maps through this so the "all JSON is snake_case" invariant holds and
+ * other-language protocol clients interoperate.
+ */
+export interface NotificationWireDTO {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  fired_at: number;
+  read_at: number | null;
+  source_id: string;
+  deep_link: string | null;
+  expires_at: number | null;
+  data_scope: string;
+}
+
+/** camelCase stored row → snake_case wire DTO. */
+export function storedNotificationToWire(item: StoredNotificationItem): NotificationWireDTO {
+  return {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    body: item.body,
+    fired_at: item.firedAt,
+    read_at: item.readAt,
+    source_id: item.sourceId,
+    deep_link: item.deepLink,
+    expires_at: item.expiresAt,
+    data_scope: item.dataScope,
+  };
+}
+
+/** Validate + map an untrusted snake_case wire body → a stored row, or null. */
+export function wireToStoredNotification(raw: unknown): StoredNotificationItem | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = typeof o.id === 'string' ? o.id.trim() : '';
+  if (id === '') return null;
+  if (typeof o.kind !== 'string' || o.kind === '') return null;
+  if (typeof o.title !== 'string' || typeof o.body !== 'string') return null;
+  if (typeof o.fired_at !== 'number' || !Number.isFinite(o.fired_at)) return null;
+  return {
+    id,
+    kind: o.kind as NotificationKind,
+    title: o.title,
+    body: o.body,
+    firedAt: o.fired_at,
+    readAt: typeof o.read_at === 'number' && Number.isFinite(o.read_at) ? o.read_at : null,
+    sourceId: typeof o.source_id === 'string' ? o.source_id : '',
+    deepLink: typeof o.deep_link === 'string' ? o.deep_link : null,
+    expiresAt: typeof o.expires_at === 'number' && Number.isFinite(o.expires_at) ? o.expires_at : null,
+    dataScope: typeof o.data_scope === 'string' && o.data_scope !== '' ? o.data_scope : 'user',
+  };
 }
 
 export interface NotificationLogRepository {
@@ -67,6 +124,10 @@ export interface NotificationLogRepository {
   /** Drop rows whose `firedAt < cutoff` AND (no explicit expiresAt OR
    *  expiresAt < cutoff). Returns the number purged. */
   purgeBefore(cutoff: number): Promise<number>;
+  /** Drop every row whose `dataScope` starts with `prefix` (e.g.
+   *  `'guided_demo:'`). Backs `dropGuidedDemoNotifications` so a demo
+   *  notification never survives the demo in the durable log (R4-03). */
+  purgeByScopePrefix(prefix: string): Promise<number>;
   /** Wipe — for testing + identity reset. */
   reset(): Promise<void>;
 }
@@ -121,7 +182,8 @@ export class InMemoryNotificationLogRepository implements NotificationLogReposit
   async purgeBefore(cutoff: number): Promise<number> {
     let purged = 0;
     for (let i = this.rows.length - 1; i >= 0; i--) {
-      const r = this.rows[i]!;
+      const r = this.rows[i];
+      if (r === undefined) continue;
       const expired = r.expiresAt !== null ? r.expiresAt < cutoff : r.firedAt < cutoff;
       if (expired) {
         this.rows.splice(i, 1);
@@ -131,7 +193,116 @@ export class InMemoryNotificationLogRepository implements NotificationLogReposit
     return purged;
   }
 
+  async purgeByScopePrefix(prefix: string): Promise<number> {
+    let purged = 0;
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      const r = this.rows[i];
+      if (r !== undefined && r.dataScope.startsWith(prefix)) {
+        this.rows.splice(i, 1);
+        purged += 1;
+      }
+    }
+    return purged;
+  }
+
   async reset(): Promise<void> {
     this.rows.length = 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SQLite implementation — the durable log (R4-03). Writes to `identity.sqlite`
+// (Tier 0, owner-private) via the `notification_log` table (migration v27).
+// Synchronous adapter under an async interface: the calls resolve immediately.
+// ---------------------------------------------------------------------------
+
+const NOTIFICATION_COLUMNS =
+  'id, kind, title, body, fired_at, read_at, source_id, deep_link, expires_at, data_scope';
+
+function rowToStored(r: DBRow): StoredNotificationItem {
+  return {
+    id: String(r.id),
+    kind: String(r.kind) as NotificationKind,
+    title: String(r.title),
+    body: String(r.body),
+    firedAt: Number(r.fired_at),
+    readAt: r.read_at === null || r.read_at === undefined ? null : Number(r.read_at),
+    sourceId: String(r.source_id),
+    deepLink: r.deep_link === null || r.deep_link === undefined ? null : String(r.deep_link),
+    expiresAt: r.expires_at === null || r.expires_at === undefined ? null : Number(r.expires_at),
+    dataScope: r.data_scope === null || r.data_scope === undefined ? 'user' : String(r.data_scope),
+  };
+}
+
+/** Escape LIKE metacharacters (`%`, `_`, `\`) so a literal prefix matches
+ *  literally under `ESCAPE '\'`. */
+function escapeLike(literal: string): string {
+  return literal.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export class SqliteNotificationLogRepository implements NotificationLogRepository {
+  constructor(private readonly db: DatabaseAdapter) {}
+
+  async append(item: StoredNotificationItem): Promise<void> {
+    // Upsert on id (mirrors the in-memory full-replace: a re-fire overwrites).
+    this.db.run(
+      `INSERT INTO notification_log (${NOTIFICATION_COLUMNS})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         kind = excluded.kind, title = excluded.title, body = excluded.body,
+         fired_at = excluded.fired_at, read_at = excluded.read_at,
+         source_id = excluded.source_id, deep_link = excluded.deep_link,
+         expires_at = excluded.expires_at, data_scope = excluded.data_scope`,
+      [
+        item.id,
+        item.kind,
+        item.title,
+        item.body,
+        item.firedAt,
+        item.readAt,
+        item.sourceId,
+        item.deepLink,
+        item.expiresAt,
+        item.dataScope,
+      ],
+    );
+  }
+
+  async markRead(id: string, readAt: number): Promise<boolean> {
+    // One-shot: only an unread row flips, so a second ack returns false.
+    const affected = this.db.run(
+      `UPDATE notification_log SET read_at = ? WHERE id = ? AND read_at IS NULL`,
+      [readAt, id],
+    );
+    return affected > 0;
+  }
+
+  async listAll(limit?: number): Promise<StoredNotificationItem[]> {
+    const rows = this.db.query(
+      `SELECT ${NOTIFICATION_COLUMNS} FROM notification_log
+       ORDER BY fired_at DESC${limit !== undefined ? ' LIMIT ?' : ''}`,
+      limit !== undefined ? [limit] : [],
+    );
+    return rows.map(rowToStored);
+  }
+
+  async purgeBefore(cutoff: number): Promise<number> {
+    return this.db.run(
+      `DELETE FROM notification_log
+       WHERE (expires_at IS NOT NULL AND expires_at < ?)
+          OR (expires_at IS NULL AND fired_at < ?)`,
+      [cutoff, cutoff],
+    );
+  }
+
+  async purgeByScopePrefix(prefix: string): Promise<number> {
+    return this.db.run(
+      `DELETE FROM notification_log WHERE data_scope LIKE ? ESCAPE '\\'`,
+      [`${escapeLike(prefix)}%`],
+    );
+  }
+
+  async reset(): Promise<void> {
+    this.db.run(`DELETE FROM notification_log`, []);
   }
 }

@@ -236,7 +236,15 @@ export function isMoneyAction(action: string): boolean {
  * Returns undefined for unknown actions (treated as MODERATE by evaluateIntent).
  */
 export function getDefaultRiskLevel(action: string): RiskLevel | undefined {
-  return DEFAULT_POLICY[action];
+  // Own-property lookup ONLY. `DEFAULT_POLICY` is a plain object, so a
+  // provider/caller-controlled action name like `constructor`, `toString`, or
+  // `__proto__` would otherwise resolve to an inherited Object.prototype member
+  // (a function) instead of `undefined` — silently bypassing the unknown-action
+  // fail-safe and, in the run path, poisoning `risk_class` with a non-RiskLevel
+  // value. Guard against inherited keys so every unknown name falls through.
+  return Object.prototype.hasOwnProperty.call(DEFAULT_POLICY, action)
+    ? DEFAULT_POLICY[action]
+    : undefined;
 }
 
 // ---------------------------------------------------------------

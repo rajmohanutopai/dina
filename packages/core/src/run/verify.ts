@@ -403,6 +403,7 @@ export interface VerifiedRunResult {
   message_id: string;
   delegation_id: string;
   run_id: string;
+  decision_revision: number;
   status: 'completed' | 'failed';
   result_card_digest: string;
   issued_at: number;
@@ -496,6 +497,7 @@ export function verifyRunResult(
       message_id: wire.message_id,
       delegation_id: wire.delegation_id,
       run_id: wire.run_id,
+      decision_revision: wire.decision_revision,
       status: wire.status,
       result_card_digest: wire.result_card_digest,
       issued_at: wire.issued_at,

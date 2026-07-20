@@ -81,7 +81,7 @@ describe('forceTerminate (Â§5.1)', () => {
     messages.create(makeMsg({ message_id: 'claimed', run_id: run.run_id, state: 'dispatched' }));
     reservations.create({
       reservation_id: 'held', run_id: run.run_id, cursor: 0, state: 'held_by_lock',
-      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1',
+      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1', held_message_json: null,
       error_reason: null, error_at: null, lease_expires_at: null, query_correlation_id: null,
       created_at: NOW, updated_at: NOW,
     });
@@ -166,7 +166,7 @@ describe('onBarrier â€” atomic invalidation/fence at barrier SET (RR-01b/R2-02/Â
     messages.create(makeMsg({ message_id: 'claimed', run_id: run.run_id, state: 'dispatched' }));
     reservations.create({
       reservation_id: 'held', run_id: run.run_id, cursor: 0, state: 'held_by_lock',
-      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1',
+      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1', held_message_json: null,
       error_reason: null, error_at: null, lease_expires_at: null, query_correlation_id: null,
       created_at: NOW, updated_at: NOW,
     });
@@ -204,7 +204,7 @@ describe('onBarrier â€” atomic invalidation/fence at barrier SET (RR-01b/R2-02/Â
     messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
     reservations.create({
       reservation_id: 'ahead', run_id: run.run_id, cursor: 1, state: 'reserved',
-      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null,
+      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null, held_message_json: null,
       error_reason: null, error_at: null, lease_expires_at: NOW + 60_000, query_correlation_id: null,
       created_at: NOW, updated_at: NOW,
     });
@@ -373,7 +373,7 @@ describe('RunSweeper', () => {
     const run = h.runService.create(params());
     h.reservations.create({
       reservation_id: 'stale', run_id: run.run_id, cursor: 0, state: 'reserved',
-      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null,
+      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null, held_message_json: null,
       error_reason: null, error_at: null, lease_expires_at: NOW + 100, query_correlation_id: null,
       created_at: NOW, updated_at: NOW,
     });

@@ -42,6 +42,23 @@ import {
 
 import type { WorkflowEventDeliverer } from '../service/workflow_event_consumer';
 
+/** #6 — a standing-WATCH poll result handed to the notification-inbox sink
+ *  instead of a chat thread. The boot classifies it (silence tiers) + writes a
+ *  `push`-kind notification into the Activity inbox (PUSH §8). */
+export interface WatchInboxDelivery {
+  subscriptionId: string;
+  capability: string;
+  serviceName: string;
+  status: ServiceQueryStatus;
+  /** The bounded, UNTRUSTED-validated provider card (null on failure/non-success). */
+  card: CardSpec | null;
+  result: Record<string, unknown> | null;
+  /** The formatted human text the consumer produced. */
+  text: string;
+  /** Stable idempotency source (the workflow task id). */
+  sourceId: string;
+}
+
 export interface ServiceQueryDelivererOptions {
   /** Fallback thread the card lands in when no resolver is supplied or it
    *  returns empty. Lite uses the chat default (`'main'`). */
@@ -56,6 +73,13 @@ export interface ServiceQueryDelivererOptions {
     eventKind: string;
     task: { id: string; kind: string };
   }) => string | null;
+  /**
+   * #6 — sink for a WATCH-origin (`watch:<subscription_id>`) result. When
+   * supplied, a watch poll's terminal event is routed HERE (silence classifier +
+   * notification inbox) instead of a main-chat lifecycle card. Omit to keep the
+   * legacy chat-thread fallback.
+   */
+  notifyWatchInbox?: (delivery: WatchInboxDelivery) => void | Promise<void>;
 }
 
 /**
@@ -72,10 +96,52 @@ export function createServiceQueryDeliverer(
     if (details.capability !== undefined && details.capability !== '') {
       sources.push(details.capability);
     }
+    const originChannel = extractOriginChannel(task.payload);
+
+    // #6 — a WATCH poll result (`watch:<subscription_id>`) is a standing-
+    // subscription arrival, NOT a chat turn: route it to the notification-inbox
+    // sink (silence classifier + `push` notification, PUSH §8) instead of a main-
+    // chat lifecycle card. Only for `service_query` tasks with a wired sink; every
+    // other origin keeps the chat-thread path below.
+    if (
+      options.notifyWatchInbox !== undefined &&
+      task.kind === 'service_query' &&
+      originChannel.startsWith('watch:')
+    ) {
+      const subscriptionId = originChannel.slice('watch:'.length);
+      const status = mapResponseStatusToCardStatus(details.response_status);
+      const resultBody = parseEventResult(details.result);
+      const capability =
+        details.capability !== undefined && details.capability !== ''
+          ? details.capability
+          : extractCapabilityFromPayload(task.payload);
+      const serviceName =
+        details.service_name !== undefined && details.service_name !== ''
+          ? details.service_name
+          : 'service';
+      const card: CardSpec | null =
+        status === 'resolved'
+          ? (validateCardSpec(details.card, { trusted: false }) ??
+            (resultBody !== null
+              ? buildResultCardSpec({ capability, serviceName, result: resultBody })
+              : null))
+          : null;
+      await options.notifyWatchInbox({
+        subscriptionId,
+        capability,
+        serviceName,
+        status,
+        card,
+        result: resultBody,
+        text,
+        sourceId: event.task_id !== '' ? event.task_id : task.id,
+      });
+      return;
+    }
+
     let target = threadId;
     let diverted = false;
     if (threadResolver !== undefined) {
-      const originChannel = extractOriginChannel(task.payload);
       const resolved = threadResolver({
         originChannel,
         eventKind: event.event_kind,
@@ -258,3 +324,4 @@ export function extractOriginChannel(payload: string): string {
     return '';
   }
 }
+

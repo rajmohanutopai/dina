@@ -144,6 +144,10 @@ const AUTHZ_RULES: {
   { prefix: '/v1/reminder', allowed: new Set(['admin', 'brain', 'device']) },
   { prefix: '/v1/reminders', allowed: new Set(['admin', 'brain', 'device']) },
 
+  // Notification log (R4-03) — the durable inbox backing. Brain dual-writes
+  // through it across the split boundary; same caller set as reminders.
+  { prefix: '/v1/notifications', allowed: new Set(['admin', 'brain', 'device']) },
+
   // Notify — Brain
   { prefix: '/v1/notify', allowed: new Set(['brain']) },
 

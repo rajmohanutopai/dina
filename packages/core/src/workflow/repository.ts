@@ -170,6 +170,30 @@ export interface WorkflowRepository {
    */
   setWatchNextRun(id: string, nextRunAtSec: number | null, updatedAtMs: number): boolean;
 
+  /**
+   * R4-05 — list the DUE poll-mode watches directly: `kind='watch'`,
+   * `state='running'`, `next_run_at` set (NOT null/0 → not paused) and `<= nowSec`,
+   * ordered by `next_run_at` ASC (most-overdue first) so a fixed page can never let
+   * paused/future rows permanently hide a due watch behind them. `limit` bounds the
+   * per-tick burst; ASC-by-due ordering guarantees eventual firing across ticks.
+   */
+  listDueWatches(nowSec: number, limit: number): WorkflowTask[];
+
+  /**
+   * R4-04 — reschedule a fired watch ONLY IF its `next_run_at` still equals the
+   * value the sweeper fired (`expectedNextRunAtSec`). A compare-and-set: if a
+   * concurrent pause set `next_run_at = null` (or a resume/steer changed it) while
+   * the poll was in flight, the CAS misses and the reschedule is dropped — so an
+   * in-flight poll can never silently undo a pause. Scoped to running watches.
+   * Returns true iff the reschedule was applied.
+   */
+  rescheduleWatch(
+    id: string,
+    expectedNextRunAtSec: number,
+    newNextRunAtSec: number,
+    updatedAtMs: number,
+  ): boolean;
+
   // -- lifecycle helpers --
 
   /**
@@ -676,6 +700,34 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       `UPDATE workflow_tasks SET next_run_at = ?, updated_at = ?
        WHERE id = ? AND kind = 'watch' AND state = 'running'`,
       [nextRunAtSec, updatedAtMs, id],
+    );
+    return affected > 0;
+  }
+
+  listDueWatches(nowSec: number, limit: number): WorkflowTask[] {
+    const rows = this.db.query(
+      `SELECT ${TASK_COLUMNS} FROM workflow_tasks
+       WHERE kind = 'watch' AND state = 'running'
+         AND next_run_at IS NOT NULL AND next_run_at > 0 AND next_run_at <= ?
+       ORDER BY next_run_at ASC
+       LIMIT ?`,
+      [nowSec, limit],
+    );
+    return rows.map(rowToTask);
+  }
+
+  rescheduleWatch(
+    id: string,
+    expectedNextRunAtSec: number,
+    newNextRunAtSec: number,
+    updatedAtMs: number,
+  ): boolean {
+    // CAS on next_run_at: only reschedule if the row still holds the value the
+    // sweeper fired. A pause (→ null) or resume/steer in the interim misses.
+    const affected = this.db.run(
+      `UPDATE workflow_tasks SET next_run_at = ?, updated_at = ?
+       WHERE id = ? AND kind = 'watch' AND state = 'running' AND next_run_at = ?`,
+      [newNextRunAtSec, updatedAtMs, id, expectedNextRunAtSec],
     );
     return affected > 0;
   }
@@ -1597,6 +1649,43 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     const t = this.tasks.get(id);
     if (t === undefined || t.kind !== 'watch' || t.status !== 'running') return false;
     t.next_run_at = nextRunAtSec ?? undefined;
+    t.updated_at = updatedAtMs;
+    return true;
+  }
+
+  listDueWatches(nowSec: number, limit: number): WorkflowTask[] {
+    const out: WorkflowTask[] = [];
+    for (const t of this.tasks.values()) {
+      if (
+        t.kind === 'watch' &&
+        t.status === 'running' &&
+        t.next_run_at !== undefined &&
+        t.next_run_at > 0 &&
+        t.next_run_at <= nowSec
+      ) {
+        out.push({ ...t });
+      }
+    }
+    out.sort((a, b) => (a.next_run_at ?? 0) - (b.next_run_at ?? 0));
+    return out.slice(0, limit);
+  }
+
+  rescheduleWatch(
+    id: string,
+    expectedNextRunAtSec: number,
+    newNextRunAtSec: number,
+    updatedAtMs: number,
+  ): boolean {
+    const t = this.tasks.get(id);
+    if (
+      t === undefined ||
+      t.kind !== 'watch' ||
+      t.status !== 'running' ||
+      t.next_run_at !== expectedNextRunAtSec
+    ) {
+      return false;
+    }
+    t.next_run_at = newNextRunAtSec;
     t.updated_at = updatedAtMs;
     return true;
   }

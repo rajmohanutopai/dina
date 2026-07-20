@@ -13,6 +13,8 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { MAX_SERVICE_TTL } from '../d2d/families';
+
 import type { WatchPollPayload } from './payload';
 import type { WatchPollHandler } from './poll_sweeper';
 import type { CoreClient, ServiceQueryClientRequest } from '../client/core-client';
@@ -23,9 +25,11 @@ export function newWatchQueryId(): string {
   return `watchq-${bytesToHex(randomBytes(12))}`;
 }
 
-/** Map a watch payload → a requester `service.query`. The query TTL is the poll
- *  cadence, so a stale unanswered poll expires before the next one fires (no
- *  overlapping correlations for the same watch). */
+/** Map a watch payload → a requester `service.query`. The wire TTL is the poll
+ *  cadence CLAMPED to `MAX_SERVICE_TTL` (the service-query route rejects TTLs
+ *  above it), so a stale unanswered poll still expires before the next one fires
+ *  without failing validation. A long cadence (e.g. an hourly watch) keeps its
+ *  local next-run schedule but sends the capped wire TTL. */
 export function watchPollToServiceQuery(
   payload: WatchPollPayload,
   queryId: string,
@@ -35,7 +39,7 @@ export function watchPollToServiceQuery(
     capability: payload.capability,
     queryId,
     params: payload.query,
-    ttlSeconds: payload.poll_interval_sec,
+    ttlSeconds: Math.max(1, Math.min(payload.poll_interval_sec, MAX_SERVICE_TTL)),
     serviceUri: payload.service_uri,
     originChannel: `watch:${payload.subscription_id}`,
   };

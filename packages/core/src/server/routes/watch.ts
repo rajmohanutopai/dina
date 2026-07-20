@@ -12,6 +12,7 @@
  * subscriber's own standing work — no agent or Brain may list or steer it.
  */
 
+import { classifyWatchFilter, parseWatchFilter } from '../../watch/filter';
 import { watchTaskToListItem, type WatchListItem } from '../../watch/list';
 import { getWatchService, type WatchService } from '../../watch/service';
 
@@ -21,6 +22,10 @@ export type { WatchListItem } from '../../watch/list';
 
 function j(status: number, body: unknown): CoreResponse {
   return { status, body };
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 /** Owner guard bound to the boot-minted capability (§12.5, F15) — closure-held,
@@ -46,6 +51,70 @@ function requireService(): WatchService | CoreResponse {
 
 export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerOnlyGuard = makeOwnerGuard(ownerCapability);
+
+  // POST /v1/watch/create — the owner creates a poll-mode standing watch (#7).
+  // Owner-only, same boundary as list/steer. Idempotent on `subscription_id`
+  // (createPollWatch dedups via the active idempotency key), so a replayed create
+  // returns the existing watch instead of a duplicate.
+  router.post('/v1/watch/create', async (req) => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const svc = requireService();
+    if ('status' in svc) return svc;
+
+    const body = isRecord(req.body) ? req.body : {};
+    const subscriptionId = String(body.subscription_id ?? '');
+    const persona = String(body.persona ?? '');
+    const serviceUri = String(body.service_uri ?? '');
+    const providerDid = String(body.provider_did ?? '');
+    const capability = String(body.capability ?? '');
+    const pollInterval = typeof body.poll_interval_sec === 'number' ? body.poll_interval_sec : 0;
+    if (
+      subscriptionId === '' ||
+      persona === '' ||
+      serviceUri === '' ||
+      providerDid === '' ||
+      capability === '' ||
+      pollInterval <= 0
+    ) {
+      return j(400, {
+        error: 'invalid',
+        reason:
+          'subscription_id, persona, service_uri, provider_did, capability, and a positive poll_interval_sec are required',
+      });
+    }
+    const query = isRecord(body.query) ? body.query : {};
+    const condition = typeof body.condition === 'string' ? body.condition : undefined;
+    // R2-04 / R5-07 — the optional executable wake filter (untrusted). A PRESENT
+    // but malformed filter is REJECTED (400), never silently dropped to
+    // "unfiltered = fire always" — a corrupt condition must fail closed, not
+    // become cry-wolf noise (Silence First).
+    if (classifyWatchFilter(body.filter) === 'invalid') {
+      return j(400, {
+        error: 'invalid',
+        reason: 'filter, when present, must be { contains: <non-empty string> }',
+      });
+    }
+    const filter = parseWatchFilter(body.filter);
+    const task = svc.createPollWatch({
+      subscription_id: subscriptionId,
+      persona,
+      service_uri: serviceUri,
+      provider_did: providerDid,
+      capability,
+      query,
+      poll_interval_sec: pollInterval,
+      ...(condition !== undefined ? { condition } : {}),
+      ...(filter !== undefined ? { filter } : {}),
+    });
+    const item = watchTaskToListItem(task);
+    return j(201, {
+      watch_id: task.id,
+      subscription_id: subscriptionId,
+      ...(item !== null ? { watch: item } : {}),
+    });
+  });
+
   // GET /v1/watch/list — the owner's active (running) watches.
   router.get('/v1/watch/list', async (req) => {
     const denied = ownerOnlyGuard(req);

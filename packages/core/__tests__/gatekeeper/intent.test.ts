@@ -28,6 +28,15 @@ describe('Gatekeeper Intent Evaluation', () => {
     it('returns undefined for unknown action', () => {
       expect(getDefaultRiskLevel('made_up_action')).toBeUndefined();
     });
+
+    it('returns undefined for inherited Object.prototype keys (prototype-pollution safe, 81B)', () => {
+      // A provider-controlled action name must NEVER resolve to an inherited member
+      // (a function) — that would bypass the unknown-action MODERATE fail-safe and,
+      // in the run ingest path, poison risk_class with a non-RiskLevel value.
+      for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf']) {
+        expect(getDefaultRiskLevel(key)).toBeUndefined();
+      }
+    });
   });
 
   describe('evaluateIntent', () => {

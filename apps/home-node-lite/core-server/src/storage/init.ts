@@ -32,6 +32,7 @@ import {
   hydrateContactDirectory,
   hydrateServiceConfig,
   recoverOutboxOnBoot,
+  registerPersonaDEK,
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
   SQLitePushSubscriptionRepository,
@@ -48,6 +49,8 @@ import {
   setRunRepository,
   setRunService,
   setServiceConfigRepository,
+  setNotificationLogRepository,
+  SqliteNotificationLogRepository,
 } from '@dina/core';
 import { getDeviceByDID } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
@@ -170,10 +173,15 @@ export async function initializeStorage(
   const identityDekHex = bytesToHex(
     hkdf(sha256, seed32, new Uint8Array(32), encoder.encode('dina:vault:identity:v1'), 32),
   );
-  const resolvePersonaDekHex = async (persona: string): Promise<string> =>
-    bytesToHex(
-      hkdf(sha256, seed32, new Uint8Array(32), encoder.encode(`dina:vault:${persona}:v1`), 32),
-    );
+  const resolvePersonaDekHex = async (persona: string): Promise<string> => {
+    const dek = hkdf(sha256, seed32, new Uint8Array(32), encoder.encode(`dina:vault:${persona}:v1`), 32);
+    // ISVC-10/R5-01 — register the DEK with the orchestrator so the run
+    // plane's persona-open predicate (`hasDEK`) and payload cipher
+    // (`wrapWithPersonaDEK`) see this vault as open. The registry takes
+    // ownership of a copy (zeroed on release); the hex string feeds SQLCipher.
+    registerPersonaDEK(persona, dek.slice());
+    return bytesToHex(dek);
+  };
 
   const provider = new NodeDBProvider({
     vaultDir,
@@ -197,6 +205,10 @@ export async function initializeStorage(
   setPluginGrantRepository(new SQLitePluginGrantRepository(identityDB));
   setPluginDecisionRepository(new SQLitePluginDecisionRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
+  // R4-03 — the durable notification log (identity.sqlite). On the split server
+  // Core owns it; Brain reaches it over the `/v1/notifications` routes so its
+  // inbox dual-write survives restart here too.
+  setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   // Round-8 #2: wire the agent-grant repo BEFORE hydrating devices —

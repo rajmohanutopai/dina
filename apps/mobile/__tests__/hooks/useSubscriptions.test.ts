@@ -11,6 +11,7 @@ import {
   InMemoryWorkflowRepository,
   InProcessOwnerRunClient,
   createCoreRouter,
+  parseWatchPollPayload,
 } from '@dina/core';
 
 import {
@@ -18,6 +19,7 @@ import {
   pauseSubscription,
   resumeSubscription,
   cancelSubscription,
+  createSubscription,
 } from '../../src/hooks/useSubscriptions';
 import { setOwnerRunClient } from '../../src/services/owner_run_client';
 
@@ -89,5 +91,46 @@ describe('useSubscriptions', () => {
     expect(await pauseSubscription('x')).toBe(false);
     expect(await resumeSubscription('x')).toBe(false);
     expect(await cancelSubscription('x')).toBe(false);
+  });
+
+  describe('createSubscription (#7 / R3-06 / R2-04)', () => {
+    const baseInput = {
+      persona: 'general',
+      serviceUri: 'at://did:plc:prov/x/self',
+      providerDid: 'did:plc:prov',
+      capability: 'flight_status',
+      pollIntervalSec: 300,
+    };
+
+    it('parses the target string into a poll query and the condition into a wake filter', async () => {
+      const svc = wireWatch();
+      const watchId = await createSubscription({ ...baseInput, target: 'flight=BA117', condition: 'delayed' });
+      expect(watchId).not.toBeNull();
+      const active = svc.listActive();
+      expect(active).toHaveLength(1);
+      const payload = parseWatchPollPayload(active[0].payload);
+      // R3-06 — the poll TARGET (what to poll) becomes the query params...
+      expect(payload?.query).toEqual({ flight: 'BA117' });
+      // R2-04 — ...and the wake CONDITION (when to notify) becomes the filter.
+      expect(payload?.filter).toEqual({ contains: 'delayed' });
+      expect(payload?.condition).toBe('delayed');
+    });
+
+    it('an explicit query object wins over the target string', async () => {
+      const svc = wireWatch();
+      await createSubscription({ ...baseInput, query: { flight: 'AA1' }, target: 'flight=BA117' });
+      expect(parseWatchPollPayload(svc.listActive()[0].payload)?.query).toEqual({ flight: 'AA1' });
+    });
+
+    it('omitting the condition sets no wake filter (fire on every poll)', async () => {
+      const svc = wireWatch();
+      await createSubscription({ ...baseInput });
+      expect(parseWatchPollPayload(svc.listActive()[0].payload)?.filter).toBeUndefined();
+    });
+
+    it('returns null when no owner client is wired', async () => {
+      setOwnerRunClient(null);
+      expect(await createSubscription({ ...baseInput })).toBeNull();
+    });
   });
 });

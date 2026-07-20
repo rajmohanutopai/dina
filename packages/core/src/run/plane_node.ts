@@ -24,9 +24,12 @@ import { PersonaLockedError } from '../errors';
 import { hasDEK, unwrapWithPersonaDEK, wrapWithPersonaDEK } from '../persona/orchestrator';
 
 import { parseRunMessagePayload, parseResultCardPayload } from './card';
+import { getCompletionReceiptRepository } from './completion';
 import { SQLiteErasureKeyStore, type ErasureKeyStore } from './erasure_store';
+import { NaclDeviceSealer, SQLiteRunSpool, type DeviceSealer, type RunSpool } from './locked_arrival';
+import { getMessageRepository, type MessageRepository } from './message';
 import { type PersonaCipher } from './payload_store';
-import { wireRunPlane, type RunPlane } from './plane';
+import { wireRunPlane, type RunPlane, type RunPlaneDeps } from './plane';
 import { getRunRepository, type RunRepository } from './repository';
 import { getReservationRepository, type ReservationRepository } from './reservation';
 import {
@@ -73,6 +76,21 @@ export interface RunPlaneNodeDeps {
   isPersonaOpen?: (persona: string) => boolean;
   /** Erasure backend (default: durable SQLite `logical_deletion` over `db`). */
   erasureStore?: ErasureKeyStore;
+  /** R5-02 — post-commit sink for a message reaching `classified` (§9.1); the
+   *  boot wires it to the notification inbox (retained Activity entry). */
+  onMessageClassified?: RunPlaneDeps['onMessageClassified'];
+  /** R5-01 — the device Ed25519 keypair the locked-arrival staging key is
+   *  sealed to (§7/§13). Supplying it composes the full held_by_lock lane over
+   *  the durable SQLite spool; omitted ⇒ the degraded persona_locked mode
+   *  (logged by the plane). */
+  deviceKeypair?: { publicKey: Uint8Array; secretKey: Uint8Array };
+  /** Overrides for tests (default: SQLite spool over `db`; NaCl sealer over
+   *  `deviceKeypair`). */
+  runSpool?: RunSpool;
+  deviceSealer?: DeviceSealer;
+  /** R5-01/§7 — post-commit sink for a held response detected LOST; the boot
+   *  wires it to a `run`-kind notification. */
+  onResponseLost?: RunPlaneDeps['onResponseLost'];
   nowMsFn?: () => number;
   log?: (entry: Record<string, unknown>) => void;
   engineIntervalMs?: number;
@@ -81,6 +99,7 @@ export interface RunPlaneNodeDeps {
   completionIntervalMs?: number;
   runRepo?: RunRepository;
   reservationRepo?: ReservationRepository;
+  messageRepo?: MessageRepository;
 }
 
 export interface RunPlaneNode {
@@ -158,6 +177,16 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     });
   };
 
+  // R5-01 — the durable spool always defaults over Tier-0; the sealer needs the
+  // device keypair. `wireRunPlane` composes the locked-arrival lane only when
+  // BOTH land (else it logs the degraded mode).
+  const deviceSealer =
+    deps.deviceSealer ??
+    (deps.deviceKeypair !== undefined
+      ? new NaclDeviceSealer(deps.deviceKeypair.publicKey, deps.deviceKeypair.secretKey)
+      : undefined);
+  const runSpool = deps.runSpool ?? new SQLiteRunSpool(deps.db);
+
   const plane = wireRunPlane({
     db: deps.db,
     personaCipher,
@@ -165,6 +194,12 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     emitQuery,
     emitDelegation,
     erasureStore: deps.erasureStore ?? new SQLiteErasureKeyStore(deps.db),
+    runSpool,
+    ...(deviceSealer !== undefined ? { deviceSealer } : {}),
+    ...(deps.onMessageClassified !== undefined
+      ? { onMessageClassified: deps.onMessageClassified }
+      : {}),
+    ...(deps.onResponseLost !== undefined ? { onResponseLost: deps.onResponseLost } : {}),
     // E76-06 — no `buildClassificationView` override: the plane's OWN default
     // decrypts the stored payload via the PayloadStore for an open persona and
     // renders the card title/body + the verified content digest (§6.2/§12.6).
@@ -190,11 +225,31 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
   // binds issuer===provider. Shared by the message / exhausted / result branches.
   const resolveKeyFor = async (
     r: Record<string, unknown>,
-    fallbackIssuer: string,
+    expectedProviderDid: string,
   ): Promise<ResolveRuntimeKey> => {
-    const issuerDid = typeof r.runtime_issuer_did === 'string' ? r.runtime_issuer_did : fallbackIssuer;
+    const issuerDid = typeof r.runtime_issuer_did === 'string' ? r.runtime_issuer_did : '';
     const keyId = typeof r.runtime_key_id === 'string' ? r.runtime_key_id : '';
-    const issuedAt = typeof r.issued_at === 'number' ? r.issued_at : 0;
+    const issuedAt = typeof r.issued_at === 'number' ? r.issued_at : NaN;
+    // R2-02 — a COMPLETE shape + binding preflight BEFORE any external DID lookup:
+    // the issuer must be PRESENT and EQUAL the correlated run's provider (each
+    // `verify*` binds `runtime_issuer_did === provider_did` too), `issued_at` finite
+    // and positive, and `key_id` + `signature` present + well-typed. Anything
+    // malformed, unsigned, non-finite, or cross-provider resolves to a null verifier
+    // WITHOUT a network call (the verifier rejects it anyway) — so a provider holding
+    // a live reservation/delegation cannot force DID resolutions for arbitrary or
+    // mismatched issuers. (Resolving the EXACT method authorized at `issued_at` — vs.
+    // the provider's current key — remains the documented rotation-aware V1 deferral.)
+    if (
+      issuerDid === '' ||
+      issuerDid !== expectedProviderDid ||
+      keyId === '' ||
+      !Number.isFinite(issuedAt) ||
+      issuedAt <= 0 ||
+      typeof r.signature !== 'string' ||
+      r.signature === ''
+    ) {
+      return () => null;
+    }
     const key = await deps.resolveVerificationKey(issuerDid, keyId, issuedAt);
     return () => key;
   };
@@ -229,7 +284,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
         log({ evt: 'run_plane.completion_rejected', reason: 'unknown_run', delegation_id: delegationId });
         return true;
       }
-      const resolve = await resolveKeyFor(r, senderDID);
+      const resolve = await resolveKeyFor(r, run.provider_did);
       const verified = verifyRunResult(
         r as unknown as SignedRunResultWire,
         {
@@ -243,6 +298,42 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
       );
       if (!verified.ok) {
         log({ evt: 'run_plane.completion_rejected', reason: verified.reason, run_id: run.run_id });
+        return true;
+      }
+      // 81B-04b — bind the completion to the STORED delegated message BEFORE the
+      // card is persisted (else a signed-but-mismatched completion could pin card
+      // A under `result-<delegation_id>`, and `putPayload`'s published-idempotency
+      // would then hand that stale ref to a later valid completion signing card B).
+      // Require the signed `message_id` + `decision_revision` to resolve to a
+      // message actually bound to this delegation + run. `ingestCompletion` re-checks
+      // the same binding (defense in depth); this gate stops storage on a mismatch.
+      const messages = deps.messageRepo ?? getMessageRepository();
+      const boundMsg = messages?.getById(verified.verified.message_id) ?? null;
+      if (
+        boundMsg === null ||
+        boundMsg.delegation_id !== delegationId ||
+        boundMsg.run_id !== run.run_id ||
+        boundMsg.decision_revision !== verified.verified.decision_revision
+      ) {
+        log({ evt: 'run_plane.completion_rejected', reason: 'binding_mismatch', run_id: run.run_id });
+        return true;
+      }
+      // R3-01 — receipt CONFLICT gate BEFORE any card write: if a receipt already
+      // exists for this delegation with a DIFFERENT status or a DIFFERENT signed
+      // card digest, this is a conflicting completion — reject it WITHOUT storing its
+      // card. Otherwise its card would publish under `result-<delegation_id>` and a
+      // later correct re-send could inherit that poisoned blob via putPayload's
+      // published-idempotency (the regression R3-01 flags). A matching digest (the
+      // provider's idempotent re-send) proceeds to the locked→unlock upgrade.
+      const receipts = getCompletionReceiptRepository();
+      const priorReceipt = receipts?.getByDelegationId(delegationId) ?? null;
+      if (
+        priorReceipt !== null &&
+        (priorReceipt.status !== verified.verified.status ||
+          (priorReceipt.result_card_digest !== null &&
+            priorReceipt.result_card_digest !== verified.verified.result_card_digest))
+      ) {
+        log({ evt: 'run_plane.completion_rejected', reason: 'receipt_conflict', run_id: run.run_id });
         return true;
       }
       // 81B-04 — the RESULT-CARD is a payload just like a pull message (§5.1/§13):
@@ -292,6 +383,9 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
         run_id: verified.verified.run_id,
         status: verified.verified.status,
         result_card_ref: resultCardRef,
+        // R3-01 — bind the SIGNED digest to the receipt (first-writer-immutable) so a
+        // later conflicting completion is rejected before its card can be attached.
+        result_card_digest: verified.verified.result_card_digest,
         issued_at: verified.verified.issued_at,
       });
       log({ evt: 'run_plane.completion_ingested', run_id: run.run_id, outcome });
@@ -311,7 +405,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
       log({ evt: 'run_plane.response_rejected', reason: 'no_result', run_id: run.run_id });
       return true;
     }
-    const resolve = await resolveKeyFor(r, senderDID);
+    const resolve = await resolveKeyFor(r, run.provider_did);
 
     // (C) EXHAUSTED-marker branch (§7.1, pull only) — a result carrying a `cursor`
     // and NO `message_id`. Verify + set the (permissive) exhaustion barrier — this

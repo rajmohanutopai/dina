@@ -171,6 +171,7 @@ export class AdmissionService {
       dedup_key: null,
       content_digest: null,
       sealed_response_ref: null,
+      held_message_json: null,
       error_reason: null,
       error_at: null,
       lease_expires_at: nowMs + this.leaseMs,
@@ -194,9 +195,14 @@ export class AdmissionService {
    * (cursor unmoved, reservation released) — a crash can never leave an advanced
    * cursor with no message, nor a published payload with no lifecycle row.
    */
-  commit(reservationId: string, input: CommitReservationInput, onCommitted?: () => void): CommitResult {
+  commit(
+    reservationId: string,
+    input: CommitReservationInput,
+    onCommitted?: () => void,
+    from: 'reserved' | 'held_by_lock' = 'reserved',
+  ): CommitResult {
     const res = this.resRepo.getById(reservationId);
-    if (res === null || res.state !== 'reserved') {
+    if (res === null || res.state !== from) {
       return { committed: false, reason: 'reservation_not_open' };
     }
     const run = this.runRepo.getById(res.run_id);
@@ -216,7 +222,7 @@ export class AdmissionService {
         if (!this.runRepo.incrementProducedAndAdvance(res.run_id, nowMs, run.interval_ms ?? 0, res.cursor)) {
           throw ABORT;
         }
-        if (!this.resRepo.commit(reservationId, input, nowMs)) throw ABORT;
+        if (!this.resRepo.commit(reservationId, input, nowMs, from)) throw ABORT;
         // Caller's lifecycle enqueue + classify + payload-publish, atomic with the
         // CAS above (F2). A throw here aborts the whole transaction.
         if (onCommitted !== undefined) onCommitted();

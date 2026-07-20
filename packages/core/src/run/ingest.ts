@@ -25,14 +25,16 @@
  */
 
 import { PersonaLockedError } from '../errors';
-import { DEFAULT_POLICY } from '../gatekeeper/intent';
+import { getDefaultRiskLevel } from '../gatekeeper/intent';
 
-import { getMessageRepository, type MessageKind, type MessageRepository } from './message';
+import { getMessageRepository, type MessageKind, type MessageRecord, type MessageRepository } from './message';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRepository } from './reservation';
+import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
 
 import type { AdmissionService } from './admission';
 import type { RunClassifyService } from './classification';
+import type { RunRecord } from './domain';
+import type { LockedArrivalStore } from './locked_arrival';
 import type { PayloadStore } from './payload_store';
 import type { RunService } from './service';
 
@@ -64,6 +66,78 @@ export interface VerifiedRunMessage {
 // keyed on `action_type` (an explicit SAFE allow-list) is where auto-dispatch of
 // genuinely-safe actions would later be earned, never from provider input.
 
+/** The Tier-0 metadata a `held_by_lock` reservation persists so the unlock
+ *  replay can rebuild the message row (the payload itself stays Core-sealed in
+ *  the spool). `VerifiedRunMessage` minus `payload`. */
+export type HeldMessageMeta = Omit<VerifiedRunMessage, 'payload'>;
+
+/** Parse a stored `held_message_json` back to metadata; null on corruption. */
+export function parseHeldMessageMeta(raw: string | null): HeldMessageMeta | null {
+  if (raw === null || raw === '') return null;
+  try {
+    const p = JSON.parse(raw) as Partial<HeldMessageMeta>;
+    if (
+      typeof p.message_id !== 'string' || p.message_id === '' ||
+      typeof p.sequence !== 'number' ||
+      typeof p.dedup_key !== 'string' ||
+      (p.kind !== 'informational' && p.kind !== 'action') ||
+      typeof p.expires_at !== 'number' ||
+      typeof p.content_digest !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      message_id: p.message_id,
+      sequence: p.sequence,
+      dedup_key: p.dedup_key,
+      kind: p.kind,
+      action_type: typeof p.action_type === 'string' ? p.action_type : null,
+      expires_at: p.expires_at,
+      content_digest: p.content_digest,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The `enqueued` message row for a verified arrival — shared by the live ingest
+ * and the unlock replay so the row shape (incl. the Core-DERIVED risk class,
+ * never provider-supplied — §9.1) can never diverge between the two paths.
+ */
+export function buildEnqueuedMessageRow(
+  meta: HeldMessageMeta,
+  run: RunRecord,
+  reservation: ReservationRecord,
+  contentId: string,
+  nowMs: number,
+): MessageRecord {
+  return {
+    message_id: meta.message_id,
+    run_id: run.run_id,
+    reservation_id: reservation.reservation_id,
+    dedup_key: meta.dedup_key,
+    sequence: meta.sequence,
+    kind: meta.kind,
+    action_type: meta.action_type,
+    risk_class:
+      meta.kind === 'action' ? (getDefaultRiskLevel(meta.action_type ?? '') ?? 'MODERATE') : null,
+    state: 'enqueued',
+    decision: null,
+    decision_revision: 0,
+    delegation_id: null,
+    expires_at: meta.expires_at,
+    payload_ref: contentId,
+    content_digest: meta.content_digest,
+    tier_candidate: null,
+    final_tier: null,
+    tier_source: null,
+    reconciliation_evidence: '[]',
+    created_at: nowMs,
+    updated_at: nowMs,
+  };
+}
+
 export type PullIngestOutcome =
   /** admitted: `enqueued` + classification begun. */
   | { outcome: 'enqueued'; message_id: string }
@@ -76,8 +150,12 @@ export type PullIngestOutcome =
   | { outcome: 'content_mismatch'; message_id: string }
   /** a barrier / TTL raced the commit CAS → ciphertext shredded, slot released. */
   | { outcome: 'barrier_raced' }
-  /** the persona locked between query + response → the held-blob path (ISVC-6),
-   *  handled by the locked-arrival composition, not admitted here. */
+  /** the persona locked between query + response AND the locked-arrival store is
+   *  composed: the response was durably STAGED and the slot is `held_by_lock` —
+   *  it will be admitted exactly-once on unlock (§7). */
+  | { outcome: 'held_by_lock' }
+  /** the persona locked between query + response and NO locked-arrival store is
+   *  wired (degraded mode): nothing staged; the slot stays reserved/released. */
   | { outcome: 'persona_locked' }
   /** the provider signalled `exhausted` (§7.1): slot released; if the run is
    *  `stop_on_exhaustion` the permissive exhaustion barrier was set. */
@@ -98,6 +176,11 @@ export interface RunResponseIngestOptions {
   /** Runs the message enqueue + `beginClassification` as ONE commit after the
    *  guarded admission CAS (§6.3). Default is a passthrough. */
   tx?: (fn: () => void) => void;
+  /** R5-01 — the composed locked-arrival store (§7): a lock-raced verified
+   *  response is durably STAGED (device-sealed spool blob) and its slot becomes
+   *  `held_by_lock` for exactly-once admission on unlock. Omitted ⇒ the degraded
+   *  pre-composition behavior (persona_locked; the response may be re-fetched). */
+  lockedArrival?: LockedArrivalStore;
 }
 
 export class RunResponseIngest {
@@ -111,6 +194,7 @@ export class RunResponseIngest {
   private readonly personaOpen: (persona: string) => boolean;
   private readonly now: () => number;
   private readonly tx: (fn: () => void) => void;
+  private readonly lockedArrival: LockedArrivalStore | undefined;
 
   constructor(opts: RunResponseIngestOptions) {
     const runs = opts.runRepo ?? getRunRepository();
@@ -129,6 +213,47 @@ export class RunResponseIngest {
     this.personaOpen = opts.isPersonaOpen ?? (() => true);
     this.now = opts.nowMsFn ?? (() => Date.now());
     this.tx = opts.tx ?? ((fn) => fn());
+    this.lockedArrival = opts.lockedArrival;
+  }
+
+  /**
+   * R5-01 (§7) — a verified response raced a persona LOCK: durably stage its
+   * ciphertext (device-sealed spool blob) BEFORE the `held_by_lock` CAS, so it is
+   * never lost and never re-fetched; the unlock replay admits it exactly once.
+   * Falls back to the degraded `persona_locked` outcome when no locked-arrival
+   * store is composed (nothing staged) or the CAS loses a race (blob discarded).
+   */
+  private holdForLock(
+    res: { reservation_id: string },
+    message: VerifiedRunMessage,
+  ): PullIngestOutcome {
+    if (this.lockedArrival === undefined) return { outcome: 'persona_locked' };
+    const meta: HeldMessageMeta = {
+      message_id: message.message_id,
+      sequence: message.sequence,
+      dedup_key: message.dedup_key,
+      kind: message.kind,
+      action_type: message.action_type,
+      expires_at: message.expires_at,
+      content_digest: message.content_digest,
+    };
+    // Stage FIRST (durable spool write), THEN the CAS — the §7 ordering: a crash
+    // between the two leaves an unreferenced spool blob (GC'd later), never a
+    // held reservation pointing at nothing.
+    const ref = this.lockedArrival.stage(message.message_id, message.payload);
+    const held = this.reservations.holdByLock(
+      res.reservation_id,
+      JSON.stringify(ref),
+      JSON.stringify(meta),
+      this.now(),
+    );
+    if (!held) {
+      // The slot changed under us (barrier invalidated it mid-flight) — the
+      // response must not survive: crypto-shred + delete the staged blob.
+      this.lockedArrival.discard(message.message_id, ref);
+      return { outcome: 'persona_locked' };
+    }
+    return { outcome: 'held_by_lock' };
   }
 
   /**
@@ -211,8 +336,8 @@ export class RunResponseIngest {
     if (run === null) return { outcome: 'no_slot' };
 
     // Persona must be open to wrap the payload under its DEK (§7). A locked
-    // persona is the durable held-blob path (ISVC-6) — not admitted here.
-    if (!this.personaOpen(run.persona)) return { outcome: 'persona_locked' };
+    // persona takes the durable held-blob path: stage + `held_by_lock` (R5-01).
+    if (!this.personaOpen(run.persona)) return this.holdForLock(res, message);
 
     // PREPARE the payload (envelope-encrypt + leaf key + `prepared` pin), but do
     // NOT publish yet (F2): publication is deferred into the enqueue-commit tx
@@ -228,23 +353,27 @@ export class RunResponseIngest {
       });
       contentId = ref.content_id;
     } catch (err) {
-      // The DEK dropped between the open-check and the wrap (a lock race): treat
-      // as the held path, leave the slot `reserved` for the locked-arrival flow.
-      if (err instanceof PersonaLockedError) return { outcome: 'persona_locked' };
+      // The DEK dropped between the open-check and the wrap (a lock race): the
+      // durable held-blob path (R5-01) — stage + `held_by_lock`.
+      if (err instanceof PersonaLockedError) return this.holdForLock(res, message);
       throw err;
     }
 
     // Recheck persona-open at the enqueue-commit point (§7/§18 "hard bounds", F3).
-    // `putPayload` above already fails closed on a lock (PersonaLockedError), but
-    // this is the explicit hard-bound recheck AT the commit: a persona that locked
-    // after the payload was stored fails closed here — crypto-shred the just-stored
-    // ciphertext + release the slot — rather than admitting a message under a now-
-    // closed persona. (Durably STAGING a lock-raced response as `held_by_lock` for
-    // replay on unlock is the ISVC-6 fs-spool path, layered on when composed.)
+    // `preparePayload` above already fails closed on a lock (PersonaLockedError),
+    // but this is the explicit hard-bound recheck AT the commit: a persona that
+    // locked after the payload was prepared must NOT be admitted under a now-
+    // closed persona. Crypto-shred the just-prepared (persona-wrapped) ciphertext,
+    // then take the durable held-blob path (R5-01): stage the still-in-memory
+    // plaintext device-sealed and CAS the slot to `held_by_lock` — never dropped,
+    // admitted exactly-once on unlock. (Degraded mode releases the slot as before.)
     if (!this.personaOpen(run.persona)) {
       this.payloads.shredPayload(message.message_id);
-      this.reservations.release(res.reservation_id, this.now());
-      return { outcome: 'persona_locked' };
+      const held = this.holdForLock(res, message);
+      if (held.outcome === 'persona_locked') {
+        this.reservations.release(res.reservation_id, this.now());
+      }
+      return held;
     }
 
     // GUARDED enqueue-commit CAS (§7/§8) — ONE Tier-0 transaction (F2). The
@@ -267,40 +396,10 @@ export class RunResponseIngest {
         content_digest: message.content_digest,
       },
       () => {
-        this.messages.create({
-          message_id: message.message_id,
-          run_id: run.run_id,
-          reservation_id: res.reservation_id,
-          dedup_key: message.dedup_key,
-          sequence: message.sequence,
-          kind: message.kind,
-          action_type: message.action_type,
-          // 81B-05 — Core DERIVES the risk class from the verified action_type via
-          // the deterministic gatekeeper policy (§9.1, NEVER provider-supplied):
-          // BLOCKED (credential_export/key_access/read_vault/…) → the risk gate
-          // routes it to `policy_refused` (never confirmable/dispatchable); an
-          // UNKNOWN action fails safe to MODERATE (owner confirm). Informational
-          // messages carry no risk class.
-          risk_class:
-            message.kind === 'action'
-              ? (DEFAULT_POLICY[message.action_type ?? ''] ?? 'MODERATE')
-              : null,
-          state: 'enqueued',
-          decision: null,
-          decision_revision: 0,
-          delegation_id: null,
-          expires_at: message.expires_at,
-          payload_ref: contentId,
-          // The verified provider content digest (card_digest) — the stable
-          // content identity for the classify-view + same-dedup checks (E76-05/06).
-          content_digest: message.content_digest,
-          tier_candidate: null,
-          final_tier: null,
-          tier_source: null,
-          reconciliation_evidence: '[]',
-          created_at: nowMs,
-          updated_at: nowMs,
-        });
+        // 81B-05 — the row's risk class is Core-DERIVED inside the shared
+        // builder (§9.1, never provider-supplied); the builder is shared with the
+        // unlock replay so the two admission paths can never diverge.
+        this.messages.create(buildEnqueuedMessageRow(message, run, res, contentId, nowMs));
         this.classify.beginClassification(message.message_id);
         // Publish the payload pointer within this same tx (prepared → published).
         if (!this.payloads.publishPayload(message.message_id)) {

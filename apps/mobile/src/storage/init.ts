@@ -13,8 +13,12 @@
 
 import { Paths } from 'expo-file-system';
 
+import {
+  registerEngagementProvider,
+  collectNotificationBriefingItems,
+} from '@dina/brain/briefing';
 import { resetThreads } from '@dina/brain/chat';
-import { hydrateNotifications } from '@dina/brain/notifications';
+import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/notifications';
 import {
   hydrateContactDirectory,
   resetContactDirectory,
@@ -35,6 +39,8 @@ import {
   personaExists,
   wireIdentityScopeCleanups,
   wirePersonaScopeCleanups,
+  SqliteNotificationLogRepository,
+  setNotificationLogRepository,
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
@@ -160,6 +166,12 @@ export async function initializePersistence(
   resetThreads();
   resetStagingState({ preserveRepositoryRows: true });
   resetQuarantineState();
+  // R5-03 — same hazard for the notification inbox: its in-memory items are a
+  // module global, and `hydrateNotifications` skips when items already exist, so
+  // a different identity in the same process would otherwise inherit the prior
+  // user's notifications. Drop the in-memory view (NOT the durable rows) before
+  // this identity's repo is wired + hydrated below.
+  clearNotificationsMemory();
 
   // Use Expo's document directory for database storage. `Paths.document`
   // returns a `Directory` whose `.uri` is a `file://…/` string — op-sqlite
@@ -194,6 +206,11 @@ export async function initializePersistence(
   setPluginGrantRepository(new SQLitePluginGrantRepository(identityDB));
   setPluginDecisionRepository(new SQLitePluginDecisionRepository(identityDB));
   setReminderRepository(new SQLiteReminderRepository(identityDB));
+  // R4-03 — the DURABLE notification inbox. Wiring this makes Brain's inbox
+  // dual-write survive restart (hydrated below) and carries `data_scope` so a
+  // guided-demo notification is purged on teardown, never persisting past the
+  // demo.
+  setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
   setAuditRepository(new SQLiteAuditRepository(identityDB));
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   setStagingRepository(new SQLiteStagingRepository(identityDB));
@@ -372,6 +389,12 @@ export async function initializePersistence(
   // hydrate fires a `'hydrated'` event so live badge subscribers
   // recompute against the freshly restocked store.
   await hydrateNotifications();
+
+  // R4-03 — surface Tier-3 (`briefing`-kind) notifications the silence pipeline
+  // saved-for-later into the daily briefing's engagement section. Without this,
+  // a benign watch/push result retained as a briefing item would never reach the
+  // digest. Registration is idempotent (single provider slot).
+  registerEngagementProvider(collectNotificationBriefingItems);
 }
 
 /**
@@ -482,6 +505,12 @@ export async function shutdownAllPersistence(): Promise<void> {
     // land in a closed DB. Privacy bug: erase + re-login leaked old chats.
     resetThreads();
     setChatMessageRepository(null);
+    // Notification inbox — R5-03 — same cross-identity in-memory leak. Drop the
+    // in-memory view (NOT via resetNotifications, which would also wipe the
+    // durable rows that belong to the erased identity's own encrypted DB) and
+    // unwire the repo so a post-teardown append can't land in the closed DB.
+    clearNotificationsMemory();
+    setNotificationLogRepository(null);
     // Staging inbox — same cross-identity in-memory leak as chat/quarantine.
     // It caches in-flight /remember content (raw, pre-classification). Null
     // the repo first so the reset's repo.clear() is a no-op, and pass

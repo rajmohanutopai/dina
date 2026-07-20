@@ -10,6 +10,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { fireHeldReplay } from '../run/replay_registry';
+
 import { setDBProvider, resetDBProvider } from './db_provider';
 import { applyMigrations } from './migration';
 import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from './schemas';
@@ -49,6 +51,13 @@ export async function openPersonaVault(
 ): Promise<DatabaseAdapter> {
   const personaDB = await provider.openPersonaDB(persona);
   applyMigrations(personaDB, PERSONA_MIGRATIONS);
+  // R5-01 (§7 unlock-commit) — this is the SHARED persona-unlock choke point
+  // for both boots (mobile `openPersonaDB`, lite `openVaultDB`, the agent
+  // locked-persona unlock hook). The provider registered the DEK during
+  // `openPersonaDB`, so a `held_by_lock` run response for this persona can be
+  // admitted NOW. Best-effort no-op until the run plane registers its hook
+  // (boot-time opens are covered by `recoverOnBoot`'s replayAll instead).
+  fireHeldReplay(persona);
   return personaDB;
 }
 

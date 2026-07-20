@@ -120,11 +120,13 @@ describe('LockedArrivalStore (§7)', () => {
   it('barrier discard crypto-shreds the leaf key + ack-deletes the spool blob WITHOUT decryption', () => {
     const { erasure, spool, payloadStore, locked } = setup();
     const ref = locked.stage('p1', enc.encode('secret'));
-    expect(erasure.has('p1')).toBe(true);
+    // R5-01 — the staging leaf key is NAMESPACED (`staged:<payloadId>`) so a
+    // later preparePayload can never overwrite it (§7 crash-safety).
+    expect(erasure.has('staged:p1')).toBe(true);
 
     locked.discard('p1', ref);
 
-    expect(erasure.has('p1')).toBe(false); // crypto-shred
+    expect(erasure.has('staged:p1')).toBe(false); // crypto-shred
     expect(spool.peek(ref.spool_id)).toBeNull(); // spool blob gone
     expect(payloadStore.blobState('p1')).toBeNull(); // never published
   });
@@ -169,21 +171,22 @@ describe('LockedArrivalStore (§7)', () => {
   it('a shredded leaf key before publish surfaces response_lost', () => {
     const { erasure, locked } = setup();
     const ref = locked.stage('p1', enc.encode('x'));
-    erasure.destroy('p1'); // shredded (e.g. a racing barrier)
+    erasure.destroy('staged:p1'); // shredded (e.g. a racing barrier)
     expect(locked.publish('p1', 'r1', 'general', ref)).toEqual({
       outcome: 'response_lost',
       reason: 'erasure_key_gone',
     });
   });
 
-  it('a putPayload failure restores the staging key + surfaces publish_failed; a retry succeeds (VERIF #3)', () => {
+  it('a putPayload failure leaves the staging key intact + surfaces publish_failed; a retry succeeds (VERIF #3)', () => {
     const { erasure, spool, payloadStore, sealer, locked } = setup();
     const ref = locked.stage('p1', enc.encode('recovered on retry'));
-    expect(erasure.has('p1')).toBe(true);
+    expect(erasure.has('staged:p1')).toBe(true);
 
     // A publish store whose persona-store write throws mid-flight (e.g. disk
-    // error) — `putPayload` overwrites the staging leaf key, so a naive impl
-    // would leave the spool blob undecryptable AND throw uncaught.
+    // error). R5-01: the staging leaf key lives under its OWN namespaced id
+    // (`staged:p1`), so putPayload's bare-`p1` key write can never clobber it —
+    // the spool blob stays decryptable for the retry with no restore dance.
     let attempts = 0;
     const throwingPayloads = {
       contentId: (id: string) => payloadStore.contentId(id),
@@ -203,8 +206,8 @@ describe('LockedArrivalStore (§7)', () => {
     const out = failStore.publish('p1', 'r1', 'general', ref);
     expect(out).toEqual({ outcome: 'response_lost', reason: 'publish_failed' });
     expect(attempts).toBe(1);
-    // The staging key was RESTORED (retry-safe) and the spool blob NOT acked.
-    expect(erasure.has('p1')).toBe(true);
+    // The staging key is INTACT (retry-safe) and the spool blob NOT acked.
+    expect(erasure.has('staged:p1')).toBe(true);
     expect(spool.peek(ref.spool_id)).not.toBeNull();
 
     // A retry against the real (healthy) payload store recovers the response.

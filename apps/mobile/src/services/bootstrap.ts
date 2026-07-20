@@ -37,6 +37,7 @@ import {
   WorkflowService,
   bootstrapMsgBox,
   buildWatchPollHandler,
+  getWatchService,
   disconnectMsgBox,
   getReviewPublishRepository,
   getServiceConfig,
@@ -148,6 +149,7 @@ import {
   addSystemMessage,
   hydrateThread,
   createServiceQueryDeliverer} from '@dina/brain/chat';
+import { deliverWatchResult } from '@dina/brain/notifications';
 import {
   installWorkflowApprovalInboxBridge,
   installWorkflowApprovalChatBridge,
@@ -171,6 +173,7 @@ import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
 import { postGrantPromptOnce } from './grant_prompt';
 import { resolveInboxCoreClient } from './inbox_client_resolver';
+import { installServerNotifications } from './server_notifications';
 import {
   resetPendingPreflights,
   stashPendingPreflight,
@@ -670,6 +673,32 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const deliver: WorkflowEventDeliverer = createServiceQueryDeliverer({
     threadId,
     ...(options.threadResolver !== undefined ? { threadResolver: options.threadResolver } : {}),
+    // #6 / R2-05 — a WATCH poll result (origin `watch:<id>`) is a standing-
+    // subscription arrival, not a chat turn. It runs through the SHARED silence
+    // pipeline (`deliverWatchResult`): the R2-04 wake filter (resolved from the
+    // watch by subscription id), the silence classifier (ceiling-capped: an
+    // owner-created watch is Solicited, never a self-escalated interrupt), the DND /
+    // quiet-hours gate, and bounded CardSpec rendering — Tier 1/2 → the Activity
+    // `push` inbox, Tier 3 → briefing. Never a blind append, never the main chat.
+    notifyWatchInbox: (d) => {
+      // R3-02 — resolve the delivery policy (active + filter) by EXACT subscription
+      // lookup; a cancelled/unknown watch fails closed (suppressed).
+      const policy = getWatchService()?.deliveryPolicyFor(d.subscriptionId) ?? { active: false };
+      // R5-04 — RETURN the promise: a failed durable append rejects the delivery,
+      // so the workflow event stays unacknowledged and Core retries (the
+      // idempotent sourceId append makes the retry an upsert, not a duplicate).
+      return deliverWatchResult({
+        subscriptionId: d.subscriptionId,
+        capability: d.capability,
+        serviceName: d.serviceName,
+        status: d.status,
+        card: d.card,
+        text: d.text,
+        sourceId: d.sourceId,
+        watchActive: policy.active,
+        ...(policy.filter !== undefined ? { filter: policy.filter } : {}),
+      }).then(() => undefined);
+    },
   });
   // 2-5. Shared service runtime — handler + dispatcher (with
   // service.query registered) + orchestrator + workflow-event consumer
@@ -968,6 +997,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(resetInboxCoreClient);
     setServiceConfigCoreClient(options.coreClient);
     globalDisposers.push(resetServiceConfigCoreClient);
+    // R4-03 — on web, wire the notification inbox to the split server's durable
+    // log (`/api/v1/notifications` + SSE) so watch/push results surface in the
+    // browser Activity inbox. A no-op on native (the in-process SQLite log backs
+    // the inbox directly).
+    globalDisposers.push(installServerNotifications());
     // Pattern A coordinator wins over the simpler agenticAsk path —
     // coordinator subsumes the tool-loop and adds the suspend/resume
     // chain. Tests / minimal nodes that don't need approval gating
@@ -1345,6 +1379,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         taskExpiry.flush(),
         leaseExpiry.flush(),
         bridgeRetry.flush(),
+        // 81B-08 — the watch poll sweeper is single-flight; await its in-flight tick
+        // so no watch poll/send is still running after teardown.
+        watchPoll.flush(),
         stagingDrain !== null ? stagingDrain.flush() : Promise.resolve(),
         localRunner !== null ? localRunner.flush() : Promise.resolve(),
       ]);

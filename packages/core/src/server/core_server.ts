@@ -34,6 +34,7 @@ import {
 } from './routes/service_respond';
 import { registerPersonasRoutes } from './routes/personas';
 import { registerReminderRoutes } from './routes/reminders';
+import { registerNotificationRoutes } from './routes/notifications';
 import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerSessionRoutes } from './routes/session';
@@ -121,6 +122,11 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // Core's process). Mobile Brain shares the process and calls the
   // reminder service directly, so it never hits these routes.
   registerReminderRoutes(router);
+
+  // Notification log (R4-03) — the durable inbox backing. On the split server
+  // Brain dual-writes through these routes into identity.sqlite; mobile Brain
+  // shares the process and writes the repository directly, never hitting these.
+  registerNotificationRoutes(router);
 
   // Device pairing — `/v1/pair/initiate` (admin) + `/v1/pair/complete`
   // (public, code-authenticated). Port of `dina-admin device pair`

@@ -45,6 +45,28 @@ export interface RunStartResult {
   effective_erasure_mode: string;
 }
 
+/** #7 — owner-initiated poll-mode watch creation. `subscription_id` is the stable
+ *  idempotency key (a replayed create returns the existing watch). */
+export interface WatchCreateRequest {
+  subscription_id: string;
+  persona: string;
+  service_uri: string;
+  provider_did: string;
+  capability: string;
+  poll_interval_sec: number;
+  query?: Record<string, unknown>;
+  condition?: string;
+  /** R2-04 — optional executable wake filter: only notify when a poll result
+   *  contains this (case-insensitive) substring (else the watch stays silent). */
+  filter?: { contains: string };
+}
+
+export interface WatchCreateResult {
+  watch_id: string;
+  subscription_id: string;
+  watch?: WatchListItem;
+}
+
 export interface RunUpdateRequest {
   config_version: number;
   interval_ms?: number;
@@ -83,8 +105,15 @@ export interface OwnerRunClient {
   runDecide(runId: string, req: RunDecideRequest): Promise<{ state: string; decision_revision: number }>;
   /** Owner confirm of a MODERATE/HIGH action: `risk_pending → risk_authorized` (E76-08). */
   confirmRisk(runId: string, messageId: string): Promise<{ state: string; authorized: boolean }>;
+  /** R5-01/§7 — give up on a `response_lost` slot (terminal `skipped`; fetch
+   *  resumes once no lost slot remains). */
+  skipLost(
+    runId: string,
+    reservationId: string,
+  ): Promise<{ reservation_id: string; state: string; fetch_resumed: boolean }>;
   runStatus(runId: string): Promise<Record<string, unknown>>;
   // Poll-mode watch management (PSVC-4) — same owner boundary.
+  watchCreate(req: WatchCreateRequest): Promise<WatchCreateResult>;
   watchList(): Promise<{ watches: WatchListItem[] }>;
   watchPause(watchId: string): Promise<{ ok: boolean }>;
   watchResume(watchId: string): Promise<{ ok: boolean }>;
@@ -226,6 +255,22 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
     );
     return expectOk<{ state: string; authorized: boolean }>(res, 'confirmRisk');
   }
+  async skipLost(
+    runId: string,
+    reservationId: string,
+  ): Promise<{ reservation_id: string; state: string; fetch_resumed: boolean }> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/skip-lost`,
+        body: { reservation_id: reservationId, idempotency_key: this.nextKey() },
+      }),
+    );
+    return expectOk<{ reservation_id: string; state: string; fetch_resumed: boolean }>(
+      res,
+      'skipLost',
+    );
+  }
   async runStatus(runId: string): Promise<Record<string, unknown>> {
     const res = await this.router.handle(
       this.stampReq({ method: 'GET', path: `/v1/run/${runId}/status` }),
@@ -233,6 +278,13 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
     return expectOk<Record<string, unknown>>(res, 'runStatus');
   }
 
+  async watchCreate(req: WatchCreateRequest): Promise<WatchCreateResult> {
+    // `subscription_id` IS the idempotency key (createPollWatch dedups on it).
+    const res = await this.router.handle(
+      this.stampReq({ method: 'POST', path: '/v1/watch/create', body: req }),
+    );
+    return expectOk<WatchCreateResult>(res, 'watchCreate');
+  }
   async watchList(): Promise<{ watches: WatchListItem[] }> {
     const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/watch/list' }));
     return expectOk<{ watches: WatchListItem[] }>(res, 'watchList');

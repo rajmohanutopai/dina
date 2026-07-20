@@ -1,16 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Alert, TextInput } from 'react-native';
 
 import {
   getActiveRuns,
   pauseRun,
   resumeRun,
   stopRun,
+  startRun,
   getRunDecisions,
   decideRunMessage,
   confirmRunRisk,
+  skipLostReservation,
   type RunUIItem,
   type RunDecisions,
   type RunPendingItem,
@@ -30,6 +32,7 @@ import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 export default function RunsScreen() {
   const [items, setItems] = useState<RunUIItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const refresh = useCallback(() => {
     void getActiveRuns()
@@ -76,9 +79,37 @@ export default function RunsScreen() {
     return <View style={styles.container} testID="runs-screen" />;
   }
 
-  if (items.length === 0) {
-    return (
-      <View style={styles.container} testID="runs-screen">
+  const header = (
+    <View style={styles.header}>
+      <Text style={styles.headerTitle}>Interactive runs</Text>
+      <Pressable
+        testID="run-new-toggle"
+        onPress={() => setShowForm((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={showForm ? 'Close new run form' : 'Start a run'}
+        hitSlop={8}
+        style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.6 }]}
+      >
+        <Ionicons name={showForm ? 'close' : 'add'} size={18} color={colors.accent} />
+        <Text style={styles.newBtnText}>{showForm ? 'Close' : 'Start'}</Text>
+      </Pressable>
+    </View>
+  );
+
+  const form = showForm ? (
+    <NewRunForm
+      onStarted={() => {
+        setShowForm(false);
+        refresh();
+      }}
+    />
+  ) : null;
+
+  return (
+    <View style={styles.container} testID="runs-screen">
+      {header}
+      {form}
+      {items.length === 0 ? (
         <View style={styles.emptyState} testID="runs-empty">
           <Ionicons
             name="sync-circle-outline"
@@ -88,25 +119,112 @@ export default function RunsScreen() {
           />
           <Text style={styles.emptyTitle}>No interactive runs</Text>
           <Text style={styles.emptyBody}>
-            When you start an interactive session with a provider, it appears here so you can pause,
-            resume, or stop it.
+            Start an interactive session with a provider — tap Start above — and it appears here so
+            you can pause, resume, or stop it.
           </Text>
         </View>
-      </View>
-    );
-  }
+      ) : (
+        <FlatList
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          data={items}
+          keyExtractor={(item) => item.run_id}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item }) => (
+            <RunRow item={item} onToggle={onToggle} onStop={onStop} onChanged={refresh} />
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+/** #7 — owner-facing form to START an interactive run. Minimal bounded inputs;
+ *  submits through the owner-only `/v1/run/start` route via `startRun`. */
+function NewRunForm({ onStarted }: { onStarted: () => void }) {
+  const [providerDid, setProviderDid] = useState('');
+  const [serviceUri, setServiceUri] = useState('');
+  const [persona, setPersona] = useState('general');
+  const [ttlMinutes, setTtlMinutes] = useState('60');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit =
+    providerDid.trim() !== '' &&
+    serviceUri.trim() !== '' &&
+    persona.trim() !== '' &&
+    Number(ttlMinutes) > 0 &&
+    !busy;
+
+  const submit = () => {
+    setBusy(true);
+    setError(null);
+    void startRun({
+      providerDid: providerDid.trim(),
+      serviceUri: serviceUri.trim(),
+      persona: persona.trim(),
+      ttlSeconds: Math.round(Number(ttlMinutes) * 60),
+    })
+      .then((runId) => {
+        if (runId === null) setError('Could not start the run.');
+        else onStarted();
+      })
+      .finally(() => setBusy(false));
+  };
 
   return (
-    <View style={styles.container} testID="runs-screen">
-      <FlatList
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        data={items}
-        keyExtractor={(item) => item.run_id}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        renderItem={({ item }) => (
-          <RunRow item={item} onToggle={onToggle} onStop={onStop} onChanged={refresh} />
-        )}
+    <View style={styles.form} testID="run-new-form">
+      <RunFormField label="Provider DID" value={providerDid} onChange={setProviderDid} placeholder="did:plc:…" testID="run-field-provider" />
+      <RunFormField label="Service URI" value={serviceUri} onChange={setServiceUri} placeholder="at://…" testID="run-field-service" />
+      <RunFormField label="Persona" value={persona} onChange={setPersona} placeholder="general" testID="run-field-persona" />
+      <RunFormField label="Run for (minutes)" value={ttlMinutes} onChange={setTtlMinutes} placeholder="60" keyboardType="numeric" testID="run-field-ttl" />
+      {error !== null ? <Text style={styles.formError}>{error}</Text> : null}
+      <Pressable
+        testID="run-start-submit"
+        onPress={submit}
+        disabled={!canSubmit}
+        accessibilityRole="button"
+        accessibilityLabel="Start run"
+        style={({ pressed }) => [
+          styles.submitBtn,
+          !canSubmit && styles.submitBtnDisabled,
+          pressed && canSubmit && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={styles.submitBtnText}>{busy ? 'Starting…' : 'Start run'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function RunFormField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  keyboardType,
+  testID,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  keyboardType?: 'numeric';
+  testID: string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        testID={testID}
+        style={styles.input}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType={keyboardType}
       />
     </View>
   );
@@ -183,7 +301,11 @@ function RunRow({
  * classified stream is never owner-visible and no action can ever dispatch.
  */
 function RunDecisionsSection({ runId, onChanged }: { runId: string; onChanged: () => void }) {
-  const [decisions, setDecisions] = useState<RunDecisions>({ pending: [], pendingRisk: [] });
+  const [decisions, setDecisions] = useState<RunDecisions>({
+    pending: [],
+    pendingRisk: [],
+    lost: [],
+  });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -207,7 +329,13 @@ function RunDecisionsSection({ runId, onChanged }: { runId: string; onChanged: (
     [load, onChanged],
   );
 
-  if (decisions.pending.length === 0 && decisions.pendingRisk.length === 0) return null;
+  if (
+    decisions.pending.length === 0 &&
+    decisions.pendingRisk.length === 0 &&
+    decisions.lost.length === 0
+  ) {
+    return null;
+  }
 
   const label = (m: RunPendingItem): string =>
     m.kind === 'action'
@@ -319,6 +447,27 @@ function RunDecisionsSection({ runId, onChanged }: { runId: string; onChanged: (
           </View>
         </View>
       ))}
+      {decisions.lost.map((l) => (
+        // R5-01/§7 — a slot whose held-by-lock response proved unrecoverable.
+        // Fetch is paused until the service resends it or the owner skips it.
+        <View key={l.reservation_id} testID={`run-lost-${l.reservation_id}`}>
+          <View style={styles.decisionRow}>
+            <Text style={styles.decisionLabel} numberOfLines={2}>
+              Update #{l.cursor} was lost{l.reason ? ` (${l.reason})` : ''} — waiting for the
+              service to resend
+            </Text>
+            <View style={styles.decisionBtns}>
+              <DecisionBtn
+                testID={`run-skip-lost-${l.reservation_id}`}
+                text="Skip"
+                tone="muted"
+                disabled={busy}
+                onPress={() => act(() => skipLostReservation(runId, l.reservation_id))}
+              />
+            </View>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -358,6 +507,48 @@ function DecisionBtn({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  headerTitle: { ...textStyles.bodyStrong, color: colors.textPrimary },
+  newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: spacing.xs },
+  newBtnText: { ...textStyles.caption, color: colors.accent },
+  form: {
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    ...shadows.sm,
+  },
+  field: { gap: 4 },
+  fieldLabel: { ...textStyles.caption, color: colors.textMuted },
+  input: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgPrimary,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.bgTertiary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  formError: { ...textStyles.caption, color: colors.error },
+  submitBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  submitBtnDisabled: { opacity: 0.4 },
+  submitBtnText: { ...textStyles.bodyStrong, color: colors.bgPrimary },
   list: { flex: 1 },
   listContent: { padding: spacing.md, paddingBottom: spacing.xl },
   separator: { height: spacing.sm },

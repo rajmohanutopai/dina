@@ -89,6 +89,21 @@ export const REMINDERS_ROOT = '/v1/reminders';
 export const REMINDERS_PENDING = '/v1/reminders/pending';
 
 // ---------------------------------------------------------------
+// Notification log (R4-03) — the durable notification inbox backing.
+// Brain's inbox dual-writes here across the split boundary so watch/push/
+// reminder/approval notifications survive restart on the server too.
+// ---------------------------------------------------------------
+
+// Collection root — POST appends, GET lists (newest-first, `?limit=`).
+export const NOTIFICATIONS_ROOT = '/v1/notifications';
+// Mark-read sub-resource — POST `{id, readAt}`.
+export const NOTIFICATIONS_READ = '/v1/notifications/read';
+// Retention purge — POST `{cutoff}`.
+export const NOTIFICATIONS_PURGE = '/v1/notifications/purge';
+// Full wipe (identity reset) — POST.
+export const NOTIFICATIONS_RESET = '/v1/notifications/reset';
+
+// ---------------------------------------------------------------
 // PII
 // ---------------------------------------------------------------
 

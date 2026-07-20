@@ -146,6 +146,16 @@ export interface MessageRepository {
   listByRun(runId: string): MessageRecord[];
   countEnqueuedUndecided(runId: string): number;
 
+  /**
+   * R5-05 — distinct run ids with at least one message in a DISPATCH-actionable
+   * state (`approved` | `risk_authorized` | `sending`), ordered by each run's
+   * OLDEST actionable message so the dispatcher visits the most-overdue action
+   * first. Bounds the per-tick fan-out WITHOUT hiding a later run's action behind
+   * older idle runs — the fix for the fixed-run-page starvation class. A
+   * dispatched message leaves these states, so the set self-drains across ticks.
+   */
+  listRunIdsWithActionableMessages(limit: number): string[];
+
   /** CAS lifecycle transition, validated against the state machine. Returns
    *  true iff the message was in `from` AND the edge is allowed. */
   transition(messageId: string, from: MessageState, to: MessageState, nowMs: number): boolean;
@@ -178,7 +188,20 @@ export interface MessageRepository {
    *  them, to `expired`. Runs before decisions are surfaced + before admission
    *  accounting so a stale message is never offered nor counted. Returns the
    *  expired ids; idempotent (already-terminal rows are untouched). */
-  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[];
+  /**
+   * Expire every decidable message past its own or the run's hard bound and
+   * return their ids. R2-03 — `onExpired` (if supplied) runs INSIDE the same
+   * commit as the message-state update, so a caller can fence each expired
+   * message's classification job atomically (message-expire + job-cancel are one
+   * transaction; a crash can't leave a terminal message with a live pending job).
+   * The callback's writes must target the SAME db adapter to join the transaction.
+   */
+  expireDecidable(
+    runId: string,
+    nowMs: number,
+    runExpiresAt: number,
+    onExpired?: (expiredIds: string[]) => void,
+  ): string[];
 
   size(): number;
 }
@@ -277,6 +300,19 @@ export class SQLiteMessageRepository implements MessageRepository {
     return this.db
       .query('SELECT * FROM run_messages WHERE run_id = ? ORDER BY sequence ASC', [runId])
       .map(rowToMsg);
+  }
+
+  listRunIdsWithActionableMessages(limit: number): string[] {
+    return this.db
+      .query<{ run_id: string }>(
+        `SELECT run_id FROM run_messages
+          WHERE state IN ('approved', 'risk_authorized', 'sending')
+          GROUP BY run_id
+          ORDER BY MIN(created_at) ASC
+          LIMIT ?`,
+        [limit],
+      )
+      .map((r) => String(r.run_id));
   }
 
   countEnqueuedUndecided(runId: string): number {
@@ -378,7 +414,12 @@ export class SQLiteMessageRepository implements MessageRepository {
     return ids;
   }
 
-  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[] {
+  expireDecidable(
+    runId: string,
+    nowMs: number,
+    runExpiresAt: number,
+    onExpired?: (expiredIds: string[]) => void,
+  ): string[] {
     // `? <= ?` (runExpiresAt <= nowMs) is a whole-run bound; `expires_at <= ?` is
     // per-message. Either makes a decidable row terminal-`expired`.
     const where = `run_id = ? AND state IN ${EXPIRABLE_SQL} AND (expires_at <= ? OR ? <= ?)`;
@@ -391,13 +432,19 @@ export class SQLiteMessageRepository implements MessageRepository {
       ])
       .map((r) => String(r.message_id));
     if (ids.length > 0) {
-      this.db.run(`UPDATE run_messages SET state = 'expired', updated_at = ? WHERE ${where}`, [
-        nowMs,
-        runId,
-        nowMs,
-        runExpiresAt,
-        nowMs,
-      ]);
+      // R2-03 — the message-state UPDATE and the caller's job-fencing (onExpired)
+      // commit together: statements on the same db adapter join this transaction,
+      // so a crash can never leave an `expired` message with a live `pending` job.
+      this.db.transaction(() => {
+        this.db.run(`UPDATE run_messages SET state = 'expired', updated_at = ? WHERE ${where}`, [
+          nowMs,
+          runId,
+          nowMs,
+          runExpiresAt,
+          nowMs,
+        ]);
+        if (onExpired !== undefined) onExpired(ids);
+      });
     }
     return ids;
   }
@@ -423,6 +470,19 @@ export class InMemoryMessageRepository implements MessageRepository {
       .filter((r) => r.run_id === runId)
       .sort((a, b) => a.sequence - b.sequence)
       .map((r) => ({ ...r }));
+  }
+  listRunIdsWithActionableMessages(limit: number): string[] {
+    const oldestByRun = new Map<string, number>();
+    for (const r of this.rows.values()) {
+      if (r.state === 'approved' || r.state === 'risk_authorized' || r.state === 'sending') {
+        const prev = oldestByRun.get(r.run_id);
+        if (prev === undefined || r.created_at < prev) oldestByRun.set(r.run_id, r.created_at);
+      }
+    }
+    return [...oldestByRun.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, limit)
+      .map(([runId]) => runId);
   }
   countEnqueuedUndecided(runId: string): number {
     let n = 0;
@@ -497,7 +557,12 @@ export class InMemoryMessageRepository implements MessageRepository {
     }
     return out;
   }
-  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[] {
+  expireDecidable(
+    runId: string,
+    nowMs: number,
+    runExpiresAt: number,
+    onExpired?: (expiredIds: string[]) => void,
+  ): string[] {
     const expirable = new Set<MessageState>([
       'enqueued',
       'classification_pending',
@@ -517,6 +582,8 @@ export class InMemoryMessageRepository implements MessageRepository {
         r.updated_at = nowMs;
       }
     }
+    // R2-03 — fence in the same synchronous step (in-memory has no crash window).
+    if (out.length > 0 && onExpired !== undefined) onExpired(out);
     return out;
   }
   size(): number {

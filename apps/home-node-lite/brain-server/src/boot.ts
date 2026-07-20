@@ -42,8 +42,13 @@ import {
   setReminderBackend,
   setVaultReadBackend,
 } from '@dina/brain';
+import {
+  registerEngagementProvider,
+  collectNotificationBriefingItems,
+} from '@dina/brain/briefing';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
-import { createPersona, getPersona } from '@dina/core';
+import { hydrateNotifications } from '@dina/brain/notifications';
+import { createPersona, getPersona, setNotificationLogRepository } from '@dina/core';
 import {
   buildHomeNodeAskRuntime,
   type HomeNodeAskRuntime,
@@ -70,6 +75,8 @@ import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerContactApiRoutes } from './routes/contacts';
 import { registerQuarantineApiRoutes } from './routes/quarantine';
+import { CoreClientNotificationLogRepository } from './notifications/core_client_repository';
+import { registerNotificationApiRoutes } from './routes/notifications';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerWebRoutes } from './routes/web';
 import { registerWorkflowApiRoutes } from './routes/workflow';
@@ -638,6 +645,24 @@ export async function bootServer(
     });
     app.addHook('onClose', async () => stopFireLoop());
     dependencyStatus.reminderRoutes = 'configured';
+
+    // R4-03 — the durable notification inbox on the split server. Brain's inbox
+    // dual-writes THROUGH Core's `/v1/notifications` routes (identity.sqlite) so
+    // watch/push notifications survive restart here too; hydrate replays them into
+    // the in-process inbox at boot. The SPA reads them over `/api/v1/notifications`
+    // + SSE (the proper silence-tiered surface, not chat), and Tier-3 items reach
+    // the daily briefing via the notification-backed engagement provider.
+    setNotificationLogRepository(new CoreClientNotificationLogRepository(clients.core));
+    registerEngagementProvider(collectNotificationBriefingItems);
+    registerNotificationApiRoutes(app);
+    try {
+      await hydrateNotifications();
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        'notification hydrate failed',
+      );
+    }
   }
 
   // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate

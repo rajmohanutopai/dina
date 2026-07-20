@@ -42,6 +42,38 @@ export async function getActiveRuns(): Promise<RunUIItem[]> {
   }
 }
 
+/** #7 — owner-initiated start of an interactive run. Mints a stable
+ *  `idempotency_key` and starts the run through the owner-only `/v1/run/start`
+ *  route. Returns the new run id, or null on failure. */
+export interface StartRunInput {
+  serviceUri: string;
+  providerDid: string;
+  persona: string;
+  ttlSeconds: number;
+  intervalMs?: number;
+  maxCount?: number;
+}
+
+export async function startRun(input: StartRunInput): Promise<string | null> {
+  const client = getOwnerRunClient();
+  if (client === null) return null;
+  try {
+    const idempotencyKey = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const res = await client.runStart({
+      service_uri: input.serviceUri,
+      provider_did: input.providerDid,
+      persona: input.persona,
+      idempotency_key: idempotencyKey,
+      ttl_seconds: input.ttlSeconds,
+      ...(input.intervalMs !== undefined ? { interval_ms: input.intervalMs } : {}),
+      ...(input.maxCount !== undefined ? { max_count: input.maxCount } : {}),
+    });
+    return res.run_id;
+  } catch {
+    return null;
+  }
+}
+
 /** Pause the pull loop (keeps the run). Returns the new state, or null. */
 export async function pauseRun(runId: string): Promise<string | null> {
   try {
@@ -84,11 +116,20 @@ export interface RunPendingItem {
   body?: string;
 }
 
+/** R5-01/§7 — a slot whose held-by-lock response proved unrecoverable. */
+export interface RunLostItem {
+  reservation_id: string;
+  cursor: number;
+  reason?: string | null;
+}
+
 export interface RunDecisions {
   /** Classified messages awaiting the owner's approve/deny/acknowledge. */
   pending: RunPendingItem[];
   /** Owner-approved actions parked awaiting MODERATE/HIGH risk confirmation. */
   pendingRisk: RunPendingItem[];
+  /** R5-01 — lost slots pausing fetch until a provider resend or an owner skip. */
+  lost: RunLostItem[];
   /** 81B-06 — service attribution: which provider/service these decisions belong to. */
   serviceUri?: string;
   providerDid?: string;
@@ -97,21 +138,23 @@ export interface RunDecisions {
 /** Fetch a run's pending owner decisions (via the owner-only `/status`, §11/§12.5). */
 export async function getRunDecisions(runId: string): Promise<RunDecisions> {
   const client = getOwnerRunClient();
-  if (client === null) return { pending: [], pendingRisk: [] };
+  if (client === null) return { pending: [], pendingRisk: [], lost: [] };
   try {
     const status = await client.runStatus(runId);
     const pending = Array.isArray(status.pending) ? (status.pending as RunPendingItem[]) : [];
     const pendingRisk = Array.isArray(status.pending_risk)
       ? (status.pending_risk as RunPendingItem[])
       : [];
+    const lost = Array.isArray(status.lost) ? (status.lost as RunLostItem[]) : [];
     return {
       pending,
       pendingRisk,
+      lost,
       serviceUri: typeof status.service_uri === 'string' ? status.service_uri : undefined,
       providerDid: typeof status.provider_did === 'string' ? status.provider_did : undefined,
     };
   } catch {
-    return { pending: [], pendingRisk: [] };
+    return { pending: [], pendingRisk: [], lost: [] };
   }
 }
 
@@ -138,6 +181,18 @@ export async function decideRunMessage(
 export async function confirmRunRisk(runId: string, messageId: string): Promise<string | null> {
   try {
     return (await getOwnerRunClient()?.confirmRisk(runId, messageId))?.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** R5-01/§7 — owner gives up on a `response_lost` slot. New state, or null. */
+export async function skipLostReservation(
+  runId: string,
+  reservationId: string,
+): Promise<string | null> {
+  try {
+    return (await getOwnerRunClient()?.skipLost(runId, reservationId))?.state ?? null;
   } catch {
     return null;
   }

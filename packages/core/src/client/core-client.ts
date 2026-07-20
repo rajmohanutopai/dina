@@ -663,6 +663,27 @@ export interface CoreClient {
    */
   reminderFireMissed(now?: number): Promise<Reminder[]>;
 
+  // ─── Notification log (R4-03) ───────────────────────────────────────────────
+  // The durable notification inbox, reached across the split boundary. Brain's
+  // inbox dual-writes THROUGH these (on the split server) so watch/push/reminder
+  // notifications survive restart there too. Mobile shares the process and writes
+  // the repository directly, never hitting these.
+
+  /** Append (upsert on id) a notification into Core's durable log. */
+  notificationAppend(item: StoredNotificationItem): Promise<void>;
+
+  /** List notifications newest-first, optionally capped by `limit`. */
+  notificationList(limit?: number): Promise<StoredNotificationItem[]>;
+
+  /** Mark a notification read. Returns whether a row was actually flipped. */
+  notificationMarkRead(id: string, readAt: number): Promise<boolean>;
+
+  /** Retention purge — drop rows older than `cutoff`. Returns the count purged. */
+  notificationPurgeBefore(cutoff: number): Promise<number>;
+
+  /** Wipe the durable log (identity reset). */
+  notificationReset(): Promise<void>;
+
   // ─── Persona registry (read-only) ──────────────────────────────────────────
 
   /**
@@ -1312,6 +1333,10 @@ export type { ExtractionResult, ApplyExtractionResponse, Person };
  *  `reminders/service`. */
 import type { Reminder, RecurringFrequency } from '../reminders/service';
 export type { Reminder, RecurringFrequency };
+
+/** The durable notification-log row shape, crossing the Core boundary (R4-03). */
+import type { StoredNotificationItem } from '../notifications/repository';
+export type { StoredNotificationItem };
 
 /**
  * Create-reminder request shape — mirrors the `createReminder` service

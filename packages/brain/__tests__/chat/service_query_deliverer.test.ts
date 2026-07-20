@@ -11,7 +11,10 @@
  * `apps/mobile/__tests__/services/talk_thread_routing.test.ts`.
  */
 
-import { createServiceQueryDeliverer } from '../../src/chat/service_query_deliverer';
+import {
+  createServiceQueryDeliverer,
+  type WatchInboxDelivery,
+} from '../../src/chat/service_query_deliverer';
 import { addLifecycleMessage, getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 
 import type { ServiceQueryEventDetails } from '../../src/service/result_formatter';
@@ -159,5 +162,47 @@ describe('createServiceQueryDeliverer — round-14 #12 delegation bubble dedup',
       details: noDetails,
     });
     expect(getThread('main')).toHaveLength(2);
+  });
+});
+
+describe('createServiceQueryDeliverer — watch-origin inbox routing (#6)', () => {
+  it('routes a `watch:` origin result to the inbox sink, NOT the main chat', async () => {
+    const inbox: WatchInboxDelivery[] = [];
+    const deliver = createServiceQueryDeliverer({
+      threadId: 'main',
+      notifyWatchInbox: (d) => {
+        inbox.push(d);
+      },
+    });
+    await deliver({
+      text: 'Flight BA117 is on time',
+      event: makeEvent(),
+      task: makeTask('watch:sub-1'),
+      details: SUCCESS_DETAILS,
+    });
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0].subscriptionId).toBe('sub-1');
+    expect(inbox[0].status).toBe('resolved');
+    expect(inbox[0].text).toBe('Flight BA117 is on time');
+    // The card was validated + handed to the inbox — nothing posted to main chat.
+    expect(getThread('main')?.length ?? 0).toBe(0);
+  });
+
+  it('a non-watch origin still uses the chat thread (inbox sink untouched)', async () => {
+    const inbox: WatchInboxDelivery[] = [];
+    const deliver = createServiceQueryDeliverer({
+      threadId: 'main',
+      notifyWatchInbox: (d) => {
+        inbox.push(d);
+      },
+    });
+    await deliver({
+      text: 'Here is your answer',
+      event: makeEvent(),
+      task: makeTask('ask'),
+      details: SUCCESS_DETAILS,
+    });
+    expect(inbox).toHaveLength(0);
+    expect((getThread('main')?.length ?? 0)).toBeGreaterThan(0);
   });
 });

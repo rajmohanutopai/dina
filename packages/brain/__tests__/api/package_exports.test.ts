@@ -3,6 +3,9 @@ import { join } from 'node:path';
 
 const EXPECTED_EXPORTS: Record<string, string> = {
   '.': './src/index.ts',
+  // R4-03 — the briefing engagement-provider seam (both boots register the
+  // notification-inbox briefing collector through this entry).
+  './briefing': './briefing.ts',
   './chat': './chat.ts',
   './enrichment': './enrichment.ts',
   './llm': './llm.ts',

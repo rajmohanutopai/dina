@@ -349,14 +349,23 @@ export type {
   IngestOutcome,
   CompletionServiceOptions,
 } from './run/completion';
-export { LockedArrivalStore, InMemoryRunSpool, NaclDeviceSealer } from './run/locked_arrival';
+export {
+  LockedArrivalStore,
+  InMemoryRunSpool,
+  SQLiteRunSpool,
+  NaclDeviceSealer,
+} from './run/locked_arrival';
 export type {
   RunSpool,
   DeviceSealer,
   SealedResponseRef,
   PublishOutcome,
+  RecoverOutcome,
   LockedArrivalStoreOptions,
 } from './run/locked_arrival';
+export { HeldReplayService, parseSealedRef } from './run/held_replay';
+export type { HeldReplayOptions, HeldReplayReport } from './run/held_replay';
+export { fireHeldReplay, setHeldReplayHook } from './run/replay_registry';
 export { RunTerminationService, RunSweeper } from './run/termination';
 export type {
   RunTerminationServiceOptions,
@@ -448,6 +457,8 @@ export {
   MIN_POLL_INTERVAL_SEC,
 } from './watch/payload';
 export type { WatchPollPayload } from './watch/payload';
+export { classifyWatchFilter, parseWatchFilter, watchFilterMatches } from './watch/filter';
+export type { WatchFilter } from './watch/filter';
 export { WatchService, setWatchService, getWatchService, watchIdempotencyKey } from './watch/service';
 export type { WatchServiceOptions, CreatePollWatchInput } from './watch/service';
 export { WatchPollSweeper } from './watch/poll_sweeper';
@@ -678,11 +689,15 @@ export {
   setNotificationLogRepository,
   getNotificationLogRepository,
   InMemoryNotificationLogRepository,
+  SqliteNotificationLogRepository,
+  storedNotificationToWire,
+  wireToStoredNotification,
 } from './notifications/repository';
 export type {
   NotificationKind,
   StoredNotificationItem,
   NotificationLogRepository,
+  NotificationWireDTO,
 } from './notifications/repository';
 
 // Scratchpad service — checkpoint/resume/clear/sweep API the Brain
@@ -868,6 +883,11 @@ export {
   validatePersonaName,
 } from './persona/service';
 export type { PersonaState } from './persona/service';
+// Provider-derived DEK registration (ISVC-10/R5-01): the DB providers derive
+// the SQLCipher key themselves, and must register it here so the run plane's
+// persona-open predicate (`hasDEK`) and payload cipher (`wrapWithPersonaDEK`)
+// see the vault as open.
+export { hasDEK, registerPersonaDEK, releasePersonaDEK } from './persona/orchestrator';
 export {
   SQLitePersonaRepository,
   getPersonaRepository,

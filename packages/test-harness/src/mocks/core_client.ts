@@ -78,6 +78,7 @@ import type {
   Person,
   Reminder,
   ReminderCreateInput,
+  StoredNotificationItem,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -266,6 +267,10 @@ export class MockCoreClient implements CoreClient {
    */
   readonly reminders: Reminder[] = [];
   private reminderSeq = 0;
+
+  /** In-memory durable-notification log (R4-03) backing the notification*
+   *  CoreClient methods. */
+  notifications: StoredNotificationItem[] = [];
 
   /**
    * Per-persona override for `personaStatus`. When a tested code path
@@ -1003,6 +1008,47 @@ export class MockCoreClient implements CoreClient {
       );
       for (const r of fired) r.status = 'fired';
       return fired;
+    });
+  }
+
+  async notificationAppend(item: StoredNotificationItem): Promise<void> {
+    return this.dispatch('notificationAppend', [item], () => {
+      const idx = this.notifications.findIndex((n) => n.id === item.id);
+      if (idx >= 0) this.notifications[idx] = { ...item };
+      else this.notifications.push({ ...item });
+    });
+  }
+
+  async notificationList(limit?: number): Promise<StoredNotificationItem[]> {
+    return this.dispatch('notificationList', [limit], () => {
+      const sorted = [...this.notifications].sort((a, b) => b.firedAt - a.firedAt);
+      return limit !== undefined ? sorted.slice(0, limit) : sorted;
+    });
+  }
+
+  async notificationMarkRead(id: string, readAt: number): Promise<boolean> {
+    return this.dispatch('notificationMarkRead', [id, readAt], () => {
+      const n = this.notifications.find((x) => x.id === id);
+      if (!n || n.readAt !== null) return false;
+      n.readAt = readAt;
+      return true;
+    });
+  }
+
+  async notificationPurgeBefore(cutoff: number): Promise<number> {
+    return this.dispatch('notificationPurgeBefore', [cutoff], () => {
+      const before = this.notifications.length;
+      this.notifications = this.notifications.filter((n) => {
+        const exp = n.expiresAt !== null ? n.expiresAt : n.firedAt;
+        return exp >= cutoff;
+      });
+      return before - this.notifications.length;
+    });
+  }
+
+  async notificationReset(): Promise<void> {
+    return this.dispatch('notificationReset', [], () => {
+      this.notifications = [];
     });
   }
 

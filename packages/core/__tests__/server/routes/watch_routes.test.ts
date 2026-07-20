@@ -60,9 +60,10 @@ describe('/v1/watch/* — owner boundary + management', () => {
 
   afterEach(() => setWatchService(null));
 
-  it('rejects every non-owner caller on list + steer (403)', async () => {
+  it('rejects every non-owner caller on list + steer + create (403)', async () => {
     const routes: [CoreRequest['method'], string][] = [
       ['GET', '/v1/watch/list'],
+      ['POST', '/v1/watch/create'],
       ['POST', '/v1/watch/w1/pause'],
       ['POST', '/v1/watch/w1/resume'],
       ['POST', '/v1/watch/w1/cancel'],
@@ -73,6 +74,84 @@ describe('/v1/watch/* — owner boundary + management', () => {
         expect(resp.status).toBe(403);
       }
     }
+  });
+
+  it('owner creates a watch (#7) → 201, and it appears in the active list', async () => {
+    const createBody = {
+      subscription_id: 'sub-new',
+      persona: 'general',
+      service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+      provider_did: 'did:plc:prov',
+      capability: 'flight_status',
+      poll_interval_sec: 300,
+      query: { flight: 'BA117' },
+    };
+    const created = await router.handle(req('POST', '/v1/watch/create', 'owner', createBody));
+    expect(created.status).toBe(201);
+    expect((created.body as { subscription_id: string }).subscription_id).toBe('sub-new');
+
+    const list = (
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] }
+    ).watches;
+    expect(list.map((w) => w.subscription_id)).toContain('sub-new');
+  });
+
+  it('owner create is idempotent on subscription_id (#7)', async () => {
+    const body = {
+      subscription_id: 'sub-idem',
+      persona: 'general',
+      service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+      provider_did: 'did:plc:prov',
+      capability: 'flight_status',
+      poll_interval_sec: 300,
+    };
+    const a = await router.handle(req('POST', '/v1/watch/create', 'owner', body));
+    const b = await router.handle(req('POST', '/v1/watch/create', 'owner', body));
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect((a.body as { watch_id: string }).watch_id).toBe((b.body as { watch_id: string }).watch_id);
+    const list = (
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] }
+    ).watches;
+    expect(list.filter((w) => w.subscription_id === 'sub-idem')).toHaveLength(1);
+  });
+
+  it('owner create rejects a missing required field (400)', async () => {
+    const resp = await router.handle(
+      req('POST', '/v1/watch/create', 'owner', { subscription_id: 'sub-x', persona: 'general' }),
+    );
+    expect(resp.status).toBe(400);
+  });
+
+  it('owner create persists a wake filter, retrievable via deliveryPolicyFor (R2-04/R3-02)', async () => {
+    const resp = await router.handle(
+      req('POST', '/v1/watch/create', 'owner', {
+        subscription_id: 'sub-flt',
+        persona: 'general',
+        service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+        provider_did: 'did:plc:prov',
+        capability: 'flight_status',
+        poll_interval_sec: 300,
+        filter: { contains: 'delayed' },
+      }),
+    );
+    expect(resp.status).toBe(201);
+    expect(svc.deliveryPolicyFor('sub-flt')).toEqual({ active: true, filter: { contains: 'delayed' } });
+    // R5-07 — a PRESENT-but-malformed filter is REJECTED (400), never silently
+    // dropped to "fire always"; the watch is not created (fail closed).
+    const bad = await router.handle(
+      req('POST', '/v1/watch/create', 'owner', {
+        subscription_id: 'sub-badfilter',
+        persona: 'general',
+        service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+        provider_did: 'did:plc:prov',
+        capability: 'flight_status',
+        poll_interval_sec: 300,
+        filter: { contains: '' },
+      }),
+    );
+    expect(bad.status).toBe(400);
+    expect(svc.deliveryPolicyFor('sub-badfilter')).toEqual({ active: false });
   });
 
   it('owner lists active watches with display fields', async () => {

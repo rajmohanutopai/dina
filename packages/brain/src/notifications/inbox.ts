@@ -86,18 +86,9 @@ export function setRetentionDays(days: number): void {
  * generated id (or the caller-supplied id, used by producers that want
  * idempotent semantics — fire-twice → upsert, no duplicate event).
  */
-export function appendNotification(input: {
-  kind: NotificationKind;
-  title: string;
-  body: string;
-  sourceId?: string;
-  /** Optional caller-supplied id for idempotent appends. */
-  id?: string;
-  deepLink?: string;
-  expiresAt?: number;
-  /** Override clock — for tests. */
-  now?: number;
-}): NotificationItem {
+/** The shared in-memory insert both append variants use: idempotent id-upsert,
+ *  sorted-insert by firedAt DESC, subscriber fire only for a NEW id. */
+function insertItem(input: AppendNotificationInput): NotificationItem {
   const firedAt = input.now ?? Date.now();
   const id = input.id ?? `nt-${bytesToHex(randomBytes(6))}`;
 
@@ -129,9 +120,46 @@ export function appendNotification(input: {
     items.splice(insertAt, 0, item);
   }
 
-  persist(item);
   if (existingIdx < 0) fire({ type: 'appended', item });
   maybePurge(firedAt);
+  return item;
+}
+
+export interface AppendNotificationInput {
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  sourceId?: string;
+  /** Optional caller-supplied id for idempotent appends. */
+  id?: string;
+  deepLink?: string;
+  expiresAt?: number;
+  /** Override clock — for tests. */
+  now?: number;
+}
+
+export function appendNotification(input: AppendNotificationInput): NotificationItem {
+  const item = insertItem(input);
+  persist(item);
+  return item;
+}
+
+/**
+ * R5-04 — the FAILURE-ATOMIC append: same in-memory insert, but AWAITS the
+ * durable write and THROWS when it fails, so a delivery pipeline can refuse to
+ * report success (and its workflow event stays unacknowledged → Core retries;
+ * the idempotent id makes the retry an upsert, never a duplicate). The in-memory
+ * item is left in place on failure — the retry converges durability, and the
+ * user-visible view was already correct.
+ */
+export async function appendNotificationDurable(
+  input: AppendNotificationInput,
+): Promise<NotificationItem> {
+  const item = insertItem(input);
+  const repo = getNotificationLogRepository();
+  if (repo !== null) {
+    await repo.append(itemToStored(item));
+  }
   return item;
 }
 
@@ -163,6 +191,19 @@ export function dropGuidedDemoNotifications(): number {
   }
   const dropped = before - items.length;
   if (dropped > 0) fire({ type: 'hydrated', loaded: items.length });
+  // R4-03 — a persistent log now carries scope, so also drop persisted demo
+  // rows; otherwise a demo notification would survive teardown in the durable
+  // log. Fire-and-forget (mirrors `persist`): a no-op when no repo is wired.
+  const repo = getNotificationLogRepository();
+  if (repo !== null) {
+    try {
+      void repo.purgeByScopePrefix('guided_demo:').catch((err) => {
+        console.warn('[notifications] demo-scope purge failed:', err);
+      });
+    } catch (err) {
+      console.warn('[notifications] demo-scope purge failed:', err);
+    }
+  }
   return dropped;
 }
 
@@ -256,6 +297,48 @@ export function resetNotifications(): void {
   }
 }
 
+/**
+ * R5-09 — MERGE durable rows into the in-memory store WITHOUT clearing it.
+ * Reconnect reconciliation for a remote-backed inbox (the web client): a
+ * `hydrateNotifications({force})` REPLACES the store wholesale, so an SSE frame
+ * folded in the same instant as the snapshot fetch could be clobbered by a
+ * snapshot that predates it. Merging upserts by id instead (preserving each
+ * row's `readAt`, unlike a re-`appendNotification`), so nothing already folded
+ * is ever dropped. Fires one `'hydrated'` event when anything changed.
+ */
+export function mergeNotifications(rows: StoredNotificationItem[]): number {
+  let changed = 0;
+  for (const row of rows) {
+    const item = storedToItem(row);
+    const idx = items.findIndex((i) => i.id === item.id);
+    if (idx >= 0) {
+      items[idx] = item;
+    } else {
+      let insertAt = 0;
+      while (insertAt < items.length && items[insertAt]!.firedAt >= item.firedAt) insertAt += 1;
+      items.splice(insertAt, 0, item);
+    }
+    changed += 1;
+  }
+  if (changed > 0) fire({ type: 'hydrated', loaded: items.length });
+  return changed;
+}
+
+/**
+ * R5-03 — drop the in-memory view WITHOUT erasing the durable log. Called on
+ * identity teardown/switch so one identity's notifications never bleed into the
+ * next in the same JS process, while its persisted rows stay intact for when it
+ * signs back in. (Unlike `resetNotifications`, which also wipes the durable
+ * store — that's a test/identity-erase concern, not a sign-out.) The next
+ * `hydrateNotifications()` refills from whichever identity's repo is then wired.
+ * Fires `'hydrated'` so a live unread badge recomputes to 0.
+ */
+export function clearNotificationsMemory(): void {
+  items.length = 0;
+  lastPurgeAt = 0;
+  fire({ type: 'hydrated', loaded: 0 });
+}
+
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
@@ -332,7 +415,14 @@ function itemToStored(item: NotificationItem): StoredNotificationItem {
     sourceId: item.sourceId,
     deepLink: item.deepLink ?? null,
     expiresAt: item.expiresAt ?? null,
+    dataScope: item.dataScope,
   };
+}
+
+/** Coerce a persisted `data_scope` string back to a typed `DataScope`; an
+ *  unrecognized value falls back to `'user'` (never mis-scopes a real row). */
+function coerceDataScope(raw: string): DataScope {
+  return raw === 'user' || isGuidedDemoScope(raw as DataScope) ? (raw as DataScope) : 'user';
 }
 
 function storedToItem(row: StoredNotificationItem): NotificationItem {
@@ -346,14 +436,8 @@ function storedToItem(row: StoredNotificationItem): NotificationItem {
     sourceId: row.sourceId,
     ...(row.deepLink !== null && { deepLink: row.deepLink }),
     ...(row.expiresAt !== null && { expiresAt: row.expiresAt }),
-    // The persistent log predates scoping (no `data_scope` column); hydrated
-    // rows are the user's own. Demo notifications never persist (no host wires
-    // the log — see notifications/repository.ts; and the guided demo runs only
-    // on mobile's in-memory store) — they live + die in-memory within the demo
-    // session. FORWARD-GUARD: if a persistent log is ever wired on a host that
-    // runs the guided demo, add a data_scope column + carry it here (don't
-    // hard-code 'user'), and extend dropGuidedDemoNotifications to purge
-    // persisted demo rows. See repository.ts's "Guided-demo scoping gap" note.
-    dataScope: 'user',
+    // R4-03 — carry the persisted scope so a hydrated demo row stays demo-scoped
+    // (and is purgeable on teardown), not silently promoted to 'user'.
+    dataScope: coerceDataScope(row.dataScope),
   };
 }

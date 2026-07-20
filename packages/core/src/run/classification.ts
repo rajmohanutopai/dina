@@ -333,6 +333,14 @@ export interface RunClassifyServiceOptions {
    *  (§6.3 "atomically transitions ... at the fallback tier") and a crash can
    *  never strand a message `classified` with a null `final_tier`. */
   tx?: (fn: () => void) => void;
+  /**
+   * R5-02 — fired AFTER a message durably reaches `classified` (action base,
+   * worker report, or classify-timeout fallback). The boots wire this to the
+   * notification inbox so every classified message lands a retained Activity
+   * entry (§9.1 — the entry is never removed; banner loudness is the inbox's
+   * downstream concern). Best-effort: a sink throw never fails classification.
+   */
+  onClassified?: (message: MessageRecord, run: RunRecord) => void;
 }
 
 export class RunClassifyService {
@@ -345,6 +353,7 @@ export class RunClassifyService {
   private readonly viewOf: (m: MessageRecord) => { title: string; body: string; content_digest: string };
   private readonly leaseMs: number;
   private readonly tx: (fn: () => void) => void;
+  private readonly onClassified: ((message: MessageRecord, run: RunRecord) => void) | undefined;
   private seq = 0;
 
   constructor(opts: RunClassifyServiceOptions = {}) {
@@ -363,6 +372,21 @@ export class RunClassifyService {
     this.viewOf = opts.buildClassificationView ?? (() => ({ title: '', body: '', content_digest: '' }));
     this.leaseMs = opts.leaseMs ?? 30_000;
     this.tx = opts.tx ?? ((fn) => fn());
+    this.onClassified = opts.onClassified;
+  }
+
+  /** Fire the post-commit classified sink, isolated (never fails the caller). */
+  private fireClassified(messageId: string): void {
+    if (this.onClassified === undefined) return;
+    const msg = this.messages.getById(messageId);
+    if (msg === null || msg.state !== 'classified') return;
+    const run = this.runs.getById(msg.run_id);
+    if (run === null) return;
+    try {
+      this.onClassified(msg, run);
+    } catch {
+      /* the notification sink is best-effort — classification already committed */
+    }
   }
 
   /**
@@ -415,6 +439,9 @@ export class RunClassifyService {
         updated_at: nowMs,
       });
     });
+    // R5-02 — an ACTION classifies inside the tx above; surface it post-commit.
+    // (An informational message fires later, from workerReport/finalizeTimeout.)
+    if (msg.kind === 'action') this.fireClassified(messageId);
   }
 
   /** Brain pull #1 (§12.6): acquire the next eligible informational job. */
@@ -496,6 +523,11 @@ export class RunClassifyService {
       );
       outcome = 'ok';
     });
+    // R5-02 — surface the freshly-classified informational message post-commit.
+    // Unconditional: fireClassified re-reads state and fires only when the
+    // message is actually `classified` (a rejected report on an already-
+    // classified message just re-upserts the idempotent entry).
+    this.fireClassified(messageId);
     return outcome;
   }
 
@@ -525,6 +557,9 @@ export class RunClassifyService {
         this.messages.setTier(messageId, { final_tier: result.tier, tier_source: result.tier_source }, nowMs);
       }
     });
+    // R5-02 — surface the timeout-finalized message post-commit (fireClassified
+    // re-reads state, so a fenced/failed transition fires nothing).
+    this.fireClassified(messageId);
   }
 
   /**

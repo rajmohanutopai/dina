@@ -161,7 +161,11 @@ describe('brain-server — boot (task 5.1)', () => {
 
       const res = await booted.app.inject({ method: 'GET', url: '/healthz' });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ status: 'ok', role: 'brain' });
+      const health = res.json() as { status: string; role: string; startedAt: number };
+      expect(health).toMatchObject({ status: 'ok', role: 'brain' });
+      // `startedAt` is the boot epoch (ms) — a real liveness field, so pin its type.
+      expect(typeof health.startedAt).toBe('number');
+      expect(health.startedAt).toBeGreaterThan(0);
 
       // No Core configured → /readyz stays 503 even though boot
       // completed. `runtime: 'ok'` reflects "Fastify is up", `core:
@@ -478,10 +482,12 @@ describe('brain-server — boot (task 5.1)', () => {
       });
       expect(booted.compositions.ask).toBeDefined();
       expect(booted.dependencyStatus.askRoutes).toBe('configured');
-      // Boot issues one fetch — GET /v1/personas — to mirror Core's
-      // persona registry. Other interactions are still lazy.
-      expect(fetchFn).toHaveBeenCalledTimes(1);
-      expect(fetchFn.mock.calls[0]?.[0]).toBe('http://core.example:8100/v1/personas');
+      // Boot issues two eager fetches: GET /v1/personas (persona-registry mirror)
+      // and GET /v1/notifications (R4-03 durable-inbox hydrate). Other
+      // interactions are still lazy.
+      const urls = fetchFn.mock.calls.map((c) => c[0]);
+      expect(urls).toContain('http://core.example:8100/v1/personas');
+      expect(urls).toContain('http://core.example:8100/v1/notifications');
     } finally {
       await booted?.app.close();
       if (booted !== undefined) {
@@ -658,10 +664,12 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(booted.schedulers.stagingDrain).toBeDefined();
       expect(setIntervalFn).toHaveBeenCalledTimes(1);
       expect(timerHandle.unref).toHaveBeenCalledTimes(1);
-      // Boot itself issues one fetch — GET /v1/personas — to mirror
-      // Core's persona registry into Brain's accessiblePersonas state.
-      expect(fetchFn).toHaveBeenCalledTimes(1);
-      expect(fetchFn.mock.calls[0]?.[0]).toBe('http://core.example:8100/v1/personas');
+      // Boot itself issues two eager fetches: GET /v1/personas (persona-registry
+      // mirror into Brain's accessiblePersonas) and GET /v1/notifications (R4-03
+      // durable-inbox hydrate).
+      const bootUrls = fetchFn.mock.calls.map((c) => c[0]);
+      expect(bootUrls).toContain('http://core.example:8100/v1/personas');
+      expect(bootUrls).toContain('http://core.example:8100/v1/notifications');
       fetchFn.mockClear();
 
       await booted.schedulers.stagingDrain!.flush();

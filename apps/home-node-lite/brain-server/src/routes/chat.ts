@@ -26,9 +26,10 @@ import {
   subscribeToThread,
   createServiceQueryDeliverer,
 } from '@dina/brain/chat';
+import { deliverWatchResult } from '@dina/brain/notifications';
+import { type WatchFilter, type WorkflowEvent, type WorkflowTask } from '@dina/core';
 
 import type { ServiceQueryEventDetails } from '@dina/brain';
-import type { WorkflowEvent, WorkflowTask } from '@dina/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface RegisterChatRoutesOptions {
@@ -60,6 +61,34 @@ interface ServiceResultBody {
   event?: unknown;
   task?: unknown;
   details?: unknown;
+  /** R3-03 — the watch DELIVERY POLICY resolved in the Core process (where
+   *  `WatchService` lives) and forwarded here, since this Brain process's own
+   *  `getWatchService()` is null. Untrusted wire shape → parsed defensively. */
+  watch_policy?: unknown;
+}
+
+/** R3-03 — the forwarded watch delivery policy: whether the subscription is still
+ *  active (a cancelled/unknown watch arrives `active:false` → suppress, fail-closed)
+ *  and its optional wake filter. Parsed from the untrusted `watch_policy` body
+ *  field; a malformed value is treated as no policy (→ suppress). */
+function parseForwardedWatchPolicy(
+  raw: unknown,
+): { active: boolean; filter?: WatchFilter } | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const obj = raw as { active?: unknown; filter?: unknown };
+  if (typeof obj.active !== 'boolean') return null;
+  // R4-02 — a filter field, WHEN PRESENT, must be well-formed. A present-but-
+  // malformed filter fails CLOSED (→ null → suppress) rather than silently
+  // degrading to "fire always": the owner conditioned this watch, and a corrupt
+  // wake filter must never be reinterpreted as "notify on every poll". An ABSENT
+  // filter is a legitimately unfiltered watch (fire, gated only by `active`).
+  if (obj.filter !== undefined) {
+    if (obj.filter === null || typeof obj.filter !== 'object') return null;
+    const contains = (obj.filter as { contains?: unknown }).contains;
+    if (typeof contains !== 'string' || contains === '') return null;
+    return { active: obj.active, filter: { contains } };
+  }
+  return { active: obj.active };
 }
 
 export function registerChatRoutes(
@@ -110,7 +139,6 @@ export function registerChatRoutes(
   // is patched in place — one card per query, no stacking. Idempotent: a
   // re-forward (Core delivery retry) patches the same card by task id.
   // ────────────────────────────────────────────────────────────────
-  const serviceDeliver = createServiceQueryDeliverer({ threadId: 'main' });
   app.post(
     `${prefix}/chat/service-result`,
     async (req: FastifyRequest<{ Body: ServiceResultBody }>, reply: FastifyReply) => {
@@ -124,6 +152,37 @@ export function registerChatRoutes(
       ) {
         return reply.status(400).send({ error: 'text, event, task are required' });
       }
+      // R4-02 — a WATCH-origin poll result flows through the SAME shared silence
+      // pipeline mobile uses (`deliverWatchResult`): silence classifier → DND →
+      // durable notification inbox / briefing. The delivery POLICY (active + wake
+      // filter) is resolved in the CORE process (where `WatchService` lives) and
+      // forwarded here as `watch_policy` — this Brain process's own
+      // `getWatchService()` is null, so a missing/malformed policy fails CLOSED
+      // (`watchActive: false` → suppressed). On the split server the inbox
+      // dual-writes THROUGH Core into identity.sqlite (wired in boot), so the
+      // result survives restart and the `/web` client reads it over the
+      // `/api/v1/notifications` route + SSE. Non-watch service results keep the
+      // chat lifecycle-card path.
+      const task = body.task as WorkflowTask;
+      const policy = parseForwardedWatchPolicy(body.watch_policy);
+      const serviceDeliver = createServiceQueryDeliverer({
+        threadId: 'main',
+        // R5-04 — RETURN the promise: a failed durable append rejects the
+        // delivery → this route 500s → the workflow event stays unacknowledged
+        // → Core redelivers (the idempotent sourceId append makes retry safe).
+        notifyWatchInbox: (d) =>
+          deliverWatchResult({
+            subscriptionId: d.subscriptionId,
+            capability: d.capability,
+            serviceName: d.serviceName,
+            status: d.status,
+            card: d.card,
+            text: d.text,
+            sourceId: d.sourceId,
+            watchActive: policy?.active ?? false,
+            ...(policy?.filter !== undefined ? { filter: policy.filter } : {}),
+          }).then(() => undefined),
+      });
       try {
         // `WorkflowEventDeliverer` may return Promise<void> — await it so a
         // future async deliverer's failure surfaces as a 500 (→ Core retries)
@@ -131,7 +190,7 @@ export function registerChatRoutes(
         await serviceDeliver({
           text: body.text,
           event: body.event as WorkflowEvent,
-          task: body.task as WorkflowTask,
+          task,
           details: (body.details ?? {}) as ServiceQueryEventDetails,
         });
         return reply.status(200).send({ ok: true });

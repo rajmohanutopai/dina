@@ -253,6 +253,31 @@ export function hasDEK(name: string): boolean {
 }
 
 /**
+ * Register a persona DEK that a DB PROVIDER derived while opening the vault
+ * (mobile `ProductionDBProvider.openPersonaDB`, lite `resolvePersonaDekHex`).
+ * The providers derive the SQLCipher key themselves, so without this the
+ * orchestrator's DEK map — which backs `hasDEK` + `wrapWithPersonaDEK`, and
+ * through them the run plane's persona-open predicate and payload cipher —
+ * stays empty and every persona reads as LOCKED to the run plane (ISVC-10).
+ * Takes OWNERSHIP of `dek` (zeroed on release/replace); callers must pass a
+ * copy if they keep using their own buffer.
+ */
+export function registerPersonaDEK(name: string, dek: Uint8Array): void {
+  const existing = activeDEKs.get(name);
+  if (existing !== undefined) zeroBytes(existing);
+  activeDEKs.set(name, dek);
+}
+
+/** Inverse of {@link registerPersonaDEK}: zero + drop the DEK (vault close). */
+export function releasePersonaDEK(name: string): void {
+  const dek = activeDEKs.get(name);
+  if (dek !== undefined) {
+    zeroBytes(dek);
+    activeDEKs.delete(name);
+  }
+}
+
+/**
  * Get the DEK hash for a persona (for validation, never the DEK itself).
  */
 export function getDEKHash(name: string): string | null {

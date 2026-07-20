@@ -16,6 +16,7 @@ import {
 
 import {
   appendNotification,
+  clearNotificationsMemory,
   dropGuidedDemoNotifications,
   getUnreadCount,
   hydrateNotifications,
@@ -196,6 +197,24 @@ describe('Notifications inbox (5.66)', () => {
       expect(remaining[0]!.title).toBe('real');
     });
 
+    it('also purges PERSISTED demo rows from the durable log, keeping user rows (R4-03)', async () => {
+      // With a durable log wired, a demo notification must not survive teardown
+      // in the persistent store either — the R4-03 guided-demo safeguard.
+      const repo = new InMemoryNotificationLogRepository();
+      setNotificationLogRepository(repo);
+      appendNotification({ kind: 'reminder', title: 'real', body: '' });
+      setCurrentDataScope(newGuidedDemoScope());
+      appendNotification({ kind: 'approval', title: 'demo-a', body: '' });
+      resetDataScope();
+      // Both were dual-written to the durable log, each carrying its scope.
+      expect((await repo.listAll()).map((r) => r.title).sort()).toEqual(['demo-a', 'real']);
+
+      dropGuidedDemoNotifications();
+
+      // The demo row is gone from the durable log; the user row stays.
+      expect((await repo.listAll()).map((r) => r.title)).toEqual(['real']);
+    });
+
     it('returns 0 and fires nothing when no demo notifications exist', () => {
       appendNotification({ kind: 'reminder', title: 'real', body: '' });
       const events: NotificationEvent[] = [];
@@ -292,6 +311,26 @@ describe('Notifications inbox (5.66)', () => {
       expect(listNotifications().map((i) => i.id)).toEqual([item.id]);
     });
 
+    it('clearNotificationsMemory drops the in-memory view but NOT the durable log (R5-03)', async () => {
+      // Identity A: one notification, dual-written to A's durable log.
+      const repoA = new InMemoryNotificationLogRepository();
+      setNotificationLogRepository(repoA);
+      appendNotification({ kind: 'push', title: 'A-secret', body: '' });
+      expect(listNotifications()).toHaveLength(1);
+      expect(await repoA.listAll()).toHaveLength(1);
+
+      // Sign-out clears the in-memory view WITHOUT wiping A's durable rows.
+      clearNotificationsMemory();
+      expect(listNotifications()).toHaveLength(0);
+      expect(await repoA.listAll()).toHaveLength(1); // A's persisted rows survive
+
+      // Identity B wires ITS (empty) repo + hydrates — it must NOT see A's items.
+      const repoB = new InMemoryNotificationLogRepository();
+      setNotificationLogRepository(repoB);
+      await hydrateNotifications();
+      expect(listNotifications()).toHaveLength(0);
+    });
+
     it('hydrateNotifications replays repo on cold start', async () => {
       const repo = new InMemoryNotificationLogRepository();
       await repo.append({
@@ -304,6 +343,7 @@ describe('Notifications inbox (5.66)', () => {
         sourceId: 'b-1',
         deepLink: null,
         expiresAt: null,
+        dataScope: 'user',
       });
       setNotificationLogRepository(repo);
       const hydrated = await hydrateNotifications();
@@ -323,6 +363,7 @@ describe('Notifications inbox (5.66)', () => {
         sourceId: 's-1',
         deepLink: null,
         expiresAt: null,
+        dataScope: 'user',
       });
       await repo.append({
         id: 'b',
@@ -334,6 +375,7 @@ describe('Notifications inbox (5.66)', () => {
         sourceId: 's-2',
         deepLink: null,
         expiresAt: null,
+        dataScope: 'user',
       });
       setNotificationLogRepository(repo);
 
@@ -367,6 +409,7 @@ describe('Notifications inbox (5.66)', () => {
         sourceId: '',
         deepLink: null,
         expiresAt: null,
+        dataScope: 'user',
       });
       setNotificationLogRepository(repo);
       await hydrateNotifications();

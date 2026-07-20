@@ -13,6 +13,8 @@
 
 import { stagingListByStatus, browseRecent, listPersonas } from '@dina/core';
 
+import { listNotifications } from '../notifications/inbox';
+
 import type { BriefingItem } from './assembly';
 
 // ---------------------------------------------------------------
@@ -76,6 +78,29 @@ export function collectEngagementItems(now?: number): BriefingItem[] {
   }
 
   return items;
+}
+
+// ---------------------------------------------------------------
+// Notification-backed engagement Provider (R4-03)
+// ---------------------------------------------------------------
+
+/**
+ * Collect the Tier-3 (`briefing`-kind) items the silence pipeline saved for the
+ * daily digest (PUSH_SERVICES §8/§19). `deliverWatchResult` routes a benign
+ * (Tier-3) watch/push result to the durable notification inbox as a `briefing`
+ * item; this surfaces those into the briefing instead of leaving them stranded.
+ * Reads the last 24h so the digest stays fresh.
+ */
+export function collectNotificationBriefingItems(now?: number): BriefingItem[] {
+  const currentTime = now ?? Date.now();
+  const since = currentTime - MS_24H;
+  return listNotifications({ kinds: ['briefing'], since }).map((n) => ({
+    type: 'engagement' as const,
+    title: n.title,
+    detail: n.body,
+    source: 'notification',
+    timestamp: n.firedAt,
+  }));
 }
 
 // ---------------------------------------------------------------

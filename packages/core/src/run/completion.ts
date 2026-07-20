@@ -30,6 +30,9 @@ export interface CompletionReceiptRecord {
   run_id: string;
   status: CompletionStatus;
   result_card_ref: string | null;
+  /** R3-01 — the SIGNED result-card digest (first-writer-immutable). A conflicting
+   *  completion carrying a different digest is rejected before any card is stored. */
+  result_card_digest: string | null;
   receipt_state: ReceiptState;
   issued_at: number;
   received_at: number;
@@ -53,6 +56,10 @@ function rowToReceipt(row: DBRow): CompletionReceiptRecord {
     status: String(row.status) as CompletionStatus,
     result_card_ref:
       row.result_card_ref === null || row.result_card_ref === undefined ? null : String(row.result_card_ref),
+    result_card_digest:
+      row.result_card_digest === null || row.result_card_digest === undefined
+        ? null
+        : String(row.result_card_digest),
     receipt_state: String(row.receipt_state) as ReceiptState,
     issued_at: Number(row.issued_at),
     received_at: Number(row.received_at),
@@ -67,16 +74,19 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
   upsert(r: CompletionReceiptRecord): void {
     this.db.run(
       `INSERT INTO run_completion_receipts
-         (delegation_id, message_id, run_id, status, result_card_ref, receipt_state, issued_at, received_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (delegation_id, message_id, run_id, status, result_card_ref, result_card_digest, receipt_state, issued_at, received_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(delegation_id) DO UPDATE SET
          status = excluded.status, result_card_ref = excluded.result_card_ref, updated_at = excluded.updated_at`,
+      // NOTE: result_card_digest is first-writer-immutable — NOT in the DO UPDATE
+      // set, so a re-send/upgrade keeps the originally-signed digest (R3-01).
       [
         r.delegation_id,
         r.message_id,
         r.run_id,
         r.status,
         r.result_card_ref,
+        r.result_card_digest,
         r.receipt_state,
         r.issued_at,
         r.received_at,
@@ -168,6 +178,9 @@ export interface IngestCompletionInput {
   run_id: string;
   status: CompletionStatus;
   result_card_ref?: string | null;
+  /** R3-01 — the SIGNED result-card digest. Bound to the receipt on first write
+   *  (immutable); a later completion with a different digest is rejected. */
+  result_card_digest?: string | null;
   issued_at: number;
 }
 
@@ -223,19 +236,36 @@ export class CompletionService {
     if (!this.verify(input)) return 'rejected';
 
     const existing = this.receipts.getByDelegationId(input.delegation_id);
-    // First-writer-immutable (§6.2) — checked BEFORE the advanced-duplicate
-    // short-circuit: a runtime-issuer completion is signed + immutable, so a
-    // second receipt for the same delegation_id carrying a DIFFERENT outcome
-    // (status / result card) is anomalous and rejected even after the receipt has
-    // already ADVANCED (otherwise a conflicting `failed` after an advanced
-    // `completed` would be silently swallowed as a duplicate).
-    if (
-      existing !== null &&
-      (existing.status !== input.status || existing.result_card_ref !== (input.result_card_ref ?? null))
-    ) {
-      return 'rejected';
+    const inRef = input.result_card_ref ?? null;
+    const inDigest = input.result_card_digest ?? null;
+    // First-writer-immutable (§6.2/R3-01) for the OUTCOME + the SIGNED card: a second
+    // completion for this delegation with a DIFFERENT status, a DIFFERENT signed card
+    // DIGEST, or a DIFFERENT non-null card ref is anomalous and rejected even after
+    // advancing (a conflicting `failed` after `completed`, or a swapped card, must
+    // never be swallowed — nor its card attached). A null→non-null card-ref UPGRADE
+    // is allowed ONLY when the signed digest MATCHES (R2-01 locked→unlock re-send):
+    // the provider re-sent the SAME signed completion, so Core attaches its card
+    // rather than losing it. The digest gate is what makes the upgrade safe against
+    // a conflicting card that was published under this delegation id.
+    if (existing !== null) {
+      const statusConflict = existing.status !== input.status;
+      const digestConflict =
+        existing.result_card_digest !== null &&
+        inDigest !== null &&
+        existing.result_card_digest !== inDigest;
+      const refConflict =
+        existing.result_card_ref !== null && inRef !== null && existing.result_card_ref !== inRef;
+      if (statusConflict || digestConflict || refConflict) return 'rejected';
     }
-    if (existing?.receipt_state === 'advanced') return 'duplicate';
+    if (existing?.receipt_state === 'advanced') {
+      // Already advanced. A null→non-null upgrade (identical signed digest, checked
+      // above) attaches the post-unlock card; anything else is a pure duplicate.
+      if (existing.result_card_ref === null && inRef !== null) {
+        this.receipts.upsert({ ...existing, result_card_ref: inRef, updated_at: this.now() });
+        return 'advanced';
+      }
+      return 'duplicate';
+    }
 
     const msg = this.messages.getById(input.message_id);
     // Mismatched delegation_id / run_id / unknown message → reject (never
@@ -256,6 +286,8 @@ export class CompletionService {
       run_id: input.run_id,
       status: input.status,
       result_card_ref: input.result_card_ref ?? null,
+      // First-writer-immutable: keep the digest bound on the first receipt.
+      result_card_digest: existing?.result_card_digest ?? inDigest,
       receipt_state: 'verified_pending',
       issued_at: input.issued_at,
       received_at: nowMs,

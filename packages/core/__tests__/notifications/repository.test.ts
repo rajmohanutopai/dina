@@ -7,8 +7,20 @@
  * the bottom guards against migration drift.
  */
 
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   InMemoryNotificationLogRepository,
+  SqliteNotificationLogRepository,
+  storedNotificationToWire,
+  wireToStoredNotification,
   type NotificationLogRepository,
   type StoredNotificationItem,
 } from '../../src/notifications/repository';
@@ -24,6 +36,7 @@ function mkItem(overrides: Partial<StoredNotificationItem> = {}): StoredNotifica
     sourceId: overrides.sourceId ?? '',
     deepLink: overrides.deepLink ?? null,
     expiresAt: overrides.expiresAt ?? null,
+    dataScope: overrides.dataScope ?? 'user',
   };
 }
 
@@ -128,6 +141,162 @@ describe('InMemoryNotificationLogRepository', () => {
     (a as { title: string }).title = 'leaked';
     const b = (await repo.listAll())[0]!;
     expect(b.title).toBe('orig');
+  });
+
+  it('purgeByScopePrefix drops guided-demo rows and keeps user rows (R4-03)', async () => {
+    await repo.append(mkItem({ id: 'u1', dataScope: 'user' }));
+    await repo.append(mkItem({ id: 'd1', dataScope: 'guided_demo:run-1' }));
+    await repo.append(mkItem({ id: 'd2', dataScope: 'guided_demo:run-2' }));
+    expect(await repo.purgeByScopePrefix('guided_demo:')).toBe(2);
+    expect((await repo.listAll()).map((r) => r.id)).toEqual(['u1']);
+  });
+});
+
+// R5-08 — the snake_case wire mapping used at every HTTP/SSE boundary.
+describe('notification wire mapping (R5-08)', () => {
+  const stored: StoredNotificationItem = {
+    id: 'a',
+    kind: 'push',
+    title: 'Flight delayed',
+    body: 'BA117 +40m',
+    firedAt: 1_700_000_000_000,
+    readAt: null,
+    sourceId: 'task-1',
+    deepLink: 'dina://subscriptions',
+    expiresAt: null,
+    dataScope: 'guided_demo:run-1',
+  };
+
+  it('storedNotificationToWire → wireToStoredNotification round-trips (snake_case on the wire)', () => {
+    const wire = storedNotificationToWire(stored);
+    expect(wire).toEqual({
+      id: 'a',
+      kind: 'push',
+      title: 'Flight delayed',
+      body: 'BA117 +40m',
+      fired_at: 1_700_000_000_000,
+      read_at: null,
+      source_id: 'task-1',
+      deep_link: 'dina://subscriptions',
+      expires_at: null,
+      data_scope: 'guided_demo:run-1',
+    });
+    expect(wireToStoredNotification(wire)).toEqual(stored);
+  });
+
+  it('wireToStoredNotification rejects a malformed body', () => {
+    expect(wireToStoredNotification(null)).toBeNull();
+    expect(wireToStoredNotification({ kind: 'push' })).toBeNull(); // no id
+    expect(wireToStoredNotification({ id: 'x', kind: 'push', title: 't', body: 'b' })).toBeNull(); // no fired_at
+  });
+});
+
+// R4-03 — the DURABLE store: the SAME contract against the real SQLite engine +
+// the v27 notification_log migration, so restart survival + data_scope are real.
+describe('SqliteNotificationLogRepository (durable, migration v27)', () => {
+  let dir: string;
+  let dbPath: string;
+  let passHex: string;
+  let adapter: NodeSQLiteAdapter;
+  let repo: SqliteNotificationLogRepository;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'notiflog-'));
+    dbPath = path.join(dir, 'identity.sqlite');
+    passHex = randomBytes(32).toString('hex');
+    adapter = new NodeSQLiteAdapter({
+      path: dbPath,
+      passphraseHex: passHex,
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    repo = new SqliteNotificationLogRepository(adapter);
+  });
+
+  afterEach(() => {
+    adapter?.close();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function row(over: Partial<StoredNotificationItem> = {}): StoredNotificationItem {
+    return {
+      id: over.id ?? 'n1',
+      kind: over.kind ?? 'push',
+      title: over.title ?? 'Flight delayed',
+      body: over.body ?? 'BA117 +40m',
+      firedAt: over.firedAt ?? 1_700_000_000_000,
+      readAt: over.readAt ?? null,
+      sourceId: over.sourceId ?? 'task-1',
+      deepLink: over.deepLink ?? 'dina://subscriptions',
+      expiresAt: over.expiresAt ?? null,
+      dataScope: over.dataScope ?? 'user',
+    };
+  }
+
+  it('append + listAll round-trips every field including data_scope', async () => {
+    await repo.append(row({ id: 'a', dataScope: 'guided_demo:run-9' }));
+    const [got] = await repo.listAll();
+    expect(got).toEqual(row({ id: 'a', dataScope: 'guided_demo:run-9' }));
+  });
+
+  it('append upserts on id (a re-fire overwrites, no duplicate)', async () => {
+    await repo.append(row({ id: 'a', title: 'first' }));
+    await repo.append(row({ id: 'a', title: 'second' }));
+    const all = await repo.listAll();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.title).toBe('second');
+  });
+
+  it('listAll is newest-first and honours the limit', async () => {
+    await repo.append(row({ id: 'old', firedAt: 100 }));
+    await repo.append(row({ id: 'new', firedAt: 300 }));
+    await repo.append(row({ id: 'mid', firedAt: 200 }));
+    expect((await repo.listAll()).map((r) => r.id)).toEqual(['new', 'mid', 'old']);
+    expect((await repo.listAll(2)).map((r) => r.id)).toEqual(['new', 'mid']);
+  });
+
+  it('markRead is one-shot', async () => {
+    await repo.append(row({ id: 'a' }));
+    expect(await repo.markRead('a', 123)).toBe(true);
+    expect(await repo.markRead('a', 456)).toBe(false); // already read
+    expect(await repo.markRead('nope', 1)).toBe(false);
+    expect((await repo.listAll())[0]!.readAt).toBe(123);
+  });
+
+  it('purgeBefore prefers explicit expiresAt', async () => {
+    await repo.append(row({ id: 'kept', firedAt: 100, expiresAt: 1000 }));
+    await repo.append(row({ id: 'purged', firedAt: 900, expiresAt: 100 }));
+    expect(await repo.purgeBefore(500)).toBe(1);
+    expect((await repo.listAll()).map((r) => r.id)).toEqual(['kept']);
+  });
+
+  it('purgeByScopePrefix drops only guided-demo rows (escaped LIKE)', async () => {
+    await repo.append(row({ id: 'u1', dataScope: 'user' }));
+    await repo.append(row({ id: 'd1', dataScope: 'guided_demo:run-1' }));
+    await repo.append(row({ id: 'd2', dataScope: 'guided_demo:run-2' }));
+    expect(await repo.purgeByScopePrefix('guided_demo:')).toBe(2);
+    expect((await repo.listAll()).map((r) => r.id)).toEqual(['u1']);
+  });
+
+  it('survives a fresh adapter over the same file (restart durability)', async () => {
+    await repo.append(row({ id: 'persisted', title: 'kept across restart' }));
+    adapter.close();
+    // Reopen the SAME encrypted file with the SAME passphrase — a process
+    // restart. The row must still be there (the whole point of R4-03:
+    // notifications no longer vanish on restart).
+    const reopened = new NodeSQLiteAdapter({
+      path: dbPath,
+      passphraseHex: passHex,
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    const all = await new SqliteNotificationLogRepository(reopened).listAll();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.title).toBe('kept across restart');
+    // Hand the reopened adapter to afterEach so it (not the closed original) is
+    // the one closed.
+    adapter = reopened;
   });
 });
 

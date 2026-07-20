@@ -20,6 +20,7 @@
  *       the dedicated owner dispatch stamps `callerType='owner'`.
  */
 
+import { getClassificationJobRepository } from '../../run/classification';
 import { CommandIdempotencyConflictError, recordOrReplayCommand } from '../../run/command_receipt';
 import { getRunDispatchService, getRunPayloadView } from '../../run/dispatch';
 import {
@@ -34,6 +35,7 @@ import {
 import { runToListItem } from '../../run/list';
 import { getMessageRepository } from '../../run/message';
 import { getRunRepository } from '../../run/repository';
+import { getReservationRepository } from '../../run/reservation';
 import {
   RunNotFoundError,
   getRunService,
@@ -589,7 +591,16 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     // 81B-07 — expire any decidable message past its own or the run's hard bound
     // BEFORE surfacing, so an expired action is never offered for a new decision and
     // stops counting against the queue. Idempotent (skips already-terminal rows).
-    if (messages !== null) messages.expireDecidable(run.run_id, now, run.expires_at);
+    if (messages !== null) {
+      // 81B-07b / R2-03 — expire each decidable message past its bound AND fence its
+      // still-`pending` classification job ATOMICALLY (the cancels run inside
+      // expireDecidable's commit; both repos share the db adapter), so a crash can't
+      // leave an `expired` message with an orphaned job scanned forever by sweeps.
+      const jobs = getClassificationJobRepository();
+      messages.expireDecidable(run.run_id, now, run.expires_at, (expiredIds) => {
+        if (jobs !== null) for (const id of expiredIds) jobs.cancel(id, 'expired', now);
+      });
+    }
     const allMsgs = messages === null ? [] : messages.listByRun(run.run_id);
     // 81B-06 — render the bounded CardSpec title/body Core holds for each decidable
     // message so the owner sees WHAT they are approving/denying, not just an opaque
@@ -653,9 +664,80 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       },
       pending,
       pending_risk: pendingRisk,
+      // R5-01/§7 — slots whose held-by-lock response proved UNRECOVERABLE on
+      // unlock replay. Each pauses fetch (`paused_reason: 'response_lost'`)
+      // until the provider re-fills the freed cursor or the owner skips it
+      // (POST /v1/run/:id/skip-lost). Metadata only — the payload is gone.
+      lost: (getReservationRepository()?.listByRun(run.run_id) ?? [])
+        .filter((r) => r.state === 'response_lost')
+        .sort((a, b) => a.cursor - b.cursor)
+        .map((r) => ({
+          reservation_id: r.reservation_id,
+          cursor: r.cursor,
+          reason: r.error_reason,
+          at: r.error_at,
+        })),
       next_fetch_at: run.next_fetch_at,
       config_version: run.config_version,
     });
+  });
+
+  // POST /v1/run/:id/skip-lost — the owner gives up on a `response_lost` slot
+  // (§7): terminal `skipped`, and when no lost slot remains the run's
+  // `paused_reason` clears so the pacer resumes. (A provider RETRY instead
+  // re-fills the freed cursor through the live ingest; skipping is the owner's
+  // explicit "stop waiting".)
+  router.post('/v1/run/:id/skip-lost', async (req) => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const svc = requireService();
+    if ('status' in svc) return svc;
+    const reservations = getReservationRepository();
+    const runs = getRunRepository();
+    if (reservations === null || runs === null) {
+      return j(503, { error: 'unavailable', reason: 'reservation store not wired' });
+    }
+    const body = isRecord(req.body) ? req.body : {};
+    const reservationId = typeof body.reservation_id === 'string' ? body.reservation_id : '';
+    if (reservationId === '') return j(400, { error: 'invalid', field: 'reservation_id' });
+    const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
+    if (idemKey === '') {
+      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+    }
+    const runId = String(req.params.id ?? '');
+    if (svc.get(runId) === null) return j(404, { error: 'not_found' });
+    // The reservation must belong to THIS run (the owner addressed a specific run).
+    if (reservations.getById(reservationId)?.run_id !== runId) return j(404, { error: 'not_found' });
+
+    const compute = (): CoreResponse => {
+      const now = Date.now();
+      const skipped = reservations.skipLost(reservationId, now);
+      if (!skipped) {
+        const state = reservations.getById(reservationId)?.state ?? 'missing';
+        return j(409, { error: 'conflict', reason: `reservation is ${state}, not response_lost` });
+      }
+      // Recompute the pause: with the last lost slot resolved, fetch resumes.
+      const anyLost = reservations
+        .listByRun(runId)
+        .some((r) => r.state === 'response_lost');
+      const run = runs.getById(runId);
+      if (!anyLost && run !== null && run.paused_reason === 'response_lost') {
+        runs.setPausedReason(runId, null, now);
+      }
+      return j(200, { reservation_id: reservationId, state: 'skipped', fetch_resumed: !anyLost });
+    };
+    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    return replayOrConflict(
+      () =>
+        recordOrReplayCommand<CoreResponse>({
+          ownerPrincipal: owner,
+          runId,
+          route: 'skip_lost',
+          idempotencyKey: idemKey,
+          requestBody: { reservation_id: reservationId },
+          compute,
+        }).response,
+    );
   });
 }
 

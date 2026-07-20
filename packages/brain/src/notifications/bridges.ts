@@ -23,18 +23,70 @@
  * extra layer of indirection for no testability gain.
  */
 
-import { WorkflowTaskState } from '@dina/core';
-
-import { addMessage, getThread } from '../chat/thread';
-
-import { appendNotification } from './inbox';
-
-import type {
+import { WorkflowTaskState, type MessageRecord, type RunRecord ,
   ApprovalManager,
   ApprovalRequest,
   WorkflowRepository,
   WorkflowTask,
 } from '@dina/core';
+
+import { addMessage, getThread } from '../chat/thread';
+
+import { appendNotification } from './inbox';
+
+/**
+ * R5-02 — the interactive-run classified-message sink (§9.1). Both boots wire
+ * this as the run plane's `onMessageClassified`, so every message that durably
+ * reaches `classified` lands a RETAINED `run`-kind Activity entry:
+ *   - an ACTION needs the owner's decision — without an inbox entry a pending
+ *     action sits invisible (blocking the bounded queue) until the owner happens
+ *     to open Settings → Interactive runs;
+ *   - an INFORMATIONAL message is Solicited output of a standing run.
+ * Metadata only (capability + kind) — never payload content. Idempotent on the
+ * message id, so a redelivered classify event upserts instead of duplicating.
+ * DND/mute quiet the BANNER downstream; the entry itself is never removed.
+ */
+export function notifyRunMessageClassified(message: MessageRecord, run: RunRecord): void {
+  const isAction = message.kind === 'action';
+  // Display the service by its listing URI's record key ("self", "bus42", …) —
+  // the only bounded, non-payload service identifier the run record carries.
+  const serviceLabel = run.service_uri.split('/').pop() ?? 'service';
+  appendNotification({
+    kind: 'run',
+    title: isAction ? 'Service action needs review' : 'Service update',
+    body: isAction
+      ? `A service (${serviceLabel}) proposed an action that is waiting for your decision.`
+      : `A service (${serviceLabel}) sent a new update.`,
+    id: `run-msg-${message.message_id}`,
+    sourceId: message.message_id,
+    deepLink: 'dina://runs',
+  });
+}
+
+/**
+ * R5-01/§7 — a `held_by_lock` run response was detected UNRECOVERABLE on unlock
+ * replay (`response_lost`). Both boots wire this as the run plane's
+ * `onResponseLost`: the run is paused on a gap the owner must resolve (wait for
+ * the provider's retry, or skip the slot), so silence here would strand it.
+ * Metadata only — the lost payload's content is, by definition, gone.
+ * Idempotent on the reservation id.
+ */
+export function notifyRunResponseLost(
+  run: RunRecord,
+  reservation: { reservation_id: string; cursor: number },
+  reason: string,
+): void {
+  const serviceLabel = run.service_uri.split('/').pop() ?? 'service';
+  appendNotification({
+    kind: 'run',
+    title: 'Service update lost',
+    body: `An update from ${serviceLabel} (position ${reservation.cursor}) could not be recovered after unlock (${reason}). The run is paused until the service resends it or you skip it.`,
+    id: `run-lost-${reservation.reservation_id}`,
+    sourceId: reservation.reservation_id,
+    deepLink: 'dina://runs',
+  });
+}
+
 
 /**
  * Subscribe an inbox bridge to an ApprovalManager. Every

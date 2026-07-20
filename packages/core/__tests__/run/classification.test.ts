@@ -82,7 +82,14 @@ function makeMsg(over: Partial<MessageRecord> = {}): MessageRecord {
   };
 }
 
-function setup(opts: { ceiling?: PriorityCeiling; runState?: RunRecord['state']; personaOpen?: boolean } = {}) {
+function setup(
+  opts: {
+    ceiling?: PriorityCeiling;
+    runState?: RunRecord['state'];
+    personaOpen?: boolean;
+    onClassified?: (message: MessageRecord, run: RunRecord) => void;
+  } = {},
+) {
   const messages = new InMemoryMessageRepository();
   const jobs = new InMemoryClassificationJobRepository();
   const runs = new InMemoryRunRepository();
@@ -103,9 +110,46 @@ function setup(opts: { ceiling?: PriorityCeiling; runState?: RunRecord['state'];
     idFn: () => `lease-${++seq}`,
     isPersonaOpen: () => opts.personaOpen ?? true,
     buildClassificationView: (m) => ({ title: `t-${m.message_id}`, body: 'b', content_digest: 'cd' }),
+    ...(opts.onClassified !== undefined ? { onClassified: opts.onClassified } : {}),
   });
   return { messages, jobs, runs, svc };
 }
+
+describe('onClassified sink (R5-02)', () => {
+  it('fires post-commit for an ACTION fast-path classification', () => {
+    const seen: { id: string; kind: string }[] = [];
+    const { messages, svc } = setup({
+      onClassified: (m) => seen.push({ id: m.message_id, kind: m.kind }),
+    });
+    messages.create(makeMsg({ message_id: 'a', kind: 'action', action_type: 'book' }));
+    svc.beginClassification('a');
+    expect(seen).toEqual([{ id: 'a', kind: 'action' }]);
+  });
+
+  it('does NOT fire for an informational message until its tier finalizes, then fires once', () => {
+    const seen: string[] = [];
+    const { messages, svc } = setup({ onClassified: (m) => seen.push(m.message_id) });
+    messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    svc.beginClassification('i'); // job created; not yet classified
+    expect(seen).toEqual([]);
+    const acq = svc.workerAcquire();
+    expect(acq).not.toBeNull();
+    expect(svc.workerReport('i', acq!.message_revision, acq!.lease_token, 3)).toBe('ok');
+    expect(seen).toEqual(['i']); // fired exactly once, post-commit
+  });
+
+  it('fires for a classify-timeout finalization, and a sink throw never breaks classification', () => {
+    const { messages, svc } = setup({
+      onClassified: () => {
+        throw new Error('sink exploded');
+      },
+    });
+    messages.create(makeMsg({ message_id: 'i', kind: 'informational' }));
+    svc.beginClassification('i');
+    expect(() => svc.finalizeTimeout('i')).not.toThrow();
+    expect(messages.getById('i')?.state).toBe('classified'); // commit unaffected
+  });
+});
 
 describe('beginClassification (§6.3)', () => {
   it('an ACTION takes the Tier-2 base directly, NO Brain job', () => {

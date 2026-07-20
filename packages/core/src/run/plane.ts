@@ -33,19 +33,24 @@ import {
 import { RunDispatchService, setRunDispatchService, setRunPayloadView } from './dispatch';
 import { RunEngine, type EmitDelegationEffect, type EmitQueryEffect } from './engine';
 import { SQLiteErasureKeyStore, getErasureKeyStore, type ErasureKeyStore } from './erasure_store';
+import { HeldReplayService, parseSealedRef, type HeldReplayReport } from './held_replay';
 import {
   RunResponseIngest,
+  parseHeldMessageMeta,
   type PullIngestOutcome,
   type VerifiedRunMessage,
 } from './ingest';
+import { LockedArrivalStore, type DeviceSealer, type RunSpool } from './locked_arrival';
 import { getMessageRepository, type MessageRecord, type MessageRepository } from './message';
 import { PayloadStore, type PersonaCipher } from './payload_store';
+import { setHeldReplayHook } from './replay_registry';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRepository } from './reservation';
+import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
 import { RunService, setRunService } from './service';
 import { RunSweeper, RunTerminationService } from './termination';
 import { makeReentrantTxRunner, type TxRunner } from './tx';
 
+import type { RunRecord } from './domain';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /** Keyset page size for the terminal-run re-shred recovery scan (§13, E76-09).
@@ -91,6 +96,20 @@ export interface RunPlaneDeps {
   /** Hardened erasure backend (§13/§20). Omitted ⇒ the durable SQLite
    *  `logical_deletion` backend over `db` — the honest V1 mode. */
   erasureStore?: ErasureKeyStore;
+  /** R5-02 — post-commit sink for a message reaching `classified` (§9.1). The
+   *  boots wire it to the notification inbox so every classified message lands a
+   *  retained Activity entry. Best-effort; never fails classification. */
+  onMessageClassified?: (message: MessageRecord, run: RunRecord) => void;
+  /** R5-01 — the durable locked-arrival spool + device sealer (§7). When BOTH
+   *  are supplied the plane composes the `LockedArrivalStore`: a lock-raced
+   *  verified response is durably staged + `held_by_lock`, admitted exactly-once
+   *  on unlock, and crypto-shred-discarded on a barrier. Omitted ⇒ the degraded
+   *  pre-composition behavior (persona_locked; the response may be re-fetched). */
+  runSpool?: RunSpool;
+  deviceSealer?: DeviceSealer;
+  /** R5-01/§7 — post-commit sink for a held response detected LOST
+   *  (`response_lost`). The boots wire it to a `run`-kind notification. */
+  onResponseLost?: (run: RunRecord, reservation: ReservationRecord, reason: string) => void;
   /** The ONE re-entrant transaction runner the boot shares with the
    *  command-receipt runner + the owner `RunService` (E76-02). When omitted the
    *  plane builds a private runner over `db` (fine for standalone/test use, but a
@@ -129,8 +148,14 @@ export interface RunPlane {
   ingestCompletion: (input: IngestCompletionInput) => IngestOutcome;
   /** One idempotent crash-recovery pass (re-advance verified_pending completions;
    *  the engine's dispatch tick re-drives durable `sending` rows; the sweeper
-   *  reclaims expired leases). Run once at boot before starting the loops. */
+   *  reclaims expired leases; held_by_lock responses for OPEN personas replay).
+   *  Run once at boot before starting the loops. */
   recoverOnBoot: () => void;
+  /** R5-01 — admit every `held_by_lock` response for a just-unlocked persona
+   *  exactly-once (§7). Also fired via the held-replay hook registry from the
+   *  Core unlock points; a no-op report when the locked-arrival store is not
+   *  composed. */
+  replayHeldForPersona: (persona: string) => HeldReplayReport;
   // (start below is sync; stop is async so a disposer can await tick quiescence.)
   /** Start every cadence loop (idempotent). */
   start: () => void;
@@ -147,6 +172,8 @@ export interface RunPlane {
   readonly dispatch: RunDispatchService;
   readonly payloads: PayloadStore;
   readonly runService: RunService;
+  /** Null when the locked-arrival store is not composed (degraded mode). */
+  readonly heldReplay: HeldReplayService | null;
 }
 
 function need<T>(v: T | null, what: string): T {
@@ -250,7 +277,15 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     counts: {
       enqueuedUndecided: (runId) => {
         const r = runs.getById(runId);
-        if (r !== null) messages.expireDecidable(runId, now(), r.expires_at);
+        if (r !== null) {
+          // 81B-07b / R2-03 — fencing/expiry must also invalidate the classification
+          // lease (§9.1), ATOMICALLY: the job-cancels run inside expireDecidable's
+          // commit, so a crash can't leave an `expired` message with a live `pending`
+          // job (both repos share this db adapter → one transaction).
+          messages.expireDecidable(runId, now(), r.expires_at, (expired) => {
+            for (const id of expired) jobs.cancel(id, 'expired', now());
+          });
+        }
         return messages.countEnqueuedUndecided(runId);
       },
     },
@@ -310,6 +345,7 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     buildClassificationView: deps.buildClassificationView ?? defaultClassificationView,
     nowMsFn: now,
     tx,
+    ...(deps.onMessageClassified !== undefined ? { onClassified: deps.onMessageClassified } : {}),
   });
 
   const completion = new CompletionService({
@@ -319,6 +355,22 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     verifyReceipt: deps.verifyReceipt,
     nowMsFn: now,
   });
+
+  // R5-01 — compose the locked-arrival store when the boot supplies a durable
+  // spool + device sealer (§7). Without them the plane runs the degraded
+  // persona_locked mode (nothing staged) — logged so the gap is visible.
+  const lockedArrival =
+    deps.runSpool !== undefined && deps.deviceSealer !== undefined
+      ? new LockedArrivalStore({
+          spool: deps.runSpool,
+          deviceSealer: deps.deviceSealer,
+          payloadStore: payloads,
+          erasureStore: erasure,
+        })
+      : undefined;
+  if (lockedArrival === undefined) {
+    deps.log?.({ evt: 'run_plane.locked_arrival_degraded' });
+  }
 
   const ingest = new RunResponseIngest({
     runRepo: runs,
@@ -331,7 +383,24 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     isPersonaOpen: deps.isPersonaOpen,
     nowMsFn: now,
     tx,
+    ...(lockedArrival !== undefined ? { lockedArrival } : {}),
   });
+
+  const heldReplay =
+    lockedArrival !== undefined
+      ? new HeldReplayService({
+          admission,
+          classify,
+          payloadStore: payloads,
+          lockedArrival,
+          runRepo: runs,
+          reservationRepo: reservations,
+          messageRepo: messages,
+          isPersonaOpen: deps.isPersonaOpen,
+          nowMsFn: now,
+          ...(deps.onResponseLost !== undefined ? { onResponseLost: deps.onResponseLost } : {}),
+        })
+      : null;
 
   const termination = new RunTerminationService({
     runRepo: runs,
@@ -343,9 +412,18 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     fenceClassificationJob: (messageId, terminal) => classify.fenceJob(messageId, terminal),
     reconcileClaimed: (messageId) => completion.reconcileAtDeadline(messageId),
     shredPayloads: (runId) => payloads.shredRun(runId),
-    // discardHeld (locked-arrival spool crypto-shred) composes with the fs-spool
-    // adapter (§13, conformance-gated) — left to the erasure store's degraded
-    // path until that backend is wired.
+    // R5-01 — a barrier that invalidates a `held_by_lock` reservation crypto-
+    // shreds + ack-deletes its staged spool blob WITHOUT decryption (§7).
+    ...(lockedArrival !== undefined
+      ? {
+          discardHeld: (res: ReservationRecord) => {
+            const ref = parseSealedRef(res.sealed_response_ref);
+            if (ref === null) return;
+            const meta = parseHeldMessageMeta(res.held_message_json);
+            lockedArrival.discard(meta?.message_id ?? res.reservation_id, ref);
+          },
+        }
+      : {}),
   });
   cycle.termination = termination;
 
@@ -440,6 +518,15 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
         terminal_reshred: reshred,
         terminal_reshred_failed: reshredFailed,
       });
+      // R5-01 — replay any held_by_lock response whose persona is already open
+      // (crash after unlock, before/mid replay). Idempotent: an already-admitted
+      // message just finalizes; a still-locked persona's items defer.
+      if (heldReplay !== null) {
+        const replayed = heldReplay.replayAll();
+        if (replayed.published > 0 || replayed.lost > 0 || replayed.deferred > 0) {
+          log({ evt: 'run_plane.held_replayed', ...replayed });
+        }
+      }
     } catch (err) {
       log({ evt: 'run_plane.recover_failed', error: err instanceof Error ? err.message : String(err) });
     }
@@ -472,6 +559,7 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   };
 
   const stop = async (): Promise<void> => {
+    setHeldReplayHook(null);
     if (!started) return;
     started = false;
     // Set the stopped flags + clear the interval handles FIRST so no new tick
@@ -486,11 +574,29 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     await engine.drain();
   };
 
+  // R5-01 — the persona-unlock points (owner unlock route, agent-grant
+  // activation) fire the registry so a held response is admitted the moment its
+  // persona reopens. A degraded plane (no spool/sealer) reports zeros.
+  const replayHeldForPersona = (persona: string): HeldReplayReport => {
+    if (heldReplay === null) return { published: 0, lost: 0, deferred: 0 };
+    const report = heldReplay.replayForPersona(persona);
+    if (report.published > 0 || report.lost > 0 || report.deferred > 0) {
+      log({ evt: 'run_plane.held_replayed', persona, ...report });
+    }
+    return report;
+  };
+  if (heldReplay !== null) {
+    setHeldReplayHook((persona) => {
+      replayHeldForPersona(persona);
+    });
+  }
+
   return {
     ingestPullResponse: (correlationId, message) => ingest.ingestPullResponse(correlationId, message),
     ingestExhausted: (correlationId) => ingest.ingestExhausted(correlationId),
     ingestCompletion: (input) => completion.ingestCompletion(input),
     recoverOnBoot,
+    replayHeldForPersona,
     start,
     stop,
     engine,
@@ -503,5 +609,6 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     dispatch,
     payloads,
     runService,
+    heldReplay,
   };
 }

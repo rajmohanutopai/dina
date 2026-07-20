@@ -27,6 +27,7 @@
  */
 
 import { buildRememberRuntime } from '@dina/brain';
+import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
 import { addMessage, postReminderCard } from '@dina/brain/chat';
 import { listPersonas } from '@dina/core';
 import {
@@ -524,6 +525,19 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
             const { keys } = await inputs.resolveSender(issuerDid);
             return keys[0] ?? null;
           },
+          // R5-02 — every classified run message lands a retained `run`-kind
+          // Activity entry (in-process append; dual-writes the durable log).
+          onMessageClassified: notifyRunMessageClassified,
+          // R5-01 — the locked-arrival lane (§7): a lock-raced verified response
+          // is device-sealed into the durable SQLite spool + `held_by_lock`,
+          // then admitted exactly-once on unlock. The device's identity signing
+          // keypair IS its device key; a held response detected lost on replay
+          // lands a `run`-kind entry.
+          deviceKeypair: {
+            publicKey: inputs.signingKeypair.publicKey,
+            secretKey: inputs.signingKeypair.privateKey,
+          },
+          onResponseLost: notifyRunResponseLost,
           log: (entry) => log(entry),
         })
       : undefined;

@@ -28,6 +28,8 @@ import { sealDecrypt, sealEncrypt } from '../crypto/nacl';
 import { getErasureKeyStore, type ErasureKeyStore } from './erasure_store';
 import { PayloadStore, type PayloadRef } from './payload_store';
 
+import type { DatabaseAdapter } from '../storage/db_adapter';
+
 /**
  * Byte storage for a locked-arrival ciphertext. Net-new `peek`/`ack` two-phase
  * drain over the shipping dead-drop spool (a fsync'd Node impl + an Expo adapter
@@ -102,6 +104,27 @@ export interface LockedArrivalStoreOptions {
   erasureStore?: ErasureKeyStore;
 }
 
+/**
+ * The staging leaf key's erasure-store id. NAMESPACED apart from the payload's
+ * own leaf key (which `preparePayload`/`putPayload` store under the bare
+ * `payloadId`), so preparing the payload during the unlock replay can never
+ * overwrite the staging key — a crash between the prepared vault write and the
+ * Tier-0 commit leaves the staged spool blob still decryptable for the retry
+ * (§7 crash-safety: "reservation still held_by_lock, spool blob intact ⇒
+ * retried").
+ */
+function stagedKeyId(payloadId: string): string {
+  return `staged:${payloadId}`;
+}
+
+/** What `recover` yields: the decrypted plaintext, or a detected loss. */
+export type RecoverOutcome =
+  | { outcome: 'recovered'; plaintext: Uint8Array }
+  | {
+      outcome: 'response_lost';
+      reason: 'blob_missing' | 'digest_mismatch' | 'erasure_key_gone' | 'corrupt';
+    };
+
 function serializeStaged(wrappedSealedKp: Uint8Array, blob: Uint8Array): Uint8Array {
   const out = new Uint8Array(4 + wrappedSealedKp.length + blob.length);
   new DataView(out.buffer).setUint32(0, wrappedSealedKp.length, false);
@@ -159,9 +182,46 @@ export class LockedArrivalStore {
     const sealedKp = this.sealer.seal(kP);
     const wrappedSealedKp = aeadEncrypt(kE, sealedKp);
 
-    this.erasure().put(payloadId, kE);
+    this.erasure().put(stagedKeyId(payloadId), kE);
     const spoolId = this.spool.store(serializeStaged(wrappedSealedKp, blob));
     return { spool_id: spoolId, content_digest: contentDigest };
+  }
+
+  /**
+   * Recover the staged plaintext WITHOUT publishing or consuming anything (§7):
+   * peek → digest verify → device-unseal → decrypt. Side-effect free — the spool
+   * blob and staging key stay intact, so the caller can run the guarded
+   * enqueue-commit (prepare + Tier-0 CAS) and call {@link finalize} only after
+   * the commit lands; a crash at any point retries cleanly.
+   */
+  recover(payloadId: string, ref: SealedResponseRef): RecoverOutcome {
+    const staged = this.spool.peek(ref.spool_id);
+    if (staged === null) return { outcome: 'response_lost', reason: 'blob_missing' };
+    const parsed = deserializeStaged(staged);
+    if (parsed === null) return { outcome: 'response_lost', reason: 'corrupt' };
+    const { wrappedSealedKp, blob } = parsed;
+    if (bytesToHex(sha256(blob)) !== ref.content_digest) {
+      return { outcome: 'response_lost', reason: 'digest_mismatch' };
+    }
+    const kE = this.erasure().get(stagedKeyId(payloadId));
+    if (kE === null) return { outcome: 'response_lost', reason: 'erasure_key_gone' };
+    try {
+      const sealedKp = aeadDecrypt(kE, wrappedSealedKp);
+      const kP = this.sealer.unseal(sealedKp);
+      return { outcome: 'recovered', plaintext: aeadDecrypt(kP, blob) };
+    } catch {
+      return { outcome: 'response_lost', reason: 'corrupt' };
+    }
+  }
+
+  /**
+   * Post-commit cleanup: ack-delete the spool blob + destroy the staging leaf
+   * key. Idempotent — safe to re-run after a crash-between-commit-and-finalize
+   * (the replay detects the already-admitted message and just finalizes).
+   */
+  finalize(payloadId: string, ref: SealedResponseRef): void {
+    this.spool.ack(ref.spool_id);
+    this.erasure().destroy(stagedKeyId(payloadId));
   }
 
   /**
@@ -180,44 +240,29 @@ export class LockedArrivalStore {
       return { outcome: 'published', ref: { payload_id: payloadId, content_id: alreadyPublished } };
     }
 
-    const staged = this.spool.peek(ref.spool_id);
-    if (staged === null) return { outcome: 'response_lost', reason: 'blob_missing' };
-    const parsed = deserializeStaged(staged);
-    if (parsed === null) return { outcome: 'response_lost', reason: 'corrupt' }; // bad framing
-    const { wrappedSealedKp, blob } = parsed;
-    if (bytesToHex(sha256(blob)) !== ref.content_digest) {
-      return { outcome: 'response_lost', reason: 'digest_mismatch' };
-    }
-    const kE = this.erasure().get(payloadId);
-    if (kE === null) return { outcome: 'response_lost', reason: 'erasure_key_gone' };
-
-    // The stored digest covers only `blob`, so a corrupted `wrappedSealedKp` (or
-    // a tampered sealed k_p) passes the digest check and only fails here — catch
-    // the auth/decrypt throw and surface `response_lost` rather than propagating
-    // an uncaught exception that would strand the unlock recovery (F16).
-    let plaintext: Uint8Array;
-    try {
-      const sealedKp = aeadDecrypt(kE, wrappedSealedKp);
-      const kP = this.sealer.unseal(sealedKp);
-      plaintext = aeadDecrypt(kP, blob);
-    } catch {
-      return { outcome: 'response_lost', reason: 'corrupt' };
+    // Recover is side-effect free; a failure surfaces `response_lost` (F16).
+    const recovered = this.recover(payloadId, ref);
+    if (recovered.outcome === 'response_lost') {
+      return { outcome: 'response_lost', reason: recovered.reason };
     }
 
     // Re-encrypt under the normal open-persona envelope (fresh keys + persona
-    // DEK); the Tier-0 pointer CAS is the sole commit (§13). `putPayload`
-    // overwrites the staging leaf key at `payloadId`, so if it fails mid-flight
-    // the spool blob would become undecryptable — RESTORE the staging key so a
-    // retry can re-decrypt, and surface a detected `response_lost` rather than
-    // an uncaught throw + permanent loss (VERIF #3). Then ack the spool.
+    // DEK); the Tier-0 pointer CAS is the sole commit (§13). The staging leaf
+    // key lives under its OWN namespaced id, so a mid-flight failure leaves the
+    // spool blob fully decryptable for the retry (VERIF #3 — no restore dance
+    // needed). Finalize (spool ack + staging-key destroy) only after success.
     let payloadRef: PayloadRef;
     try {
-      payloadRef = this.payloads.putPayload({ payloadId, runId, persona, plaintext });
+      payloadRef = this.payloads.putPayload({
+        payloadId,
+        runId,
+        persona,
+        plaintext: recovered.plaintext,
+      });
     } catch {
-      this.erasure().put(payloadId, kE); // restore the staging key (retry-safe)
       return { outcome: 'response_lost', reason: 'publish_failed' };
     }
-    this.spool.ack(ref.spool_id);
+    this.finalize(payloadId, ref);
     return { outcome: 'published', ref: payloadRef };
   }
 
@@ -227,7 +272,49 @@ export class LockedArrivalStore {
    * WITHOUT decryption.
    */
   discard(payloadId: string, ref: SealedResponseRef): void {
-    this.erasure().destroy(payloadId); // crypto-shred (no decryption)
+    this.erasure().destroy(stagedKeyId(payloadId)); // crypto-shred (no decryption)
     this.spool.ack(ref.spool_id); // physical delete of the inert ciphertext
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Durable spool — SQLite over Tier-0 (`identity.sqlite`), both platforms.
+// ---------------------------------------------------------------------------
+
+let spoolSeq = 0;
+
+/**
+ * The PRODUCTION `RunSpool`: a Tier-0 SQLite table (`run_spool`, migration
+ * `run_reservations_and_payloads`). One implementation serves BOTH boots (the
+ * Node server and Expo/Hermes mobile share the DatabaseAdapter port), and a WAL
+ * transaction commit gives the durability the doc's "fsync before the
+ * `held_by_lock` commit" requires — with same-DB atomicity when the caller wraps
+ * store + hold in one Tier-0 transaction (strictly stronger than a separate fs
+ * spool). The blob is Core-sealed ciphertext; no plaintext is ever written (§13).
+ */
+export class SQLiteRunSpool implements RunSpool {
+  constructor(private readonly db: DatabaseAdapter) {}
+
+  store(blob: Uint8Array): string {
+    const id = `spool-${Date.now().toString(36)}-${(++spoolSeq).toString(36)}`;
+    this.db.execute('INSERT INTO run_spool (spool_id, blob, created_at) VALUES (?, ?, ?)', [
+      id,
+      blob,
+      Date.now(),
+    ]);
+    return id;
+  }
+
+  peek(id: string): Uint8Array | null {
+    const rows = this.db.query<{ blob: Uint8Array }>(
+      'SELECT blob FROM run_spool WHERE spool_id = ? LIMIT 1',
+      [id],
+    );
+    const raw = rows[0]?.blob;
+    return raw === undefined || raw === null ? null : new Uint8Array(raw);
+  }
+
+  ack(id: string): void {
+    this.db.run('DELETE FROM run_spool WHERE spool_id = ?', [id]);
   }
 }

@@ -9,6 +9,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./briefing": {
+      "types": "./briefing.ts",
+      "default": "./briefing.ts"
+    },
     "./chat": {
       "types": "./chat.ts",
       "default": "./chat.ts"

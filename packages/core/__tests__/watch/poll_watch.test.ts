@@ -115,6 +115,44 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         expect(svc().listActive().map((t) => t.id)).toEqual([second.id]);
       });
 
+      it('createPollWatch round-trips the wake filter into the payload (R2-04)', () => {
+        const w = svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
+        expect(need(parseWatchPollPayload(w.payload)).filter).toEqual({ contains: 'delayed' });
+      });
+
+      it('deliveryPolicyFor: fails CLOSED for an unknown subscription (R3-02)', () => {
+        // No watch created → exact idempotency-key lookup misses → suppress.
+        expect(svc().deliveryPolicyFor('never-created')).toEqual({ active: false });
+      });
+
+      it('deliveryPolicyFor: an active watch is {active:true} and carries its filter (R3-02/R2-04)', () => {
+        svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+      });
+
+      it('deliveryPolicyFor: an active UNFILTERED watch omits filter (R3-02)', () => {
+        svc().createPollWatch(input());
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true });
+      });
+
+      it('deliveryPolicyFor: a cancelled watch reverts to {active:false} — fail closed (R3-02)', () => {
+        const w = svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+        svc().cancel(w.id);
+        // A delivery arriving after cancel must NOT fire-always; it fails closed.
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: false });
+      });
+
+      it('deliveryPolicyFor: a PAUSED watch reports inactive — a late response is suppressed (R4-04)', () => {
+        const w = svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
+        svc().pause(w.id);
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: false });
+        // resume restores the active policy (with its filter)
+        clockMs = NOW_MS + 60_000;
+        svc().resume(w.id);
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+      });
+
       it('setWatchNextRun never perturbs a non-watch task', () => {
         // A delegation whose retry-backoff next_run_at must not be touchable.
         const deleg: WorkflowTask = {
@@ -200,6 +238,44 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         expect(need(repo.getById(w.id)).next_run_at).toBe(Math.floor(clockMs / 1000) + INTERVAL_SEC);
       });
 
+      it('is single-flight: timer fires during a slow poll coalesce onto one tick (81B-08)', async () => {
+        svc().createPollWatch(input());
+        clockMs = NOW_MS + (INTERVAL_SEC + 1) * 1000; // due
+        let invocations = 0;
+        let release!: () => void;
+        const gate = new Promise<void>((r) => {
+          release = r;
+        });
+        const timer: { fire: (() => void) | null } = { fire: null };
+        const sw = new WatchPollSweeper({
+          repository: repo,
+          nowMsFn: () => clockMs,
+          onPoll: async () => {
+            invocations++;
+            await gate; // hold the poll open so overlapping fires can be observed
+          },
+          setInterval: (fn) => {
+            timer.fire = fn;
+            return 1 as unknown as ReturnType<typeof setInterval>;
+          },
+          clearInterval: () => {
+            /* no-op for the fake timer */
+          },
+        });
+
+        sw.start(); // first tick starts + blocks in onPoll #1
+        await Promise.resolve();
+        expect(invocations).toBe(1);
+        // Two more timer fires WHILE the first poll is unresolved → must coalesce.
+        timer.fire?.();
+        timer.fire?.();
+        await Promise.resolve();
+        expect(invocations).toBe(1); // single-flight — no overlapping second poll
+
+        release(); // unblock the in-flight poll
+        await sw.flush(); // drains to quiescence (teardown contract)
+      });
+
       it('an onPoll throw is isolated and the watch is STILL rescheduled (never wedged)', async () => {
         const w = svc().createPollWatch(input());
         clockMs = NOW_MS + (INTERVAL_SEC + 1) * 1000;
@@ -215,6 +291,45 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         expect(errors).toHaveLength(1);
         // but the watch was rescheduled, so the next interval retries
         expect(need(repo.getById(w.id)).next_run_at).toBe(Math.floor(clockMs / 1000) + INTERVAL_SEC);
+      });
+
+      it('R4-04: a pause during an in-flight poll is NOT undone by the post-poll reschedule', async () => {
+        const w = svc().createPollWatch(input());
+        clockMs = NOW_MS + (INTERVAL_SEC + 1) * 1000; // due
+        // The owner pauses WHILE the poll is in flight (the classic race).
+        const sw = sweeper(() => {
+          svc().pause(w.id);
+        });
+        await sw.runTick();
+        // The reschedule CAS is anchored on the value the tick fired; the pause
+        // cleared next_run_at in the interim, so the CAS misses and the pause holds.
+        expect(need(repo.getById(w.id)).next_run_at ?? 0).toBe(0);
+        // And it stays paused on the next tick (never silently resumes).
+        expect((await sw.runTick()).polled).toHaveLength(0);
+      });
+
+      it('R4-05: a due watch fires even when the batch page is full of paused/future watches', async () => {
+        // Codex R4-05: the old sweeper fetched the oldest N running rows by
+        // created_at then filtered due AFTER, so paused/future rows inside that
+        // fixed page permanently hid later due watches. Create batchLimit paused
+        // watches BEFORE the due one; with a due-time query the due watch fires.
+        const s = svc();
+        for (let i = 0; i < 5; i += 1) {
+          const p = s.createPollWatch(input({ subscription_id: `paused-${i}` }));
+          s.pause(p.id); // next_run_at cleared → excluded from the due query
+        }
+        const dueWatch = s.createPollWatch(input({ subscription_id: 'due-1' }));
+        clockMs = NOW_MS + (INTERVAL_SEC + 1) * 1000;
+        const seen: string[] = [];
+        const sw = new WatchPollSweeper({
+          repository: repo,
+          onPoll: (t) => void seen.push(t.id),
+          nowMsFn: () => clockMs,
+          batchLimit: 5, // a created_at page of 5 would be ALL the paused watches
+        });
+        const r = await sw.runTick();
+        expect(seen).toEqual([dueWatch.id]);
+        expect(r.polled.map((t) => t.id)).toEqual([dueWatch.id]);
       });
 
       it('skips (does not fire) a malformed-payload watch and reports it', async () => {
@@ -247,6 +362,49 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         expect(r.skipped.map((t) => t.id)).toEqual(['watch-bad']);
         expect(skipped).toEqual(['watch-bad']);
         expect(fired).not.toContain('watch-bad');
+      });
+
+      it('R5-06: a malformed batch at the head does NOT permanently starve a later valid due watch', async () => {
+        // Two malformed rows due EARLIER than the valid watch; batchLimit 2 so a
+        // single tick's due page is entirely malformed. Without pausing them they
+        // would re-occupy the head every tick and the valid watch would never fire.
+        const mkBad = (id: string, dueSec: number): void => {
+          const bad: WorkflowTask = {
+            id,
+            kind: WorkflowTaskKind.Watch,
+            status: WorkflowTaskState.Running,
+            priority: 'background',
+            description: 'corrupt',
+            payload: 'not-json',
+            result_summary: '',
+            policy: '{}',
+            idempotency_key: `watch:${id}`,
+            next_run_at: dueSec,
+            created_at: NOW_MS,
+            updated_at: NOW_MS,
+          };
+          repo.create(bad);
+        };
+        mkBad('bad-1', NOW_SEC);
+        mkBad('bad-2', NOW_SEC + 1);
+        const good = svc().createPollWatch(input({ subscription_id: 'good' })); // due latest
+        clockMs = NOW_MS + (INTERVAL_SEC + 1) * 1000;
+        const seen: string[] = [];
+        const sweep = (): WatchPollSweeper =>
+          new WatchPollSweeper({
+            repository: repo,
+            onPoll: (t) => void seen.push(t.id),
+            nowMsFn: () => clockMs,
+            batchLimit: 2,
+          });
+
+        await sweep().runTick(); // page = [bad-1, bad-2] → both paused; good not reached
+        expect(seen).toHaveLength(0);
+        expect(need(repo.getById('bad-1')).next_run_at ?? 0).toBe(0); // paused out of the due query
+        expect(need(repo.getById('bad-2')).next_run_at ?? 0).toBe(0);
+
+        await sweep().runTick(); // the valid watch is now at the head → it fires
+        expect(seen).toEqual([good.id]);
       });
     });
   });

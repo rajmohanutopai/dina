@@ -21,6 +21,11 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.30.
  */
 
+import {
+  storedNotificationToWire,
+  wireToStoredNotification,
+} from '../notifications/repository';
+
 import { WorkflowConflictError } from './core-client';
 import { CoreHttpError } from './http-transport';
 
@@ -80,6 +85,7 @@ import type {
   Person,
   Reminder,
   ReminderCreateInput,
+  StoredNotificationItem,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -1153,6 +1159,63 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { fired?: Reminder[] };
     return Array.isArray(raw.fired) ? raw.fired : [];
+  }
+
+  // ─── Notification log (R4-03) ───────────────────────────────────────────────
+  // Mutations throw on non-200 (never swallow a failed durable write); the list
+  // read degrades to empty. In-process these route to Core's notification routes,
+  // which read the wired repository (mobile shares the process).
+
+  async notificationAppend(item: StoredNotificationItem): Promise<void> {
+    // R5-08 — the route parses the snake_case wire shape; map before dispatch so
+    // in-process and HTTP feed the handler an identical contract.
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/notifications',
+        body: storedNotificationToWire(item) as unknown as Record<string, unknown>,
+      }),
+    );
+    if (res.status !== 200) throw new Error(`notificationAppend failed: ${res.status}`);
+  }
+
+  async notificationList(limit?: number): Promise<StoredNotificationItem[]> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/notifications',
+        query: limit !== undefined ? { limit: String(limit) } : {},
+      }),
+    );
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { notifications?: unknown[] };
+    if (!Array.isArray(raw.notifications)) return [];
+    return raw.notifications
+      .map((r) => wireToStoredNotification(r))
+      .filter((r): r is StoredNotificationItem => r !== null);
+  }
+
+  async notificationMarkRead(id: string, readAt: number): Promise<boolean> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/notifications/read', body: { id, read_at: readAt } }),
+    );
+    if (res.status !== 200) throw new Error(`notificationMarkRead failed: ${res.status}`);
+    return Boolean((res.body as { changed?: boolean } | undefined)?.changed);
+  }
+
+  async notificationPurgeBefore(cutoff: number): Promise<number> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/notifications/purge', body: { cutoff } }),
+    );
+    if (res.status !== 200) throw new Error(`notificationPurgeBefore failed: ${res.status}`);
+    return Number((res.body as { purged?: number } | undefined)?.purged ?? 0);
+  }
+
+  async notificationReset(): Promise<void> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/notifications/reset', body: {} }),
+    );
+    if (res.status !== 200) throw new Error(`notificationReset failed: ${res.status}`);
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

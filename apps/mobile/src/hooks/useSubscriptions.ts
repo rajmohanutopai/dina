@@ -34,6 +34,67 @@ function cadenceLabel(sec: number): string {
   return `every ${sec}s`;
 }
 
+/** #7 — owner-initiated creation of a poll-mode standing subscription. Mints a
+ *  stable `subscription_id` (the idempotency key) and creates the watch through
+ *  the owner-only `/v1/watch/create` route. Returns the created watch id, or null
+ *  on failure. */
+export interface CreateSubscriptionInput {
+  persona: string;
+  serviceUri: string;
+  providerDid: string;
+  capability: string;
+  pollIntervalSec: number;
+  query?: Record<string, unknown>;
+  /** R3-06 — the poll TARGET as `key=value` pairs (comma-separated), e.g.
+   *  "flight=BA117". Parsed into the `service.query` params so a parameterized watch
+   *  polls the right subject. Distinct from the wake `condition`. */
+  target?: string;
+  /** R2-04 — a wake condition keyword: only notify when a poll result contains it
+   *  (case-insensitive). Stored both as the display `condition` and the executable
+   *  `filter`. Empty/omitted → notify on every resolved poll. */
+  condition?: string;
+}
+
+/** Parse a bounded `key=value, key2=value2` target string into a query record.
+ *  Ignores malformed pairs; empty → undefined (no params). */
+function parseTargetQuery(target: string | undefined): Record<string, unknown> | undefined {
+  if (target === undefined || target.trim() === '') return undefined;
+  const out: Record<string, string> = {};
+  for (const pair of target.split(',')) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    const key = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (key !== '' && value !== '') out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export async function createSubscription(input: CreateSubscriptionInput): Promise<string | null> {
+  const client = getOwnerRunClient();
+  if (client === null) return null;
+  try {
+    const subscriptionId = `sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const condition = input.condition !== undefined ? input.condition.trim() : '';
+    // R3-06 — the poll target (what to poll) is distinct from the wake filter (when
+    // to notify): an explicit `query` wins, else derive it from the `target` string.
+    const query = input.query ?? parseTargetQuery(input.target);
+    const res = await client.watchCreate({
+      subscription_id: subscriptionId,
+      persona: input.persona,
+      service_uri: input.serviceUri,
+      provider_did: input.providerDid,
+      capability: input.capability,
+      poll_interval_sec: input.pollIntervalSec,
+      ...(query !== undefined ? { query } : {}),
+      ...(condition !== '' ? { condition, filter: { contains: condition } } : {}),
+    });
+    return res.watch_id;
+  } catch {
+    return null;
+  }
+}
+
 /** The owner's active (running) subscriptions, most-recent first. */
 export async function getActiveSubscriptions(): Promise<SubscriptionUIItem[]> {
   const client = getOwnerRunClient();

@@ -38,6 +38,13 @@ describe('watchPollToServiceQuery', () => {
       originChannel: 'watch:sub-1',
     });
   });
+
+  it('clamps a cadence longer than MAX_SERVICE_TTL to the wire TTL cap (81B-05)', () => {
+    // An hourly watch keeps its local cadence but must send a wire ttl ≤ 300, else
+    // the service-query route (MAX_SERVICE_TTL=300) rejects every poll.
+    const req = watchPollToServiceQuery({ ...payload, poll_interval_sec: 3600 }, 'q-2');
+    expect(req.ttlSeconds).toBe(300);
+  });
 });
 
 describe('buildWatchPollHandler', () => {

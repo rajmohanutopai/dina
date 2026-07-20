@@ -31,6 +31,7 @@ import {
   MsgTypeServiceResponse,
   SQLiteWorkflowRepository,
   getServiceConfig,
+  getWatchService,
   registerPublicKeyResolver,
   registerService,
   setOutboxRedeliverFn,
@@ -43,6 +44,7 @@ import {
 // `setD2DSender` registers the generic D2D egress callback for the
 // `/v1/msg/send` route. It lives on the runtime subpath (route module),
 // not the main `@dina/core` barrel.
+import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
 import { setD2DSender } from '@dina/core/runtime';
 import {
   makeSendD2D,
@@ -193,6 +195,20 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       const { keys } = await resolveRunSender(issuerDid);
       return keys[0] ?? null;
     },
+    // R5-02 — every classified run message lands a retained `run`-kind Activity
+    // entry. In THIS (Core) process the append's dual-write hits the durable
+    // notification log directly; the brain-server hydrates it at boot and the
+    // browser reconciles over SSE reconnect.
+    onMessageClassified: notifyRunMessageClassified,
+    // R5-01 — the locked-arrival lane (§7): a lock-raced verified response is
+    // device-sealed into the durable SQLite spool + `held_by_lock`, then
+    // admitted exactly-once on unlock. The node's signing keypair IS its device
+    // key; a held response detected lost on replay lands a `run`-kind entry.
+    deviceKeypair: {
+      publicKey: signingKeypair.publicKey,
+      secretKey: signingKeypair.privateKey,
+    },
+    onResponseLost: notifyRunResponseLost,
     log: (entry) => logger.info(entry, 'run-plane'),
   });
   runPlaneNode.plane.recoverOnBoot();
@@ -252,10 +268,31 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
         // Throw on failure so the consumer backs off + retries (the Brain
         // endpoint is idempotent by task id).
         if (task.kind !== 'service_query') return;
+        // R3-03 — the WATCH delivery policy (active + wake filter) can only be
+        // resolved in THIS (Core) process, where the WatchService lives. Resolve it
+        // here for a `watch:` origin and forward it in the DTO so the Brain applies
+        // the correct filter/active decision (a cancelled/unknown watch fails closed)
+        // instead of a null `getWatchService()` in its own process.
+        let watchPolicy: { active: boolean; filter?: { contains: string } } | undefined;
+        try {
+          const origin = JSON.parse(task.payload) as { origin_channel?: unknown };
+          if (typeof origin.origin_channel === 'string' && origin.origin_channel.startsWith('watch:')) {
+            const subId = origin.origin_channel.slice('watch:'.length);
+            watchPolicy = getWatchService()?.deliveryPolicyFor(subId) ?? { active: false };
+          }
+        } catch {
+          /* not a watch origin → no policy */
+        }
         const res = await fetch(`${brainUrl}/api/v1/chat/service-result`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text, event, task, details }),
+          body: JSON.stringify({
+            text,
+            event,
+            task,
+            details,
+            ...(watchPolicy !== undefined ? { watch_policy: watchPolicy } : {}),
+          }),
         });
         if (!res.ok) {
           throw new Error(

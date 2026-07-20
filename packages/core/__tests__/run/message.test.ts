@@ -119,6 +119,31 @@ function runSuite(makeRepo: () => MessageRepository): void {
     expect(repo.getById('c')?.state).toBe('dispatched');
   });
 
+  it('R5-05: listRunIdsWithActionableMessages returns runs by oldest actionable message, capped', () => {
+    const repo = makeRepo();
+    // Non-actionable states never surface a run.
+    repo.create(msg({ message_id: 'i1', run_id: 'idle-1', dedup_key: 'k1', state: 'classified' }));
+    repo.create(msg({ message_id: 'i2', run_id: 'idle-2', dedup_key: 'k2', state: 'dispatched' }));
+    // Three runs with actionable messages, oldest-actionable determines order.
+    repo.create(
+      msg({ message_id: 'a1', run_id: 'run-c', dedup_key: 'k3', state: 'approved', created_at: NOW + 30 }),
+    );
+    repo.create(
+      msg({ message_id: 'a2', run_id: 'run-a', dedup_key: 'k4', state: 'risk_authorized', created_at: NOW + 10 }),
+    );
+    repo.create(
+      msg({ message_id: 'a3', run_id: 'run-b', dedup_key: 'k5', state: 'sending', created_at: NOW + 20 }),
+    );
+    // A second, newer actionable message on run-a must not demote it.
+    repo.create(
+      msg({ message_id: 'a4', run_id: 'run-a', dedup_key: 'k6', sequence: 2, state: 'approved', created_at: NOW + 99 }),
+    );
+
+    expect(repo.listRunIdsWithActionableMessages(10)).toEqual(['run-a', 'run-b', 'run-c']);
+    // The limit caps the fan-out but keeps most-overdue-first order.
+    expect(repo.listRunIdsWithActionableMessages(2)).toEqual(['run-a', 'run-b']);
+  });
+
   it('appendReconciliation accumulates append-only evidence', () => {
     const repo = makeRepo();
     repo.create(msg({ message_id: 'a', state: 'outcome_unknown' }));

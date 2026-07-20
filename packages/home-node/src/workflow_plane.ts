@@ -32,6 +32,7 @@
  */
 
 import { validateAgainstSchema } from '@dina/brain';
+import { appendNotification } from '@dina/brain/notifications';
 import {
   BridgePendingSweeper,
   LeaseExpirySweeper,
@@ -268,6 +269,22 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   const watchPoll = new WatchPollSweeper({
     repository: opts.workflowRepository,
     onPoll: buildWatchPollHandler(opts.runtime.core),
+    // R5-06 — a malformed watch is PAUSED by the sweeper (so it can't starve the
+    // due queue); this makes that owner-visible: an idempotent inbox entry
+    // explaining the pause. On mobile the append is live (same VM); in the split
+    // server's Core process the dual-write lands in the durable log, which the
+    // browser inbox picks up on hydrate/reconnect. Metadata only — the corrupt
+    // payload itself is never included.
+    onMalformed: (task) => {
+      appendNotification({
+        kind: 'push',
+        title: 'Subscription paused',
+        body: 'A subscription could not be read and was paused. Cancel it and create it again.',
+        id: `watch-malformed-${task.id}`,
+        sourceId: task.id,
+        deepLink: 'dina://subscriptions',
+      });
+    },
     onError: (err) => log({ event: 'watch_poll.error', error: String(err) }),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
@@ -285,6 +302,10 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       leaseExpiry.stop();
       bridgeRetry.stop();
       watchPoll.stop();
+      // R2-06 — await the single-flight sweeper's in-flight tick BEFORE tearing the
+      // runtime + clearing shared globals, so no watch poll/send keeps running (and
+      // possibly reschedules against dismantled state) after teardown (81B-08).
+      await watchPoll.flush();
       await runtime.dispose();
       setWatchService(null);
       setWorkflowService(null);

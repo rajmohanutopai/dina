@@ -1158,6 +1158,7 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         dedup_key TEXT,
         content_digest TEXT,
         sealed_response_ref TEXT,
+        held_message_json TEXT,
         error_reason TEXT,
         error_at INTEGER,
         lease_expires_at INTEGER,
@@ -1169,6 +1170,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON run_reservations(run_id, state);
       CREATE INDEX IF NOT EXISTS idx_run_reservations_lease
         ON run_reservations(state, lease_expires_at);
+      -- R5-01 — the durable locked-arrival spool (§7/§13): Core-sealed ciphertext
+      -- staged BEFORE a held_by_lock commit; peek/ack two-phase drain on unlock.
+      CREATE TABLE IF NOT EXISTS run_spool (
+        spool_id TEXT PRIMARY KEY,
+        blob BLOB NOT NULL,
+        created_at INTEGER NOT NULL
+      );
     `,
   },
   {
@@ -1239,6 +1247,11 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         run_id TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('completed','failed')),
         result_card_ref TEXT,
+        -- R3-01 — the SIGNED result-card digest, first-writer-immutable: a second
+        -- completion for this delegation carrying a different digest is a conflict
+        -- (rejected before any card is stored), so a card signed for one outcome can
+        -- never be attached to another. Null when the completion carried no card.
+        result_card_digest TEXT,
         receipt_state TEXT NOT NULL DEFAULT 'verified_pending'
           CHECK (receipt_state IN ('verified_pending','advanced')),
         issued_at INTEGER NOT NULL,
@@ -1307,6 +1320,33 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_push_subscriptions_persona ON push_subscriptions(persona);
       CREATE INDEX IF NOT EXISTS idx_push_subscriptions_auth
         ON push_subscriptions(provider_did, service_uri, push_capability) WHERE revoked_at IS NULL;
+    `,
+  },
+  {
+    version: 27,
+    name: 'notification_log',
+    // R4-03 — the DURABLE notification inbox. Brain's inbox store
+    // (packages/brain/src/notifications/inbox.ts) dual-writes through
+    // `NotificationLogRepository` so watch/push/reminder/approval notifications
+    // survive restart and Tier-3 items reach the daily briefing. `data_scope`
+    // keeps a guided-demo notification purgeable on demo teardown (never
+    // surviving the demo in the durable log). Timestamps are caller-supplied
+    // epoch ms (JS Date.now()), matching every other Tier-0 table.
+    sql: `
+      CREATE TABLE IF NOT EXISTS notification_log (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        fired_at INTEGER NOT NULL,
+        read_at INTEGER,
+        source_id TEXT NOT NULL,
+        deep_link TEXT,
+        expires_at INTEGER,
+        data_scope TEXT NOT NULL DEFAULT 'user'
+      );
+      CREATE INDEX IF NOT EXISTS idx_notification_log_fired ON notification_log(fired_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notification_log_scope ON notification_log(data_scope);
     `,
   },
 ];

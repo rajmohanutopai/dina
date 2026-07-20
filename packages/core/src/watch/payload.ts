@@ -14,6 +14,8 @@
  * in `@dina/protocol`.
  */
 
+import { classifyWatchFilter, parseWatchFilter, type WatchFilter } from './filter';
+
 /** Poll-mode watch payload — stored in `workflow_tasks.payload` (JSON). */
 export interface WatchPollPayload {
   /** Discriminates the payload family in the shared `workflow_tasks.payload`. */
@@ -34,6 +36,9 @@ export interface WatchPollPayload {
   poll_interval_sec: number;
   /** Optional human-readable condition ("BA117 delayed > 30m"). Display only. */
   condition?: string;
+  /** R2-04 — the executable WAKE FILTER: only surface a poll result when it
+   *  matches (else the watch stays silent — Silence First). Absent → fire always. */
+  filter?: WatchFilter;
 }
 
 /** The floor poll cadence (§6 "conservative poll intervals"; a hard guard
@@ -72,6 +77,11 @@ export function parseWatchPollPayload(raw: string | undefined | null): WatchPoll
   ) {
     return null;
   }
+  // R5-07 — a PRESENT-but-invalid filter fails the WHOLE parse (treated as a
+  // malformed payload), so a corrupt wake condition can never be silently
+  // reinterpreted as "fire always". The sweeper pauses a malformed row (R5-06)
+  // and `deliveryPolicyFor` reports it inactive — fail closed, per Silence First.
+  if (classifyWatchFilter(parsed.filter) === 'invalid') return null;
   return {
     type: 'watch_poll',
     subscription_id,
@@ -82,6 +92,10 @@ export function parseWatchPollPayload(raw: string | undefined | null): WatchPoll
     query: isRecord(parsed.query) ? parsed.query : {},
     poll_interval_sec,
     ...(typeof parsed.condition === 'string' ? { condition: parsed.condition } : {}),
+    ...((): { filter?: WatchFilter } => {
+      const f = parseWatchFilter(parsed.filter);
+      return f !== undefined ? { filter: f } : {};
+    })(),
   };
 }
 

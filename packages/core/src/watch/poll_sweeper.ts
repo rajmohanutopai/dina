@@ -18,7 +18,7 @@
  * scheduler, idempotent start/stop, `flush`).
  */
 
-import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
+import { type WorkflowTask } from '../workflow/domain';
 
 import { parseWatchPollPayload, type WatchPollPayload } from './payload';
 
@@ -72,6 +72,7 @@ export class WatchPollSweeper {
 
   private handle: unknown | null = null;
   private tickInFlight: Promise<WatchPollSweepResult> | null = null;
+  private stopped = false;
 
   constructor(options: WatchPollSweeperOptions) {
     if (!options.repository) throw new Error('WatchPollSweeper: repository is required');
@@ -104,20 +105,42 @@ export class WatchPollSweeper {
 
   start(): void {
     if (this.handle !== null) return;
-    this.tickInFlight = this.runTick();
+    this.stopped = false;
+    void this.guardedTick();
     this.handle = this.setIntervalFn(() => {
-      this.tickInFlight = this.runTick();
+      void this.guardedTick();
     }, this.intervalMs);
     const maybeTimeout = this.handle as { unref?: () => void };
     if (typeof maybeTimeout.unref === 'function') maybeTimeout.unref();
   }
 
+  /**
+   * SINGLE-FLIGHT tick (81B-08). A timer fire that lands while the previous tick's
+   * async poll is still unresolved COALESCES onto the in-flight promise instead of
+   * launching (and overwriting `tickInFlight` with) a second overlapping iteration.
+   * Overlap would both duplicate polls/sends and orphan the older promise from
+   * `flush()`. Once stopped, no new tick starts. The finally clears the field only
+   * if it still points at this tick, so `flush()` can observe completion.
+   */
+  private guardedTick(): Promise<WatchPollSweepResult> {
+    if (this.tickInFlight !== null) return this.tickInFlight;
+    if (this.stopped) return Promise.resolve({ polled: [], skipped: [], errors: [] });
+    const p = this.runTick().finally(() => {
+      if (this.tickInFlight === p) this.tickInFlight = null;
+    });
+    this.tickInFlight = p;
+    return p;
+  }
+
   stop(): void {
+    this.stopped = true;
     if (this.handle === null) return;
     this.clearIntervalFn(this.handle);
     this.handle = null;
   }
 
+  /** Await quiescence of the in-flight tick (call AFTER `stop()` so no new tick
+   *  starts). Guarantees no poll/send is still running after teardown. */
   async flush(): Promise<void> {
     while (this.tickInFlight !== null) {
       const current = this.tickInFlight;
@@ -138,28 +161,37 @@ export class WatchPollSweeper {
     const nowMs = this.nowMsFn();
     const nowSec = Math.floor(nowMs / 1000);
 
-    let running: WorkflowTask[];
+    let due: WorkflowTask[];
     try {
-      running = this.repo.listByKindAndState(
-        WorkflowTaskKind.Watch,
-        WorkflowTaskState.Running,
-        this.batchLimit,
-      );
+      // R4-05 — query DUE watches directly (next_run_at set and <= now, ordered
+      // by due time). Paused (null) / future rows are excluded by the query, so
+      // they can never hide a due watch behind a fixed page. Bounded per tick;
+      // most-overdue-first ordering guarantees eventual firing across ticks.
+      due = this.repo.listDueWatches(nowSec, this.batchLimit);
     } catch (err) {
       result.errors.push(err);
       this.onError(err);
       return result;
     }
 
-    for (const task of running) {
-      // A null/0/unset next_run_at is a PAUSE (never due); the future ones are
-      // not yet due. Only fire watches at or past their cadence.
-      const nextRun = task.next_run_at;
-      if (nextRun === undefined || nextRun === 0 || nextRun > nowSec) continue;
+    for (const task of due) {
+      // The value this tick fired on — the CAS anchor for rescheduling (R4-04).
+      const firedNextRun = task.next_run_at;
 
       const payload = parseWatchPollPayload(task.payload);
       if (payload === null) {
         result.skipped.push(task);
+        // R5-06 — a malformed row is due-ordered at the HEAD of `listDueWatches`
+        // and its payload can't self-heal, so leaving next_run_at untouched would
+        // re-select it every tick and starve later valid due watches. PAUSE it
+        // (clear next_run_at) so it drops out of the due query; `onMalformed`
+        // surfaces it to the owner. Best-effort — a failed pause is isolated.
+        try {
+          this.repo.setWatchNextRun(task.id, null, nowMs);
+        } catch (err) {
+          result.errors.push(err);
+          this.onError(err);
+        }
         try {
           this.onMalformed(task);
         } catch (err) {
@@ -176,13 +208,23 @@ export class WatchPollSweeper {
         result.errors.push(err);
         this.onError(err);
       }
-      // Reschedule regardless of the poll outcome (a transient send failure just
-      // retries next interval; never wedge the watch).
-      try {
-        this.repo.setWatchNextRun(task.id, nowSec + payload.poll_interval_sec, nowMs);
-      } catch (err) {
-        result.errors.push(err);
-        this.onError(err);
+      // R4-04 — reschedule via CAS on the value we fired. If a pause set
+      // next_run_at=null (or a resume/steer changed it) WHILE this poll was in
+      // flight, the CAS misses and we do NOT resurrect the schedule — an
+      // in-flight poll can never silently undo the owner's pause. A transient
+      // send failure still reschedules (retries next interval; never wedged).
+      if (firedNextRun !== undefined) {
+        try {
+          this.repo.rescheduleWatch(
+            task.id,
+            firedNextRun,
+            nowSec + payload.poll_interval_sec,
+            nowMs,
+          );
+        } catch (err) {
+          result.errors.push(err);
+          this.onError(err);
+        }
       }
     }
     return result;

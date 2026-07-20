@@ -39,6 +39,11 @@ export interface ReservationRecord {
   content_digest: string | null;
   /** held_by_lock: spool blob id + digest (ISVC-6). */
   sealed_response_ref: string | null;
+  /** held_by_lock: the verified message's Tier-0 metadata (id, sequence,
+   *  dedup_key, kind, action_type, expires_at, content_digest) as JSON, so the
+   *  unlock replay can run the SAME guarded enqueue-commit the live ingest uses.
+   *  Metadata only — the payload itself lives Core-sealed in the spool. */
+  held_message_json: string | null;
   error_reason: string | null;
   error_at: number | null;
   /** not applied to held_by_lock (§7). */
@@ -69,12 +74,38 @@ export interface ReservationRepository {
    *  null if none (already committed / invalidated / unknown id). */
   getByCorrelation(correlationId: string): ReservationRecord | null;
 
-  /** CAS `reserved → committed`, stamping the wire ids. Returns true iff the
-   *  reservation was still `reserved` (the enqueue-commit linearization point). */
-  commit(reservationId: string, input: CommitReservationInput, nowMs: number): boolean;
+  /** CAS `from → committed` (default from `reserved`), stamping the wire ids —
+   *  the enqueue-commit linearization point. `from: 'held_by_lock'` is the
+   *  unlock-replay commit (§7): the SAME CAS, entered from the held state. */
+  commit(
+    reservationId: string,
+    input: CommitReservationInput,
+    nowMs: number,
+    from?: 'reserved' | 'held_by_lock',
+  ): boolean;
 
   /** CAS `reserved → released` (fetch error / barrier raced). */
   release(reservationId: string, nowMs: number): boolean;
+
+  /** CAS `reserved → held_by_lock` (ISVC-6 §7): a lock-raced verified response
+   *  whose ciphertext was DURABLY staged in the spool first. Stamps the
+   *  `sealed_response_ref` + the message metadata the replay needs. */
+  holdByLock(
+    reservationId: string,
+    sealedResponseRefJson: string,
+    heldMessageJson: string,
+    nowMs: number,
+  ): boolean;
+
+  /** CAS `held_by_lock → response_lost` (§7): the staged blob is unrecoverable
+   *  (missing/corrupt/shredded). Persists the detected reason. */
+  markResponseLost(reservationId: string, reason: string, nowMs: number): boolean;
+
+  /** CAS `response_lost → skipped` (owner `skip_lost_reservation`, terminal). */
+  skipLost(reservationId: string, nowMs: number): boolean;
+
+  /** Every `held_by_lock` reservation (unlock replay + boot recovery). */
+  listHeldByLock(): ReservationRecord[];
 
   /** Invalidate every OPEN reservation of a run (barrier / termination, §5.1):
    *  reserved/held_by_lock → released. Returns the invalidated records so the
@@ -98,6 +129,7 @@ const COLS = [
   'dedup_key',
   'content_digest',
   'sealed_response_ref',
+  'held_message_json',
   'error_reason',
   'error_at',
   'lease_expires_at',
@@ -118,6 +150,7 @@ function rowToRes(row: DBRow): ReservationRecord {
     dedup_key: s(row.dedup_key),
     content_digest: s(row.content_digest),
     sealed_response_ref: s(row.sealed_response_ref),
+    held_message_json: s(row.held_message_json),
     error_reason: s(row.error_reason),
     error_at: n(row.error_at),
     lease_expires_at: n(row.lease_expires_at),
@@ -159,13 +192,18 @@ export class SQLiteReservationRepository implements ReservationRepository {
     return rows[0]?.n ?? 0;
   }
 
-  commit(reservationId: string, input: CommitReservationInput, nowMs: number): boolean {
+  commit(
+    reservationId: string,
+    input: CommitReservationInput,
+    nowMs: number,
+    from: 'reserved' | 'held_by_lock' = 'reserved',
+  ): boolean {
     return (
       this.db.run(
         `UPDATE run_reservations
            SET state = 'committed', message_id = ?, dedup_key = ?, content_digest = ?, updated_at = ?
-         WHERE reservation_id = ? AND state = 'reserved'`,
-        [input.message_id, input.dedup_key, input.content_digest, nowMs, reservationId],
+         WHERE reservation_id = ? AND state = ?`,
+        [input.message_id, input.dedup_key, input.content_digest, nowMs, reservationId, from],
       ) > 0
     );
   }
@@ -177,6 +215,48 @@ export class SQLiteReservationRepository implements ReservationRepository {
         [nowMs, reservationId],
       ) > 0
     );
+  }
+
+  holdByLock(
+    reservationId: string,
+    sealedResponseRefJson: string,
+    heldMessageJson: string,
+    nowMs: number,
+  ): boolean {
+    return (
+      this.db.run(
+        `UPDATE run_reservations
+           SET state = 'held_by_lock', sealed_response_ref = ?, held_message_json = ?, updated_at = ?
+         WHERE reservation_id = ? AND state = 'reserved'`,
+        [sealedResponseRefJson, heldMessageJson, nowMs, reservationId],
+      ) > 0
+    );
+  }
+
+  markResponseLost(reservationId: string, reason: string, nowMs: number): boolean {
+    return (
+      this.db.run(
+        `UPDATE run_reservations
+           SET state = 'response_lost', error_reason = ?, error_at = ?, updated_at = ?
+         WHERE reservation_id = ? AND state = 'held_by_lock'`,
+        [reason, nowMs, nowMs, reservationId],
+      ) > 0
+    );
+  }
+
+  skipLost(reservationId: string, nowMs: number): boolean {
+    return (
+      this.db.run(
+        "UPDATE run_reservations SET state = 'skipped', updated_at = ? WHERE reservation_id = ? AND state = 'response_lost'",
+        [nowMs, reservationId],
+      ) > 0
+    );
+  }
+
+  listHeldByLock(): ReservationRecord[] {
+    return this.db
+      .query("SELECT * FROM run_reservations WHERE state = 'held_by_lock' ORDER BY cursor ASC")
+      .map(rowToRes);
   }
 
   setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
@@ -246,9 +326,14 @@ export class InMemoryReservationRepository implements ReservationRepository {
     }
     return n;
   }
-  commit(reservationId: string, input: CommitReservationInput, nowMs: number): boolean {
+  commit(
+    reservationId: string,
+    input: CommitReservationInput,
+    nowMs: number,
+    from: 'reserved' | 'held_by_lock' = 'reserved',
+  ): boolean {
     const r = this.rows.get(reservationId);
-    if (!r || r.state !== 'reserved') return false;
+    if (!r || r.state !== from) return false;
     r.state = 'committed';
     r.message_id = input.message_id;
     r.dedup_key = input.dedup_key;
@@ -262,6 +347,42 @@ export class InMemoryReservationRepository implements ReservationRepository {
     r.state = 'released';
     r.updated_at = nowMs;
     return true;
+  }
+  holdByLock(
+    reservationId: string,
+    sealedResponseRefJson: string,
+    heldMessageJson: string,
+    nowMs: number,
+  ): boolean {
+    const r = this.rows.get(reservationId);
+    if (!r || r.state !== 'reserved') return false;
+    r.state = 'held_by_lock';
+    r.sealed_response_ref = sealedResponseRefJson;
+    r.held_message_json = heldMessageJson;
+    r.updated_at = nowMs;
+    return true;
+  }
+  markResponseLost(reservationId: string, reason: string, nowMs: number): boolean {
+    const r = this.rows.get(reservationId);
+    if (!r || r.state !== 'held_by_lock') return false;
+    r.state = 'response_lost';
+    r.error_reason = reason;
+    r.error_at = nowMs;
+    r.updated_at = nowMs;
+    return true;
+  }
+  skipLost(reservationId: string, nowMs: number): boolean {
+    const r = this.rows.get(reservationId);
+    if (!r || r.state !== 'response_lost') return false;
+    r.state = 'skipped';
+    r.updated_at = nowMs;
+    return true;
+  }
+  listHeldByLock(): ReservationRecord[] {
+    return [...this.rows.values()]
+      .filter((r) => r.state === 'held_by_lock')
+      .sort((a, b) => a.cursor - b.cursor)
+      .map((r) => ({ ...r }));
   }
   setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
     const r = this.rows.get(reservationId);

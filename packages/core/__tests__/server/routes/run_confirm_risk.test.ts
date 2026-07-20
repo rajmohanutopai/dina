@@ -8,6 +8,10 @@
  */
 
 import {
+  InMemoryClassificationJobRepository,
+  setClassificationJobRepository,
+} from '../../../src/run/classification';
+import {
   InMemoryCommandReceiptRepository,
   setCommandReceiptRepository,
 } from '../../../src/run/command_receipt';
@@ -89,11 +93,15 @@ describe('POST /v1/run/:id/confirm-risk (E76-08)', () => {
     return run.run_id;
   }
 
+  let jobs: InMemoryClassificationJobRepository;
+
   beforeEach(() => {
     runs = new InMemoryRunRepository();
     messages = new InMemoryMessageRepository();
+    jobs = new InMemoryClassificationJobRepository();
     setRunRepository(runs);
     setMessageRepository(messages);
+    setClassificationJobRepository(jobs);
     setCommandReceiptRepository(new InMemoryCommandReceiptRepository());
     setRunService(new RunService({ repository: runs, nowMsFn: () => NOW }));
     setRunDispatchService(
@@ -114,6 +122,7 @@ describe('POST /v1/run/:id/confirm-risk (E76-08)', () => {
     setRunRepository(null);
     setMessageRepository(null);
     setCommandReceiptRepository(null);
+    setClassificationJobRepository(null);
     setRunDispatchService(null);
     setRunPayloadView(null);
   });
@@ -226,5 +235,50 @@ describe('POST /v1/run/:id/confirm-risk (E76-08)', () => {
     const r = b.pending_risk.find((m) => m.message_id === 'r1');
     expect(r?.title).toBe('Title-r1');
     expect(r?.body).toBe('Body-r1');
+  });
+
+  it('/status expiry also fences the expired message’s pending classification job (81B-07b)', async () => {
+    const runId = startRun();
+    // A classification_pending message that is already past its own hard bound,
+    // with a still-`pending` classification job.
+    messages.create(
+      actionMessage({
+        message_id: 'cp1',
+        run_id: runId,
+        kind: 'informational',
+        state: 'classification_pending',
+        decision: null,
+        expires_at: NOW - 1000,
+      }),
+    );
+    jobs.create({
+      message_id: 'cp1',
+      message_revision: 0,
+      state: 'pending',
+      lease_token: null,
+      lease_expires_at: null,
+      tier_candidate: null,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    expect(jobs.getByMessage('cp1')?.state).toBe('pending');
+
+    const res = await router.handle({
+      method: 'GET',
+      path: `/v1/run/${runId}/status`,
+      headers: {},
+      query: {},
+      body: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'owner',
+      ownerCapability: OWNER_CAP,
+      callerDID: 'did:key:owner',
+    } as unknown as CoreRequest);
+    expect(res.status).toBe(200);
+    // The message expired AND its orphaned classification lease was fenced.
+    expect(messages.getById('cp1')?.state).toBe('expired');
+    expect(jobs.getByMessage('cp1')?.state).toBe('expired');
   });
 });

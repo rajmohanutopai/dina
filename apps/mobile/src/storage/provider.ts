@@ -9,7 +9,7 @@
 
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { derivePersonaDEK, validatePersonaName } from '@dina/core';
+import { derivePersonaDEK, registerPersonaDEK, releasePersonaDEK, validatePersonaName } from '@dina/core';
 
 import { OpSQLiteAdapter } from './op_sqlite_adapter';
 
@@ -64,6 +64,11 @@ export class ProductionDBProvider implements DBProvider {
     const adapter = new OpSQLiteAdapter();
     adapter.open(`${persona}.sqlite`, this.config.dbDir, dekHex, this.config.openFn);
     this.personaDBs.set(persona, adapter);
+    // ISVC-10/R5-01 — register the DEK with the orchestrator so the run
+    // plane's persona-open predicate (`hasDEK`) and payload cipher
+    // (`wrapWithPersonaDEK`) see this vault as open. The registry takes
+    // ownership (zeroes on release); `dek` isn't used again here.
+    registerPersonaDEK(persona, dek);
     return adapter;
   }
 
@@ -73,6 +78,7 @@ export class ProductionDBProvider implements DBProvider {
       db.close();
       this.personaDBs.delete(persona);
     }
+    releasePersonaDEK(persona);
   }
 
   async getIdentityDB(): Promise<DatabaseAdapter | null> {
@@ -89,8 +95,9 @@ export class ProductionDBProvider implements DBProvider {
       this.identityDB.close();
       this.identityDB = null;
     }
-    for (const db of this.personaDBs.values()) {
+    for (const [persona, db] of this.personaDBs.entries()) {
       db.close();
+      releasePersonaDEK(persona);
     }
     this.personaDBs.clear();
   }

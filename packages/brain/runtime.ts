@@ -12,6 +12,8 @@ export {
   installApprovalInboxBridge,
   installWorkflowApprovalInboxBridge,
   installWorkflowApprovalChatBridge,
+  notifyRunMessageClassified,
+  notifyRunResponseLost,
 } from './src/notifications/bridges';
 export { setReviewDraftStarter } from './src/reasoning/draft_review_tool';
 export { createGeminiClassifier } from './src/routing/gemini_classify';

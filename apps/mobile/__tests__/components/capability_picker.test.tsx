@@ -71,9 +71,9 @@ describe('CapabilityPicker', () => {
   });
 
   it('labels official capabilities + shows a lifecycle badge for non-stable ones', () => {
-    const { getAllByText, getByText } = renderPicker({ selectedCategoryId: 'appointments' });
+    const { getAllByText } = renderPicker({ selectedCategoryId: 'appointments' });
     expect(getAllByText('Official Dina capability').length).toBeGreaterThan(0);
-    // appointment_book is `beta` → shows a Beta badge.
-    expect(getByText('Beta')).toBeTruthy();
+    // appointment_book + availability_coordination are `beta` → Beta badges.
+    expect(getAllByText('Beta').length).toBeGreaterThan(0);
   });
 });

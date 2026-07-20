@@ -26,6 +26,11 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.31.
  */
 
+import {
+  storedNotificationToWire,
+  wireToStoredNotification,
+} from '../notifications/repository';
+
 import { WorkflowConflictError } from './core-client';
 
 import type {
@@ -84,6 +89,7 @@ import type {
   Person,
   Reminder,
   ReminderCreateInput,
+  StoredNotificationItem,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -1134,6 +1140,59 @@ export class HttpCoreTransport implements CoreClient {
       'reminderFireMissed',
     );
     return Array.isArray(raw.fired) ? raw.fired : [];
+  }
+
+  // ─── Notification log (R4-03) — signed HTTP to Core's notification routes ────
+
+  async notificationAppend(item: StoredNotificationItem): Promise<void> {
+    // R5-08 — snake_case wire body.
+    await this.call<unknown>(
+      'POST',
+      '/v1/notifications',
+      undefined,
+      storedNotificationToWire(item),
+      'notificationAppend',
+    );
+  }
+
+  async notificationList(limit?: number): Promise<StoredNotificationItem[]> {
+    const raw = await this.call<{ notifications?: unknown[] }>(
+      'GET',
+      '/v1/notifications',
+      limit !== undefined ? { limit: String(limit) } : undefined,
+      undefined,
+      'notificationList',
+    );
+    if (!Array.isArray(raw.notifications)) return [];
+    return raw.notifications
+      .map((r) => wireToStoredNotification(r))
+      .filter((r): r is StoredNotificationItem => r !== null);
+  }
+
+  async notificationMarkRead(id: string, readAt: number): Promise<boolean> {
+    const raw = await this.call<{ changed?: boolean }>(
+      'POST',
+      '/v1/notifications/read',
+      undefined,
+      { id, read_at: readAt },
+      'notificationMarkRead',
+    );
+    return Boolean(raw.changed);
+  }
+
+  async notificationPurgeBefore(cutoff: number): Promise<number> {
+    const raw = await this.call<{ purged?: number }>(
+      'POST',
+      '/v1/notifications/purge',
+      undefined,
+      { cutoff },
+      'notificationPurgeBefore',
+    );
+    return Number(raw.purged ?? 0);
+  }
+
+  async notificationReset(): Promise<void> {
+    await this.call<unknown>('POST', '/v1/notifications/reset', undefined, {}, 'notificationReset');
   }
 
   async updateContact(did: string, updates: UpdateContactParams): Promise<void> {

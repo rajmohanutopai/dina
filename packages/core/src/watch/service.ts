@@ -18,6 +18,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
 
+import { type WatchFilter } from './filter';
 import {
   MIN_POLL_INTERVAL_SEC,
   parseWatchPollPayload,
@@ -37,6 +38,9 @@ export interface CreatePollWatchInput {
   query?: Record<string, unknown>;
   poll_interval_sec: number;
   condition?: string;
+  /** R2-04 — optional executable wake filter (fire only when a poll result
+   *  matches; absent = fire on every resolved poll). */
+  filter?: WatchFilter;
 }
 
 export interface WatchServiceOptions {
@@ -90,6 +94,7 @@ export class WatchService {
       query: input.query ?? {},
       poll_interval_sec: intervalSec,
       ...(input.condition !== undefined ? { condition: input.condition } : {}),
+      ...(input.filter !== undefined ? { filter: input.filter } : {}),
     };
 
     const task: WorkflowTask = {
@@ -143,6 +148,27 @@ export class WatchService {
   /** List the live (running) watches. */
   listActive(limit = 100): WorkflowTask[] {
     return this.repo.listByKindAndState(WorkflowTaskKind.Watch, WorkflowTaskState.Running, limit);
+  }
+
+  /** R2-04 / R3-02 — resolve the DELIVERY POLICY for a subscription at delivery
+   *  time. EXACT lookup by the subscription's idempotency key (not a bounded page
+   *  scan), so a cancelled/unknown watch returns `{ active: false }` — which the
+   *  pipeline treats as suppress (instant cancel + default silence), NOT the
+   *  ambiguous "undefined = fire always". `filter` is present only for an active,
+   *  filtered watch. */
+  deliveryPolicyFor(subscriptionId: string): { active: boolean; filter?: WatchFilter } {
+    const task = this.repo.getActiveByIdempotencyKey(watchIdempotencyKey(subscriptionId));
+    if (task === null) return { active: false };
+    // R4-04 — a PAUSED watch stays `running` but with `next_run_at` cleared. A
+    // response still in flight when the owner paused must NOT surface, so a paused
+    // watch reports inactive (fail closed) — consistent with the cancelled case.
+    if (task.next_run_at === undefined || task.next_run_at <= 0) return { active: false };
+    // R5-07 — a corrupt stored payload (incl. a present-but-invalid filter, which
+    // fails the whole parse) reports INACTIVE rather than active-and-unfiltered,
+    // so a malformed condition can never be reinterpreted as "fire always".
+    const payload = parseWatchPollPayload(task.payload);
+    if (payload === null) return { active: false };
+    return { active: true, ...(payload.filter !== undefined ? { filter: payload.filter } : {}) };
   }
 }
 

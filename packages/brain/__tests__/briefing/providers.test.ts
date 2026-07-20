@@ -18,10 +18,12 @@ import {
   collectEngagementItems,
   collectApprovalItems,
   collectNewMemories,
+  collectNotificationBriefingItems,
   setLastBriefingTimestamp,
   resetProviderState,
   registerAllProviders,
 } from '../../src/briefing/providers';
+import { appendNotification, resetNotifications } from '../../src/notifications/inbox';
 
 const NOW = Date.now();
 const ONE_HOUR = 60 * 60 * 1000;
@@ -36,6 +38,28 @@ describe('Briefing Providers', () => {
     resetBriefingState();
     createPersona('general', 'default');
     openPersona('general');
+  });
+
+  describe('collectNotificationBriefingItems (R4-03)', () => {
+    beforeEach(() => resetNotifications());
+
+    it('surfaces briefing-kind notifications as engagement items, excluding other kinds', () => {
+      appendNotification({ kind: 'briefing', title: 'Flight FYI', body: 'BA117 on time' });
+      appendNotification({ kind: 'push', title: 'urgent', body: 'delayed' }); // not briefing
+      const items = collectNotificationBriefingItems();
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        type: 'engagement',
+        title: 'Flight FYI',
+        detail: 'BA117 on time',
+        source: 'notification',
+      });
+    });
+
+    it('is empty when no briefing-kind notifications exist', () => {
+      appendNotification({ kind: 'push', title: 'urgent', body: 'x' });
+      expect(collectNotificationBriefingItems()).toEqual([]);
+    });
   });
 
   describe('collectEngagementItems', () => {

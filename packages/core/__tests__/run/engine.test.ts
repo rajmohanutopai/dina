@@ -329,6 +329,35 @@ describe('RunEngine.dispatchTick (§8)', () => {
     expect(h.messages.getById('m1')?.delegation_id).toBe(emitted[0]);
   });
 
+  it('R5-05: dispatches an authorized action even when >pageLimit older idle runs precede it', async () => {
+    const h = setup();
+    // Three idle-but-active runs created EARLIER, each carrying only a
+    // non-actionable message. The old `listByState('active', pageLimit)` page
+    // would be entirely these, hiding the later run's authorized action forever.
+    for (let i = 0; i < 3; i += 1) {
+      h.runs.create(makeRun({ run_id: `idle-${i}`, idempotency_key: `k-idle-${i}`, created_at: NOW + i }));
+      h.messages.create(
+        makeMsg({ message_id: `im-${i}`, run_id: `idle-${i}`, state: 'classified', created_at: NOW + i }),
+      );
+    }
+    // A LATER run with an owner-authorized action.
+    h.runs.create(makeRun({ run_id: 'act', idempotency_key: 'k-act', created_at: NOW + 100 }));
+    h.messages.create(
+      makeMsg({ message_id: 'am', run_id: 'act', state: 'risk_authorized', created_at: NOW + 100 }),
+    );
+    const emitted: string[] = [];
+    const engine = makeEngine(h, {
+      pageLimit: 2, // smaller than the idle-run count, to expose the old starvation
+      emitDelegation: async ({ delegationId }) => void emitted.push(delegationId),
+    });
+
+    const report = await engine.dispatchTick();
+
+    expect(report.claimed).toBe(1);
+    expect(emitted).toHaveLength(1);
+    expect(h.messages.getById('am')?.state).toBe('dispatched');
+  });
+
   it('runs the risk gate: an owner-approved SAFE action → risk_authorized → dispatched in one pass', async () => {
     const h = setup();
     h.runs.create(makeRun());

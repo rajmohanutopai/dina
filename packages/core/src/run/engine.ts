@@ -247,12 +247,20 @@ export class RunEngine {
     let claimed = 0;
     let sent = 0;
     let retried = 0;
-    // Active + draining runs (a draining-permissive run still dispatches cause-
-    // retained approvals until its deadline; the claim guard enforces the bound).
-    const runs = [
-      ...this.runs.listByState('active', this.pageLimit),
-      ...this.runs.listByState('draining', this.pageLimit),
-    ];
+    // R5-05 — visit ONLY runs that actually have a dispatch-actionable message
+    // (approved | risk_authorized | sending), ordered by their oldest such
+    // message. This bounds the per-tick fan-out WITHOUT the old
+    // `listByState('active'|'draining', 500)` starvation, where the 501st-oldest
+    // run's authorized action was hidden forever behind older idle runs. A run
+    // must still be active or draining to dispatch (a draining-permissive run
+    // keeps sending cause-retained approvals until its deadline; the claim guard
+    // enforces the bound).
+    const runs = this.messages
+      .listRunIdsWithActionableMessages(this.pageLimit)
+      .map((runId) => this.runs.getById(runId))
+      .filter(
+        (r): r is RunRecord => r !== null && (r.state === 'active' || r.state === 'draining'),
+      );
     // Collect the delegations to transmit this pass, THEN emit concurrently. Two
     // sources feed the durable outbox (the message row IS the outbox, §8):
     //   (a) freshly-claimed `risk_authorized` actions (claim → `sending`), and

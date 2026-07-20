@@ -202,7 +202,7 @@ describe('reserve — eligibility gates (§7)', () => {
       message_id: null,
       dedup_key: null,
       content_digest: null,
-      sealed_response_ref: null,
+      sealed_response_ref: null, held_message_json: null,
       error_reason: null,
       error_at: null,
       lease_expires_at: h.now() + 60_000,
