@@ -20,7 +20,9 @@
  */
 
 import { AdmissionService } from './admission';
+import { renderRunPayloadView } from './card';
 import { RunClassifyService, getClassificationJobRepository, type ClassificationJobRepository } from './classification';
+import { setCommandTxRunner } from './command_receipt';
 import {
   CompletionService,
   getCompletionReceiptRepository,
@@ -28,7 +30,7 @@ import {
   type IngestCompletionInput,
   type IngestOutcome,
 } from './completion';
-import { RunDispatchService } from './dispatch';
+import { RunDispatchService, setRunDispatchService, setRunPayloadView } from './dispatch';
 import { RunEngine, type EmitDelegationEffect, type EmitQueryEffect } from './engine';
 import { SQLiteErasureKeyStore, getErasureKeyStore, type ErasureKeyStore } from './erasure_store';
 import {
@@ -40,7 +42,6 @@ import { getMessageRepository, type MessageRecord, type MessageRepository } from
 import { PayloadStore, type PersonaCipher } from './payload_store';
 import { getRunRepository, type RunRepository } from './repository';
 import { getReservationRepository, type ReservationRepository } from './reservation';
-import { setCommandTxRunner } from './command_receipt';
 import { RunService, setRunService } from './service';
 import { RunSweeper, RunTerminationService } from './termination';
 import { makeReentrantTxRunner, type TxRunner } from './tx';
@@ -77,12 +78,12 @@ export interface RunPlaneDeps {
    *  FAIL-CLOSED default (every completion rejected) — an action never advances
    *  on an unverified receipt. */
   verifyReceipt?: (input: IngestCompletionInput) => boolean;
-  /** REQUIRED. Build the bounded, size-limited classify view Core hands Brain
-   *  (§9.1/§12.6/§212 — NO vault context, NO `params`) from a message's decrypted
-   *  payload. Required (not optional-with-empty-default) so the plane can never
-   *  silently hand Brain contentless views: the boot composes a real Core-owned
-   *  builder backed by the payload store. */
-  buildClassificationView: (message: MessageRecord) => {
+  /** OPTIONAL override of the bounded classify view Core hands Brain (§9.1/§12.6/
+   *  §212 — NO vault context, NO `params`). When omitted the plane's OWN default
+   *  runs (E76-06): it decrypts the stored payload for an open persona via the
+   *  PayloadStore and renders the card's title/body + the verified content digest,
+   *  so an omitted builder is never contentless. */
+  buildClassificationView?: (message: MessageRecord) => {
     title: string;
     body: string;
     content_digest: string;
@@ -244,7 +245,15 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     // as 0, so a committed message frees its reserved slot yet does not itself
     // consume `queue_cap` — admission could exceed the bounded queue. Feed the
     // real count so the cap holds across the reserve→commit handoff.
-    counts: { enqueuedUndecided: (runId) => messages.countEnqueuedUndecided(runId) },
+    // 81B-07 — expire any decidable message past its own/the run's hard bound
+    // BEFORE counting, so a stale message never consumes `queue_cap` at admission.
+    counts: {
+      enqueuedUndecided: (runId) => {
+        const r = runs.getById(runId);
+        if (r !== null) messages.expireDecidable(runId, now(), r.expires_at);
+        return messages.countEnqueuedUndecided(runId);
+      },
+    },
   });
 
   const dispatch = new RunDispatchService({
@@ -254,22 +263,53 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     nowMsFn: now,
     tx,
   });
-
-  const classify = new RunClassifyService({
-    messageRepo: messages,
-    jobRepo: jobs,
-    runRepo: runs,
-    isPersonaOpen: deps.isPersonaOpen,
-    buildClassificationView: deps.buildClassificationView,
-    nowMsFn: now,
-    tx,
-  });
+  // E76-08 — register the dispatch service so the owner-only confirm-risk route
+  // (getRunDispatchService().authorizeRisk) can advance a risk_pending action.
+  setRunDispatchService(dispatch);
 
   const payloads = new PayloadStore({
     db: deps.db,
     erasureStore: erasure,
     personaCipher: deps.personaCipher,
     nowMsFn: now,
+  });
+  // 81B-06 — register the owner-decision payload view so `/v1/run/:id/status` can
+  // render the bounded CardSpec title/body for a classified/risk-pending message.
+  // Decrypt only for an OPEN persona (getPayload returns null while locked) + render
+  // the same bounded view Brain sees — no `params`, no vault context. A message's
+  // payload is stored under its `message_id`.
+  setRunPayloadView((messageId, persona) => {
+    const plaintext = payloads.getPayload(messageId, persona);
+    if (plaintext === null) return { title: '', body: '' };
+    return renderRunPayloadView(plaintext);
+  });
+
+  // E76-06 — the default Core-owned classify view: decrypt the stored payload for
+  // an OPEN persona and render the card's bounded title/body + the VERIFIED content
+  // digest (never the randomized ciphertext id in `payload_ref`). A locked /
+  // shredded / absent payload yields empty text (Brain is non-load-bearing — the
+  // classify-timeout finalizes regardless). A boot MAY override with
+  // `deps.buildClassificationView`; omitting it no longer means contentless.
+  const defaultClassificationView = (
+    m: MessageRecord,
+  ): { title: string; body: string; content_digest: string } => {
+    const digest = m.content_digest ?? '';
+    const run = runs.getById(m.run_id);
+    if (run === null || m.payload_ref === null) return { title: '', body: '', content_digest: digest };
+    const plaintext = payloads.getPayload(m.message_id, run.persona);
+    if (plaintext === null) return { title: '', body: '', content_digest: digest };
+    const { title, body } = renderRunPayloadView(plaintext);
+    return { title, body, content_digest: digest };
+  };
+
+  const classify = new RunClassifyService({
+    messageRepo: messages,
+    jobRepo: jobs,
+    runRepo: runs,
+    isPersonaOpen: deps.isPersonaOpen,
+    buildClassificationView: deps.buildClassificationView ?? defaultClassificationView,
+    nowMsFn: now,
+    tx,
   });
 
   const completion = new CompletionService({

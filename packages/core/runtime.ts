@@ -98,6 +98,7 @@ export { TaskExpirySweeper } from './src/workflow/task_expiry_sweeper';
 // the Tier-0 stores + services the app boot wires.
 export { SQLiteRunRepository, setRunRepository } from './src/run/repository';
 export { RunService, setRunService } from './src/run/service';
+export { setRunDispatchService, getRunDispatchService } from './src/run/dispatch';
 export { SQLiteErasureKeyStore, setErasureKeyStore } from './src/run/erasure_store';
 export { SQLiteReservationRepository, setReservationRepository } from './src/run/reservation';
 export { SQLiteMessageRepository, setMessageRepository } from './src/run/message';

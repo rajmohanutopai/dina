@@ -816,7 +816,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       : null;
 
   // Chat-orchestrator globals are also deferred to start(). Issue #8.
-  const globalDisposers: (() => void)[] = [];
+  // Disposers may be async (e.g. `runPlane.stop()` awaits the in-flight engine
+  // tick, E76-10/81B-08); `dispose()` AWAITs each so teardown reaches quiescence
+  // before the shared stores/globals they read are unwired.
+  const globalDisposers: (() => void | Promise<void>)[] = [];
   // ISVC-10 — stop the interactive-run pull loop (pacer/sweeper/classify/
   // completion timers) when the node tears down, before the run stores it reads
   // are torn down under it.
@@ -1406,7 +1409,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       await this.stop();
       for (const fn of globalDisposers.reverse()) {
         try {
-          fn();
+          // AWAIT — an async disposer (run-plane drain, 81B-08) must complete
+          // before the next disposer unwires a store/global it still reads.
+          await fn();
         } catch {
           /* swallow */
         }

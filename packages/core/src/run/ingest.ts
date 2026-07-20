@@ -25,6 +25,7 @@
  */
 
 import { PersonaLockedError } from '../errors';
+import { DEFAULT_POLICY } from '../gatekeeper/intent';
 
 import { getMessageRepository, type MessageKind, type MessageRepository } from './message';
 import { getRunRepository, type RunRepository } from './repository';
@@ -71,6 +72,8 @@ export type PullIngestOutcome =
   | { outcome: 'no_slot' }
   /** the message was already admitted (idempotent replay). */
   | { outcome: 'duplicate'; message_id: string }
+  /** rejected: a same-`dedup_key` retry that MUTATED the content (81B-03). */
+  | { outcome: 'content_mismatch'; message_id: string }
   /** a barrier / TTL raced the commit CAS → ciphertext shredded, slot released. */
   | { outcome: 'barrier_raced' }
   /** the persona locked between query + response → the held-blob path (ISVC-6),
@@ -185,6 +188,17 @@ export class RunResponseIngest {
         : null;
     const duplicate = dupById ?? dupByKey;
     if (duplicate !== null) {
+      // 81B-03 — a same-id / same-`dedup_key` retry that MUTATED the content (a
+      // DIFFERENT canonical content_digest) is a provider integrity violation, not
+      // a duplicate: reject it, never collapse it onto the original claimed event.
+      // A faithful retry (identical content_digest) still collapses as a dup.
+      if (
+        duplicate.content_digest !== null &&
+        duplicate.content_digest !== message.content_digest
+      ) {
+        if (res.state === 'reserved') this.reservations.release(res.reservation_id, this.now());
+        return { outcome: 'content_mismatch', message_id: duplicate.message_id };
+      }
       if (res.state === 'reserved') this.reservations.release(res.reservation_id, this.now());
       return { outcome: 'duplicate', message_id: duplicate.message_id };
     }
@@ -261,15 +275,25 @@ export class RunResponseIngest {
           sequence: message.sequence,
           kind: message.kind,
           action_type: message.action_type,
-          // Core-derived, NEVER provider-supplied (§9.1): null → the risk gate
-          // requires an owner confirm (fail-safe). See the VerifiedRunMessage note.
-          risk_class: null,
+          // 81B-05 — Core DERIVES the risk class from the verified action_type via
+          // the deterministic gatekeeper policy (§9.1, NEVER provider-supplied):
+          // BLOCKED (credential_export/key_access/read_vault/…) → the risk gate
+          // routes it to `policy_refused` (never confirmable/dispatchable); an
+          // UNKNOWN action fails safe to MODERATE (owner confirm). Informational
+          // messages carry no risk class.
+          risk_class:
+            message.kind === 'action'
+              ? (DEFAULT_POLICY[message.action_type ?? ''] ?? 'MODERATE')
+              : null,
           state: 'enqueued',
           decision: null,
           decision_revision: 0,
           delegation_id: null,
           expires_at: message.expires_at,
           payload_ref: contentId,
+          // The verified provider content digest (card_digest) — the stable
+          // content identity for the classify-view + same-dedup checks (E76-05/06).
+          content_digest: message.content_digest,
           tier_candidate: null,
           final_tier: null,
           tier_source: null,

@@ -241,3 +241,37 @@ export class RunDispatchService {
     return false;
   }
 }
+
+// E76-08 — the plane registers its RunDispatchService here so the owner-only
+// `/v1/run/:id/confirm-risk` route can advance a MODERATE/HIGH action from
+// `risk_pending → risk_authorized` (the owner's confirm; the driver never does
+// this). Without it, every derived-MODERATE action stalls in `risk_pending` and
+// no provider action can ever dispatch.
+let globalRunDispatch: RunDispatchService | null = null;
+export function setRunDispatchService(d: RunDispatchService | null): void {
+  globalRunDispatch = d;
+}
+export function getRunDispatchService(): RunDispatchService | null {
+  return globalRunDispatch;
+}
+
+// 81B-06 — the owner decision surface (`/v1/run/:id/status`) must show the human
+// what they are deciding on: the bounded, validated CardSpec title/body of a
+// classified/risk-pending message. Only Core can decrypt the persona-DEK-wrapped
+// payload, so the plane registers a resolver that decrypts (open persona only) +
+// renders the same bounded view Brain sees — never `params`, never vault context.
+// A locked/shredded/absent payload yields empty text (the owner still sees the
+// service attribution + action_type). The route holds only the `RunService`
+// singleton, so this global is how the decrypt reaches the DTO without leaking the
+// payload store across the boundary.
+export type RunPayloadViewResolver = (
+  messageId: string,
+  persona: string,
+) => { title: string; body: string };
+let globalRunPayloadView: RunPayloadViewResolver | null = null;
+export function setRunPayloadView(fn: RunPayloadViewResolver | null): void {
+  globalRunPayloadView = fn;
+}
+export function getRunPayloadView(): RunPayloadViewResolver | null {
+  return globalRunPayloadView;
+}

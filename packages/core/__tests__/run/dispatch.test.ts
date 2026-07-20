@@ -74,6 +74,7 @@ function makeMsg(over: Partial<MessageRecord> = {}): MessageRecord {
     delegation_id: null,
     expires_at: NOW + 60_000,
     payload_ref: 'cid1',
+    content_digest: null,
     tier_candidate: null,
     final_tier: 2,
     tier_source: 'action_base',

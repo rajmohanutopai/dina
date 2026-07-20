@@ -72,6 +72,7 @@ function classifiedMessage(
     delegation_id: null,
     expires_at: FAR_FUTURE,
     payload_ref: null,
+    content_digest: null,
     tier_candidate: null,
     final_tier: null,
     tier_source: null,

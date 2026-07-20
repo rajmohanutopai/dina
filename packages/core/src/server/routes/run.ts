@@ -21,6 +21,7 @@
  */
 
 import { CommandIdempotencyConflictError, recordOrReplayCommand } from '../../run/command_receipt';
+import { getRunDispatchService, getRunPayloadView } from '../../run/dispatch';
 import {
   RunValidationError,
   isRunTerminal,
@@ -364,6 +365,51 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     );
   });
 
+  // POST /v1/run/:id/confirm-risk — the owner confirms a MODERATE/HIGH action,
+  // advancing it `risk_pending → risk_authorized` so the engine can dispatch it
+  // (§6.3/§6.4, E76-08). The engine auto-authorizes SAFE actions; MODERATE/HIGH
+  // (incl. the fail-safe null→MODERATE default) wait for THIS explicit owner
+  // confirm — the driver never self-authorizes. Owner-only + durable (receipted);
+  // a replayed / non-`risk_pending` confirm is an idempotent no-op.
+  router.post('/v1/run/:id/confirm-risk', async (req) => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const messages = getMessageRepository();
+    if (messages === null) return j(503, { error: 'unavailable', reason: 'message store not wired' });
+    const dispatch = getRunDispatchService();
+    if (dispatch === null) {
+      return j(503, { error: 'unavailable', reason: 'dispatch service not wired' });
+    }
+    const body = isRecord(req.body) ? req.body : {};
+    const messageId = typeof body.message_id === 'string' ? body.message_id : '';
+    if (messageId === '') return j(400, { error: 'invalid', field: 'message_id' });
+    const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
+    if (idemKey === '') {
+      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+    }
+    const runId = String(req.params.id ?? '');
+    // The message must belong to THIS run (the owner addressed a specific run).
+    if (messages.getById(messageId)?.run_id !== runId) return j(404, { error: 'not_found' });
+
+    const compute = (): CoreResponse => {
+      const authorized = dispatch.authorizeRisk(messageId);
+      const after = messages.getById(messageId);
+      return j(200, { message_id: messageId, state: after?.state, authorized });
+    };
+    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    return replayOrConflict(
+      () =>
+        recordOrReplayCommand<CoreResponse>({
+          ownerPrincipal: owner,
+          runId,
+          route: 'confirm_risk',
+          idempotencyKey: idemKey,
+          requestBody: { message_id: messageId },
+          compute,
+        }).response,
+    );
+  });
+
   // POST /v1/run/:id/pause
   router.post('/v1/run/:id/pause', async (req) => steer(req, 'pause', ownerOnlyGuard));
   // POST /v1/run/:id/resume
@@ -540,26 +586,56 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     // RunMessage (params / envelope) never leaves Core — only the decidable
     // display fields.
     const messages = getMessageRepository();
-    const pending =
-      messages === null
-        ? []
-        : messages
-            .listByRun(run.run_id)
-            .filter((m) => m.state === 'classified')
-            .sort((a, b) => a.sequence - b.sequence)
-            .map((m) => ({
-              message_id: m.message_id,
-              kind: m.kind,
-              sequence: m.sequence,
-              final_tier: m.final_tier,
-              // The owner UI passes this back as the REQUIRED `decision_revision`
-              // so a stale card can never authorize a message (§12.5).
-              decision_revision: m.decision_revision,
-            }));
+    // 81B-07 — expire any decidable message past its own or the run's hard bound
+    // BEFORE surfacing, so an expired action is never offered for a new decision and
+    // stops counting against the queue. Idempotent (skips already-terminal rows).
+    if (messages !== null) messages.expireDecidable(run.run_id, now, run.expires_at);
+    const allMsgs = messages === null ? [] : messages.listByRun(run.run_id);
+    // 81B-06 — render the bounded CardSpec title/body Core holds for each decidable
+    // message so the owner sees WHAT they are approving/denying, not just an opaque
+    // digest. Only Core can decrypt (open persona); locked/absent → empty text (the
+    // owner still sees the service attribution + action_type). Never `params`/vault.
+    const view = getRunPayloadView();
+    const renderView = (messageId: string): { title: string; body: string } =>
+      view === null ? { title: '', body: '' } : view(messageId, run.persona);
+    const pending = allMsgs
+      .filter((m) => m.state === 'classified' && now < m.expires_at)
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((m) => ({
+        message_id: m.message_id,
+        kind: m.kind,
+        sequence: m.sequence,
+        action_type: m.action_type,
+        final_tier: m.final_tier,
+        content_digest: m.content_digest,
+        ...renderView(m.message_id),
+        // The owner UI passes this back as the REQUIRED `decision_revision`
+        // so a stale card can never authorize a message (§12.5).
+        decision_revision: m.decision_revision,
+      }));
+    // E76-11 — actions the owner has APPROVED that are parked in `risk_pending`
+    // awaiting an explicit MODERATE/HIGH risk confirmation (§6.3/§6.4). The mobile
+    // Activity surface renders these with a Confirm button wired to
+    // `OwnerRunClient.confirmRisk`; without them a MODERATE action never dispatches.
+    const pendingRisk = allMsgs
+      .filter((m) => m.state === 'risk_pending' && now < m.expires_at)
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((m) => ({
+        message_id: m.message_id,
+        kind: m.kind,
+        sequence: m.sequence,
+        action_type: m.action_type,
+        content_digest: m.content_digest,
+        ...renderView(m.message_id),
+      }));
 
     return j(200, {
       run_id: run.run_id,
       state: run.state,
+      // 81B-06 — service attribution: the owner must see WHICH provider/service this
+      // run's decisions belong to (run-scoped; every message shares it).
+      service_uri: run.service_uri,
+      provider_did: run.provider_did,
       transport: run.transport,
       erasure_mode: run.erasure_mode,
       effective_erasure_mode: run.erasure_mode,
@@ -576,6 +652,7 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
         queue_cap: run.queue_cap,
       },
       pending,
+      pending_risk: pendingRisk,
       next_fetch_at: run.next_fetch_at,
       config_version: run.config_version,
     });

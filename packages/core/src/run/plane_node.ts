@@ -20,20 +20,35 @@ import { hexToBytes } from '@noble/hashes/utils.js';
 import { INTERACTIVE_RUN_CAPABILITY } from '@dina/protocol';
 
 import { MsgTypeServiceQuery, MAX_SERVICE_TTL } from '../d2d/families';
+import { PersonaLockedError } from '../errors';
 import { hasDEK, unwrapWithPersonaDEK, wrapWithPersonaDEK } from '../persona/orchestrator';
 
+import { parseRunMessagePayload, parseResultCardPayload } from './card';
 import { SQLiteErasureKeyStore, type ErasureKeyStore } from './erasure_store';
 import { type PersonaCipher } from './payload_store';
 import { wireRunPlane, type RunPlane } from './plane';
 import { getRunRepository, type RunRepository } from './repository';
 import { getReservationRepository, type ReservationRepository } from './reservation';
-import { verifyRunMessage, type ResolveRuntimeKey, type SignedRunMessageWire } from './verify';
+import {
+  verifyRunMessage,
+  verifyRunExhausted,
+  verifyRunResult,
+  type ResolveRuntimeKey,
+  type SignedRunMessageWire,
+  type SignedRunExhaustedWire,
+  type SignedRunResultWire,
+} from './verify';
 
 import type { EmitDelegationEffect, EmitQueryEffect } from './engine';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /** The signed D2D egress the boot already wired (sign + resolve + WS/HTTP). */
 export type SendD2D = (to: string, type: string, body: Record<string, unknown>) => Promise<void>;
+
+/** Correlation-id prefix for an action DELEGATION query (§6.3). A provider's
+ *  action-result completion echoes it, so the receive path routes it to the
+ *  completion branch (not the reservation-correlated pull branch). */
+const DELEGATION_CORRELATION_PREFIX = 'deleg-';
 
 export interface RunPlaneNodeDeps {
   /** Tier-0 db (`identity.sqlite`). */
@@ -128,7 +143,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
       Math.min(MAX_SERVICE_TTL, Math.round((message.expires_at - now()) / 1000)),
     );
     await deps.sendD2D(run.provider_did, MsgTypeServiceQuery, {
-      query_id: `deleg-${delegationId}`,
+      query_id: `${DELEGATION_CORRELATION_PREFIX}${delegationId}`,
       capability: INTERACTIVE_RUN_CAPABILITY,
       params: {
         run_id: run.run_id,
@@ -150,15 +165,16 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     emitQuery,
     emitDelegation,
     erasureStore: deps.erasureStore ?? new SQLiteErasureKeyStore(deps.db),
-    // Minimal Core-owned classify view (§212): the signed content digest, no
-    // vault context, no params. The full decrypted-card title/body is a Brain-
-    // classify-path refinement; Brain is non-load-bearing (the classify-timeout
-    // fallback finalizes without it).
-    buildClassificationView: (m) => ({ title: '', body: '', content_digest: m.payload_ref ?? '' }),
-    // No completion verifier wired ⇒ CompletionService fail-closed: an action
-    // dispatches, and if its signed completion cannot be verified it reconciles
-    // to `outcome_unknown` at the drain deadline (honest V1; the signed-completion
-    // receive path is the next layer).
+    // E76-06 — no `buildClassificationView` override: the plane's OWN default
+    // decrypts the stored payload via the PayloadStore for an open persona and
+    // renders the card title/body + the verified content digest (§6.2/§12.6).
+    // E76-07 — an action-result completion is cryptographically verified at the
+    // D2D receive boundary (`verifyRunResult` in `handleServiceResponse`) BEFORE
+    // `ingestCompletion` is called, and the CompletionService additionally binds
+    // it to the stored message + dedups (§6.3). So the receipt hook affirms the
+    // pre-verified input; a completion that fails the boundary verifier never
+    // reaches here (the action then reconciles to `outcome_unknown` at drain).
+    verifyReceipt: () => true,
     nowMsFn: now,
     log: deps.log,
     engineIntervalMs: deps.engineIntervalMs,
@@ -169,6 +185,20 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     reservationRepo: deps.reservationRepo,
   });
 
+  // Resolve the runtime-issuer key for a signed provider terminal (E76-03). The
+  // boot's resolver honours `key_id`/`issued_at`; each `verify*` additionally
+  // binds issuer===provider. Shared by the message / exhausted / result branches.
+  const resolveKeyFor = async (
+    r: Record<string, unknown>,
+    fallbackIssuer: string,
+  ): Promise<ResolveRuntimeKey> => {
+    const issuerDid = typeof r.runtime_issuer_did === 'string' ? r.runtime_issuer_did : fallbackIssuer;
+    const keyId = typeof r.runtime_key_id === 'string' ? r.runtime_key_id : '';
+    const issuedAt = typeof r.issued_at === 'number' ? r.issued_at : 0;
+    const key = await deps.resolveVerificationKey(issuerDid, keyId, issuedAt);
+    return () => key;
+  };
+
   const handleServiceResponse = async (senderDID: string, body: unknown): Promise<boolean> => {
     if (body === null || typeof body !== 'object') return false;
     const b = body as Record<string, unknown>;
@@ -178,21 +208,139 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     const reservations = deps.reservationRepo ?? getReservationRepository();
     const runs = deps.runRepo ?? getRunRepository();
     if (reservations === null || runs === null) return false;
-    // Recover the reserved slot by the correlation id the pacer stamped. Absent
-    // ⇒ not a live run response (already handled / unknown / a plain requester
-    // service.response) → let the caller's normal path handle it.
+    const raw = b.result;
+    const r = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+
+    // (A) ACTION-COMPLETION branch (§6.3) — correlated by the STABLE delegation id
+    // (`deleg-<delegationId>`), NOT a reservation. Verify the signed result at the
+    // trust boundary; `ingestCompletion` additionally binds it to the stored
+    // message + dedups. A verified completion advances the action's outcome; a
+    // forged/mismatched one is rejected (the action reconciles at drain).
+    if (correlationId.startsWith(DELEGATION_CORRELATION_PREFIX)) {
+      const delegationId = correlationId.slice(DELEGATION_CORRELATION_PREFIX.length);
+      if (r === null) {
+        log({ evt: 'run_plane.completion_rejected', reason: 'no_result', delegation_id: delegationId });
+        return true;
+      }
+      // The wire run_id is untrusted until verified; look up the run by it and let
+      // `verifyRunResult` bind run_id + provider + service back to that run.
+      const run = runs.getById(typeof r.run_id === 'string' ? r.run_id : '');
+      if (run === null) {
+        log({ evt: 'run_plane.completion_rejected', reason: 'unknown_run', delegation_id: delegationId });
+        return true;
+      }
+      const resolve = await resolveKeyFor(r, senderDID);
+      const verified = verifyRunResult(
+        r as unknown as SignedRunResultWire,
+        {
+          run_id: run.run_id,
+          provider_did: run.provider_did,
+          service_uri: run.service_uri,
+          delegation_id: delegationId,
+        },
+        resolve,
+        now(),
+      );
+      if (!verified.ok) {
+        log({ evt: 'run_plane.completion_rejected', reason: verified.reason, run_id: run.run_id });
+        return true;
+      }
+      // 81B-04 — the RESULT-CARD is a payload just like a pull message (§5.1/§13):
+      // the signature proved the provider SIGNED `result_card_digest`; now prove the
+      // serialized card bytes actually HASH to it + are a valid bounded CardSpec, then
+      // Core envelope-encrypts + persists them under its OWN content-addressed ref
+      // (crypto-shredded with the run). NEVER trust a provider-supplied ref string:
+      // the outcome (completed/failed) is independently signed + always advances, but
+      // an absent/mismatched/invalid/lock-raced card is dropped (ref stays null) so
+      // Core never stores an unverified card. Result-card bytes ride the wire as
+      // `r.result_card` (hex), parallel to a message's `r.payload`.
+      let resultCardRef: string | null = null;
+      if (typeof r.result_card === 'string' && r.result_card !== '') {
+        let cardBytes: Uint8Array | null = null;
+        try {
+          cardBytes = hexToBytes(r.result_card);
+        } catch {
+          cardBytes = null;
+        }
+        const parsed =
+          cardBytes === null
+            ? ({ ok: false, reason: 'malformed' } as const)
+            : parseResultCardPayload(cardBytes, verified.verified.result_card_digest);
+        if (!parsed.ok) {
+          log({ evt: 'run_plane.result_card_rejected', reason: parsed.reason, run_id: run.run_id });
+        } else {
+          try {
+            const ref = plane.payloads.putPayload({
+              payloadId: `result-${verified.verified.delegation_id}`,
+              runId: run.run_id,
+              persona: run.persona,
+              plaintext: cardBytes as Uint8Array,
+            });
+            resultCardRef = ref.content_id;
+          } catch (err) {
+            // Persona locked at completion (§13): the card is not retained (the outcome
+            // still advances); a re-sent completion on unlock re-stores it. Any other
+            // store fault is likewise non-fatal to outcome advancement.
+            if (!(err instanceof PersonaLockedError)) throw err;
+            log({ evt: 'run_plane.result_card_deferred', reason: 'persona_locked', run_id: run.run_id });
+          }
+        }
+      }
+      const outcome = plane.ingestCompletion({
+        delegation_id: verified.verified.delegation_id,
+        message_id: verified.verified.message_id,
+        run_id: verified.verified.run_id,
+        status: verified.verified.status,
+        result_card_ref: resultCardRef,
+        issued_at: verified.verified.issued_at,
+      });
+      log({ evt: 'run_plane.completion_ingested', run_id: run.run_id, outcome });
+      return true;
+    }
+
+    // (B)/(C) RESERVATION-correlated: recover the reserved slot the pacer stamped.
+    // Absent ⇒ not a live run response (already handled / unknown / a plain
+    // requester service.response) → let the caller's normal path handle it.
     const res = reservations.getByCorrelation(correlationId);
     if (res === null) return false;
     const run = runs.getById(res.run_id);
     if (run === null) return false;
     // From here it IS a run-correlated response: handle it (verify or reject) and
     // NEVER fall through to the workflow-task requester path.
-    const raw = b.result;
-    if (raw === null || typeof raw !== 'object') {
+    if (r === null) {
       log({ evt: 'run_plane.response_rejected', reason: 'no_result', run_id: run.run_id });
       return true;
     }
-    const r = raw as Record<string, unknown>;
+    const resolve = await resolveKeyFor(r, senderDID);
+
+    // (C) EXHAUSTED-marker branch (§7.1, pull only) — a result carrying a `cursor`
+    // and NO `message_id`. Verify + set the (permissive) exhaustion barrier — this
+    // is what terminates a `stop_on_exhaustion` run when a finite stream ends.
+    const hasMessageId = typeof r.message_id === 'string' && r.message_id !== '';
+    if (!hasMessageId && typeof r.cursor === 'number') {
+      const verified = verifyRunExhausted(
+        r as unknown as SignedRunExhaustedWire,
+        {
+          run_id: run.run_id,
+          provider_did: run.provider_did,
+          service_uri: run.service_uri,
+          expected_cursor: res.cursor,
+        },
+        resolve,
+        now(),
+      );
+      if (!verified.ok) {
+        log({ evt: 'run_plane.exhausted_rejected', reason: verified.reason, run_id: run.run_id });
+        return true;
+      }
+      const outcome = plane.ingestExhausted(correlationId);
+      log({ evt: 'run_plane.exhausted_ingested', run_id: run.run_id, outcome: outcome.outcome });
+      return true;
+    }
+
+    // (B) MESSAGE/proposal branch — the default pull response. A wrongly-typed
+    // field just yields a different projection string → the signature fails; the
+    // verifier's own shape checks catch the rest (fail-closed cast).
     let payload: Uint8Array;
     try {
       payload = typeof r.payload === 'string' ? hexToBytes(r.payload) : new Uint8Array();
@@ -200,18 +348,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
       log({ evt: 'run_plane.response_rejected', reason: 'bad_payload', run_id: run.run_id });
       return true;
     }
-    // A wrongly-typed field just yields a different projection string → the
-    // signature fails; the verifier's own shape checks catch the rest. So the
-    // cast is safe (fail-closed).
     const wire = { ...r, payload } as unknown as SignedRunMessageWire;
-    const issuerDid = typeof r.runtime_issuer_did === 'string' ? r.runtime_issuer_did : senderDID;
-    const keyId = typeof r.runtime_key_id === 'string' ? r.runtime_key_id : '';
-    const issuedAt = typeof r.issued_at === 'number' ? r.issued_at : 0;
-    // Resolve the runtime-issuer key for THIS key id at THIS issue time (E76-03);
-    // the boot's resolver honours `key_id`/`issued_at`. `verifyRunMessage` then
-    // additionally binds issuer===provider + the sequence window (E76-03/04).
-    const key = await deps.resolveVerificationKey(issuerDid, keyId, issuedAt);
-    const resolve: ResolveRuntimeKey = () => key;
     const verified = verifyRunMessage(
       wire,
       {
@@ -226,6 +363,20 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     );
     if (!verified.ok) {
       log({ evt: 'run_plane.response_rejected', reason: verified.reason, run_id: run.run_id });
+      return true;
+    }
+    // E76-05 — the signature proved the provider SIGNED these digests; now prove
+    // the plaintext actually HASHES to them + is a valid bounded CardSpec, before
+    // Core envelope-encrypts + persists it. A card/params-digest mismatch or an
+    // invalid/oversized card is rejected (never stored under a signed-but-unrelated
+    // digest). `r.card_digest`/`r.params_digest` are authenticated by the signature.
+    const parsedPayload = parseRunMessagePayload(
+      verified.verified.payload,
+      typeof r.card_digest === 'string' ? r.card_digest : '',
+      typeof r.params_digest === 'string' ? r.params_digest : '',
+    );
+    if (!parsedPayload.ok) {
+      log({ evt: 'run_plane.response_rejected', reason: parsedPayload.reason, run_id: run.run_id });
       return true;
     }
     const outcome = plane.ingestPullResponse(correlationId, verified.verified);

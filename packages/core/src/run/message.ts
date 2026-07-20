@@ -126,6 +126,11 @@ export interface MessageRecord {
   /** the message's own signed expiry (§6.3), ms. */
   expires_at: number;
   payload_ref: string | null;
+  /** The provider-signed, plaintext-verified content digest (`card_digest`,
+   *  E76-05/06) — a STABLE content identity (unlike the randomized ciphertext id
+   *  in `payload_ref`). Used for the classify-view digest + same-dedup content
+   *  rejection. Null for a message stored before this field existed. */
+  content_digest: string | null;
   tier_candidate: number | null;
   final_tier: number | null;
   tier_source: TierSource | null;
@@ -168,6 +173,13 @@ export interface MessageRepository {
    *  expiry / deadline, §5.1). Returns the fenced message ids. */
   fenceOpen(runId: string, terminal: 'cancelled' | 'expired', nowMs: number): string[];
 
+  /** 81B-07 — expire every PRE-dispatch decidable message of a run whose OWN
+   *  `expires_at` has passed, or (when the RUN's hard bound has passed) all of
+   *  them, to `expired`. Runs before decisions are surfaced + before admission
+   *  accounting so a stale message is never offered nor counted. Returns the
+   *  expired ids; idempotent (already-terminal rows are untouched). */
+  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[];
+
   size(): number;
 }
 
@@ -186,6 +198,7 @@ const COLS = [
   'delegation_id',
   'expires_at',
   'payload_ref',
+  'content_digest',
   'tier_candidate',
   'final_tier',
   'tier_source',
@@ -223,6 +236,7 @@ function rowToMsg(row: DBRow): MessageRecord {
     delegation_id: s(row.delegation_id),
     expires_at: Number(row.expires_at),
     payload_ref: s(row.payload_ref),
+    content_digest: s(row.content_digest),
     tier_candidate: n(row.tier_candidate),
     final_tier: n(row.final_tier),
     tier_source: s(row.tier_source) as TierSource | null,
@@ -235,6 +249,10 @@ function rowToMsg(row: DBRow): MessageRecord {
 const FENCEABLE_SQL =
   "('enqueued','classification_pending','classified','approved','risk_pending','risk_authorized','dispatch_pending')";
 const UNDECIDED_SQL = "('enqueued','classification_pending','classified')";
+// 81B-07 — pre-dispatch decidable states that expire on their own/the run's hard
+// bound (NOT approved/risk_authorized/dispatch_pending, which are past the owner
+// decision + already draining under their own cause).
+const EXPIRABLE_SQL = "('enqueued','classification_pending','classified','risk_pending')";
 
 export class SQLiteMessageRepository implements MessageRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -360,6 +378,30 @@ export class SQLiteMessageRepository implements MessageRepository {
     return ids;
   }
 
+  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[] {
+    // `? <= ?` (runExpiresAt <= nowMs) is a whole-run bound; `expires_at <= ?` is
+    // per-message. Either makes a decidable row terminal-`expired`.
+    const where = `run_id = ? AND state IN ${EXPIRABLE_SQL} AND (expires_at <= ? OR ? <= ?)`;
+    const ids = this.db
+      .query<{ message_id: string }>(`SELECT message_id FROM run_messages WHERE ${where}`, [
+        runId,
+        nowMs,
+        runExpiresAt,
+        nowMs,
+      ])
+      .map((r) => String(r.message_id));
+    if (ids.length > 0) {
+      this.db.run(`UPDATE run_messages SET state = 'expired', updated_at = ? WHERE ${where}`, [
+        nowMs,
+        runId,
+        nowMs,
+        runExpiresAt,
+        nowMs,
+      ]);
+    }
+    return ids;
+  }
+
   size(): number {
     const rows = this.db.query<{ n: number }>('SELECT COUNT(*) AS n FROM run_messages');
     return rows[0]?.n ?? 0;
@@ -450,6 +492,28 @@ export class InMemoryMessageRepository implements MessageRepository {
       if (r.run_id === runId && FENCEABLE_STATES.has(r.state)) {
         out.push(r.message_id);
         r.state = terminal;
+        r.updated_at = nowMs;
+      }
+    }
+    return out;
+  }
+  expireDecidable(runId: string, nowMs: number, runExpiresAt: number): string[] {
+    const expirable = new Set<MessageState>([
+      'enqueued',
+      'classification_pending',
+      'classified',
+      'risk_pending',
+    ]);
+    const runExpired = runExpiresAt <= nowMs;
+    const out: string[] = [];
+    for (const r of this.rows.values()) {
+      if (
+        r.run_id === runId &&
+        expirable.has(r.state) &&
+        (r.expires_at <= nowMs || runExpired)
+      ) {
+        out.push(r.message_id);
+        r.state = 'expired';
         r.updated_at = nowMs;
       }
     }

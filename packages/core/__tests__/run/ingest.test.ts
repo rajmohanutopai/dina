@@ -176,15 +176,60 @@ describe('RunResponseIngest.ingestPullResponse (§7)', () => {
     expect(msg?.state).toBe('classified');
     expect(msg?.final_tier).not.toBeNull();
     expect(msg?.payload_ref).not.toBeNull();
-    // SECURITY (F5/§9.1): risk_class is Core-derived (null → owner confirm), NEVER
-    // the provider's claim — a provider cannot pre-label an action to bypass the gate.
-    expect(msg?.risk_class).toBeNull();
+    // SECURITY (F5/§9.1/81B-05): risk_class is Core-DERIVED from the action_type via
+    // the deterministic policy, NEVER the provider's claim — 'book' is unknown → the
+    // fail-safe MODERATE (owner confirm).
+    expect(msg?.risk_class).toBe('MODERATE');
     // The verified payload is retrievable under the open persona.
     expect(dec.decode(need(h.payloads.getPayload('msg-1', 'general')))).toBe('PROVIDER-RESPONSE');
     // The reservation committed + the run cursor advanced exactly once.
     expect(h.reservations.getByCorrelation('corr-1')?.state).toBe('committed');
     expect(h.runs.getById(runId)?.produced_count).toBe(1);
     expect(h.runs.getById(runId)?.fetch_cursor).toBe(1);
+  });
+
+  it('DERIVES a BLOCKED risk class for a dangerous action (81B-05 security)', () => {
+    const h = setup();
+    reserveAndTag(h, 'corr-blk');
+    h.ingest.ingestPullResponse(
+      'corr-blk',
+      verifiedMsg({ message_id: 'mblk', action_type: 'credential_export' }),
+    );
+    // A BLOCKED action must be recorded BLOCKED so the risk gate routes it to
+    // policy_refused (never owner-confirmable / dispatchable).
+    expect(h.messages.getById('mblk')?.risk_class).toBe('BLOCKED');
+  });
+
+  it('DERIVES HIGH for a known high-risk action (81B-05)', () => {
+    const h = setup();
+    reserveAndTag(h, 'corr-pay');
+    h.ingest.ingestPullResponse(
+      'corr-pay',
+      verifiedMsg({ message_id: 'mpay', action_type: 'purchase' }),
+    );
+    expect(h.messages.getById('mpay')?.risk_class).toBe('HIGH');
+  });
+
+  it('rejects a same-dedup_key retry that MUTATED the content (81B-03)', () => {
+    const h = setup();
+    const run = h.runService.create(runParams());
+    const r1 = h.admission.reserve(run.run_id);
+    if (!r1.ok) throw new Error('reserve r1 failed');
+    h.reservations.setQueryCorrelation(r1.reservation_id, 'corr-a', NOW);
+    h.ingest.ingestPullResponse(
+      'corr-a',
+      verifiedMsg({ message_id: 'm1', dedup_key: 'dk', content_digest: 'a'.repeat(64), sequence: 0 }),
+    );
+    // A retry under the SAME dedup_key but a DIFFERENT content digest.
+    const r2 = h.admission.reserve(run.run_id);
+    if (!r2.ok) throw new Error('reserve r2 failed');
+    h.reservations.setQueryCorrelation(r2.reservation_id, 'corr-b', NOW);
+    const out = h.ingest.ingestPullResponse(
+      'corr-b',
+      verifiedMsg({ message_id: 'm2', dedup_key: 'dk', content_digest: 'b'.repeat(64), sequence: 1 }),
+    );
+    expect(out.outcome).toBe('content_mismatch');
+    expect(h.messages.getById('m2')).toBeNull();
   });
 
   it('an INFORMATIONAL response enqueues + creates a durable Brain classify job', () => {

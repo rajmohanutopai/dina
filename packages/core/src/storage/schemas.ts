@@ -1196,6 +1196,11 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         delegation_id TEXT,
         expires_at INTEGER NOT NULL,
         payload_ref TEXT,
+        -- The provider-signed, plaintext-verified content digest (card_digest,
+        -- E76-05/06). Stable content identity for same-dedup content-mismatch
+        -- rejection + the classify-view's content_digest (NOT the randomized
+        -- ciphertext id in payload_ref).
+        content_digest TEXT,
         tier_candidate INTEGER,
         final_tier INTEGER,
         tier_source TEXT CHECK (tier_source IN ('action_base','brain_candidate','classify_timeout_ceiling')),

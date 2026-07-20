@@ -15,9 +15,14 @@
  * runtime-issuer check the design mandates, never a substitute for it.
  */
 
-import { hexToBytes } from '@noble/hashes/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { hexToBytes, bytesToHex } from '@noble/hashes/utils.js';
 
-import { buildRunMessageProjection } from '@dina/protocol';
+import {
+  buildRunMessageProjection,
+  buildRunExhaustedProjection,
+  buildRunResultProjection,
+} from '@dina/protocol';
 
 import { verify as ed25519Verify } from '../crypto/ed25519';
 
@@ -91,6 +96,66 @@ export type VerifyRunMessageResult =
 /** Max clock skew (ms) allowed on `issued_at` being ahead of now. */
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
+const RUN_CONTENT_DOMAIN = 'dina:run:content:v1';
+
+/**
+ * 81B-03 — the CANONICAL content digest (§7.1 point 3 / §13, line 374): a SHA-256
+ * over ALL the message's immutable semantic + lifecycle fields, EXCLUDING the ones
+ * that legitimately vary across a re-issued / key-rotated retry (`message_id`,
+ * `sequence`, `signature`, `issued_at`, `runtime_issuer_did`, `runtime_key_id`).
+ * This is the stable content identity Core dedups on — so a same-`dedup_key` retry
+ * that mutates params/card/kind/expiry produces a DIFFERENT digest and is rejected
+ * rather than silently collapsed as the original.
+ */
+export function computeRunContentDigest(w: {
+  provider_did: string;
+  service_uri: string;
+  run_id: string;
+  dedup_key: string;
+  kind: string;
+  action_type: string;
+  expires_at: number;
+  schema_version: string;
+  params_digest: string;
+  card_digest: string;
+}): string {
+  const canonical = [
+    RUN_CONTENT_DOMAIN,
+    w.provider_did,
+    w.service_uri,
+    w.run_id,
+    w.dedup_key,
+    w.kind,
+    w.action_type,
+    String(w.expires_at),
+    w.schema_version,
+    w.params_digest,
+    w.card_digest,
+  ].join('\n');
+  return bytesToHex(sha256(enc.encode(canonical)));
+}
+
+// 81B-02 — every frozen projection field is validated BEFORE key resolution so a
+// blank/missing key id, empty schema, non-finite timestamp, or malformed digest
+// can never reach the signature check (NaN arithmetic silently skips comparisons).
+const isFiniteNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isNonEmptyStr = (v: unknown): v is string => typeof v === 'string' && v !== '';
+const isHex64 = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+/** The issuer/key/schema/issued_at fields common to EVERY signed run projection. */
+function commonProjectionValid(w: {
+  issued_at: unknown;
+  schema_version: unknown;
+  runtime_issuer_did: unknown;
+  runtime_key_id: unknown;
+}): boolean {
+  return (
+    isFiniteNum(w.issued_at) &&
+    isNonEmptyStr(w.schema_version) &&
+    isNonEmptyStr(w.runtime_issuer_did) &&
+    isNonEmptyStr(w.runtime_key_id)
+  );
+}
+
 /**
  * Verify a signed provider `RunMessage` and project it to a `VerifiedRunMessage`.
  * Fails CLOSED on every anomaly. `expected` binds the message to the run that
@@ -105,13 +170,15 @@ export function verifyRunMessage(
   // Shape: reject anything missing a required field (a malformed body must never
   // reach the projection or the lifecycle).
   if (
-    typeof wire.message_id !== 'string' ||
-    wire.message_id === '' ||
-    typeof wire.dedup_key !== 'string' ||
-    wire.dedup_key === '' ||
+    !isNonEmptyStr(wire.message_id) ||
+    !isNonEmptyStr(wire.dedup_key) ||
     (wire.kind !== 'informational' && wire.kind !== 'action') ||
-    typeof wire.card_digest !== 'string' ||
-    wire.card_digest === '' ||
+    // action ⇒ non-empty action_type; informational ⇒ EXACTLY '' (§6.2).
+    (wire.kind === 'action' ? !isNonEmptyStr(wire.action_type) : wire.action_type !== '') ||
+    !isHex64(wire.params_digest) ||
+    !isHex64(wire.card_digest) ||
+    !isFiniteNum(wire.expires_at) ||
+    !commonProjectionValid(wire) ||
     !(wire.payload instanceof Uint8Array)
   ) {
     return { ok: false, reason: 'malformed' };
@@ -185,8 +252,10 @@ export function verifyRunMessage(
     return { ok: false, reason: 'bad_signature' };
   }
   if (!verified) return { ok: false, reason: 'bad_signature' };
-  // Verified. The signed `card_digest` is the content digest the lifecycle dedups
-  // on; the plaintext `payload` is what Core envelope-encrypts on ingest (§13).
+  // Verified. `content_digest` is the CANONICAL all-immutable-fields digest (81B-03)
+  // — the stable content identity the lifecycle dedups on (NOT just `card_digest`),
+  // so a mutated same-`dedup_key` retry is caught. The plaintext `payload` is what
+  // Core envelope-encrypts on ingest (§13).
   return {
     ok: true,
     verified: {
@@ -196,8 +265,240 @@ export function verifyRunMessage(
       kind: wire.kind,
       action_type: wire.kind === 'action' ? wire.action_type : null,
       expires_at: wire.expires_at,
-      content_digest: wire.card_digest,
+      content_digest: computeRunContentDigest(wire),
       payload: wire.payload,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// E76-07 — the two OTHER signed provider terminals over their own DISTINCT,
+// domain-separated projections (§6.2): the pull `exhausted` marker and the
+// action-result completion. Same fail-closed discipline as verifyRunMessage; the
+// domain-separation prefix means a message signature can never be replayed as an
+// exhausted/result signature.
+// ---------------------------------------------------------------------------
+
+/** The signed pull `exhausted` marker a provider delivers (§6.2/§7.1, pull only). */
+export interface SignedRunExhaustedWire {
+  provider_did: string;
+  service_uri: string;
+  run_id: string;
+  cursor: number;
+  issued_at: number;
+  schema_version: string;
+  runtime_issuer_did: string;
+  runtime_key_id: string;
+  signature: string;
+}
+
+/** What the run expected for an exhausted marker — the reserved fetch cursor. */
+export interface ExpectedExhaustedBinding {
+  run_id: string;
+  provider_did: string;
+  service_uri: string;
+  /** The reserved pull cursor this exhausted marker must be for. */
+  expected_cursor: number;
+}
+
+export type VerifyRunExhaustedResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'malformed'
+        | 'missing_signature'
+        | 'cross_run'
+        | 'out_of_window'
+        | 'future_issued'
+        | 'unauthorized_runtime_key'
+        | 'bad_signature';
+    };
+
+/**
+ * Verify a signed pull `exhausted` marker. Binds it to the run + the reserved
+ * cursor (an exhausted for a DIFFERENT cursor is out-of-window) and to the
+ * provider-as-runtime-issuer, fail-closed on every anomaly. There is no
+ * `expires_at` on an exhausted marker (§6.2), so only future-issue is time-checked.
+ */
+export function verifyRunExhausted(
+  wire: SignedRunExhaustedWire,
+  expected: ExpectedExhaustedBinding,
+  resolveRuntimeKey: ResolveRuntimeKey,
+  nowMs: number,
+): VerifyRunExhaustedResult {
+  if (!isFiniteNum(wire.cursor) || !commonProjectionValid(wire)) {
+    return { ok: false, reason: 'malformed' };
+  }
+  if (typeof wire.signature !== 'string' || wire.signature === '') {
+    return { ok: false, reason: 'missing_signature' };
+  }
+  if (
+    wire.run_id !== expected.run_id ||
+    wire.provider_did !== expected.provider_did ||
+    wire.service_uri !== expected.service_uri
+  ) {
+    return { ok: false, reason: 'cross_run' };
+  }
+  if (wire.runtime_issuer_did !== expected.provider_did) {
+    return { ok: false, reason: 'unauthorized_runtime_key' };
+  }
+  // The exhausted marker MUST be for the reserved cursor (not an earlier/later one).
+  if (wire.cursor !== expected.expected_cursor) {
+    return { ok: false, reason: 'out_of_window' };
+  }
+  if (wire.issued_at * 1000 - nowMs > MAX_FUTURE_SKEW_MS) {
+    return { ok: false, reason: 'future_issued' };
+  }
+  const key = resolveRuntimeKey(wire.runtime_issuer_did, wire.runtime_key_id, wire.issued_at);
+  if (key === null) return { ok: false, reason: 'unauthorized_runtime_key' };
+  const projection = buildRunExhaustedProjection({
+    provider_did: wire.provider_did,
+    service_uri: wire.service_uri,
+    run_id: wire.run_id,
+    cursor: wire.cursor,
+    issued_at: wire.issued_at,
+    schema_version: wire.schema_version,
+    runtime_issuer_did: wire.runtime_issuer_did,
+    runtime_key_id: wire.runtime_key_id,
+  });
+  let verified = false;
+  try {
+    verified = ed25519Verify(key, enc.encode(projection), hexToBytes(wire.signature));
+  } catch {
+    return { ok: false, reason: 'bad_signature' };
+  }
+  if (!verified) return { ok: false, reason: 'bad_signature' };
+  return { ok: true };
+}
+
+/** The signed action-result completion a provider delivers (§6.2/§6.3). */
+export interface SignedRunResultWire {
+  provider_did: string;
+  service_uri: string;
+  run_id: string;
+  message_id: string;
+  delegation_id: string;
+  decision_revision: number;
+  status: 'completed' | 'failed';
+  result_card_digest: string;
+  issued_at: number;
+  schema_version: string;
+  runtime_issuer_did: string;
+  runtime_key_id: string;
+  signature: string;
+}
+
+/** What the run expected for a completion — the dispatched delegation. */
+export interface ExpectedResultBinding {
+  run_id: string;
+  provider_did: string;
+  service_uri: string;
+  /** The delegation id Core dispatched (from the `deleg-<id>` correlation). */
+  delegation_id: string;
+}
+
+/** The verified completion, projected to `IngestCompletionInput` by the caller. */
+export interface VerifiedRunResult {
+  message_id: string;
+  delegation_id: string;
+  run_id: string;
+  status: 'completed' | 'failed';
+  result_card_digest: string;
+  issued_at: number;
+}
+
+export type VerifyRunResultResult =
+  | { ok: true; verified: VerifiedRunResult }
+  | {
+      ok: false;
+      reason:
+        | 'malformed'
+        | 'missing_signature'
+        | 'cross_run'
+        | 'wrong_delegation'
+        | 'unknown_status'
+        | 'future_issued'
+        | 'unauthorized_runtime_key'
+        | 'bad_signature';
+    };
+
+/**
+ * Verify a signed action-result completion. Binds it to the run, the dispatched
+ * `delegation_id`, and the provider-as-runtime-issuer, fail-closed. The caller
+ * (`plane_node`) turns a verified result into an `IngestCompletionInput`, which
+ * the CompletionService additionally binds to the stored message (§6.3).
+ */
+export function verifyRunResult(
+  wire: SignedRunResultWire,
+  expected: ExpectedResultBinding,
+  resolveRuntimeKey: ResolveRuntimeKey,
+  nowMs: number,
+): VerifyRunResultResult {
+  if (
+    !isNonEmptyStr(wire.message_id) ||
+    !isNonEmptyStr(wire.delegation_id) ||
+    !isFiniteNum(wire.decision_revision) ||
+    !isHex64(wire.result_card_digest) ||
+    !commonProjectionValid(wire)
+  ) {
+    return { ok: false, reason: 'malformed' };
+  }
+  if (typeof wire.signature !== 'string' || wire.signature === '') {
+    return { ok: false, reason: 'missing_signature' };
+  }
+  if (wire.status !== 'completed' && wire.status !== 'failed') {
+    return { ok: false, reason: 'unknown_status' };
+  }
+  if (
+    wire.run_id !== expected.run_id ||
+    wire.provider_did !== expected.provider_did ||
+    wire.service_uri !== expected.service_uri
+  ) {
+    return { ok: false, reason: 'cross_run' };
+  }
+  // Bind to the delegation Core actually dispatched (the correlation authority).
+  if (wire.delegation_id !== expected.delegation_id) {
+    return { ok: false, reason: 'wrong_delegation' };
+  }
+  if (wire.runtime_issuer_did !== expected.provider_did) {
+    return { ok: false, reason: 'unauthorized_runtime_key' };
+  }
+  if (wire.issued_at * 1000 - nowMs > MAX_FUTURE_SKEW_MS) {
+    return { ok: false, reason: 'future_issued' };
+  }
+  const key = resolveRuntimeKey(wire.runtime_issuer_did, wire.runtime_key_id, wire.issued_at);
+  if (key === null) return { ok: false, reason: 'unauthorized_runtime_key' };
+  const projection = buildRunResultProjection({
+    provider_did: wire.provider_did,
+    service_uri: wire.service_uri,
+    run_id: wire.run_id,
+    message_id: wire.message_id,
+    delegation_id: wire.delegation_id,
+    decision_revision: wire.decision_revision,
+    status: wire.status,
+    result_card_digest: wire.result_card_digest,
+    issued_at: wire.issued_at,
+    schema_version: wire.schema_version,
+    runtime_issuer_did: wire.runtime_issuer_did,
+    runtime_key_id: wire.runtime_key_id,
+  });
+  let verified = false;
+  try {
+    verified = ed25519Verify(key, enc.encode(projection), hexToBytes(wire.signature));
+  } catch {
+    return { ok: false, reason: 'bad_signature' };
+  }
+  if (!verified) return { ok: false, reason: 'bad_signature' };
+  return {
+    ok: true,
+    verified: {
+      message_id: wire.message_id,
+      delegation_id: wire.delegation_id,
+      run_id: wire.run_id,
+      status: wire.status,
+      result_card_digest: wire.result_card_digest,
+      issued_at: wire.issued_at,
     },
   };
 }

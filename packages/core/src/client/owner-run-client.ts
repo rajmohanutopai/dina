@@ -81,6 +81,8 @@ export interface OwnerRunClient {
   runStop(runId: string, onStop?: string): Promise<{ state: string }>;
   runUpdate(runId: string, req: RunUpdateRequest): Promise<{ config_version: number }>;
   runDecide(runId: string, req: RunDecideRequest): Promise<{ state: string; decision_revision: number }>;
+  /** Owner confirm of a MODERATE/HIGH action: `risk_pending → risk_authorized` (E76-08). */
+  confirmRisk(runId: string, messageId: string): Promise<{ state: string; authorized: boolean }>;
   runStatus(runId: string): Promise<Record<string, unknown>>;
   // Poll-mode watch management (PSVC-4) — same owner boundary.
   watchList(): Promise<{ watches: WatchListItem[] }>;
@@ -210,6 +212,19 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
       }),
     );
     return expectOk<{ state: string; decision_revision: number }>(res, 'runDecide');
+  }
+  async confirmRisk(
+    runId: string,
+    messageId: string,
+  ): Promise<{ state: string; authorized: boolean }> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/confirm-risk`,
+        body: { message_id: messageId, idempotency_key: this.nextKey() },
+      }),
+    );
+    return expectOk<{ state: string; authorized: boolean }>(res, 'confirmRisk');
   }
   async runStatus(runId: string): Promise<Record<string, unknown>> {
     const res = await this.router.handle(
