@@ -78,6 +78,7 @@ function makeMsg(over: Partial<MessageRecord> = {}): MessageRecord {
     final_tier: 2,
     tier_source: 'action_base',
     reconciliation_evidence: '[]',
+    shred_after: null,
     created_at: NOW,
     updated_at: NOW,
     ...over,

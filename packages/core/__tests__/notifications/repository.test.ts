@@ -106,6 +106,16 @@ describe('InMemoryNotificationLogRepository', () => {
     expect(row.readAt).toBe(1234); // first ack timestamp wins
   });
 
+  it('CA-9 — a re-fire upserts content but never un-reads an already-read row', async () => {
+    await repo.append(mkItem({ id: 'a', title: 'v1', readAt: null }));
+    expect(await repo.markRead('a', 1234)).toBe(true);
+    // A boot reconcile re-fires the same id with a fresh (unread) item.
+    await repo.append(mkItem({ id: 'a', title: 'refired', readAt: null }));
+    const [row] = await repo.listAll();
+    expect(row?.title).toBe('refired'); // content upserted
+    expect(row?.readAt).toBe(1234); // read state preserved
+  });
+
   it('markRead returns false for unknown id', async () => {
     expect(await repo.markRead('nope', 0)).toBe(false);
   });
@@ -262,6 +272,16 @@ describe('SqliteNotificationLogRepository (durable, migration v27)', () => {
     expect(await repo.markRead('a', 456)).toBe(false); // already read
     expect(await repo.markRead('nope', 1)).toBe(false);
     expect((await repo.listAll())[0]!.readAt).toBe(123);
+  });
+
+  it('CA-9 — a re-fire (COALESCE) upserts content but never un-reads a read row', async () => {
+    await repo.append(row({ id: 'a', title: 'first', readAt: null }));
+    expect(await repo.markRead('a', 123)).toBe(true);
+    // A boot reconcile re-fires the same id with a fresh (unread) item.
+    await repo.append(row({ id: 'a', title: 'refired', readAt: null }));
+    const [got] = await repo.listAll();
+    expect(got?.title).toBe('refired'); // content upserted
+    expect(got?.readAt).toBe(123); // read state preserved
   });
 
   it('purgeBefore prefers explicit expiresAt', async () => {

@@ -44,6 +44,7 @@ function msg(over: Partial<MessageRecord> = {}): MessageRecord {
     final_tier: null,
     tier_source: null,
     reconciliation_evidence: '[]',
+    shred_after: null,
     created_at: NOW,
     updated_at: NOW,
     ...over,
@@ -176,6 +177,78 @@ function runSuite(makeRepo: () => MessageRepository): void {
     // The run stays listed ONLY for the claimed `sending` row (re-driven for
     // dispatch retries) — the two expired zombies no longer count.
     expect(repo.listRunIdsWithActionableMessages(10)).toEqual(['r1']);
+  });
+
+  it('CA-3: stamps only payload-bearing TERMINAL rows, then drains via the sentinel', () => {
+    const repo = makeRepo();
+    // terminal + payload → stamped; live → not; terminal-but-no-payload → not.
+    repo.create(msg({ message_id: 'term', state: 'completed', updated_at: NOW - 10_000 }));
+    repo.create(msg({ message_id: 'live', dedup_key: 'k2', sequence: 2, state: 'classified' }));
+    repo.create(
+      msg({ message_id: 'nopay', dedup_key: 'k3', sequence: 3, state: 'deny', payload_ref: null }),
+    );
+
+    expect(repo.stampTerminalShredDeadlines(5_000)).toBe(1); // only `term`
+    expect(repo.getById('term')?.shred_after).toBe(NOW - 5_000); // updated_at + window
+    expect(repo.getById('live')?.shred_after).toBeNull();
+    expect(repo.getById('nopay')?.shred_after).toBeNull();
+
+    // Due at NOW; the live/no-payload rows never appear.
+    expect(repo.listPayloadShredDue(NOW, 10)).toEqual(['term']);
+    // Idempotent stamp: a second pass adds nothing.
+    expect(repo.stampTerminalShredDeadlines(5_000)).toBe(0);
+
+    // Mark shredded → drains (sentinel 0) and is never re-stamped or re-listed.
+    repo.markPayloadShredded('term');
+    expect(repo.getById('term')?.shred_after).toBe(0);
+    expect(repo.listPayloadShredDue(NOW, 10)).toEqual([]);
+    expect(repo.stampTerminalShredDeadlines(5_000)).toBe(0);
+  });
+
+  it('CA-3: a not-yet-due terminal deadline is withheld from the sweep', () => {
+    const repo = makeRepo();
+    repo.create(msg({ message_id: 'term', state: 'acknowledged', updated_at: NOW }));
+    repo.stampTerminalShredDeadlines(60_000); // deadline = NOW + 60s
+    expect(repo.listPayloadShredDue(NOW, 10)).toEqual([]); // not due yet
+    expect(repo.listPayloadShredDue(NOW + 60_000, 10)).toEqual(['term']); // due at the bound
+  });
+
+  it('CA-9: listClassifiedAfter returns only classified rows, keyset-ordered + paged', () => {
+    const repo = makeRepo();
+    repo.create(msg({ message_id: 'c2', state: 'classified', created_at: NOW + 200 }));
+    repo.create(msg({ message_id: 'c1', dedup_key: 'k2', sequence: 2, state: 'classified', created_at: NOW + 100 }));
+    repo.create(msg({ message_id: 'c3', dedup_key: 'k5', sequence: 5, state: 'classified', created_at: NOW + 300 }));
+    repo.create(msg({ message_id: 'done', dedup_key: 'k3', sequence: 3, state: 'acknowledged' }));
+    repo.create(msg({ message_id: 'pend', dedup_key: 'k4', sequence: 4, state: 'classification_pending' }));
+
+    // Only classified, ascending by (created_at, message_id).
+    expect(repo.listClassifiedAfter(0, '', 10).map((m) => m.message_id)).toEqual(['c1', 'c2', 'c3']);
+    // Keyset paging: page 1 (size 2), then resume after the last row → exhaustion.
+    const page1 = repo.listClassifiedAfter(0, '', 2);
+    expect(page1.map((m) => m.message_id)).toEqual(['c1', 'c2']);
+    const cur = page1[page1.length - 1];
+    const page2 = repo.listClassifiedAfter(cur?.created_at ?? 0, cur?.message_id ?? '', 2);
+    expect(page2.map((m) => m.message_id)).toEqual(['c3']);
+  });
+
+  it('CA-9: keyset pages across EQUAL timestamps via message_id (no skip/dup at the boundary)', () => {
+    const repo = makeRepo();
+    const T = NOW + 500;
+    // Four classified rows sharing ONE created_at — only message_id breaks the
+    // tie, so this exercises the `created_at = ? AND message_id > ?` branch that
+    // a distinct-timestamp fixture never reaches.
+    for (const id of ['m4', 'm1', 'm3', 'm2']) {
+      repo.create(msg({ message_id: id, dedup_key: `k-${id}`, sequence: 1, state: 'classified', created_at: T }));
+    }
+    // Page size 2 straddling the equal-timestamp boundary → exact concatenation.
+    const p1 = repo.listClassifiedAfter(0, '', 2);
+    const a = p1[p1.length - 1];
+    const p2 = repo.listClassifiedAfter(a?.created_at ?? 0, a?.message_id ?? '', 2);
+    const b = p2[p2.length - 1];
+    const p3 = repo.listClassifiedAfter(b?.created_at ?? 0, b?.message_id ?? '', 2);
+    expect(p1.map((m) => m.message_id)).toEqual(['m1', 'm2']);
+    expect(p2.map((m) => m.message_id)).toEqual(['m3', 'm4']);
+    expect(p3).toEqual([]); // exhausted — no skips, no duplicates
   });
 }
 

@@ -77,6 +77,7 @@ function classifiedMessage(
     final_tier: null,
     tier_source: null,
     reconciliation_evidence: '[]',
+    shred_after: null,
     created_at: NOW,
     updated_at: NOW,
     ...over,

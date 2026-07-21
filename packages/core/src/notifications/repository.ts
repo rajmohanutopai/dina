@@ -161,6 +161,10 @@ export class InMemoryNotificationLogRepository implements NotificationLogReposit
     const idx = this.rows.findIndex((r) => r.id === item.id);
     const cloned: StoredNotificationItem = { ...item };
     if (idx >= 0) {
+      // CA-9 — preserve read state on re-fire (parity with the SQLite COALESCE):
+      // once read, stays read, so a boot reconcile never un-reads a dismissed row.
+      const prior = this.rows[idx];
+      if (prior !== undefined) cloned.readAt = prior.readAt ?? cloned.readAt;
       this.rows[idx] = cloned;
     } else {
       this.rows.push(cloned);
@@ -244,13 +248,16 @@ export class SqliteNotificationLogRepository implements NotificationLogRepositor
   constructor(private readonly db: DatabaseAdapter) {}
 
   async append(item: StoredNotificationItem): Promise<void> {
-    // Upsert on id (mirrors the in-memory full-replace: a re-fire overwrites).
+    // Upsert on id (mirrors the in-memory upsert). CA-9 — PRESERVE read state:
+    // once a row is read it stays read, so a re-fire / boot reconciliation of a
+    // best-effort-lost entry can never un-read a notification the user dismissed.
     this.db.run(
       `INSERT INTO notification_log (${NOTIFICATION_COLUMNS})
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          kind = excluded.kind, title = excluded.title, body = excluded.body,
-         fired_at = excluded.fired_at, read_at = excluded.read_at,
+         fired_at = excluded.fired_at,
+         read_at = COALESCE(notification_log.read_at, excluded.read_at),
          source_id = excluded.source_id, deep_link = excluded.deep_link,
          expires_at = excluded.expires_at, data_scope = excluded.data_scope`,
       [

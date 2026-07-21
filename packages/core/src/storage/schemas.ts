@@ -1175,7 +1175,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE TABLE IF NOT EXISTS run_spool (
         spool_id TEXT PRIMARY KEY,
         blob BLOB NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        -- Round-C C-02 — the spool row IS the durable cleanup owner: it names the
+        -- staging leaf key that protects this blob, written BEFORE the key so a
+        -- crash before the reservation/receipt adopts the ref still leaves a
+        -- record the orphan GC can use to destroy the (unique, non-derivable)
+        -- key before deleting the blob. Null for legacy rows.
+        staged_key_id TEXT
       );
     `,
   },
@@ -1213,11 +1219,19 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         final_tier INTEGER,
         tier_source TEXT CHECK (tier_source IN ('action_base','brain_candidate','classify_timeout_ceiling')),
         reconciliation_evidence TEXT NOT NULL DEFAULT '[]',
+        -- CA-3 (§13) — bounded terminal retention. When a message reaches a
+        -- terminal state its payload's per-payload leaf erasure key is
+        -- crypto-shredded past a bounded audit/replay window (not held until
+        -- WHOLE-run termination). NULL = not-yet-stamped; positive = shred due
+        -- at that ms; 0 = already shredded (drains the sweep). Payload-bearing
+        -- terminal rows only.
+        shred_after INTEGER,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_run_messages_run_state ON run_messages(run_id, state);
       CREATE INDEX IF NOT EXISTS idx_run_messages_delegation ON run_messages(delegation_id);
+      CREATE INDEX IF NOT EXISTS idx_run_messages_shred ON run_messages(shred_after);
 
       CREATE TABLE IF NOT EXISTS run_classification_jobs (
         message_id TEXT PRIMARY KEY,

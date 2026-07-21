@@ -111,6 +111,11 @@ function insertItem(input: AppendNotificationInput): NotificationItem {
   };
 
   if (existingIdx >= 0) {
+    // Preserve read state on re-fire (CA-9): a re-delivered / boot-reconciled
+    // event upserts content but must NEVER un-read a notification the user
+    // already dismissed, so the reconciler can re-fire freely for durability.
+    const prior = items[existingIdx];
+    if (prior !== undefined) item.readAt = prior.readAt;
     items[existingIdx] = item;
   } else {
     // Sorted-insert by firedAt DESC so list reads are O(1) without

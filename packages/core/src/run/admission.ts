@@ -262,6 +262,27 @@ export class AdmissionService {
             this.resRepo.skipLost(sibling.reservation_id, nowMs);
           }
         }
+        // Round-C C-04 — this commit advanced fetch_cursor to res.cursor+1. If an
+        // owner ALREADY terminally-skipped a LATER cursor (an out-of-order skip
+        // whose earlier gap this repair just closed), advance THROUGH every
+        // contiguous skipped position so the next reserve never targets a
+        // position the owner permanently skipped (§13 permanent-gap). In-tx +
+        // CAS-guarded (advanceCursorPastSkipped only advances when fetch_cursor
+        // equals the skipped cursor), so it's a no-op unless the run cursor sits
+        // exactly on a skipped position.
+        const skippedCursors = new Set(
+          this.resRepo
+            .listByRun(res.run_id)
+            .filter((r) => r.state === 'skipped')
+            .map((r) => r.cursor),
+        );
+        let nextCursor = res.cursor + 1;
+        while (
+          skippedCursors.has(nextCursor) &&
+          this.runRepo.advanceCursorPastSkipped(res.run_id, nextCursor, nowMs)
+        ) {
+          nextCursor += 1;
+        }
         const runNow = this.runRepo.getById(res.run_id);
         if (runNow !== null && runNow.paused_reason === 'response_lost') {
           const anyLost = this.resRepo

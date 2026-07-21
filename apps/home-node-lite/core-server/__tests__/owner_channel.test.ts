@@ -8,7 +8,16 @@
  * path grants nothing.
  */
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -25,7 +34,7 @@ import {
 } from '@dina/core';
 
 import { bindCoreRouter } from '../src/server/bind_core_router';
-import { resolveOwnerCapability } from '../src/server/owner_capability';
+import { resolveOwnerCapability, writeFreshOwnerCapability } from '../src/server/owner_capability';
 
 const CAP = 'test-owner-capability-0123456789abcdef';
 
@@ -52,9 +61,85 @@ describe('owner capability resolution', () => {
     const first = resolveOwnerCapability({}, dir);
     expect(first.source).toBe('generated');
     expect(first.capability).toMatch(/^[0-9a-f]{64}$/);
-    expect(readFileSync(path.join(dir, 'owner_capability'), 'utf8').trim()).toBe(first.capability);
+    const fp = path.join(dir, 'owner_capability');
+    expect(readFileSync(fp, 'utf8').trim()).toBe(first.capability);
+    // C-05 — the generated file really is 0600.
+    expect(lstatSync(fp).mode & 0o777).toBe(0o600);
     const second = resolveOwnerCapability({}, dir);
     expect(second).toEqual({ ...first, source: 'file' });
+  });
+
+  it('C-05: a loose-permission existing file is tightened to 0600 on load', () => {
+    const fp = path.join(dir, 'owner_capability');
+    writeFileSync(fp, `${'a'.repeat(40)}\n`, { mode: 0o644 });
+    // Ensure the loose bits are actually on disk (umask can strip them).
+    chmodSync(fp, 0o644);
+    expect(lstatSync(fp).mode & 0o077).not.toBe(0);
+    const res = resolveOwnerCapability({}, dir);
+    expect(res.source).toBe('file');
+    expect(lstatSync(fp).mode & 0o077).toBe(0); // group/other bits cleared
+  });
+
+  it('C-05: a symlink at the capability path refuses to boot', () => {
+    const real = path.join(dir, 'real_secret');
+    writeFileSync(real, `${'b'.repeat(40)}\n`, { mode: 0o600 });
+    symlinkSync(real, path.join(dir, 'owner_capability'));
+    expect(() => resolveOwnerCapability({}, dir)).toThrow(/not a regular file/);
+  });
+
+  it('C-05: a corrupt existing file is replaced with a fresh 0600 inode', () => {
+    const fp = path.join(dir, 'owner_capability');
+    writeFileSync(fp, 'short\n', { mode: 0o644 }); // below MIN_CAPABILITY_LENGTH
+    chmodSync(fp, 0o644);
+    const res = resolveOwnerCapability({}, dir);
+    expect(res.source).toBe('generated');
+    expect(res.capability).toMatch(/^[0-9a-f]{64}$/);
+    expect(lstatSync(fp).mode & 0o777).toBe(0o600);
+  });
+
+  it('C-05: a DANGLING symlink refuses to boot and is never written through', () => {
+    // A dangling symlink is the sharp case: `existsSync` follows it and reports
+    // false, so a path-based generate would `writeFileSync` the fresh
+    // capability straight into the attacker-chosen target. The O_NOFOLLOW load
+    // must reject it instead, and the target must stay non-existent.
+    const target = path.join(dir, 'attacker_target');
+    symlinkSync(target, path.join(dir, 'owner_capability'));
+    expect(existsSync(target)).toBe(false); // dangling
+    expect(() => resolveOwnerCapability({}, dir)).toThrow(/not a regular file/);
+    // The generated bearer was NOT written through the link.
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('C-05: create refuses a LIVE symlink present at create time (O_EXCL|O_NOFOLLOW)', () => {
+    // The load path rejects a symlink before the resolver reaches creation, so
+    // the create-time guard is exercised DIRECTLY: a symlink occupies the path
+    // when the exclusive create runs. It must throw (EEXIST) rather than write
+    // the bearer through the redirect, and the target must stay untouched.
+    const fp = path.join(dir, 'owner_capability');
+    const target = path.join(dir, 'create_target');
+    writeFileSync(target, 'not-the-capability\n', { mode: 0o600 });
+    symlinkSync(target, fp);
+    expect(() => writeFreshOwnerCapability(fp)).toThrow();
+    // The pre-existing target file was never overwritten with a capability.
+    expect(readFileSync(target, 'utf8')).toBe('not-the-capability\n');
+  });
+
+  it('C-05: create refuses a DANGLING symlink at create time (no write-through)', () => {
+    const fp = path.join(dir, 'owner_capability');
+    const target = path.join(dir, 'create_dangling_target');
+    symlinkSync(target, fp); // dangling: target does not exist
+    expect(existsSync(target)).toBe(false);
+    expect(() => writeFreshOwnerCapability(fp)).toThrow();
+    // The generated bearer was NOT written through the dangling link.
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('C-05: create writes a fresh 0600 file on a clear path', () => {
+    const fp = path.join(dir, 'owner_capability');
+    const cap = writeFreshOwnerCapability(fp);
+    expect(cap).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(fp, 'utf8').trim()).toBe(cap);
+    expect(lstatSync(fp).mode & 0o777).toBe(0o600);
   });
 });
 

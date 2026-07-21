@@ -133,6 +133,7 @@ export function buildEnqueuedMessageRow(
     final_tier: null,
     tier_source: null,
     reconciliation_evidence: '[]',
+    shred_after: null,
     created_at: nowMs,
     updated_at: nowMs,
   };

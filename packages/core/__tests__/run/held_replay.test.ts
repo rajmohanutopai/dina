@@ -32,7 +32,11 @@ import {
 import { InMemoryErasureKeyStore } from '../../src/run/erasure_store';
 import { buildEnqueuedMessageRow, parseHeldMessageMeta } from '../../src/run/ingest';
 import { NaclDeviceSealer, SQLiteRunSpool } from '../../src/run/locked_arrival';
-import { SQLiteMessageRepository, setMessageRepository } from '../../src/run/message';
+import {
+  SQLiteMessageRepository,
+  setMessageRepository,
+  type MessageRecord,
+} from '../../src/run/message';
 import { type PersonaCipher } from '../../src/run/payload_store';
 import { wireRunPlane, type RunPlane } from '../../src/run/plane';
 import { fireHeldReplay, setHeldReplayHook } from '../../src/run/replay_registry';
@@ -87,7 +91,13 @@ interface Composed {
   now: () => number;
 }
 
-function compose(): Composed {
+function compose(
+  opts: {
+    onMessageClassified?: (m: MessageRecord, run: RunRecord) => void;
+    messageShredWindowMs?: number;
+    reconcilePageSize?: number;
+  } = {},
+): Composed {
   dir = mkdtempSync(path.join(tmpdir(), 'r501-held-'));
   adapter = new NodeSQLiteAdapter({
     path: path.join(dir, 'identity.sqlite'),
@@ -138,6 +148,15 @@ function compose(): Composed {
     onResponseLost: (run: RunRecord, res: ReservationRecord, reason: string) => {
       lostEvents.push({ runId: run.run_id, reservationId: res.reservation_id, reason });
     },
+    ...(opts.onMessageClassified !== undefined
+      ? { onMessageClassified: opts.onMessageClassified }
+      : {}),
+    ...(opts.messageShredWindowMs !== undefined
+      ? { messageShredWindowMs: opts.messageShredWindowMs }
+      : {}),
+    ...(opts.reconcilePageSize !== undefined
+      ? { reconcilePageSize: opts.reconcilePageSize }
+      : {}),
     nowMsFn: () => NOW,
   });
 
@@ -536,10 +555,10 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
       created_at: NOW,
       updated_at: NOW,
     });
-    // Age the spool blob PAST the 24h orphan-GC TTL (a sensitive persona
-    // routinely stays locked for days) and lock the persona.
+    // Age the spool blob PAST the 24h orphan-GC TTL relative to the plane's
+    // (fixed) clock — a sensitive persona routinely stays locked for days.
     adapter.run('UPDATE run_spool SET created_at = ? WHERE spool_id = ?', [
-      Date.now() - 48 * 3_600_000,
+      NOW - 48 * 3_600_000,
       stagedRef.spool_id,
     ]);
     c.cipher.lock('general');
@@ -587,6 +606,105 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(fresh[0].cursor).toBe(held.cursor + 1);
   });
 
+  it('C-02: a crash-orphaned staged blob is crypto-shredded (key destroyed) before the GC deletes it', () => {
+    const c = compose();
+    const lockedArrival = c.plane.lockedArrival;
+    if (lockedArrival === null) throw new Error('locked arrival not composed');
+    // Stage a card but NEVER adopt it (simulate a crash between stage() and the
+    // reservation/receipt write): the spool row names its unique staging key.
+    const ref = lockedArrival.stage('result-orphan', enc.encode('{"x":1}'));
+    expect(c.erasure.has(ref.staged_key_id ?? '')).toBe(true);
+    // Age it past the 24h orphan TTL relative to the plane's (fixed) clock; no
+    // live reservation/receipt references it.
+    adapter.run('UPDATE run_spool SET created_at = ? WHERE spool_id = ?', [
+      NOW - 48 * 3_600_000,
+      ref.spool_id,
+    ]);
+    c.plane.recoverOnBoot();
+    // The GC destroyed the NAMED key (crypto-shred) AND deleted the blob — the
+    // key never outlives the ciphertext (C-02).
+    expect(c.erasure.has(ref.staged_key_id ?? '')).toBe(false);
+    expect(c.spool.peek(ref.spool_id)).toBeNull();
+  });
+
+  it('C-01: a duplicate lock-time completion does not orphan the incumbent staged key (first-writer)', () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const first = c.receipts;
+    const lockedArrival = c.plane.lockedArrival;
+    if (lockedArrival === null) throw new Error('locked arrival not composed');
+    const cardA = lockedArrival.stage('result-dupe', enc.encode('{"card":"A"}'));
+    first.upsert({
+      delegation_id: 'dupe',
+      message_id: 'm-dupe',
+      run_id: run.run_id,
+      status: 'completed',
+      result_card_ref: null,
+      result_card_digest: 'dig-A',
+      result_card_staged_ref: JSON.stringify(cardA),
+      receipt_state: 'verified_pending',
+      issued_at: NOW,
+      received_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    // A duplicate arrives while still verified_pending with its OWN staged card.
+    const cardB = lockedArrival.stage('result-dupe', enc.encode('{"card":"B"}'));
+    first.upsert({
+      delegation_id: 'dupe',
+      message_id: 'm-dupe',
+      run_id: run.run_id,
+      status: 'completed',
+      result_card_ref: null,
+      result_card_digest: 'dig-A',
+      result_card_staged_ref: JSON.stringify(cardB),
+      receipt_state: 'verified_pending',
+      issued_at: NOW,
+      received_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    // First-writer: the receipt still points at card A; A's key survives.
+    expect(c.receipts.getByDelegationId('dupe')?.result_card_staged_ref).toBe(JSON.stringify(cardA));
+    expect(c.erasure.has(cardA.staged_key_id ?? '')).toBe(true);
+  });
+
+  it('C-04: an out-of-order skip then earlier repair never resumes onto the skipped cursor', async () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun({ queue_cap: 5 }));
+    // Two held responses race a lock: cursors 0 and 1.
+    const corr0 = await reserve(c);
+    c.cipher.lock('general');
+    expect(c.plane.ingestPullResponse(corr0, verifiedMsg()).outcome).toBe('held_by_lock');
+    c.cipher.open('general');
+    const corr1 = await reserve(c); // opens cursor 1
+    c.cipher.lock('general');
+    expect(c.plane.ingestPullResponse(corr1, verifiedMsg()).outcome).toBe('held_by_lock');
+    // Both lost.
+    for (const held of c.reservations.listByRun(run.run_id)) {
+      const ref = JSON.parse(held.sealed_response_ref ?? '') as { spool_id: string };
+      c.spool.ack(ref.spool_id);
+    }
+    c.cipher.open('general');
+    c.plane.replayHeldForPersona('general'); // both → response_lost
+    const byCursor = new Map(c.reservations.listByRun(run.run_id).map((r) => [r.cursor, r]));
+    const lostAt1 = byCursor.get(1);
+    if (lostAt1 === undefined) throw new Error('expected a lost reservation at cursor 1');
+    // Owner skips the LATER loss (cursor 1) first — out of order. fetch_cursor
+    // stays 0 (skip of a non-current cursor doesn't advance).
+    expect(c.reservations.skipLost(lostAt1.reservation_id, NOW + 1)).toBe(true);
+    expect(c.runs.getById(run.run_id)?.fetch_cursor).toBe(0);
+    // Resume + provider repairs cursor 0 → commit advances the cursor AND skips
+    // through the already-skipped cursor 1 (C-04).
+    c.runs.setPausedReason(run.run_id, null, NOW + 2);
+    const retry = await c.plane.engine.pacerTick();
+    expect(retry.reserved).toBe(1);
+    const corrRetry = c.queries[c.queries.length - 1].correlationId;
+    expect(c.plane.ingestPullResponse(corrRetry, verifiedMsg()).outcome).toBe('enqueued');
+    // The run cursor jumped PAST the skipped cursor 1 → next reserve targets 2.
+    expect(c.runs.getById(run.run_id)?.fetch_cursor).toBe(2);
+  });
+
   it('SQLiteRunSpool stores durable ciphertext blobs (store → peek → ack)', () => {
     const c = compose();
     const blob = randomBytes(64);
@@ -599,5 +717,166 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(Buffer.from(spool2.peek(id) ?? new Uint8Array())).toEqual(blob);
     spool2.ack(id);
     expect(c.spool.peek(id)).toBeNull();
+  });
+});
+
+/** Build + insert a message row with a stored payload (payload_id == message_id,
+ *  §13). Returns the message id. */
+function seedMessageWithPayload(
+  c: Composed,
+  runId: string,
+  messageId: string,
+  over: Partial<MessageRecord>,
+): string {
+  const ref = c.plane.payloads.putPayload({
+    payloadId: messageId,
+    runId,
+    persona: 'general',
+    plaintext: enc.encode(`PAYLOAD-${messageId}`),
+  });
+  c.messages.create({
+    message_id: messageId,
+    run_id: runId,
+    reservation_id: null,
+    dedup_key: `dk-${messageId}`,
+    sequence: 1,
+    kind: 'informational',
+    action_type: null,
+    risk_class: null,
+    state: 'classified',
+    decision: null,
+    decision_revision: 0,
+    delegation_id: null,
+    expires_at: NOW + 600_000,
+    payload_ref: ref.content_id,
+    content_digest: `digest-${messageId}`,
+    tier_candidate: null,
+    final_tier: null,
+    tier_source: null,
+    reconciliation_evidence: '[]',
+    shred_after: null,
+    created_at: NOW,
+    updated_at: NOW,
+    ...over,
+  });
+  return messageId;
+}
+
+describe('CA-3 — per-message crypto-shred past the bounded window (§13)', () => {
+  it('shreds a TERMINAL message payload mid-run, leaving live siblings decryptable', () => {
+    const c = compose({ messageShredWindowMs: 60_000 });
+    // An ACTIVE run (so whole-run shredRun never fires) with a terminal message
+    // aged past the window + a live sibling still classified.
+    const run = c.plane.runService.create(pullRun());
+    seedMessageWithPayload(c, run.run_id, 'm-term', {
+      state: 'completed',
+      updated_at: NOW - 120_000, // stamped deadline = updated_at + 60s < NOW → due
+    });
+    seedMessageWithPayload(c, run.run_id, 'm-live', { state: 'classified', updated_at: NOW });
+
+    // Both decryptable before maintenance.
+    expect(c.plane.payloads.getPayload('m-term', 'general')).not.toBeNull();
+    expect(c.plane.payloads.getPayload('m-live', 'general')).not.toBeNull();
+
+    c.plane.recoverOnBoot(); // runs the terminal-shred sweep
+
+    // The terminal message's leaf key is destroyed (ciphertext inert); the live
+    // sibling is untouched (per-payload isolation).
+    expect(c.plane.payloads.getPayload('m-term', 'general')).toBeNull();
+    expect(c.erasure.has('m-term')).toBe(false);
+    expect(c.plane.payloads.getPayload('m-live', 'general')).not.toBeNull();
+    // Drained: shred_after marked done (0), so a second pass is a no-op and the
+    // live sibling stays decryptable (idempotent across restart).
+    expect(c.messages.getById('m-term')?.shred_after).toBe(0);
+    c.plane.recoverOnBoot();
+    expect(c.plane.payloads.getPayload('m-term', 'general')).toBeNull();
+    expect(c.plane.payloads.getPayload('m-live', 'general')).not.toBeNull();
+  });
+
+  it('does NOT shred a terminal message still inside the audit/replay window', () => {
+    const c = compose({ messageShredWindowMs: 3_600_000 });
+    const run = c.plane.runService.create(pullRun());
+    seedMessageWithPayload(c, run.run_id, 'm-recent', {
+      state: 'deny',
+      updated_at: NOW - 1_000, // deadline = updated_at + 1h ≫ NOW → NOT yet due
+    });
+    c.plane.recoverOnBoot();
+    // Retained for late-completion reconciliation until the window elapses.
+    expect(c.plane.payloads.getPayload('m-recent', 'general')).not.toBeNull();
+    const after = c.messages.getById('m-recent')?.shred_after;
+    expect(after !== null && after !== undefined && after > NOW).toBe(true);
+  });
+});
+
+describe('CA-9 — classified→Activity notification reconciliation on boot', () => {
+  it('re-fires the sink for a still-classified message (lost best-effort entry restored)', () => {
+    const fired: string[] = [];
+    const c = compose({ onMessageClassified: (m) => fired.push(m.message_id) });
+    const run = c.plane.runService.create(pullRun());
+    // A message that durably reached `classified` but whose best-effort inbox
+    // entry was lost (crash in the post-commit gap / persistent write failure).
+    seedMessageWithPayload(c, run.run_id, 'm-cls', { state: 'classified' });
+    // A decided (terminal) message must NOT be re-notified as needing review.
+    seedMessageWithPayload(c, run.run_id, 'm-done', { state: 'acknowledged' });
+
+    c.plane.recoverOnBoot();
+
+    expect(fired).toEqual(['m-cls']);
+  });
+
+  it('pages the FULL classified set to exhaustion (a 501st lost entry is not stranded)', () => {
+    const fired: string[] = [];
+    // Page size 2 with 3 classified messages: a fixed oldest-N window would
+    // re-fire only the first page every boot and never reach the 3rd. The
+    // keyset loop must re-fire all three in ONE recoverOnBoot.
+    const c = compose({ onMessageClassified: (m) => fired.push(m.message_id), reconcilePageSize: 2 });
+    const run = c.plane.runService.create(pullRun());
+    seedMessageWithPayload(c, run.run_id, 'a', { state: 'classified', created_at: NOW + 1 });
+    seedMessageWithPayload(c, run.run_id, 'b', { state: 'classified', created_at: NOW + 2 });
+    seedMessageWithPayload(c, run.run_id, 'c', { state: 'classified', created_at: NOW + 3 });
+
+    c.plane.recoverOnBoot();
+
+    expect(new Set(fired)).toEqual(new Set(['a', 'b', 'c']));
+  });
+});
+
+describe('CA-3 — whole-run + boot re-shred coexist with per-message shred', () => {
+  it('whole-run shredRun destroys EVERY payload (incl a per-message-shredded one), idempotently', () => {
+    const c = compose({ messageShredWindowMs: 60_000 });
+    const run = c.plane.runService.create(pullRun());
+    seedMessageWithPayload(c, run.run_id, 'm-term', {
+      state: 'completed',
+      updated_at: NOW - 120_000,
+    });
+    seedMessageWithPayload(c, run.run_id, 'm-live', { state: 'classified', updated_at: NOW });
+
+    // Per-message path shreds the terminal one; the live sibling survives.
+    c.plane.recoverOnBoot();
+    expect(c.plane.payloads.getPayload('m-term', 'general')).toBeNull();
+    expect(c.plane.payloads.getPayload('m-live', 'general')).not.toBeNull();
+
+    // Whole-run terminal shred then destroys EVERY remaining payload key.
+    const shredded = c.plane.payloads.shredRun(run.run_id);
+    expect(shredded).toBeGreaterThanOrEqual(1);
+    expect(c.plane.payloads.getPayload('m-live', 'general')).toBeNull();
+    // Idempotent: a re-shred (boot recovery path) never throws.
+    expect(() => c.plane.payloads.shredRun(run.run_id)).not.toThrow();
+  });
+
+  it('boot re-shred crypto-shreds a finalized-terminal run whose payload was still live (crash gap)', () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    seedMessageWithPayload(c, run.run_id, 'm-live', { state: 'classified' });
+    // Simulate a crash AFTER the run finalized terminal but BEFORE its post-commit
+    // shred: drive it to a `completed` terminal state with a live payload key.
+    expect(c.runs.transitionState(run.run_id, 'active', 'draining', NOW)).toBe(true);
+    expect(c.runs.finalize(run.run_id, 'completed', NOW)).toBe(true);
+    expect(c.plane.payloads.getPayload('m-live', 'general')).not.toBeNull();
+
+    c.plane.recoverOnBoot(); // reshred loop finds the terminal run → shredRun
+
+    expect(c.plane.payloads.getPayload('m-live', 'general')).toBeNull();
+    expect(c.erasure.has('m-live')).toBe(false);
   });
 });

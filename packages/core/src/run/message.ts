@@ -136,6 +136,10 @@ export interface MessageRecord {
   tier_source: TierSource | null;
   /** append-only late-completion reconciliation evidence (JSON array). */
   reconciliation_evidence: string;
+  /** CA-3 (§13) bounded terminal retention. NULL until stamped; positive = the
+   *  ms at which this terminal message's payload leaf key is crypto-shredded;
+   *  0 = already shredded. Only ever set for payload-bearing terminal messages. */
+  shred_after: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -203,6 +207,37 @@ export interface MessageRepository {
     onExpired?: (expiredIds: string[]) => void,
   ): string[];
 
+  /** CA-9 — a keyset page of `classified` (undecided) messages after
+   *  `(afterCreatedAt, afterMessageId)`, ascending, so the boot reconciler
+   *  pages to EXHAUSTION (a fixed oldest-N window would forever re-fire the same
+   *  page and strand the N+1-th lost entry, since a re-fire leaves the message
+   *  `classified`). The reconciler re-fires the Activity sink for these so a
+   *  classified action whose best-effort inbox entry was lost (crash or
+   *  durable-write failure) is restored (idempotent on the inbox id). */
+  listClassifiedAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit: number,
+  ): MessageRecord[];
+
+  /**
+   * CA-3 (§13) — stamp a shred deadline (`updated_at + windowMs`) on every
+   * payload-bearing TERMINAL message that has none yet, so its per-payload leaf
+   * key is crypto-shredded past a bounded audit/replay window rather than held
+   * until whole-run termination. Idempotent (only NULL rows are stamped; an
+   * already-stamped or shredded row is untouched). Returns the count stamped.
+   */
+  stampTerminalShredDeadlines(windowMs: number): number;
+
+  /** CA-3 — payload ids (== message ids) whose shred deadline has passed and
+   *  are not yet shredded (`shred_after` in `(0, nowMs]`), oldest deadline
+   *  first, bounded by `limit`. */
+  listPayloadShredDue(nowMs: number, limit: number): string[];
+
+  /** CA-3 — mark a message's payload crypto-shredded so it drains the sweep
+   *  (sets `shred_after = 0`). Idempotent. */
+  markPayloadShredded(messageId: string): void;
+
   size(): number;
 }
 
@@ -226,6 +261,7 @@ const COLS = [
   'final_tier',
   'tier_source',
   'reconciliation_evidence',
+  'shred_after',
   'created_at',
   'updated_at',
 ] as const;
@@ -264,6 +300,7 @@ function rowToMsg(row: DBRow): MessageRecord {
     final_tier: n(row.final_tier),
     tier_source: s(row.tier_source) as TierSource | null,
     reconciliation_evidence: String(row.reconciliation_evidence ?? '[]'),
+    shred_after: n(row.shred_after),
     created_at: Number(row.created_at),
     updated_at: Number(row.updated_at),
   };
@@ -281,6 +318,10 @@ const UNDECIDED_SQL = "('enqueued','classification_pending','classified')";
 // re-arm survive expiry, reconciled by the drain deadline instead (§6.3/§9).
 const EXPIRABLE_SQL =
   "('enqueued','classification_pending','classified','risk_pending','approved','risk_authorized')";
+// CA-3 — the terminal states whose payload leaf key is crypto-shredded past the
+// bounded audit/replay window (mirrors MESSAGE_TERMINAL_STATES).
+const TERMINAL_SQL =
+  "('deny','acknowledged','policy_refused','completed','failed','outcome_unknown','cancelled','expired')";
 
 export class SQLiteMessageRepository implements MessageRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -454,6 +495,49 @@ export class SQLiteMessageRepository implements MessageRepository {
     return ids;
   }
 
+  listClassifiedAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit: number,
+  ): MessageRecord[] {
+    return this.db
+      .query(
+        `SELECT * FROM run_messages
+          WHERE state = 'classified'
+            AND (created_at > ? OR (created_at = ? AND message_id > ?))
+          ORDER BY created_at ASC, message_id ASC
+          LIMIT ?`,
+        [afterCreatedAt, afterCreatedAt, afterMessageId, limit],
+      )
+      .map(rowToMsg);
+  }
+
+  stampTerminalShredDeadlines(windowMs: number): number {
+    // Payload-bearing terminal rows with no deadline yet: stamp updated_at (the
+    // terminal-transition time) + window. `shred_after IS NULL` excludes both
+    // already-stamped (positive) and already-shredded (0) rows.
+    return this.db.run(
+      `UPDATE run_messages SET shred_after = updated_at + ?
+        WHERE state IN ${TERMINAL_SQL} AND payload_ref IS NOT NULL AND shred_after IS NULL`,
+      [windowMs],
+    );
+  }
+
+  listPayloadShredDue(nowMs: number, limit: number): string[] {
+    return this.db
+      .query<{ message_id: string }>(
+        `SELECT message_id FROM run_messages
+          WHERE shred_after IS NOT NULL AND shred_after > 0 AND shred_after <= ?
+          ORDER BY shred_after ASC LIMIT ?`,
+        [nowMs, limit],
+      )
+      .map((r) => String(r.message_id));
+  }
+
+  markPayloadShredded(messageId: string): void {
+    this.db.run('UPDATE run_messages SET shred_after = 0 WHERE message_id = ?', [messageId]);
+  }
+
   size(): number {
     const rows = this.db.query<{ n: number }>('SELECT COUNT(*) AS n FROM run_messages');
     return rows[0]?.n ?? 0;
@@ -592,6 +676,43 @@ export class InMemoryMessageRepository implements MessageRepository {
     // R2-03 — fence in the same synchronous step (in-memory has no crash window).
     if (out.length > 0 && onExpired !== undefined) onExpired(out);
     return out;
+  }
+  listClassifiedAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit: number,
+  ): MessageRecord[] {
+    return [...this.rows.values()]
+      .filter((r) => r.state === 'classified')
+      .filter(
+        (r) =>
+          r.created_at > afterCreatedAt ||
+          (r.created_at === afterCreatedAt && r.message_id > afterMessageId),
+      )
+      .sort((a, b) => a.created_at - b.created_at || (a.message_id < b.message_id ? -1 : 1))
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+  stampTerminalShredDeadlines(windowMs: number): number {
+    let stamped = 0;
+    for (const r of this.rows.values()) {
+      if (MESSAGE_TERMINAL_STATES.has(r.state) && r.payload_ref !== null && r.shred_after === null) {
+        r.shred_after = r.updated_at + windowMs;
+        stamped += 1;
+      }
+    }
+    return stamped;
+  }
+  listPayloadShredDue(nowMs: number, limit: number): string[] {
+    return [...this.rows.values()]
+      .filter((r) => r.shred_after !== null && r.shred_after > 0 && r.shred_after <= nowMs)
+      .sort((a, b) => (a.shred_after ?? 0) - (b.shred_after ?? 0))
+      .slice(0, limit)
+      .map((r) => r.message_id);
+  }
+  markPayloadShredded(messageId: string): void {
+    const r = this.rows.get(messageId);
+    if (r) r.shred_after = 0;
   }
   size(): number {
     return this.rows.size;

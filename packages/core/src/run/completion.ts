@@ -93,13 +93,19 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
          (delegation_id, message_id, run_id, status, result_card_ref, result_card_digest, result_card_staged_ref, receipt_state, issued_at, received_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(delegation_id) DO UPDATE SET
-         status = excluded.status, result_card_ref = excluded.result_card_ref,
-         result_card_staged_ref = COALESCE(excluded.result_card_staged_ref, run_completion_receipts.result_card_staged_ref),
+         status = excluded.status,
+         result_card_ref = COALESCE(run_completion_receipts.result_card_ref, excluded.result_card_ref),
+         result_card_staged_ref = COALESCE(run_completion_receipts.result_card_staged_ref, excluded.result_card_staged_ref),
          updated_at = excluded.updated_at`,
-      // NOTE: result_card_digest is first-writer-immutable — NOT in the DO UPDATE
-      // set, so a re-send/upgrade keeps the originally-signed digest (R3-01).
-      // A-04: an idempotent re-send without a staged ref must not CLEAR an
-      // existing staged pointer (COALESCE keeps it until attach/clear).
+      // Round-C C-01 — both card references are FIRST-WRITER-MONOTONIC (existing
+      // wins): a duplicate completion arriving while `verified_pending` can
+      // NEITHER clobber the incumbent staged pointer (which would orphan its
+      // unique key — the loser is discarded by ITS OWN ref in plane_node)
+      // NOR regress an already-attached `result_card_ref` back to null (a
+      // card-less resend). The null→non-null attach UPGRADE still works because
+      // the upgrade path passes a record whose EXISTING ref is null, so
+      // COALESCE(null, new) = new. `result_card_digest` is likewise first-writer
+      // (kept out of the DO UPDATE entirely, R3-01).
       [
         r.delegation_id,
         r.message_id,
@@ -178,10 +184,12 @@ export class InMemoryCompletionReceiptRepository implements CompletionReceiptRep
     const existing = this.receipts.get(r.delegation_id);
     if (existing) {
       existing.status = r.status;
-      existing.result_card_ref = r.result_card_ref;
-      // A-04 — mirror SQLite's COALESCE: a re-send without a staged ref keeps
-      // the existing staged pointer.
-      existing.result_card_staged_ref = r.result_card_staged_ref ?? existing.result_card_staged_ref;
+      // C-01 — first-writer-monotonic (mirror SQLite): existing non-null wins,
+      // so a duplicate can't clobber the staged pointer or regress an attached
+      // card ref to null; a null→non-null upgrade still works (existing null).
+      existing.result_card_ref = existing.result_card_ref ?? r.result_card_ref;
+      existing.result_card_staged_ref =
+        existing.result_card_staged_ref ?? r.result_card_staged_ref;
       existing.updated_at = r.updated_at;
     } else {
       this.receipts.set(r.delegation_id, { ...r });
@@ -365,7 +373,13 @@ export class CompletionService {
       result_card_digest: existing?.result_card_digest ?? inDigest,
       // A-04 — a lock-raced card's device-sealed pointer rides the receipt until
       // the unlock replay attaches the persona-wrapped copy (upsert COALESCEs).
-      result_card_staged_ref: input.result_card_staged_ref ?? null,
+      // C-01 — propose the input staged ref ONLY when the receipt has neither an
+      // attached card nor an incumbent staged pointer; otherwise plane_node
+      // sees it un-adopted and discards it (its unique key never lingers).
+      result_card_staged_ref:
+        existing?.result_card_ref != null || existing?.result_card_staged_ref != null
+          ? null
+          : input.result_card_staged_ref ?? null,
       receipt_state: 'verified_pending',
       issued_at: input.issued_at,
       received_at: nowMs,

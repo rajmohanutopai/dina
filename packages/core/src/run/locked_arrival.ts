@@ -36,26 +36,36 @@ import type { DatabaseAdapter } from '../storage/db_adapter';
  * are the platform backings; this port is what Core depends on).
  */
 export interface RunSpool {
-  /** Durably store an opaque (already-sealed) blob; returns its id. */
-  store(blob: Uint8Array): string;
+  /** Durably store an opaque (already-sealed) blob; returns its id. C-02 — the
+   *  optional `stagedKeyId` names the staging leaf key protecting the blob so a
+   *  crash-orphaned row can be crypto-shredded (key destroyed) before deletion. */
+  store(blob: Uint8Array, stagedKeyId?: string): string;
   /** Read WITHOUT removing (the non-destructive drain, §7). Null if absent. */
   peek(id: string): Uint8Array | null;
   /** Remove after a committed publish / a terminal discard. */
   ack(id: string): void;
-  /** Round-A A-05 — ids of blobs stored before `cutoffMs` (orphan GC: the
-   *  plane deletes any that no live `held_by_lock` ref reaches). Optional so
-   *  minimal test doubles keep working; without it orphan GC is skipped. */
-  listStaleIds?(cutoffMs: number, limit: number): string[];
+  /** Round-A A-05 + C-02 — entries stored before `cutoffMs`, each carrying its
+   *  `staged_key_id` so orphan GC destroys the key before deleting the blob.
+   *  Optional so minimal test doubles keep working; without it orphan GC is
+   *  skipped. */
+  listStaleEntries?(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[];
 }
 
 /** In-memory spool for tests. The Node fs impl (fsync + atomic rename) mirrors
  *  home-node-lite's `ingress/dead_drop.ts`. */
 export class InMemoryRunSpool implements RunSpool {
-  private readonly blobs = new Map<string, { blob: Uint8Array; createdAt: number }>();
+  private readonly blobs = new Map<
+    string,
+    { blob: Uint8Array; createdAt: number; stagedKeyId: string | null }
+  >();
   private seq = 0;
-  store(blob: Uint8Array): string {
+  store(blob: Uint8Array, stagedKeyId?: string): string {
     const id = `spool-${(++this.seq).toString(36)}`;
-    this.blobs.set(id, { blob: new Uint8Array(blob), createdAt: Date.now() });
+    this.blobs.set(id, {
+      blob: new Uint8Array(blob),
+      createdAt: Date.now(),
+      stagedKeyId: stagedKeyId ?? null,
+    });
     return id;
   }
   peek(id: string): Uint8Array | null {
@@ -65,10 +75,10 @@ export class InMemoryRunSpool implements RunSpool {
   ack(id: string): void {
     this.blobs.delete(id);
   }
-  listStaleIds(cutoffMs: number, limit: number): string[] {
-    const out: string[] = [];
+  listStaleEntries(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[] {
+    const out: { spool_id: string; staged_key_id: string | null }[] = [];
     for (const [id, v] of this.blobs.entries()) {
-      if (v.createdAt < cutoffMs) out.push(id);
+      if (v.createdAt < cutoffMs) out.push({ spool_id: id, staged_key_id: v.stagedKeyId });
       if (out.length >= limit) break;
     }
     return out;
@@ -212,9 +222,26 @@ export class LockedArrivalStore {
     // completion while locked) can never overwrite the key protecting the
     // previously staged copy; the loser is discarded by ITS OWN ref.
     const keyId = `${stagedKeyId(payloadId)}:${bytesToHex(sha256(kP)).slice(0, 16)}`;
+    // C-02 crash-safety — write the durable spool row (which NAMES the key) FIRST,
+    // THEN put the key. A crash between them leaves an inert blob whose named key
+    // never existed → orphan GC just deletes it (nothing to shred). A crash AFTER
+    // both, before the caller adopts the ref, leaves a spool row the orphan GC
+    // reaps by destroying its named key then deleting the blob. Either way the key
+    // never outlives the ciphertext.
+    const spoolId = this.spool.store(serializeStaged(wrappedSealedKp, blob), keyId);
     this.erasure().put(keyId, kE);
-    const spoolId = this.spool.store(serializeStaged(wrappedSealedKp, blob));
     return { spool_id: spoolId, content_digest: contentDigest, staged_key_id: keyId };
+  }
+
+  /**
+   * C-02 orphan cleanup: crypto-shred a crash-orphaned staged blob whose ref no
+   * live reservation/receipt reaches. Destroys the named staging key (if any)
+   * BEFORE deleting the blob, so a copy in a backup taken between is never left
+   * decryptable. Idempotent (a missing key/blob is a no-op).
+   */
+  discardOrphanSpool(spoolId: string, stagedKeyId: string | null): void {
+    if (stagedKeyId !== null && stagedKeyId !== '') this.erasure().destroy(stagedKeyId);
+    this.spool.ack(spoolId);
   }
 
   /**
@@ -329,13 +356,12 @@ let spoolSeq = 0;
 export class SQLiteRunSpool implements RunSpool {
   constructor(private readonly db: DatabaseAdapter) {}
 
-  store(blob: Uint8Array): string {
+  store(blob: Uint8Array, stagedKeyId?: string): string {
     const id = `spool-${Date.now().toString(36)}-${(++spoolSeq).toString(36)}`;
-    this.db.execute('INSERT INTO run_spool (spool_id, blob, created_at) VALUES (?, ?, ?)', [
-      id,
-      blob,
-      Date.now(),
-    ]);
+    this.db.execute(
+      'INSERT INTO run_spool (spool_id, blob, created_at, staged_key_id) VALUES (?, ?, ?, ?)',
+      [id, blob, Date.now(), stagedKeyId ?? null],
+    );
     return id;
   }
 
@@ -352,12 +378,16 @@ export class SQLiteRunSpool implements RunSpool {
     this.db.run('DELETE FROM run_spool WHERE spool_id = ?', [id]);
   }
 
-  listStaleIds(cutoffMs: number, limit: number): string[] {
+  listStaleEntries(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[] {
     return this.db
-      .query<{ spool_id: string }>(
-        'SELECT spool_id FROM run_spool WHERE created_at < ? ORDER BY created_at ASC LIMIT ?',
+      .query<{ spool_id: string; staged_key_id: string | null }>(
+        'SELECT spool_id, staged_key_id FROM run_spool WHERE created_at < ? ORDER BY created_at ASC LIMIT ?',
         [cutoffMs, limit],
       )
-      .map((r) => String(r.spool_id));
+      .map((r) => ({
+        spool_id: String(r.spool_id),
+        staged_key_id:
+          r.staged_key_id === null || r.staged_key_id === undefined ? null : String(r.staged_key_id),
+      }));
   }
 }

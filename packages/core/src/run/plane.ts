@@ -62,6 +62,11 @@ import type { DatabaseAdapter } from '../storage/db_adapter';
  *  window) so no crash-gap run is ever stranded; this only bounds each page's
  *  size. `shredRun` is idempotent, so re-visiting already-clean runs is a no-op. */
 const RESHRED_PAGE = 500;
+// CA-3 (§13) — default bounded audit/replay window before a terminal message's
+// per-payload leaf key is crypto-shredded (overridable via deps for tests).
+const MESSAGE_PAYLOAD_SHRED_WINDOW_MS = 5 * 60_000;
+// CA-9 — max still-classified messages the boot reconciler re-fires per boot.
+const RECONCILE_PAGE = 500;
 
 type Interval = ReturnType<typeof setInterval>;
 interface TimerFns {
@@ -137,6 +142,12 @@ export interface RunPlaneDeps {
   classifyIntervalMs?: number;
   /** Completion-recovery (verified_pending re-advance) cadence (default 30s). */
   completionIntervalMs?: number;
+  /** CA-3 (§13) — bounded audit/replay window before a terminal message's
+   *  payload leaf key is crypto-shredded (default 5 min). */
+  messageShredWindowMs?: number;
+  /** CA-9 — keyset page size for the boot classified-notification reconciler
+   *  (default 500). Small values let tests prove exhaustion across pages. */
+  reconcilePageSize?: number;
   setIntervalFn?: (cb: () => void, ms: number) => Interval;
   clearIntervalFn?: (h: Interval) => void;
   /** Structured boot log sink (metadata only — never payload/PII). */
@@ -574,7 +585,7 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
           reservations.clearSealedRef(res.reservation_id);
           residue += 1;
         }
-        if (deps.runSpool?.listStaleIds !== undefined) {
+        if (lockedArrival !== undefined && deps.runSpool?.listStaleEntries !== undefined) {
           // §13 reachability: a spool blob is deletable only when NO live
           // reference reaches it. TWO reference sources point into the spool:
           // held reservations (`sealed_response_ref`) AND lock-staged result
@@ -591,14 +602,33 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
             const ref = parseSealedRef(receipt.result_card_staged_ref);
             if (ref !== null) live.add(ref.spool_id);
           }
-          for (const id of deps.runSpool.listStaleIds(now() - 86_400_000, 200)) {
-            if (!live.has(id)) deps.runSpool.ack(id);
+          // C-02 — an orphan (crash before adoption) is crypto-shredded: the
+          // spool row NAMES its staging key, so the GC destroys the key BEFORE
+          // deleting the blob (never an ack that leaves a live key behind).
+          for (const e of deps.runSpool.listStaleEntries(now() - 86_400_000, 200)) {
+            if (!live.has(e.spool_id)) lockedArrival.discardOrphanSpool(e.spool_id, e.staged_key_id);
           }
         }
       }
+      // CA-3 (§13) — a message that reached a terminal state has its per-payload
+      // leaf key crypto-shredded past a bounded audit/replay window, MID-run, so
+      // a long-lived watch/run doesn't retain a day-1 terminal message's key (and
+      // its persona-DEK-recoverable ciphertext in WAL/backups) until whole-run
+      // termination. Per-payload isolated — live sibling messages keep their
+      // keys. Stamp freshly-terminal deadlines, then shred + mark the due ones;
+      // sweepMaintenance() below GCs the now-inert blobs in the SAME pass.
+      messages.stampTerminalShredDeadlines(
+        deps.messageShredWindowMs ?? MESSAGE_PAYLOAD_SHRED_WINDOW_MS,
+      );
+      let msgShred = 0;
+      for (const id of messages.listPayloadShredDue(now(), 200)) {
+        payloads.shredPayload(id);
+        messages.markPayloadShredded(id);
+        msgShred += 1;
+      }
       const swept = payloads.sweepMaintenance();
-      if (residue > 0 || swept.reclaimed_prepared > 0 || swept.gc_blobs > 0) {
-        log({ evt: 'run_plane.storage_maintenance', staged_residue: residue, ...swept });
+      if (residue > 0 || swept.reclaimed_prepared > 0 || swept.gc_blobs > 0 || msgShred > 0) {
+        log({ evt: 'run_plane.storage_maintenance', staged_residue: residue, msg_shred: msgShred, ...swept });
       }
       // A-04 — attach (open persona) or discard (terminal run) staged cards.
       replayStagedCards(null);
@@ -669,6 +699,46 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
         if (replayed.published > 0 || replayed.lost > 0 || replayed.deferred > 0) {
           log({ evt: 'run_plane.held_replayed', ...replayed });
         }
+      }
+      // CA-9 — re-fire the classified→Activity sink for every still-`classified`
+      // message. The inbox entry is a best-effort post-commit sink: a crash in
+      // that gap (or a persistent durable-write failure) can leave a classified
+      // ACTION invisible while it still holds an `outstanding` slot in the
+      // bounded queue. Re-firing is idempotent — the inbox upserts on
+      // `run-msg-<id>` and PRESERVES read state — so an already-notified message
+      // re-persists harmlessly and a lost one is restored. Bounded to the
+      // undecided `classified` set; on mobile (ephemeral inbox) it also
+      // repopulates the Activity list a relaunch would otherwise drop.
+      const onClassified = deps.onMessageClassified;
+      if (onClassified !== undefined) {
+        // Page the FULL classified set to exhaustion via a stable
+        // `(created_at, message_id)` keyset — NOT a fixed oldest-N window, which
+        // would re-fire the same page every boot and strand the N+1-th lost
+        // entry (a re-fire leaves the message `classified`). Many runs can carry
+        // more than one page of undecided classifieds.
+        const pageSize = deps.reconcilePageSize ?? RECONCILE_PAGE;
+        let reNotified = 0;
+        let afterCreatedAt = 0;
+        let afterMessageId = '';
+        for (;;) {
+          const batch = messages.listClassifiedAfter(afterCreatedAt, afterMessageId, pageSize);
+          if (batch.length === 0) break;
+          for (const msg of batch) {
+            const run = runs.getById(msg.run_id);
+            if (run === null) continue;
+            try {
+              onClassified(msg, run);
+              reNotified += 1;
+            } catch {
+              /* best-effort — the classified state itself is durable regardless */
+            }
+          }
+          const last = batch[batch.length - 1];
+          afterCreatedAt = last.created_at;
+          afterMessageId = last.message_id;
+          if (batch.length < pageSize) break;
+        }
+        if (reNotified > 0) log({ evt: 'run_plane.classified_renotified', count: reNotified });
       }
       // Round-A A-01/A-05 — AFTER the replay (held rows are never residue):
       // finalize commit-crash residue, GC spool orphans, reclaim crashed

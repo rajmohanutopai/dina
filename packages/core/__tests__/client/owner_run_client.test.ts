@@ -30,7 +30,7 @@ function makeMsg(over: Partial<MessageRecord>): MessageRecord {
     decision: null, decision_revision: 0, delegation_id: null, expires_at: MSG_EXPIRES_AT,
     payload_ref: null, tier_candidate: null, final_tier: 2, tier_source: 'action_base',
     content_digest: null,
-    reconciliation_evidence: '[]', created_at: NOW, updated_at: NOW, ...over,
+    reconciliation_evidence: '[]', shred_after: null, created_at: NOW, updated_at: NOW, ...over,
   };
 }
 

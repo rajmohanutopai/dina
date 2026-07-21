@@ -69,6 +69,17 @@ describe('Notifications inbox (5.66)', () => {
       expect(list[0]!.title).toBe('t2'); // upserted
     });
 
+    it('CA-9 — a re-fire upserts content but never un-reads a read item', () => {
+      appendNotification({ id: 'fixed-9', kind: 'run', title: 't', body: 'b' });
+      markNotificationRead('fixed-9');
+      // A boot reconcile re-fires the same id with a fresh (unread) item.
+      appendNotification({ id: 'fixed-9', kind: 'run', title: 't2', body: 'b2' });
+      const [only] = listNotifications();
+      expect(listNotifications()).toHaveLength(1);
+      expect(only?.title).toBe('t2'); // content upserted
+      expect(only?.readAt).not.toBeNull(); // read state preserved
+    });
+
     it('preserves deepLink and expiresAt when set', () => {
       const item = appendNotification({
         kind: 'approval',
