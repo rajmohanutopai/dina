@@ -89,6 +89,35 @@ Two surfaces hold device-local material:
   scripts. The CDN sits inside the trust boundary by definition.
 - Sharing a browser profile across users. Don't.
 
+## Owner control (interactive runs & watches)
+
+The `/v1/run*` and `/v1/watch*` routes are the owner-only control plane
+(`INTERACTIVE_SERVICES_ARCHITECTURE.md` §12.5): only the human owner may
+create, decide, or steer a run. On mobile that owner is the in-app user
+(in-process, no credential travels). On the split server the owner is the
+human at a browser, so Core mints an **owner capability** —
+`DINA_OWNER_CAPABILITY`, or a `0600` `owner_capability` file in the vault dir —
+and only a request carrying the matching `x-dina-owner-capability` header (a
+timing-safe compare, scoped to the run/watch paths) is treated as the owner.
+
+Two ways to present it, both **opt-in and off by default**:
+
+- **Core-served owner console (recommended) — `DINA_CORE_OWNER_CONSOLE=1`.**
+  Core serves a self-contained page at `/owner` (on the Core port) whose calls
+  target Core's *own* routes same-origin. The capability lives only on Core's
+  origin and **never transits Brain**. This is the credential-safe surface.
+- **Brain byte-pipe — `DINA_BRAIN_OWNER_PROXY=1`.** Lets the Brain-served web
+  app drive runs by forwarding the header verbatim to Core. Convenient (one
+  origin for the whole SPA), but the reusable capability **passes through the
+  Brain process**: a fully-compromised Brain could skim it from a live request
+  and then issue owner commands itself. Enable this only when that residual is
+  acceptable (loopback-only dev), and prefer the Core console otherwise.
+
+With neither flag set, the server exposes no browser owner surface at all
+(fail-closed). The custom-header requirement is itself a CSRF defense — a
+cross-site page can't set a custom header without a CORS preflight, and Core
+sends no permissive CORS headers by default.
+
 ## Verifying the security claims locally
 
 The dual-mode parity test

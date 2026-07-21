@@ -655,8 +655,18 @@ export async function bootServer(
     // the daily briefing via the notification-backed engagement provider.
     // Round-A A-07 — the owner run/watch byte-pipe: forwards the SPA's owner
     // calls (with the browser-presented capability header) verbatim to Core.
-    // Brain holds no owner authority; Core validates every request.
-    registerOwnerProxyRoutes(app, { coreBaseUrl: config.core.baseUrl });
+    // Brain holds no owner authority; Core validates every request. Round-B
+    // B-02: OFF by default so no owner credential transits Brain unless an
+    // operator opts in (`DINA_BRAIN_OWNER_PROXY=1`) — the credential-safe path
+    // is the Core-served owner console (`DINA_CORE_OWNER_CONSOLE=1`). Opting in
+    // accepts that a compromised Brain could skim the reusable bearer.
+    if (process.env.DINA_BRAIN_OWNER_PROXY === '1') {
+      registerOwnerProxyRoutes(app, { coreBaseUrl: config.core.baseUrl });
+      logger.info(
+        {},
+        'owner run/watch proxy enabled (DINA_BRAIN_OWNER_PROXY=1) — the owner capability transits Brain; prefer the Core-served owner console for strict isolation',
+      );
+    }
 
     const notificationRepo = new CoreClientNotificationLogRepository(clients.core);
     setNotificationLogRepository(notificationRepo);

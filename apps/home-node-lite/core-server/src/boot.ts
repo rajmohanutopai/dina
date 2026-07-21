@@ -69,8 +69,9 @@ import {
 import { createLogger } from './logger';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
-import { resolveOwnerCapability } from './server/owner_capability';
 import { registerDebugDispatch } from './server/debug_dispatch';
+import { resolveOwnerCapability } from './server/owner_capability';
+import { registerOwnerConsoleRoute } from './server/owner_console';
 import { initializeStorage } from './storage/init';
 import {
   wireWorkflowPlane,
@@ -579,6 +580,19 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // `x-dina-owner-capability` match, scoped to the run/watch surface.
       ownerCapability: ownerCap.capability,
     });
+    // Round-B B-02 (full fix) — the CORE-SERVED owner console. Opt-in
+    // (`DINA_CORE_OWNER_CONSOLE=1`); serves a self-contained page at /owner
+    // that drives Core's OWN run/watch routes SAME-ORIGIN, so the owner
+    // capability lives only on Core's origin and never transits Brain.
+    const ownerConsolePath = registerOwnerConsoleRoute(app, {
+      enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1',
+    });
+    if (ownerConsolePath !== null) {
+      logger.info(
+        { path: ownerConsolePath },
+        'owner console served (credential-safe: browser → Core, never Brain)',
+      );
+    }
     // Debug control channel — TEST/DEV only, off by default. Lets a test
     // harness drive a real booted node over loopback without signing.
     if (process.env.DINA_DEBUG_MODE === '1') {
