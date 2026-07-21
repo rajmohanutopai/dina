@@ -114,6 +114,15 @@ describe('response_lost owner surface (R5-01/§7)', () => {
     expect(b.lost[0]).toEqual({ reservation_id: 'l1', cursor: 1, reason: 'blob_missing', at: NOW });
   });
 
+  it('A-11: /status reports fetch_paused + fetch_blocked_reason for a paused run (probe-less fallback)', async () => {
+    const runId = startPausedRun();
+    const res = await router.handle(ownerReq('GET', `/v1/run/${runId}/status`));
+    expect(res.status).toBe(200);
+    const b = res.body as { fetch_paused: boolean; fetch_blocked_reason: string | null };
+    expect(b.fetch_paused).toBe(true);
+    expect(b.fetch_blocked_reason).toBe('paused');
+  });
+
   it('skip-lost skips the slot and clears paused_reason when it was the LAST lost slot', async () => {
     const runId = startPausedRun();
     reservations.create(lostReservation({ reservation_id: 'l1', run_id: runId, cursor: 1 }));
@@ -125,6 +134,21 @@ describe('response_lost owner surface (R5-01/§7)', () => {
     expect(res.body).toMatchObject({ reservation_id: 'l1', state: 'skipped', fetch_resumed: true });
     expect(reservations.getById('l1')?.state).toBe('skipped');
     expect(runs.getById(runId)?.paused_reason).toBeNull();
+  });
+
+  it('NEW-6: skip advances the pull cursor PAST the skipped position (permanent gap)', async () => {
+    const runId = startPausedRun();
+    // The lost slot sits at the run's CURRENT fetch position (cursor 0 — the
+    // canonical single-flight loss). Skip must advance the cursor to 1 so the
+    // pacer fetches the NEXT position, never the dead one again.
+    reservations.create(lostReservation({ reservation_id: 'l0', run_id: runId, cursor: 0 }));
+    const res = await router.handle(
+      ownerReq('POST', `/v1/run/${runId}/skip-lost`, { reservation_id: 'l0' }),
+    );
+    expect(res.status).toBe(200);
+    expect(runs.getById(runId)?.fetch_cursor).toBe(1);
+    // No produced count for a skipped position (§13 "without counting it").
+    expect(runs.getById(runId)?.produced_count).toBe(0);
   });
 
   it('skip-lost keeps paused_reason while OTHER lost slots remain', async () => {

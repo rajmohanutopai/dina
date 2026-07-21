@@ -346,6 +346,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
       // Core never stores an unverified card. Result-card bytes ride the wire as
       // `r.result_card` (hex), parallel to a message's `r.payload`.
       let resultCardRef: string | null = null;
+      let resultCardStagedRef: string | null = null;
       if (typeof r.result_card === 'string' && r.result_card !== '') {
         let cardBytes: Uint8Array | null = null;
         try {
@@ -369,11 +370,23 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
             });
             resultCardRef = ref.content_id;
           } catch (err) {
-            // Persona locked at completion (§13): the card is not retained (the outcome
-            // still advances); a re-sent completion on unlock re-stores it. Any other
-            // store fault is likewise non-fatal to outcome advancement.
             if (!(err instanceof PersonaLockedError)) throw err;
-            log({ evt: 'run_plane.result_card_deferred', reason: 'persona_locked', run_id: run.run_id });
+            // Round-A A-04 (§13): a card racing a persona lock is DEVICE-SEALED
+            // like a held fetch — staged into the durable spool with its ref on
+            // the receipt — and re-wrapped under the persona DEK by the unlock
+            // replay. Never dropped-and-hope-for-a-resend. Degraded (no
+            // locked-arrival store): the pre-A-04 behavior, logged.
+            if (plane.lockedArrival !== null) {
+              resultCardStagedRef = JSON.stringify(
+                plane.lockedArrival.stage(
+                  `result-${verified.verified.delegation_id}`,
+                  cardBytes as Uint8Array,
+                ),
+              );
+              log({ evt: 'run_plane.result_card_staged', run_id: run.run_id });
+            } else {
+              log({ evt: 'run_plane.result_card_deferred', reason: 'persona_locked', run_id: run.run_id });
+            }
           }
         }
       }
@@ -386,8 +399,32 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
         // R3-01 — bind the SIGNED digest to the receipt (first-writer-immutable) so a
         // later conflicting completion is rejected before its card can be attached.
         result_card_digest: verified.verified.result_card_digest,
+        result_card_staged_ref: resultCardStagedRef,
         issued_at: verified.verified.issued_at,
       });
+      // Round-B B-01 — a staged card the receipt did NOT adopt (rejected
+      // completion, duplicate of an advanced receipt whose OWN staged/attached
+      // card wins via the upsert COALESCE) is discarded by ITS OWN unique ref:
+      // its staging key + spool blob never linger, and the incumbent's staged
+      // copy is untouched (unique per-stage key ids).
+      if (resultCardStagedRef !== null && plane.lockedArrival !== null) {
+        const adopted =
+          getCompletionReceiptRepository()?.getByDelegationId(verified.verified.delegation_id)
+            ?.result_card_staged_ref === resultCardStagedRef;
+        if (!adopted) {
+          try {
+            plane.lockedArrival.discard(
+              `result-${verified.verified.delegation_id}`,
+              JSON.parse(resultCardStagedRef) as Parameters<
+                NonNullable<typeof plane.lockedArrival>['discard']
+              >[1],
+            );
+          } catch {
+            /* best-effort — the residue/orphan sweeps reap a missed discard */
+          }
+          log({ evt: 'run_plane.staged_card_discarded_unadopted', run_id: run.run_id, outcome });
+        }
+      }
       log({ evt: 'run_plane.completion_ingested', run_id: run.run_id, outcome });
       return true;
     }

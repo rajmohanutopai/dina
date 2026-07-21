@@ -107,6 +107,16 @@ export interface ReservationRepository {
   /** Every `held_by_lock` reservation (unlock replay + boot recovery). */
   listHeldByLock(): ReservationRecord[];
 
+  /** Round-A A-01/NEW-4 — reservations that LEFT the held set with their staged
+   *  ciphertext ref still attached (committed-but-unfinalized after a crash;
+   *  barrier-released; lost/skipped). The residue sweep shreds + acks each and
+   *  then clears the ref. */
+  listStagedResidue(): ReservationRecord[];
+
+  /** Clear the staged-ciphertext ref + held metadata after the staged copy is
+   *  finalized/discarded (state untouched; idempotent). */
+  clearSealedRef(reservationId: string): void;
+
   /** Invalidate every OPEN reservation of a run (barrier / termination, §5.1):
    *  reserved/held_by_lock → released. Returns the invalidated records so the
    *  caller can crypto-shred any staged ciphertext (ISVC-6). */
@@ -259,6 +269,21 @@ export class SQLiteReservationRepository implements ReservationRepository {
       .map(rowToRes);
   }
 
+  listStagedResidue(): ReservationRecord[] {
+    return this.db
+      .query(
+        "SELECT * FROM run_reservations WHERE sealed_response_ref IS NOT NULL AND state NOT IN ('reserved','held_by_lock') ORDER BY cursor ASC",
+      )
+      .map(rowToRes);
+  }
+
+  clearSealedRef(reservationId: string): void {
+    this.db.run(
+      'UPDATE run_reservations SET sealed_response_ref = NULL, held_message_json = NULL WHERE reservation_id = ?',
+      [reservationId],
+    );
+  }
+
   setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
     return (
       this.db.run(
@@ -383,6 +408,24 @@ export class InMemoryReservationRepository implements ReservationRepository {
       .filter((r) => r.state === 'held_by_lock')
       .sort((a, b) => a.cursor - b.cursor)
       .map((r) => ({ ...r }));
+  }
+  listStagedResidue(): ReservationRecord[] {
+    return [...this.rows.values()]
+      .filter(
+        (r) =>
+          r.sealed_response_ref !== null &&
+          r.state !== 'reserved' &&
+          r.state !== 'held_by_lock',
+      )
+      .sort((a, b) => a.cursor - b.cursor)
+      .map((r) => ({ ...r }));
+  }
+  clearSealedRef(reservationId: string): void {
+    const r = this.rows.get(reservationId);
+    if (r) {
+      r.sealed_response_ref = null;
+      r.held_message_json = null;
+    }
   }
   setQueryCorrelation(reservationId: string, correlationId: string, nowMs: number): boolean {
     const r = this.rows.get(reservationId);

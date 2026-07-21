@@ -20,6 +20,7 @@
  *       the dedicated owner dispatch stamps `callerType='owner'`.
  */
 
+import { getFetchEligibilityProbe } from '../../run/admission';
 import { getClassificationJobRepository } from '../../run/classification';
 import { CommandIdempotencyConflictError, recordOrReplayCommand } from '../../run/command_receipt';
 import { getRunDispatchService, getRunPayloadView } from '../../run/dispatch';
@@ -577,11 +578,22 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     if (run === null) return j(404, { error: 'not_found' });
 
     // A run is fetch-paused (a derived condition under `active`) when it cannot
-    // currently admit — for ISVC-1 the observable trigger is a set
-    // `paused_reason` or the run being past its hard TTL. The full derived-set
-    // (queue full / interval / count / persona lock) lands with admission (ISVC-3).
+    // currently admit. Round-A A-11: the plane registers the admission gate as a
+    // side-effect-free probe, so this reports the FULL derived set (§5 —
+    // barrier/state, TTL, paused_reason, cadence, queue cap, count budget,
+    // persona lock, grant), not just paused_reason/TTL. Probe absent (plane not
+    // composed — degraded/test boots) → the paused_reason/TTL approximation.
     const now = Date.now();
-    const fetchPaused = run.paused_reason !== null || now >= run.expires_at;
+    const probe = getFetchEligibilityProbe();
+    const fetchBlockedReason =
+      probe !== null
+        ? probe(run.run_id)
+        : run.paused_reason !== null
+          ? 'paused'
+          : now >= run.expires_at
+            ? 'past_ttl'
+            : null;
+    const fetchPaused = fetchBlockedReason !== null;
 
     // Real pending-decisions list (§11/§12.5 "pending decisions in order"): the
     // classified, awaiting-owner-decision messages, in sequence order. The full
@@ -653,6 +665,11 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       drain_cause: run.drain_cause,
       drain_strength: run.drain_strength,
       fetch_paused: fetchPaused,
+      // A-11 — WHY fetch is currently blocked (null when eligible): the
+      // admission gate's first blocking reason (`not_active` | `past_ttl` |
+      // `paused` | `cadence_not_elapsed` | `queue_full` | `count_exhausted` |
+      // `persona_locked` | `grant_unavailable`).
+      fetch_blocked_reason: fetchBlockedReason,
       paused_reason: run.paused_reason,
       provider_grant_valid_until: run.provider_grant_expires_at_sec,
       counts: {
@@ -683,10 +700,11 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
   });
 
   // POST /v1/run/:id/skip-lost — the owner gives up on a `response_lost` slot
-  // (§7): terminal `skipped`, and when no lost slot remains the run's
-  // `paused_reason` clears so the pacer resumes. (A provider RETRY instead
-  // re-fills the freed cursor through the live ingest; skipping is the owner's
-  // explicit "stop waiting".)
+  // (§7/§13): terminal `skipped`, the pull cursor advances PAST the position
+  // (a permanent gap — the skipped item is never fetched or admitted again),
+  // and when no lost slot remains the run's `paused_reason` clears so the
+  // pacer resumes at the NEXT position. (An owner who wants the provider's
+  // retry uses RESUME instead, which leaves the cursor on the lost position.)
   router.post('/v1/run/:id/skip-lost', async (req) => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
@@ -711,10 +729,33 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
 
     const compute = (): CoreResponse => {
       const now = Date.now();
+      const lostRes = reservations.getById(reservationId);
       const skipped = reservations.skipLost(reservationId, now);
-      if (!skipped) {
+      if (!skipped || lostRes === null) {
         const state = reservations.getById(reservationId)?.state ?? 'missing';
         return j(409, { error: 'conflict', reason: `reservation is ${state}, not response_lost` });
+      }
+      // Round-B NEW-6 (§13 "pull: the fetch_cursor advances past it") — a skip
+      // is a PERMANENT gap: advance the pull cursor past the skipped position
+      // (no produced count) so the pacer fetches the NEXT position and a late
+      // provider replay of the skipped item is never admitted. (An owner who
+      // wants the provider's retry uses RESUME instead — that leaves the
+      // cursor parked on the lost position.)
+      // B-04 — multiple UNORDERED losses: an out-of-order skip (cursor ahead of
+      // the run cursor) is a no-op CAS; when the CURRENT position is skipped,
+      // advance through EVERY contiguous already-skipped cursor so the run can
+      // never resume onto a position the owner permanently skipped.
+      if (runs.advanceCursorPastSkipped(runId, lostRes.cursor, now)) {
+        const skippedCursors = new Set(
+          reservations
+            .listByRun(runId)
+            .filter((r) => r.state === 'skipped')
+            .map((r) => r.cursor),
+        );
+        let cursor = lostRes.cursor + 1;
+        while (skippedCursors.has(cursor) && runs.advanceCursorPastSkipped(runId, cursor, now)) {
+          cursor += 1;
+        }
       }
       // Recompute the pause: with the last lost slot resolved, fetch resumes.
       const anyLost = reservations

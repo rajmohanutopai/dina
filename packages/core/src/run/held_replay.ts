@@ -71,7 +71,12 @@ export function parseSealedRef(raw: string | null): SealedResponseRef | null {
   try {
     const p = JSON.parse(raw) as Partial<SealedResponseRef>;
     if (typeof p.spool_id !== 'string' || typeof p.content_digest !== 'string') return null;
-    return { spool_id: p.spool_id, content_digest: p.content_digest };
+    return {
+      spool_id: p.spool_id,
+      content_digest: p.content_digest,
+      // A-02 — the ref-pinned staging-key id; absent on pre-field refs.
+      ...(typeof p.staged_key_id === 'string' ? { staged_key_id: p.staged_key_id } : {}),
+    };
   } catch {
     return null;
   }
@@ -159,6 +164,7 @@ export class HeldReplayService {
           this.now(),
           'held_by_lock',
         );
+        this.reservations.clearSealedRef(res.reservation_id);
         report.published += 1;
         continue;
       }
@@ -204,6 +210,10 @@ export class HeldReplayService {
       );
       if (committed.committed) {
         this.lockedArrival.finalize(meta.message_id, ref);
+        // A-01 — clear the staged ref so a crash between commit and finalize is
+        // detectable: a committed row that still CARRIES a ref is exactly the
+        // residue the cleanup sweep finalizes on the next boot/tick.
+        this.reservations.clearSealedRef(res.reservation_id);
         report.published += 1;
       } else {
         // Barrier/TTL raced (or the in-order cursor CAS rejected): shred the
@@ -228,10 +238,17 @@ export class HeldReplayService {
     const nowMs = this.now();
     if (!this.reservations.markResponseLost(res.reservation_id, reason, nowMs)) return;
     // The stale staged copy is unrecoverable garbage (a provider RETRY repairs
-    // via a fresh live fetch, not from the spool) — ack the blob + destroy the
-    // staging key when the payload id is known (an unknown id acks the blob and
-    // no-op-destroys a nonexistent key).
-    if (ref !== null) this.lockedArrival.finalize(payloadId ?? res.reservation_id, ref);
+    // via a fresh live fetch, not from the spool) — destroy the staging key,
+    // then ack the blob. A-02: the ref pins the REAL key id, so even a
+    // corrupt-metadata loss (payloadId unknown) shreds the right key.
+    if (ref !== null) {
+      this.lockedArrival.finalize(payloadId ?? res.reservation_id, ref);
+    }
+    // Clear the raw ref either way: a parseable one was just finalized; an
+    // UNPARSEABLE one points at nothing actionable (the orphaned spool blob is
+    // reaped by the age-based spool GC, A-05) — keeping it would make the
+    // residue sweep rescan the row forever.
+    this.reservations.clearSealedRef(res.reservation_id);
     this.runs.setPausedReason(run.run_id, 'response_lost', nowMs);
     if (this.onResponseLost !== undefined) {
       try {

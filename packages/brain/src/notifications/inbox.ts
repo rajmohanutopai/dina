@@ -308,6 +308,7 @@ export function resetNotifications(): void {
  */
 export function mergeNotifications(rows: StoredNotificationItem[]): number {
   let changed = 0;
+  const appended: NotificationItem[] = [];
   for (const row of rows) {
     const item = storedToItem(row);
     const idx = items.findIndex((i) => i.id === item.id);
@@ -317,9 +318,15 @@ export function mergeNotifications(rows: StoredNotificationItem[]): number {
       let insertAt = 0;
       while (insertAt < items.length && items[insertAt]!.firedAt >= item.firedAt) insertAt += 1;
       items.splice(insertAt, 0, item);
+      appended.push(item);
     }
     changed += 1;
   }
+  // Round-A A-06 — a merged-in NEW row fires `appended` so live forwarders
+  // (the brain-server SSE stream) deliver it to connected clients: on the split
+  // server this merge IS how a Core-process notification reaches Brain after
+  // boot (the reconcile poll), not only how a reconnect back-fills.
+  for (const item of appended) fire({ type: 'appended', item });
   if (changed > 0) fire({ type: 'hydrated', loaded: items.length });
   return changed;
 }
@@ -336,6 +343,11 @@ export function mergeNotifications(rows: StoredNotificationItem[]): number {
 export function clearNotificationsMemory(): void {
   items.length = 0;
   lastPurgeAt = 0;
+  // B-03 — cancel outstanding persist retries: a timer surviving an identity
+  // switch must never fire against the next identity's wiring (the retry is
+  // repo-bound anyway; cancelling closes the window entirely).
+  for (const t of pendingPersistRetries) clearTimeout(t);
+  pendingPersistRetries.clear();
   fire({ type: 'hydrated', loaded: 0 });
 }
 
@@ -353,16 +365,42 @@ function fire(event: NotificationEvent): void {
   }
 }
 
-function persist(item: NotificationItem): void {
-  const repo = getNotificationLogRepository();
+/** Round-B B-03 — outstanding persist-retry timers, cancelled on identity
+ *  teardown so a retry can never fire after the repository was swapped. */
+const pendingPersistRetries = new Set<ReturnType<typeof setTimeout>>();
+
+function persist(
+  item: NotificationItem,
+  attempt = 0,
+  boundRepo?: ReturnType<typeof getNotificationLogRepository>,
+): void {
+  // B-03 — a RETRY stays bound to the repository that owned the FIRST attempt
+  // (never re-resolving the swappable global): if identity A's append fails and
+  // the retry fires after identity B is wired, the write goes to A's (now
+  // closed) repo and fails again — never into B's database. Teardown also
+  // cancels outstanding timers via clearNotificationsMemory.
+  const repo = boundRepo ?? getNotificationLogRepository();
   if (repo === null) return;
   try {
     void repo.append(itemToStored(item)).catch((err) => {
-       
-      console.warn('[notifications] persist failed:', err);
+      // Round-A A-06 — a transient durable-write failure (split-server HTTP
+      // blip, busy DB) retries with backoff instead of silently dropping the
+      // durable copy; the idempotent id makes each retry an upsert. After the
+      // budget the failure is logged (metadata only) and the in-memory copy —
+      // which the user already sees — remains authoritative for this session.
+      if (attempt < 3) {
+        const t = setTimeout(() => {
+          pendingPersistRetries.delete(t);
+          persist(item, attempt + 1, repo);
+        }, 2_000 * (attempt + 1));
+        pendingPersistRetries.add(t);
+        (t as { unref?: () => void }).unref?.();
+        return;
+      }
+      console.warn('[notifications] persist failed after retries:', err);
     });
   } catch (err) {
-     
+
     console.warn('[notifications] persist failed:', err);
   }
 }

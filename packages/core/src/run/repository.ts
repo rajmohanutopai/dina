@@ -86,6 +86,15 @@ export interface RunRepository {
     expectedCursor?: number,
   ): boolean;
 
+  /** Round-B NEW-6 (§13 "pull: the fetch_cursor advances past it") — an owner
+   *  SKIP of a `response_lost` slot leaves a PERMANENT gap: advance the pull
+   *  cursor past the skipped position WITHOUT counting it as produced, so the
+   *  next fetch targets the following position and a late provider replay of
+   *  the skipped item is never admitted (no reservation is ever handed that
+   *  cursor again). CAS on `fetch_cursor == skippedCursor` (a fetch-ahead
+   *  cursor already past it needs no advance). */
+  advanceCursorPastSkipped(runId: string, skippedCursor: number, nowMs: number): boolean;
+
   /** Bump decided_count on an owner decision (§5.1 decided-basis count).
    *  Returns the new decided_count (0 if the run is missing). */
   incrementDecided(runId: string, nowMs: number): number;
@@ -342,6 +351,17 @@ export class SQLiteRunRepository implements RunRepository {
     );
   }
 
+  advanceCursorPastSkipped(runId: string, skippedCursor: number, nowMs: number): boolean {
+    return (
+      this.db.run(
+        `UPDATE interactive_runs
+           SET fetch_cursor = ? + 1, updated_at = ?
+         WHERE run_id = ? AND COALESCE(fetch_cursor, 0) = ?`,
+        [skippedCursor, nowMs, runId, skippedCursor],
+      ) > 0
+    );
+  }
+
   incrementDecided(runId: string, nowMs: number): number {
     this.db.run(
       'UPDATE interactive_runs SET decided_count = decided_count + 1, updated_at = ? WHERE run_id = ?',
@@ -565,6 +585,14 @@ export class InMemoryRunRepository implements RunRepository {
     r.fetch_cursor = (r.fetch_cursor ?? 0) + 1;
     r.next_fetch_at = nowMs + intervalMs;
     r.last_commit_at = nowMs;
+    r.updated_at = nowMs;
+    return true;
+  }
+
+  advanceCursorPastSkipped(runId: string, skippedCursor: number, nowMs: number): boolean {
+    const r = this.runs.get(runId);
+    if (!r || (r.fetch_cursor ?? 0) !== skippedCursor) return false;
+    r.fetch_cursor = skippedCursor + 1;
     r.updated_at = nowMs;
     return true;
   }

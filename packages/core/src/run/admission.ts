@@ -36,7 +36,11 @@ export type ReserveRejection =
   | 'queue_full'
   | 'count_exhausted'
   | 'persona_locked'
-  | 'grant_unavailable';
+  | 'grant_unavailable'
+  // Round-A A-03 — `paused_reason` is set (§7 response_lost / §10
+  // provider_grant_unavailable): fetch is PAUSED until the owner resumes
+  // (retry), skips the lost slot, or rebinds the grant.
+  | 'paused';
 
 export type ReserveResult =
   | { ok: true; reservation_id: string; cursor: number }
@@ -124,26 +128,52 @@ export class AdmissionService {
    * inserts a `reserved` reservation at the run's current fetch_cursor and
    * returns it. The caller then fetches and calls {@link commit}.
    */
-  reserve(runId: string): ReserveResult {
+  /**
+   * Round-A A-11 — the FULL admission gate set as a SIDE-EFFECT-FREE check
+   * (§5 "fetch-paused is a derived condition": barrier/state, hard TTL,
+   * `paused_reason`, cadence, queue cap, count budget, persona lock, grant).
+   * `reserve` consumes it before opening a slot; `/status` reports it so
+   * `fetch_paused` reflects the REAL current condition, not just
+   * `paused_reason`/TTL. Returns the first blocking reason, or null.
+   */
+  gateReason(runId: string): ReserveRejection | null {
     const run = this.runRepo.getById(runId);
-    if (run === null) return { ok: false, reason: 'not_active' };
+    if (run === null) return 'not_active';
     const nowMs = this.now();
 
-    if (run.state !== 'active') return { ok: false, reason: 'not_active' };
-    if (nowMs >= run.expires_at) return { ok: false, reason: 'past_ttl' };
+    if (run.state !== 'active') return 'not_active';
+    if (nowMs >= run.expires_at) return 'past_ttl';
+    // A-03 — an OWNER-ACTION pause blocks fetch outright (§7 response_lost:
+    // "run paused for owner skip/resume/stop"; §7.1 push_grant_unavailable:
+    // lifts only via an /update rebind). Without this gate the pacer kept
+    // polling and a retry was admitted while the loss and pause stood.
+    // `provider_grant_unavailable` is NOT gated here — §10 says "Core
+    // auto-revalidates and resumes", so it falls through to the grant check
+    // below: an invalid grant re-reports `grant_unavailable`; a rebound valid
+    // grant admits again and the pacer clears the stale pause marker.
+    if (run.paused_reason === 'response_lost' || run.paused_reason === 'push_grant_unavailable') {
+      return 'paused';
+    }
     if (run.next_fetch_at !== null && nowMs < run.next_fetch_at) {
-      return { ok: false, reason: 'cadence_not_elapsed' };
+      return 'cadence_not_elapsed';
     }
 
     const open = this.resRepo.countOpen(runId);
     const outstanding = this.counts.enqueuedUndecided(runId) + open;
-    if (outstanding >= run.queue_cap) return { ok: false, reason: 'queue_full' };
+    if (outstanding >= run.queue_cap) return 'queue_full';
 
-    if (!this.withinCountBudget(run, open, outstanding)) {
-      return { ok: false, reason: 'count_exhausted' };
-    }
-    if (!this.personaOpen(run.persona)) return { ok: false, reason: 'persona_locked' };
-    if (!this.providerGrantValid(run, nowMs)) return { ok: false, reason: 'grant_unavailable' };
+    if (!this.withinCountBudget(run, open, outstanding)) return 'count_exhausted';
+    if (!this.personaOpen(run.persona)) return 'persona_locked';
+    if (!this.providerGrantValid(run, nowMs)) return 'grant_unavailable';
+    return null;
+  }
+
+  reserve(runId: string): ReserveResult {
+    const blocked = this.gateReason(runId);
+    if (blocked !== null) return { ok: false, reason: blocked };
+    const run = this.runRepo.getById(runId);
+    if (run === null) return { ok: false, reason: 'not_active' };
+    const nowMs = this.now();
 
     // DISTINCT cursor per open reservation (§7 single-flight-per-cursor): the
     // run's `fetch_cursor` only advances at COMMIT, so under fetch-ahead every
@@ -223,6 +253,22 @@ export class AdmissionService {
           throw ABORT;
         }
         if (!this.resRepo.commit(reservationId, input, nowMs, from)) throw ABORT;
+        // A-03 — a commit at this cursor SUPERSEDES any stale `response_lost`
+        // row parked on the same position (the owner resumed and the provider's
+        // retry re-filled it): terminal-skip the stale row and clear the
+        // `response_lost` pause once no loss remains — atomic with the commit.
+        for (const sibling of this.resRepo.listByRun(res.run_id)) {
+          if (sibling.state === 'response_lost' && sibling.cursor === res.cursor) {
+            this.resRepo.skipLost(sibling.reservation_id, nowMs);
+          }
+        }
+        const runNow = this.runRepo.getById(res.run_id);
+        if (runNow !== null && runNow.paused_reason === 'response_lost') {
+          const anyLost = this.resRepo
+            .listByRun(res.run_id)
+            .some((r) => r.state === 'response_lost');
+          if (!anyLost) this.runRepo.setPausedReason(res.run_id, null, nowMs);
+        }
         // Caller's lifecycle enqueue + classify + payload-publish, atomic with the
         // CAS above (F2). A throw here aborts the whole transaction.
         if (onCommitted !== undefined) onCommitted();
@@ -307,4 +353,24 @@ export class AdmissionService {
     if (run.provider_grant_expires_at_sec === null) return true;
     return Math.floor(nowMs / 1000) < run.provider_grant_expires_at_sec;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Round-A A-11 — the fetch-eligibility probe the owner `/status` route reads.
+// The plane registers its AdmissionService's `gateReason` here (same pattern as
+// `setRunPayloadView`), so the route reports the FULL derived condition without
+// reaching into the plane. Absent a probe the route falls back to the
+// paused_reason/TTL approximation.
+// ---------------------------------------------------------------------------
+
+export type FetchEligibilityProbe = (runId: string) => ReserveRejection | null;
+
+let eligibilityProbe: FetchEligibilityProbe | null = null;
+
+export function setFetchEligibilityProbe(p: FetchEligibilityProbe | null): void {
+  eligibilityProbe = p;
+}
+
+export function getFetchEligibilityProbe(): FetchEligibilityProbe | null {
+  return eligibilityProbe;
 }

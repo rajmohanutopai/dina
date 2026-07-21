@@ -465,4 +465,26 @@ describe('Notifications inbox (5.66)', () => {
       expect(listNotifications().map((i) => i.title)).toEqual(['normal']);
     });
   });
+
+  describe('mergeNotifications (round-A A-06 — split-server reconcile)', () => {
+    it('a merged-in NEW row fires `appended` (so the SSE stream forwards it live)', async () => {
+      const { mergeNotifications } = await import('../../src/notifications/inbox');
+      appendNotification({ id: 'seen', kind: 'run', title: 'seen', body: '' });
+      const events: NotificationEvent[] = [];
+      subscribeNotifications((e) => events.push(e));
+
+      const merged = mergeNotifications([
+        // Already-present row: updated in place, NOT re-appended.
+        { id: 'seen', kind: 'run', title: 'seen', body: '', firedAt: 1, readAt: null, sourceId: 'seen', deepLink: null, expiresAt: null, dataScope: 'real' },
+        // NEW row (appended by the CORE process after Brain boot on lite).
+        { id: 'fresh', kind: 'run', title: 'fresh', body: '', firedAt: 2, readAt: null, sourceId: 'fresh', deepLink: null, expiresAt: null, dataScope: 'real' },
+      ]);
+      expect(merged).toBe(2);
+      const appended = events.filter((e) => e.type === 'appended');
+      expect(appended).toHaveLength(1);
+      expect(appended[0]?.type === 'appended' && appended[0].item.id).toBe('fresh');
+      // The hydrated event still fires so badge subscribers recompute.
+      expect(events.some((e) => e.type === 'hydrated')).toBe(true);
+    });
+  });
 });

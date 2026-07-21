@@ -41,6 +41,22 @@ import {
   wirePersonaScopeCleanups,
   SqliteNotificationLogRepository,
   setNotificationLogRepository,
+  // Round-A NEW-2/A-08 — the interactive-run + watch singletons the boot
+  // installs; teardown must null them like every other identity-scoped global.
+  setRunRepository,
+  setRunService,
+  setReservationRepository,
+  setMessageRepository,
+  setClassificationJobRepository,
+  setCompletionReceiptRepository,
+  setCommandReceiptRepository,
+  setCommandTxRunner,
+  setErasureKeyStore,
+  setRunDispatchService,
+  setRunPayloadView,
+  setHeldReplayHook,
+  setWatchService,
+  setFetchEligibilityProbe,
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
@@ -100,6 +116,8 @@ import {
   shutdownPersistence,
   type DatabaseAdapter,
 } from '@dina/core/storage';
+
+import { setOwnerRunClient } from '../services/owner_run_client';
 
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
 // `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
@@ -511,6 +529,31 @@ export async function shutdownAllPersistence(): Promise<void> {
     // unwire the repo so a post-teardown append can't land in the closed DB.
     clearNotificationsMemory();
     setNotificationLogRepository(null);
+    // Interactive-run plane + watch singletons (round-A NEW-2/A-08) — the same
+    // closed-DB / cross-identity class as the resets around this block. Boot
+    // installed every one of these bound to THIS identity's adapter (and the
+    // owner client to this identity's router + owner capability); without the
+    // nulls, a post-teardown `getRunService()`/`getOwnerRunClient()` in the
+    // same JS process still reaches the previous identity until the next boot
+    // happens to overwrite them. Fail-closed: absent singletons throw/no-op.
+    setRunRepository(null);
+    setRunService(null);
+    setReservationRepository(null);
+    setMessageRepository(null);
+    setClassificationJobRepository(null);
+    setCompletionReceiptRepository(null);
+    setCommandReceiptRepository(null);
+    setCommandTxRunner(null);
+    setErasureKeyStore(null);
+    setRunDispatchService(null);
+    setRunPayloadView(null);
+    setHeldReplayHook(null);
+    setWatchService(null);
+    // Round-B B-05 — the A-11 eligibility probe is a module global too; the
+    // plane's stop() clears it on the async dispose path, but this synchronous
+    // teardown must not depend on that ordering.
+    setFetchEligibilityProbe(null);
+    setOwnerRunClient(null);
     // Staging inbox — same cross-identity in-memory leak as chat/quarantine.
     // It caches in-flight /remember content (raw, pre-classification). Null
     // the repo first so the reset's repo.clear() is a no-op, and pass

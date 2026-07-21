@@ -244,4 +244,35 @@ describe('GC vs publish (§13)', () => {
     expect(store.gcPayload('pin')).toBe(true);
     expect(store.blobState('pin')).toBeNull();
   });
+
+  it('A-05: sweepMaintenance reclaims STALE prepared pins + GCs shredded published blobs, never live ones', () => {
+    const cipher = new StubPersonaCipher();
+    cipher.open('general');
+    const erasure = new InMemoryErasureKeyStore();
+    const { store } = makeStore(erasure, cipher);
+    const enc2 = new TextEncoder();
+
+    // A crashed prepare from 20 minutes ago (never published) — its leaf key
+    // and ciphertext would otherwise live forever.
+    const old = Date.now() - 20 * 60_000;
+    store.preparePayload({ payloadId: 'stale', runId: 'r1', persona: 'general', plaintext: enc2.encode('a') });
+    db.run('UPDATE run_payload_blobs SET updated_at = ? WHERE payload_id = ?', [old, 'stale']);
+    // A FRESH prepare (mid-publish) — must survive.
+    store.preparePayload({ payloadId: 'fresh', runId: 'r1', persona: 'general', plaintext: enc2.encode('b') });
+    // A live published payload — must survive.
+    store.putPayload({ payloadId: 'live', runId: 'r1', persona: 'general', plaintext: enc2.encode('c') });
+    // A published-then-crypto-shredded payload — physical GC due.
+    store.putPayload({ payloadId: 'shredded', runId: 'r1', persona: 'general', plaintext: enc2.encode('d') });
+    erasure.destroy('shredded');
+
+    const report = store.sweepMaintenance();
+    expect(report.reclaimed_prepared).toBe(1);
+    expect(report.gc_blobs).toBe(1);
+    expect(store.blobState('stale')).toBeNull();
+    expect(erasure.has('stale')).toBe(false);
+    expect(store.blobState('fresh')).toBe('prepared');
+    expect(store.blobState('live')).toBe('published');
+    expect(store.getPayload('live', 'general')).not.toBeNull();
+    expect(store.blobState('shredded')).toBeNull();
+  });
 });

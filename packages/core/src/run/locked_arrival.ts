@@ -42,24 +42,36 @@ export interface RunSpool {
   peek(id: string): Uint8Array | null;
   /** Remove after a committed publish / a terminal discard. */
   ack(id: string): void;
+  /** Round-A A-05 — ids of blobs stored before `cutoffMs` (orphan GC: the
+   *  plane deletes any that no live `held_by_lock` ref reaches). Optional so
+   *  minimal test doubles keep working; without it orphan GC is skipped. */
+  listStaleIds?(cutoffMs: number, limit: number): string[];
 }
 
 /** In-memory spool for tests. The Node fs impl (fsync + atomic rename) mirrors
  *  home-node-lite's `ingress/dead_drop.ts`. */
 export class InMemoryRunSpool implements RunSpool {
-  private readonly blobs = new Map<string, Uint8Array>();
+  private readonly blobs = new Map<string, { blob: Uint8Array; createdAt: number }>();
   private seq = 0;
   store(blob: Uint8Array): string {
     const id = `spool-${(++this.seq).toString(36)}`;
-    this.blobs.set(id, new Uint8Array(blob));
+    this.blobs.set(id, { blob: new Uint8Array(blob), createdAt: Date.now() });
     return id;
   }
   peek(id: string): Uint8Array | null {
     const b = this.blobs.get(id);
-    return b ? new Uint8Array(b) : null;
+    return b ? new Uint8Array(b.blob) : null;
   }
   ack(id: string): void {
     this.blobs.delete(id);
+  }
+  listStaleIds(cutoffMs: number, limit: number): string[] {
+    const out: string[] = [];
+    for (const [id, v] of this.blobs.entries()) {
+      if (v.createdAt < cutoffMs) out.push(id);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 }
 
@@ -83,10 +95,21 @@ export class NaclDeviceSealer implements DeviceSealer {
   }
 }
 
-/** The `sealed_response_ref` a `held_by_lock` reservation carries (§13). */
+/** The `sealed_response_ref` a `held_by_lock` reservation carries (§13).
+ *  `staged_key_id` (round-A A-02) pins the EXACT erasure-store id of the
+ *  staging leaf key, so cleanup can shred the real key even when the held
+ *  message metadata is unreadable (it must never guess an id and ack the
+ *  spool while the true key survives). Optional only for refs persisted
+ *  before the field existed — those fall back to `staged:<payloadId>`. */
 export interface SealedResponseRef {
   spool_id: string;
   content_digest: string;
+  staged_key_id?: string;
+}
+
+/** The staging leaf key's erasure id for a ref: the pinned id, else legacy. */
+function refKeyId(ref: SealedResponseRef, payloadId: string): string {
+  return ref.staged_key_id ?? stagedKeyId(payloadId);
 }
 
 export type PublishOutcome =
@@ -182,9 +205,16 @@ export class LockedArrivalStore {
     const sealedKp = this.sealer.seal(kP);
     const wrappedSealedKp = aeadEncrypt(kE, sealedKp);
 
-    this.erasure().put(stagedKeyId(payloadId), kE);
+    // A-02 — pin the key id IN the ref, so cleanup shreds the real key even
+    // when the held metadata later proves unreadable. B-01 — the id is UNIQUE
+    // per staged object (suffixed with a digest of the fresh random data key),
+    // so staging the same payloadId twice (an idempotent provider re-send of a
+    // completion while locked) can never overwrite the key protecting the
+    // previously staged copy; the loser is discarded by ITS OWN ref.
+    const keyId = `${stagedKeyId(payloadId)}:${bytesToHex(sha256(kP)).slice(0, 16)}`;
+    this.erasure().put(keyId, kE);
     const spoolId = this.spool.store(serializeStaged(wrappedSealedKp, blob));
-    return { spool_id: spoolId, content_digest: contentDigest };
+    return { spool_id: spoolId, content_digest: contentDigest, staged_key_id: keyId };
   }
 
   /**
@@ -203,7 +233,7 @@ export class LockedArrivalStore {
     if (bytesToHex(sha256(blob)) !== ref.content_digest) {
       return { outcome: 'response_lost', reason: 'digest_mismatch' };
     }
-    const kE = this.erasure().get(stagedKeyId(payloadId));
+    const kE = this.erasure().get(refKeyId(ref, payloadId));
     if (kE === null) return { outcome: 'response_lost', reason: 'erasure_key_gone' };
     try {
       const sealedKp = aeadDecrypt(kE, wrappedSealedKp);
@@ -215,13 +245,15 @@ export class LockedArrivalStore {
   }
 
   /**
-   * Post-commit cleanup: ack-delete the spool blob + destroy the staging leaf
-   * key. Idempotent — safe to re-run after a crash-between-commit-and-finalize
+   * Post-commit cleanup: destroy the staging leaf key, THEN ack-delete the
+   * spool blob (A-02 shred-first ordering — a crash between the two leaves an
+   * INERT blob for the residue sweep, never a live key over a deleted blob).
+   * Idempotent — safe to re-run after a crash-between-commit-and-finalize
    * (the replay detects the already-admitted message and just finalizes).
    */
   finalize(payloadId: string, ref: SealedResponseRef): void {
+    this.erasure().destroy(refKeyId(ref, payloadId));
     this.spool.ack(ref.spool_id);
-    this.erasure().destroy(stagedKeyId(payloadId));
   }
 
   /**
@@ -232,11 +264,12 @@ export class LockedArrivalStore {
    */
   publish(payloadId: string, runId: string, persona: string, ref: SealedResponseRef): PublishOutcome {
     // Crash-recovery no-op (§7): if the persona blob was already published (crash
-    // after the Tier-0 CAS, before the spool ack), just ack and return — never a
-    // duplicate insert, never a double-admit.
+    // after the Tier-0 CAS, before the spool ack), FINALIZE (destroy the staging
+    // key, then ack — B-01: a bare ack left the staging key alive forever) and
+    // return — never a duplicate insert, never a double-admit.
     const alreadyPublished = this.payloads.contentId(payloadId);
     if (alreadyPublished !== null && this.payloads.blobState(payloadId) === 'published') {
-      this.spool.ack(ref.spool_id);
+      this.finalize(payloadId, ref);
       return { outcome: 'published', ref: { payload_id: payloadId, content_id: alreadyPublished } };
     }
 
@@ -269,10 +302,11 @@ export class LockedArrivalStore {
   /**
    * Discard a held payload when a barrier intervenes before unlock (§7): crypto-
    * shred the leaf key (staged blob → inert) and ack-delete the spool blob
-   * WITHOUT decryption.
+   * WITHOUT decryption. Shreds by the ref-pinned key id (A-02), so a corrupt
+   * held metadata can never make cleanup destroy the wrong key.
    */
   discard(payloadId: string, ref: SealedResponseRef): void {
-    this.erasure().destroy(stagedKeyId(payloadId)); // crypto-shred (no decryption)
+    this.erasure().destroy(refKeyId(ref, payloadId)); // crypto-shred (no decryption)
     this.spool.ack(ref.spool_id); // physical delete of the inert ciphertext
   }
 }
@@ -316,5 +350,14 @@ export class SQLiteRunSpool implements RunSpool {
 
   ack(id: string): void {
     this.db.run('DELETE FROM run_spool WHERE spool_id = ?', [id]);
+  }
+
+  listStaleIds(cutoffMs: number, limit: number): string[] {
+    return this.db
+      .query<{ spool_id: string }>(
+        'SELECT spool_id FROM run_spool WHERE created_at < ? ORDER BY created_at ASC LIMIT ?',
+        [cutoffMs, limit],
+      )
+      .map((r) => String(r.spool_id));
   }
 }

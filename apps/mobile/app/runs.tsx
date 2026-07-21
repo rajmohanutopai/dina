@@ -146,6 +146,9 @@ function NewRunForm({ onStarted }: { onStarted: () => void }) {
   const [serviceUri, setServiceUri] = useState('');
   const [persona, setPersona] = useState('general');
   const [ttlMinutes, setTtlMinutes] = useState('60');
+  // A-10 (§10) — optional provider-issued grant for a protected/known_only
+  // service; without it a protected run's queries are silently dropped.
+  const [grantId, setGrantId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,6 +167,7 @@ function NewRunForm({ onStarted }: { onStarted: () => void }) {
       serviceUri: serviceUri.trim(),
       persona: persona.trim(),
       ttlSeconds: Math.round(Number(ttlMinutes) * 60),
+      ...(grantId.trim() !== '' ? { providerGrantId: grantId.trim() } : {}),
     })
       .then((runId) => {
         if (runId === null) setError('Could not start the run.');
@@ -178,6 +182,7 @@ function NewRunForm({ onStarted }: { onStarted: () => void }) {
       <RunFormField label="Service URI" value={serviceUri} onChange={setServiceUri} placeholder="at://…" testID="run-field-service" />
       <RunFormField label="Persona" value={persona} onChange={setPersona} placeholder="general" testID="run-field-persona" />
       <RunFormField label="Run for (minutes)" value={ttlMinutes} onChange={setTtlMinutes} placeholder="60" keyboardType="numeric" testID="run-field-ttl" />
+      <RunFormField label="Provider grant (optional)" value={grantId} onChange={setGrantId} placeholder="grant id for a protected service" testID="run-field-grant" />
       {error !== null ? <Text style={styles.formError}>{error}</Text> : null}
       <Pressable
         testID="run-start-submit"

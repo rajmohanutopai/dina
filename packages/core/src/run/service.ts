@@ -191,6 +191,15 @@ export class RunService {
     if (canResume(run.state)) {
       this.repo.resume(runId, this.now());
     }
+    // Round-A A-03 (§7) — resume on an ACTIVE run paused by `response_lost` is
+    // the owner's "wait for the provider's retry" choice: clear the pause so
+    // fetch re-polls the un-advanced cursor; the provider's replayed response
+    // re-fills the lost position through the normal admission commit (which
+    // then terminal-skips the stale lost row). The grant pause is NOT cleared
+    // here — it lifts only when `/update` rebinds a valid grant (§10).
+    if (run.state === 'active' && run.paused_reason === 'response_lost') {
+      this.repo.setPausedReason(runId, null, this.now());
+    }
     return this.currentResult(runId);
   }
 

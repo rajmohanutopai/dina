@@ -272,10 +272,15 @@ function rowToMsg(row: DBRow): MessageRecord {
 const FENCEABLE_SQL =
   "('enqueued','classification_pending','classified','approved','risk_pending','risk_authorized','dispatch_pending')";
 const UNDECIDED_SQL = "('enqueued','classification_pending','classified')";
-// 81B-07 — pre-dispatch decidable states that expire on their own/the run's hard
-// bound (NOT approved/risk_authorized/dispatch_pending, which are past the owner
-// decision + already draining under their own cause).
-const EXPIRABLE_SQL = "('enqueued','classification_pending','classified','risk_pending')";
+// 81B-07 + round-A A-09 — pre-CLAIM states that expire on their own/the run's
+// hard bound. `approved`/`risk_authorized` are included: past expiry the
+// dispatch guard refuses the claim anyway (an expired action must never
+// dispatch), so without a terminal transition the row would stay "actionable"
+// forever — rescanned every engine tick and never crypto-shredded. Only a
+// CLAIMED effect (`sending`/`dispatched`) and the lock-held `dispatch_pending`
+// re-arm survive expiry, reconciled by the drain deadline instead (§6.3/§9).
+const EXPIRABLE_SQL =
+  "('enqueued','classification_pending','classified','risk_pending','approved','risk_authorized')";
 
 export class SQLiteMessageRepository implements MessageRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -568,6 +573,8 @@ export class InMemoryMessageRepository implements MessageRepository {
       'classification_pending',
       'classified',
       'risk_pending',
+      'approved',
+      'risk_authorized',
     ]);
     const runExpired = runExpiresAt <= nowMs;
     const out: string[] = [];

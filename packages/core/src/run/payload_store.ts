@@ -323,4 +323,47 @@ export class PayloadStore {
     this.erasure().destroy(payloadId);
     return true;
   }
+
+  /**
+   * Round-A A-05 — ONE bounded maintenance pass, wired into the plane's boot
+   * recovery + cadence (the primitives above existed but had no production
+   * caller, so a crash between prepare and commit retained a live leaf key +
+   * ciphertext indefinitely, and shredded/abandoned blobs accumulated forever).
+   *
+   *   1. Prepared-lease reclaim: a `prepared` pin older than `preparedTtlMs`
+   *      is a crashed prepare (a live prepare→commit is milliseconds) —
+   *      abandon it, then GC (which destroys its residual leaf key + row).
+   *   2. Physical GC: `abandoned` pins and `published`-but-crypto-shredded
+   *      blobs are reclaimed via {@link gcPayload}'s own guards (a LIVE
+   *      published blob — leaf key present — is never touched, so GC and
+   *      publish never race; §13 reachability holds because a blob referenced
+   *      by a live message/receipt keeps its leaf key until terminal shred).
+   */
+  sweepMaintenance(
+    opts: { preparedTtlMs?: number; limit?: number } = {},
+  ): { reclaimed_prepared: number; gc_blobs: number } {
+    const preparedTtl = opts.preparedTtlMs ?? 600_000;
+    const limit = opts.limit ?? 200;
+    const now = this.now();
+
+    let reclaimed = 0;
+    const stale = this.db.query<{ payload_id: string }>(
+      "SELECT payload_id FROM run_payload_blobs WHERE state = 'prepared' AND updated_at < ? ORDER BY updated_at ASC LIMIT ?",
+      [now - preparedTtl, limit],
+    );
+    for (const r of stale) {
+      const id = String(r.payload_id);
+      if (this.abandonPrepared(id) && this.gcPayload(id)) reclaimed += 1;
+    }
+
+    let gced = 0;
+    const candidates = this.db.query<{ payload_id: string }>(
+      "SELECT payload_id FROM run_payload_blobs WHERE state IN ('abandoned','published') ORDER BY updated_at ASC LIMIT ?",
+      [limit],
+    );
+    for (const r of candidates) {
+      if (this.gcPayload(String(r.payload_id))) gced += 1;
+    }
+    return { reclaimed_prepared: reclaimed, gc_blobs: gced };
+  }
 }

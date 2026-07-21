@@ -152,6 +152,31 @@ function runSuite(makeRepo: () => MessageRepository): void {
     const ev = JSON.parse(String(repo.getById('a')?.reconciliation_evidence)) as unknown[];
     expect(ev.length).toBe(2);
   });
+
+  it('A-09: expireDecidable expires unclaimed approved/risk_authorized past their bound (claimed survives)', () => {
+    const repo = makeRepo();
+    // Past-expiry, unclaimed post-decision states: without a terminal transition
+    // the dispatch guard refuses them forever while the engine rescans them
+    // every tick — zombies that also never crypto-shred.
+    repo.create(
+      msg({ message_id: 'auth', state: 'risk_authorized', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+    );
+    repo.create(
+      msg({ message_id: 'appr', dedup_key: 'k2', sequence: 2, state: 'approved', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+    );
+    // A CLAIMED effect survives expiry (reconciled by the drain deadline).
+    repo.create(
+      msg({ message_id: 'sent', dedup_key: 'k3', sequence: 3, state: 'sending', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+    );
+    const expired = repo.expireDecidable('r1', NOW, NOW + 60_000);
+    expect(new Set(expired)).toEqual(new Set(['auth', 'appr']));
+    expect(repo.getById('auth')?.state).toBe('expired');
+    expect(repo.getById('appr')?.state).toBe('expired');
+    expect(repo.getById('sent')?.state).toBe('sending');
+    // The run stays listed ONLY for the claimed `sending` row (re-driven for
+    // dispatch retries) — the two expired zombies no longer count.
+    expect(repo.listRunIdsWithActionableMessages(10)).toEqual(['r1']);
+  });
 }
 
 describe('message state-machine helpers', () => {

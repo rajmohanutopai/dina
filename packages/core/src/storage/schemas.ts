@@ -1252,6 +1252,11 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- (rejected before any card is stored), so a card signed for one outcome can
         -- never be attached to another. Null when the completion carried no card.
         result_card_digest TEXT,
+        -- Round-A A-04 (§13) — a result card that arrived while its persona was
+        -- LOCKED is device-sealed into the run spool; this ref (JSON: spool id +
+        -- digest + staged key id) points at the staged copy until the unlock
+        -- replay re-wraps it under the persona DEK and attaches result_card_ref.
+        result_card_staged_ref TEXT,
         receipt_state TEXT NOT NULL DEFAULT 'verified_pending'
           CHECK (receipt_state IN ('verified_pending','advanced')),
         issued_at INTEGER NOT NULL,

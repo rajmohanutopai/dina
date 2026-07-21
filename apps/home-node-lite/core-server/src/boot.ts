@@ -69,6 +69,7 @@ import {
 import { createLogger } from './logger';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
+import { resolveOwnerCapability } from './server/owner_capability';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { initializeStorage } from './storage/init';
 import {
@@ -483,9 +484,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // surface instead of health-only scaffolding while keeping readiness
   // honest about missing storage/MsgBox.
   const coreRouterStart = Date.now();
+  // Round-A A-07 — the owner capability for the §12.5 run/watch control plane.
+  // Minted/loaded by CORE (env or a 0600 file in the vault dir); presented by
+  // the OWNER'S BROWSER on every owner call; validated only here. Brain never
+  // holds it — the brain-server merely byte-pipes the header through.
+  const ownerCap = resolveOwnerCapability(process.env, config.storage.vaultDir);
+  logger.info(
+    { source: ownerCap.source, ...(ownerCap.filePath !== undefined ? { file: ownerCap.filePath } : {}) },
+    'owner capability resolved (value never logged) — paste it into the web UI to control runs',
+  );
   let coreRouter: CoreRouter;
   try {
-    coreRouter = createCoreRouter();
+    coreRouter = createCoreRouter({ ownerCapability: ownerCap.capability });
   } catch (err) {
     trace.push({
       step: 'core_router',
@@ -565,6 +575,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       coreRouter,
       app,
       skipRoutes: [{ method: 'GET', path: HEALTHZ_PATH }],
+      // A-07 — the HTTP adapter stamps the owner identity on a timing-safe
+      // `x-dina-owner-capability` match, scoped to the run/watch surface.
+      ownerCapability: ownerCap.capability,
     });
     // Debug control channel — TEST/DEV only, off by default. Lets a test
     // harness drive a real booted node over loopback without signing.

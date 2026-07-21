@@ -19,7 +19,9 @@
  * no transport — the boot supplies the signed D2D sender + ISVC-8 verifier.
  */
 
-import { AdmissionService } from './admission';
+import { PersonaLockedError } from '../errors';
+
+import { AdmissionService, setFetchEligibilityProbe } from './admission';
 import { renderRunPayloadView } from './card';
 import { RunClassifyService, getClassificationJobRepository, type ClassificationJobRepository } from './classification';
 import { setCommandTxRunner } from './command_receipt';
@@ -31,6 +33,7 @@ import {
   type IngestOutcome,
 } from './completion';
 import { RunDispatchService, setRunDispatchService, setRunPayloadView } from './dispatch';
+import { isRunTerminal } from './domain';
 import { RunEngine, type EmitDelegationEffect, type EmitQueryEffect } from './engine';
 import { SQLiteErasureKeyStore, getErasureKeyStore, type ErasureKeyStore } from './erasure_store';
 import { HeldReplayService, parseSealedRef, type HeldReplayReport } from './held_replay';
@@ -49,6 +52,7 @@ import { getReservationRepository, type ReservationRecord, type ReservationRepos
 import { RunService, setRunService } from './service';
 import { RunSweeper, RunTerminationService } from './termination';
 import { makeReentrantTxRunner, type TxRunner } from './tx';
+
 
 import type { RunRecord } from './domain';
 import type { DatabaseAdapter } from '../storage/db_adapter';
@@ -174,6 +178,9 @@ export interface RunPlane {
   readonly runService: RunService;
   /** Null when the locked-arrival store is not composed (degraded mode). */
   readonly heldReplay: HeldReplayService | null;
+  /** A-04 — the composed locked-arrival store (device-seal staging for lock-
+   *  raced responses AND result cards). Null in degraded mode. */
+  readonly lockedArrival: LockedArrivalStore | null;
 }
 
 function need<T>(v: T | null, what: string): T {
@@ -412,15 +419,20 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     fenceClassificationJob: (messageId, terminal) => classify.fenceJob(messageId, terminal),
     reconcileClaimed: (messageId) => completion.reconcileAtDeadline(messageId),
     shredPayloads: (runId) => payloads.shredRun(runId),
-    // R5-01 — a barrier that invalidates a `held_by_lock` reservation crypto-
-    // shreds + ack-deletes its staged spool blob WITHOUT decryption (§7).
+    // R5-01 — a terminal path that invalidated a `held_by_lock` reservation
+    // crypto-shreds + ack-deletes its staged spool blob WITHOUT decryption (§7),
+    // POST-COMMIT only (forceTerminate collects in-tx, discards after; a barrier
+    // inside an ambient tx leaves the row as staged residue for the sweep —
+    // round-A NEW-4). The ref is cleared so the residue scan converges.
     ...(lockedArrival !== undefined
       ? {
           discardHeld: (res: ReservationRecord) => {
             const ref = parseSealedRef(res.sealed_response_ref);
-            if (ref === null) return;
-            const meta = parseHeldMessageMeta(res.held_message_json);
-            lockedArrival.discard(meta?.message_id ?? res.reservation_id, ref);
+            if (ref !== null) {
+              const meta = parseHeldMessageMeta(res.held_message_json);
+              lockedArrival.discard(meta?.message_id ?? res.reservation_id, ref);
+            }
+            reservations.clearSealedRef(res.reservation_id);
           },
         }
       : {}),
@@ -466,6 +478,137 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   const classifyMs = deps.classifyIntervalMs ?? 10_000;
   const completionMs = deps.completionIntervalMs ?? 30_000;
   const log = deps.log ?? (() => undefined);
+
+  // Round-A A-04 (§13 "a result card arriving while the persona is locked is
+  // device-sealed like a held fetch and re-wrapped under the persona DEK on
+  // unlock") — attach staged result cards whose persona is now open. Loss
+  // clears the pointer (the OUTCOME already advanced; a provider re-send can
+  // still re-attach via the digest-gated null→non-null upgrade). A terminal
+  // run's staged card is crypto-shred-discarded with the run.
+  const replayStagedCards = (personaFilter: ((p: string) => boolean) | null): void => {
+    if (lockedArrival === undefined) return;
+    for (const receipt of receipts.listStagedCards()) {
+      const payloadId = `result-${receipt.delegation_id}`;
+      const ref = parseSealedRef(receipt.result_card_staged_ref);
+      if (ref === null) {
+        log({ evt: 'run_plane.staged_card_ref_corrupt', delegation_id: receipt.delegation_id });
+        receipts.clearStagedCard(receipt.delegation_id, now());
+        continue;
+      }
+      const run = runs.getById(receipt.run_id);
+      if (run === null || isRunTerminal(run.state)) {
+        lockedArrival.discard(payloadId, ref);
+        receipts.clearStagedCard(receipt.delegation_id, now());
+        continue;
+      }
+      // B-01 convergence — a crash between attach and finalize left the card
+      // ATTACHED with its staged pointer intact: just finalize (destroy the
+      // staging key, ack the blob) and clear; never re-publish.
+      if (receipt.result_card_ref !== null) {
+        lockedArrival.finalize(payloadId, ref);
+        receipts.clearStagedCard(receipt.delegation_id, now());
+        continue;
+      }
+      if (personaFilter !== null && !personaFilter(run.persona)) continue;
+      if (!deps.isPersonaOpen(run.persona)) continue;
+      const recovered = lockedArrival.recover(payloadId, ref);
+      if (recovered.outcome === 'response_lost') {
+        log({
+          evt: 'run_plane.staged_card_lost',
+          delegation_id: receipt.delegation_id,
+          reason: recovered.reason,
+        });
+        lockedArrival.finalize(payloadId, ref);
+        receipts.clearStagedCard(receipt.delegation_id, now());
+        continue;
+      }
+      try {
+        const stored = payloads.putPayload({
+          payloadId,
+          runId: run.run_id,
+          persona: run.persona,
+          plaintext: recovered.plaintext,
+        });
+        // B-01 ordering: attach (staged pointer KEPT) → finalize (destroy the
+        // staging key, then ack the blob) → clear the pointer. A crash at any
+        // boundary converges on the next pass (see the branch above).
+        receipts.attachResultCard(receipt.delegation_id, stored.content_id, now());
+        lockedArrival.finalize(payloadId, ref);
+        receipts.clearStagedCard(receipt.delegation_id, now());
+      } catch (err) {
+        // Re-locked mid-replay: defer to the next unlock (nothing consumed).
+        if (err instanceof PersonaLockedError) continue;
+        log({
+          evt: 'run_plane.staged_card_attach_failed',
+          delegation_id: receipt.delegation_id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  };
+
+  // Round-A A-01/A-02/A-05/NEW-4 — the idempotent STORAGE-MAINTENANCE pass,
+  // run at boot recovery and on the completion cadence:
+  //   1. Staged residue: any reservation that LEFT the held set with its
+  //      `sealed_response_ref` still attached (commit-crash before finalize;
+  //      barrier-released inside an ambient tx; lost/skipped) — shred the
+  //      staging key (ref-pinned id) + ack the spool blob + clear the ref.
+  //   2. Spool orphan GC: spool blobs past a 24h TTL that no live
+  //      `held_by_lock` ref reaches (e.g. their ref row was corrupted).
+  //   3. Payload-store maintenance: reclaim crashed `prepared` pins + GC
+  //      abandoned / published-but-shredded blobs (`sweepMaintenance`).
+  const runStorageMaintenance = (): void => {
+    try {
+      let residue = 0;
+      if (lockedArrival !== undefined) {
+        for (const res of reservations.listStagedResidue()) {
+          const ref = parseSealedRef(res.sealed_response_ref);
+          if (ref !== null) {
+            const meta = parseHeldMessageMeta(res.held_message_json);
+            lockedArrival.discard(meta?.message_id ?? res.reservation_id, ref);
+          } else {
+            // Metadata-only log (never blob/payload content): the staging key
+            // id is unrecoverable — the blob is reaped by the orphan GC below.
+            log({ evt: 'run_plane.staged_ref_corrupt', reservation_id: res.reservation_id });
+          }
+          reservations.clearSealedRef(res.reservation_id);
+          residue += 1;
+        }
+        if (deps.runSpool?.listStaleIds !== undefined) {
+          // §13 reachability: a spool blob is deletable only when NO live
+          // reference reaches it. TWO reference sources point into the spool:
+          // held reservations (`sealed_response_ref`) AND lock-staged result
+          // cards (`result_card_staged_ref`, A-04) — round-B NEW-5: a card
+          // under a persona locked past the TTL must SURVIVE this GC (locked
+          // sensitive personas stay closed for days; the card attaches on
+          // unlock).
+          const live = new Set<string>();
+          for (const held of reservations.listHeldByLock()) {
+            const ref = parseSealedRef(held.sealed_response_ref);
+            if (ref !== null) live.add(ref.spool_id);
+          }
+          for (const receipt of receipts.listStagedCards()) {
+            const ref = parseSealedRef(receipt.result_card_staged_ref);
+            if (ref !== null) live.add(ref.spool_id);
+          }
+          for (const id of deps.runSpool.listStaleIds(now() - 86_400_000, 200)) {
+            if (!live.has(id)) deps.runSpool.ack(id);
+          }
+        }
+      }
+      const swept = payloads.sweepMaintenance();
+      if (residue > 0 || swept.reclaimed_prepared > 0 || swept.gc_blobs > 0) {
+        log({ evt: 'run_plane.storage_maintenance', staged_residue: residue, ...swept });
+      }
+      // A-04 — attach (open persona) or discard (terminal run) staged cards.
+      replayStagedCards(null);
+    } catch (err) {
+      log({
+        evt: 'run_plane.storage_maintenance_failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 
   const recoverOnBoot = (): void => {
     // Idempotent crash recovery: (a) re-advance any completion that arrived (or
@@ -527,6 +670,10 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
           log({ evt: 'run_plane.held_replayed', ...replayed });
         }
       }
+      // Round-A A-01/A-05 — AFTER the replay (held rows are never residue):
+      // finalize commit-crash residue, GC spool orphans, reclaim crashed
+      // prepared pins, and physically GC inert blobs.
+      runStorageMaintenance();
     } catch (err) {
       log({ evt: 'run_plane.recover_failed', error: err instanceof Error ? err.message : String(err) });
     }
@@ -552,6 +699,10 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
       } catch (err) {
         log({ evt: 'run_plane.completion_recover_failed', error: err instanceof Error ? err.message : String(err) });
       }
+      // A-01/A-05 — the storage-maintenance pass shares the completion cadence
+      // (30s default): staged residue from an ambient-tx barrier is shredded
+      // shortly after its transaction lands, and payload/spool GC stays bounded.
+      runStorageMaintenance();
     }, completionMs);
     (classifyTimer as { unref?: () => void }).unref?.();
     (completionTimer as { unref?: () => void }).unref?.();
@@ -560,6 +711,7 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
 
   const stop = async (): Promise<void> => {
     setHeldReplayHook(null);
+    setFetchEligibilityProbe(null);
     if (!started) return;
     started = false;
     // Set the stopped flags + clear the interval handles FIRST so no new tick
@@ -583,6 +735,9 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     if (report.published > 0 || report.lost > 0 || report.deferred > 0) {
       log({ evt: 'run_plane.held_replayed', persona, ...report });
     }
+    // A-04 — the same unlock also re-wraps any staged result card for this
+    // persona under its now-live DEK.
+    replayStagedCards((p) => p === persona);
     return report;
   };
   if (heldReplay !== null) {
@@ -590,6 +745,9 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
       replayHeldForPersona(persona);
     });
   }
+  // A-11 — the owner `/status` route reads the FULL admission-derived
+  // fetch-eligibility through this probe (side-effect free `gateReason`).
+  setFetchEligibilityProbe((runId) => admission.gateReason(runId));
 
   return {
     ingestPullResponse: (correlationId, message) => ingest.ingestPullResponse(correlationId, message),
@@ -610,5 +768,6 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     payloads,
     runService,
     heldReplay,
+    lockedArrival: lockedArrival ?? null,
   };
 }

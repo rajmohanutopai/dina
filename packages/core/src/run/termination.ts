@@ -177,13 +177,16 @@ export class RunTerminationService {
       }
       fencedCount = fenced.length;
     }
-    // Invalidate outstanding reservations for EVERY barrier + shred held ciphertext.
+    // Invalidate outstanding reservations for EVERY barrier. The held-blob
+    // crypto-shred is NOT performed here (round-A NEW-4): onBarrier runs in the
+    // AMBIENT barrier transaction, and an erasure-key destroy is irreversible —
+    // if the outer transaction later rolled back, a live `held_by_lock`
+    // reservation would point at permanently irrecoverable ciphertext (the same
+    // R2-09 ordering forceTerminate honors by deferring to post-commit).
+    // Instead the invalidated rows keep their `sealed_response_ref` and become
+    // STAGED RESIDUE — the plane's residue sweep (post-commit, boot, cadence)
+    // shreds + acks them idempotently once the transaction has durably landed.
     const invalidated = this.reservations.invalidateOpen(runId, this.now());
-    if (this.discardHeld !== undefined) {
-      for (const res of invalidated) {
-        if (res.state === 'held_by_lock') this.discardHeld(res);
-      }
-    }
     return { invalidated: invalidated.length, fenced: fencedCount };
   }
 }

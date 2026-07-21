@@ -33,6 +33,11 @@ export interface CompletionReceiptRecord {
   /** R3-01 — the SIGNED result-card digest (first-writer-immutable). A conflicting
    *  completion carrying a different digest is rejected before any card is stored. */
   result_card_digest: string | null;
+  /** Round-A A-04 (§13) — a card that arrived while the persona was LOCKED is
+   *  device-sealed into the run spool; this ref (SealedResponseRef JSON) points
+   *  at the staged copy until unlock replay re-wraps it under the persona DEK
+   *  and fills `result_card_ref`. */
+  result_card_staged_ref: string | null;
   receipt_state: ReceiptState;
   issued_at: number;
   received_at: number;
@@ -45,6 +50,13 @@ export interface CompletionReceiptRepository {
   getByDelegationId(delegationId: string): CompletionReceiptRecord | null;
   listVerifiedPending(limit?: number): CompletionReceiptRecord[];
   markAdvanced(delegationId: string, nowMs: number): void;
+  /** A-04 — receipts whose result card is still device-sealed in the spool. */
+  listStagedCards(): CompletionReceiptRecord[];
+  /** A-04 — unlock replay attached the persona-wrapped card: set the ref +
+   *  clear the staged pointer. */
+  attachResultCard(delegationId: string, contentId: string, nowMs: number): void;
+  /** A-04 — clear a staged pointer whose copy was discarded/lost. */
+  clearStagedCard(delegationId: string, nowMs: number): void;
   size(): number;
 }
 
@@ -60,6 +72,10 @@ function rowToReceipt(row: DBRow): CompletionReceiptRecord {
       row.result_card_digest === null || row.result_card_digest === undefined
         ? null
         : String(row.result_card_digest),
+    result_card_staged_ref:
+      row.result_card_staged_ref === null || row.result_card_staged_ref === undefined
+        ? null
+        : String(row.result_card_staged_ref),
     receipt_state: String(row.receipt_state) as ReceiptState,
     issued_at: Number(row.issued_at),
     received_at: Number(row.received_at),
@@ -74,12 +90,16 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
   upsert(r: CompletionReceiptRecord): void {
     this.db.run(
       `INSERT INTO run_completion_receipts
-         (delegation_id, message_id, run_id, status, result_card_ref, result_card_digest, receipt_state, issued_at, received_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (delegation_id, message_id, run_id, status, result_card_ref, result_card_digest, result_card_staged_ref, receipt_state, issued_at, received_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(delegation_id) DO UPDATE SET
-         status = excluded.status, result_card_ref = excluded.result_card_ref, updated_at = excluded.updated_at`,
+         status = excluded.status, result_card_ref = excluded.result_card_ref,
+         result_card_staged_ref = COALESCE(excluded.result_card_staged_ref, run_completion_receipts.result_card_staged_ref),
+         updated_at = excluded.updated_at`,
       // NOTE: result_card_digest is first-writer-immutable — NOT in the DO UPDATE
       // set, so a re-send/upgrade keeps the originally-signed digest (R3-01).
+      // A-04: an idempotent re-send without a staged ref must not CLEAR an
+      // existing staged pointer (COALESCE keeps it until attach/clear).
       [
         r.delegation_id,
         r.message_id,
@@ -87,6 +107,7 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
         r.status,
         r.result_card_ref,
         r.result_card_digest,
+        r.result_card_staged_ref,
         r.receipt_state,
         r.issued_at,
         r.received_at,
@@ -119,6 +140,32 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
     );
   }
 
+  listStagedCards(): CompletionReceiptRecord[] {
+    return this.db
+      .query(
+        'SELECT * FROM run_completion_receipts WHERE result_card_staged_ref IS NOT NULL ORDER BY received_at ASC',
+      )
+      .map(rowToReceipt);
+  }
+
+  attachResultCard(delegationId: string, contentId: string, nowMs: number): void {
+    // B-01 — attach KEEPS the staged pointer: the replay clears it only AFTER
+    // finalize (destroy-then-ack) succeeds, so a crash between attach and
+    // finalize leaves the pointer for the convergence pass, never an
+    // unreachable decryptable staging copy.
+    this.db.run(
+      'UPDATE run_completion_receipts SET result_card_ref = ?, updated_at = ? WHERE delegation_id = ?',
+      [contentId, nowMs, delegationId],
+    );
+  }
+
+  clearStagedCard(delegationId: string, nowMs: number): void {
+    this.db.run(
+      'UPDATE run_completion_receipts SET result_card_staged_ref = NULL, updated_at = ? WHERE delegation_id = ?',
+      [nowMs, delegationId],
+    );
+  }
+
   size(): number {
     const rows = this.db.query<{ n: number }>('SELECT COUNT(*) AS n FROM run_completion_receipts');
     return rows[0]?.n ?? 0;
@@ -132,6 +179,9 @@ export class InMemoryCompletionReceiptRepository implements CompletionReceiptRep
     if (existing) {
       existing.status = r.status;
       existing.result_card_ref = r.result_card_ref;
+      // A-04 — mirror SQLite's COALESCE: a re-send without a staged ref keeps
+      // the existing staged pointer.
+      existing.result_card_staged_ref = r.result_card_staged_ref ?? existing.result_card_staged_ref;
       existing.updated_at = r.updated_at;
     } else {
       this.receipts.set(r.delegation_id, { ...r });
@@ -152,6 +202,28 @@ export class InMemoryCompletionReceiptRepository implements CompletionReceiptRep
     const r = this.receipts.get(delegationId);
     if (r) {
       r.receipt_state = 'advanced';
+      r.updated_at = nowMs;
+    }
+  }
+  listStagedCards(): CompletionReceiptRecord[] {
+    return [...this.receipts.values()]
+      .filter((r) => r.result_card_staged_ref !== null)
+      .sort((a, b) => a.received_at - b.received_at)
+      .map((r) => ({ ...r }));
+  }
+  attachResultCard(delegationId: string, contentId: string, nowMs: number): void {
+    // B-01 — mirror SQLite: attach keeps the staged pointer (cleared only
+    // after finalize by the replay).
+    const r = this.receipts.get(delegationId);
+    if (r) {
+      r.result_card_ref = contentId;
+      r.updated_at = nowMs;
+    }
+  }
+  clearStagedCard(delegationId: string, nowMs: number): void {
+    const r = this.receipts.get(delegationId);
+    if (r) {
+      r.result_card_staged_ref = null;
       r.updated_at = nowMs;
     }
   }
@@ -181,6 +253,9 @@ export interface IngestCompletionInput {
   /** R3-01 — the SIGNED result-card digest. Bound to the receipt on first write
    *  (immutable); a later completion with a different digest is rejected. */
   result_card_digest?: string | null;
+  /** A-04 (§13) — the device-sealed staged-card pointer when the persona was
+   *  locked at arrival (SealedResponseRef JSON); attached on unlock replay. */
+  result_card_staged_ref?: string | null;
   issued_at: number;
 }
 
@@ -288,6 +363,9 @@ export class CompletionService {
       result_card_ref: input.result_card_ref ?? null,
       // First-writer-immutable: keep the digest bound on the first receipt.
       result_card_digest: existing?.result_card_digest ?? inDigest,
+      // A-04 — a lock-raced card's device-sealed pointer rides the receipt until
+      // the unlock replay attaches the persona-wrapped copy (upsert COALESCEs).
+      result_card_staged_ref: input.result_card_staged_ref ?? null,
       receipt_state: 'verified_pending',
       issued_at: input.issued_at,
       received_at: nowMs,

@@ -34,6 +34,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4b task 4.13.
  */
 
+import { createHash, timingSafeEqual } from 'node:crypto';
+
 import type {
   CoreRouter,
   CoreRequest,
@@ -52,6 +54,20 @@ declare module 'fastify' {
 export interface BindCoreRouterOptions {
   /** The assembled `CoreRouter` with all handlers registered. */
   coreRouter: CoreRouter;
+  /**
+   * Round-A A-07 — the owner capability for the §12.5 owner-only run/watch
+   * control plane. When set, a request whose `x-dina-owner-capability` header
+   * MATCHES it (timing-safe) AND whose path is on the owner surface
+   * (`/v1/run*` / `/v1/watch*`) is stamped `callerType:'owner'` +
+   * `ownerCapability` + the in-process trust marker, so the router dispatches
+   * it to the in-handler owner guard (which re-validates the capability). The
+   * stamp is SCOPED: a matching header on any other path grants nothing, so
+   * the capability never becomes a whole-Core credential. Absent/mismatched
+   * headers leave the request unstamped — the guard 403s (fail-closed), and
+   * external callers still can't forge the trust marker (it is never read
+   * from HTTP input).
+   */
+  ownerCapability?: string;
   /**
    * Routes already owned by the Fastify shell. Boot uses this to keep
    * `/healthz` as the process liveness route while binding the rest of
@@ -99,7 +115,22 @@ export function bindCoreRouter(opts: BindCoreRouterOptions): number {
     const fastifyPath = route.path; // `:param` is shared syntax between CoreRouter + Fastify
 
     const handler: FastifyHandler = async (req, reply) => {
-      const coreReq = buildCoreRequest(req);
+      let coreReq = buildCoreRequest(req);
+      // A-07 — stamp the OWNER identity only on a timing-safe capability match
+      // scoped to the run/watch owner surface (see BindCoreRouterOptions).
+      if (
+        opts.ownerCapability !== undefined &&
+        opts.ownerCapability !== '' &&
+        isOwnerSurfacePath(coreReq.path) &&
+        ownerHeaderMatches(coreReq.headers['x-dina-owner-capability'], opts.ownerCapability)
+      ) {
+        coreReq = {
+          ...coreReq,
+          trustedInProcess: true,
+          callerType: 'owner',
+          ownerCapability: opts.ownerCapability,
+        };
+      }
       const coreRes = await opts.coreRouter.handle(coreReq);
       renderCoreResponse(coreRes, reply);
     };
@@ -167,6 +198,22 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
       done(null, req.rawBody);
     },
   );
+}
+
+/** The §12.5 owner-only control surface — the ONLY paths the owner-capability
+ *  header can authenticate (boundary-safe prefix match). */
+function isOwnerSurfacePath(p: string): boolean {
+  return (
+    p === '/v1/run' || p.startsWith('/v1/run/') || p === '/v1/watch' || p.startsWith('/v1/watch/')
+  );
+}
+
+/** Timing-safe capability comparison (hash both sides to fixed length first). */
+function ownerHeaderMatches(header: string | undefined, expected: string): boolean {
+  if (header === undefined || header === '') return false;
+  const a = createHash('sha256').update(header).digest();
+  const b = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(a, b);
 }
 
 function buildCoreRequest(req: FastifyRequest): CoreRequest {

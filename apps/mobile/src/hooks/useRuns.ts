@@ -52,6 +52,9 @@ export interface StartRunInput {
   ttlSeconds: number;
   intervalMs?: number;
   maxCount?: number;
+  /** Round-A A-10 (§10) — the provider-issued grant a protected/`known_only`
+   *  service requires; included in every outbound `service.query`. */
+  providerGrantId?: string;
 }
 
 export async function startRun(input: StartRunInput): Promise<string | null> {
@@ -67,6 +70,9 @@ export async function startRun(input: StartRunInput): Promise<string | null> {
       ttl_seconds: input.ttlSeconds,
       ...(input.intervalMs !== undefined ? { interval_ms: input.intervalMs } : {}),
       ...(input.maxCount !== undefined ? { max_count: input.maxCount } : {}),
+      ...(input.providerGrantId !== undefined && input.providerGrantId !== ''
+        ? { provider_grant_id: input.providerGrantId }
+        : {}),
     });
     return res.run_id;
   } catch {

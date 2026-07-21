@@ -326,7 +326,13 @@ export type {
   WorkerAcquireResult,
   RunClassifyServiceOptions,
 } from './run/classification';
-export { RunDispatchService, deriveDelegationId } from './run/dispatch';
+export {
+  RunDispatchService,
+  deriveDelegationId,
+  setRunDispatchService,
+  getRunDispatchService,
+  setRunPayloadView,
+} from './run/dispatch';
 export type {
   RunDispatchServiceOptions,
   RiskClass,
@@ -366,6 +372,7 @@ export type {
 export { HeldReplayService, parseSealedRef } from './run/held_replay';
 export type { HeldReplayOptions, HeldReplayReport } from './run/held_replay';
 export { fireHeldReplay, setHeldReplayHook } from './run/replay_registry';
+export { setFetchEligibilityProbe, getFetchEligibilityProbe } from './run/admission';
 export { RunTerminationService, RunSweeper } from './run/termination';
 export type {
   RunTerminationServiceOptions,
@@ -1216,6 +1223,8 @@ export type {
   RunStartResult,
   RunUpdateRequest,
   RunDecideRequest,
+  WatchCreateRequest,
+  WatchCreateResult,
 } from './client/owner-run-client';
 export { registerWatchRoutes } from './server/routes/watch';
 export { watchTaskToListItem } from './watch/list';

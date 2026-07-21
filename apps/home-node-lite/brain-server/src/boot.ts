@@ -47,7 +47,7 @@ import {
   collectNotificationBriefingItems,
 } from '@dina/brain/briefing';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
-import { hydrateNotifications } from '@dina/brain/notifications';
+import { hydrateNotifications, mergeNotifications } from '@dina/brain/notifications';
 import { createPersona, getPersona, setNotificationLogRepository } from '@dina/core';
 import {
   buildHomeNodeAskRuntime,
@@ -70,13 +70,14 @@ import { registerHostAllowlistGuard } from './host_guard';
 import { postInboundD2DToMainChat } from './inbound_d2d_chat';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
+import { CoreClientNotificationLogRepository } from './notifications/core_client_repository';
 import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerContactApiRoutes } from './routes/contacts';
-import { registerQuarantineApiRoutes } from './routes/quarantine';
-import { CoreClientNotificationLogRepository } from './notifications/core_client_repository';
 import { registerNotificationApiRoutes } from './routes/notifications';
+import { registerOwnerProxyRoutes } from './routes/owner_proxy';
+import { registerQuarantineApiRoutes } from './routes/quarantine';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerWebRoutes } from './routes/web';
 import { registerWorkflowApiRoutes } from './routes/workflow';
@@ -652,7 +653,13 @@ export async function bootServer(
     // the in-process inbox at boot. The SPA reads them over `/api/v1/notifications`
     // + SSE (the proper silence-tiered surface, not chat), and Tier-3 items reach
     // the daily briefing via the notification-backed engagement provider.
-    setNotificationLogRepository(new CoreClientNotificationLogRepository(clients.core));
+    // Round-A A-07 — the owner run/watch byte-pipe: forwards the SPA's owner
+    // calls (with the browser-presented capability header) verbatim to Core.
+    // Brain holds no owner authority; Core validates every request.
+    registerOwnerProxyRoutes(app, { coreBaseUrl: config.core.baseUrl });
+
+    const notificationRepo = new CoreClientNotificationLogRepository(clients.core);
+    setNotificationLogRepository(notificationRepo);
     registerEngagementProvider(collectNotificationBriefingItems);
     registerNotificationApiRoutes(app);
     try {
@@ -663,6 +670,28 @@ export async function bootServer(
         'notification hydrate failed',
       );
     }
+    // Round-A A-06 — CONTINUOUS Core→Brain reconciliation. On the split server
+    // the CORE process appends run notifications (classified actions,
+    // response_lost) to the durable log in ITS process; without this poll they
+    // reached Brain's inbox — and therefore the SPA's list + SSE stream — only
+    // after a Brain restart. The merge upserts by id (idempotent) and fires
+    // `appended` for each NEW row, so connected SSE clients get it live.
+    // 15s keeps a pending run decision from sitting invisible; a failed poll is
+    // logged and retried next tick.
+    const notificationReconcile = setInterval(() => {
+      void notificationRepo
+        .listAll()
+        .then((rows) => {
+          mergeNotifications(rows);
+        })
+        .catch((err: unknown) => {
+          logger.debug(
+            { error: err instanceof Error ? err.message : String(err) },
+            'notification reconcile poll failed (retrying next tick)',
+          );
+        });
+    }, 15_000);
+    notificationReconcile.unref();
   }
 
   // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate

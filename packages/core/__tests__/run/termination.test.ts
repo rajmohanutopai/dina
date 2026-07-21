@@ -190,7 +190,13 @@ describe('onBarrier â€” atomic invalidation/fence at barrier SET (RR-01b/R2-02/Â
     expect(messages.getById('undecided')?.state).toBe('cancelled');
     expect(messages.getById('claimed')?.state).toBe('dispatched'); // claimed NOT fenced
     expect(reservations.getById('held')?.state).toBe('released');
-    expect(discarded).toEqual(['held']); // held ciphertext crypto-shredded at SET
+    // Round-A NEW-4 (R2-09): onBarrier runs in the AMBIENT barrier transaction,
+    // so the IRREVERSIBLE crypto-shred must NOT happen inline (a rollback would
+    // strand a live held reservation over a destroyed key). The released row
+    // keeps its sealed_response_ref as STAGED RESIDUE for the post-commit sweep.
+    expect(discarded).toEqual([]);
+    expect(reservations.getById('held')?.sealed_response_ref).toBe('spool-1');
+    expect(reservations.listStagedResidue().map((r) => r.reservation_id)).toEqual(['held']);
     expect(fencedJobs).toEqual(['undecided']);
   });
 

@@ -14,13 +14,13 @@
  * the inbox directly, bypassing all of this.
  */
 
-import { storedNotificationToWire } from '@dina/core';
 import {
   listNotifications,
   markNotificationRead,
   subscribeNotifications,
   type NotificationItem,
 } from '@dina/brain/notifications';
+import { storedNotificationToWire } from '@dina/core';
 
 import type { NotificationWireDTO } from '@dina/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -96,9 +96,13 @@ export function registerNotificationApiRoutes(
     reply.raw.on('error', cleanup);
   });
 
-  // GET /api/v1/notifications — the inbox, newest-first.
+  // GET /api/v1/notifications — the inbox, newest-first. Rows go through the
+  // SAME snake_case wire mapping as the SSE branch (round-A NEW-1): the web
+  // client parses each row with `wireToStoredNotification`, which rejects a
+  // camelCase row (no numeric `fired_at`) — so an unmapped list silently
+  // hydrated ZERO stored notifications on every reload/reconnect.
   app.get(`${prefix}/notifications`, async (_req: FastifyRequest, reply: FastifyReply) => {
-    const notifications: NotificationItem[] = listNotifications();
+    const notifications: NotificationWireDTO[] = listNotifications().map(toWire);
     return reply.status(200).send({ notifications });
   });
 

@@ -79,6 +79,7 @@ interface Composed {
   runs: SQLiteRunRepository;
   reservations: SQLiteReservationRepository;
   messages: SQLiteMessageRepository;
+  receipts: SQLiteCompletionReceiptRepository;
   spool: SQLiteRunSpool;
   erasure: InMemoryErasureKeyStore;
   lostEvents: { runId: string; reservationId: string; reason: string }[];
@@ -140,7 +141,7 @@ function compose(): Composed {
     nowMsFn: () => NOW,
   });
 
-  return { plane, cipher, runs, reservations, messages, spool, erasure, lostEvents, queries, now: () => NOW };
+  return { plane, cipher, runs, reservations, messages, receipts, spool, erasure, lostEvents, queries, now: () => NOW };
 }
 
 afterEach(() => {
@@ -209,9 +210,10 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     const meta = parseHeldMessageMeta(res.held_message_json);
     expect(meta?.message_id).toBe(msg.message_id);
     // Durably staged: spool blob present + staging leaf key live.
-    const ref = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string };
+    const ref = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string; staged_key_id: string };
     expect(c.spool.peek(ref.spool_id)).not.toBeNull();
-    expect(c.erasure.has(`staged:${msg.message_id}`)).toBe(true);
+    expect(ref.staged_key_id.startsWith(`staged:${msg.message_id}:`)).toBe(true);
+    expect(c.erasure.has(ref.staged_key_id)).toBe(true);
     // NOT admitted: no message row, run produced nothing.
     expect(c.messages.getById(msg.message_id)).toBeNull();
     expect(c.runs.getById(run.run_id)?.produced_count).toBe(0);
@@ -226,7 +228,7 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(c.plane.ingestPullResponse(corr, msg).outcome).toBe('held_by_lock');
     const heldRef = JSON.parse(
       c.reservations.listByRun(run.run_id)[0].sealed_response_ref ?? '',
-    ) as { spool_id: string };
+    ) as { spool_id: string; staged_key_id: string };
 
     // Unlock → replay.
     c.cipher.open('general');
@@ -245,7 +247,7 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(c.plane.payloads.getPayload(msg.message_id, 'general')).not.toBeNull();
     // Finalized: spool blob acked + staging key destroyed.
     expect(c.spool.peek(heldRef.spool_id)).toBeNull();
-    expect(c.erasure.has(`staged:${msg.message_id}`)).toBe(false);
+    expect(c.erasure.has(heldRef.staged_key_id)).toBe(false);
 
     // Exactly-once: a second replay finds nothing held.
     expect(c.plane.replayHeldForPersona('general')).toEqual({ published: 0, lost: 0, deferred: 0 });
@@ -309,7 +311,7 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     const storedRun = c.runs.getById(run.run_id);
     if (meta === null || storedRun === null) throw new Error('held meta / run missing');
     c.messages.create(buildEnqueuedMessageRow(meta, storedRun, res, 'content-x', NOW));
-    const heldRef = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string };
+    const heldRef = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string; staged_key_id: string };
 
     c.cipher.open('general');
     const report = c.plane.replayHeldForPersona('general');
@@ -318,7 +320,7 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(c.messages.listByRun(run.run_id)).toHaveLength(1);
     expect(c.reservations.listByRun(run.run_id)[0].state).toBe('committed');
     expect(c.spool.peek(heldRef.spool_id)).toBeNull();
-    expect(c.erasure.has(`staged:${msg.message_id}`)).toBe(false);
+    expect(c.erasure.has(heldRef.staged_key_id)).toBe(false);
   });
 
   it('an unrecoverable staged blob → response_lost + paused run + owner notification; skip frees the run', async () => {
@@ -350,6 +352,239 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     // RETRY re-fill the position through the live ingest.
     expect(c.reservations.skipLost(held.reservation_id, NOW + 1)).toBe(true);
     expect(c.reservations.listByRun(run.run_id)[0].state).toBe('skipped');
+  });
+
+  it('A-01: commit-crash residue (committed row still carrying its staged ref) is finalized by boot maintenance', async () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const corr = await reserve(c);
+    c.cipher.lock('general');
+    const msg = verifiedMsg();
+    expect(c.plane.ingestPullResponse(corr, msg).outcome).toBe('held_by_lock');
+    const held = c.reservations.listByRun(run.run_id)[0];
+    const meta = parseHeldMessageMeta(held.held_message_json);
+    const storedRun = c.runs.getById(run.run_id);
+    if (meta === null || storedRun === null) throw new Error('setup');
+    const ref = JSON.parse(held.sealed_response_ref ?? '') as { spool_id: string };
+
+    // Simulate the crash WINDOW (§7): the Tier-0 commit landed (message row +
+    // reservation committed) but finalize/clear never ran — the committed row
+    // still CARRIES its staged ref, spool blob, and staging key.
+    c.cipher.open('general');
+    c.messages.create(buildEnqueuedMessageRow(meta, storedRun, held, 'content-x', NOW));
+    expect(
+      c.reservations.commit(
+        held.reservation_id,
+        { message_id: meta.message_id, dedup_key: meta.dedup_key, content_digest: meta.content_digest },
+        NOW,
+        'held_by_lock',
+      ),
+    ).toBe(true);
+    expect(c.spool.peek(ref.spool_id)).not.toBeNull();
+    const stagedKeyId = (ref as { staged_key_id?: string }).staged_key_id ?? '';
+    expect(c.erasure.has(stagedKeyId)).toBe(true);
+
+    // Boot maintenance (the residue sweep) finds the committed-with-ref row:
+    // staged key shredded, spool blob acked, ref cleared — no second admit.
+    c.plane.recoverOnBoot();
+    expect(c.spool.peek(ref.spool_id)).toBeNull();
+    expect(c.erasure.has(stagedKeyId)).toBe(false);
+    expect(c.reservations.getById(held.reservation_id)?.sealed_response_ref).toBeNull();
+    expect(c.messages.listByRun(run.run_id)).toHaveLength(1);
+  });
+
+  it('A-02: corrupt held METADATA still shreds the REAL staging key (ref-pinned id), never a guessed one', async () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const corr = await reserve(c);
+    c.cipher.lock('general');
+    const msg = verifiedMsg();
+    expect(c.plane.ingestPullResponse(corr, msg).outcome).toBe('held_by_lock');
+    const held = c.reservations.listByRun(run.run_id)[0];
+    const ref = JSON.parse(held.sealed_response_ref ?? '') as { spool_id: string };
+    // Corrupt ONLY the held metadata (the ref stays parseable).
+    adapter.run('UPDATE run_reservations SET held_message_json = ? WHERE reservation_id = ?', [
+      'not-json',
+      held.reservation_id,
+    ]);
+
+    c.cipher.open('general');
+    const report = c.plane.replayHeldForPersona('general');
+    expect(report).toEqual({ published: 0, lost: 1, deferred: 0 });
+    // The REAL staging key is gone even though the message id was
+    // unrecoverable from the metadata — the ref pinned its exact id.
+    expect(c.erasure.has((ref as { staged_key_id?: string }).staged_key_id ?? '')).toBe(false);
+    expect(c.spool.peek(ref.spool_id)).toBeNull();
+    const lost = c.reservations.getById(held.reservation_id);
+    expect(lost?.state).toBe('response_lost');
+    expect(lost?.sealed_response_ref).toBeNull();
+  });
+
+  it('A-03: response_lost PAUSES fetch; owner resume re-polls; the retry commit supersedes the stale lost row', async () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const corr = await reserve(c);
+    c.cipher.lock('general');
+    const msg = verifiedMsg();
+    expect(c.plane.ingestPullResponse(corr, msg).outcome).toBe('held_by_lock');
+    // Lose the staged blob → replay marks response_lost + pauses the run.
+    const held = c.reservations.listByRun(run.run_id)[0];
+    const ref = JSON.parse(held.sealed_response_ref ?? '') as { spool_id: string };
+    c.spool.ack(ref.spool_id);
+    c.cipher.open('general');
+    expect(c.plane.replayHeldForPersona('general')).toEqual({ published: 0, lost: 1, deferred: 0 });
+    expect(c.runs.getById(run.run_id)?.paused_reason).toBe('response_lost');
+
+    // The pause is ENFORCED: the pacer opens no new slot while paused.
+    const paused = await c.plane.engine.pacerTick();
+    expect(paused.reserved).toBe(0);
+
+    // Owner RESUME = "wait for the provider's retry": pause clears, the pacer
+    // re-polls the un-advanced cursor.
+    c.plane.runService.resume(run.run_id);
+    expect(c.runs.getById(run.run_id)?.paused_reason).toBeNull();
+    const resumed = await c.plane.engine.pacerTick();
+    expect(resumed.reserved).toBe(1);
+    const retryCorr = c.queries[c.queries.length - 1].correlationId;
+
+    // The provider's retry re-fills cursor 0; the commit SUPERSEDES the stale
+    // lost row (terminal `skipped`) so /status lost[] converges.
+    const retryMsg = verifiedMsg();
+    expect(c.plane.ingestPullResponse(retryCorr, retryMsg).outcome).toBe('enqueued');
+    expect(c.reservations.getById(held.reservation_id)?.state).toBe('skipped');
+    expect(c.runs.getById(run.run_id)?.paused_reason).toBeNull();
+    expect(c.runs.getById(run.run_id)?.produced_count).toBe(1);
+  });
+
+  it('A-04: a device-sealed result card staged under lock is re-wrapped + attached on unlock', () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const lockedArrival = c.plane.lockedArrival;
+    if (lockedArrival === null) throw new Error('locked arrival not composed');
+    const card = enc.encode('{"title":"Booked","body":"Seat 12A"}');
+    const stagedRef = lockedArrival.stage('result-d1', card);
+    c.receipts.upsert({
+      delegation_id: 'd1',
+      message_id: 'm1',
+      run_id: run.run_id,
+      status: 'completed',
+      result_card_ref: null,
+      result_card_digest: 'digest-1',
+      result_card_staged_ref: JSON.stringify(stagedRef),
+      receipt_state: 'advanced',
+      issued_at: NOW,
+      received_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+
+    // Unlock replay attaches the persona-wrapped card + finalizes the staging.
+    c.plane.replayHeldForPersona('general');
+    const receipt = c.receipts.getByDelegationId('d1');
+    expect(receipt?.result_card_ref).not.toBeNull();
+    expect(receipt?.result_card_staged_ref).toBeNull();
+    expect(c.plane.payloads.getPayload('result-d1', 'general')).not.toBeNull();
+    expect(c.spool.peek(stagedRef.spool_id)).toBeNull();
+    expect(c.erasure.has(stagedRef.staged_key_id ?? '')).toBe(false);
+  });
+
+  it('A-04: a staged card whose run is GONE/terminal is crypto-shred-discarded by maintenance', () => {
+    const c = compose();
+    const lockedArrival = c.plane.lockedArrival;
+    if (lockedArrival === null) throw new Error('locked arrival not composed');
+    const stagedRef = lockedArrival.stage('result-d2', enc.encode('x'));
+    c.receipts.upsert({
+      delegation_id: 'd2',
+      message_id: 'm2',
+      run_id: 'run-that-does-not-exist',
+      status: 'completed',
+      result_card_ref: null,
+      result_card_digest: 'digest-2',
+      result_card_staged_ref: JSON.stringify(stagedRef),
+      receipt_state: 'advanced',
+      issued_at: NOW,
+      received_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+
+    c.plane.recoverOnBoot();
+    const receipt = c.receipts.getByDelegationId('d2');
+    expect(receipt?.result_card_ref).toBeNull();
+    expect(receipt?.result_card_staged_ref).toBeNull();
+    expect(c.spool.peek(stagedRef.spool_id)).toBeNull();
+    expect(c.erasure.has(stagedRef.staged_key_id ?? '')).toBe(false);
+  });
+
+  it('NEW-5: a staged result card under a STILL-LOCKED persona survives the stale-spool GC and attaches on unlock', () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const lockedArrival = c.plane.lockedArrival;
+    if (lockedArrival === null) throw new Error('locked arrival not composed');
+    const stagedRef = lockedArrival.stage('result-d3', enc.encode('{"title":"Late card"}'));
+    c.receipts.upsert({
+      delegation_id: 'd3',
+      message_id: 'm3',
+      run_id: run.run_id,
+      status: 'completed',
+      result_card_ref: null,
+      result_card_digest: 'digest-3',
+      result_card_staged_ref: JSON.stringify(stagedRef),
+      receipt_state: 'advanced',
+      issued_at: NOW,
+      received_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    // Age the spool blob PAST the 24h orphan-GC TTL (a sensitive persona
+    // routinely stays locked for days) and lock the persona.
+    adapter.run('UPDATE run_spool SET created_at = ? WHERE spool_id = ?', [
+      Date.now() - 48 * 3_600_000,
+      stagedRef.spool_id,
+    ]);
+    c.cipher.lock('general');
+
+    // Maintenance runs with the persona locked: the staged card is a LIVE §13
+    // reference — the GC must not reap it.
+    c.plane.recoverOnBoot();
+    expect(c.spool.peek(stagedRef.spool_id)).not.toBeNull();
+    expect(c.receipts.getByDelegationId('d3')?.result_card_staged_ref).not.toBeNull();
+
+    // Unlock: the card attaches (§13 — "re-wrapped under the persona DEK").
+    c.cipher.open('general');
+    c.plane.replayHeldForPersona('general');
+    expect(c.receipts.getByDelegationId('d3')?.result_card_ref).not.toBeNull();
+    expect(c.plane.payloads.getPayload('result-d3', 'general')).not.toBeNull();
+    expect(c.spool.peek(stagedRef.spool_id)).toBeNull();
+  });
+
+  it('NEW-6: after an owner skip the pacer fetches the NEXT position — the dead cursor is never re-handed', async () => {
+    const c = compose();
+    const run = c.plane.runService.create(pullRun());
+    const corr = await reserve(c);
+    c.cipher.lock('general');
+    expect(c.plane.ingestPullResponse(corr, verifiedMsg()).outcome).toBe('held_by_lock');
+    // Lose the staged blob → replay → response_lost at cursor 0 + pause.
+    const held = c.reservations.listByRun(run.run_id)[0];
+    const ref = JSON.parse(held.sealed_response_ref ?? '') as { spool_id: string };
+    c.spool.ack(ref.spool_id);
+    c.cipher.open('general');
+    expect(c.plane.replayHeldForPersona('general')).toEqual({ published: 0, lost: 1, deferred: 0 });
+
+    // Owner SKIP (the route semantics): terminal skip + cursor advance + pause
+    // recompute — a permanent gap, unlike RESUME which re-polls the position.
+    expect(c.reservations.skipLost(held.reservation_id, NOW + 1)).toBe(true);
+    expect(c.runs.advanceCursorPastSkipped(run.run_id, held.cursor, NOW + 1)).toBe(true);
+    c.runs.setPausedReason(run.run_id, null, NOW + 1);
+
+    const report = await c.plane.engine.pacerTick();
+    expect(report.reserved).toBe(1);
+    const fresh = c.reservations
+      .listByRun(run.run_id)
+      .filter((r) => r.state === 'reserved');
+    expect(fresh).toHaveLength(1);
+    // The new slot targets the NEXT position — never the skipped cursor 0.
+    expect(fresh[0].cursor).toBe(held.cursor + 1);
   });
 
   it('SQLiteRunSpool stores durable ciphertext blobs (store → peek → ack)', () => {

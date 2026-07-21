@@ -51,8 +51,19 @@ export function notifyRunMessageClassified(message: MessageRecord, run: RunRecor
   // Display the service by its listing URI's record key ("self", "bus42", …) —
   // the only bounded, non-payload service identifier the run record carries.
   const serviceLabel = run.service_uri.split('/').pop() ?? 'service';
+  // Round-A NEW-3 — honor the §9.1 outputs at the delivery edge:
+  //   - an INFORMATIONAL message whose Core-set `final_tier` is 3 (engagement)
+  //     routes to the `briefing` kind, so the daily digest collects it instead
+  //     of an Activity banner (the same routing the watch pipeline applies);
+  //   - a MUTED run quiets its informational updates the same way ("suppresses
+  //     banners", §5) — the entry still accrues, just in the digest;
+  //   - an ACTION always lands a `run`-kind decision entry: §9.1 floors an
+  //     action at the Tier-2 base and §5 pins that "decisions still accrue in
+  //     the inbox" under mute — an invisible pending decision would silently
+  //     block the bounded queue.
+  const quietInformational = !isAction && (run.muted || message.final_tier === 3);
   appendNotification({
-    kind: 'run',
+    kind: quietInformational ? 'briefing' : 'run',
     title: isAction ? 'Service action needs review' : 'Service update',
     body: isAction
       ? `A service (${serviceLabel}) proposed an action that is waiting for your decision.`
