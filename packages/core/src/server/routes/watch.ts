@@ -84,6 +84,12 @@ export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string
       });
     }
     const query = isRecord(body.query) ? body.query : {};
+    const schemaHash =
+      typeof body.schema_hash === 'string' && body.schema_hash !== '' ? body.schema_hash : undefined;
+    const freshnessSec =
+      typeof body.freshness_sec === 'number' && body.freshness_sec > 0
+        ? body.freshness_sec
+        : undefined;
     const condition = typeof body.condition === 'string' ? body.condition : undefined;
     // R2-04 / R5-07 — the optional executable wake filter (untrusted). A PRESENT
     // but malformed filter is REJECTED (400), never silently dropped to
@@ -104,6 +110,8 @@ export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string
       capability,
       query,
       poll_interval_sec: pollInterval,
+      ...(schemaHash !== undefined ? { schema_hash: schemaHash } : {}),
+      ...(freshnessSec !== undefined ? { freshness_sec: freshnessSec } : {}),
       ...(condition !== undefined ? { condition } : {}),
       ...(filter !== undefined ? { filter } : {}),
     });

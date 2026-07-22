@@ -77,8 +77,10 @@ import { registerChatRoutes } from './routes/chat';
 import { registerContactApiRoutes } from './routes/contacts';
 import { registerNotificationApiRoutes } from './routes/notifications';
 import { registerOwnerProxyRoutes } from './routes/owner_proxy';
+import { registerPeerlensProxyRoutes } from './routes/peerlens_proxy';
 import { registerQuarantineApiRoutes } from './routes/quarantine';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
+import { registerServiceConfigProxyRoutes } from './routes/service_config_proxy';
 import { registerWebRoutes } from './routes/web';
 import { registerWorkflowApiRoutes } from './routes/workflow';
 
@@ -628,6 +630,11 @@ export async function bootServer(
     // Contact-directory data layer for the SPA's People/Talk screen (F4).
     registerContactApiRoutes(app, { core: clients.core });
 
+    // Service-config (My Services publish) data layer for the SPA. `/v1/service/*`
+    // is brain-allowed, so the Brain forwards the provider's own listing
+    // read/write here; the web My-Services form (useServiceConfigForm) targets it.
+    registerServiceConfigProxyRoutes(app, { core: clients.core });
+
     // Quarantine-review data layer for the SPA's InlineQuarantineCard (F4).
     registerQuarantineApiRoutes(app, { core: clients.core });
 
@@ -731,6 +738,18 @@ export async function bootServer(
         'brain-server web UI requested but bundle is missing — /web/ will 404 until built',
       );
     }
+    // The web thin-client can't call the AppView directly (sovereignty + CORS),
+    // so it fetches PeerLens reads at this same-origin path and we forward them
+    // to the AppView server-side. Web-only: registered under the same web-UI
+    // gate. Native keeps calling the AppView directly.
+    registerPeerlensProxyRoutes(app, {
+      appViewURL: config.endpoints.appViewBaseUrl,
+      logger,
+    });
+    logger.info(
+      { appViewURL: config.endpoints.appViewBaseUrl, path: '/api/peerlens/xrpc/*' },
+      'brain-server PeerLens read proxy configured (web thin-client)',
+    );
   }
 
   app.get('/readyz', async (_req, reply) => {

@@ -19,6 +19,9 @@
  * where the browser goes; Core is where state lives.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 const CORE_PORT = Number(process.env.DINA_CORE_E2E_PORT ?? 18298);
 const CORE_URL = `http://127.0.0.1:${CORE_PORT}`;
 const DEBUG_TOKEN = process.env.DINA_DEBUG_TOKEN ?? '';
@@ -325,5 +328,166 @@ export async function resetApprovals(): Promise<void> {
   if (pending === null) return;
   for (const task of pending) {
     await dispatch('POST', `/v1/workflow/tasks/${task.id}/cancel`, { body: {} });
+  }
+}
+
+// ── Services (publish / subscribe / deliver) ──────────────────────────────
+
+/**
+ * The node's own did:plc, read from `<vaultDir>/pds_identity.json` (Core writes
+ * it once PDS provisioning completes). Used as the `provider_did` for a
+ * self-subscription — the node publishes a public service and subscribes to it.
+ */
+export function readOwnerDid(vaultDir: string): string {
+  const file = path.join(vaultDir, 'pds_identity.json');
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { did?: string };
+  if (typeof raw.did !== 'string' || raw.did === '') {
+    throw new Error(`backstage.readOwnerDid: no did in ${file}`);
+  }
+  return raw.did;
+}
+
+/** Poll for the node's DID until PDS provisioning has written it. */
+export async function waitForOwnerDid(
+  vaultDir: string,
+  { timeoutMs = 60_000, intervalMs = 1_000 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return readOwnerDid(vaultDir);
+    } catch {
+      if (Date.now() >= deadline) throw new Error('backstage.waitForOwnerDid: timed out');
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+}
+
+/** Publish the node's default (`self`) service listing (owner PUT). Core
+ *  canonicalises the schema + stamps the `schemaHash`. */
+export async function publishServiceConfig(config: unknown): Promise<void> {
+  await dispatchOk('PUT', '/v1/service/config', { body: config });
+}
+
+/** Read back the node's `self` listing (to pick up the Core-stamped
+ *  `schemaHash` a subscription must pin). */
+export async function getServiceConfig(): Promise<Record<string, unknown>> {
+  return (await dispatchOk('GET', '/v1/service/config')) as Record<string, unknown>;
+}
+
+/** The Core-stamped schema hash for one capability of the `self` listing. */
+export async function serviceSchemaHash(capability: string): Promise<string | undefined> {
+  const cfg = await getServiceConfig();
+  const schemas = cfg.capabilitySchemas as Record<string, { schemaHash?: string }> | undefined;
+  return schemas?.[capability]?.schemaHash;
+}
+
+export interface CreateWatchInput {
+  subscription_id: string;
+  persona: string;
+  provider_did: string;
+  service_uri: string;
+  capability: string;
+  poll_interval_sec: number;
+  query?: Record<string, unknown>;
+  schema_hash?: string;
+  freshness_sec?: number;
+}
+
+/**
+ * The boot-minted owner capability (`<vaultDir>/owner_capability`). The
+ * `/v1/watch/*` + `/v1/run/*` routes are owner-ONLY (§12.5) — they require the
+ * real capability, NOT the debug-dispatch owner bypass — so a subscription is
+ * created by calling Core directly with the `x-dina-owner-capability` header,
+ * exactly as Core's own `/owner` console does.
+ */
+function readOwnerCapability(): string {
+  const vaultDir = process.env.DINA_E2E_VAULT_DIR;
+  if (vaultDir === undefined || vaultDir === '') {
+    throw new Error('backstage: DINA_E2E_VAULT_DIR not set (needed for the owner capability)');
+  }
+  return fs.readFileSync(path.join(vaultDir, 'owner_capability'), 'utf8').trim();
+}
+
+/** Call an owner-only Core route with the real owner capability header. */
+async function ownerFetch(
+  method: string,
+  routePath: string,
+  body?: unknown,
+): Promise<DispatchResult> {
+  const res = await fetch(`${CORE_URL}${routePath}`, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      'x-dina-owner-capability': readOwnerCapability(),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  const text = await res.text();
+  let parsed: unknown = null;
+  if (text !== '') {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+  return { status: res.status, body: parsed };
+}
+
+/** Create a poll-mode subscription (owner-only `/v1/watch/create`). Returns the
+ *  created watch id. */
+export async function createWatch(input: CreateWatchInput): Promise<string> {
+  const { status, body } = await ownerFetch('POST', '/v1/watch/create', input);
+  if (status < 200 || status >= 300) {
+    throw new Error(`backstage.createWatch: ${status} ${JSON.stringify(body).slice(0, 200)}`);
+  }
+  const watchId = (body as { watch_id?: string }).watch_id;
+  if (typeof watchId !== 'string') {
+    throw new Error(`backstage.createWatch: no watch_id in response`);
+  }
+  return watchId;
+}
+
+/** Cancel a watch (clean teardown so the poll loop stops). */
+export async function cancelWatch(watchId: string): Promise<void> {
+  await ownerFetch('POST', `/v1/watch/${watchId}/cancel`, {});
+}
+
+export interface NotificationRow {
+  kind?: string;
+  title?: string;
+  body?: string;
+  text?: string;
+  [k: string]: unknown;
+}
+
+/** The owner's notifications (the Activity feed's backing store). The GET
+ *  normally needs a signed header, but backstage runs it in-process as owner. */
+export async function listNotifications(): Promise<NotificationRow[]> {
+  const body = (await dispatchOk('GET', '/v1/notifications')) as
+    | { notifications?: NotificationRow[]; items?: NotificationRow[] }
+    | NotificationRow[]
+    | undefined;
+  if (Array.isArray(body)) return body;
+  return body?.notifications ?? body?.items ?? [];
+}
+
+/** Poll notifications until one contains `needle` (in title/body/text), or
+ *  timeout. The invisible assertion for "the subscription delivered". */
+export async function waitForNotification(
+  needle: string,
+  { timeoutMs = 100_000, intervalMs = 3_000 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<NotificationRow | null> {
+  const n = needle.toLowerCase();
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await listNotifications();
+    const hit = rows.find((r) =>
+      [r.title, r.body, r.text].some((f) => typeof f === 'string' && f.toLowerCase().includes(n)),
+    );
+    if (hit !== undefined) return hit;
+    if (Date.now() >= deadline) return null;
+    await new Promise((r) => setTimeout(r, intervalMs));
   }
 }

@@ -24,27 +24,29 @@
  * place and both mobile + lite pick them up.
  */
 
+import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
 import {
   AppViewServiceResolver,
   InProcessTransport,
   LocalDelegationRunner,
   MsgTypeServiceResponse,
   SQLiteWorkflowRepository,
+  WatchPollSweeper,
+  WatchService,
+  buildWatchPollHandler,
   getServiceConfig,
   getWatchService,
   registerPublicKeyResolver,
   registerService,
   setOutboxRedeliverFn,
+  setWatchService,
   startOutboxDrainer,
   wireRunPlaneNode,
   type CoreRouter,
   type ServiceConfig,
 } from '@dina/core';
-
-// `setD2DSender` registers the generic D2D egress callback for the
-// `/v1/msg/send` route. It lives on the runtime subpath (route module),
-// not the main `@dina/core` barrel.
-import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
+// `setD2DSender` registers the generic D2D egress callback for the `/v1/msg/send`
+// route. It lives on the runtime subpath (route module), not the main barrel.
 import { setD2DSender } from '@dina/core/runtime';
 import {
   makeSendD2D,
@@ -168,7 +170,10 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     }),
     pdsIdentity.did,
   );
-  startOutboxDrainer();
+  // Capture the handle so dispose() can stop the periodic worker — otherwise the
+  // (unref'd) timer leaks past teardown (harmless in prod, but it strands the
+  // process/event loop in tests).
+  const outboxDrainer = startOutboxDrainer();
 
   // ISVC-10 — the interactive-run pull loop, live. `wireRunPlaneNode` composes
   // the run drivers (pacer/sweeper/classify/completion) over the Tier-0 run
@@ -236,11 +241,35 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
   };
 
   const workflowRepository = new SQLiteWorkflowRepository(identityDB);
+  // ONE in-process CoreClient — reused by the shared runtime AND the watch poll
+  // sweeper's requester lane.
+  const coreClient = new InProcessTransport(coreRouter);
+
+  // PSVC-0 — poll-mode watches (subscriptions), the same surface mobile wires.
+  // Register the WatchService so the owner watch routes (create/list/pause/
+  // cancel) resolve `getWatchService()` instead of 503-ing, and run the
+  // WatchPollSweeper: each DUE `watch` task fires an ordinary `service.query`
+  // through the same in-process requester lane the run plane uses, so the
+  // provider's `service.response` lands + correlates. No inbound push (Phase 0);
+  // the sweeper's timer is unref'd so it never holds the process open.
+  const watchService = new WatchService({ repository: workflowRepository });
+  setWatchService(watchService);
+  const watchPoll = new WatchPollSweeper({
+    repository: workflowRepository,
+    onPoll: buildWatchPollHandler(coreClient),
+    onError: (err) =>
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        'watch poll sweeper error',
+      ),
+  });
+  watchPoll.start();
+
   const shared: SharedWiredWorkflowPlane = wireSharedWorkflowPlane({
     workflowRepository,
     sendD2D,
     runtime: {
-      core: new InProcessTransport(coreRouter),
+      core: coreClient,
       appView,
       readConfig: (rkey?: string): ServiceConfig | null => getServiceConfig(rkey),
       deliver: async ({ text, event, task, details }) => {
@@ -364,6 +393,13 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       // Stop the run-plane loops first so no pacer tick races the teardown, and
       // await tick quiescence before the shared stores are torn down (§13).
       await runPlaneNode.stop();
+      // Stop the poll-mode watch sweeper + deregister the WatchService global so
+      // a re-wire (tests) doesn't observe a stale service.
+      watchPoll.stop();
+      await watchPoll.flush();
+      setWatchService(null);
+      // Stop the durable-outbox drainer's periodic worker.
+      outboxDrainer.stop();
       // stop() only clears the claim timer; an in-flight Tier-1 capability
       // execution may still be running. flush() awaits it so we don't tear
       // down the workflow plane (shared.dispose) out from under a live run.

@@ -34,6 +34,18 @@ describe('watch payload', () => {
     expect(out?.condition).toBeUndefined();
   });
 
+  it('round-trips a pinned schema_hash (survives storage so the poll can forward it)', () => {
+    const withHash = { ...base, schema_hash: 'abc123' };
+    const out = parseWatchPollPayload(serializeWatchPollPayload(withHash));
+    expect(out?.schema_hash).toBe('abc123');
+  });
+
+  it('omits an absent or empty schema_hash', () => {
+    expect(parseWatchPollPayload(serializeWatchPollPayload(base))).not.toHaveProperty('schema_hash');
+    const out = parseWatchPollPayload(JSON.stringify({ ...base, schema_hash: '' }));
+    expect(out).not.toHaveProperty('schema_hash');
+  });
+
   it.each([
     ['not json', 'not-json'],
     ['empty', ''],

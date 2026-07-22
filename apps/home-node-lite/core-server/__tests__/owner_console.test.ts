@@ -27,6 +27,9 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('/v1/run/list');
       expect(body).toContain('/v1/run/start');
       expect(body).toContain('/v1/watch/list');
+      // The owner can create a poll-mode subscription from this page (Piece 2).
+      expect(body).toContain('/v1/watch/create');
+      expect(body).toContain('New subscription');
       // Presents the capability header the HTTP adapter validates.
       expect(body).toContain('x-dina-owner-capability');
       // Never targets a Brain-origin proxy path from this page.

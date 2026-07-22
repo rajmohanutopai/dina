@@ -7,12 +7,15 @@
  */
 
 import {
+  buildScriptedProvider,
   createGeminiEmbeddingProvider,
   GeminiGenaiAdapter,
   type EmbeddingProvider,
   type LLMProvider,
   type ProviderName,
 } from '@dina/brain';
+
+import { buildDeterministicEmbedder, loadScriptedRules } from './scripted_llm';
 
 import type { BrainServerConfig } from './config';
 
@@ -40,6 +43,17 @@ export function buildBrainServerLLMRuntime(
         embedding: {
           name: 'gemini-embedding-001',
           generate: createGeminiEmbeddingProvider({ apiKey: config.apiKey }),
+        },
+      };
+    case 'scripted':
+      // Deterministic canned-response provider (E2E/dev). Paired with a
+      // deterministic embedder so semantic search is reproducible + offline.
+      return {
+        providerName: 'scripted',
+        llm: buildScriptedProvider({ rules: loadScriptedRules(config.scriptFile) }),
+        embedding: {
+          name: 'scripted-deterministic',
+          generate: buildDeterministicEmbedder(),
         },
       };
   }

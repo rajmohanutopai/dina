@@ -31,7 +31,16 @@ export type TaskType =
   | 'silence_classify'
   | 'multi_step';
 
-export type ProviderName = 'claude' | 'openai' | 'gemini' | 'openrouter' | 'local' | 'none';
+export type ProviderName =
+  | 'claude'
+  | 'openai'
+  | 'gemini'
+  | 'openrouter'
+  | 'local'
+  // A deterministic, canned-response provider for E2E/dev — replays a fixture
+  // instead of calling a real LLM. Never a production provider.
+  | 'scripted'
+  | 'none';
 
 export interface RoutingDecision {
   provider: ProviderName;

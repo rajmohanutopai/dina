@@ -114,7 +114,21 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
 
 <section>
   <h2>Watches</h2>
-  <div class="bar"><button id="refreshWatches">Refresh</button></div>
+  <div class="bar">
+    <button id="refreshWatches">Refresh</button>
+    <button id="toggleWatch">New subscription</button>
+  </div>
+  <form class="start hidden" id="watchForm">
+    <label>Provider DID</label><input id="w_provider" placeholder="did:plc:…" />
+    <label>Service URI</label><input id="w_service" placeholder="at://…" />
+    <label>Capability</label><input id="w_capability" value="eta_query" />
+    <label>Persona</label><input id="w_persona" value="general" />
+    <label>Poll every (sec)</label><input id="w_interval" value="60" inputmode="numeric" />
+    <label>Freshness (sec, optional)</label><input id="w_freshness" placeholder="provider defaultTtlSeconds — floors the poll interval" inputmode="numeric" />
+    <label>Query (JSON, optional)</label><input id="w_query" placeholder='{"route_id":"42"}' />
+    <label>Schema hash (optional)</label><input id="w_schema" placeholder="from discovery — required if the provider publishes a schema" />
+    <span></span><button type="submit" class="primary">Create</button>
+  </form>
   <div id="watchlist"></div>
 </section>
 
@@ -294,6 +308,33 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     api("POST", "/v1/watch/" + encodeURIComponent(watchId) + "/" + action, {})
       .then(loadWatches).catch(function (e) { alert(e.message); });
   }
+  function createWatch(ev) {
+    ev.preventDefault();
+    var interval = Math.round(Number(document.getElementById("w_interval").value));
+    var queryRaw = document.getElementById("w_query").value.trim();
+    var query = {};
+    if (queryRaw !== "") {
+      try { query = JSON.parse(queryRaw); }
+      catch (e) { alert("Query must be valid JSON: " + e.message); return; }
+    }
+    var schemaHash = document.getElementById("w_schema").value.trim();
+    var freshness = Math.round(Number(document.getElementById("w_freshness").value));
+    var body = {
+      subscription_id: "sub-" + nextKey(),
+      provider_did: document.getElementById("w_provider").value.trim(),
+      service_uri: document.getElementById("w_service").value.trim(),
+      capability: document.getElementById("w_capability").value.trim(),
+      persona: document.getElementById("w_persona").value.trim(),
+      poll_interval_sec: interval > 0 ? interval : 60,
+      query: query,
+    };
+    if (schemaHash !== "") body.schema_hash = schemaHash;
+    if (freshness > 0) body.freshness_sec = freshness;
+    api("POST", "/v1/watch/create", body).then(function () {
+      document.getElementById("watchForm").classList.add("hidden");
+      loadWatches();
+    }).catch(function (e) { alert(e.message); });
+  }
 
   // ── wire up ─────────────────────────────────────────────────────────
   document.getElementById("save").addEventListener("click", function () {
@@ -308,6 +349,10 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     document.getElementById("startForm").classList.toggle("hidden");
   });
   document.getElementById("startForm").addEventListener("submit", startRun);
+  document.getElementById("toggleWatch").addEventListener("click", function () {
+    document.getElementById("watchForm").classList.toggle("hidden");
+  });
+  document.getElementById("watchForm").addEventListener("submit", createWatch);
   refreshKeyState();
   if (getCap()) { loadRuns(); loadWatches(); }
 })();

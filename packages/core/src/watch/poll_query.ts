@@ -41,6 +41,12 @@ export function watchPollToServiceQuery(
     params: payload.query,
     ttlSeconds: Math.max(1, Math.min(payload.poll_interval_sec, MAX_SERVICE_TTL)),
     serviceUri: payload.service_uri,
+    // Forward the pinned schema hash so a provider advertising a versioned
+    // schema accepts the poll (else `schema_hash_required`). Omitted when the
+    // subscription pinned none (provider publishes no schema).
+    ...(payload.schema_hash !== undefined && payload.schema_hash !== ''
+      ? { schemaHash: payload.schema_hash }
+      : {}),
     originChannel: `watch:${payload.subscription_id}`,
   };
 }

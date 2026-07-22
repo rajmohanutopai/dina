@@ -37,6 +37,14 @@ export interface CreatePollWatchInput {
   capability: string;
   query?: Record<string, unknown>;
   poll_interval_sec: number;
+  /** The provider's published schema hash, pinned at subscribe time and
+   *  forwarded on every poll (else a schema-publishing provider rejects the
+   *  poll as `schema_hash_required`). Omit when the provider publishes none. */
+  schema_hash?: string;
+  /** The provider's declared freshness (its capability `defaultTtlSeconds`),
+   *  pinned from discovery. The poll interval is floored at it — polling faster
+   *  than the data changes is pure waste (and pure cost). Omit when unknown. */
+  freshness_sec?: number;
   condition?: string;
   /** R2-04 — optional executable wake filter (fire only when a poll result
    *  matches; absent = fire on every resolved poll). */
@@ -81,7 +89,17 @@ export class WatchService {
     const existing = this.repo.getActiveByIdempotencyKey(idemKey);
     if (existing !== null) return existing;
 
-    const intervalSec = Math.max(MIN_POLL_INTERVAL_SEC, Math.floor(input.poll_interval_sec));
+    // Never poll faster than (a) the hard floor, or (b) the provider's declared
+    // freshness — asking again before the data can have changed only burns cost.
+    const freshnessFloor =
+      typeof input.freshness_sec === 'number' && input.freshness_sec > 0
+        ? Math.floor(input.freshness_sec)
+        : 0;
+    const intervalSec = Math.max(
+      MIN_POLL_INTERVAL_SEC,
+      freshnessFloor,
+      Math.floor(input.poll_interval_sec),
+    );
     const nowMs = this.now();
     const nowSec = Math.floor(nowMs / 1000);
     const payload: WatchPollPayload = {
@@ -93,6 +111,9 @@ export class WatchService {
       capability: input.capability,
       query: input.query ?? {},
       poll_interval_sec: intervalSec,
+      ...(input.schema_hash !== undefined && input.schema_hash !== ''
+        ? { schema_hash: input.schema_hash }
+        : {}),
       ...(input.condition !== undefined ? { condition: input.condition } : {}),
       ...(input.filter !== undefined ? { filter: input.filter } : {}),
     };

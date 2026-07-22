@@ -26,9 +26,14 @@ import {
   resolveCatalogCapability,
 } from '@dina/protocol';
 
-
+import { answerCacheKey, getTier1AnswerCache, type Tier1AnswerCache } from './answer_cache';
 import { getCapability } from './capabilities/registry';
 import { getVaultFactBuilder } from './capabilities/vault_facts';
+import { buildCapabilityRuntime, type CapabilityRuntimeOptions } from './capability_runtime';
+import { findCapabilityConfig, lookupPublishedSchema, snapshotForCapability } from './service_handler';
+
+import type { LocalCapabilityRunner, WorkflowTask } from '@dina/core';
+import type { ServiceConfig } from '@dina/protocol';
 
 /**
  * Vault-MUTATING action classes — capabilities whose execution may persist to
@@ -38,14 +43,6 @@ import { getVaultFactBuilder } from './capabilities/vault_facts';
  * mutation).
  */
 const MUTATING_ACTION_CLASSES: ReadonlySet<string> = new Set(['booking', 'write', 'payment']);
-import {
-  buildCapabilityRuntime,
-  type CapabilityRuntimeOptions,
-} from './capability_runtime';
-import { findCapabilityConfig, snapshotForCapability } from './service_handler';
-
-import type { LocalCapabilityRunner, WorkflowTask } from '@dina/core';
-import type { ServiceConfig } from '@dina/protocol';
 
 /** Mirrors `DEFAULT_LISTING_RKEY` in @dina/core's service_config. */
 const DEFAULT_RKEY = 'self';
@@ -56,6 +53,13 @@ export interface Tier1RunnerOptions extends CapabilityRuntimeOptions {
    * core's `getServiceConfig`.
    */
   readConfig: (rkey: string) => ServiceConfig | null;
+  /**
+   * Provider answer cache (cost control). Defaults to the process-wide
+   * singleton so a fresh runner per request still shares one cache; tests
+   * inject a fake-clock instance. Only AUTO-policy read-only capabilities are
+   * cached (see the runner body).
+   */
+  answerCache?: Tier1AnswerCache;
 }
 
 /**
@@ -65,6 +69,7 @@ export interface Tier1RunnerOptions extends CapabilityRuntimeOptions {
  */
 export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCapabilityRunner {
   const runtime = buildCapabilityRuntime(options);
+  const answerCache = options.answerCache ?? getTier1AnswerCache();
 
   return async (capability: string, params: unknown, task: WorkflowTask): Promise<unknown> => {
     // THE codec — same parser as the approval consumer + Response Bridge.
@@ -108,6 +113,38 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
     const catalogEntry = getCatalogCapability(canonical);
     const actionClass = catalogEntry?.action_class;
     const mutationAllowed = actionClass !== undefined && MUTATING_ACTION_CLASSES.has(actionClass);
+
+    // ── Provider answer cache (cost control) ─────────────────────────────
+    // Cache ONLY auto-policy, read-only capabilities. A booking/write/payment
+    // action is distinct every time; a review-policy capability keeps its
+    // per-response operator approval. Cache within the provider's DECLARED
+    // freshness (`defaultTtlSeconds`) — serving inside that window is the
+    // freshness contract, so a repeat poll (or another subscriber) returns the
+    // same answer with NO LLM call. `instructionUpdatedAt` in the key means an
+    // instruction edit invalidates stale answers.
+    const published = lookupPublishedSchema(config, capability);
+    const cacheTtlSec =
+      typeof published?.defaultTtlSeconds === 'number' ? published.defaultTtlSeconds : 0;
+    const cacheable = cap.responsePolicy === 'auto' && !mutationAllowed && cacheTtlSec > 0;
+    const cacheKey = cacheable
+      ? answerCacheKey({
+          rkey,
+          capability,
+          params,
+          schemaHash: published?.schemaHash ?? '',
+          ...(typeof cap.instructionUpdatedAt === 'number'
+            ? { instructionUpdatedAt: cap.instructionUpdatedAt }
+            : {}),
+        })
+      : '';
+    if (cacheable) {
+      const cached = answerCache.get(cacheKey);
+      if (cached.hit) {
+        options.logger?.({ event: 'tier1.answer_cache.hit', capability, rkey });
+        return cached.value;
+      }
+    }
+
     // The result statuses that mean the mutation SUCCEEDED — the only ones that
     // commit a vault write (e.g. appointment_book → ['confirmed']). The runtime
     // fail-closes when this is absent, so a non-success booking
@@ -131,7 +168,7 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
         ? config.vaultPersona
         : 'general';
 
-    return runtime.run({
+    const result = await runtime.run({
       capability,
       params,
       instruction,
@@ -152,5 +189,9 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
       // scope to exactly this one persona (∩ the runtime's safe-tier filter).
       allowedPersonas: [vaultPersona],
     });
+    // Cache the fresh answer for the freshness window (a throw above never
+    // reaches here, so only successful results are cached).
+    if (cacheable) answerCache.set(cacheKey, result, cacheTtlSec * 1000);
+    return result;
   };
 }

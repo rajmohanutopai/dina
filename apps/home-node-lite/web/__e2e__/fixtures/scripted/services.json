@@ -1,0 +1,13 @@
+{
+  "_comment": "Scripted LLM rules for the services E2E. The provider's Tier-1 eta_query instruction contains 'Route 42', so the first rule matches and returns a schema-valid ETA JSON directly (no tool call → the agentic loop terminates on the first turn). The empty-match fallback keeps any other agentic call (e.g. a stray classify) deterministic.",
+  "rules": [
+    {
+      "match": "route 42",
+      "content": "{\"status\":\"on_route\",\"eta_minutes\":7,\"route_name\":\"Route 42\",\"vehicle_type\":\"Bus\",\"stop_name\":\"Castro\",\"stop_distance_m\":1450,\"message\":\"Route 42 is on route. The next bus reaches Castro in about 7 minutes.\"}"
+    },
+    {
+      "match": "",
+      "content": "{\"status\":\"not_found\",\"message\":\"No matching service.\"}"
+    }
+  ]
+}

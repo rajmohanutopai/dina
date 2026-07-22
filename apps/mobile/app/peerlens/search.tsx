@@ -55,10 +55,9 @@ export interface SearchResult {
 }
 
 /**
- * Module-level empty defaults. Hoisted out of the render so memoised
+ * Module-level empty default. Hoisted out of the render so memoised
  * children + dep arrays don't see fresh references on every mount.
  */
-const EMPTY_RESULTS: readonly SearchResult[] = [];
 const EMPTY_FACETS: FacetBar = { primary: [], overflow: [] };
 
 export interface SearchScreenProps {
@@ -143,6 +142,38 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
     onRetry = () => setRetryNonce((n) => n + 1),
   } = props;
 
+  const trimmedQ = q && q.trim().length > 0 ? q.trim() : '';
+
+  // ─── Viewer-profile filter chips (TN-V2-RANK-005 / RANK-016) ────────────
+  // Off by default, opts in per session — `activeFilters` is a session-
+  // local Set, NOT persisted. The user toggles a chip → re-render with
+  // the chip's predicate applied to `results`. Cluster A's keystore-
+  // resident profile is the source of truth; this chip-state is just
+  // ephemeral UI.
+  //
+  // These hooks MUST sit above the `error` early-return below: a mid-search
+  // error transitions the screen from a full-hook render to the early-return
+  // render, and if these hooks lived after it their count would drop —
+  // React #300 ("rendered fewer hooks than expected"), which blanked the
+  // screen on a failed AppView search.
+  const { profile: viewerProfile } = useViewerPreferences();
+  const filters = React.useMemo(() => applicableFilters(viewerProfile), [viewerProfile]);
+  const [activeFilters, setActiveFilters] = React.useState<ReadonlySet<ViewerFilterId>>(
+    () => new Set<ViewerFilterId>(),
+  );
+  const onToggleFilter = React.useCallback((id: ViewerFilterId) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const displayedResults = React.useMemo(
+    () => applyFilters(results, viewerProfile, activeFilters),
+    [results, viewerProfile, activeFilters],
+  );
+
   if (error !== null) {
     return (
       <View style={styles.container} testID="search-error">
@@ -166,32 +197,6 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
       </View>
     );
   }
-
-  const trimmedQ = q && q.trim().length > 0 ? q.trim() : '';
-
-  // ─── Viewer-profile filter chips (TN-V2-RANK-005 / RANK-016) ────────────
-  // Off by default, opts in per session — `activeFilters` is a session-
-  // local Set, NOT persisted. The user toggles a chip → re-render with
-  // the chip's predicate applied to `results`. Cluster A's keystore-
-  // resident profile is the source of truth; this chip-state is just
-  // ephemeral UI.
-  const { profile: viewerProfile } = useViewerPreferences();
-  const filters = React.useMemo(() => applicableFilters(viewerProfile), [viewerProfile]);
-  const [activeFilters, setActiveFilters] = React.useState<ReadonlySet<ViewerFilterId>>(
-    () => new Set<ViewerFilterId>(),
-  );
-  const onToggleFilter = React.useCallback((id: ViewerFilterId) => {
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-  const displayedResults = React.useMemo(
-    () => applyFilters(results, viewerProfile, activeFilters),
-    [results, viewerProfile, activeFilters],
-  );
 
   return (
     <View style={styles.container} testID="search-screen">

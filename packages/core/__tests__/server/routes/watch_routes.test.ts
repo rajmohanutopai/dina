@@ -5,6 +5,7 @@
 
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerWatchRoutes, type WatchListItem } from '../../../src/server/routes/watch';
+import { parseWatchPollPayload } from '../../../src/watch/payload';
 import { WatchService, setWatchService } from '../../../src/watch/service';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
 
@@ -152,6 +153,44 @@ describe('/v1/watch/* — owner boundary + management', () => {
     );
     expect(bad.status).toBe(400);
     expect(svc.deliveryPolicyFor('sub-badfilter')).toEqual({ active: false });
+  });
+
+  it('floors the poll interval at the provider freshness (never polls faster than the data changes)', async () => {
+    // Requester asks for 60s but the provider declares 300s freshness → the
+    // watch polls every 300s (asking sooner only burns cost).
+    const resp = await router.handle(
+      req('POST', '/v1/watch/create', 'owner', {
+        subscription_id: 'sub-fresh',
+        persona: 'general',
+        service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/self',
+        provider_did: 'did:plc:prov',
+        capability: 'eta_query',
+        poll_interval_sec: 60,
+        freshness_sec: 300,
+      }),
+    );
+    expect(resp.status).toBe(201);
+    expect((resp.body as { watch?: WatchListItem }).watch?.poll_interval_sec).toBe(300);
+  });
+
+  it('owner create pins a schema_hash into the stored payload (GAP-SH-01 forwarding)', async () => {
+    // A provider that publishes a versioned schema rejects a hash-less poll as
+    // `schema_hash_required`; the subscription must pin + persist the hash so the
+    // sweeper forwards it on every fire.
+    const resp = await router.handle(
+      req('POST', '/v1/watch/create', 'owner', {
+        subscription_id: 'sub-hash',
+        persona: 'general',
+        service_uri: 'at://did:plc:prov/com.dinakernel.service.profile/route-42',
+        provider_did: 'did:plc:prov',
+        capability: 'eta_query',
+        poll_interval_sec: 300,
+        schema_hash: 'deadbeef',
+      }),
+    );
+    expect(resp.status).toBe(201);
+    const task = svc.listActive().find((t) => t.description.includes('eta_query'));
+    expect(parseWatchPollPayload(task?.payload)?.schema_hash).toBe('deadbeef');
   });
 
   it('owner lists active watches with display fields', async () => {

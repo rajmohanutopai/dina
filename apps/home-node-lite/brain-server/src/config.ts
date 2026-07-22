@@ -64,6 +64,12 @@ const LLMSchema = z.discriminatedUnion('provider', [
     apiKey: z.string().min(1),
     model: z.string().min(1).optional(),
   }),
+  // Deterministic canned-response provider for E2E/dev. NEVER production —
+  // gated behind an explicit `DINA_BRAIN_LLM_PROVIDER=scripted` opt-in.
+  z.object({
+    provider: z.literal('scripted'),
+    scriptFile: z.string().min(1).optional(),
+  }),
 ]);
 
 const BrainServerConfigSchema = z.object({
@@ -149,6 +155,12 @@ function readLLM(env: NodeJS.ProcessEnv) {
         env.DINA_GEMINI_API_KEY ?? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY,
       ),
       model: blankToUndefined(env.DINA_GEMINI_MODEL),
+    };
+  }
+  if (provider === 'scripted') {
+    return {
+      provider: 'scripted',
+      scriptFile: blankToUndefined(env.DINA_BRAIN_SCRIPTED_LLM_FILE),
     };
   }
   return { provider };

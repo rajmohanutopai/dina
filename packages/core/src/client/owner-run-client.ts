@@ -55,6 +55,14 @@ export interface WatchCreateRequest {
   capability: string;
   poll_interval_sec: number;
   query?: Record<string, unknown>;
+  /** The provider's published schema hash, pinned from discovery. Forwarded on
+   *  every poll so a schema-publishing provider accepts it (GAP-SH-01). Omit
+   *  when the provider advertises no schema. */
+  schema_hash?: string;
+  /** The provider's declared freshness (`defaultTtlSeconds`), pinned from
+   *  discovery. Floors the poll interval so it never polls faster than the data
+   *  changes. Omit when unknown. */
+  freshness_sec?: number;
   condition?: string;
   /** R2-04 — optional executable wake filter: only notify when a poll result
    *  contains this (case-insensitive) substring (else the watch stays silent). */

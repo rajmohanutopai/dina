@@ -39,6 +39,18 @@ describe('watchPollToServiceQuery', () => {
     });
   });
 
+  it('forwards a pinned schema_hash so a schema-publishing provider accepts the poll', () => {
+    // Without this, a provider that advertises a versioned schema rejects every
+    // poll as `schema_hash_required` (GAP-SH-01) and the subscription never delivers.
+    const req = watchPollToServiceQuery({ ...payload, schema_hash: 'abc123' }, 'q-3');
+    expect(req.schemaHash).toBe('abc123');
+  });
+
+  it('omits schemaHash when the subscription pinned none (provider publishes no schema)', () => {
+    const req = watchPollToServiceQuery(payload, 'q-4');
+    expect('schemaHash' in req).toBe(false);
+  });
+
   it('clamps a cadence longer than MAX_SERVICE_TTL to the wire TTL cap (81B-05)', () => {
     // An hourly watch keeps its local cadence but must send a wire ttl ≤ 300, else
     // the service-query route (MAX_SERVICE_TTL=300) rejects every poll.

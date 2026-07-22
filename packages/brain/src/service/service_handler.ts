@@ -77,7 +77,7 @@ function resolveConfiguredKey(keys: readonly string[], capability: string): stri
  * `snapshotForCapability`) funnel through here so they agree on the same
  * config key Core's ingress accepted.
  */
-function lookupPublishedSchema(
+export function lookupPublishedSchema(
   config: ServiceConfig | null,
   capability: string,
 ): ServiceCapabilitySchemas | undefined {

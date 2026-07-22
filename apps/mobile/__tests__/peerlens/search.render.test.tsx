@@ -130,6 +130,32 @@ describe('SearchScreen — render states', () => {
     );
     expect(queryByTestId('facet-bar')).toBeNull();
   });
+
+  it('survives results↔error transitions without a hooks-order crash (React #300 regression)', () => {
+    // The reported web crash: a live search renders results (every hook runs),
+    // then the AppView fetch fails and the screen re-renders into the error
+    // state. When the viewer-filter hooks lived BELOW the `error` early-return,
+    // the error render ran fewer hooks → React #300 blanked the screen. With
+    // the hooks hoisted above the early return, both transitions are safe.
+    const { getByTestId, rerender } = render(
+      <SearchScreen q="coffee" results={makeResults(2)} facets={SOME_FACETS} error={null} />,
+    );
+    expect(getByTestId('search-results')).toBeTruthy();
+    // results → error (the exact failing path: a failed search after results)
+    expect(() =>
+      rerender(
+        <SearchScreen q="coffee" results={[]} facets={EMPTY_FACETS} error="Network unreachable" />,
+      ),
+    ).not.toThrow();
+    expect(getByTestId('search-error')).toBeTruthy();
+    // error → results (the reverse transition — retry succeeds)
+    expect(() =>
+      rerender(
+        <SearchScreen q="coffee" results={makeResults(1)} facets={SOME_FACETS} error={null} />,
+      ),
+    ).not.toThrow();
+    expect(getByTestId('search-results')).toBeTruthy();
+  });
 });
 
 describe('SearchScreen — interactions', () => {

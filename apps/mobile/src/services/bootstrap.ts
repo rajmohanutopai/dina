@@ -173,6 +173,7 @@ import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
 import { postGrantPromptOnce } from './grant_prompt';
 import { resolveInboxCoreClient } from './inbox_client_resolver';
+import { resolveServiceConfigCoreClient } from './service_config_resolver';
 import { installServerNotifications } from './server_notifications';
 import {
   resetPendingPreflights,
@@ -995,7 +996,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // (F4). On native it returns the in-process client unchanged.
     setInboxCoreClient(resolveInboxCoreClient(options.coreClient));
     globalDisposers.push(resetInboxCoreClient);
-    setServiceConfigCoreClient(options.coreClient);
+    // On web the in-process Core store is empty, so the resolver swaps in an
+    // HTTP client to the brain's `/api/v1/service/config` proxy (so the
+    // My-Services publish form actually reaches Core). On native it returns the
+    // in-process client unchanged.
+    setServiceConfigCoreClient(resolveServiceConfigCoreClient(options.coreClient));
     globalDisposers.push(resetServiceConfigCoreClient);
     // R4-03 — on web, wire the notification inbox to the split server's durable
     // log (`/api/v1/notifications` + SSE) so watch/push results surface in the

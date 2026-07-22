@@ -34,6 +34,12 @@ export interface WatchPollPayload {
   query: Record<string, unknown>;
   /** Poll cadence in SECONDS (matches the `workflow_tasks.next_run_at` unit). */
   poll_interval_sec: number;
+  /** The provider's published schema hash, PINNED at subscribe time (from
+   *  discovery). Forwarded on every poll's `service.query` so a provider that
+   *  advertises a versioned schema accepts the poll (GAP-SH-01: a provider with
+   *  a non-empty published hash rejects a hash-less requester as
+   *  `schema_hash_required`). Absent when the provider publishes no schema. */
+  schema_hash?: string;
   /** Optional human-readable condition ("BA117 delayed > 30m"). Display only. */
   condition?: string;
   /** R2-04 — the executable WAKE FILTER: only surface a poll result when it
@@ -91,6 +97,9 @@ export function parseWatchPollPayload(raw: string | undefined | null): WatchPoll
     capability,
     query: isRecord(parsed.query) ? parsed.query : {},
     poll_interval_sec,
+    ...(typeof parsed.schema_hash === 'string' && parsed.schema_hash !== ''
+      ? { schema_hash: parsed.schema_hash }
+      : {}),
     ...(typeof parsed.condition === 'string' ? { condition: parsed.condition } : {}),
     ...((): { filter?: WatchFilter } => {
       const f = parseWatchFilter(parsed.filter);

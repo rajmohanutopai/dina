@@ -18,11 +18,20 @@
  * hosted test or release fleet as one unit.
  */
 
+import { Platform } from 'react-native';
+
 import { mobileHostedEndpoints } from '../services/hosted_endpoints';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 function configuredURL(): string {
+  // Web thin-client: the browser must NOT call the AppView directly — that
+  // breaks the sovereignty rule (external I/O flows through the Home Node) and
+  // is CORS-blocked (the AppView sends no Access-Control-Allow-Origin). Route
+  // PeerLens reads at the Home Node's same-origin proxy (brain-server
+  // `/api/peerlens/xrpc/*`), which forwards to the AppView server-side. Native
+  // IS the full Home Node, so it keeps calling the AppView directly.
+  if (Platform.OS === 'web') return '/api/peerlens';
   return mobileHostedEndpoints().appViewBaseUrl;
 }
 

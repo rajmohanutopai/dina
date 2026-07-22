@@ -222,7 +222,9 @@ export class LLMRouter {
     override: string | undefined,
   ): string | undefined {
     if (override !== undefined && override !== '') return override;
-    if (providerName === 'none') return undefined;
+    // `none`/`scripted` have no real model tiers — the scripted provider ignores
+    // the model, so there is nothing to pick.
+    if (providerName === 'none' || providerName === 'scripted') return undefined;
     const tiers = getProviderTiers(providerName);
     return isLightweightTask(taskType) ? tiers.lite : tiers.primary;
   }

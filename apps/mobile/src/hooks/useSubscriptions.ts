@@ -45,6 +45,12 @@ export interface CreateSubscriptionInput {
   capability: string;
   pollIntervalSec: number;
   query?: Record<string, unknown>;
+  /** The provider's published schema hash, from discovery. Forwarded on every
+   *  poll so a schema-publishing provider accepts it (else `schema_hash_required`). */
+  schemaHash?: string;
+  /** The provider's declared freshness (`defaultTtlSeconds`), from discovery.
+   *  Floors the poll interval so it never polls faster than the data changes. */
+  freshnessSec?: number;
   /** R3-06 — the poll TARGET as `key=value` pairs (comma-separated), e.g.
    *  "flight=BA117". Parsed into the `service.query` params so a parameterized watch
    *  polls the right subject. Distinct from the wake `condition`. */
@@ -87,6 +93,12 @@ export async function createSubscription(input: CreateSubscriptionInput): Promis
       capability: input.capability,
       poll_interval_sec: input.pollIntervalSec,
       ...(query !== undefined ? { query } : {}),
+      ...(input.schemaHash !== undefined && input.schemaHash !== ''
+        ? { schema_hash: input.schemaHash }
+        : {}),
+      ...(input.freshnessSec !== undefined && input.freshnessSec > 0
+        ? { freshness_sec: input.freshnessSec }
+        : {}),
       ...(condition !== '' ? { condition, filter: { contains: condition } } : {}),
     });
     return res.watch_id;

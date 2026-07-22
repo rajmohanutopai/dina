@@ -62,6 +62,9 @@ export interface BuiltStack {
   corePort: number;
   brainPort: number;
   baseURL: string;
+  /** The Core vault dir (temp, per stack). After PDS provisioning it holds
+   *  `pds_identity.json` → `.did` (the node's own DID, for a self-subscription). */
+  vaultDir: string;
   /** True when a Gemini key is present → Brain boots the real provider. */
   live: boolean;
   /** Server stdout log files (for the MRS-14 log-hygiene teardown). */
@@ -93,20 +96,47 @@ export function buildStack(opts: {
    *  deterministic agent-safety flows (gatekeeper / workflow / agent
    *  perimeter) need no product LLM, so they run with zero secrets. */
   noLlm?: boolean;
+  /** Boot Brain with the deterministic `scripted` LLM provider, replaying this
+   *  rules fixture (absolute path). Lets a tier exercise the REAL agentic /
+   *  Tier-1 path with a fixed, offline, zero-cost output. Wins over `noLlm`. */
+  scriptedLlmFile?: string;
+  /** Serve Core's same-origin `/owner` console (`DINA_CORE_OWNER_CONSOLE=1`) —
+   *  the owner surface for run/watch control (subscriptions). */
+  ownerConsole?: boolean;
+  /** Enable the real MsgBox D2D transport (`DINA_MSGBOX_ENABLED=true`) so the
+   *  node can send/receive `service.query`/`service.response` over the deployed
+   *  test relay — REQUIRED for a real services loop. Implies `provisionPds`
+   *  (a node must have a did:plc + registered MsgBox endpoint to be reachable). */
+  msgbox?: boolean;
 }): BuiltStack {
   const corePort = Number(process.env.DINA_CORE_E2E_PORT ?? 18298);
   const brainPort = Number(process.env.DINA_BRAIN_E2E_PORT ?? 18299);
   const baseURL = `http://127.0.0.1:${brainPort}`;
 
-  const stackDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-pw-stack-'));
+  // Playwright RE-EVALUATES the config in every worker process, so buildStack
+  // runs again there. The FIRST eval (main process, which boots the webServer)
+  // mints the stack dir + brain key and publishes the path via
+  // DINA_E2E_STACK_DIR; workers inherit that env at spawn and must REUSE it —
+  // else a worker mkdtemps a fresh empty dir (and a fresh brain key → a DID
+  // mismatch with the running server), and anything a worker reads from the
+  // vault (e.g. the provisioned `pds_identity.json`) points at the wrong dir.
+  const brainKeyFile = 'brain.ed25519';
+  const inheritedDir = process.env.DINA_E2E_STACK_DIR;
+  const reusing =
+    inheritedDir !== undefined &&
+    inheritedDir !== '' &&
+    fs.existsSync(path.join(inheritedDir, 'service-keys', brainKeyFile));
+  const stackDir = reusing
+    ? (inheritedDir as string)
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'dina-pw-stack-'));
   const vaultDir = path.join(stackDir, 'vault');
   const serviceKeyDir = path.join(stackDir, 'service-keys');
-  fs.mkdirSync(vaultDir, { recursive: true });
-  fs.mkdirSync(serviceKeyDir, { recursive: true });
-
-  const brainKeyFile = 'brain.ed25519';
   const brainKeyPath = path.join(serviceKeyDir, brainKeyFile);
-  fs.writeFileSync(brainKeyPath, randomBytes(32), { mode: 0o600 });
+  if (!reusing) {
+    fs.mkdirSync(vaultDir, { recursive: true });
+    fs.mkdirSync(serviceKeyDir, { recursive: true });
+    fs.writeFileSync(brainKeyPath, randomBytes(32), { mode: 0o600 });
+  }
   const brainDid = deriveBrainDidKey(new Uint8Array(fs.readFileSync(brainKeyPath)));
 
   // Explicit env override wins; else the caller's choice; else warn. The
@@ -121,11 +151,17 @@ export function buildStack(opts: {
   const coreLogPath = path.join(stackDir, 'core.log');
   const brainLogPath = path.join(stackDir, 'brain.log');
   process.env.DINA_E2E_STACK_DIR = stackDir;
+  // Publish the vault dir so a worker can read the provisioned DID from
+  // `pds_identity.json` (a self-subscription targets the node's own DID).
+  process.env.DINA_E2E_VAULT_DIR = vaultDir;
 
   // Agent tier: a unique PDS handle per stack (derived from the random
   // mkdtemp suffix, tied to this vault) so a fresh vault mints a fresh
   // did:plc rather than colliding on a taken handle.
-  const pdsEnv: Record<string, string> = opts.provisionPds
+  // MsgBox needs a reachable did:plc (its endpoint is registered in the PLC
+  // doc), so enabling MsgBox implies provisioning.
+  const needsPds = opts.provisionPds === true || opts.msgbox === true;
+  const pdsEnv: Record<string, string> = needsPds
     ? {
         DINA_PDS_PROVISION: '1',
         DINA_PDS_HANDLE: `e2e${path
@@ -135,27 +171,35 @@ export function buildStack(opts: {
           .slice(-12)}.test-pds.dinakernel.com`,
       }
     : {};
+  const msgboxEnv: Record<string, string> = opts.msgbox === true ? { DINA_MSGBOX_ENABLED: 'true' } : {};
   // Provisioning is a network round-trip (createAccount + PLC) — give Core
   // a longer boot window when it's on.
-  const coreBootTimeout = opts.provisionPds ? 90_000 : 30_000;
+  const coreBootTimeout = needsPds ? 90_000 : 30_000;
 
-  const brainLlmEnv: Record<string, string> = opts.noLlm
-    ? { DINA_BRAIN_LLM_PROVIDER: 'none' }
-    : GEMINI_KEY !== ''
+  const brainLlmEnv: Record<string, string> =
+    opts.scriptedLlmFile !== undefined
       ? {
-          DINA_BRAIN_LLM_PROVIDER: 'gemini',
-          DINA_GEMINI_API_KEY: GEMINI_KEY,
-          ...(process.env.DINA_GEMINI_MODEL !== undefined
-            ? { DINA_GEMINI_MODEL: process.env.DINA_GEMINI_MODEL }
-            : {}),
+          DINA_BRAIN_LLM_PROVIDER: 'scripted',
+          DINA_BRAIN_SCRIPTED_LLM_FILE: opts.scriptedLlmFile,
         }
-      : {};
-  const live = !opts.noLlm && GEMINI_KEY !== '';
+      : opts.noLlm
+        ? { DINA_BRAIN_LLM_PROVIDER: 'none' }
+        : GEMINI_KEY !== ''
+          ? {
+              DINA_BRAIN_LLM_PROVIDER: 'gemini',
+              DINA_GEMINI_API_KEY: GEMINI_KEY,
+              ...(process.env.DINA_GEMINI_MODEL !== undefined
+                ? { DINA_GEMINI_MODEL: process.env.DINA_GEMINI_MODEL }
+                : {}),
+            }
+          : {};
+  const live = !opts.noLlm && opts.scriptedLlmFile === undefined && GEMINI_KEY !== '';
 
   return {
     corePort,
     brainPort,
     baseURL,
+    vaultDir,
     live,
     coreLogPath,
     brainLogPath,
@@ -177,10 +221,15 @@ export function buildStack(opts: {
           DINA_LOG_LEVEL: logLevel,
           DINA_RATE_LIMIT: '100000',
           DINA_BRAIN_DID: brainDid,
+          // Core → Brain (Tier-1 capability execution + workflow-event delivery)
+          // — without this Core defaults to :8200 and the fetch fails silently.
+          DINA_BRAIN_URL: `http://127.0.0.1:${brainPort}`,
           // Backstage hook (loopback-only owner-bypass); refuses release
           // endpoints, so keep the endpoint mode test.
           DINA_DEBUG_MODE: '1',
           DINA_ENDPOINT_MODE: 'test',
+          ...(opts.ownerConsole ? { DINA_CORE_OWNER_CONSOLE: '1' } : {}),
+          ...msgboxEnv,
           ...pdsEnv,
         },
       },

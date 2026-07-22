@@ -53,6 +53,15 @@ export type {
 } from './service/capability_runtime';
 export { makeTier1CapabilityRunner } from './service/tier1_runner';
 export type { Tier1RunnerOptions } from './service/tier1_runner';
+export {
+  Tier1AnswerCache,
+  getTier1AnswerCache,
+  setTier1AnswerCache,
+  resetTier1AnswerCache,
+  answerCacheKey,
+  stableStringify,
+} from './service/answer_cache';
+export type { Tier1AnswerCacheOptions, AnswerCacheKeyParts } from './service/answer_cache';
 export { validateAgainstSchema } from './service/capabilities/schema_validator';
 export * from './guardian/silence';
 export * from './llm/router';
@@ -69,6 +78,8 @@ export type {
 } from './llm/adapters/provider';
 export { GeminiGenaiAdapter } from './llm/adapters/gemini_genai';
 export type { GeminiGenaiAdapterOptions } from './llm/adapters/gemini_genai';
+export { ScriptedLLMProvider, buildScriptedProvider } from './llm/adapters/scripted';
+export type { ScriptedRule, ScriptedProviderOptions } from './llm/adapters/scripted';
 export * from './staging/processor';
 export {
   runStagingDrainTick,

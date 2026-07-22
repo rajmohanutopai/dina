@@ -13,6 +13,7 @@
     "test:e2e:functional:isolated": "bash scripts/run-functional-isolated.sh",
     "test:e2e:pr": "playwright test --config=playwright.pr.config.ts",
     "test:e2e:relay": "playwright test --config=playwright.relay.config.ts",
+    "test:e2e:services": "playwright test --config=playwright.services.config.ts",
     "test:e2e:install": "playwright install --with-deps chromium",
     "typecheck": "tsc --noEmit"
   },
