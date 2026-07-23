@@ -8,6 +8,7 @@
  */
 
 import { queryAudit, resetAuditState, auditCount } from '../../../src/audit/service';
+import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import {
   registerCodingGateRoutes,
@@ -48,14 +49,20 @@ const allowGate: CodingGateFn = () => ({
 });
 
 describe('POST /v1/agent/gate — wire contract', () => {
+  afterEach(() => setSessionRegistry(null));
+
   it('forwards the raw call and returns the decision in snake_case', async () => {
+    // A supplied session must be a live session bound to this DID (audit).
+    const reg = new SessionRegistry();
+    setSessionRegistry(reg);
+    const sid = reg.start({ agentDid: 'did:key:z6MkAgent', hostSessionId: 'h1' }).sessionId;
     let seen: CodingGateInput | undefined;
     const gate: CodingGateFn = (input): CodingGateResult => {
       seen = input;
       return { action: 'code_edit', risk: 'SAFE', outcome: 'allow', enforced: true, permitId: 'p1', reason: 'r' };
     };
     const res = await routerWith(gate).handle(
-      agentReq({ tool_name: 'Write', tool_input: { file_path: 'a.ts' }, session_id: 's1', cwd: '/work' }),
+      agentReq({ tool_name: 'Write', tool_input: { file_path: 'a.ts' }, session_id: sid, cwd: '/work' }),
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -71,10 +78,24 @@ describe('POST /v1/agent/gate — wire contract', () => {
       toolName: 'Write',
       toolInput: { file_path: 'a.ts' },
       agentDid: 'did:key:z6MkAgent',
-      sessionId: 's1',
+      sessionId: sid,
       cwd: '/work',
       mode: 'enforce',
     });
+  });
+
+  it('CODEX-AUDIT: rejects a fake/foreign/ended session_id (401), never mints a permit', async () => {
+    setSessionRegistry(new SessionRegistry()); // empty — no session is registered
+    let called = false;
+    const gate: CodingGateFn = () => {
+      called = true;
+      return { action: 'code_read', risk: 'SAFE', outcome: 'allow', enforced: true, reason: 'r' };
+    };
+    const res = await routerWith(gate).handle(
+      agentReq({ tool_name: 'Read', tool_input: { file_path: 'a.ts' }, session_id: 'sess-forged' }),
+    );
+    expect(res.status).toBe(401);
+    expect(called).toBe(false); // gate/permit never reached
   });
 
   it('defaults mode to enforce and session_id to empty', async () => {

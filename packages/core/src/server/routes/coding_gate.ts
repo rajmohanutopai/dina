@@ -18,6 +18,7 @@
  */
 
 import { appendAudit } from '../../audit/service';
+import { getSessionRegistry } from '../../session/registry';
 
 import type { CoreRouter } from '../router';
 
@@ -81,6 +82,15 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     }
     const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
     const cwd = typeof body.cwd === 'string' && body.cwd !== '' ? body.cwd : undefined;
+
+    // A supplied session_id must be a LIVE session bound to THIS authenticated
+    // agent (§15) — otherwise a caller could mint a permit against a fake, ended,
+    // or foreign session id, and session-end wouldn't revoke gate authority
+    // (audit). An empty session_id is the no-session case (permit is still
+    // DID-bound). The session-start route is the only bootstrap-exempt op.
+    if (sessionId !== '' && !getSessionRegistry().validate(sessionId, agentDid).ok) {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
 
     if (!gate) {
       return { status: 501, body: { error: 'coding gate not available on this node' } };

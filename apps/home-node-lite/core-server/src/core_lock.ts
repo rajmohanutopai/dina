@@ -62,6 +62,10 @@ export function readLock(vaultDir: string): LockInfo | null {
  * Refuse to boot when another LIVE Core already owns this vault dir. Call
  * BEFORE opening the vault's SQLite. A stale lock (dead pid) or our own lock is
  * ignored.
+ *
+ * NOTE: prefer {@link acquireLock} on the boot path — this read-then-decide form
+ * is a TOCTOU race (two Cores can both observe "no live lock" and both open the
+ * same SQLite). Kept for callers that only need a non-mutating probe.
  */
 export function assertNoLiveForeignLock(vaultDir: string): void {
   const existing = readLock(vaultDir);
@@ -71,6 +75,48 @@ export function assertNoLiveForeignLock(vaultDir: string): void {
         `already owns ${vaultDir}. Stop it first, or use a different DINA_VAULT_DIR.`,
     );
   }
+}
+
+/**
+ * ATOMICALLY acquire the single-owner lock BEFORE opening any vault database
+ * (audit — closes the check-then-write race). Uses `open(…, 'wx')` = O_CREAT|
+ * O_EXCL, which the kernel guarantees only one process can win. On contention
+ * (`EEXIST`) it refuses to boot if the current owner is a LIVE foreign Core, or
+ * recovers a STALE lock (dead pid / our own / unreadable) by removing it and
+ * retrying the atomic create. Returns after the lock is ours; call
+ * {@link writeLock} later to refresh it with the real bound port + node DID.
+ */
+export function acquireLock(vaultDir: string, info: LockInfo): void {
+  fs.mkdirSync(vaultDir, { recursive: true });
+  const target = path.join(vaultDir, LOCK_FILE_NAME);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = fs.openSync(target, 'wx'); // atomic create-or-fail
+      try {
+        fs.writeSync(fd, JSON.stringify(info));
+      } finally {
+        fs.closeSync(fd);
+      }
+      return; // acquired
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      const existing = readLock(vaultDir);
+      if (existing !== null && existing.pid !== process.pid && isPidAlive(existing.pid)) {
+        throw new Error(
+          `core.lock: another Dina Core (pid ${existing.pid}, ${existing.host}:${existing.port}) ` +
+            `already owns ${vaultDir}. Stop it first, or use a different DINA_VAULT_DIR.`,
+        );
+      }
+      // Stale / our own / unreadable → drop it and retry the atomic create.
+      // If a peer removes it first, the next openSync just wins or re-contends.
+      try {
+        fs.rmSync(target);
+      } catch {
+        /* raced with another remover — retry */
+      }
+    }
+  }
+  throw new Error(`core.lock: could not acquire the single-owner lock for ${vaultDir} (contended).`);
 }
 
 /** Write/refresh the discovery lock atomically (temp → rename). */

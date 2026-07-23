@@ -72,7 +72,7 @@ import {
   deliverBootstrapCapability,
   resolveHandoffFromEnv,
 } from './pair/bootstrap_capability';
-import { assertNoLiveForeignLock, releaseLock, writeLock } from './core_lock';
+import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
 import { createAgentFacades } from './agent/facades';
 import { createServer } from './server';
@@ -257,10 +257,17 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     logger.info({ adminDid }, 'admin service DID registered');
   }
 
-  // Item 2c — refuse to boot when another LIVE Core already owns this vault dir
-  // (two Cores sharing one vault's SQLite would corrupt state). A stale lock
-  // (dead pid) or our own is ignored. Checked BEFORE the vault is opened.
-  assertNoLiveForeignLock(config.storage.vaultDir);
+  // Item 2c — ATOMICALLY acquire the single-owner lock BEFORE opening the vault
+  // (two Cores sharing one vault's SQLite would corrupt state). O_EXCL create so
+  // only one racing Core wins; a stale/own lock is recovered. Refreshed with the
+  // real bound port + node DID after listen (writeLock below).
+  acquireLock(config.storage.vaultDir, {
+    pid: process.pid,
+    host: config.network.host,
+    port: 0,
+    nodeDid: null,
+    startedAtMs: Date.now(),
+  });
 
   // Step 2 (task 4.51 + 4.52): identity — load or first-boot-generate
   // the master seed. Convenience mode (raw keyfile) lands here;

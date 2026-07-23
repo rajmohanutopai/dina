@@ -492,3 +492,27 @@ describe('prefix / env-assignment handling', () => {
   it('/usr/bin/git status resolves basename → SAFE', () =>
     expect(risk('/usr/bin/git status')).toBe('SAFE'));
 });
+
+describe('CODEX AUDIT — env-dump + tilde', () => {
+  it('env-dump commands disclose environment secrets → BLOCKED', () => {
+    for (const c of ['env', 'printenv', 'printenv AWS_SECRET_ACCESS_KEY', 'set', 'export', 'declare', 'typeset']) {
+      expect(risk(c)).toBe('BLOCKED');
+    }
+  });
+  it('OVER-BLOCK guard — env wrapper / set -e / export FOO=bar are NOT dumps', () => {
+    expect(risk('env FOO=bar node app.js')).toBe('MODERATE'); // wraps a command
+    expect(risk('set -e')).toBe('SAFE'); // errexit option
+    expect(risk('export FOO=bar')).toBe('SAFE'); // assignment
+    expect(risk('set -euo pipefail')).toBe('SAFE');
+  });
+  it('tilde path to the vault keyfile is expanded + BLOCKED', () => {
+    const vault = path.join(os.homedir(), '.dina');
+    expect(classifyBashCommand({ command: 'cat ~/.dina/keyfile', vaultDir: vault, cwd: projectDir }).risk).toBe('BLOCKED');
+    // a ~otheruser path we can't resolve fails closed (protected)
+    expect(classifyBashCommand({ command: 'cat ~root/.dina/keyfile', vaultDir: vault, cwd: projectDir }).risk).toBe('BLOCKED');
+  });
+  it('OVER-BLOCK guard — tilde to a non-vault path stays SAFE', () => {
+    const vault = path.join(os.homedir(), '.dina');
+    expect(classifyBashCommand({ command: 'cat ~/notes.txt', vaultDir: vault, cwd: projectDir }).risk).toBe('SAFE');
+  });
+});

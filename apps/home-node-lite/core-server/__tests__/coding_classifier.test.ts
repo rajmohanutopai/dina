@@ -305,3 +305,22 @@ describe('classifyFileToolCall', () => {
     });
   });
 });
+
+describe('CODEX AUDIT — tilde expansion', () => {
+  const homeVault = path.join(os.homedir(), '.dina');
+  it('~/.dina/keyfile expands to the home vault → secret_read BLOCKED', () => {
+    expect(
+      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~/.dina/keyfile'], vaultDir: homeVault, cwd: projectDir }),
+    ).toEqual({ action: 'secret_read', risk: 'BLOCKED' });
+  });
+  it('~otheruser path fails closed (unresolvable → protected)', () => {
+    expect(
+      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~root/.dina/keyfile'], vaultDir: homeVault, cwd: projectDir }).risk,
+    ).toBe('BLOCKED');
+  });
+  it('OVER-BLOCK guard — ~/ to a non-vault file stays SAFE', () => {
+    expect(
+      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~/notes.txt'], vaultDir: homeVault, cwd: projectDir }).risk,
+    ).toBe('SAFE');
+  });
+});

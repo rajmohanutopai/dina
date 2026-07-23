@@ -17,6 +17,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
@@ -113,6 +114,15 @@ function isUnder(child: string, parent: string): boolean {
  * resolved and cannot be used to escape the protected check.
  */
 export function canonicalizePath(rawPath: string, cwd: string): string {
+  // Expand a leading `~`/`~/` to the execution user's home BEFORE resolving —
+  // the shell does, so `cat ~/.dina/keyfile` reads the seed even though the raw
+  // token isn't under the vault dir string (audit-found CRITICAL). A `~user`
+  // form we can't resolve fails CLOSED (protected) for a secret-capable op.
+  if (rawPath === '~' || rawPath.startsWith('~/')) {
+    rawPath = os.homedir() + rawPath.slice(1);
+  } else if (rawPath.startsWith('~')) {
+    return UNRESOLVABLE; // `~otheruser/...` — can't resolve statically → fail closed
+  }
   // Do NOT use path.resolve — it collapses `..` LEXICALLY before symlinks are
   // resolved, diverging from the kernel when a component is a symlink (a mid-path
   // `..` after `inbox -> /vault` must resolve against /vault, not the lexical

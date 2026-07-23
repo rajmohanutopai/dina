@@ -613,6 +613,28 @@ function classifySegment(
   input: BashClassifyInput,
   anyProtected: (paths: string[]) => boolean,
 ): { action: string; risk: RiskLevel; reason: string } {
+  // Env-dump commands disclose process secrets (API tokens, signing keys, cloud
+  // creds) with no filesystem read (audit). `printenv` (any), and a BARE
+  // `env`/`set`/`export`/`declare`/`typeset` (no command / no assignment) dump
+  // the environment → treat as a secret read. `env FOO=bar cmd` (a wrapper) and
+  // `set -e` / `export FOO=bar` (options/assignments) are NOT dumps and fall
+  // through. Runs before unwrapVerb (which would consume a leading `env`).
+  {
+    const firstReal = tokens.find((t) => t !== '' && !/^[A-Za-z_]\w*=/.test(t) && !t.startsWith('-'));
+    const dv = firstReal ? basename(firstReal) : '';
+    if (dv === 'printenv') return mk('secret_read', 'printenv discloses environment secrets', 'BLOCKED');
+    if (dv === 'env' || dv === 'set' || dv === 'export' || dv === 'declare' || dv === 'typeset') {
+      const rest = tokens.slice(tokens.indexOf(firstReal as string) + 1).filter((t) => t !== '');
+      const hasCommand = rest.some((t) => !t.startsWith('-') && !/^[A-Za-z_]\w*=/.test(t));
+      const hasAssignment = rest.some((t) => /^[A-Za-z_]\w*=/.test(t));
+      // `env` dumps unless it wraps a command; the shell builtins
+      // (`set`/`export`/`declare`/`typeset`) dump only in their BARE form —
+      // `set -e` (errexit) and `export FOO=bar` are options/assignments, not dumps.
+      const dumps = dv === 'env' ? !hasCommand && !hasAssignment : rest.length === 0;
+      if (dumps) return mk('secret_read', `${dv} discloses environment secrets`, 'BLOCKED');
+    }
+  }
+
   const { verb, args, privileged } = unwrapVerb(tokens);
   if (verb === null) return mk('code_read', 'no command');
 

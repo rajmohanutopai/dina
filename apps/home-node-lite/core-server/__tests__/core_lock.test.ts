@@ -8,6 +8,7 @@ import * as path from 'node:path';
 
 import {
   LOCK_FILE_NAME,
+  acquireLock,
   isPidAlive,
   readLock,
   writeLock,
@@ -138,4 +139,37 @@ describe('core.lock (item 2c)', () => {
       }
     });
   });
+
+  describe('acquireLock (CODEX AUDIT — atomic, no check-then-write race)', () => {
+    it('acquires when the dir is free', async () => {
+      const dir = await mkTmpDir();
+      acquireLock(dir, lockInfo());
+      expect(readLock(dir)?.pid).toBe(process.pid);
+    });
+    it('recovers a STALE lock (dead pid) and boots', async () => {
+      const dir = await mkTmpDir();
+      writeLock(dir, lockInfo({ pid: 2_000_000_000 })); // dead pid
+      expect(() => acquireLock(dir, lockInfo())).not.toThrow();
+      expect(readLock(dir)?.pid).toBe(process.pid);
+    });
+    it('recovers OUR OWN prior lock', async () => {
+      const dir = await mkTmpDir();
+      writeLock(dir, lockInfo({ port: 1 }));
+      acquireLock(dir, lockInfo({ port: 2 }));
+      expect(readLock(dir)?.port).toBe(2);
+    });
+    it('REFUSES to boot when a LIVE foreign Core holds the lock', async () => {
+      const dir = await mkTmpDir();
+      writeLock(dir, lockInfo({ pid: 1 })); // pid 1 is always alive + foreign
+      expect(() => acquireLock(dir, lockInfo())).toThrow(/already owns/);
+    });
+    it('creates the vault dir if missing', async () => {
+      const base = await mkTmpDir();
+      const uniq = path.join(base, 'nested', 'vault'); // does not exist yet
+      acquireLock(uniq, lockInfo()); // acquireLock mkdirs it
+      expect(readLock(uniq)?.pid).toBe(process.pid);
+      await fs.rm(base, { recursive: true, force: true });
+    });
+  });
+
 });

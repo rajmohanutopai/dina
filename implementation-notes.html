@@ -474,6 +474,32 @@
       <code>agent_ask</code>→staging); 5d Core-mediated ask (<code>dina_recall</code>/<code>dina_ask</code>)
       with the Core persona PEP on the read path.</p>
 
+    <h2>Second-model review — Codex (independent, post-Claude-hardening)</h2>
+    <p>After the 13 Claude adversarial rounds, an INDEPENDENT model (Codex) reviewed the whole
+      implementation — the value being what a same-model loop is systematically blind to. Codex
+      <strong>confirmed the parts Claude hardened</strong> (path/redirect/glob/symlink/awk-sed protection,
+      the permit's four bindings, COLD-1, audit metadata-only, no mnemonic in logs) and found <strong>8
+      findings in DIFFERENT classes</strong> the classifier-parsing rounds never targeted. 4 were concrete
+      bounded bugs — <strong>fixed + regression-tested</strong>; 4 were deeper integration items this repo
+      already scopes as deferred — Codex independently validating that scoping.</p>
+    <table>
+      <tr><th>Sev</th><th>Finding</th><th>Disposition</th></tr>
+      <tr><td>CRIT</td><td><code>~/.dina/keyfile</code> tilde not expanded → the seed read classified SAFE</td><td><strong>FIXED</strong>: canonicalizePath expands <code>~</code>/<code>~/</code> to home; <code>~user</code> fails closed</td></tr>
+      <tr><td>HIGH</td><td><code>env</code> / <code>printenv AWS_SECRET</code> / <code>set</code> disclose environment secrets → SAFE</td><td><strong>FIXED</strong>: env-dump commands → secret_read BLOCKED (wrappers/<code>set -e</code>/assignments stay SAFE)</td></tr>
+      <tr><td>HIGH</td><td>gate route trusts a body <code>session_id</code> without validating it against the registry</td><td><strong>FIXED</strong>: a non-empty session must pass <code>SessionRegistry.validate(sid, did)</code> → else 401, no permit</td></tr>
+      <tr><td>MED</td><td><code>core.lock</code> is a check-then-write TOCTOU race (two Cores can both open one vault)</td><td><strong>FIXED</strong>: <code>acquireLock</code> — atomic <code>open(…,'wx')</code> (O_EXCL) before storage, with stale-owner recovery</td></tr>
+      <tr><td>HIGH</td><td>Brain retains ambient vault authz (query/store/delete) via <code>/v1/vault/*</code> with default <code>owner_request</code></td><td>DEFERRED — the untrusted-Brain vault-capability system (spec §5/P0), documented as not-wired; 5b is the origin PRIMITIVE + seam, not the Brain re-authz</td></tr>
+      <tr><td>HIGH</td><td>permits are minted but never CONSUMED in production (no execution-seam redemption; <code>mintApprovedPermit</code> only in tests)</td><td>DEFERRED — the execution seam is item 4's CLIENT hook + item 7's approval flow, both marked TODO</td></tr>
+      <tr><td>HIGH</td><td><code>agent_scope</code> not derived/propagated by the auth middleware → façades 403 for real callers; broad agent authz remains</td><td>DEFERRED — item 6b's live derivation (device-record column + middleware) — primitive built, wiring is the COLD-4 migration item</td></tr>
+      <tr><td>MED</td><td>session registry is in-memory, not persisted/reconciled on restart</td><td>DEFERRED — SQLite backing is item 8; the registry exposes the injectable seam for it</td></tr>
+    </table>
+    <p class="meta">This is exactly why dual-model review matters: the Claude rounds exhaustively hardened the
+      shell/path PARSER but never questioned <em>env-var disclosure</em>, <em>tilde expansion</em>, the
+      <em>gate↔session wiring</em>, or <em>lock atomicity</em> — all of which a fresh model surfaced
+      immediately. The 4 deferred findings are real and align with the scope notes already in this doc;
+      they are the client-hook / Brain-capability / scope-derivation / durable-store integration work, not
+      regressions.</p>
+
     <h2>Item 4 — catch-all coding gate route + two conformance classes <span class="status wip">SERVER DONE; client hook/supervisor TODO</span></h2>
     <p class="meta">
       packages/core/src/server/routes/coding_gate.ts (route + injectable <code>CodingGateFn</code>) ·
