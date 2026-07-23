@@ -77,6 +77,42 @@ export const DEFAULT_POLICY: Record<string, RiskLevel> = {
 };
 
 /**
+ * Coding risk taxonomy (Plugin Developer Surface §12.3, item 3). `DEFAULT_POLICY`
+ * is money/email-shaped; a coding agent (Claude Code / Codex) needs its own
+ * action keys. The classifier (item 3b/3c) maps a raw `(tool_name, tool_input)`
+ * to one of these keys — canonicalizing every path operand — and the risk is
+ * looked up here. Kept as a distinct record so the two surfaces stay readable.
+ *
+ * `secret_read` / `secret_write` are BLOCKED, mirroring `BRAIN_DENIED`'s
+ * `vault_raw_read` / `vault_raw_write` / `seed_export`: an automated caller must
+ * never read or write the seed, keys, credentials, `.env`, Dina state, or raw
+ * vault files, whether directly (`Read`/`Write`) or as a shell operand
+ * (`cp`/`mv`/redirect source or destination). `network_egress` is the base
+ * (MODERATE) end of the spec's MODERATE→HIGH range; `network_egress_untrusted`
+ * (a non-allowlisted `curl`) is the HIGH end.
+ */
+export const CODING_ACTION_POLICY: Record<string, RiskLevel> = {
+  // SAFE — project-file reads/edits + local VCS.
+  code_read: 'SAFE', // read a non-protected project path
+  code_edit: 'SAFE',
+  vcs_local: 'SAFE',
+  // MODERATE — recoverable but the user should see them.
+  code_edit_external: 'MODERATE',
+  vcs_push: 'MODERATE',
+  package_install: 'MODERATE',
+  network_egress: 'MODERATE',
+  // HIGH — approval every time.
+  vcs_destructive: 'HIGH', // git push --force, git reset --hard
+  network_egress_untrusted: 'HIGH', // curl to a non-allowlisted host
+  fs_destructive: 'HIGH', // rm -rf, dd
+  system_modify: 'HIGH', // sudo
+  deploy: 'HIGH', // kubectl/terraform apply, npm publish
+  // BLOCKED — a coding agent must never touch these (mirror BRAIN_DENIED).
+  secret_read: 'BLOCKED', // read a protected path (seed/key/cred/.env/vault/state)
+  secret_write: 'BLOCKED', // write/target a protected path
+};
+
+/**
  * Actions that Brain/agents can NEVER perform — user-only via UI.
  *
  * Includes the 3 vault actions missing from mobile (A27 #3):
@@ -236,15 +272,21 @@ export function isMoneyAction(action: string): boolean {
  * Returns undefined for unknown actions (treated as MODERATE by evaluateIntent).
  */
 export function getDefaultRiskLevel(action: string): RiskLevel | undefined {
-  // Own-property lookup ONLY. `DEFAULT_POLICY` is a plain object, so a
+  // Own-property lookup ONLY. The policy tables are plain objects, so a
   // provider/caller-controlled action name like `constructor`, `toString`, or
   // `__proto__` would otherwise resolve to an inherited Object.prototype member
   // (a function) instead of `undefined` — silently bypassing the unknown-action
   // fail-safe and, in the run path, poisoning `risk_class` with a non-RiskLevel
   // value. Guard against inherited keys so every unknown name falls through.
-  return Object.prototype.hasOwnProperty.call(DEFAULT_POLICY, action)
-    ? DEFAULT_POLICY[action]
-    : undefined;
+  // The money/email `DEFAULT_POLICY` and the coding `CODING_ACTION_POLICY` are
+  // disjoint key sets (checked by a test); DEFAULT_POLICY is consulted first.
+  if (Object.prototype.hasOwnProperty.call(DEFAULT_POLICY, action)) {
+    return DEFAULT_POLICY[action];
+  }
+  if (Object.prototype.hasOwnProperty.call(CODING_ACTION_POLICY, action)) {
+    return CODING_ACTION_POLICY[action];
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------

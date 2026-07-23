@@ -115,11 +115,11 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     return j(200, withPayloadType(task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
-    const guard = ownerDecisionGuard(req);
+    const guard = ownerDecisionGuard(req) ?? brainAgentTaskGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, approveTask);
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
-    const guard = ownerDecisionGuard(req);
+    const guard = ownerDecisionGuard(req) ?? brainAgentTaskGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, cancelTask);
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
@@ -195,7 +195,12 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     );
   });
   router.post('/v1/workflow/tasks/:id/fail', async (req) => {
-    const guard = agentCompletionGuard(req);
+    // Item 7 / COLD-1: `/fail` can DENY a pending_approval task, so brain must
+    // not reach an agent-origin task here either — same owner-authority rule as
+    // /approve + /cancel (audit finding). A runner (agent/plugin) failing its
+    // OWN claimed work is unaffected (the guard fires only for callerType brain).
+    const guard =
+      brainAgentTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
     const claimId = extractClaimId(req);
     if (claimId instanceof Object) return claimId;
     return (
@@ -840,6 +845,28 @@ function ownerDecisionGuard(req: CoreRequest): CoreResponse | null {
     return j(403, {
       error: 'access_denied',
       reason: `${req.callerType} callers cannot approve or deny tasks`,
+    });
+  }
+  return null;
+}
+
+/**
+ * Item 7 / COLD-1 — Brain must NOT decide an AGENT-RAISED task. On the server
+ * split Brain is untrusted; an agent-origin approval requires the phone-signed
+ * OWNER decision (§13), not Brain's `brain`-authority. Brain keeps its
+ * in-process `/service_approve` path for brain-origin tasks — only agent-origin
+ * ones are excluded. Fetches the task so the check is on real task provenance,
+ * not a caller claim.
+ */
+function brainAgentTaskGuard(req: CoreRequest, id: string): CoreResponse | null {
+  if (req.callerType !== 'brain') return null;
+  const service = getWorkflowService();
+  if (service === null) return null; // runAction will surface the 503
+  const task = service.store().getById(id);
+  if (task !== null && task.origin === 'agent') {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'brain cannot decide agent-raised tasks; owner decision required',
     });
   }
   return null;

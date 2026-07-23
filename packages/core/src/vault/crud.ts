@@ -39,6 +39,7 @@ import {
   InMemoryVaultRepository,
   type VaultRepository,
 } from './repository';
+import { isVaultOperationAllowed, type VaultOrigin } from './origin_capability';
 import { validateVaultItem, SEARCHABLE_RETRIEVAL_POLICIES } from './validation';
 
 import type { VaultItem, SearchQuery } from '@dina/test-harness';
@@ -198,7 +199,19 @@ function normalizeEmbedding(
  *
  * Auto-generates an ID if the item's id field is empty or missing.
  */
-export function storeItem(persona: string, item: VaultItemWrite): string {
+export function storeItem(
+  persona: string,
+  item: VaultItemWrite,
+  origin: VaultOrigin = 'owner_request',
+): string {
+  // Item 5b — typed-origin gate at the storage seam (§5/§14). A read/search
+  // origin (agent_ask/service_task) can NEVER write, whatever persona is open —
+  // this holds on the mobile in-process path too, where there is no HTTP authz.
+  // Existing callers default to `owner_request` (unchanged behaviour); the agent
+  // memory-ingress route passes its own origin.
+  if (!isVaultOperationAllowed(origin, 'write')) {
+    throw new Error(`vault: origin '${origin}' may not write`);
+  }
   // Validate enum fields before storage (defense-in-depth)
   const validationError = validateVaultItem(item);
   if (validationError) {
@@ -593,7 +606,16 @@ export function getItemIncludeDeleted(persona: string, itemId: string): VaultIte
  *
  * Item remains in storage for audit/recovery. Excluded from query results.
  */
-export function deleteItem(persona: string, itemId: string): boolean {
+export function deleteItem(
+  persona: string,
+  itemId: string,
+  origin: VaultOrigin = 'owner_request',
+): boolean {
+  // Item 5b — only `owner_request` may delete (§5/§14 matrix). Existing callers
+  // default to owner; no agent/service/staging origin can reach a delete.
+  if (!isVaultOperationAllowed(origin, 'delete')) {
+    throw new Error(`vault: origin '${origin}' may not delete`);
+  }
   return requireRepo(persona).deleteItemSync(itemId);
 }
 

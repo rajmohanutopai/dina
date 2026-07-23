@@ -298,6 +298,49 @@ describe('ordered boot (task 4.3)', () => {
       }
     });
 
+    it('writes core.lock (our pid + real bound port) and removes it on close (item 2c)', async () => {
+      const fsp = await import('node:fs/promises');
+      const p = await import('node:path');
+      const vaultDir = process.env['DINA_VAULT_DIR'] as string;
+      const booted = await bootTestServer();
+      try {
+        const lock = JSON.parse(await fsp.readFile(p.join(vaultDir, 'core.lock'), 'utf8'));
+        expect(lock.pid).toBe(process.pid);
+        expect(typeof lock.port).toBe('number');
+        expect(lock.port).toBeGreaterThan(0); // ephemeral 0 → real bound port
+      } finally {
+        await booted.app.close();
+      }
+      // The onClose hook removes our lock on clean shutdown.
+      await expect(fsp.stat(p.join(vaultDir, 'core.lock'))).rejects.toThrow();
+    });
+
+    it('never logs the mnemonic on first boot — logs only the recovery-file path (item 1)', async () => {
+      // Inject a capturing warn-level logger so we can assert EXACTLY what the
+      // structured logger received. The mnemonic is the master seed; it must
+      // never reach the logs (AGENTS.md). Only the 0600 file path is metadata.
+      const { pino } = await import('pino');
+      const captured: string[] = [];
+      const testLogger = pino(
+        { base: null, level: 'warn' },
+        { write: (chunk: string) => captured.push(chunk) },
+      );
+      const booted = await bootServer({
+        msgboxWsFactory: makeFakeMsgBoxFactory(),
+        msgboxReadyTimeoutMs: 1_000,
+        logger: testLogger,
+      });
+      try {
+        expect(booted.identity?.kind).toBe('generated');
+        if (booted.identity?.kind !== 'generated') return;
+        const out = captured.join('');
+        expect(out).not.toContain(booted.identity.mnemonic); // the security property
+        expect(out).toContain(booted.identity.recoveryPhrasePath); // metadata IS logged
+      } finally {
+        await booted.app.close();
+      }
+    });
+
     it('ok flag is true when no step failed', async () => {
       const booted = await bootTestServer();
       try {

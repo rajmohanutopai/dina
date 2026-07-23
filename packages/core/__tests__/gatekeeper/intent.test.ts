@@ -10,11 +10,14 @@
 import { DEFAULT_ACTION_POLICIES } from '@dina/test-harness';
 
 import {
+  CODING_ACTION_POLICY,
+  DEFAULT_POLICY,
   evaluateIntent,
   evaluateIntentWithPersona,
   getDefaultRiskLevel,
   isBrainDenied,
   isMoneyAction,
+  type RiskLevel,
 } from '../../src/gatekeeper/intent';
 
 describe('Gatekeeper Intent Evaluation', () => {
@@ -36,6 +39,50 @@ describe('Gatekeeper Intent Evaluation', () => {
       for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__', 'valueOf']) {
         expect(getDefaultRiskLevel(key)).toBeUndefined();
       }
+    });
+  });
+
+  describe('coding action taxonomy (item 3a, §12.3)', () => {
+    const expected: Record<string, RiskLevel> = {
+      code_read: 'SAFE',
+      code_edit: 'SAFE',
+      vcs_local: 'SAFE',
+      code_edit_external: 'MODERATE',
+      vcs_push: 'MODERATE',
+      package_install: 'MODERATE',
+      network_egress: 'MODERATE',
+      vcs_destructive: 'HIGH',
+      network_egress_untrusted: 'HIGH',
+      fs_destructive: 'HIGH',
+      system_modify: 'HIGH',
+      deploy: 'HIGH',
+      secret_read: 'BLOCKED',
+      secret_write: 'BLOCKED',
+    };
+
+    for (const [action, risk] of Object.entries(expected)) {
+      it(`"${action}" → ${risk} (via getDefaultRiskLevel)`, () => {
+        expect(getDefaultRiskLevel(action)).toBe(risk);
+      });
+    }
+
+    it('CODING_ACTION_POLICY has exactly the expected keys', () => {
+      expect(Object.keys(CODING_ACTION_POLICY).sort()).toEqual(Object.keys(expected).sort());
+    });
+
+    it('coding keys are disjoint from the money/email DEFAULT_POLICY', () => {
+      const overlap = Object.keys(CODING_ACTION_POLICY).filter((k) =>
+        Object.prototype.hasOwnProperty.call(DEFAULT_POLICY, k),
+      );
+      expect(overlap).toEqual([]);
+    });
+
+    it('evaluateIntent gates coding actions: code_edit SAFE, secret_write BLOCKED', () => {
+      expect(evaluateIntent('code_edit').riskLevel).toBe('SAFE');
+      expect(evaluateIntent('code_edit').allowed).toBe(true);
+      const secret = evaluateIntent('secret_write');
+      expect(secret.riskLevel).toBe('BLOCKED');
+      expect(secret.allowed).toBe(false);
     });
   });
 

@@ -84,6 +84,13 @@ export interface CoreRequest {
   /** Resolved caller DID — the agent's DID for `callerType === 'agent'`. */
   callerDID?: string;
   /**
+   * Item 6b — the agent's scope (`coding` | `runner`), DERIVED server-side from
+   * the authenticated device record (never a client claim). Populated by the
+   * auth middleware for `callerType === 'agent'`; undefined otherwise. The new
+   * scope-gated `/v1/agent/*` façades fail closed when it is missing.
+   */
+  agentScope?: 'coding' | 'runner';
+  /**
    * The owner control-plane capability (INTERACTIVE_SERVICES §12.5, F15). A
    * boot-minted secret the app holds in an app-layer closure and stamps on every
    * owner-marked `/v1/run|watch` request. The route guard compares it to the

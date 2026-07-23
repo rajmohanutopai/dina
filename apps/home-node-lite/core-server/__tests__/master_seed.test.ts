@@ -13,6 +13,7 @@ import {
   KEYFILE_MODE,
   KEYFILE_NAME,
   WRAPPED_SEED_NAME,
+  RECOVERY_PHRASE_NAME,
   SEED_LEN_BYTES,
 } from '../src/identity/master_seed';
 
@@ -81,6 +82,51 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
         await loadOrGenerateSeed(dir);
         const entries = await fs.readdir(dir);
         expect(entries.some((e) => e.startsWith('.keyfile.tmp-'))).toBe(false);
+        expect(entries.some((e) => e.startsWith(`.${RECOVERY_PHRASE_NAME}.tmp-`))).toBe(false);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('recovery phrase (item 1 — mnemonic never logged, written 0600)', () => {
+    it('writes the recovery phrase to a 0o600 file and returns its path', async () => {
+      const dir = await mkTmpDir();
+      try {
+        const res = await loadOrGenerateSeed(dir);
+        if (res.kind !== 'generated') throw new Error('expected generated');
+        const expected = path.join(dir, RECOVERY_PHRASE_NAME);
+        expect(res.recoveryPhrasePath).toBe(expected);
+        const stat = await fs.stat(expected);
+        expect(stat.mode & 0o777).toBe(KEYFILE_MODE);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('the file contains the exact generated mnemonic plus a save-and-delete warning', async () => {
+      const dir = await mkTmpDir();
+      try {
+        const res = await loadOrGenerateSeed(dir);
+        if (res.kind !== 'generated') throw new Error('expected generated');
+        const contents = await fs.readFile(res.recoveryPhrasePath, 'utf8');
+        expect(contents).toContain(res.mnemonic);
+        expect(contents).toMatch(/delete this file/i);
+        expect(contents).toMatch(/never .*log/i);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('is NOT written when loading an existing convenience keyfile', async () => {
+      const dir = await mkTmpDir();
+      try {
+        await loadOrGenerateSeed(dir); // first boot writes it
+        await fs.rm(path.join(dir, RECOVERY_PHRASE_NAME)); // operator deletes it
+        const second = await loadOrGenerateSeed(dir); // subsequent boot
+        expect(second.kind).toBe('loaded_convenience');
+        // A load must not re-create the phrase file — the seed already exists.
+        await expect(fs.stat(path.join(dir, RECOVERY_PHRASE_NAME))).rejects.toThrow();
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }

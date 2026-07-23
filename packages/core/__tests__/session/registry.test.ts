@@ -1,0 +1,139 @@
+/**
+ * Item 6 — durable session registry tests (§15).
+ *
+ * Covers DID-binding (cross-agent isolation), idempotent start (one Core session
+ * per host session), lease/heartbeat, revoke-on-end, and lease-lapse reaping.
+ * Uses an injectable clock so expiry is deterministic.
+ */
+
+import {
+  SessionRegistry,
+  DEFAULT_LEASE_MS,
+  type SessionRecord,
+  type EndReason,
+} from '../../src/session/registry';
+
+const A = 'did:key:z6MkAgentA';
+const B = 'did:key:z6MkAgentB';
+
+function makeClock(start = 1000) {
+  let t = start;
+  return { now: () => t, advance: (ms: number) => (t += ms) };
+}
+
+describe('start', () => {
+  it('mints a session bound to the caller DID + host session', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    expect(s.agentDid).toBe(A);
+    expect(s.hostSessionId).toBe('host-1');
+    expect(s.endedAtMs).toBeNull();
+    expect(s.leaseExpiresAtMs).toBe(1000 + DEFAULT_LEASE_MS);
+  });
+
+  it('is idempotent for the same (agentDid, hostSessionId) — one Core session (F-04)', () => {
+    const clock = makeClock();
+    const reg = new SessionRegistry(clock.now);
+    const first = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    clock.advance(1000);
+    const second = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(second.leaseExpiresAtMs).toBe(2000 + DEFAULT_LEASE_MS); // lease renewed
+  });
+
+  it('different agents on the same host id get different sessions', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const sa = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    const sb = reg.start({ agentDid: B, hostSessionId: 'host-1' });
+    expect(sa.sessionId).not.toBe(sb.sessionId);
+  });
+});
+
+describe('validate — DID binding + lifecycle', () => {
+  it('accepts the owning DID', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    expect(reg.validate(s.sessionId, A)).toEqual({ ok: true, session: expect.objectContaining({ sessionId: s.sessionId }) });
+  });
+
+  it('rejects a different agent (cross-agent isolation)', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    expect(reg.validate(s.sessionId, B)).toEqual({ ok: false, reason: 'principal_mismatch' });
+  });
+
+  it('rejects an unknown session', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    expect(reg.validate('sess-nope', A)).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('rejects an ended session', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    reg.end(s.sessionId, A);
+    expect(reg.validate(s.sessionId, A)).toEqual({ ok: false, reason: 'ended' });
+  });
+
+  it('rejects (and reaps) a lease-lapsed session', () => {
+    const clock = makeClock();
+    const reg = new SessionRegistry(clock.now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h', leaseMs: 1000 });
+    clock.advance(1001);
+    expect(reg.validate(s.sessionId, A)).toEqual({ ok: false, reason: 'lease_lapsed' });
+    expect(reg.get(s.sessionId)?.endReason).toBe('lease_lapsed');
+  });
+});
+
+describe('renew — heartbeat', () => {
+  it('extends the lease on a valid call', () => {
+    const clock = makeClock();
+    const reg = new SessionRegistry(clock.now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h', leaseMs: 1000 });
+    clock.advance(500);
+    reg.renew(s.sessionId, A, 1000);
+    clock.advance(700); // 1200 total; would have lapsed without the renew
+    expect(reg.validate(s.sessionId, A).ok).toBe(true);
+  });
+
+  it('cannot renew another agent\'s session', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    expect(reg.renew(s.sessionId, B)).toEqual({ ok: false, reason: 'principal_mismatch' });
+  });
+});
+
+describe('end — revoke-on-end', () => {
+  it('fires the onEnd hook with reason=explicit', () => {
+    const ended: Array<{ id: string; reason: EndReason }> = [];
+    const reg = new SessionRegistry(makeClock().now, (s: SessionRecord, reason) =>
+      ended.push({ id: s.sessionId, reason }),
+    );
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    reg.end(s.sessionId, A);
+    expect(ended).toEqual([{ id: s.sessionId, reason: 'explicit' }]);
+  });
+
+  it('is DID-bound and idempotent', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const s = reg.start({ agentDid: A, hostSessionId: 'h' });
+    expect(reg.end(s.sessionId, B)).toEqual({ ok: false, reason: 'principal_mismatch' });
+    expect(reg.end(s.sessionId, A).ok).toBe(true);
+    expect(reg.end(s.sessionId, A)).toEqual({ ok: false, reason: 'ended' });
+  });
+});
+
+describe('reapExpired — lease reconciliation sweep', () => {
+  it('ends lapsed sessions (revoking grants) and leaves live ones', () => {
+    const clock = makeClock();
+    const ended: string[] = [];
+    const reg = new SessionRegistry(clock.now, (s) => ended.push(s.sessionId));
+    const short = reg.start({ agentDid: A, hostSessionId: 'h-short', leaseMs: 1000 });
+    const long = reg.start({ agentDid: B, hostSessionId: 'h-long', leaseMs: 100_000 });
+    clock.advance(1001);
+    const reaped = reg.reapExpired();
+    expect(reaped).toBe(1);
+    expect(ended).toEqual([short.sessionId]);
+    expect(reg.validate(long.sessionId, B).ok).toBe(true);
+    expect(reg.liveCount()).toBe(1);
+  });
+});

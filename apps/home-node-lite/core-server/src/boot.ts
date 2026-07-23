@@ -38,6 +38,7 @@ import {
   configureRateLimiter,
   createCoreRouter,
   deriveDIDKey,
+  getNodeDID,
   HEALTHZ_PATH,
   registerService,
   setNodeDID,
@@ -67,6 +68,13 @@ import {
   type PdsIdentity,
 } from './identity/provision_pds';
 import { createLogger } from './logger';
+import {
+  deliverBootstrapCapability,
+  resolveHandoffFromEnv,
+} from './pair/bootstrap_capability';
+import { assertNoLiveForeignLock, releaseLock, writeLock } from './core_lock';
+import { createCodingGate } from './gate/coding_gate_impl';
+import { createAgentFacades } from './agent/facades';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
 import { registerDebugDispatch } from './server/debug_dispatch';
@@ -154,6 +162,11 @@ export interface BootServerOptions {
   msgboxReadyTimeoutMs?: number;
   /** Sender resolver for inbound D2D. Defaults fail-closed with unknown trust. */
   resolveMsgBoxSender?: MsgBoxBootConfig['resolveSender'];
+  /**
+   * Override the logger. Production leaves this unset (built from config).
+   * Tests inject a capturing logger — e.g. to assert secrets never reach it.
+   */
+  logger?: Logger;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +203,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     elapsedMs: Date.now() - configStart,
   });
 
-  const logger = createLogger(config);
+  const logger = options.logger ?? createLogger(config);
   logger.info(
     {
       host: config.network.host,
@@ -244,6 +257,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     logger.info({ adminDid }, 'admin service DID registered');
   }
 
+  // Item 2c — refuse to boot when another LIVE Core already owns this vault dir
+  // (two Cores sharing one vault's SQLite would corrupt state). A stale lock
+  // (dead pid) or our own is ignored. Checked BEFORE the vault is opened.
+  assertNoLiveForeignLock(config.storage.vaultDir);
+
   // Step 2 (task 4.51 + 4.52): identity — load or first-boot-generate
   // the master seed. Convenience mode (raw keyfile) lands here;
   // wrapped-seed (task 4.53) returns a placeholder that leaves the
@@ -275,12 +293,14 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       elapsedMs: Date.now() - identityStart,
     });
     if (identity.kind === 'generated') {
-      // First-boot flow: operator must see the mnemonic ONCE. Logged
-      // at warn level so it stands out; the install script wraps this
-      // path with better UX (prints a banner, waits for enter, etc).
+      // First-boot flow: a new master seed was generated. The recovery phrase
+      // (the mnemonic) is the seed, so it is NEVER logged — it is written to a
+      // 0o600 file (master_seed.ts). Log only the file PATH (metadata) so the
+      // operator or install script can surface it and then delete it.
       logger.warn(
-        { mnemonic: identity.mnemonic },
-        'first-boot: generated master seed; write down this mnemonic',
+        { recoveryPhraseFile: identity.recoveryPhrasePath },
+        'first-boot: generated a new master seed. Recovery phrase written to a ' +
+          '0600 file — record it offline and delete the file. It is never logged.',
       );
     }
   }
@@ -319,6 +339,19 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       elapsedMs: Date.now() - pdsStartGlobal,
       pendingReason: 'DINA_PDS_PROVISION not set — using local did:key identity',
     });
+    // Identity is FOUNDATIONAL (§8): the node DID must exist from first boot so
+    // the pairing/enrolment ceremony (which embeds the node DID in every code)
+    // works without a did:plc. Derive the did:key from the seed and set it as
+    // the node DID. Previously `setNodeDID` ran only on the PDS path, so a plain
+    // did:key boot had no node DID and could not pair.
+    if (
+      identity !== undefined &&
+      (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+    ) {
+      const didKey = deriveDIDKey(deriveIdentity({ masterSeed: identity.seed }).root.publicKey);
+      setNodeDID(didKey);
+      logger.info({ nodeDid: didKey }, 'node identity: using local did:key (no PDS)');
+    }
   }
   if (pdsProvisionEnabled) {
     const pdsStart = Date.now();
@@ -392,6 +425,25 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         pendingReason: 'master seed not materialized (wrapped-seed mode)',
       });
     }
+  }
+
+  // Item 2 — single-use bootstrap enrolment capability. On a genuine first boot
+  // (a fresh seed was generated), mint ONE single-use `agent` pairing code and
+  // hand it to the spawning plugin over an inherited fd — never a 0600 file,
+  // never a log. No handoff fd → this boot was not spawned by an enrolling
+  // plugin (dev / standalone), so nothing is minted and devices pair via the
+  // normal admin/owner flow. The node DID is set above; the ceremony embeds it
+  // in the code so the plugin knows which home node it is joining.
+  {
+    const bootstrapResult = await deliverBootstrapCapability({
+      firstBoot: identity?.kind === 'generated',
+      handoff: resolveHandoffFromEnv(process.env),
+    });
+    // Metadata only — the enrolment code itself is never logged.
+    logger.info(
+      { delivered: bootstrapResult.delivered, reason: bootstrapResult.reason },
+      'bootstrap enrolment capability',
+    );
   }
 
   // Holds the publisher pipeline (PDS session + ServiceProfilePublisher
@@ -494,9 +546,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     { source: ownerCap.source, ...(ownerCap.filePath !== undefined ? { file: ownerCap.filePath } : {}) },
     'owner capability resolved (value never logged) — paste it into the web UI to control runs',
   );
+  // Item 4 — the fs-backed coding gate (`POST /v1/agent/gate`, §12.1). Shares
+  // one permit store across requests so a minted permit redeems at execution.
+  const codingGateHandle = createCodingGate({ vaultDir: config.storage.vaultDir });
   let coreRouter: CoreRouter;
   try {
-    coreRouter = createCoreRouter({ ownerCapability: ownerCap.capability });
+    coreRouter = createCoreRouter({
+      ownerCapability: ownerCap.capability,
+      codingGate: codingGateHandle.gate,
+      agentFacades: createAgentFacades(),
+    });
   } catch (err) {
     trace.push({
       step: 'core_router',
@@ -571,6 +630,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         wiredPublisher.dispose();
       }
       await disconnectMsgBox();
+      // Item 2c — drop our discovery lock on clean shutdown (registered here,
+      // before listen, since Fastify rejects hooks added post-listen). The
+      // lock itself is written after listen with the real bound port.
+      releaseLock(config.storage.vaultDir);
     });
     routesBound = bindCoreRouter({
       coreRouter,
@@ -623,6 +686,25 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     status: 'ok',
     elapsedMs: Date.now() - fastifyStart,
   });
+
+  // Item 2c — write the discovery lock with the REAL bound port (ephemeral when
+  // the configured port is 0), pid, and node DID, so a second same-machine
+  // agent can find this Core. The onClose hook that removes it is registered at
+  // app creation (Fastify rejects hooks added post-listen). Best-effort: a lock
+  // write failure must not down a healthy server.
+  try {
+    const addr = app.server.address();
+    const boundPort = typeof addr === 'object' && addr !== null ? addr.port : config.network.port;
+    writeLock(config.storage.vaultDir, {
+      pid: process.pid,
+      host: config.network.host,
+      port: boundPort,
+      nodeDid: getNodeDID(),
+      startedAtMs: Date.now(),
+    });
+  } catch (err) {
+    logger.warn({ error: (err as Error).message }, 'core.lock write failed (non-fatal)');
+  }
 
   // Step 8: msgbox_connect — every greenfield Home Node connects to the
   // hosted MsgBox fleet by default. Wrapped-seed boot cannot derive the

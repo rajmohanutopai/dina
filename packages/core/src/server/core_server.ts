@@ -18,6 +18,8 @@ import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerDevicesRoutes } from './routes/devices';
 import { registerIntentRoutes } from './routes/intent';
+import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
+import { registerAgentFacadeRoutes, type AgentFacadeHandlers } from './routes/agent_facades';
 import { registerMemoryRoutes } from './routes/memory';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPIIRoutes } from './routes/pii';
@@ -58,6 +60,14 @@ export interface CoreRouterOptions {
    *  omitted, those routes FAIL CLOSED (no owner surface — e.g. the server split,
    *  or a router Brain built for itself). */
   ownerCapability?: string;
+  /** Item 4 — the fs-backed coding gate (`POST /v1/agent/gate`, §12.1). Injected
+   *  by the Node Core process; when omitted (e.g. mobile) the route reports 501,
+   *  never a silent allow. */
+  codingGate?: CodingGateFn;
+  /** Items 5c/9/11/12 — coding-agent façade backings (memory ingress, find-
+   *  service, talk, delegate, peerlens). Each route is registered only when its
+   *  handler is provided; all are scope-gated to `coding` (item 6b). */
+  agentFacades?: AgentFacadeHandlers;
 }
 
 /**
@@ -148,6 +158,17 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // resolves from the mobile Approvals tab. See
   // `packages/core/src/server/routes/intent.ts` for the full pipeline.
   registerIntentRoutes(router);
+
+  // Item 4 — the catch-all coding gate (`POST /v1/agent/gate`, §12.1). A
+  // coding-agent hook forwards every raw tool call; Core classifies it and
+  // returns allow / approval_required / deny. The fs-backed gate is injected
+  // by the Node Core process; absent it, the route reports 501 (never allow).
+  registerCodingGateRoutes(router, options.codingGate);
+
+  // Items 5c/9/11/12 — the coding-agent façades (`/v1/agent/{memory,find-
+  // service,talk,delegate,peerlens}`). Each is scope-gated to `coding` and
+  // delegates to an injected backing; unwired backings register no route.
+  registerAgentFacadeRoutes(router, options.agentFacades);
 
   // Session lifecycle — paired dina-agent opens a session before each
   // delegation-task claim. Stub for now; full persona-pinning is a

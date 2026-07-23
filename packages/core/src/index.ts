@@ -903,10 +903,14 @@ export {
 export type { PersonaRepository, StoredPersona } from './persona/repository';
 export { DATA_CATEGORIES } from './persona/names';
 export type { DataCategory } from './persona/names';
+export { resolvePersonaName, PERSONA_NAMES } from './persona/names';
+export type { CanonicalPersona } from './persona/names';
 export * from './vault/lifecycle';
 export * from './vault/tiered_content';
 export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
 export * from './vault/crud';
+export * from './vault/origin_capability';
+export * from './session/registry';
 export * from './staging/state_machine';
 export type { StagingStatus, StagingTransition } from './staging/state_machine';
 // Staging service functions — exported at the root so apps (mobile,
@@ -1319,6 +1323,22 @@ export { CoreRouter } from './server/router';
 export type { CoreRequest, CoreResponse, CoreHandler, RouteRegistration, AuthMode } from './server/router';
 export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
 export type { CoreRouterOptions } from './server/core_server';
+export type {
+  CodingGateFn,
+  CodingGateInput,
+  CodingGateResult,
+} from './server/routes/coding_gate';
+export type {
+  AgentFacadeHandlers,
+  AgentFacadeHandler,
+  AgentFacadeContext,
+} from './server/routes/agent_facades';
+export {
+  isScopeAuthorized,
+  requiredScopeFor,
+  resolveAgentScope,
+  type AgentScope,
+} from './auth/agent_scope';
 export type {
   HttpClient,
   HttpRequestInit,

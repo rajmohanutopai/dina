@@ -1,39 +1,73 @@
 /**
- * Session lifecycle routes — minimal stubs for paired dina-agent.
+ * Session lifecycle routes — now backed by the durable session registry (§15).
  *
- * The Go Core implements full persona-scoped sessions: when an agent
- * starts a session it pins a persona for the lifetime of any work
- * claimed under that session, and `/v1/session/end` releases the pin.
- * The TS Core hasn't ported the persona-pinning yet, so these
- * endpoints accept the lifecycle calls but treat them as no-ops —
- * paired agents can claim/heartbeat/complete tasks without the route
- * surfacing 404 on every claim.
+ * Item 6 upgrades these from no-op stubs to a real, DID-bound lifecycle:
+ *   POST /v1/session/start  → mints (or reuses) a Core session bound to the
+ *                             authenticated caller DID + host session id; the
+ *                             bootstrap op is exempt from prior-session checks.
+ *   POST /v1/session/end    → ends the session (revoking its grants via the
+ *                             registry's onEnd hook), DID-bound so an agent can
+ *                             only end its OWN session.
  *
- * Wire-compatible with `dina-agent` so the daemon's openclaw flow:
- *   POST /v1/session/start  → { session_id }
- *   POST /v1/session/end    → { ok: true }
- * doesn't fail-task on missing routes.
+ * Wire-compatible with the existing `dina-agent` daemon: `start` still returns
+ * `{ session_id, status: 'open' }` and `end` still returns `{ ok: true }`; the
+ * new lease field is additive.
  *
  * Auth: open to `agent`, `brain`, `admin` (see `auth/authz.ts`).
  */
 
-import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
+import { getSessionRegistry } from '../../session/registry';
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
+function resolveCallerDid(req: CoreRequest): string {
+  const xDID = req.headers['x-did'];
+  return req.callerDID ?? (typeof xDID === 'string' ? xDID : '');
+}
+
 export function registerSessionRoutes(router: CoreRouter): void {
-  router.post('/v1/session/start', async (_req: CoreRequest): Promise<CoreResponse> => {
-    const sessionId = `sess-${bytesToHex(randomBytes(8))}`;
+  router.post('/v1/session/start', async (req: CoreRequest): Promise<CoreResponse> => {
+    const agentDid = resolveCallerDid(req);
+    if (agentDid === '') {
+      return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
+    }
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+    // Bind to the host session so the hook + MCP tools share ONE Core session
+    // (F-04). Absent one, fall back to the agent DID so start stays idempotent.
+    const hostSessionId =
+      typeof body.host_session_id === 'string' && body.host_session_id !== ''
+        ? body.host_session_id
+        : agentDid;
+    const session = getSessionRegistry().start({ agentDid, hostSessionId });
     return {
       status: 200,
-      body: { session_id: sessionId, status: 'open' },
+      body: {
+        session_id: session.sessionId,
+        status: 'open',
+        lease_expires_at: Math.floor(session.leaseExpiresAtMs / 1000),
+      },
     };
   });
 
-  router.post('/v1/session/end', async (_req: CoreRequest): Promise<CoreResponse> => {
-    return {
-      status: 200,
-      body: { ok: true },
-    };
+  router.post('/v1/session/end', async (req: CoreRequest): Promise<CoreResponse> => {
+    const agentDid = resolveCallerDid(req);
+    if (agentDid === '') {
+      return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
+    }
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+    const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
+    if (sessionId === '') {
+      return { status: 400, body: { error: 'missing required field: session_id' } };
+    }
+    const result = getSessionRegistry().end(sessionId, agentDid);
+    if (!result.ok) {
+      // A caller may only end its OWN live session. Unknown / foreign / ended
+      // ALL return an identical 404 — echoing the registry's distinct reason
+      // (`principal_mismatch` vs `not_found`) would be a cross-principal
+      // existence oracle (audit finding). Never reveal another session's
+      // lifecycle.
+      return { status: 404, body: { ok: false } };
+    }
+    return { status: 200, body: { ok: true } };
   });
 }
