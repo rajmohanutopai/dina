@@ -67,6 +67,8 @@ interface PendingCode {
    */
   deviceName?: string;
   role?: import('../devices/registry').DeviceRole;
+  /** Item C — agent_scope the enrolling authority stamps at INITIATE. */
+  scope?: import('../auth/agent_scope').AgentScope;
 }
 
 const pendingCodes = new Map<string, PendingCode>();
@@ -102,6 +104,7 @@ export function generatePairingCode(
   intent: {
     deviceName?: string;
     role?: import('../devices/registry').DeviceRole;
+    scope?: import('../auth/agent_scope').AgentScope;
   } = {},
 ): PairingCode {
   if (!nodeDID) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
@@ -146,6 +149,7 @@ export function generatePairingCode(
     failedAttempts: 0,
     deviceName: intent.deviceName,
     role: intent.role,
+    scope: intent.scope,
   });
 
   return { code, expiresAt };
@@ -158,12 +162,14 @@ export function generatePairingCode(
  * where the agent only presents `{code, publicKey}`). Returns null
  * when the code isn't a known pending entry.
  */
-export function getPairingIntent(
-  code: string,
-): { deviceName?: string; role?: import('../devices/registry').DeviceRole } | null {
+export function getPairingIntent(code: string): {
+  deviceName?: string;
+  role?: import('../devices/registry').DeviceRole;
+  scope?: import('../auth/agent_scope').AgentScope;
+} | null {
   const pending = pendingCodes.get(code);
   if (!pending) return null;
-  return { deviceName: pending.deviceName, role: pending.role };
+  return { deviceName: pending.deviceName, role: pending.role, scope: pending.scope };
 }
 
 /**
@@ -183,6 +189,7 @@ export function completePairing(
   deviceName: string,
   publicKeyMultibase: string,
   role: import('../devices/registry').DeviceRole = 'rich',
+  scope?: import('../auth/agent_scope').AgentScope,
 ): PairingResult {
   if (!nodeDID) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
 
@@ -216,8 +223,8 @@ export function completePairing(
   }
   const deviceDID = deriveDIDKey(pubKey);
 
-  // Persist device in device registry with caller-specified role
-  const device = persistDevice(deviceName, publicKeyMultibase, role);
+  // Persist device in device registry with caller-specified role + scope
+  const device = persistDevice(deviceName, publicKeyMultibase, role, scope);
 
   // Register device DID for auth resolution (callerType = 'device')
   registerDeviceAuth(deviceDID, deviceName);

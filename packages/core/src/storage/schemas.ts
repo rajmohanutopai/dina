@@ -70,6 +70,9 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         public_key_multibase TEXT NOT NULL,
         device_name TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'rich',
+        -- Item C — agent_scope ('coding' | 'runner') stamped at pairing for an
+        -- agent/plugin device; NULL for a non-agent (rich/thin/cli) device.
+        scope TEXT,
         auth_type TEXT NOT NULL DEFAULT 'ed25519',
         last_seen INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
@@ -87,6 +90,22 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       -- be '' on a legacy/mock row.)
       CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_pubkey ON paired_devices(public_key_multibase);
       CREATE INDEX IF NOT EXISTS idx_devices_did ON paired_devices(did);
+
+      -- Item D — durable coding-agent sessions (DID-bound lease). Backs the
+      -- in-memory SessionRegistry so a session survives a Core restart; boot
+      -- reconciles from here and reaps any lapsed lease. ended_at IS NULL ⇒ live.
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        session_id TEXT PRIMARY KEY,
+        agent_did TEXT NOT NULL,
+        host_session_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        lease_expires_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        end_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_principal
+        ON agent_sessions(agent_did, host_session_id);
 
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY,

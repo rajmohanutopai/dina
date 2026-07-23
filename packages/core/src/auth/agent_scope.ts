@@ -46,6 +46,8 @@ interface ScopeRule {
  * caller-type matrix alone decides).
  */
 const SCOPE_RULES: readonly ScopeRule[] = [
+  // Coding-agent surfaces (the plugin the coding scope exists for).
+  { prefix: '/v1/agent/gate', scope: 'coding' },
   { prefix: '/v1/agent/memory', scope: 'coding' },
   { prefix: '/v1/agent/find-service', scope: 'coding' },
   { prefix: '/v1/agent/talk', scope: 'coding' },
@@ -53,6 +55,11 @@ const SCOPE_RULES: readonly ScopeRule[] = [
   { prefix: '/v1/agent/peerlens', scope: 'coding' },
   { prefix: '/v1/agent/ask', scope: 'coding' },
   { prefix: '/v1/agent/reminders', scope: 'coding' },
+  // Delegation-runner surface: claiming a workflow task is a RUNNER action, not
+  // a coding one (Item C — narrow the broad agent authz). A coding agent that
+  // somehow reaches the claim endpoint is denied by scope even though the
+  // caller-type matrix admits any 'agent'.
+  { prefix: '/v1/workflow/tasks/claim', scope: 'runner' },
 ];
 
 /** Boundary-safe prefix test: exact, or followed by `/`. */

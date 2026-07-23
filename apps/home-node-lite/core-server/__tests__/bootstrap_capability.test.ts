@@ -40,7 +40,13 @@ describe('bootstrap enrolment capability (item 2)', () => {
       const gen = fakeGenerate('TESTCODE', 1234);
       const res = await deliverBootstrapCapability({ firstBoot: true, handoff, generate: gen });
       expect(res).toEqual({ delivered: true, expiresAt: 1234 });
-      expect(gen).toHaveBeenCalledWith({ role: 'agent', deviceName: DEFAULT_BOOTSTRAP_DEVICE_NAME });
+      // Item C — the bootstrap enrols a CODING agent, so it stamps the coding
+      // agent_scope at initiate.
+      expect(gen).toHaveBeenCalledWith({
+        role: 'agent',
+        scope: 'coding',
+        deviceName: DEFAULT_BOOTSTRAP_DEVICE_NAME,
+      });
       expect(JSON.parse(writes.join('').trim())).toEqual({ code: 'TESTCODE', expiresAt: 1234 });
       expect(isClosed()).toBe(true);
     });

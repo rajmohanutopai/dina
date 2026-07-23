@@ -22,6 +22,12 @@ import {
   isAgentPersonaAccessApproval,
   reserveAgentPersonaGrant,
 } from '../../agent/access';
+import {
+  getCodingPermitAuthority,
+  isCodingGateApproval,
+  mintApprovedCodingPermit,
+  parseCodingGateApprovalPayload,
+} from '../../agent/coding_permit';
 import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
@@ -712,6 +718,44 @@ async function approveTask(
         'agent persona-access grant could not be activated after approval — re-request access',
         'grant',
       );
+    }
+    writeSessionGrant();
+    return approved;
+  }
+
+  // Item B — approving a coding-gate request mints the single-use, payload-bound
+  // permit the agent's retry redeems. No durable grant, no local runner: the
+  // permit IS the outcome (and it is single-use, so each risky coding action is
+  // approved individually).
+  if (
+    isCodingGateApproval(before) &&
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
+  ) {
+    // Fail CLOSED before the transition: a missing permit authority or malformed
+    // payload would approve a card that grants nothing. Refuse (→ the owner
+    // re-prompts) rather than commit a useless approval. Both are re-checked
+    // here exactly as `mintApprovedCodingPermit` checks them, so the mint below
+    // (after the CAS) cannot silently no-op.
+    if (
+      getCodingPermitAuthority() === null ||
+      parseCodingGateApprovalPayload(before.payload) === null
+    ) {
+      throw new WorkflowValidationError(
+        'coding-gate permit could not be minted (permit authority unavailable)',
+        'permit',
+      );
+    }
+    const approved = service.approve(id); // throws → 409, nothing minted
+    // Mint AFTER the CAS commits so a lost/cancelled transition mints no permit.
+    try {
+      mintApprovedCodingPermit(before);
+    } catch (err) {
+      // Minting is an in-memory insert and should not throw; if it does after
+      // the task is already approved, CANCEL so the idempotency key frees and
+      // the owner re-approves a fresh card instead of an unredeemable one.
+      service.cancel(id, 'coding-gate permit mint error after approval');
+      throw err;
     }
     writeSessionGrant();
     return approved;

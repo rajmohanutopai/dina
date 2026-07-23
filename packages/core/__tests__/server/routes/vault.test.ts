@@ -212,3 +212,240 @@ describe('vault/query — agent persona-access gate', () => {
     expect(del.status).toBe(403);
   });
 });
+
+// Item A (Codex review) — the vault route binds its storage origin to WHO is
+// calling, so a compromised Brain (an untrusted `service` caller on the server
+// split) cannot delete owner items or overwrite them, even on a FREE persona
+// where the agent persona-access gate does not fire.
+describe('vault routes — caller-bound origin (Brain ambient-authority fix)', () => {
+  beforeEach(() => {
+    resetVaultRepositories();
+    setVaultRepository('general', new InMemoryVaultRepository());
+    resetPersonaState();
+    resetAuditState();
+    createPersona('general', 'default');
+    setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
+    setAgentGrantRepository(new InMemoryAgentGrantRepository());
+  });
+  afterEach(() => {
+    resetVaultRepositories();
+    resetPersonaState();
+    setWorkflowService(null);
+    setAgentGrantRepository(null);
+  });
+
+  function router(): CoreRouter {
+    const r = new CoreRouter();
+    registerVaultRoutes(r);
+    return r;
+  }
+  // On a real signed request the router stamps the FINE-GRAINED role, so Brain
+  // arrives as callerType:'brain' (never the coarse 'service') — exercise that.
+  const service = {
+    headers: {},
+    rawBody: new Uint8Array(),
+    params: {},
+    trustedInProcess: true, // bypass HTTP auth; the callerType is what we exercise
+    callerType: 'brain',
+    callerDID: 'did:key:brain',
+  } as const;
+
+  it('a BRAIN (service) caller may APPEND on a free persona (staging_item origin)', async () => {
+    const resp = await router().handle({
+      ...service,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'brain-ingested fact', body: 'b' },
+    });
+    expect(resp.status).toBe(201);
+    expect((resp.body as { id?: string }).id).toBeTruthy();
+  });
+
+  it('a BRAIN (service) caller CANNOT DELETE — origin denied (403), owner items survive', async () => {
+    // The owner stores an item in-process (owner_request).
+    const r = router();
+    const stored = await r.handle({
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true, // no callerType → owner
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'owner secret', body: 'keep me' },
+    });
+    const id = (stored.body as { id: string }).id;
+
+    // Brain tries to delete it — refused at the origin seam.
+    const del = await r.handle({
+      ...service,
+      method: 'DELETE',
+      path: `/v1/vault/item/${id}`,
+      query: { persona: 'general' },
+      body: undefined,
+      params: { id },
+    });
+    expect(del.status).toBe(403);
+    expect((del.body as { reason?: string }).reason).toMatch(/may not delete/);
+
+    // The item is still there (owner can still read it).
+    const got = await r.handle({
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: { id },
+      trustedInProcess: true,
+      method: 'GET',
+      path: `/v1/vault/item/${id}`,
+      query: { persona: 'general' },
+      body: undefined,
+    });
+    expect(got.status).toBe(200);
+  });
+
+  it('a BRAIN (service) caller CANNOT OVERWRITE an existing owner item by id (403)', async () => {
+    const r = router();
+    const stored = await r.handle({
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true, // owner
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'owner note', body: 'original' },
+    });
+    const id = (stored.body as { id: string }).id;
+
+    // Brain re-stores with the SAME id but tampered content → append-only origin
+    // refuses to overwrite.
+    const overwrite = await r.handle({
+      ...service,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { id, type: 'note', summary: 'tampered', body: 'evil' },
+    });
+    expect(overwrite.status).toBe(403);
+    expect((overwrite.body as { reason?: string }).reason).toMatch(/overwrite/);
+  });
+
+  it('a PLUGIN caller cannot write (read-only origin → 403)', async () => {
+    const resp = await router().handle({
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'plugin',
+      callerDID: 'did:key:plugin',
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'x' },
+    });
+    expect(resp.status).toBe(403);
+    expect((resp.body as { reason?: string }).reason).toMatch(/may not write/);
+  });
+
+  it('a CONNECTOR (store-only) caller may APPEND but not DELETE', async () => {
+    const conn = {
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'connector',
+      callerDID: 'did:key:connector',
+    } as const;
+    const r = router();
+    const stored = await r.handle({
+      ...conn,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'connector fact' },
+    });
+    expect(stored.status).toBe(201);
+    const id = (stored.body as { id: string }).id;
+    const del = await r.handle({
+      ...conn,
+      method: 'DELETE',
+      path: `/v1/vault/item/${id}`,
+      query: { persona: 'general' },
+      body: undefined,
+      params: { id },
+    });
+    expect(del.status).toBe(403);
+    expect((del.body as { reason?: string }).reason).toMatch(/may not delete/);
+  });
+
+  it('an ADMIN (operator) caller retains owner authority (delete allowed)', async () => {
+    const admin = {
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'admin',
+      callerDID: 'did:key:admin',
+    } as const;
+    const r = router();
+    const stored = await r.handle({
+      ...admin,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'op note' },
+    });
+    expect(stored.status).toBe(201);
+    const id = (stored.body as { id: string }).id;
+    const del = await r.handle({
+      ...admin,
+      method: 'DELETE',
+      path: `/v1/vault/item/${id}`,
+      query: { persona: 'general' },
+      body: undefined,
+      params: { id },
+    });
+    expect(del.status).toBe(200);
+    expect((del.body as { deleted?: boolean }).deleted).toBe(true);
+  });
+
+  it('the OWNER (in-process) still deletes and overwrites freely', async () => {
+    const owner = {
+      headers: {},
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true, // no callerType → owner
+    } as const;
+    const r = router();
+    const stored = await r.handle({
+      ...owner,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { type: 'note', summary: 'v1', body: 'a' },
+    });
+    const id = (stored.body as { id: string }).id;
+
+    // Owner overwrite (same id) is allowed.
+    const overwrite = await r.handle({
+      ...owner,
+      method: 'POST',
+      path: '/v1/vault/store',
+      query: { persona: 'general' },
+      body: { id, type: 'note', summary: 'v2', body: 'b' },
+    });
+    expect(overwrite.status).toBe(201);
+
+    // Owner delete is allowed.
+    const del = await r.handle({
+      ...owner,
+      method: 'DELETE',
+      path: `/v1/vault/item/${id}`,
+      query: { persona: 'general' },
+      body: undefined,
+      params: { id },
+    });
+    expect(del.status).toBe(200);
+    expect((del.body as { deleted?: boolean }).deleted).toBe(true);
+  });
+});

@@ -307,6 +307,8 @@ export interface BootServiceInputs {
   role?: NodeRole;
   /** Agent-role resolver for the auth caller-type registry (#14). */
   deviceRoleResolver?: CreateNodeOptions['deviceRoleResolver'];
+  /** Item C — agent_scope resolver so the auth layer derives req.agentScope. */
+  deviceScopeResolver?: CreateNodeOptions['deviceScopeResolver'];
   /** Keys for paired peers so their signed D2D + RPC verify. */
   peerPublicKeys?: Map<string, Uint8Array>;
   /** Fired when a post-boot ServicePublisher sync fails (#19). */
@@ -709,6 +711,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     role: inputs.role ?? 'requester',
     peerPublicKeys: inputs.peerPublicKeys,
     deviceRoleResolver: inputs.deviceRoleResolver,
+    deviceScopeResolver: inputs.deviceScopeResolver,
     // Contact Services seam 4: route an inbound `service.response` back to the
     // Talk thread the query was launched from. `talkThreadResolver` returns the
     // peer DID for a `did:`-shaped origin (seam 5 stamps `origin_channel =

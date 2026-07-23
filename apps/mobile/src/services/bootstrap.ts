@@ -57,6 +57,7 @@ import {
   resetServiceConfigState,
   setD2DSender,
   setDeviceRoleResolver,
+  setDeviceScopeResolver,
   setNodeDID,
   setReviewPublishRepository,
   setServiceConfig,
@@ -286,6 +287,13 @@ export interface CreateNodeOptions {
    * caller_type module treats all paired DIDs as generic 'device'.
    */
   deviceRoleResolver?: (did: string) => string | null;
+
+  /**
+   * Item C — device agent_scope resolver. Given a DID, return 'coding' /
+   * 'runner' / null. Lets the auth pipeline derive `req.agentScope` from the
+   * signed device record. Omitted ⇒ agents default to 'runner' in middleware.
+   */
+  deviceScopeResolver?: (did: string) => string | null;
 
   // --- Role + wiring ------------------------------------------------------
   role: NodeRole;
@@ -558,6 +566,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     registerService(options.did, 'brain');
     if (options.deviceRoleResolver !== undefined) {
       setDeviceRoleResolver(options.deviceRoleResolver);
+    }
+    if (options.deviceScopeResolver !== undefined) {
+      setDeviceScopeResolver(options.deviceScopeResolver);
     }
 
     // Pairing ceremony — `generatePairingCode` + `completePairing` need

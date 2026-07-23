@@ -202,6 +202,67 @@ describe('consume by re-sent payload (hook flow)', () => {
   });
 });
 
+describe('mintApprovedFromHash (Item B — owner-approval path)', () => {
+  it('mints an approved, single-use permit redeemable by the re-sent payload', () => {
+    const store = new PermitStore();
+    const hash = hashPayload(payloadA);
+    const rec = store.mintApprovedFromHash({
+      action: 'vcs_push',
+      risk: 'MODERATE',
+      payloadHash: hash,
+      agentDid: AGENT,
+      sessionId: SESSION,
+    });
+    expect(rec.decision).toBe('approved');
+    expect(rec.payloadHash).toBe(hash);
+    // Redeems once for the exact payload (the gate's no-permitId path)…
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(true);
+    // …precisely: the SAME permit is now consumed…
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: rec.permitId })).toEqual({
+      ok: false,
+      reason: 'already_consumed',
+    });
+    // …and the gate's no-id retry sees no LIVE permit to redeem (→ re-gates).
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(false);
+  });
+
+  it('is principal-bound: a foreign session cannot redeem it', () => {
+    const store = new PermitStore();
+    store.mintApprovedFromHash({
+      action: 'vcs_push',
+      risk: 'MODERATE',
+      payloadHash: hashPayload(payloadA),
+      agentDid: AGENT,
+      sessionId: SESSION,
+    });
+    expect(store.consume({ agentDid: AGENT, sessionId: 'other', payload: payloadA })).toEqual({
+      ok: false,
+      reason: 'not_found',
+    });
+  });
+
+  it('is time-bound: an expired approved permit no longer redeems', () => {
+    const clock = makeClock();
+    const store = new PermitStore(clock.now);
+    const rec = store.mintApprovedFromHash({
+      action: 'vcs_push',
+      risk: 'MODERATE',
+      payloadHash: hashPayload(payloadA),
+      agentDid: AGENT,
+      sessionId: SESSION,
+      ttlMs: 100,
+    });
+    clock.advance(200);
+    // Explicit id → the precise `expired` reason; the gate's no-id path sees no
+    // live match and re-gates.
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: rec.permitId })).toEqual({
+      ok: false,
+      reason: 'expired',
+    });
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(false);
+  });
+});
+
 describe('sweep', () => {
   it('drops consumed and expired permits, keeps live ones', () => {
     const clock = makeClock();

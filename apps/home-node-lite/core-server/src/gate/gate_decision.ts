@@ -25,7 +25,7 @@ import {
   type ProtectedPathOptions,
 } from './coding_classifier';
 import { classifyBashCommand } from './bash_classifier';
-import { PermitStore, type PermitRecord, type ToolPayload } from './permit';
+import { PermitStore, hashPayload, type PermitRecord, type ToolPayload } from './permit';
 import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
 
 export type GateMode = 'enforce' | 'classify_only';
@@ -57,6 +57,8 @@ export interface GateDecision {
   enforced: boolean;
   /** Minted only for an allowed call in enforce mode. */
   permit?: PermitRecord;
+  /** SHA-256 of the exact `(tool, input)` payload — present in enforce mode. */
+  payloadHash?: string;
   reason: string;
 }
 
@@ -218,19 +220,52 @@ export function gateToolCall(input: GateInput, permits: PermitStore): GateDecisi
   }
 
   // enforce
+  const payload = toPayload(input);
+  const payloadHash = hashPayload(payload);
+
   if (outcome === 'allow') {
     const permit = permits.mint({
       action,
       risk,
-      payload: toPayload(input),
+      payload,
       agentDid: input.agentDid,
       sessionId: input.sessionId,
       decision: 'auto',
     });
-    return { mode: 'enforce', action, risk, outcome, enforced: true, permit, reason };
+    return { mode: 'enforce', action, risk, outcome, enforced: true, permit, payloadHash, reason };
   }
-  // approval_required or deny: no permit yet (approval mints one on the owner's yes).
-  return { mode: 'enforce', action, risk, outcome, enforced: true, reason };
+
+  if (outcome === 'approval_required') {
+    // Item B — the agent's retry AFTER the owner approved: redeem the single-use
+    // approved permit for THIS exact payload. A payload that classifies
+    // MODERATE/HIGH is deterministic, so it never has an `auto` permit (those are
+    // minted only for SAFE calls) — the only thing `consume` can match here is an
+    // owner-approved permit; the `decision === 'approved'` guard makes that
+    // explicit. First matching retry is allowed and the permit is consumed; a
+    // second finds it spent → falls through to approval_required (re-gate).
+    const redeemed = permits.consume({
+      agentDid: input.agentDid,
+      sessionId: input.sessionId,
+      payload,
+    });
+    if (redeemed.ok && redeemed.permit.decision === 'approved') {
+      return {
+        mode: 'enforce',
+        action,
+        risk,
+        outcome: 'allow',
+        enforced: true,
+        permit: redeemed.permit,
+        payloadHash,
+        reason: `${reason} (redeemed owner-approved permit)`,
+      };
+    }
+    // No approved permit yet → the route creates/reuses the owner-approval card.
+    return { mode: 'enforce', action, risk, outcome, enforced: true, payloadHash, reason };
+  }
+
+  // deny (BLOCKED): no permit, no card.
+  return { mode: 'enforce', action, risk, outcome, enforced: true, payloadHash, reason };
 }
 
 /** Mint the permit that redeems an owner-approved MODERATE/HIGH call. */

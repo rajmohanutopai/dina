@@ -17,9 +17,11 @@
  * `agent.go`).
  */
 
+import { createCodingGateApproval } from '../../agent/coding_permit';
 import { appendAudit } from '../../audit/service';
 import { getSessionRegistry } from '../../session/registry';
 
+import type { RiskLevel } from '../../gatekeeper/intent';
 import type { CoreRouter } from '../router';
 
 /** Result the injected gate returns; serialised to snake_case on the wire. */
@@ -31,6 +33,12 @@ export interface CodingGateResult {
   enforced: boolean;
   /** Permit id minted for an allowed enforce-mode call, else undefined. */
   permitId?: string;
+  /**
+   * SHA-256 of the exact `(tool, input)` payload. Present for an enforce-mode
+   * decision; the route binds the approval card + the permit it will mint to
+   * this hash, so the owner's approval authorises THIS call and no other.
+   */
+  payloadHash?: string;
   reason: string;
 }
 
@@ -105,6 +113,30 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       mode: modeRaw,
     });
 
+    // Item B — an enforce-mode MODERATE/HIGH call that the gate could NOT redeem
+    // against an already-approved permit needs the owner's decision. Create the
+    // idempotent approval card (bound to the payload hash, never the raw input)
+    // and hand its id back, so the owner can approve and the agent's retry can
+    // redeem. Fail CLOSED: if the approval subsystem is unavailable we downgrade
+    // to a plain `approval_required` with no card rather than silently allow.
+    let approvalTaskId: string | undefined;
+    if (
+      modeRaw === 'enforce' &&
+      result.outcome === 'approval_required' &&
+      typeof result.payloadHash === 'string' &&
+      result.payloadHash !== ''
+    ) {
+      const created = createCodingGateApproval({
+        agentDid,
+        sessionId,
+        payloadHash: result.payloadHash,
+        tool: toolName,
+        action: result.action,
+        risk: result.risk as RiskLevel,
+      });
+      if (created.kind === 'approval_required') approvalTaskId = created.taskId;
+    }
+
     // Item 8 — durably record every non-SAFE decision, METADATA ONLY. Never the
     // tool_input (a Bash command / file path can carry a secret literal, §20);
     // only action / risk / outcome / reason / mode. Best-effort — an audit
@@ -122,6 +154,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
             mode: modeRaw,
             enforced: result.enforced,
             ...(result.permitId ? { permit_id: result.permitId } : {}),
+            ...(approvalTaskId ? { task_id: approvalTaskId } : {}),
             ...(sessionId ? { session_id: sessionId } : {}),
           }),
         );
@@ -138,6 +171,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
         outcome: result.outcome,
         enforced: result.enforced,
         permit_id: result.permitId ?? null,
+        task_id: approvalTaskId ?? null,
         reason: result.reason,
       },
     };

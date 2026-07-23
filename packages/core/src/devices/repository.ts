@@ -11,6 +11,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { resolveAgentScope } from '../auth/agent_scope';
+
 import type { PairedDevice, DeviceRole, AuthType } from './registry';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -50,14 +52,15 @@ export class SQLiteDeviceRepository implements DeviceRepository {
     // is a semantic no-op for the first writer and a clean upsert for
     // any same-row retry.
     this.db.execute(
-      `INSERT OR REPLACE INTO paired_devices (device_id, did, public_key_multibase, device_name, role, auth_type, last_seen, created_at, revoked)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO paired_devices (device_id, did, public_key_multibase, device_name, role, scope, auth_type, last_seen, created_at, revoked)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         d.deviceId,
         d.did,
         d.publicKeyMultibase,
         d.deviceName,
         d.role,
+        d.scope ?? null,
         d.authType,
         d.lastSeen,
         d.createdAt,
@@ -125,12 +128,17 @@ const VALID_DEVICE_ROLES = new Set<DeviceRole>(['rich', 'thin', 'cli', 'agent', 
 function rowToDevice(row: DBRow): PairedDevice | null {
   const role = String(row.role ?? 'rich');
   if (!VALID_DEVICE_ROLES.has(role as DeviceRole)) return null;
+  // Item C — a corrupt/unknown scope normalises to undefined (fail-safe: no
+  // scope means the coding façades stay denied; the auth layer applies the
+  // runner default for an agent/plugin caller).
+  const scope = resolveAgentScope(row.scope == null ? null : String(row.scope));
   return {
     deviceId: String(row.device_id ?? ''),
     did: String(row.did ?? ''),
     publicKeyMultibase: String(row.public_key_multibase ?? ''),
     deviceName: String(row.device_name ?? ''),
     role: role as DeviceRole,
+    ...(scope !== undefined ? { scope } : {}),
     authType: String(row.auth_type ?? 'ed25519') as AuthType,
     lastSeen: Number(row.last_seen ?? 0),
     createdAt: Number(row.created_at ?? 0),

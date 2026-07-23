@@ -2,6 +2,7 @@ export {
   registerService,
   registerDevice,
   setDeviceRoleResolver,
+  setDeviceScopeResolver,
   resetCallerTypeState,
 } from './src/auth/caller_type';
 export {

@@ -13,6 +13,7 @@ import { publicKeyToMultibase } from '../../src/identity/did';
 import {
   generatePairingCode,
   completePairing,
+  getPairingIntent,
   isCodeValid,
   activePairingCount,
   purgeExpiredCodes,
@@ -290,6 +291,31 @@ describe('Device Pairing Ceremony', () => {
       expect(device).not.toBeNull();
       expect(device!.deviceName).toBe('TestPhone');
       expect(device!.revoked).toBe(false);
+    });
+
+    it('Item C — threads the initiate-time agent_scope onto the paired device', () => {
+      const { getByPublicKey } = require('../../src/devices/registry');
+      // Initiate stamps scope='coding' (as the bootstrap capability does).
+      const { code } = generatePairingCode({
+        role: 'agent',
+        scope: 'coding',
+        deviceName: 'coding-plugin',
+      });
+      // The intent carries it (the /complete route reads this — authoritative).
+      expect(getPairingIntent(code)?.scope).toBe('coding');
+      // Redeem with the authoritative scope from the intent.
+      completePairing(code, 'coding-plugin', testMultibase1, 'agent', 'coding');
+      const device = getByPublicKey(testMultibase1);
+      expect(device!.role).toBe('agent');
+      expect(device!.scope).toBe('coding');
+    });
+
+    it('Item C — a non-agent pairing carries no scope', () => {
+      const { getByPublicKey } = require('../../src/devices/registry');
+      const { code } = generatePairingCode({ role: 'rich', deviceName: 'phone' });
+      expect(getPairingIntent(code)?.scope).toBeUndefined();
+      completePairing(code, 'phone', testMultibase1, 'rich');
+      expect(getByPublicKey(testMultibase1)!.scope).toBeUndefined();
     });
 
     it('revocation cascades to auth — device DID unregistered', () => {

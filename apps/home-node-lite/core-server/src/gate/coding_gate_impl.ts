@@ -9,7 +9,7 @@
  * redeemable on the execution seam.
  */
 
-import type { CodingGateInput, CodingGateResult } from '@dina/core';
+import type { CodingGateInput, CodingGateResult, CodingPermitAuthority } from '@dina/core';
 
 import { gateToolCall } from './gate_decision';
 import { PermitStore } from './permit';
@@ -29,6 +29,13 @@ export interface CodingGateConfig {
 export interface CodingGateHandle {
   gate: SyncCodingGate;
   permits: PermitStore;
+  /**
+   * The permit authority injected into `@dina/core`'s workflow approve route
+   * (`setCodingPermitAuthority`) so approving a coding-gate card mints the
+   * single-use permit the agent's retry redeems. Backed by the SAME
+   * `PermitStore` the gate consumes from.
+   */
+  authority: CodingPermitAuthority;
 }
 
 export function createCodingGate(config: CodingGateConfig): CodingGateHandle {
@@ -54,8 +61,20 @@ export function createCodingGate(config: CodingGateConfig): CodingGateHandle {
       outcome: decision.outcome,
       enforced: decision.enforced,
       permitId: decision.permit?.permitId,
+      payloadHash: decision.payloadHash,
       reason: decision.reason,
     };
   };
-  return { gate, permits };
+  const authority: CodingPermitAuthority = {
+    mintApproved: (claim) => {
+      permits.mintApprovedFromHash({
+        action: claim.action,
+        risk: claim.risk,
+        payloadHash: claim.payloadHash,
+        agentDid: claim.agentDid,
+        sessionId: claim.sessionId,
+      });
+    },
+  };
+  return { gate, permits, authority };
 }

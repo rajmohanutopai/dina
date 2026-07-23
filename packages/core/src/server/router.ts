@@ -265,6 +265,9 @@ export class CoreRouter {
         ...req,
         callerType: authResult.authzRole ?? authResult.callerType,
         callerDID: authResult.did,
+        // Item C — the device-derived agent_scope (agent/plugin callers only),
+        // so scope-gated handlers (coding façades) read a signed value.
+        ...(authResult.agentScope !== undefined ? { agentScope: authResult.agentScope } : {}),
       };
     }
 

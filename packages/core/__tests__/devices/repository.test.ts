@@ -231,4 +231,34 @@ describe('round-15 #8 — revoked flag is constrained + coerced fail-closed', ()
       cleanup();
     }
   });
+
+  it('Item C — the agent_scope column round-trips (coding, and absent)', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      await repo.register(deviceFixture({ deviceId: 'dev-coding', scope: 'coding' }));
+      await repo.register(deviceFixture({ deviceId: 'dev-none', publicKeyMultibase: 'z6MkOther' }));
+      expect((await repo.get('dev-coding'))?.scope).toBe('coding');
+      // No scope stamped → the field is absent (not '' or null), matching the
+      // in-memory registry so the auth layer's runner default applies cleanly.
+      expect((await repo.get('dev-none'))?.scope).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('Item C — a corrupt scope value normalises to undefined (fail-safe)', async () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      await repo.register(deviceFixture({ deviceId: 'dev-bad' }));
+      // Simulate schema drift / a foreign writer putting garbage in the column.
+      adapter.execute("UPDATE paired_devices SET scope = 'nonsense' WHERE device_id = ?", [
+        'dev-bad',
+      ]);
+      expect((await repo.get('dev-bad'))?.scope).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
 });

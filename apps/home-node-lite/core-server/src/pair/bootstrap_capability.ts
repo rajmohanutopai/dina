@@ -70,8 +70,13 @@ export async function deliverBootstrapCapability(
   if (opts.handoff === null) return { delivered: false, reason: 'no_handoff_channel' };
 
   const generate = opts.generate ?? generatePairingCode;
+  // Item C — the bootstrap capability enrols a CODING agent (Claude Code /
+  // Codex), so stamp `agent_scope='coding'` at initiate. It travels through the
+  // pairing intent to registration, and Core later derives `req.agentScope`
+  // from the device record — this is what unlocks the coding tool façades.
   const { code, expiresAt } = generate({
     role: 'agent',
+    scope: 'coding',
     deviceName: opts.deviceName ?? DEFAULT_BOOTSTRAP_DEVICE_NAME,
   });
 

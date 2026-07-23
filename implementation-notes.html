@@ -488,17 +488,83 @@
       <tr><td>HIGH</td><td><code>env</code> / <code>printenv AWS_SECRET</code> / <code>set</code> disclose environment secrets → SAFE</td><td><strong>FIXED</strong>: env-dump commands → secret_read BLOCKED (wrappers/<code>set -e</code>/assignments stay SAFE)</td></tr>
       <tr><td>HIGH</td><td>gate route trusts a body <code>session_id</code> without validating it against the registry</td><td><strong>FIXED</strong>: a non-empty session must pass <code>SessionRegistry.validate(sid, did)</code> → else 401, no permit</td></tr>
       <tr><td>MED</td><td><code>core.lock</code> is a check-then-write TOCTOU race (two Cores can both open one vault)</td><td><strong>FIXED</strong>: <code>acquireLock</code> — atomic <code>open(…,'wx')</code> (O_EXCL) before storage, with stale-owner recovery</td></tr>
-      <tr><td>HIGH</td><td>Brain retains ambient vault authz (query/store/delete) via <code>/v1/vault/*</code> with default <code>owner_request</code></td><td>DEFERRED — the untrusted-Brain vault-capability system (spec §5/P0), documented as not-wired; 5b is the origin PRIMITIVE + seam, not the Brain re-authz</td></tr>
-      <tr><td>HIGH</td><td>permits are minted but never CONSUMED in production (no execution-seam redemption; <code>mintApprovedPermit</code> only in tests)</td><td>DEFERRED — the execution seam is item 4's CLIENT hook + item 7's approval flow, both marked TODO</td></tr>
-      <tr><td>HIGH</td><td><code>agent_scope</code> not derived/propagated by the auth middleware → façades 403 for real callers; broad agent authz remains</td><td>DEFERRED — item 6b's live derivation (device-record column + middleware) — primitive built, wiring is the COLD-4 migration item</td></tr>
-      <tr><td>MED</td><td>session registry is in-memory, not persisted/reconciled on restart</td><td>DEFERRED — SQLite backing is item 8; the registry exposes the injectable seam for it</td></tr>
+      <tr><td>HIGH</td><td>Brain retains ambient vault authz (query/store/delete) via <code>/v1/vault/*</code> with default <code>owner_request</code></td><td><strong>NOW DONE</strong> (item A below) — vault routes bind the origin to the caller; Brain appends (<code>staging_item</code>) but can't delete/overwrite</td></tr>
+      <tr><td>HIGH</td><td>permits are minted but never CONSUMED in production (no execution-seam redemption; <code>mintApprovedPermit</code> only in tests)</td><td><strong>NOW DONE</strong> (item B below) — approval card → owner approval mints an approved permit → the retry redeems it once</td></tr>
+      <tr><td>HIGH</td><td><code>agent_scope</code> not derived/propagated by the auth middleware → façades 403 for real callers; broad agent authz remains</td><td><strong>NOW DONE</strong> (item C below) — scope persisted on the device record + derived from the signed DID in the middleware + enforced (gate/façades = coding, claim = runner)</td></tr>
+      <tr><td>MED</td><td>session registry is in-memory, not persisted/reconciled on restart</td><td><strong>NOW DONE</strong> (item D below) — SQLite-backed, cryptographically-random ids, reconcile-on-boot</td></tr>
     </table>
     <p class="meta">This is exactly why dual-model review matters: the Claude rounds exhaustively hardened the
       shell/path PARSER but never questioned <em>env-var disclosure</em>, <em>tilde expansion</em>, the
       <em>gate↔session wiring</em>, or <em>lock atomicity</em> — all of which a fresh model surfaced
-      immediately. The 4 deferred findings are real and align with the scope notes already in this doc;
-      they are the client-hook / Brain-capability / scope-derivation / durable-store integration work, not
-      regressions.</p>
+      immediately. All 4 initially-deferred integration findings have since been BUILT (items A–D below).</p>
+
+    <h2>Codex deferred items A–D — now built <span class="status done">DONE</span></h2>
+    <p class="meta">Follow-on to the Codex review: the 4 deferred integration findings, implemented + regression-tested.
+      packages/core 5844 green · core-server 2736 green · full workspace typecheck clean.</p>
+
+    <h3>A — remove Brain's ambient vault authority</h3>
+    <p class="meta">packages/core/src/server/routes/vault.ts · vault/crud.ts · vault.test.ts (+7)</p>
+    <ul>
+      <li>The vault routes stored/deleted with the default <code>owner_request</code> origin for EVERY caller, so on
+        the server split a compromised Brain held owner-equivalent write+delete just by reaching the route. The
+        routes now BIND the typed origin to who is calling: owner (in-process app, <code>device</code>,
+        <code>owner</code> run/watch surface, <code>admin</code> operator) → <code>owner_request</code>;
+        service-class analyst/connector (<code>brain</code>/<code>connector</code>/<code>service</code>) →
+        <code>staging_item</code> (append-only ingest, no delete); everything else (<code>agent</code>/<code>plugin</code>/
+        <code>unknown</code>) → <code>agent_ask</code> (read-only).</li>
+      <li>Also closed the INSERT-OR-REPLACE overwrite hole in <code>storeItem</code>: a non-owner origin may only
+        APPEND — supplying an existing item's id to tamper with it now throws (403), so Brain can neither delete NOR
+        overwrite an owner item it can't delete.</li>
+      <li><strong>Deep-review catch:</strong> the first cut keyed on <code>callerType==='service'</code>, but the router
+        stamps the FINE-GRAINED authz role, so a real Brain arrives as <code>'brain'</code> (never <code>'service'</code>).
+        The initial mapping would have broken Brain's legitimate capability-writer store. Fixed to the real role names
+        (<code>brain</code>/<code>connector</code>/<code>admin</code>) + pinned by tests.</li>
+    </ul>
+
+    <h3>B — permit execution-seam redemption</h3>
+    <p class="meta">packages/core/src/agent/coding_permit.ts (new) · server/routes/coding_gate.ts + workflow.ts ·
+      core-server gate/permit.ts + gate_decision.ts + coding_gate_impl.ts + boot.ts · coding_permit.test.ts / permit / gate_decision / coding_gate_impl (+27)</p>
+    <ul>
+      <li>Permits were minted but never consumed, and owner approval minted nothing — so an approved MODERATE/HIGH coding
+        action re-classified to <code>approval_required</code> forever. Closed the loop, mirroring the persona-grant
+        pattern: classify MODERATE/HIGH → the gate route creates an idempotent approval card bound to the payload HASH
+        (never the raw tool input, §20) → the owner approves via the workflow route → <code>mintApprovedCodingPermit</code>
+        mints a single-use, payload+principal-bound APPROVED permit → the agent's retry redeems it once
+        (<code>consume</code>); a second retry finds it spent → re-gates.</li>
+      <li>The <code>PermitStore</code> is fs/Node-side while the approve route is in <code>@dina/core</code>, so — exactly
+        as the route injects <code>CodingGateFn</code> — the Node process injects a <code>CodingPermitAuthority</code>
+        (<code>setCodingPermitAuthority</code>). Fail-closed: approving a coding card with no authority wired refuses to
+        commit. Coding cards carry <code>origin:'agent'</code>, so COLD-1 keeps Brain from approving them — owner only.</li>
+    </ul>
+
+    <h3>C — <code>agent_scope</code> live derivation</h3>
+    <p class="meta">packages/core: auth/agent_scope.ts (rules) + caller_type.ts + middleware.ts + server/router.ts +
+      devices/registry.ts + devices/repository.ts + storage/schemas.ts + pairing/ceremony.ts + server/routes/pair.ts +
+      server/core_server.ts · core-server bootstrap_capability.ts · mobile boot wiring · agent_scope_derivation / ceremony / repository (+ tests)</p>
+    <ul>
+      <li>The enforcement primitive existed but <code>req.agentScope</code> was NEVER populated — so the scope-gated
+        coding façades failed closed (403) for everyone. Now: scope is persisted on the device record (schema edited in
+        place, no migration), stamped at pairing (authoritative from initiate, like <code>role</code> — the bootstrap
+        capability stamps <code>coding</code>), and DERIVED by the auth middleware from the signature-authenticated device
+        DID (never a client claim). Enforced for <code>agent</code>/<code>plugin</code> callers: the coding surfaces +
+        <code>/v1/agent/gate</code> require <code>coding</code>; <code>/v1/workflow/tasks/claim</code> requires
+        <code>runner</code>.</li>
+      <li>An agent/plugin with no stamped scope defaults to <code>runner</code> — pre-scope delegation runners keep
+        working, while an unstamped device is still barred from the coding surfaces. Enforcement lives in the middleware
+        (bypassed by the in-process owner transport), so it gates real signed requests without touching in-process flows.</li>
+    </ul>
+
+    <h3>D — session SQLite durability</h3>
+    <p class="meta">packages/core/src/session/repository.ts (new) + registry.ts + storage/schemas.ts + index.ts ·
+      core-server storage/init.ts · session/durability.test.ts (+5)</p>
+    <ul>
+      <li>The <code>SessionRegistry</code> was in-memory only, so a coding-agent session died on a Core restart and its ids
+        were a predictable <code>seq</code>+host+timestamp. Now: an optional <code>SessionRepository</code> (SQLite-backed,
+        identity store) receives a best-effort write-through on every mutation; <code>reconcile()</code> reloads the live
+        sessions on boot and reaps any whose lease lapsed while Core was down; ids are cryptographically random
+        (<code>sess-</code>+128 random bits — no counter/host/timestamp leakage). The in-memory Map stays authoritative for
+        reads (matching the device-registry pattern). Wired at boot via <code>setSessionRegistry</code>.</li>
+    </ul>
 
     <h2>Item 4 — catch-all coding gate route + two conformance classes <span class="status wip">SERVER DONE; client hook/supervisor TODO</span></h2>
     <p class="meta">

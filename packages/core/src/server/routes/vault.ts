@@ -18,9 +18,60 @@ import {
   listRecentItems,
   deleteItem,
 } from '../../vault/crud';
+import { isVaultOperationAllowed, type VaultOrigin } from '../../vault/origin_capability';
 
 import type { GrantMode } from '../../agent/grant_repository';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
+
+/**
+ * Item A (Codex review — Brain's ambient vault authority). The typed-origin
+ * matrix (`origin_capability.ts`) is enforced at the storage seam, but until
+ * now the vault ROUTES stored/deleted with the default `owner_request` origin
+ * for every caller — so on the server split a compromised Brain (an untrusted
+ * `service` caller) held owner-equivalent write AND delete authority just by
+ * reaching the route. These helpers bind the origin to WHO is calling:
+ *
+ *   - owner        → `owner_request`  (write + delete; the only deleter)
+ *   - Brain/service→ `staging_item`   (append-only ingest — never delete, and
+ *                                       crud.ts blocks overwrite-by-id)
+ *   - agent/other  → `agent_ask`      (read-only; write + delete denied)
+ *
+ * NOTE ON CALLER TYPES: after auth the router stamps `req.callerType` with the
+ * FINE-GRAINED authz role (`brain` / `connector` / `admin` / `device` / `agent`
+ * / `plugin`), NOT the coarse `service` — brain/connector/admin never arrive as
+ * `service` on a real signed request (see middleware `mapToAuthzRole`). The
+ * mapping below is keyed on those real roles.
+ *
+ *   - owner (in-process app, `device`, `owner` run/watch surface, `admin`
+ *     operator) → `owner_request` (write + delete; the only deleter);
+ *   - service-class analyst/connector (`brain` / `connector` / `service`) →
+ *     `staging_item` (append-only ingest — never delete, and crud.ts blocks
+ *     overwrite-by-id), so a compromised Brain keeps its legitimate ingest write
+ *     but loses ambient delete/overwrite;
+ *   - everything else (`agent` / `plugin` / `unknown`) → `agent_ask` (read-only;
+ *     write + delete denied). An `agent` caller is already stopped by
+ *     `agentGate`; the read-only origin is defense-in-depth.
+ */
+const OWNER_CALLER_TYPES: ReadonlySet<string> = new Set(['device', 'owner', 'admin']);
+const APPEND_CALLER_TYPES: ReadonlySet<string> = new Set(['brain', 'connector', 'service']);
+
+function isOwnerCaller(req: CoreRequest): boolean {
+  // A typed owner principal (the owner's own device / run-watch owner surface /
+  // the operator admin) is the owner regardless of transport.
+  if (req.callerType !== undefined) return OWNER_CALLER_TYPES.has(req.callerType);
+  // No principal: the owner is the in-process app (trusted local transport). A
+  // typed non-owner caller is never the owner, even over the in-process
+  // transport — the principal governs, not the transport bypass.
+  return req.trustedInProcess === true;
+}
+function writeOriginFor(req: CoreRequest): VaultOrigin {
+  if (isOwnerCaller(req)) return 'owner_request';
+  if (req.callerType !== undefined && APPEND_CALLER_TYPES.has(req.callerType)) return 'staging_item';
+  return 'agent_ask';
+}
+function deleteOriginFor(req: CoreRequest): VaultOrigin {
+  return isOwnerCaller(req) ? 'owner_request' : 'service_task';
+}
 
 /**
  * Deterministic agent persona-access gate (issues.txt §2), shared by EVERY
@@ -99,13 +150,27 @@ export function registerVaultRoutes(router: CoreRouter): void {
     // the authz matrix — a sensitive/locked persona needs a `write` grant.
     const gate = agentGate(req, persona, 'write', '');
     if (gate !== null) return gate;
+    // Item A — bind the write origin to the caller. A non-`service`, non-owner
+    // caller gets a read-only origin and is refused here rather than silently
+    // no-op'ing at the seam.
+    const origin = writeOriginFor(req);
+    if (!isVaultOperationAllowed(origin, 'write')) {
+      return { status: 403, body: { error: 'access_denied', reason: 'origin may not write' } };
+    }
     try {
       // The stored item is whatever the caller sent — the Brain client is
-      // trusted to supply a well-shaped VaultItem.
-      const id = storeItem(persona, req.body as Parameters<typeof storeItem>[1]);
+      // trusted to supply a well-shaped VaultItem (but only to APPEND: crud.ts
+      // blocks a non-owner origin from overwriting an existing item by id).
+      const id = storeItem(persona, req.body as Parameters<typeof storeItem>[1], origin);
       return { status: 201, body: { id } };
     } catch (err) {
-      return { status: 400, body: { error: errMsg(err) } };
+      const msg = errMsg(err);
+      // An origin-matrix violation (write/overwrite denied) is an authz
+      // failure → 403, not a malformed-request 400.
+      if (/may not (write|overwrite)/.test(msg)) {
+        return { status: 403, body: { error: 'access_denied', reason: msg } };
+      }
+      return { status: 400, body: { error: msg } };
     }
   });
 
@@ -147,8 +212,15 @@ export function registerVaultRoutes(router: CoreRouter): void {
     const persona = req.query.persona ?? 'general';
     const gate = agentGate(req, persona, 'write', req.params.id ?? '');
     if (gate !== null) return gate;
+    // Item A — only the owner deletes. A non-owner caller (Brain/service, agent)
+    // maps to an origin the matrix denies for delete, so a compromised Brain
+    // cannot destroy owner vault items via this route.
+    const origin = deleteOriginFor(req);
+    if (!isVaultOperationAllowed(origin, 'delete')) {
+      return { status: 403, body: { error: 'access_denied', reason: 'origin may not delete' } };
+    }
     try {
-      const deleted = deleteItem(persona, req.params.id);
+      const deleted = deleteItem(persona, req.params.id, origin);
       return { status: 200, body: { deleted } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };

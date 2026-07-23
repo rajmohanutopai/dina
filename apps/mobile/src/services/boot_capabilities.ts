@@ -661,6 +661,9 @@ export async function buildBootInputs(
     // surface — privilege escalation by default-case. Reads the in-memory Map
     // rehydrated above (getDeviceByDID), matching core_server.ts.
     deviceRoleResolver: (did: string) => getDeviceByDID(did)?.role ?? null,
+    // Item C — device agent_scope resolver, matching core_server.ts, so a paired
+    // agent/plugin's coding/runner scope is derived from the signed record.
+    deviceScopeResolver: (did: string) => getDeviceByDID(did)?.scope ?? null,
   };
 }
 

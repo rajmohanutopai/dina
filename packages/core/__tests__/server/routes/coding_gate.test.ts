@@ -71,6 +71,8 @@ describe('POST /v1/agent/gate — wire contract', () => {
       outcome: 'allow',
       enforced: true,
       permit_id: 'p1',
+      // Item B — an allow decision creates no approval card.
+      task_id: null,
       reason: 'r',
     });
     // Core owns classification: it got the RAW call + the authenticated DID.

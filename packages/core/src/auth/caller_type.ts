@@ -33,10 +33,25 @@ export function setDeviceRoleResolver(resolver: DeviceRoleResolver | null): void
   deviceRoleResolver = resolver;
 }
 
+/**
+ * Item C — optional callback: given a DID, return the device's `agent_scope`
+ * (`coding`/`runner`) or null. Wired by startup to `getDeviceByDID(did)?.scope`.
+ * Read ONLY for an agent/plugin caller so Core can derive `req.agentScope` from
+ * the signed identity — never a client claim.
+ */
+type DeviceScopeResolver = (did: string) => string | null;
+let deviceScopeResolver: DeviceScopeResolver | null = null;
+
+export function setDeviceScopeResolver(resolver: DeviceScopeResolver | null): void {
+  deviceScopeResolver = resolver;
+}
+
 export interface CallerIdentity {
   did: string;
   callerType: CallerType;
   name?: string;
+  /** Raw device-record agent_scope for an agent/plugin caller; normalised later. */
+  scope?: string;
 }
 
 /** Registered service DIDs (Brain, admin, connectors). */
@@ -112,10 +127,12 @@ export function resolveCallerType(authenticatedDID: string, agentDID?: string): 
   if (deviceName !== undefined) {
     const role = deviceRoleResolver?.(authenticatedDID) ?? null;
     if (role === 'agent') {
-      return { did: authenticatedDID, callerType: 'agent', name: deviceName };
+      const scope = deviceScopeResolver?.(authenticatedDID) ?? undefined;
+      return { did: authenticatedDID, callerType: 'agent', name: deviceName, ...(scope != null ? { scope } : {}) };
     }
     if (role === 'plugin') {
-      return { did: authenticatedDID, callerType: 'plugin', name: deviceName };
+      const scope = deviceScopeResolver?.(authenticatedDID) ?? undefined;
+      return { did: authenticatedDID, callerType: 'plugin', name: deviceName, ...(scope != null ? { scope } : {}) };
     }
     return { did: authenticatedDID, callerType: 'device', name: deviceName };
   }
@@ -149,4 +166,5 @@ export function resetCallerTypeState(): void {
   serviceDIDs.clear();
   deviceDIDs.clear();
   deviceRoleResolver = null;
+  deviceScopeResolver = null;
 }

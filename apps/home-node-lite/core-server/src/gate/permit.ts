@@ -123,6 +123,40 @@ export class PermitStore {
   }
 
   /**
+   * Mint an APPROVED permit bound to a pre-computed payload hash — the owner-
+   * approval path (Item B). The approval card never carries the raw tool input
+   * (§20), so on approval we cannot re-hash it; the hash was captured when the
+   * card was created and travels through the workflow payload. Principal-,
+   * time-, and single-use-bound exactly like `mint`.
+   */
+  mintApprovedFromHash(input: {
+    action: string;
+    risk: RiskLevel;
+    payloadHash: string;
+    agentDid: string;
+    sessionId: string;
+    ttlMs?: number;
+  }): PermitRecord {
+    const createdAtMs = this.now();
+    const ttl = input.ttlMs ?? DEFAULT_TTL_MS;
+    const permitId = `permit_${(this.seq++).toString(36)}_${input.payloadHash.slice(0, 12)}`;
+    const record: PermitRecord = {
+      permitId,
+      action: input.action,
+      risk: input.risk,
+      payloadHash: input.payloadHash,
+      agentDid: input.agentDid,
+      sessionId: input.sessionId,
+      decision: 'approved',
+      createdAtMs,
+      expiresAtMs: createdAtMs + ttl,
+      consumedAtMs: null,
+    };
+    this.permits.set(permitId, record);
+    return record;
+  }
+
+  /**
    * Redeem a permit for an execution. Single-use + payload-bound +
    * principal-bound + time-bound; on success the permit is marked consumed.
    */

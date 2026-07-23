@@ -219,6 +219,18 @@ export function storeItem(
   }
 
   const repo = requireRepo(persona);
+  // Item A (Codex review — Brain ambient authority): a non-owner origin may
+  // only APPEND. `storeItemSync` is INSERT-OR-REPLACE, so a caller that
+  // supplies an existing item's id would OVERWRITE it — letting a compromised
+  // Brain (origin `staging_item`) tamper with an owner item it is not allowed
+  // to delete. Owner writes keep replace semantics (the staging drain re-stores
+  // by id; enrichment updates in place). This checks the CLIENT-supplied id,
+  // before the auto-generated fallback, so a fresh append is never blocked.
+  if (origin !== 'owner_request' && item.id && item.id.length > 0) {
+    if (repo.getItemIncludeDeletedSync(item.id) !== null) {
+      throw new Error(`vault: origin '${origin}' may not overwrite existing item`);
+    }
+  }
   const id = item.id && item.id.length > 0 ? item.id : `vi-${bytesToHex(randomBytes(8))}`;
   const now = Date.now();
   const embedding = normalizeEmbedding(item.embedding);

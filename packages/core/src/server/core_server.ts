@@ -43,7 +43,7 @@ import { registerSessionRoutes } from './routes/session';
 import { registerPolicyRoutes } from './routes/policy';
 
 export { setAskRouteHandler, type AskRouteHandler };
-import { setDeviceRoleResolver } from '../auth/caller_type';
+import { setDeviceRoleResolver, setDeviceScopeResolver } from '../auth/caller_type';
 import { getDeviceByDID } from '../devices/registry';
 import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
@@ -184,6 +184,13 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // "Access denied: device not authorized for POST /v1/workflow/tasks/
   // claim". The registry lookup is O(1) via the DID index.
   setDeviceRoleResolver((did) => getDeviceByDID(did)?.role ?? null);
+  // Item C — wire the device-SCOPE resolver so the auth pipeline derives
+  // `req.agentScope` (coding/runner) from the signed device record. The coding
+  // tool façades + the `/v1/agent/gate` route require `coding`; the workflow
+  // claim requires `runner`. Fail-closed: an agent with no stamped scope
+  // defaults to `runner` in the middleware, so it can never reach a coding
+  // surface, while pre-scope delegation runners keep working. O(1) DID lookup.
+  setDeviceScopeResolver((did) => getDeviceByDID(did)?.scope ?? null);
 
   // Agent ask — MT-38: agent calls POST /api/v1/ask with session to query
   // Brain. When the question touches a locked persona, Brain suspends and

@@ -19,10 +19,18 @@
  * `start` is idempotent on `(agentDid, hostSessionId)` so the per-tool hook and
  * the MCP tools share ONE Core session (F-04) and a reconnect reuses it.
  *
- * The store is in-memory with an injectable clock; a SQLite table backs it for
- * durability across restart (item 8). The session-bootstrap op is the one op
- * exempt from prior-session validation (§15) — enforced by the caller.
+ * The in-memory Map is authoritative for reads within a process, with an
+ * injectable clock. Item D wires an OPTIONAL durable `SessionRepository`: each
+ * mutation writes through to SQLite, and `reconcile()` reloads live sessions on
+ * boot (reaping any whose lease lapsed while Core was down), so an agent's
+ * session survives a restart. The session-bootstrap op is the one op exempt from
+ * prior-session validation (§15) — enforced by the caller.
  */
+
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import type { SessionRepository } from './repository';
 
 export const DEFAULT_LEASE_MS = 15 * 60 * 1000; // 15 min — matches §15 Codex reap default
 
@@ -57,12 +65,41 @@ export type SessionEndHook = (session: SessionRecord, reason: EndReason) => void
 
 export class SessionRegistry {
   private readonly byId = new Map<string, SessionRecord>();
-  private seq = 0;
 
   constructor(
     private readonly now: () => number = () => Date.now(),
-    private readonly onEnd: SessionEndHook = () => {},
+    private readonly onEnd: SessionEndHook = () => {
+      /* default: no grant-revocation hook wired */
+    },
+    /** Item D — optional durable backing; when present, mutations write through. */
+    private readonly repo: SessionRepository | null = null,
   ) {}
+
+  /**
+   * Item D — boot reconciliation: reload every not-ended session from the
+   * durable store into the in-memory Map, then reap any whose lease lapsed while
+   * Core was down (so a stale session can't be reused/validated post-restart).
+   * Idempotent; a no-op when no repo is wired. Returns the reaped count.
+   */
+  reconcile(): number {
+    if (this.repo === null) return 0;
+    for (const s of this.repo.loadActive()) {
+      // Trust the durable row; the in-memory Map is rebuilt from it.
+      this.byId.set(s.sessionId, { ...s });
+    }
+    return this.reapExpired();
+  }
+
+  /** Persist a record to the durable store (best-effort — the Map is the
+   *  in-process authority; a transient SQL failure must not break the session). */
+  private persist(s: SessionRecord): void {
+    if (this.repo === null) return;
+    try {
+      this.repo.upsert(s);
+    } catch {
+      /* durable write is best-effort; the in-memory record still stands */
+    }
+  }
 
   /** Open (or reuse) a session for `(agentDid, hostSessionId)`. Idempotent. */
   start(input: StartSessionInput): SessionRecord {
@@ -80,11 +117,17 @@ export class SessionRegistry {
       ) {
         s.lastSeenAtMs = t;
         s.leaseExpiresAtMs = t + lease;
+        this.persist(s);
         return s;
       }
     }
 
-    const sessionId = `sess-${(this.seq++).toString(36)}-${input.hostSessionId.slice(0, 8)}-${t.toString(36)}`;
+    // Item D — a cryptographically-random id (128 bits). The registry is
+    // DID-bound (the id alone is useless without the matching authenticated
+    // DID), but a random id also avoids leaking the host session id / a
+    // monotonic counter / the mint timestamp, and can't be guessed to probe
+    // session lifecycle.
+    const sessionId = `sess-${bytesToHex(randomBytes(16))}`;
     const record: SessionRecord = {
       sessionId,
       agentDid: input.agentDid,
@@ -96,6 +139,7 @@ export class SessionRegistry {
       endReason: null,
     };
     this.byId.set(sessionId, record);
+    this.persist(record);
     return record;
   }
 
@@ -120,6 +164,7 @@ export class SessionRegistry {
     const t = this.now();
     v.session.lastSeenAtMs = t;
     v.session.leaseExpiresAtMs = t + leaseMs;
+    this.persist(v.session);
     return v;
   }
 
@@ -161,6 +206,9 @@ export class SessionRegistry {
   private finish(s: SessionRecord, reason: EndReason): void {
     s.endedAtMs = this.now();
     s.endReason = reason;
+    // Persist the tombstone BEFORE the onEnd side-effects so a durable record of
+    // the end exists even if a hook throws.
+    this.persist(s);
     this.onEnd(s, reason);
   }
 }

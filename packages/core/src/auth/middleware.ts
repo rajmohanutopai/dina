@@ -18,6 +18,7 @@
 
 import { extractPublicKey } from '../identity/did';
 
+import { isScopeAuthorized, requiredScopeFor, resolveAgentScope, type AgentScope } from './agent_scope';
 import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
 import { resolveCallerType } from './caller_type';
 import { verifyRequest } from './canonical';
@@ -50,6 +51,14 @@ export interface AuthResult {
    * a connector apart from the brain — both of which are `callerType:service`.
    */
   authzRole?: AuthzCallerType;
+  /**
+   * Item C — the agent's `agent_scope` (`coding`/`runner`), derived from the
+   * signature-authenticated device record (never a client claim). Present only
+   * for an `agent`/`plugin` caller; the router threads it onto
+   * `req.agentScope`. An agent/plugin device with no stamped scope defaults to
+   * `runner` (the historical delegation-runner meaning).
+   */
+  agentScope?: AgentScope;
   rejectedAt?: 'headers' | 'timestamp' | 'nonce' | 'signature' | 'rate_limit' | 'authorization';
   reason?: string;
 }
@@ -229,6 +238,26 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
     };
   }
 
+  // Item C — derive + enforce agent_scope for an agent/plugin caller. The scope
+  // comes from the signed device record (never a client claim); an agent/plugin
+  // with no stamped scope defaults to `runner` (the historical delegation-runner
+  // meaning), so pre-scope runners keep working while an unstamped device is
+  // still barred from the coding surfaces. Non-agent callers carry no scope and
+  // are unaffected (scope-ruled paths gate agents only).
+  let agentScope: AgentScope | undefined;
+  if (callerIdentity.callerType === 'agent' || callerIdentity.callerType === 'plugin') {
+    agentScope = resolveAgentScope(callerIdentity.scope) ?? 'runner';
+    if (!isScopeAuthorized(agentScope, req.path)) {
+      return {
+        authenticated: false,
+        did,
+        callerType: callerIdentity.callerType,
+        rejectedAt: 'authorization',
+        reason: `agent_scope '${requiredScopeFor(req.path)}' required for ${req.path}`,
+      };
+    }
+  }
+
   return {
     authenticated: true,
     did: callerIdentity.did,
@@ -237,6 +266,7 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
     // so downstream handlers can distinguish brain / connector / admin (all
     // `callerType:service`).
     authzRole,
+    ...(agentScope !== undefined ? { agentScope } : {}),
   };
 }
 

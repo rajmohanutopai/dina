@@ -25,6 +25,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { resolveAgentScope, type AgentScope } from '../../auth/agent_scope';
 import { persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
 import {
   generatePairingCode,
@@ -70,11 +71,23 @@ export function registerPairRoutes(router: CoreRouter): void {
         body: { error: `role must be one of: ${[...VALID_ROLES].join(', ')}` },
       };
     }
+    // Item C — agent_scope is a privilege boundary the admin fixes HERE at
+    // initiate (like role). A present-but-invalid value is rejected; an omitted
+    // one leaves the device unscoped (the auth layer defaults an agent/plugin
+    // caller to 'runner'). It is meaningful only for an agent/plugin device.
+    let scope: AgentScope | undefined;
+    if (body.scope !== undefined) {
+      scope = resolveAgentScope(typeof body.scope === 'string' ? body.scope : null);
+      if (scope === undefined) {
+        return { status: 400, body: { error: "scope must be one of: coding, runner" } };
+      }
+    }
 
     try {
       const { code, expiresAt } = generatePairingCode({
         deviceName,
         role: role as DeviceRole,
+        ...(scope !== undefined ? { scope } : {}),
       });
       return {
         status: 201,
@@ -83,6 +96,7 @@ export function registerPairRoutes(router: CoreRouter): void {
           expires_at: expiresAt,
           device_name: deviceName,
           role,
+          ...(scope !== undefined ? { scope } : {}),
         },
       };
     } catch (err) {
@@ -130,6 +144,10 @@ export function registerPairRoutes(router: CoreRouter): void {
       // null/expired intent, which completePairing rejects anyway. (device_name
       // is just a label, so an override there stays allowed above.)
       const roleRaw = normaliseRole(intent?.role ?? 'rich');
+      // Like role, the agent_scope is authoritative from initiate — a completing
+      // device can never pick its own scope (a `runner` code can't self-upgrade
+      // to `coding`). Any client-sent scope on /complete is ignored.
+      const scope = intent?.scope;
 
       // If the intent exists but the admin didn't capture a device_name
       // AND the agent didn't supply one, reject BEFORE calling
@@ -159,6 +177,7 @@ export function registerPairRoutes(router: CoreRouter): void {
           deviceName !== '' ? deviceName : 'unknown',
           publicKeyMultibase,
           roleRaw as DeviceRole,
+          scope,
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

@@ -911,6 +911,8 @@ export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
 export * from './vault/crud';
 export * from './vault/origin_capability';
 export * from './session/registry';
+export { SQLiteSessionRepository } from './session/repository';
+export type { SessionRepository } from './session/repository';
 export * from './staging/state_machine';
 export type { StagingStatus, StagingTransition } from './staging/state_machine';
 // Staging service functions — exported at the root so apps (mobile,
@@ -1026,6 +1028,21 @@ export type {
   RequireAgentPersonaAccessParams,
   AgentPersonaAccessApprovalPayload,
 } from './agent/access';
+export {
+  setCodingPermitAuthority,
+  getCodingPermitAuthority,
+  createCodingGateApproval,
+  isCodingGateApproval,
+  mintApprovedCodingPermit,
+  parseCodingGateApprovalPayload,
+  codingGateIdemKey,
+  CODING_GATE_APPROVAL_TYPE,
+} from './agent/coding_permit';
+export type {
+  CodingPermitAuthority,
+  CodingPermitClaim,
+  CodingGateApprovalPayload,
+} from './agent/coding_permit';
 export * from './transport/delivery';
 export type { DeliveryResult } from './transport/delivery';
 export * from './transport/adversarial';

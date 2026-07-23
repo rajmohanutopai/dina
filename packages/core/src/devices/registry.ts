@@ -17,6 +17,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { getAgentGrantRepository } from '../agent/grant_repository';
 import { appendAudit } from '../audit/service';
+import type { AgentScope } from '../auth/agent_scope';
 import {
   registerDevice as registerDeviceAuth,
   unregisterDevice as unregisterDeviceAuth,
@@ -46,6 +47,14 @@ export interface PairedDevice {
   publicKeyMultibase: string;
   deviceName: string;
   role: DeviceRole;
+  /**
+   * Item C — the agent_scope stamped at pairing for an `agent`/`plugin` device:
+   * `coding` (a coding-agent plugin) or `runner` (a delegation runner). Fixed by
+   * the enrolling authority, persisted here, and read by the auth pipeline to
+   * derive `req.agentScope` (never a client claim). Undefined for a non-agent
+   * device (rich/thin/cli) — scope is an agent concept only.
+   */
+  scope?: AgentScope;
   /** Auth method used for this device (matching Go's AuthType field). */
   authType: AuthType;
   lastSeen: number;
@@ -101,6 +110,7 @@ export function registerDevice(
   name: string,
   publicKeyMultibase: string,
   role: DeviceRole,
+  scope?: AgentScope,
 ): PairedDevice {
   if (!name || name.trim().length === 0) throw new Error('devices: name is required');
   if (!publicKeyMultibase) throw new Error('devices: publicKeyMultibase is required');
@@ -125,6 +135,9 @@ export function registerDevice(
         ...existing,
         deviceName: name.trim(),
         role,
+        // Re-pairing re-stamps the scope the enrolling authority chose (a device
+        // may re-enrol as a different scope); an omitted scope clears it.
+        scope,
         lastSeen: now,
         createdAt: now,
         revoked: false,
@@ -162,6 +175,7 @@ export function registerDevice(
     publicKeyMultibase,
     deviceName: name.trim(),
     role,
+    scope,
     authType: 'ed25519',
     lastSeen: now,
     createdAt: now,

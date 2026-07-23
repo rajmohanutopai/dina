@@ -41,6 +41,7 @@ import {
   getNodeDID,
   HEALTHZ_PATH,
   registerService,
+  setCodingPermitAuthority,
   setNodeDID,
   type CoreRouter,
 } from '@dina/core';
@@ -556,6 +557,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // Item 4 — the fs-backed coding gate (`POST /v1/agent/gate`, §12.1). Shares
   // one permit store across requests so a minted permit redeems at execution.
   const codingGateHandle = createCodingGate({ vaultDir: config.storage.vaultDir });
+  // Item B — inject the permit authority so approving a coding-gate card (via the
+  // workflow approve route, in @dina/core) mints the single-use permit the
+  // agent's retry redeems. Same PermitStore the gate consumes from.
+  setCodingPermitAuthority(codingGateHandle.authority);
   let coreRouter: CoreRouter;
   try {
     coreRouter = createCoreRouter({

@@ -107,3 +107,83 @@ describe('createCodingGate — real classify + permit', () => {
     expect(bad.risk).toBe('HIGH');
   });
 });
+
+// Item B — the owner-approval permit loop end-to-end on the REAL gate + the
+// authority it injects into @dina/core. An unknown tool classifies MODERATE
+// (`code_edit_external`) deterministically, so no fs state is needed.
+describe('createCodingGate — owner-approval permit loop (Item B)', () => {
+  const modCall = (over: Record<string, unknown> = {}) => ({
+    toolName: 'SomeMcpTool',
+    toolInput: { x: 'y' },
+    agentDid: AGENT,
+    sessionId: 's1',
+    cwd: projectDir,
+    mode: 'enforce' as const,
+    ...over,
+  });
+
+  it('MODERATE with no permit → approval_required + payload hash (no permit minted)', () => {
+    const { gate, permits } = createCodingGate({ vaultDir });
+    const res = gate(modCall());
+    expect(res).toMatchObject({ risk: 'MODERATE', outcome: 'approval_required', enforced: true });
+    expect(res.permitId).toBeUndefined();
+    expect(res.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(permits.size()).toBe(0); // approval mints nothing until the owner says yes
+  });
+
+  it('approve → mintApproved → retry redeems once (single-use)', () => {
+    const { gate, authority } = createCodingGate({ vaultDir });
+
+    const first = gate(modCall());
+    expect(first.outcome).toBe('approval_required');
+
+    // Owner approves: mint the approved permit bound to the exact payload hash.
+    authority.mintApproved({
+      agentDid: AGENT,
+      sessionId: 's1',
+      payloadHash: first.payloadHash as string,
+      action: first.action,
+      risk: 'MODERATE',
+    });
+
+    // Agent retries the SAME call → the approved permit is redeemed → allow.
+    const second = gate(modCall());
+    expect(second.outcome).toBe('allow');
+    expect(second.permitId).toBeDefined();
+    expect(second.reason).toMatch(/redeemed owner-approved permit/);
+
+    // A third identical call → the single-use permit is spent → re-gates.
+    const third = gate(modCall());
+    expect(third.outcome).toBe('approval_required');
+  });
+
+  it('an altered payload after approval does NOT redeem (hash-bound)', () => {
+    const { gate, authority } = createCodingGate({ vaultDir });
+    const first = gate(modCall());
+    authority.mintApproved({
+      agentDid: AGENT,
+      sessionId: 's1',
+      payloadHash: first.payloadHash as string,
+      action: first.action,
+      risk: 'MODERATE',
+    });
+    // Bait-and-switch: same tool, different input → different hash → no redeem.
+    const altered = gate(modCall({ toolInput: { x: 'EVIL' } }));
+    expect(altered.outcome).toBe('approval_required');
+  });
+
+  it("a different session cannot redeem another session's approved permit", () => {
+    const { gate, authority } = createCodingGate({ vaultDir });
+    const first = gate(modCall({ sessionId: 's1' }));
+    authority.mintApproved({
+      agentDid: AGENT,
+      sessionId: 's1',
+      payloadHash: first.payloadHash as string,
+      action: first.action,
+      risk: 'MODERATE',
+    });
+    // Same payload, DIFFERENT session → principal mismatch → not redeemed.
+    const other = gate(modCall({ sessionId: 's2' }));
+    expect(other.outcome).toBe('approval_required');
+  });
+});

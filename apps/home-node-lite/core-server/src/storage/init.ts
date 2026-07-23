@@ -29,6 +29,9 @@ import {
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
   SQLiteAgentGrantRepository,
+  SessionRegistry,
+  SQLiteSessionRepository,
+  setSessionRegistry,
   hydrateContactDirectory,
   hydrateServiceConfig,
   recoverOutboxOnBoot,
@@ -216,6 +219,18 @@ export async function initializeStorage(
   // revoke a crash-orphaned revoked device's AGENT persona grants (not only its
   // plugin authority). Wiring it after hydrate left that half unreconciled.
   setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+  // Item D — durable coding-agent sessions. Back the SessionRegistry with the
+  // identity SQLite store and reconcile on boot so a session (Claude Code /
+  // Codex) survives a Core restart, and any session whose lease lapsed while
+  // Core was down is reaped. `setSessionRegistry` replaces the auto-provisioned
+  // in-memory global that every /v1/session route + the coding gate read.
+  const sessionRegistry = new SessionRegistry(
+    undefined,
+    undefined,
+    new SQLiteSessionRepository(identityDB),
+  );
+  sessionRegistry.reconcile();
+  setSessionRegistry(sessionRegistry);
   // Pull every previously-paired device back into the in-memory
   // registry. Without this, every signed call from a paired agent
   // (workflow claim, service.query) lands as caller-type 'unknown'
