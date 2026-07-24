@@ -15,4 +15,9 @@ The user's personal data (health, finances, relationships, preferences) lives in
 
 **Core commands** (all support `--json`): `dina session start|end|list`, `dina ask <query> --session <id>`, `dina remember <text> --session <id>`, `dina validate <action> <description> --session <id> --context '<json>'`, `dina scrub` / `dina rehydrate`, `dina status`.
 
-Run `dina --help` for the full surface and `dina validate-actions` to see which actions need approval. Setup, if not yet paired: `pip install dina-agent && dina configure --role agent` and paste the setup code from the Dina app (Settings → Agents).
+Run `dina --help` for the full surface and `dina validate-actions` to see which
+actions need approval. Setup, if not yet paired:
+`pip install dina-agent && dina configure --role agent`. A normal runner uses
+the setup code from the Dina app (Settings → Agents); a coding integration
+whose filesystem gate runs on Home Node Lite needs an owner-issued
+`coding`-scope setup code from that Home Node.

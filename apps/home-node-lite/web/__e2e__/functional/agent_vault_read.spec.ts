@@ -22,16 +22,18 @@ import { pairAgent } from '../fixtures/dina_agent';
 import { expect, test } from '../fixtures/human_session';
 import { openApprovalInbox, tapApprove } from '../fixtures/pages/activity';
 
-// The agent works inside a named session (dina session start). Grants are
-// keyed on it (dina_details §3.6), so a later fresh session must re-prompt.
-const SESSION_A = 'sess-vault-a';
-
 test.describe('MRS-07 — Agent vault-read persona gate', () => {
   test('agent gated on a sensitive persona, served on a default one; owner never gated; approval unblocks', async ({
     human,
   }) => {
     const { backstage, page } = human;
     const agent = await pairAgent('e2e-vault-read-agent');
+    const started = await agent.signedFetch('POST', '/v1/session/start', {
+      body: { host_session_id: 'e2e-vault-a' },
+    });
+    expect(started.status, 'agent can start a DID-bound Core session').toBe(200);
+    const sessionA = (started.body as { session_id?: string }).session_id ?? '';
+    expect(sessionA, 'session start returns an opaque Core session id').toMatch(/^sess-/);
 
     // POSITIVE CONTROL: the agent's signature + role really resolve to
     // callerType='agent' — an allowlisted agent route works (claim returns
@@ -44,6 +46,7 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     const general = await agent.signedFetch('POST', '/v1/vault/query', {
       query: { persona: 'general' },
       body: { text: 'anything' },
+      session: sessionA,
     });
     expect(general.status, 'agent query of a default persona is served (gate allows)').toBe(200);
 
@@ -51,7 +54,7 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     const gated = await agent.signedFetch('POST', '/v1/vault/query', {
       query: { persona: 'health' },
       body: { text: 'lab results' },
-      session: SESSION_A,
+      session: sessionA,
     });
     expect(gated.status, 'agent query of a sensitive persona is gated').toBe(403);
     const body = gated.body as { error?: string; approval_required?: boolean; task_id?: string };
@@ -93,7 +96,7 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
       const retry = await agent.signedFetch('POST', '/v1/vault/query', {
         query: { persona: 'health' },
         body: { text: 'lab results' },
-        session: SESSION_A,
+        session: sessionA,
       });
       expect(retry.status, 'after the browser approval the agent read succeeds').toBe(200);
     }).toPass({ timeout: 15_000 });
@@ -105,7 +108,7 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     const financeGated = await agent.signedFetch('POST', '/v1/vault/query', {
       query: { persona: 'finance' },
       body: { text: 'account balance' },
-      session: SESSION_A,
+      session: sessionA,
     });
     expect(
       financeGated.status,
@@ -128,10 +131,18 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     // mints a new session id, the grant doesn't match, and the owner sees a
     // fresh card. (This is the behaviour the grant model was changed to enforce:
     // findActiveGrant is now keyed on the session too.)
+    const startedB = await agent.signedFetch('POST', '/v1/session/start', {
+      body: { host_session_id: 'e2e-vault-b' },
+    });
+    expect(startedB.status).toBe(200);
+    const sessionB = (startedB.body as { session_id?: string }).session_id ?? '';
+    expect(sessionB).toMatch(/^sess-/);
+    expect(sessionB).not.toBe(sessionA);
+
     const newSession = await agent.signedFetch('POST', '/v1/vault/query', {
       query: { persona: 'health' },
       body: { text: 'lab results' },
-      session: 'sess-vault-b',
+      session: sessionB,
     });
     expect(
       newSession.status,

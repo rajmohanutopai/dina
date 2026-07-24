@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dina": {
+      "command": "dina",
+      "args": ["mcp-server", "--profile", "coding"]
+    }
+  }
+}

@@ -46,6 +46,7 @@ import {
   resetMiddlewareState,
 } from '../../src/auth/middleware';
 import { createCoreRouter } from '../../src/server/core_server';
+import { SessionRegistry, setSessionRegistry } from '../../src/session/registry';
 import {
   InMemoryWorkflowRepository,
   SQLiteWorkflowRepository,
@@ -72,6 +73,8 @@ function makeActor(seed: Uint8Array): Actor {
 describe('agent intent validation — POST /v1/agent/validate + status', () => {
   let agent: Actor;
   let router: ReturnType<typeof createCoreRouter>;
+  let sessionId: string;
+  let sessions: SessionRegistry;
 
   beforeEach(() => {
     resetMiddlewareState();
@@ -87,14 +90,22 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
     });
     registerService(brain.did, 'brain');
     registerDeviceDID(agent.did, 'agent-1');
-    setDeviceRoleResolver((d) => (d === agent.did ? 'agent' : null));
-
     setWorkflowRepository(new InMemoryWorkflowRepository());
+    sessions = new SessionRegistry();
+    setSessionRegistry(sessions);
+    sessionId = sessions.start({
+      agentDid: agent.did,
+      hostSessionId: 'intent-route-test',
+    }).sessionId;
     router = createCoreRouter();
+    // createCoreRouter wires the production device-repository resolver; this
+    // isolated route test has no device repository, so restore the test role.
+    setDeviceRoleResolver(() => 'agent');
   });
 
   afterEach(() => {
     setWorkflowRepository(null);
+    setSessionRegistry(null);
     resetMiddlewareState();
     resetCallerTypeState();
   });
@@ -104,14 +115,31 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
+    bindSession: boolean = true,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const effectiveBody =
+      bindSession &&
+      method === 'POST' &&
+      path === '/v1/agent/validate' &&
+      body !== null &&
+      typeof body === 'object' &&
+      !Array.isArray(body)
+        ? { ...(body as Record<string, unknown>), session_id: sessionId }
+        : body;
+    const query: Record<string, string> = {};
+    if (bindSession && method === 'GET' && path.includes('/v1/intent/proposals/')) {
+      query.session_id = sessionId;
+    }
+    const queryString = new URLSearchParams(query).toString();
     const bodyBytes =
-      body === undefined ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(body));
-    const headers = signRequest(method, path, '', bodyBytes, agent.seed, agent.did);
+      effectiveBody === undefined
+        ? new Uint8Array(0)
+        : new TextEncoder().encode(JSON.stringify(effectiveBody));
+    const headers = signRequest(method, path, queryString, bodyBytes, agent.seed, agent.did);
     const req: CoreRequest = {
       method,
       path,
-      query: {},
+      query,
       params: {},
       headers: {
         'x-did': headers['X-DID']!,
@@ -120,7 +148,7 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
         'x-signature': headers['X-Signature']!,
         'content-type': 'application/json',
       },
-      body: body === undefined ? undefined : body,
+      body: effectiveBody === undefined ? undefined : effectiveBody,
       rawBody: bodyBytes,
     };
     const res = await router.handle(req);
@@ -230,6 +258,33 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
   });
 
   describe('status poll lifecycle', () => {
+    it('requires the original live session and hides cross-session proposals', async () => {
+      const submit = await send(
+        'POST',
+        '/v1/agent/validate',
+        intent('send_email', 'send X'),
+      );
+      const id = submit.body.proposal_id as string;
+
+      const missing = await send(
+        'GET',
+        `/v1/intent/proposals/${id}/status`,
+        undefined,
+        false,
+      );
+      expect(missing.status).toBe(401);
+
+      const originalSessionId = sessionId;
+      sessionId = sessions.start({
+        agentDid: agent.did,
+        hostSessionId: 'different-host-session',
+      }).sessionId;
+      const wrongSession = await send('GET', `/v1/intent/proposals/${id}/status`);
+      sessionId = originalSessionId;
+      expect(wrongSession.status).toBe(404);
+      expect(wrongSession.body.error).toBe('unknown proposal_id');
+    });
+
     it('pending → approve → status=approved', async () => {
       const submit = await send(
         'POST',
@@ -298,6 +353,22 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
   });
 
   describe('input validation', () => {
+    it('rejects a missing or ended session before evaluating the action', async () => {
+      const missing = await send(
+        'POST',
+        '/v1/agent/validate',
+        intent('search', 'X'),
+        false,
+      );
+      expect(missing.status).toBe(401);
+      expect(missing.body.error).toBe('invalid_session');
+
+      sessions.end(sessionId, agent.did);
+      const ended = await send('POST', '/v1/agent/validate', intent('search', 'X'));
+      expect(ended.status).toBe(401);
+      expect(ended.body.error).toBe('invalid_session');
+    });
+
     it('missing type → 400', async () => {
       const res = await send('POST', '/v1/agent/validate', { action: 'search', target: 'X' });
       expect(res.status).toBe(400);
@@ -358,6 +429,7 @@ describe('agent intent validation — SQLite-backed contract', () => {
   let adapter: NodeSQLiteAdapter;
   let tmpDir: string;
   let dbPath: string;
+  let sessionId: string;
 
   beforeEach(() => {
     resetMiddlewareState();
@@ -373,8 +445,6 @@ describe('agent intent validation — SQLite-backed contract', () => {
     });
     registerService(brain.did, 'brain');
     registerDeviceDID(agent.did, 'agent-1');
-    setDeviceRoleResolver((d) => (d === agent.did ? 'agent' : null));
-
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-intent-sqlite-'));
     dbPath = path.join(tmpDir, 'identity.sqlite');
     adapter = new NodeSQLiteAdapter({
@@ -385,11 +455,19 @@ describe('agent intent validation — SQLite-backed contract', () => {
     });
     applyMigrations(adapter, IDENTITY_MIGRATIONS);
     setWorkflowRepository(new SQLiteWorkflowRepository(adapter));
+    const sessions = new SessionRegistry();
+    setSessionRegistry(sessions);
+    sessionId = sessions.start({
+      agentDid: agent.did,
+      hostSessionId: 'intent-sqlite-test',
+    }).sessionId;
     router = createCoreRouter();
+    setDeviceRoleResolver(() => 'agent');
   });
 
   afterEach(() => {
     setWorkflowRepository(null);
+    setSessionRegistry(null);
     try {
       adapter.close();
     } catch {
@@ -409,8 +487,18 @@ describe('agent intent validation — SQLite-backed contract', () => {
     p: string,
     body?: unknown,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const effectiveBody =
+      method === 'POST' &&
+      p === '/v1/agent/validate' &&
+      body !== null &&
+      typeof body === 'object' &&
+      !Array.isArray(body)
+        ? { ...(body as Record<string, unknown>), session_id: sessionId }
+        : body;
     const bodyBytes =
-      body === undefined ? new Uint8Array(0) : new TextEncoder().encode(JSON.stringify(body));
+      effectiveBody === undefined
+        ? new Uint8Array(0)
+        : new TextEncoder().encode(JSON.stringify(effectiveBody));
     const headers = signRequest(method, p, '', bodyBytes, agent.seed, agent.did);
     const req: CoreRequest = {
       method,
@@ -424,7 +512,7 @@ describe('agent intent validation — SQLite-backed contract', () => {
         'x-signature': headers['X-Signature']!,
         'content-type': 'application/json',
       },
-      body: body === undefined ? undefined : body,
+      body: effectiveBody === undefined ? undefined : effectiveBody,
       rawBody: bodyBytes,
     };
     const res = await router.handle(req);

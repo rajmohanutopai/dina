@@ -51,6 +51,8 @@ export interface AskRecord {
   readonly question: string;
   /** DID that submitted the ask — used for audit + rate-limit bucketing. */
   readonly requesterDid: string;
+  /** Coding-agent session that submitted the ask, when applicable. */
+  readonly sessionId?: string;
   status: AskStatus;
   readonly createdAtMs: number;
   updatedAtMs: number;
@@ -88,6 +90,8 @@ export interface AskEnqueueInput {
   id: string;
   question: string;
   requesterDid: string;
+  /** Coding-agent session that owns polling access to this ask. */
+  sessionId?: string;
   /** Explicit composer lane — preserved on the record for approval-resume. */
   forcedSources?: readonly IntentSource[];
   /** TTL override (ms). Defaults to the registry-level default. */
@@ -207,6 +211,9 @@ export class AskRegistry {
       deadlineMs: now + ttl,
       ...(input.forcedSources !== undefined && input.forcedSources.length > 0
         ? { forcedSources: input.forcedSources }
+        : {}),
+      ...(input.sessionId !== undefined && input.sessionId !== ''
+        ? { sessionId: input.sessionId }
         : {}),
     };
     await this.adapter.insert(record);
@@ -435,6 +442,7 @@ function cloneAsk(r: AskRecord): AskRecord {
     // explicit fields) so the forced composer lane reaches the approval-resume.
     // Set in the literal because it is readonly (can't be assigned after).
     ...(r.forcedSources !== undefined ? { forcedSources: r.forcedSources } : {}),
+    ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
   };
   if (r.answerJson !== undefined) clone.answerJson = r.answerJson;
   if (r.errorJson !== undefined) clone.errorJson = r.errorJson;

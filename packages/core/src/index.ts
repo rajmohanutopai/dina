@@ -38,11 +38,7 @@ export {
   createDIDPLC,
   resolveDIDPLC,
 } from './identity/directory';
-export type {
-  PLCCreateParams,
-  PLCCreateResult,
-  PLCDirectoryConfig,
-} from './identity/directory';
+export type { PLCCreateParams, PLCCreateResult, PLCDirectoryConfig } from './identity/directory';
 // Handle picker — Bluesky-style availability check + suggestion generator
 // used by mobile + Lite + main-Dina onboarding to pick a clean alsoKnownAs
 // handle instead of always appending a random hex suffix.
@@ -116,10 +112,7 @@ export type {
 // lower-level primitives (derive → compose → sign → submit) into a
 // single tested call. Steps 6 (publish namespaceProfile) + 7 (poll
 // AppView) of plan §3.5.3 are caller responsibility.
-export {
-  createNamespace,
-  nextAvailableNamespaceIndex,
-} from './identity/namespace_create_flow';
+export { createNamespace, nextAvailableNamespaceIndex } from './identity/namespace_create_flow';
 export type {
   CreateNamespaceFlowParams,
   CreateNamespaceFlowResult,
@@ -246,12 +239,7 @@ export {
   getRunRepository,
 } from './run/repository';
 export type { RunRepository, RunConfigPatch } from './run/repository';
-export {
-  RunService,
-  RunNotFoundError,
-  setRunService,
-  getRunService,
-} from './run/service';
+export { RunService, RunNotFoundError, setRunService, getRunService } from './run/service';
 export type { RunServiceOptions, RunCommandResult } from './run/service';
 export {
   SQLiteErasureKeyStore,
@@ -391,11 +379,7 @@ export type {
   EngineTickReport,
 } from './run/engine';
 export { RunResponseIngest } from './run/ingest';
-export type {
-  RunResponseIngestOptions,
-  VerifiedRunMessage,
-  PullIngestOutcome,
-} from './run/ingest';
+export type { RunResponseIngestOptions, VerifiedRunMessage, PullIngestOutcome } from './run/ingest';
 // ISVC-10 — the composition that turns the drivers into a live loop (both boots).
 export { wireRunPlane } from './run/plane';
 export type { RunPlane, RunPlaneDeps } from './run/plane';
@@ -466,7 +450,12 @@ export {
 export type { WatchPollPayload } from './watch/payload';
 export { classifyWatchFilter, parseWatchFilter, watchFilterMatches } from './watch/filter';
 export type { WatchFilter } from './watch/filter';
-export { WatchService, setWatchService, getWatchService, watchIdempotencyKey } from './watch/service';
+export {
+  WatchService,
+  setWatchService,
+  getWatchService,
+  watchIdempotencyKey,
+} from './watch/service';
 export type { WatchServiceOptions, CreatePollWatchInput } from './watch/service';
 export { WatchPollSweeper } from './watch/poll_sweeper';
 export type {
@@ -518,6 +507,7 @@ export {
   grantSessionApproval,
   grantVaultReadSessionApproval,
   isVaultReadSessionApproved,
+  revokeSessionApprovals,
   resetSessionApprovals,
 } from './server/routes/intent';
 export type {
@@ -571,7 +561,12 @@ export type { PIIMatch } from './pii/patterns';
 export { scrubTier1, rehydrate, scrubProcessRehydrate } from './pii/scrub';
 export { evaluateIntent, isBrainDenied, getDefaultRiskLevel } from './gatekeeper/intent';
 export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekeeper/intent';
-export { checkSharingPolicy, filterByTier, getSharingTier, setSharingPolicy } from './gatekeeper/sharing';
+export {
+  checkSharingPolicy,
+  filterByTier,
+  getSharingTier,
+  setSharingPolicy,
+} from './gatekeeper/sharing';
 export type { SharingTier, SharingDecision } from './gatekeeper/sharing';
 // Pure-value constants (durations, sizes, multicodec prefixes,
 // network defaults). Originally only the onboarding subset was
@@ -836,18 +831,11 @@ export type { StagingRepository } from './staging/repository';
 
 // Caller-type registry — service DID → caller type mapping used by
 // auth middleware and tests that register synthetic services.
-export {
-  registerService,
-  resetCallerTypeState,
-} from './auth/caller_type';
+export { registerService, resetCallerTypeState } from './auth/caller_type';
 
 // LRU dedup set — staging pipeline uses this to drop duplicate
 // inbound items by `(source, itemId)`.
-export {
-  isDuplicate,
-  markSeen,
-  resetDedupState,
-} from './sync/dedup';
+export { isDuplicate, markSeen, resetDedupState } from './sync/dedup';
 export {
   addContact,
   addContactIfNotExists,
@@ -1035,6 +1023,7 @@ export {
   isCodingGateApproval,
   mintApprovedCodingPermit,
   parseCodingGateApprovalPayload,
+  redeemApprovedCodingGateApproval,
   codingGateIdemKey,
   CODING_GATE_APPROVAL_TYPE,
 } from './agent/coding_permit';
@@ -1042,6 +1031,7 @@ export type {
   CodingPermitAuthority,
   CodingPermitClaim,
   CodingGateApprovalPayload,
+  RedeemCodingApprovalResult,
 } from './agent/coding_permit';
 export * from './transport/delivery';
 export type { DeliveryResult } from './transport/delivery';
@@ -1054,15 +1044,8 @@ export * from './peerlens/pds_publish';
 export type { Attestation, SignedAttestation } from './peerlens/pds_publish';
 export * from './approval/pending_reason';
 export type { PendingReasonRecord } from './approval/pending_reason';
-export {
-  ApprovalManager,
-  getApprovalManager,
-  resetApprovalManager,
-} from './approval/manager';
-export type {
-  ApprovalRequest,
-  ApprovalRequestListener,
-} from './approval/manager';
+export { ApprovalManager, getApprovalManager, resetApprovalManager } from './approval/manager';
+export type { ApprovalRequest, ApprovalRequestListener } from './approval/manager';
 export * from './schema/identity';
 export * from './schema/persona';
 export * from './cli/session';
@@ -1075,6 +1058,11 @@ export * from './background/timers';
 export * from './relay/rpc_envelope';
 export type { CoreRPCRequest, CoreRPCResponse } from './relay/rpc_envelope';
 export * from './relay/rpc_response';
+export {
+  REMOTE_APPROVAL_API_PREFIX,
+  REMOTE_APPROVAL_PAYLOAD_TYPE,
+} from './server/routes/remote_approval';
+export { applyOwnerWorkflowDecision } from './server/routes/workflow';
 export * from './relay/identity_binding';
 // msgbox_ws's isAuthenticated collides with sync/client's; disambiguate
 // by renaming the relay one so both remain reachable from the package
@@ -1142,11 +1130,7 @@ export type { DBProvider } from './storage/db_provider';
 // packages can run the real identity/persona schemas against their
 // backends (task 3.17: @dina/core suite green with the storage-node
 // backend uses these to exercise the full DDL under real SQLCipher).
-export {
-  applyMigrations,
-  getCurrentVersion,
-  listAppliedMigrations,
-} from './storage/migration';
+export { applyMigrations, getCurrentVersion, listAppliedMigrations } from './storage/migration';
 export type { Migration as CoreMigration } from './storage/migration';
 export { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from './storage/schemas';
 
@@ -1255,21 +1239,13 @@ export type { RunListItem } from './run/list';
 // Working-memory / ToC primitives (WM-CORE-04..06). Exposed so
 // apps/home-node-lite/core-server can register `GET /v1/memory/toc`
 // against the service + assert EWMA math against the scoring helpers.
-export {
-  MemoryService,
-  setMemoryService,
-  getMemoryService,
-} from './memory/service';
+export { MemoryService, setMemoryService, getMemoryService } from './memory/service';
 export type {
   MemoryServiceOptions,
   TopicRepositoryResolver,
   OpenPersonaLister,
 } from './memory/service';
-export {
-  computeSalience,
-  stemLite,
-  isConsonant,
-} from './memory/scoring';
+export { computeSalience, stemLite, isConsonant } from './memory/scoring';
 export {
   isTopicKind,
   TOPIC_TAU_SHORT_DAYS,
@@ -1337,14 +1313,20 @@ export { runPersonStoreContract } from './people/contract';
 // here keeps `apps/home-node-lite/*` from having to reach into
 // `./server/router` subpaths.
 export { CoreRouter } from './server/router';
-export type { CoreRequest, CoreResponse, CoreHandler, RouteRegistration, AuthMode } from './server/router';
+export type {
+  CoreRequest,
+  CoreResponse,
+  CoreHandler,
+  RouteRegistration,
+  AuthMode,
+} from './server/router';
 export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
 export type { CoreRouterOptions } from './server/core_server';
 export type {
-  CodingGateFn,
-  CodingGateInput,
-  CodingGateResult,
-} from './server/routes/coding_gate';
+  AskRouteHandler,
+  AskSubmitInput,
+} from './server/routes/ask';
+export type { CodingGateFn, CodingGateInput, CodingGateResult } from './server/routes/coding_gate';
 export type {
   AgentFacadeHandlers,
   AgentFacadeHandler,

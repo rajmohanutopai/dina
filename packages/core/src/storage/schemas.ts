@@ -491,10 +491,9 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     // grant → no data).
     //
     // The approval workflow task (workflow_tasks) is the durable approval
-    // OBJECT; this table is the durable RESULT of approval. We deliberately
-    // do NOT add a parallel agent_sessions store (issues.txt: avoid
-    // parallel trust stores) — `session_id` is just a nullable tag so a
-    // grant can be scoped to / revoked with a named agent session.
+    // OBJECT; this table is the durable RESULT of approval. `session_id` binds
+    // the result to the canonical durable agent_sessions lifecycle row; session
+    // end invalidates the authority and tombstones matching grants.
     //
     // scope_json holds the REQUESTED scope (e.g. the agent's query text),
     // never vault results. expires_at bounds the grant; revoked_at tombs

@@ -14,6 +14,7 @@ import {
   defineRouteSchema,
   VAULT_STORE_BODY_SCHEMA,
   VAULT_QUERY_BODY_SCHEMA,
+  VAULT_PERSONA_QUERY_SCHEMA,
   ERROR_RESPONSE_SCHEMA,
   HEALTHZ_RESPONSE_SCHEMA,
   DID_SCHEMA,
@@ -43,7 +44,10 @@ describe('route schemas (task 4.15)', () => {
     async function buildApp() {
       const app = await createServer({ config: baseConfig(), logger: silentLogger() });
       app.post('/v1/vault/store', {
-        schema: defineRouteSchema({ body: VAULT_STORE_BODY_SCHEMA }),
+        schema: defineRouteSchema({
+          body: VAULT_STORE_BODY_SCHEMA,
+          querystring: VAULT_PERSONA_QUERY_SCHEMA,
+        }),
         handler: async (req) => ({ ok: true, echo: req.body }),
       });
       return app;
@@ -53,10 +57,9 @@ describe('route schemas (task 4.15)', () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
-        url: '/v1/vault/store',
+        url: '/v1/vault/store?persona=health',
         headers: { 'content-type': 'application/json' },
         payload: JSON.stringify({
-          persona: 'health',
           type: 'note',
           content: { summary: 'hi' },
           source: 'test',
@@ -66,7 +69,7 @@ describe('route schemas (task 4.15)', () => {
       await app.close();
     });
 
-    it('rejects missing required field (persona)', async () => {
+    it('accepts omitted persona query because Core defaults to general', async () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
@@ -74,24 +77,22 @@ describe('route schemas (task 4.15)', () => {
         headers: { 'content-type': 'application/json' },
         payload: JSON.stringify({ type: 'note' }),
       });
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error: expect.stringMatching(/persona/i) });
+      expect(res.statusCode).toBe(200);
       await app.close();
     });
 
-    it('rejects unknown additional property (typo protection)', async () => {
+    it('accepts canonical VaultItem extension fields', async () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
-        url: '/v1/vault/store',
+        url: '/v1/vault/store?persona=health',
         headers: { 'content-type': 'application/json' },
         payload: JSON.stringify({
-          persoan: 'health', // typo
           type: 'note',
+          summary: 'A supported VaultItem field outside the minimal schema',
         }),
       });
-      // `additionalProperties: false` → AJV rejects.
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(200);
       await app.close();
     });
 
@@ -99,10 +100,9 @@ describe('route schemas (task 4.15)', () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
-        url: '/v1/vault/store',
+        url: '/v1/vault/store?persona=Health-Bad!',
         headers: { 'content-type': 'application/json' },
         payload: JSON.stringify({
-          persona: 'Health-Bad!', // must be lowercase alphanum_only
           type: 'note',
         }),
       });
@@ -115,31 +115,39 @@ describe('route schemas (task 4.15)', () => {
     async function buildApp() {
       const app = await createServer({ config: baseConfig(), logger: silentLogger() });
       app.post('/v1/vault/query', {
-        schema: defineRouteSchema({ body: VAULT_QUERY_BODY_SCHEMA }),
+        schema: defineRouteSchema({
+          body: VAULT_QUERY_BODY_SCHEMA,
+          querystring: VAULT_PERSONA_QUERY_SCHEMA,
+        }),
         handler: async (req) => ({ ok: true, echo: req.body }),
       });
       return app;
     }
 
-    it('accepts persona + q + limit', async () => {
+    it('accepts persona query + text/mode/types/limit body', async () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
-        url: '/v1/vault/query',
+        url: '/v1/vault/query?persona=health',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ persona: 'health', q: 'hello', limit: 50 }),
+        payload: JSON.stringify({
+          text: 'hello',
+          mode: 'hybrid',
+          types: ['note'],
+          limit: 50,
+        }),
       });
       expect(res.statusCode).toBe(200);
       await app.close();
     });
 
-    it('rejects limit > 500', async () => {
+    it('rejects limit > 100', async () => {
       const app = await buildApp();
       const res = await app.inject({
         method: 'POST',
         url: '/v1/vault/query',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ persona: 'health', limit: 1000 }),
+        payload: JSON.stringify({ limit: 101 }),
       });
       expect(res.statusCode).toBe(400);
       await app.close();
@@ -151,7 +159,7 @@ describe('route schemas (task 4.15)', () => {
         method: 'POST',
         url: '/v1/vault/query',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ persona: 'health', limit: 3.14 }),
+        payload: JSON.stringify({ limit: 3.14 }),
       });
       expect(res.statusCode).toBe(400);
       await app.close();

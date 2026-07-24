@@ -32,6 +32,8 @@ import type { CoreClient, WorkflowTask } from '@dina/core';
  *   by a workflow task (`kind=approval`, `payload.type=vault_read_request`
  *   or Core's direct `payload.type=agent_persona_access`) — same store as
  *   every other approval kind.
+ * - `remote_coding_gate` — a HIGH-risk coding action proposed by a paired
+ *   laptop Core. The phone owns the decision; raw tool arguments never cross.
  * - `unknown` — payload doesn't match a known shape; render with what
  *   we can read and surface a generic deny.
  */
@@ -40,6 +42,7 @@ export type InboxEntryKind =
   | 'intent_validation'
   | 'staging_persona_access'
   | 'vault_read'
+  | 'remote_coding_gate'
   | 'unknown';
 
 export interface InboxEntry {
@@ -263,6 +266,10 @@ function outcomeForTask(task: WorkflowTask): ApprovalOutcome {
 /** PLG-31 #16: the EXECUTION result, orthogonal to the owner decision above. */
 function executionResultForTask(task: WorkflowTask): ExecutionResult | undefined {
   if (task.error === 'expired') return undefined; // expired before running
+  // A remote coding-gate mirror is a phone-owned decision receipt, not work
+  // that runs on the phone. Its queued state means "approved"; rendering an
+  // execution result of "pending" would imply an executor is stuck here.
+  if (safeParse(task.payload).type === 'remote_coding_gate_v1') return undefined;
   switch (task.status) {
     case 'completed':
     case 'recorded': // archival of a finished task
@@ -403,7 +410,12 @@ export async function denyPending(
   const core = requireClient();
   const denyReason = reason.trim() === '' ? 'denied_by_operator' : reason.trim();
 
-  if (kind === 'vault_read' || kind === 'intent_validation' || kind === 'staging_persona_access') {
+  if (
+    kind === 'vault_read' ||
+    kind === 'intent_validation' ||
+    kind === 'remote_coding_gate' ||
+    kind === 'staging_persona_access'
+  ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
     // local and Core handles the pending_unlock denial.
@@ -466,6 +478,28 @@ function toEntry(task: WorkflowTask): InboxEntry {
       requesterDID: agentDID,
       paramsPreview: target,
       ...(riskLevel !== undefined ? { riskLevel } : {}),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'remote_coding_gate_v1') {
+    const action = typeof parsed.action === 'string' ? parsed.action : '';
+    const toolName = typeof parsed.tool_name === 'string' ? parsed.tool_name : '';
+    const sourceDeviceDID =
+      typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '';
+    return {
+      id: task.id,
+      kind: 'remote_coding_gate',
+      capability: action,
+      serviceName: 'Coding agent',
+      description: task.description ?? '',
+      // Trusted chrome identifies the authenticated paired device. `agent_did`
+      // is proposal metadata supplied by that device and must not replace the
+      // transport-authenticated principal in the approval card.
+      requesterDID: sourceDeviceDID,
+      paramsPreview: toolName,
+      riskLevel: 'HIGH',
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

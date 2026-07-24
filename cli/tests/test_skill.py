@@ -202,11 +202,13 @@ def test_init_skips_pairing_when_already_paired(tmp_path, monkeypatch):
     ident = MagicMock()
     ident.exists = True
     ident.did.return_value = "did:key:zAlready"
-    # Real saved-config shape: the interactive flow does NOT persist
-    # device_id (live bug caught 2026-06-10) — paired = keypair + node URL.
     with patch(
         "dina_cli.config._load_saved",
-        return_value={"msgbox_url": "wss://relay.example/ws", "core_url": "http://localhost:8100"},
+        return_value={
+            "device_id": "dev-paired",
+            "msgbox_url": "wss://relay.example/ws",
+            "core_url": "http://localhost:8100",
+        },
     ), patch("dina_cli.signing.CLIIdentity", return_value=ident):
         runner = CliRunner()
         result = runner.invoke(cli, ["init"])
@@ -267,7 +269,10 @@ def test_init_skip_skill(tmp_path, monkeypatch):
     ident = MagicMock()
     ident.exists = True
     ident.did.return_value = "did:key:zX"
-    with patch("dina_cli.config._load_saved", return_value={"msgbox_url": "wss://r/ws"}), \
+    with patch(
+        "dina_cli.config._load_saved",
+        return_value={"device_id": "dev-paired", "msgbox_url": "wss://r/ws"},
+    ), \
          patch("dina_cli.signing.CLIIdentity", return_value=ident):
         runner = CliRunner()
         result = runner.invoke(cli, ["init", "--skip-skill"])

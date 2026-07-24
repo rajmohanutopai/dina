@@ -89,6 +89,12 @@ export interface AgentGrantRepository {
    * revoked — issues.txt §5). Returns the count revoked.
    */
   revokeForAgent(agentDID: string, now: number): number;
+  /**
+   * Revoke every active grant issued to one exact agent session. Session end
+   * calls this so the durable grant table reflects the same authority boundary
+   * enforced by the live SessionRegistry.
+   */
+  revokeForSession(agentDID: string, sessionId: string, now: number): number;
   /** Active grants for an agent (diagnostics / UI). */
   listActiveForAgent(agentDID: string, now: number): AgentPersonaGrant[];
   /** Every row (tests). */
@@ -183,6 +189,15 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     return this.db.run(
       'UPDATE agent_persona_grants SET revoked_at = ? WHERE agent_did = ? AND revoked_at IS NULL',
       [now, agentDID],
+    );
+  }
+
+  revokeForSession(agentDID: string, sessionId: string, now: number): number {
+    return this.db.run(
+      `UPDATE agent_persona_grants
+         SET revoked_at = ?
+       WHERE agent_did = ? AND session_id = ? AND revoked_at IS NULL`,
+      [now, agentDID, sessionId],
     );
   }
 
@@ -287,6 +302,17 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
     let count = 0;
     for (const r of this.rows.values()) {
       if (r.agentDID === agentDID && r.revokedAt === null) {
+        r.revokedAt = now;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  revokeForSession(agentDID: string, sessionId: string, now: number): number {
+    let count = 0;
+    for (const r of this.rows.values()) {
+      if (r.agentDID === agentDID && r.sessionId === sessionId && r.revokedAt === null) {
         r.revokedAt = now;
         count++;
       }

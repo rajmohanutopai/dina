@@ -13,9 +13,14 @@ import { SessionRegistry, setSessionRegistry } from '../../../src/session/regist
 const A = 'did:key:z6MkAgentA';
 const B = 'did:key:z6MkAgentB';
 
-function req(path: string, body: unknown, callerDID?: string): CoreRequest {
+function req(
+  path: string,
+  body: unknown,
+  callerDID?: string,
+  method: CoreRequest['method'] = 'POST',
+): CoreRequest {
   return {
-    method: 'POST',
+    method,
     path,
     headers: {},
     query: {},
@@ -104,5 +109,28 @@ describe('POST /v1/session/end', () => {
     await router.handle(req('/v1/session/end', { session_id: sid }, A));
     const res = await router.handle(req('/v1/session/end', { session_id: sid }, A));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /v1/sessions', () => {
+  it('lists only the authenticated caller\'s active sessions', async () => {
+    await router.handle(req('/v1/session/start', { host_session_id: 'a-session' }, A));
+    await router.handle(req('/v1/session/start', { host_session_id: 'b-session' }, B));
+
+    const res = await router.handle(req('/v1/sessions', undefined, A, 'GET'));
+    expect(res.status).toBe(200);
+    const sessions = (res.body as { sessions: Array<Record<string, unknown>> }).sessions;
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      name: 'a-session',
+      status: 'active',
+      grants: [],
+    });
+    expect(typeof sessions[0]?.session_id).toBe('string');
+  });
+
+  it('401 without a caller DID', async () => {
+    const res = await router.handle(req('/v1/sessions', undefined, undefined, 'GET'));
+    expect(res.status).toBe(401);
   });
 });

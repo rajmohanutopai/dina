@@ -30,8 +30,14 @@ import {
   setD2DOutboxRepository,
   recoverOutboxOnBoot,
   SQLiteAgentGrantRepository,
+  getAgentGrantRepository,
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
+  SessionRegistry,
+  SQLiteSessionRepository,
+  setSessionRegistry,
+  revokeSessionApprovals,
+  resetSessionApprovals,
   setArchiveDataSource,
   listPersonas,
   getPersonaTier,
@@ -284,6 +290,27 @@ export async function initializePersistence(
   // in-memory fallback would lose the grant on restart). Installing the
   // SQL repo makes `requireAgentPersonaAccess` durable end-to-end.
   setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+  // Plugin/coding-agent sessions use the same durable, DID-bound lifecycle on
+  // mobile as on Home Node Lite. Without this wiring, inbound MsgBox agent
+  // requests fell back to the process-global in-memory registry and session end
+  // did not tombstone persona grants.
+  const sessionRegistry = new SessionRegistry(
+    undefined,
+    (session) => {
+      try {
+        getAgentGrantRepository()?.revokeForSession(
+          session.agentDid,
+          session.sessionId,
+          Date.now(),
+        );
+      } finally {
+        revokeSessionApprovals(session.agentDid, session.sessionId);
+      }
+    },
+    new SQLiteSessionRepository(identityDB),
+  );
+  sessionRegistry.reconcile();
+  setSessionRegistry(sessionRegistry);
 
   // issues.txt §2 — approving an agent's locked-persona request also opens
   // that persona (derives its DEK into RAM) so the agent's retry can decrypt.
@@ -594,6 +621,12 @@ export async function shutdownAllPersistence(): Promise<void> {
     setPluginInstallRepository(null);
     setPluginGrantRepository(null);
     setPluginDecisionRepository(null);
+    // Agent authority is identity-scoped. Drop both durable repository handles
+    // and all process-local session approval projections before another
+    // identity can boot in the same JS process.
+    setSessionRegistry(null);
+    setAgentGrantRepository(null);
+    resetSessionApprovals();
     // PLG-30 #1: clear the DEVICE registry + repo + caller-role map on teardown.
     // These are module-global in-memory Maps (devices/keyIndex/didIndex + the auth
     // caller-type map); `hydrateDeviceRegistry` MERGES rather than replaces, and

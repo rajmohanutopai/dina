@@ -1,0 +1,105 @@
+"""Structural checks for the installable Claude Code plugin bundle."""
+
+from __future__ import annotations
+
+import json
+import stat
+import tomllib
+from pathlib import Path
+
+from click.testing import CliRunner
+
+from dina_cli import __version__
+from dina_cli.main import cli
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CLI_ROOT = REPO_ROOT / "cli"
+MARKETPLACE_ROOT = CLI_ROOT / "claude-plugin"
+PLUGIN_ROOT = MARKETPLACE_ROOT / "dina"
+
+
+def _load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_cli_runtime_version_matches_package_metadata() -> None:
+    metadata = tomllib.loads((CLI_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert __version__ == metadata["project"]["version"]
+    assert "fastmcp==2.14.5" in metadata["project"]["dependencies"]
+
+    result = CliRunner().invoke(cli, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == f"dina-agent, version {__version__}"
+
+
+def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
+    manifest = _load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json")
+    hooks = _load_json(PLUGIN_ROOT / "hooks" / "hooks.json")
+
+    # Claude Code loads hooks/hooks.json automatically. Declaring it again in the
+    # manifest causes duplicate hook registration in an installed plugin.
+    assert "hooks" not in manifest
+    pre_tool_use = hooks["hooks"]["PreToolUse"]
+    assert len(pre_tool_use) == 1
+    assert pre_tool_use[0]["matcher"] == "*"
+    assert pre_tool_use[0]["hooks"] == [
+        {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dina-gate",
+        }
+    ]
+    session_end = hooks["hooks"]["SessionEnd"]
+    assert len(session_end) == 1
+    assert "matcher" not in session_end[0]
+    assert session_end[0]["hooks"] == [
+        {
+            "type": "command",
+            "command": "dina session-end-hook",
+            "timeout": 10,
+        }
+    ]
+
+
+def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
+    manifest = _load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json")
+    mcp_config = _load_json(PLUGIN_ROOT / ".mcp.json")
+    readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+    gate = PLUGIN_ROOT / "bin" / "dina-gate"
+
+    assert "dina-agent>=0.19.0" in manifest["description"]
+    assert mcp_config["mcpServers"]["dina"]["command"] == "dina"
+    assert mcp_config["mcpServers"]["dina"]["args"] == [
+        "mcp-server",
+        "--profile",
+        "coding",
+    ]
+    assert "configure dina" in readme.lower()
+    assert "before" in readme.lower()
+    assert "no owner-facing" in readme.lower()
+    assert "dina unpair" in readme
+    assert gate.stat().st_mode & stat.S_IXUSR
+
+
+def test_plugin_bundles_mcp_native_usage_instructions() -> None:
+    skill = (PLUGIN_ROOT / "skills" / "dina" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "dina_session_start" in skill
+    assert "dina_session_end" in skill
+    assert "dina_validate" in skill
+    assert "pending_approval" in skill
+    assert "dina_scrub" in skill
+    assert "PreToolUse" in skill
+
+
+def test_marketplace_points_at_the_self_contained_plugin() -> None:
+    marketplace = _load_json(
+        MARKETPLACE_ROOT / ".claude-plugin" / "marketplace.json"
+    )
+    plugins = marketplace["plugins"]
+
+    assert len(plugins) == 1
+    assert plugins[0]["name"] == "dina"
+    assert plugins[0]["source"] == "./dina"
+    assert (PLUGIN_ROOT / "README.md").is_file()

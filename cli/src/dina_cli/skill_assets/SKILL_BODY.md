@@ -10,11 +10,16 @@ Sovereign personal AI. The user's data is in an encrypted vault on their Home No
 
 ```bash
 pip install dina-agent
-dina configure --role agent    # paste the setup code from the Dina app
+dina configure --role agent    # paste an owner-issued setup code
 dina status                    # verify pairing
 ```
 
-The setup code comes from the Dina app: **Settings → Agents → Generate Setup Code**. One paste carries the relay address, the Home Node identity, and the pairing code. For automation: `dina configure --headless --role agent --setup-code 'dina1:…'`.
+For a normal runner paired to mobile, the setup code comes from the Dina app:
+**Settings → Agents → Generate Setup Code**. For a coding integration whose
+filesystem-aware gate runs on Home Node Lite, use a `coding`-scope setup code
+issued by that Home Node instead. One paste carries the relay address, Home
+Node identity, and pairing code. For automation:
+`dina configure --headless --role agent --setup-code 'dina1:…'`.
 
 ## Rules
 
@@ -56,7 +61,9 @@ dina session start [--name <description>]
 dina session end <id-or-name>
 ```
 
-Accepts session ID (`ses_xxx`) or name. Revokes all grants. Closes sensitive vaults opened via approval.
+Accepts session ID (`ses_xxx`) or name. Revokes the session's grants and
+pending approvals. It does not claim to close a vault that the owner or another
+authorized session may still be using.
 
 **Returns:** `{"status": "ended", "session": "ses_xxx"}`
 
@@ -339,10 +346,12 @@ On timeout: the approval request persists. `dina ask-status <request_id>` works 
 
 ## Device Pairing
 
-In the Dina app: **Settings → Agents → Generate Setup Code**, then on the agent host:
+For a normal runner, use **Settings → Agents → Generate Setup Code** in the
+Dina app. For a coding integration, obtain a `coding`-scope setup code from
+Home Node Lite. Then, on the agent host:
 
 ```bash
-dina configure --role agent    # paste the setup code when asked
+dina configure --role agent    # paste the owner-issued setup code when asked
 ```
 
 Agent-originated content is tagged `(cli, agent)` with caveated trust. Never treated as user-authored memory.

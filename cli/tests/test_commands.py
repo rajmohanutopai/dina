@@ -10,7 +10,7 @@ import httpx
 from click.testing import CliRunner
 
 from dina_cli.client import DinaClientError
-from dina_cli.main import cli
+from dina_cli.main import _try_unpair, cli
 
 
 def _test_config():
@@ -115,6 +115,37 @@ def test_status_unreachable(tmp_path):
     assert data["core_reachable"] is False
     assert data["paired"] is False
     assert data["transport"] == "direct"
+
+
+def test_status_public_health_does_not_count_as_paired(tmp_path):
+    """A reachable public /healthz must not authenticate an unpaired key."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
+    (identity_dir / "ed25519_private.pem").touch()
+    mc = MagicMock()
+    mc.session_list.side_effect = DinaClientError("HTTP 403")
+
+    runner = CliRunner()
+    with patch("dina_cli.main.DinaClient", return_value=mc), \
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
+         patch("dina_cli.main.httpx") as mock_httpx, \
+         patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
+         patch("dina_cli.main.CLIIdentity") as MockIdent:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx.get.return_value = mock_resp
+        MockIdent.return_value.did.return_value = "did:key:z6MkUnpaired"
+        result = runner.invoke(
+            cli,
+            ["--json", "status"],
+            env={"DINA_TRANSPORT": "direct"},
+        )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["core_reachable"] is True
+    assert data["authenticated"] is False
+    assert data["paired"] is False
 
 
 # ── remember ──────────────────────────────────────────────────────────────
@@ -367,10 +398,14 @@ def test_ask_status_command():
         "content": "Here is your answer.",
     }
 
-    result = _invoke(["ask-status", "ask-status-test"], mock_client=mc)
+    result = _invoke(
+        ["ask-status", "ask-status-test", "--session", "ses_test"],
+        mock_client=mc,
+    )
 
     assert result.exit_code == 0
     assert "Here is your answer" in result.output
+    mc.ask_status.assert_called_once_with("ask-status-test", session="ses_test")
 
 
 # TRACE: {"suite": "CLI", "case": "0011", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "16", "title": "ask_status_denied"}
@@ -382,7 +417,10 @@ def test_ask_status_denied():
         "request_id": "ask-denied",
     }
 
-    result = _invoke(["ask-status", "ask-denied"], mock_client=mc)
+    result = _invoke(
+        ["ask-status", "ask-denied", "--session", "ses_test"],
+        mock_client=mc,
+    )
 
     assert result.exit_code == 0
     assert "denied" in result.output.lower()
@@ -574,14 +612,12 @@ def test_sign_json(tmp_path):
 # TRACE: {"suite": "CLI", "case": "0043", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "27", "title": "audit_json"}
 def test_audit_json():
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"entries": [
+    mc.audit_query.return_value = {"entries": [
         {"action": "vault_query", "persona": "general", "timestamp": "2026-03-15T10:00:00Z"},
     ]}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
     result = _invoke(["--json", "audit", "--limit", "5"], mock_client=mc)
     assert result.exit_code == 0
+    mc.audit_query.assert_called_once_with(limit=5, action="")
 
 
 # ── missing keypair ───────────────────────────────────────────────────────
@@ -853,14 +889,12 @@ def test_configure_help():
 def test_session_start():
     """Session start creates a named session."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"id": "ses-123", "name": "research", "status": "active"}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
+    mc.session_start.return_value = {"session_id": "ses-123", "status": "open"}
     result = _invoke(["session", "start", "--name", "research"], mock_client=mc)
     assert result.exit_code == 0
     assert "research" in result.output
     assert "active" in result.output
+    mc.session_start.assert_called_once_with("research")
 
 
 # TST-CLI-048
@@ -868,13 +902,11 @@ def test_session_start():
 def test_session_end():
     """Session end closes a session."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"status": "ended"}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
+    mc.session_end.return_value = {"ok": True}
     result = _invoke(["session", "end", "ses-123"], mock_client=mc)
     assert result.exit_code == 0
     assert "ended" in result.output or "ses-123" in result.output
+    mc.session_end.assert_called_once_with("ses-123")
 
 
 # TST-CLI-049
@@ -882,13 +914,11 @@ def test_session_end():
 def test_session_list_empty():
     """Session list shows no sessions when none active."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"sessions": []}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
+    mc.session_list.return_value = {"sessions": []}
     result = _invoke(["session", "list"], mock_client=mc)
     assert result.exit_code == 0
     assert "No active sessions" in result.output
+    mc.session_list.assert_called_once_with()
 
 
 # TST-CLI-050
@@ -896,19 +926,16 @@ def test_session_list_empty():
 def test_session_list_with_sessions():
     """Session list shows active sessions with grants."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {
+    mc.session_list.return_value = {
         "sessions": [
             {
-                "id": "ses-123",
+                "session_id": "ses-123",
                 "name": "chair-research",
                 "status": "active",
                 "grants": [{"persona_id": "health"}],
             }
         ]
     }
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
     result = _invoke(["session", "list"], mock_client=mc)
     assert result.exit_code == 0
     assert "chair-research" in result.output
@@ -920,14 +947,15 @@ def test_session_list_with_sessions():
 def test_session_start_json():
     """Session start with --json returns JSON."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"id": "ses-456", "name": "tax", "status": "active"}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
+    mc.session_start.return_value = {
+        "session_id": "ses-456",
+        "status": "open",
+        "lease_expires_at": 123,
+    }
     result = _invoke(["--json", "session", "start", "--name", "tax"], mock_client=mc)
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["name"] == "tax"
+    assert data["session_id"] == "ses-456"
 
 
 # ── ask with session ──────────────────────────────────────────────────
@@ -1021,15 +1049,12 @@ def test_remember_uses_remember_endpoint():
 # TST-CLI-059
 # TRACE: {"suite": "CLI", "case": "0059", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "43", "title": "audit_uses_audit_endpoint"}
 def test_audit_uses_audit_endpoint():
-    """Audit uses /v1/audit/query, not vault query."""
+    """Audit delegates to the caller-aware client projection, not vault query."""
     mc = MagicMock()
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"entries": []}
-    mc._request.return_value = mock_resp
-    mc._core = MagicMock()
+    mc.audit_query.return_value = {"entries": []}
     result = _invoke(["--json", "audit"], mock_client=mc)
     assert result.exit_code == 0
-    # Should call _request, not vault_query
+    mc.audit_query.assert_called_once_with(limit=20, action="")
     mc.vault_query.assert_not_called()
 
 
@@ -1037,13 +1062,17 @@ def test_audit_uses_audit_endpoint():
 
 
 # TRACE: {"suite": "CLI", "case": "0012", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "44", "title": "unpair_not_paired"}
-def test_unpair_not_paired():
-    """Unpair when no device_id is saved."""
+def test_unpair_not_paired(tmp_path):
+    """Without a key there is no authenticated remote authority to revoke."""
+    identity_dir = tmp_path / "identity"
+    identity_dir.mkdir()
     runner = CliRunner()
-    with patch("dina_cli.main._load_saved", return_value={}):
+    with patch("dina_cli.main._load_saved", return_value={}), patch(
+        "dina_cli.main.save_config"
+    ), patch("dina_cli.config.IDENTITY_DIR", identity_dir):
         result = runner.invoke(cli, ["unpair"])
     assert result.exit_code == 0
-    assert "not_paired" in result.output.lower() or "already" in result.output.lower() or "never" in result.output.lower() or "unpaired" in result.output.lower()
+    assert "no keypair" in result.output.lower()
 
 
 # TRACE: {"suite": "CLI", "case": "0013", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "45", "title": "unpair_json"}
@@ -1057,20 +1086,102 @@ def test_unpair_json(tmp_path):
     with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
          patch("dina_cli.main.save_config"), \
          patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
-         patch("dina_cli.main.CLIIdentity") as MockIdent, \
-         patch("dina_cli.main.httpx") as mock_httpx:
-        mock_ident = MagicMock()
-        mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
-        mock_ident.ensure_loaded.return_value = None
-        MockIdent.return_value = mock_ident
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
+         patch("dina_cli.main.DinaClient") as MockClient:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_httpx.delete.return_value = mock_resp
+        MockClient.return_value._request.return_value = mock_resp
         result = runner.invoke(cli, ["--json", "unpair"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert data["status"] == "unpaired"
     assert data["device_id"] == "dev-123"
+    assert MockClient.return_value._request.call_args.args[2] == "/v1/devices/self"
+
+
+def test_reconfigure_self_revokes_old_key_without_admin_device_route():
+    """Replacing a key revokes the authenticated old key via the self route."""
+    identity = MagicMock()
+    identity.sign_request.return_value = (
+        "did:key:zOld",
+        "1700000000",
+        "nonce",
+        "signature",
+    )
+    transport = MagicMock()
+    transport.request.return_value.status = 204
+
+    with patch(
+        "dina_cli.main._load_saved",
+        return_value={
+            "device_id": "dev-old",
+            "core_url": "http://old-core:8100",
+            "transport_mode": "direct",
+        },
+    ), patch("dina_cli.main.save_config") as save, patch(
+        "dina_cli.main._build_pairing_transport",
+        return_value=transport,
+    ) as build_transport:
+        _try_unpair(
+            "http://new-core:8100",
+            identity,
+            transport_mode="direct",
+        )
+
+    identity.sign_request.assert_called_once_with(
+        "DELETE",
+        "/v1/devices/self",
+        b"",
+    )
+    assert transport.request.call_args.args[:2] == (
+        "DELETE",
+        "/v1/devices/self",
+    )
+    build_transport.assert_called_once_with(
+        "http://old-core:8100",
+        "",
+        "",
+        "direct",
+        identity=identity,
+    )
+    save.assert_called_once_with(
+        {
+            "core_url": "http://old-core:8100",
+            "transport_mode": "direct",
+        }
+    )
+
+
+def test_reconfigure_keeps_old_key_state_when_self_revoke_fails():
+    identity = MagicMock()
+    identity.sign_request.return_value = (
+        "did:key:zOld",
+        "1700000000",
+        "nonce",
+        "signature",
+    )
+    transport = MagicMock()
+    transport.request.return_value.status = 503
+
+    with patch(
+        "dina_cli.main._load_saved",
+        return_value={"device_id": "dev-old"},
+    ), patch("dina_cli.main.save_config") as save, patch(
+        "dina_cli.main._build_pairing_transport",
+        return_value=transport,
+    ):
+        try:
+            _try_unpair(
+                "http://localhost:8100",
+                identity,
+                transport_mode="direct",
+            )
+        except Exception as exc:
+            assert "not orphaned" in str(exc)
+        else:
+            raise AssertionError("reconfiguration must stop when revoke fails")
+
+    save.assert_not_called()
 
 
 # TRACE: {"suite": "CLI", "case": "0014", "section": "01", "sectionName": "Commands", "subsection": "01", "scenario": "46", "title": "unpair_core_unreachable"}
@@ -1083,14 +1194,8 @@ def test_unpair_core_unreachable(tmp_path):
     runner = CliRunner()
     with patch("dina_cli.main._load_saved", return_value={"device_id": "dev-123", "core_url": "http://localhost:8100"}), \
          patch("dina_cli.config.IDENTITY_DIR", identity_dir), \
-         patch("dina_cli.main.CLIIdentity") as MockIdent, \
-         patch("dina_cli.main.httpx") as mock_httpx:
-        mock_ident = MagicMock()
-        mock_ident.sign_request.return_value = ("did:key:z6Mk", "ts", "nonce", "sig")
-        mock_ident.ensure_loaded.return_value = None
-        MockIdent.return_value = mock_ident
-        mock_httpx.delete.side_effect = httpx.ConnectError("connection refused")
-        mock_httpx.ConnectError = httpx.ConnectError
+         patch("dina_cli.main.load_config", return_value=_test_config()), \
+         patch("dina_cli.main.DinaClient", side_effect=DinaClientError("connection refused")):
         result = runner.invoke(cli, ["unpair"])
     assert result.exit_code != 0
 

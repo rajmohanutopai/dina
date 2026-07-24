@@ -177,6 +177,31 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
     expect(repo.listActiveForAgent('did:key:agentA', 8_500)).toHaveLength(0);
     expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', null, 8_500)?.id).toBe('b1'); // untouched
   });
+
+  it('revokeForSession revokes only the exact agent + session grants', () => {
+    repo.insert(grant({ id: 'a-s1-health', agentDID: 'did:key:agentA', sessionId: 'sess-1' }));
+    repo.insert(
+      grant({
+        id: 'a-s1-work',
+        agentDID: 'did:key:agentA',
+        sessionId: 'sess-1',
+        persona: 'work',
+      }),
+    );
+    repo.insert(grant({ id: 'a-s2', agentDID: 'did:key:agentA', sessionId: 'sess-2' }));
+    repo.insert(grant({ id: 'b-s1', agentDID: 'did:key:agentB', sessionId: 'sess-1' }));
+
+    expect(repo.revokeForSession('did:key:agentA', 'sess-1', 8_000)).toBe(2);
+    expect(
+      repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-1', 8_500),
+    ).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-2', 8_500)?.id).toBe(
+      'a-s2',
+    );
+    expect(repo.findActiveGrant('did:key:agentB', 'health', 'read', 'sess-1', 8_500)?.id).toBe(
+      'b-s1',
+    );
+  });
 });
 
 describe('SQLiteAgentGrantRepository — durability across restart', () => {

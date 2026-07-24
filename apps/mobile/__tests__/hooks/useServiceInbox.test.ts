@@ -262,6 +262,35 @@ describe('useServiceInbox', () => {
     expect(entry.serviceName).toBe('');
   });
 
+  it('projects remote coding approvals using the authenticated source device', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'remote-1',
+          description: 'A paired laptop requests a filesystem write',
+          payload: JSON.stringify({
+            type: 'remote_coding_gate_v1',
+            source_device_did: 'did:key:z6MkPairedLaptop',
+            source_task_id: 'local-1',
+            source_payload_hash: 'a'.repeat(64),
+            agent_did: 'did:key:z6MkClaimedAgent',
+            action: 'filesystem.write',
+            risk_level: 'HIGH',
+            tool_name: 'Write',
+            expires_at: 2_000_000_000,
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('remote_coding_gate');
+    expect(entry.requesterDID).toBe('did:key:z6MkPairedLaptop');
+    expect(entry.requesterDID).not.toBe('did:key:z6MkClaimedAgent');
+    expect(entry.riskLevel).toBe('HIGH');
+    expect(entry.paramsPreview).toBe('Write');
+  });
+
   it('classifies staging persona approvals with kind=staging_persona_access', async () => {
     const { client } = stubClient({
       list: [
@@ -518,6 +547,34 @@ describe('useServiceInbox', () => {
       expect(execution.errored).toBe('failed');
       expect(execution.c).toBe('completed');
       expect(execution.q).toBe('pending');
+    });
+
+    it('shows an approved remote mirror as a decision receipt, not pending phone work', async () => {
+      const { client } = stubResolvedClient({
+        queued: [
+          makeTask({
+            id: 'remote-approved',
+            status: 'queued',
+            payload: JSON.stringify({
+              type: 'remote_coding_gate_v1',
+              source_device_did: 'did:key:z6MkPairedLaptop',
+              source_task_id: 'local-1',
+              source_payload_hash: 'a'.repeat(64),
+              agent_did: 'did:key:z6MkClaimedAgent',
+              action: 'filesystem.write',
+              risk_level: 'HIGH',
+              tool_name: 'Write',
+              expires_at: 2_000_000_000,
+            }),
+          }),
+        ],
+      });
+      setInboxCoreClient(client);
+
+      const [entry] = await listResolvedApprovals();
+
+      expect(entry.outcome).toBe('approved');
+      expect(entry.executionResult).toBeUndefined();
     });
 
     it("treats a TTL-lapsed task (failed + error='expired') as expired, not denied", async () => {

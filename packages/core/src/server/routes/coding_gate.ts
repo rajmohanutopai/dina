@@ -17,7 +17,10 @@
  * `agent.go`).
  */
 
-import { createCodingGateApproval } from '../../agent/coding_permit';
+import {
+  createCodingGateApproval,
+  redeemApprovedCodingGateApproval,
+} from '../../agent/coding_permit';
 import { appendAudit } from '../../audit/service';
 import { getSessionRegistry } from '../../session/registry';
 
@@ -47,7 +50,7 @@ export interface CodingGateInput {
   toolInput: Record<string, unknown>;
   /** Authenticated agent DID (never client-supplied). */
   agentDid: string;
-  /** Agent session id (from `dina_session_start`); '' if none. */
+  /** Opaque, live Core session id resolved by this route. */
   sessionId: string;
   /** Agent working dir for relative-path resolution; undefined ⇒ Core cwd. */
   cwd?: string;
@@ -69,8 +72,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     // Caller identity binding: the authenticated DID is authority; body
     // `agent_did` is never trusted (parity with intent.ts / agent.go).
     const xDID = req.headers['x-did'];
-    const agentDid =
-      req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : '');
+    const agentDid = req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : '');
     if (agentDid === '') {
       return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
     }
@@ -88,23 +90,44 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     if (modeRaw !== 'enforce' && modeRaw !== 'classify_only') {
       return { status: 400, body: { error: `invalid mode: ${modeRaw}` } };
     }
-    const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
     const cwd = typeof body.cwd === 'string' && body.cwd !== '' ? body.cwd : undefined;
-
-    // A supplied session_id must be a LIVE session bound to THIS authenticated
-    // agent (§15) — otherwise a caller could mint a permit against a fake, ended,
-    // or foreign session id, and session-end wouldn't revoke gate authority
-    // (audit). An empty session_id is the no-session case (permit is still
-    // DID-bound). The session-start route is the only bootstrap-exempt op.
-    if (sessionId !== '' && !getSessionRegistry().validate(sessionId, agentDid).ok) {
-      return { status: 401, body: { error: 'invalid_session' } };
-    }
 
     if (!gate) {
       return { status: 501, body: { error: 'coding gate not available on this node' } };
     }
 
-    const result = await gate({
+    const sessionIdRaw = typeof body.session_id === 'string' ? body.session_id.trim() : '';
+    const hostSessionId =
+      typeof body.host_session_id === 'string' ? body.host_session_id.trim() : '';
+    if (sessionIdRaw !== '' && hostSessionId !== '') {
+      return {
+        status: 400,
+        body: { error: 'supply either session_id or host_session_id, not both' },
+      };
+    }
+    if (sessionIdRaw === '' && hostSessionId === '') {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
+    if (hostSessionId.length > 256) {
+      return { status: 400, body: { error: 'host_session_id is too long' } };
+    }
+
+    // Gate calls must always be attached to a live, DID-bound Core session.
+    // A host hook can provide its stable host_session_id in the same signed
+    // request; start() atomically resolves/reuses it and renews the lease. Other
+    // adapters can provide an opaque Core session_id, which is renewed here.
+    const sessionId =
+      hostSessionId !== ''
+        ? getSessionRegistry().start({ agentDid, hostSessionId }).sessionId
+        : sessionIdRaw;
+    if (
+      hostSessionId === '' &&
+      !getSessionRegistry().renew(sessionId, agentDid).ok
+    ) {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
+
+    let result = await gate({
       toolName,
       toolInput,
       agentDid,
@@ -113,28 +136,61 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       mode: modeRaw,
     });
 
-    // Item B — an enforce-mode MODERATE/HIGH call that the gate could NOT redeem
-    // against an already-approved permit needs the owner's decision. Create the
-    // idempotent approval card (bound to the payload hash, never the raw input)
-    // and hand its id back, so the owner can approve and the agent's retry can
-    // redeem. Fail CLOSED: if the approval subsystem is unavailable we downgrade
-    // to a plain `approval_required` with no card rather than silently allow.
+    // Item B — an enforce-mode HIGH call that the gate could NOT redeem against
+    // an already-approved permit needs the owner's Dina decision. MODERATE calls
+    // are confirmed by the host's native permission UI and must not create an
+    // orphaned Core task. Create the HIGH-risk card idempotently, bound to the
+    // payload hash (never the raw input), so an approved retry can redeem it.
+    // Fail CLOSED: if approval is unavailable we return approval_required with
+    // no task rather than silently allow.
     let approvalTaskId: string | undefined;
     if (
       modeRaw === 'enforce' &&
-      result.outcome === 'approval_required' &&
+      result.risk === 'HIGH' &&
       typeof result.payloadHash === 'string' &&
       result.payloadHash !== ''
     ) {
-      const created = createCodingGateApproval({
+      const payloadHash = result.payloadHash;
+      const redemption = redeemApprovedCodingGateApproval({
         agentDid,
         sessionId,
-        payloadHash: result.payloadHash,
+        payloadHash,
         tool: toolName,
         action: result.action,
         risk: result.risk as RiskLevel,
       });
-      if (created.kind === 'approval_required') approvalTaskId = created.taskId;
+      if (redemption.kind === 'redeemed') {
+        result = {
+          ...result,
+          outcome: 'allow',
+          enforced: true,
+          permitId: result.permitId ?? `workflow:${redemption.taskId}`,
+          reason: `${result.reason} (redeemed durable owner approval)`,
+        };
+      } else {
+        // A transient in-memory permit is never sufficient on its own. The
+        // matching durable task must win its single-use CAS, otherwise two
+        // concurrent retries (or a cancelled task) could both appear allowed.
+        if (result.outcome === 'allow') {
+          result = {
+            ...result,
+            outcome: 'approval_required',
+            permitId: undefined,
+            reason: 'owner approval could not be durably redeemed',
+          };
+        }
+        if (result.outcome === 'approval_required') {
+          const created = createCodingGateApproval({
+            agentDid,
+            sessionId,
+            payloadHash,
+            tool: toolName,
+            action: result.action,
+            risk: result.risk as RiskLevel,
+          });
+          if (created.kind === 'approval_required') approvalTaskId = created.taskId;
+        }
+      }
     }
 
     // Item 8 — durably record every non-SAFE decision, METADATA ONLY. Never the

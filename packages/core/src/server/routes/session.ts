@@ -8,6 +8,8 @@
  *   POST /v1/session/end    → ends the session (revoking its grants via the
  *                             registry's onEnd hook), DID-bound so an agent can
  *                             only end its OWN session.
+ *   GET  /v1/sessions       → lists only the authenticated caller's live
+ *                             sessions; foreign sessions are never projected.
  *
  * Wire-compatible with the existing `dina-agent` daemon: `start` still returns
  * `{ session_id, status: 'open' }` and `end` still returns `{ ok: true }`; the
@@ -32,8 +34,8 @@ export function registerSessionRoutes(router: CoreRouter): void {
       return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
     }
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
-    // Bind to the host session so the hook + MCP tools share ONE Core session
-    // (F-04). Absent one, fall back to the agent DID so start stays idempotent.
+    // Bind to the caller's host task. A host hook and MCP client share this
+    // Core session only when they intentionally supply the same host id.
     const hostSessionId =
       typeof body.host_session_id === 'string' && body.host_session_id !== ''
         ? body.host_session_id
@@ -69,5 +71,20 @@ export function registerSessionRoutes(router: CoreRouter): void {
       return { status: 404, body: { ok: false } };
     }
     return { status: 200, body: { ok: true } };
+  });
+
+  router.get('/v1/sessions', async (req: CoreRequest): Promise<CoreResponse> => {
+    const agentDid = resolveCallerDid(req);
+    if (agentDid === '') {
+      return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
+    }
+    const sessions = getSessionRegistry().listActive(agentDid).map((session) => ({
+      session_id: session.sessionId,
+      name: session.hostSessionId,
+      status: 'active',
+      lease_expires_at: Math.floor(session.leaseExpiresAtMs / 1000),
+      grants: [],
+    }));
+    return { status: 200, body: { sessions } };
   });
 }

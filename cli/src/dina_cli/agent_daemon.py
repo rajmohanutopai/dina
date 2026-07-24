@@ -119,15 +119,23 @@ def run_daemon(
         # description straight off the task; it is never logged.
         print(f"[agent-daemon] Claimed: {task_id} (session={session_name})", file=sys.stderr)
 
-        # End any orphaned session from a prior crashed attempt.
+        # End any orphaned Core session for this stable host-task name. Core
+        # session ids are opaque; the host label is not itself a valid id.
         try:
-            client.session_end(session_name)
+            for active in client.session_list().get("sessions", []):
+                if active.get("name") == session_name:
+                    prior_id = active.get("session_id") or active.get("id")
+                    if prior_id:
+                        client.session_end(str(prior_id))
         except Exception:
             pass
 
         # Start fresh Dina session.
         try:
-            client.session_start(name=session_name)
+            opened = client.session_start(name=session_name)
+            session_id = str(opened.get("session_id") or opened.get("id") or "")
+            if session_id == "":
+                raise DinaClientError("Core returned no session_id")
         except DinaClientError as e:
             print(f"[agent-daemon] Session start failed: {e} — failing task", file=sys.stderr)
             try:
@@ -137,17 +145,17 @@ def run_daemon(
             continue
 
         # Build task prompt.
-        prompt = build_task_prompt(task, session_name, runner.runner_name)
+        prompt = build_task_prompt(task, session_id, runner.runner_name)
 
         # Execute via runner.
         try:
-            result = runner.execute(task, prompt, session_name)
+            result = runner.execute(task, prompt, session_id)
         except Exception as e:
             result = RunnerResult(state="failed", error=f"Runner error: {e}")
 
         # Normalize result into Core task transitions.
         try:
-            _apply_result(client, task_id, session_name, result, runner.runner_name)
+            _apply_result(client, task_id, session_id, result, runner.runner_name)
         except Exception as e:
             print(f"[agent-daemon] Result normalization error: {e}", file=sys.stderr)
 
@@ -162,7 +170,7 @@ def run_daemon(
 def _apply_result(
     client: DinaClient,
     task_id: str,
-    session_name: str,
+    session_id: str,
     result: RunnerResult,
     runner_name: str,
 ) -> None:
@@ -189,7 +197,7 @@ def _apply_result(
             except Exception:
                 pass
             try:
-                client.session_end(session_name)
+                client.session_end(session_id)
             except Exception:
                 pass
         else:
@@ -211,7 +219,7 @@ def _apply_result(
         except Exception as e:
             print(f"[agent-daemon] Complete fallback error: {e}", file=sys.stderr)
         try:
-            client.session_end(session_name)
+            client.session_end(session_id)
         except Exception:
             pass
 
@@ -228,7 +236,7 @@ def _apply_result(
         except Exception as e:
             print(f"[agent-daemon] Fail error: {e}", file=sys.stderr)
         try:
-            client.session_end(session_name)
+            client.session_end(session_id)
         except Exception:
             pass
 

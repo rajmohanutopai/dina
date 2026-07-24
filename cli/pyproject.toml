@@ -1,6 +1,6 @@
 [project]
 name = "dina-agent"
-version = "0.18.4"
+version = "0.19.0"
 description = "CLI client for Dina Home Node — encrypted memory, PII scrubbing, action gating"
 requires-python = ">=3.10"
 license = "MIT"
@@ -13,12 +13,13 @@ dependencies = [
     "base58==2.1.1",
     "argon2-cffi==25.1.0",
     "mnemonic==0.21",
-    "fastmcp>=2.0",
+    "fastmcp==2.14.5",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 hermes = ["hermes-agent"]  # Optional: enables --runner hermes. Install per Hermes docs.
+dev = ["pytest>=8.0"]
 
 [project.scripts]
 dina = "dina_cli.main:cli"

@@ -14,7 +14,7 @@ import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { registerDevice, resetCallerTypeState } from '../../src/auth/caller_type';
 import { sign, getPublicKey } from '../../src/crypto/ed25519';
-import { sealEncrypt } from '../../src/crypto/nacl';
+import { sealDecrypt, sealEncrypt } from '../../src/crypto/nacl';
 import { sealMessage, buildMessage } from '../../src/d2d/envelope';
 import { deriveDIDKey } from '../../src/identity/did';
 import {
@@ -36,7 +36,9 @@ import {
   type WSLike,
   type MsgBoxEnvelope,
 } from '../../src/relay/msgbox_ws';
+import { verifyResponseSignature } from '../../src/relay/rpc_response';
 
+import type { CoreRPCResponse } from '../../src/relay/rpc_envelope';
 
 // Second key pair for sender simulation
 const SENDER_SEED = new Uint8Array(32);
@@ -266,6 +268,41 @@ describe('MsgBox Envelope Handlers', () => {
       );
     });
 
+    it('identity-signs the response sent by the production WebSocket handler', async () => {
+      const { ws, sent } = createCapturingWS();
+      setWSFactory(() => ws);
+
+      const { connectToMsgBox } = await import('../../src/relay/msgbox_ws');
+      await connectToMsgBox('wss://test.relay/ws');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      if (ws.onmessage) {
+        ws.onmessage({
+          data: JSON.stringify({ type: 'auth_challenge', nonce: 'test', ts: 12345 }),
+        });
+        ws.onmessage({ data: JSON.stringify({ type: 'auth_success' }) });
+      }
+      expect(isAuthenticated()).toBe(true);
+
+      const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID);
+      await handleInboundRPC(env);
+
+      const responseEnvelope = JSON.parse(sent[sent.length - 1]) as MsgBoxEnvelope;
+      expect(responseEnvelope.direction).toBe('response');
+      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext!, 'base64'));
+      const plaintext = sealDecrypt(sealed, CLI_PUB, CLI_SEED);
+      const response = JSON.parse(new TextDecoder().decode(plaintext)) as CoreRPCResponse;
+
+      expect(response).toMatchObject({
+        type: 'core_rpc_response',
+        request_id: env.id,
+        from: HOME_DID,
+        status: 200,
+        body: '{"result":"ok"}',
+      });
+      expect(verifyResponseSignature(response, HOME_PUB)).toBe(true);
+    });
+
     it('passes AbortSignal to router', async () => {
       const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID);
       await handleInboundRPC(env);
@@ -333,7 +370,11 @@ describe('MsgBox Envelope Handlers', () => {
       // Register CLI device and set up a slow router
       registerDevice(SENDER_DID, 'cli');
 
-      interface RouterResult { status: number; headers: Record<string, string>; body: string }
+      interface RouterResult {
+        status: number;
+        headers: Record<string, string>;
+        body: string;
+      }
       const resolveRef: { fn: ((v: RouterResult) => void) | null } = { fn: null };
       const slowRouter: RPCRouterFn = jest.fn(
         () =>

@@ -1,0 +1,53 @@
+#!/bin/sh
+# Dina coding-gate supervisor — Plugin Developer Surface §10 / NEW-27.
+#
+# Claude Code runs THIS on every tool call (PreToolUse, catch-all). Its only job
+# is to run the real gate (`dina gate-hook`) and NORMALIZE EVERY FAILURE TO A
+# BLOCK (exit 2). This matters because on a PreToolUse hook, *only* exit 2 blocks
+# a tool call — every other outcome (missing binary, crash, signal, a non-2 exit,
+# a host timeout) is NON-blocking and would let the tool run. So a stopped or
+# broken Dina fails CLOSED here rather than silently opening the gate.
+#
+# DISCLOSED RESIDUAL (§10, §16): this supervisor can normalize its CHILD's
+# failures, but not its OWN. If Claude Code never launches this script (missing/
+# unexecutable), this process itself crashes, or the host-side hook timeout fires,
+# no exit 2 is emitted and the tool runs. Closing that residual needs an
+# independent host-level deny-on-non-returning-hook mechanism; it is stated, not
+# hidden. The gate is fail-closed for everything downstream of a launched, living
+# supervisor (Core unreachable/slow-within-the-gate-deadline, gate crash,
+# malformed reply).
+
+set -u
+
+block() {
+  # The reason on stderr becomes the block message Claude Code surfaces.
+  printf 'Dina gate: %s — blocked (fail-closed).\n' "$1" >&2
+  exit 2
+}
+
+# The gate reuses the paired `dina` CLI for signing + transport. If it is not
+# installed/on PATH, fail closed (do not let the tool run ungated).
+command -v dina >/dev/null 2>&1 || \
+  block "the 'dina' CLI is not on PATH (pip install dina-agent && dina configure)"
+
+# Outer deadline backstop when a timeout helper exists (macOS ships neither
+# `timeout` nor `gtimeout` by default — the gate ALSO self-deadlines ~10s, so
+# this is belt-and-suspenders, not the primary guard). exit 124 = it fired.
+RUN="dina gate-hook"
+if command -v timeout >/dev/null 2>&1; then
+  RUN="timeout 15 dina gate-hook"
+elif command -v gtimeout >/dev/null 2>&1; then
+  RUN="gtimeout 15 dina gate-hook"
+fi
+
+# Run the gate, letting it read our stdin (the PreToolUse JSON) and write its own
+# stdout (an `ask` decision) / stderr (a deny reason) straight through.
+$RUN
+rc=$?
+
+case "$rc" in
+  0)   exit 0 ;;                                   # allow (or an `ask` the gate printed)
+  2)   exit 2 ;;                                   # explicit deny (reason already on stderr)
+  124) block "timed out reaching Core" ;;          # timeout(1)/gtimeout killed it
+  *)   block "the gate exited abnormally (code $rc)" ;;  # crash / signal / any non-2 exit
+esac

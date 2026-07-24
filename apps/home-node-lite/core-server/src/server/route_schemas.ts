@@ -96,30 +96,47 @@ export const HEALTHZ_RESPONSE_SCHEMA = {
 // from @dina/core's CoreRouter (task 4.13). These examples document the
 // canonical pattern every route should follow.
 
-/** POST /v1/vault/store body shape. */
-export const VAULT_STORE_BODY_SCHEMA = {
+/** Shared `?persona=` query shape for vault routes. */
+export const VAULT_PERSONA_QUERY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['persona', 'type'],
   properties: {
     persona: PERSONA_SCHEMA,
+  },
+} as const;
+
+/** POST /v1/vault/store body shape.
+ *
+ * Core accepts a partial VaultItem and normalizes defaults at the storage
+ * seam. Keep extension fields open here because the canonical VaultItem has
+ * more provenance/enrichment columns than this representative HNL schema.
+ * Persona belongs in the signed query string, never in this body.
+ */
+export const VAULT_STORE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['type'],
+  properties: {
     type: { type: 'string', minLength: 1, maxLength: 64 },
-    // `content` is intentionally `unknown` (schema `true`) — it's
-    // free-form per VaultItemInput; handlers can narrow if needed.
     content: {},
     source: { type: 'string', maxLength: 128 },
   },
 } as const;
 
-/** POST /v1/vault/query body shape. */
+/** POST /v1/vault/query body shape. Persona is in the signed query string. */
 export const VAULT_QUERY_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['persona'],
   properties: {
-    persona: PERSONA_SCHEMA,
-    q: { type: 'string', maxLength: 1024 },
-    limit: { type: 'integer', minimum: 1, maximum: 500 },
+    text: { type: 'string', maxLength: 4096 },
+    mode: { type: 'string', enum: ['fts5', 'semantic', 'hybrid'] },
+    types: {
+      type: 'array',
+      maxItems: 100,
+      items: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+    limit: { type: 'integer', minimum: 1, maximum: 100 },
+    session_id: { type: 'string', minLength: 1, maxLength: 256 },
   },
 } as const;
 

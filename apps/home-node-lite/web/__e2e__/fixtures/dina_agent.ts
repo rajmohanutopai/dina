@@ -87,17 +87,30 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
     path: string,
     opts: { query?: Record<string, string>; body?: unknown; session?: string } = {},
   ): Promise<AgentResponse> {
+    const query = { ...(opts.query ?? {}) };
+    let body = opts.body;
+    if (opts.session !== undefined) {
+      if (method === 'GET' || method === 'DELETE') {
+        query.session_id = opts.session;
+      } else {
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          throw new Error('dina_agent: a session-bound write requires an object body');
+        }
+        body = { ...(body as Record<string, unknown>), session_id: opts.session };
+      }
+    }
     // Match Core's canonical query serializer (router.ts serialiseQuery uses
     // encodeURIComponent: space → %20, not URLSearchParams' form-encoding
     // space → +). Signing the SAME bytes Core reconstructs is what keeps the
     // Ed25519 verification valid for queries containing spaces / special chars.
-    const queryStr = opts.query
-      ? Object.entries(opts.query)
+    const queryStr =
+      Object.keys(query).length > 0
+        ? Object.entries(query)
           .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
           .join('&')
-      : '';
+        : '';
     const bodyBytes =
-      opts.body !== undefined ? new TextEncoder().encode(JSON.stringify(opts.body)) : new Uint8Array();
+      body !== undefined ? new TextEncoder().encode(JSON.stringify(body)) : new Uint8Array();
     const timestamp = new Date().toISOString(); // RFC3339 (millis + Z) — within Core's window
     const nonce = bytesToHex(new Uint8Array(randomBytes(16)));
     const bodyHash = bytesToHex(sha256(bodyBytes));
@@ -112,11 +125,8 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
         'X-Timestamp': timestamp,
         'X-Nonce': nonce,
         'X-Signature': bytesToHex(signature),
-        // Named-session tag (not part of the signed canonical string — it's an
-        // app-level scope, not an auth field). Scopes the agent's grant.
-        ...(opts.session !== undefined ? { 'x-session': opts.session } : {}),
       },
-      ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     const text = await r.text();
     let body: unknown = null;

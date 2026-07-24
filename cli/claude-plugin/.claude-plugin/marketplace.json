@@ -1,0 +1,12 @@
+{
+  "name": "dina",
+  "owner": { "name": "Dina" },
+  "description": "Dina — sovereign personal AI as a coding-agent plugin: a Core-owned safety gate, portable encrypted memory, and PII scrubbing.",
+  "plugins": [
+    {
+      "name": "dina",
+      "source": "./dina",
+      "description": "Your Dina inside Claude Code: every tool call is sent to a Core-owned deterministic gate; once the hook supervisor launches, gate failures block, with a documented host-mediated residual. Includes portable encrypted memory, intent validation, and PII scrubbing over MCP. Requires dina-agent>=0.19.0."
+    }
+  ]
+}

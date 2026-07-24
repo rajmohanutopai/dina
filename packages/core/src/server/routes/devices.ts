@@ -10,6 +10,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { registerDevice as registerDeviceAuth } from '../../auth/caller_type';
 import {
+  getDeviceByDID,
   registerDevice,
   persistDeviceDurable,
   revokeDeviceDurable,
@@ -22,6 +23,28 @@ import type { CoreRouter } from '../router';
 const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent']);
 
 export function registerDevicesRoutes(router: CoreRouter): void {
+  router.delete('/v1/devices/self', async (req) => {
+    const callerDID = req.callerDID ?? '';
+    if (callerDID === '') {
+      return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
+    }
+    const device = getDeviceByDID(callerDID);
+    if (device === null) {
+      return { status: 404, body: { error: 'device not found' } };
+    }
+
+    const result = await revokeDeviceDurable(device.deviceId);
+    if (!result.durable) {
+      // Access is cut in memory even when persistence fails, but do not tell
+      // the client cleanup is complete until the tombstone and cascades stick.
+      return {
+        status: 503,
+        body: { error: 'device revocation could not be persisted; retry after Core restarts' },
+      };
+    }
+    return { status: 204 };
+  });
+
   router.post('/v1/devices', async (req) => {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const name = typeof body.name === 'string' ? body.name : '';

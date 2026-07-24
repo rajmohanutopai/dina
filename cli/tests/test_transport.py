@@ -14,6 +14,7 @@ from dina_cli.transport import (
     DirectTransport,
     MsgBoxTransport,
     TransportError,
+    _resolve_homenode_x25519_pub,
     select_transport,
 )
 
@@ -44,6 +45,53 @@ def start_health_server():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return f"http://127.0.0.1:{port}", server.shutdown
+
+
+# --- did:key Home Node encryption-key resolution ---
+def test_resolve_homenode_did_key_without_plc_lookup():
+    """A local Home Node's did:key resolves entirely from the DID."""
+    from unittest.mock import patch
+
+    import base58
+    import nacl.bindings
+    from nacl.signing import SigningKey
+
+    ed25519_public = bytes(SigningKey(b"\x01" * 32).verify_key)
+    did = "did:key:z" + base58.b58encode(b"\xed\x01" + ed25519_public).decode()
+    expected = nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(ed25519_public)
+
+    with patch("dina_cli.transport.httpx.get") as get:
+        assert _resolve_homenode_x25519_pub(did) == expected
+        get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "did",
+    [
+        "did:key:znot-base58!",
+        "did:key:z3W3",  # valid base58, wrong length
+        "did:web:node.example.com",
+    ],
+)
+def test_resolve_homenode_key_rejects_malformed_or_unknown_dids(did):
+    """Malformed or unsupported DIDs fail closed without a network fallback."""
+    from unittest.mock import patch
+
+    with patch("dina_cli.transport.httpx.get") as get:
+        assert _resolve_homenode_x25519_pub(did) is None
+        get.assert_not_called()
+
+
+def test_resolve_homenode_did_key_rejects_wrong_multicodec():
+    """A 32-byte key with a non-Ed25519 codec must not be accepted."""
+    from unittest.mock import patch
+
+    import base58
+
+    did = "did:key:z" + base58.b58encode(b"\xec\x01" + b"\x00" * 32).decode()
+    with patch("dina_cli.transport.httpx.get") as get:
+        assert _resolve_homenode_x25519_pub(did) is None
+        get.assert_not_called()
 
 
 # --- TST-MBX-0061: transport=auto, Core reachable → DirectTransport ---

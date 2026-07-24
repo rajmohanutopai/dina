@@ -32,6 +32,12 @@ describe('Authorization Matrix', () => {
       label: 'Admin → persona/unlock',
     },
     { caller: 'admin', method: 'GET', path: '/v1/devices', label: 'Admin → devices' },
+    {
+      caller: 'agent',
+      method: 'DELETE',
+      path: '/v1/devices/self',
+      label: 'Agent → self-revoke device',
+    },
     { caller: 'admin', method: 'POST', path: '/v1/export', label: 'Admin → export' },
     {
       caller: 'connector',
@@ -110,6 +116,18 @@ describe('Authorization Matrix', () => {
     },
     { caller: 'brain', method: 'POST', path: '/v1/export', label: 'Brain x export' },
     { caller: 'connector', method: 'GET', path: '/v1/devices', label: 'Connector x devices' },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/devices/self',
+      label: 'Agent x non-DELETE self-device route',
+    },
+    {
+      caller: 'agent',
+      method: 'DELETE',
+      path: '/v1/devices/another-device',
+      label: 'Agent x revoke another device',
+    },
     { caller: 'device', method: 'GET', path: '/v1/memory/toc', label: 'Device x memory/toc' },
     {
       caller: 'admin',

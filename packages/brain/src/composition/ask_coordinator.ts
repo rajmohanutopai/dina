@@ -124,7 +124,11 @@ export interface CreateAskCoordinatorOptions {
 
 export interface AskCoordinator {
   handleAsk: (req: Parameters<ReturnType<typeof createAskHandler>>[0]) => Promise<AskSubmitResult>;
-  handleStatus: (id: string) => Promise<AskStatusOutcome>;
+  handleStatus: (
+    id: string,
+    requesterDid?: string,
+    sessionId?: string,
+  ) => Promise<AskStatusOutcome>;
   gateway: AskApprovalGateway;
   registry: AskRegistry;
   resumer: AskApprovalResumer;

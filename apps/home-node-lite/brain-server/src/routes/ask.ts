@@ -37,11 +37,17 @@ export interface RegisterAskRoutesOptions {
 interface SubmitBody {
   question?: unknown;
   requesterDid?: unknown;
+  sessionId?: unknown;
   ttlMs?: unknown;
 }
 
 interface IdParams {
   id: string;
+}
+
+interface StatusQuery {
+  requesterDid?: unknown;
+  sessionId?: unknown;
 }
 
 interface DenyBody {
@@ -69,6 +75,9 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
       if (body.ttlMs !== undefined && typeof body.ttlMs !== 'number') {
         return reply.status(400).send({ error: 'ttlMs must be a number when supplied' });
       }
+      if (body.sessionId !== undefined && typeof body.sessionId !== 'string') {
+        return reply.status(400).send({ error: 'sessionId must be a string when supplied' });
+      }
       const headerVal = req.headers['x-request-id'];
       const requestIdHeader =
         typeof headerVal === 'string' ? headerVal : Array.isArray(headerVal) ? headerVal[0] : null;
@@ -77,6 +86,9 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
         requesterDid: body.requesterDid,
         requestIdHeader: requestIdHeader ?? null,
       };
+      if (typeof body.sessionId === 'string' && body.sessionId !== '') {
+        submitInput.sessionId = body.sessionId;
+      }
       if (typeof body.ttlMs === 'number') submitInput.ttlMs = body.ttlMs;
       const result = await coordinator.handleAsk(submitInput);
       return reply.status(result.status).send(result.body);
@@ -86,9 +98,20 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
   // GET /api/v1/ask/:id/status — poll
   app.get(
     `${prefix}/ask/:id/status`,
-    async (req: FastifyRequest<{ Params: IdParams }>, reply: FastifyReply) => {
+    async (
+      req: FastifyRequest<{ Params: IdParams; Querystring: StatusQuery }>,
+      reply: FastifyReply,
+    ) => {
       const id = req.params.id;
-      const result = await coordinator.handleStatus(id);
+      const requesterDid =
+        typeof req.query.requesterDid === 'string' && req.query.requesterDid !== ''
+          ? req.query.requesterDid
+          : undefined;
+      const sessionId =
+        typeof req.query.sessionId === 'string' && req.query.sessionId !== ''
+          ? req.query.sessionId
+          : undefined;
+      const result = await coordinator.handleStatus(id, requesterDid, sessionId);
       return reply.status(result.status).send(result.body);
     },
   );

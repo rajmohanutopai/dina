@@ -1,0 +1,126 @@
+name: CLI and Claude plugin
+
+on:
+  pull_request:
+    paths:
+      - "cli/**"
+      - "packages/core/**"
+      - "packages/brain/**"
+      - "apps/home-node-lite/core-server/**"
+      - "apps/home-node-lite/brain-server/**"
+      - "apps/mobile/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/cli-plugin-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cli/**"
+      - "packages/core/**"
+      - "packages/brain/**"
+      - "apps/home-node-lite/core-server/**"
+      - "apps/home-node-lite/brain-server/**"
+      - "apps/mobile/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/cli-plugin-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: cli/pyproject.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install CLI and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "./cli[dev]"
+
+      - name: Run CLI tests
+        run: python -m pytest cli/tests -q
+
+      - name: Typecheck plugin dependencies
+        run: |
+          npm run typecheck --workspace @dina/core
+          npm run typecheck --workspace @dina/brain
+          npm run typecheck --workspace @dina/home-node-lite-core-server
+          npm run typecheck --workspace @dina/home-node-lite-brain-server
+
+      - name: Test the Core-bound plugin contract
+        run: |
+          npm test --workspace @dina/core -- --runInBand --forceExit \
+            __tests__/agent/coding_permit.test.ts \
+            __tests__/auth/agent_scope.test.ts \
+            __tests__/auth/agent_scope_derivation.test.ts \
+            __tests__/server/routes/agent_audit.test.ts \
+            __tests__/server/routes/ask_session_route.test.ts \
+            __tests__/server/routes/coding_gate.test.ts \
+            __tests__/server/routes/devices_self_revoke.test.ts \
+            __tests__/server/routes/pii_agent.test.ts \
+            __tests__/server/routes/remote_approval.test.ts \
+            __tests__/server/routes/session_route.test.ts
+          npm test --workspace @dina/home-node-lite-core-server -- --runInBand --forceExit \
+            __tests__/coding_gate_impl.test.ts \
+            __tests__/http_ask_handler.test.ts \
+            __tests__/phone_approval_msgbox.test.ts \
+            __tests__/phone_approval_sync.test.ts
+          npm test --workspace @dina/home-node-lite-brain-server -- --runInBand --forceExit \
+            __tests__/ask_routes.test.ts
+
+      - name: Run the live coding-gate E2E
+        env:
+          DINA_GATE_E2E: "1"
+        run: python -m pytest cli/tests/test_gate_e2e.py -s
+
+      # Use the current host validator and installer so Claude Code schema or
+      # auto-discovery changes fail this package before users receive it.
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code
+
+      - name: Validate manifests
+        run: |
+          claude plugin validate --strict cli/claude-plugin/dina
+          claude plugin validate --strict cli/claude-plugin
+
+      - name: Smoke-test an isolated marketplace install
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CLAUDE_CONFIG_DIR
+          CLAUDE_CONFIG_DIR="$(mktemp -d)"
+          claude plugin marketplace add "$GITHUB_WORKSPACE/cli/claude-plugin" --scope user
+          claude plugin install dina@dina --scope user
+          claude plugin list --json > "$RUNNER_TEMP/dina-plugins.json"
+          node <<'NODE'
+          const fs = require("fs");
+          const plugins = JSON.parse(
+            fs.readFileSync(process.env.RUNNER_TEMP + "/dina-plugins.json", "utf8"),
+          );
+          const dina = plugins.find((plugin) => plugin.id === "dina@dina");
+          if (!dina) throw new Error("Dina plugin was not installed");
+          if ((dina.errors ?? []).length > 0) {
+            throw new Error(`Dina plugin load errors: ${dina.errors.join("; ")}`);
+          }
+          if (!fs.existsSync(dina.installPath + "/README.md")) {
+            throw new Error("Installed plugin is missing README.md");
+          }
+          fs.accessSync(dina.installPath + "/bin/dina-gate", fs.constants.X_OK);
+          NODE

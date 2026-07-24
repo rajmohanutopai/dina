@@ -39,3 +39,12 @@ describe('paired-devices PII hygiene', () => {
     expect(matches).toEqual([]);
   });
 });
+
+describe('paired-devices coding-agent authority', () => {
+  const source = fs.readFileSync(SCREEN_PATH, 'utf8');
+
+  it('stamps the coding scope into the owner-minted pairing intent', () => {
+    expect(source).toContain("const scope: AgentScope = 'coding'");
+    expect(source).toMatch(/generatePairingCode\(\{ deviceName: name, role, scope \}\)/);
+  });
+});

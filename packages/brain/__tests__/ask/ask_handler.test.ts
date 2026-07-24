@@ -492,6 +492,22 @@ describe('createAskStatusHandler (task 5.18)', () => {
     }
   });
 
+  it('binds status polling to the original requester and coding session', async () => {
+    const registry = buildRegistry();
+    const record = await registry.enqueue({
+      id: 'dddddddddddddddddddddddd',
+      question: 'q',
+      requesterDid: 'did:key:agent-a',
+      sessionId: 'sess-a',
+    });
+    await registry.markComplete(record.id, JSON.stringify({ text: 'private answer' }));
+    const handler = createAskStatusHandler({ registry });
+
+    expect((await handler(record.id, 'did:key:agent-a', 'sess-a')).status).toBe(200);
+    expect((await handler(record.id, 'did:key:agent-b', 'sess-a')).status).toBe(404);
+    expect((await handler(record.id, 'did:key:agent-a', 'sess-b')).status).toBe(404);
+  });
+
   it('returns 404 for empty id', async () => {
     const handler = createAskStatusHandler({ registry: buildRegistry() });
     const res = await handler('');

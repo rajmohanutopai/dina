@@ -146,11 +146,11 @@ export function useApprovalInbox(): ApprovalInbox {
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
       const headline =
-        entry.kind === 'intent_validation'
+        entry.kind === 'intent_validation' || entry.kind === 'remote_coding_gate'
           ? `${verb} "${entry.capability}"?`
           : `${verb} "${entry.serviceName || entry.capability}"?`;
       const subline =
-        entry.kind === 'intent_validation'
+        entry.kind === 'intent_validation' || entry.kind === 'remote_coding_gate'
           ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
           : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
@@ -291,7 +291,7 @@ export function ApprovalActionCard({
     item.expiresAt !== undefined
       ? ` · expires in ${Math.max(0, item.expiresAt - Math.floor(Date.now() / 1000))}s`
       : '';
-  const isIntent = item.kind === 'intent_validation';
+  const isIntent = item.kind === 'intent_validation' || item.kind === 'remote_coding_gate';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
@@ -418,7 +418,7 @@ export function ApprovalActionCard({
  */
 export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): React.JSX.Element {
   const item = entry;
-  const isIntent = item.kind === 'intent_validation';
+  const isIntent = item.kind === 'intent_validation' || item.kind === 'remote_coding_gate';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
   // PLG-29 #1: mirror the pending card — a resolved WRITE grant must read WRITE.

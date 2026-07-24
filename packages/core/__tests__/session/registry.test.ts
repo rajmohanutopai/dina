@@ -12,6 +12,7 @@ import {
   type SessionRecord,
   type EndReason,
 } from '../../src/session/registry';
+import type { SessionRepository } from '../../src/session/repository';
 
 const A = 'did:key:z6MkAgentA';
 const B = 'did:key:z6MkAgentB';
@@ -122,6 +123,62 @@ describe('end — revoke-on-end', () => {
   });
 });
 
+describe('durable lifecycle writes — fail closed', () => {
+  function throwingRepo(): SessionRepository {
+    return {
+      upsert: () => {
+        throw new Error('disk unavailable');
+      },
+      loadActive: () => [],
+    };
+  }
+
+  it('does not publish a newly-started session in memory when persistence fails', () => {
+    const reg = new SessionRegistry(makeClock().now, undefined, throwingRepo());
+    expect(() => reg.start({ agentDid: A, hostSessionId: 'host-1' })).toThrow(
+      'disk unavailable',
+    );
+    expect(reg.liveCount()).toBe(0);
+  });
+
+  it('does not report an end or fire cleanup when the durable tombstone fails', () => {
+    let fail = false;
+    let cleanupCalls = 0;
+    const repo: SessionRepository = {
+      upsert: () => {
+        if (fail) throw new Error('disk unavailable');
+      },
+      loadActive: () => [],
+    };
+    const reg = new SessionRegistry(makeClock().now, () => cleanupCalls++, repo);
+    const session = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    fail = true;
+
+    expect(() => reg.end(session.sessionId, A)).toThrow('disk unavailable');
+    expect(reg.validate(session.sessionId, A).ok).toBe(true);
+    expect(cleanupCalls).toBe(0);
+  });
+
+  it('does not extend the in-memory lease when the durable heartbeat fails', () => {
+    const clock = makeClock();
+    let fail = false;
+    const repo: SessionRepository = {
+      upsert: () => {
+        if (fail) throw new Error('disk unavailable');
+      },
+      loadActive: () => [],
+    };
+    const reg = new SessionRegistry(clock.now, undefined, repo);
+    const session = reg.start({ agentDid: A, hostSessionId: 'host-1', leaseMs: 100 });
+    const originalExpiry = session.leaseExpiresAtMs;
+    fail = true;
+    clock.advance(10);
+
+    expect(() => reg.renew(session.sessionId, A, 1_000)).toThrow('disk unavailable');
+    expect(reg.get(session.sessionId)?.leaseExpiresAtMs).toBe(originalExpiry);
+  });
+});
+
 describe('reapExpired — lease reconciliation sweep', () => {
   it('ends lapsed sessions (revoking grants) and leaves live ones', () => {
     const clock = makeClock();
@@ -135,5 +192,28 @@ describe('reapExpired — lease reconciliation sweep', () => {
     expect(ended).toEqual([short.sessionId]);
     expect(reg.validate(long.sessionId, B).ok).toBe(true);
     expect(reg.liveCount()).toBe(1);
+  });
+});
+
+describe('listActive — caller isolation', () => {
+  it('returns only live sessions for the requested DID', () => {
+    const clock = makeClock();
+    const reg = new SessionRegistry(clock.now);
+    const first = reg.start({ agentDid: A, hostSessionId: 'a-old' });
+    clock.advance(1);
+    const second = reg.start({ agentDid: A, hostSessionId: 'a-new' });
+    reg.start({ agentDid: B, hostSessionId: 'b' });
+    reg.end(first.sessionId, A);
+
+    expect(reg.listActive(A).map((s) => s.sessionId)).toEqual([second.sessionId]);
+    expect(reg.listActive(B)).toHaveLength(1);
+  });
+
+  it('reaps expired sessions before projecting them', () => {
+    const clock = makeClock();
+    const reg = new SessionRegistry(clock.now);
+    reg.start({ agentDid: A, hostSessionId: 'short', leaseMs: 10 });
+    clock.advance(11);
+    expect(reg.listActive(A)).toEqual([]);
   });
 });

@@ -419,8 +419,10 @@ describe('ordered boot (task 4.3)', () => {
           url: `/v1/workflow/tasks?${query}`,
           headers,
         });
-        expect(res.statusCode).toBe(503);
-        expect(res.json()).toEqual({ error: 'workflow service not wired' });
+        // Owner-local workflow storage is available without PDS provisioning;
+        // coding approvals must not depend on the public service plane.
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ tasks: [], count: 0 });
       } finally {
         await booted.app.close();
       }

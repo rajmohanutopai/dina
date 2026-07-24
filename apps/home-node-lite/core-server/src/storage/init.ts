@@ -29,9 +29,11 @@ import {
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
   SQLiteAgentGrantRepository,
+  getAgentGrantRepository,
   SessionRegistry,
   SQLiteSessionRepository,
   setSessionRegistry,
+  revokeSessionApprovals,
   hydrateContactDirectory,
   hydrateServiceConfig,
   recoverOutboxOnBoot,
@@ -226,7 +228,19 @@ export async function initializeStorage(
   // in-memory global that every /v1/session route + the coding gate read.
   const sessionRegistry = new SessionRegistry(
     undefined,
-    undefined,
+    (session) => {
+      const now = Date.now();
+      try {
+        getAgentGrantRepository()?.revokeForSession(session.agentDid, session.sessionId, now);
+      } catch {
+        // The durable session tombstone is already committed, so this grant is
+        // inert even if cleanup fails. Keep boot/runtime available and surface a
+        // PII-safe diagnostic rather than logging the DID or host-session name.
+        logger.error({ sessionId: session.sessionId }, 'session grant cleanup failed');
+      } finally {
+        revokeSessionApprovals(session.agentDid, session.sessionId);
+      }
+    },
     new SQLiteSessionRepository(identityDB),
   );
   sessionRegistry.reconcile();

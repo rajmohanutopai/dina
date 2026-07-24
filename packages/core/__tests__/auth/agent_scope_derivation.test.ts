@@ -57,6 +57,26 @@ describe('agent_scope derivation + enforcement (signed pipeline)', () => {
     expect(r.agentScope).toBe('coding');
   });
 
+  it("admits only a coding agent to the agent PII scrub façade", () => {
+    wire('coding');
+    expect(authenticateRequest(signed('POST', '/v1/agent/scrub')).authenticated).toBe(true);
+
+    wire('runner');
+    const denied = authenticateRequest(signed('POST', '/v1/agent/scrub'));
+    expect(denied.authenticated).toBe(false);
+    expect(denied.reason).toMatch(/agent_scope 'coding' required/);
+  });
+
+  it("admits only a coding agent to its own audit projection", () => {
+    wire('coding');
+    expect(authenticateRequest(signed('GET', '/v1/agent/audit')).authenticated).toBe(true);
+
+    wire('runner');
+    const denied = authenticateRequest(signed('GET', '/v1/agent/audit'));
+    expect(denied.authenticated).toBe(false);
+    expect(denied.reason).toMatch(/agent_scope 'coding' required/);
+  });
+
   it('a coding agent is DENIED the runner-only workflow claim', () => {
     wire('coding');
     const r = authenticateRequest(signed('POST', '/v1/workflow/tasks/claim'));

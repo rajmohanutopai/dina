@@ -14,6 +14,7 @@ import { InProcessTransport } from '../../../src/client/in-process-transport';
 import { createPersona, resetPersonaState } from '../../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerVaultRoutes } from '../../../src/server/routes/vault';
+import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
 import {
   InMemoryVaultRepository,
   setVaultRepository,
@@ -92,6 +93,9 @@ describe('vault routes ⇄ CoreClient contract', () => {
 // REAL router so the wiring (callerType discrimination → requireAgent-
 // PersonaAccess → 403 approval_required, no vault read) is exercised.
 describe('vault/query — agent persona-access gate', () => {
+  const agentDID = 'did:key:agentX';
+  let sessionId: string;
+
   beforeEach(() => {
     resetVaultRepositories();
     setVaultRepository('general', new InMemoryVaultRepository());
@@ -102,28 +106,40 @@ describe('vault/query — agent persona-access gate', () => {
     createPersona('health', 'sensitive');
     setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
     setAgentGrantRepository(new InMemoryAgentGrantRepository());
+    const sessions = new SessionRegistry();
+    sessionId = sessions.start({ agentDid: agentDID, hostSessionId: 'vault-test' }).sessionId;
+    setSessionRegistry(sessions);
   });
   afterEach(() => {
     resetVaultRepositories();
     resetPersonaState();
     setWorkflowService(null);
     setAgentGrantRepository(null);
+    setSessionRegistry(null);
   });
 
-  function queryReq(persona: string, callerType?: string): CoreRequest {
+  function queryReq(
+    persona: string,
+    callerType?: string,
+    session: string | null = sessionId,
+  ): CoreRequest {
     return {
       method: 'POST',
       path: '/v1/vault/query',
       query: { persona },
       headers: {},
-      body: { text: 'private health question', mode: 'fts5' },
+      body: {
+        text: 'private health question',
+        mode: 'fts5',
+        ...(session !== null ? { session_id: session } : {}),
+      },
       rawBody: new Uint8Array(),
       params: {},
       // trustedInProcess bypasses auth; we inject callerType to exercise
       // the handler's caller-type branch directly (in prod the auth layer
       // sets it). callerType undefined models the owner's in-process app.
       trustedInProcess: true,
-      ...(callerType !== undefined ? { callerType, callerDID: 'did:key:agentX' } : {}),
+      ...(callerType !== undefined ? { callerType, callerDID: agentDID } : {}),
     };
   }
 
@@ -150,20 +166,50 @@ describe('vault/query — agent persona-access gate', () => {
     expect(resp.status).toBe(200);
   });
 
+  it('an AGENT must bind even a free-persona read to a live signed session', async () => {
+    const router = new CoreRouter();
+    registerVaultRoutes(router);
+    const missing = await router.handle(queryReq('general', 'agent', null));
+    expect(missing.status).toBe(401);
+    expect((missing.body as { error?: string }).error).toBe('invalid_session');
+
+    const headerOnly = queryReq('general', 'agent', null);
+    headerOnly.headers['x-session'] = sessionId;
+    const unsignedHeader = await router.handle(headerOnly);
+    expect(unsignedHeader.status).toBe(401);
+    expect((unsignedHeader.body as { error?: string }).error).toBe('invalid_session');
+  });
+
+  it('an ended or foreign session cannot reach the vault gate', async () => {
+    const sessions = new SessionRegistry();
+    const ended = sessions.start({ agentDid: agentDID, hostSessionId: 'ended' });
+    sessions.end(ended.sessionId, agentDID);
+    const foreign = sessions.start({ agentDid: 'did:key:other', hostSessionId: 'foreign' });
+    setSessionRegistry(sessions);
+
+    const router = new CoreRouter();
+    registerVaultRoutes(router);
+    for (const invalid of [ended.sessionId, foreign.sessionId]) {
+      const response = await router.handle(queryReq('general', 'agent', invalid));
+      expect(response.status).toBe(401);
+      expect((response.body as { error?: string }).error).toBe('invalid_session');
+    }
+  });
+
   it('the gate also covers /v1/vault/list (not just query) — agent on sensitive → 403', async () => {
     const router = new CoreRouter();
     registerVaultRoutes(router);
     const resp = await router.handle({
       method: 'GET',
       path: '/v1/vault/list',
-      query: { persona: 'health' },
+      query: { persona: 'health', session_id: sessionId },
       headers: {},
       body: undefined,
       rawBody: new Uint8Array(),
       params: {},
       trustedInProcess: true,
       callerType: 'agent',
-      callerDID: 'did:key:agentX',
+      callerDID: agentDID,
     });
     expect(resp.status).toBe(403);
     expect((resp.body as { approval_required?: boolean }).approval_required).toBe(true);
@@ -189,14 +235,14 @@ describe('vault/query — agent persona-access gate', () => {
       params: {},
       trustedInProcess: true,
       callerType: 'agent',
-      callerDID: 'did:key:agentX',
+      callerDID: agentDID,
     } as const;
     const store = await router.handle({
       ...base,
       method: 'POST',
       path: '/v1/vault/store',
       query: { persona: 'health' },
-      body: { type: 'note', content: { text: 'x' } },
+      body: { type: 'note', content: { text: 'x' }, session_id: sessionId },
     });
     expect(store.status).toBe(403);
     expect((store.body as { approval_required?: boolean }).approval_required).toBe(true);
@@ -205,7 +251,7 @@ describe('vault/query — agent persona-access gate', () => {
       ...base,
       method: 'DELETE',
       path: '/v1/vault/item/some-id',
-      query: { persona: 'health' },
+      query: { persona: 'health', session_id: sessionId },
       body: undefined,
       params: { id: 'some-id' },
     });

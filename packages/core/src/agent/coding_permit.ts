@@ -164,6 +164,91 @@ export function codingGateIdemKey(
   return `${CODING_GATE_APPROVAL_TYPE}:${agentDid}:${sessionId}:${payloadHash}`;
 }
 
+export type RedeemCodingApprovalResult =
+  | { kind: 'redeemed'; taskId: string }
+  | { kind: 'not_ready'; taskId?: string }
+  | { kind: 'invalid'; taskId: string };
+
+/**
+ * Atomically consume the durable receipt for an approved coding action.
+ *
+ * The Node-side PermitStore is deliberately short-lived. The workflow task is
+ * therefore the authoritative, crash-safe single-use ledger:
+ *
+ *   pending_approval -> queued              owner approved
+ *   queued -> running -> completed          one exact retry redeemed approval
+ *
+ * The queued-to-running CAS ensures concurrent identical retries cannot both
+ * run. Completing immediately records the receipt as spent. If Core crashes
+ * after the CAS but before replying, the action remains blocked (safe failure)
+ * and the expiry sweeper eventually terminalizes the stranded task.
+ */
+export function redeemApprovedCodingGateApproval(params: {
+  agentDid: string;
+  sessionId: string;
+  payloadHash: string;
+  tool: string;
+  action: string;
+  risk: RiskLevel;
+  now?: number;
+}): RedeemCodingApprovalResult {
+  const service = getWorkflowService();
+  if (service === null) return { kind: 'not_ready' };
+
+  const idemKey = codingGateIdemKey(params.agentDid, params.sessionId, params.payloadHash);
+  const task = service.store().getActiveByIdempotencyKey(idemKey);
+  if (task === null) return { kind: 'not_ready' };
+
+  const payload = parseCodingGateApprovalPayload(task.payload);
+  if (
+    payload === null ||
+    payload.agent_did !== params.agentDid ||
+    payload.session !== params.sessionId ||
+    payload.payload_hash !== params.payloadHash ||
+    payload.tool !== params.tool ||
+    payload.action !== params.action ||
+    payload.risk !== params.risk
+  ) {
+    return { kind: 'invalid', taskId: task.id };
+  }
+  if (task.status !== WorkflowTaskState.Queued) {
+    return { kind: 'not_ready', taskId: task.id };
+  }
+
+  const now = params.now ?? Date.now();
+  const won = service
+    .store()
+    .transition(task.id, WorkflowTaskState.Queued, WorkflowTaskState.Running, now);
+  if (!won) return { kind: 'not_ready', taskId: task.id };
+
+  try {
+    service.complete(
+      task.id,
+      JSON.stringify({ type: CODING_GATE_APPROVAL_TYPE, redeemed: true }),
+      'Coding approval redeemed',
+      params.agentDid,
+    );
+  } catch (err) {
+    // No allow response has been returned yet. Terminal failure is safe and
+    // frees the idempotency key for a fresh owner decision.
+    try {
+      service.fail(task.id, 'coding approval redemption failed', params.agentDid);
+    } catch {
+      // The original error is more useful. A concurrent/terminal transition is
+      // still fail-closed because this function does not return `redeemed`.
+    }
+    throw err;
+  }
+
+  appendAudit(
+    params.agentDid,
+    'coding_gate_redeemed',
+    params.tool,
+    `action=${params.action} risk=${params.risk} task=${task.id}`,
+  );
+  return { kind: 'redeemed', taskId: task.id };
+}
+
 function shortDID(did: string): string {
   return did.length > 24 ? `${did.slice(0, 16)}…${did.slice(-6)}` : did;
 }

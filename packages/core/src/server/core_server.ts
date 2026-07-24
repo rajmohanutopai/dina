@@ -29,6 +29,8 @@ import { registerServiceConfigRoutes } from './routes/service_config';
 import { registerRunRoutes } from './routes/run';
 import { registerWatchRoutes } from './routes/watch';
 import { registerWorkflowRoutes } from './routes/workflow';
+import { registerRemoteApprovalRoutes } from './routes/remote_approval';
+import { registerAgentAuditRoutes } from './routes/agent_audit';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
 import {
   registerServiceRespondRoutes,
@@ -96,6 +98,7 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerD2DQuarantineRoutes(router);
   registerServiceConfigRoutes(router);
   registerWorkflowRoutes(router);
+  registerRemoteApprovalRoutes(router);
   // Owner-only interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md
   // §12.5). Guarded by the authz matrix (/v1/run → owner) + an in-handler
   // owner guard; reads the module-global RunService wired at bootstrap.
@@ -164,15 +167,16 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // returns allow / approval_required / deny. The fs-backed gate is injected
   // by the Node Core process; absent it, the route reports 501 (never allow).
   registerCodingGateRoutes(router, options.codingGate);
+  registerAgentAuditRoutes(router);
 
   // Items 5c/9/11/12 — the coding-agent façades (`/v1/agent/{memory,find-
   // service,talk,delegate,peerlens}`). Each is scope-gated to `coding` and
   // delegates to an injected backing; unwired backings register no route.
   registerAgentFacadeRoutes(router, options.agentFacades);
 
-  // Session lifecycle — paired dina-agent opens a session before each
-  // delegation-task claim. Stub for now; full persona-pinning is a
-  // Go-Core port still pending in TS. See `routes/session.ts`.
+  // Durable, DID-bound session lifecycle. Coding hosts and delegation runners
+  // use these leased sessions to scope persona grants and approvals; ending or
+  // expiring one revokes that authority.
   registerSessionRoutes(router);
 
   // Wire the device-role resolver so `resolveCallerType` can map paired

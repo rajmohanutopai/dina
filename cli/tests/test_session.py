@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-import json
+import os
+import time
 
+import pytest
+
+from dina_cli import config as config_mod
 from dina_cli.session import SessionStore
 
 
@@ -13,7 +17,15 @@ def test_new_id_format():
     store = SessionStore()
     sid = store.new_id()
     assert sid.startswith("pii_")
-    assert len(sid) == 12  # "pii_" + 8 hex chars
+    assert len(sid) == 36  # "pii_" + 32 hex chars
+
+
+def test_default_store_follows_active_cli_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path / "instance-b")
+    store = SessionStore()
+    store.save("pii_deadbeef", [{"type": "EMAIL", "value": "a@b.com"}])
+
+    assert (tmp_path / "instance-b" / "sessions" / "pii_deadbeef.json").is_file()
 
 
 # TST-CLI-048
@@ -67,6 +79,34 @@ def test_rehydrate(tmp_path):
     assert result == "Dr. Sharma at Apollo Hospital recommends dietary changes"
 
 
+def test_rehydrate_can_consume_sensitive_mapping(tmp_path):
+    store = SessionStore(base_dir=tmp_path)
+    store.save("pii_deadbeef", [{"type": "EMAIL", "value": "a@b.com"}])
+
+    assert store.rehydrate("[EMAIL_1]", "pii_deadbeef", consume=True) == "a@b.com"
+    with pytest.raises(FileNotFoundError):
+        store.load("pii_deadbeef")
+
+
+def test_expired_mapping_is_deleted(tmp_path):
+    store = SessionStore(base_dir=tmp_path, ttl_seconds=1)
+    store.save("pii_deadbeef", [{"type": "EMAIL", "value": "a@b.com"}])
+    path = tmp_path / "pii_deadbeef.json"
+    old = time.time() - 2
+    os.utime(path, (old, old))
+
+    with pytest.raises(FileNotFoundError, match="expired"):
+        store.load("pii_deadbeef")
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("session_id", ["../config", "a/b", "", " "])
+def test_session_id_cannot_escape_store(tmp_path, session_id):
+    store = SessionStore(base_dir=tmp_path)
+    with pytest.raises(ValueError, match="invalid PII session id"):
+        store.load(session_id)
+
+
 # TST-CLI-051
 # TRACE: {"suite": "CLI", "case": "0051", "section": "05", "sectionName": "Session", "subsection": "01", "scenario": "05", "title": "load_missing_session"}
 def test_load_missing_session(tmp_path):
@@ -87,3 +127,4 @@ def test_atomic_write(tmp_path):
     files = list(tmp_path.iterdir())
     assert len(files) == 1
     assert files[0].name == "sess_atomic12.json"
+    assert files[0].stat().st_mode & 0o777 == 0o600

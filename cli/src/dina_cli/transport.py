@@ -118,13 +118,34 @@ class DirectTransport:
 
 
 def _resolve_homenode_x25519_pub(homenode_did: str, plc_url: str = "https://plc.directory") -> bytes | None:
-    """Resolve the Home Node's X25519 public key from its PLC document.
+    """Resolve the Home Node's X25519 public key for NaCl sealed-box encryption.
 
-    Fetches the PLC doc, extracts #dina_signing Ed25519 key, converts to X25519.
-    Returns None if resolution fails (plaintext fallback).
+    Two node identity shapes:
+
+    - ``did:key`` — a self-hosted / offline Home Node with no PLC document. The
+      Ed25519 public key is embedded in the DID itself (``did:key:z<base58btc(
+      0xed01 + raw_pubkey)>``), so decode it and convert to X25519 with **no
+      network lookup**. Core derives its unsealing X25519 from the SAME identity
+      key, so a box sealed to this key opens on the node.
+    - ``did:plc`` — fetch the PLC doc and convert its #dina_signing key.
+
+    Returns None only if resolution genuinely fails.
     """
+    import base58
+    import nacl.bindings
+
+    # did:key is self-certifying — the Ed25519 pubkey is in the DID, no PLC.
+    if homenode_did.startswith("did:key:z"):
+        try:
+            raw = base58.b58decode(homenode_did[len("did:key:z"):])
+            if len(raw) != 34 or raw[0] != 0xED or raw[1] != 0x01:
+                return None
+            return nacl.bindings.crypto_sign_ed25519_pk_to_curve25519(bytes(raw[2:]))
+        except Exception:
+            return None
+
     if not homenode_did.startswith("did:plc:"):
-        return None  # did:key doesn't need PLC lookup
+        return None  # unknown DID method — no resolution path
 
     try:
         resp = httpx.get(f"{plc_url}/{homenode_did}", timeout=10)

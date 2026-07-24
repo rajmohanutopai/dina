@@ -165,8 +165,11 @@ class DinaClient:
         body_bytes = self._extract_body(kwargs)
         query = ""
         if "params" in kwargs and kwargs["params"]:
-            from urllib.parse import urlencode
-            query = urlencode(kwargs["params"], doseq=True)
+            from urllib.parse import quote, urlencode
+            # Core's canonical query serializer follows encodeURIComponent
+            # (spaces are %20), not form encoding (spaces are +). Sign and send
+            # the exact representation Core reconstructs.
+            query = urlencode(kwargs["params"], doseq=True, quote_via=quote)
         did, ts, nonce, sig = self._identity.sign_request(
             method, path, body_bytes, query=query,
         )
@@ -255,7 +258,9 @@ class DinaClient:
         """
         body: dict[str, Any] = {"prompt": prompt}
         headers: dict[str, str] = {}
-        if session:
+        if self._config.role == "agent":
+            body["session_id"] = session
+        elif session:
             headers["X-Session"] = session
         resp = self._request(
             self._core, "POST", "/api/v1/ask",
@@ -263,12 +268,65 @@ class DinaClient:
         )
         return resp.json()
 
-    def ask_status(self, request_id: str) -> dict:
+    def ask_status(self, request_id: str, session: str = "") -> dict:
         """Poll the status of a pending ask request."""
+        params = {"session_id": session} if self._config.role == "agent" else None
         resp = self._request(
             self._core, "GET", f"/api/v1/ask/{request_id}/status",
+            params=params,
         )
         return resp.json()
+
+    # -- Coding-agent gate (raw tool-call classification) ------------------
+
+    def gate(
+        self,
+        tool_name: str,
+        tool_input: dict,
+        mode: str = "enforce",
+        session: str = "",
+        host_session: str = "",
+        cwd: str | None = None,
+    ) -> dict:
+        """Classify a raw coding-agent tool call via POST /v1/agent/gate.
+
+        Sends the RAW ``(tool_name, tool_input)`` for Core to classify + score
+        (Core owns the policy — the caller never decides). Returns the decision
+        ``{action, risk, outcome, enforced, permit_id, task_id, reason}`` where
+        ``outcome`` is ``allow`` | ``approval_required`` | ``deny``. Raises
+        ``DinaClientError`` on any non-2xx (a 501 when the node has no gate
+        wired, a 401 for a bad/missing session) so the PreToolUse hook can fail
+        CLOSED. Pass either an opaque Core ``session`` or the host's stable
+        ``host_session`` id; Core atomically resolves the latter to a
+        DID-bound session. Supplying neither is rejected.
+        """
+        if session and host_session:
+            raise ValueError("pass either session or host_session, not both")
+        body: dict[str, Any] = {
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "mode": mode,
+        }
+        if session:
+            body["session_id"] = session
+        if host_session:
+            body["host_session_id"] = host_session
+        if cwd:
+            body["cwd"] = cwd
+        resp = self._request(self._core, "POST", "/v1/agent/gate", json=body)
+        return resp.json()
+
+    def audit_query(self, limit: int = 20, action: str = "") -> dict:
+        """Read audit entries through the surface allowed for this caller.
+
+        Coding agents receive only their own projected gate decisions. User and
+        admin clients retain the legacy owner audit endpoint.
+        """
+        path = "/v1/agent/audit" if self._config.role == "agent" else "/v1/audit/query"
+        params = {"limit": str(limit)}
+        if action:
+            params["action"] = action
+        return self._request(self._core, "GET", path, params=params).json()
 
     # -- Staging (universal content ingestion) ------------------------------
 
@@ -302,7 +360,8 @@ class DinaClient:
             self._core,
             "POST",
             "/v1/vault/store",
-            json={"persona": persona, "item": item},
+            params={"persona": persona},
+            json=item,
         )
         return resp.json()
 
@@ -313,16 +372,28 @@ class DinaClient:
         types: list[str] | None = None,
         limit: int = 50,
         extra_headers: dict[str, str] | None = None,
+        session: str = "",
     ) -> list[dict]:
-        """Query the vault and return matching items."""
+        """Query the vault and return matching items.
+
+        This is an internal/admin surface; coding agents should normally use
+        :meth:`ask`. When an agent does use the route, its live Core session is
+        carried in the signed JSON body rather than the unsigned X-Session
+        header.
+        """
+        body: dict[str, Any] = {
+            "text": query,
+            "mode": "hybrid",
+            "types": types or [],
+            "limit": limit,
+        }
+        if self._config.role == "agent":
+            if not session:
+                raise ValueError("agent vault query requires a session")
+            body["session_id"] = session
         kwargs: dict[str, Any] = {
-            "json": {
-                "persona": persona,
-                "query": query,
-                "mode": "hybrid",
-                "types": types or [],
-                "limit": limit,
-            },
+            "params": {"persona": persona},
+            "json": body,
         }
         if extra_headers:
             kwargs["headers"] = extra_headers
@@ -366,13 +437,32 @@ class DinaClient:
 
     # -- PII ---------------------------------------------------------------
 
-    def remember(self, text: str, session: str = "", source_id: str = "", metadata: str = "") -> dict:
-        """Store a memory via POST /api/v1/remember.
+    def remember(
+        self,
+        text: str,
+        session: str = "",
+        source_id: str = "",
+        metadata: str = "",
+        persona: str = "",
+    ) -> dict:
+        """Store a memory through the route appropriate for this caller.
 
-        Returns semantic completion: stored / needs_approval / processing / failed.
-        Blocks up to ~15s waiting for staging to complete.
-        Use remember_check(id) to poll if status is 'processing'.
+        Coding agents use the narrow, session-bound memory facade. User/device
+        callers retain the legacy staging pipeline, which can classify the
+        memory asynchronously.
         """
+        if self._config.role == "agent":
+            body: dict[str, Any] = {"content": text, "session_id": session}
+            if persona:
+                body["persona"] = persona
+            resp = self._request(
+                self._core,
+                "POST",
+                "/v1/agent/memory",
+                json=body,
+            )
+            return resp.json()
+
         resp = self._request(
             self._core,
             "POST",
@@ -398,10 +488,11 @@ class DinaClient:
 
     def pii_scrub(self, text: str) -> dict:
         """Scrub PII from text."""
+        path = "/v1/agent/scrub" if self._config.role == "agent" else "/v1/pii/scrub"
         resp = self._request(
             self._core,
             "POST",
-            "/v1/pii/scrub",
+            path,
             json={"text": text},
         )
         return resp.json()
@@ -418,31 +509,42 @@ class DinaClient:
     def process_event(self, event: dict, session: str = "") -> dict:
         """Send an event to Core's agent validation proxy.
 
-        Core authenticates via Ed25519 signature (device auth) and forwards
-        to brain's guardian internally. When ``session`` is provided, it is
-        sent as ``X-Session`` header for session-scoped approval grants.
+        Core authenticates via Ed25519 signature (device auth). Agent callers
+        carry the session in the signed JSON body; legacy user/device callers
+        retain the compatibility header.
         """
-        extra_headers = {}
-        if session:
+        body = dict(event)
+        extra_headers: dict[str, str] = {}
+        if self._config.role == "agent":
+            if not session:
+                raise ValueError("agent validation requires a session")
+            body["session_id"] = session
+        elif session:
             extra_headers["X-Session"] = session
         resp = self._request(
             self._core,
             "POST",
             "/v1/agent/validate",
-            json=event,
+            json=body,
             headers=extra_headers if extra_headers else None,
         )
         return resp.json()
 
     def get_proposal_status(self, proposal_id: str, session: str = "") -> dict:
         """Poll proposal status via Core's intent proposal endpoint."""
-        extra = {}
-        if session:
+        extra: dict[str, str] = {}
+        params: dict[str, str] = {}
+        if self._config.role == "agent":
+            if not session:
+                raise ValueError("agent proposal status requires a session")
+            params["session_id"] = session
+        elif session:
             extra["X-Session"] = session
         resp = self._request(
             self._core,
             "GET",
             f"/v1/intent/proposals/{proposal_id}/status",
+            params=params if params else None,
             headers=extra if extra else None,
         )
         return resp.json()
@@ -450,17 +552,29 @@ class DinaClient:
     # -- Sessions --------------------------------------------------------------
 
     def session_start(self, name: str) -> dict:
-        """Start a named session (POST /v1/session/start)."""
+        """Start or resume a Core session for the host task name."""
         resp = self._request(
-            self._core, "POST", "/v1/session/start", json={"name": name},
+            self._core,
+            "POST",
+            "/v1/session/start",
+            json={"host_session_id": name},
         )
         return resp.json()
 
-    def session_end(self, name: str) -> None:
+    def session_end(self, session_id: str) -> dict:
         """End a session and revoke all grants (POST /v1/session/end)."""
-        self._request(
-            self._core, "POST", "/v1/session/end", json={"name": name},
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/session/end",
+            json={"session_id": session_id},
         )
+        return resp.json()
+
+    def session_list(self) -> dict:
+        """List this authenticated caller's active Core sessions."""
+        resp = self._request(self._core, "GET", "/v1/sessions")
+        return resp.json()
 
     def proposal_status(self, proposal_id: str) -> dict:
         """Poll intent proposal status (GET /v1/intent/proposals/{id}/status)."""

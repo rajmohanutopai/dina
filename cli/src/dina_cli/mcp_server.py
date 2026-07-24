@@ -12,16 +12,22 @@ Task execution is handled by `dina agent-daemon` (separate process).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastmcp import FastMCP
 
 from .client import DinaClient, DinaClientError
 from .config import load_config
+from .session import SessionStore
 
 mcp = FastMCP("dina")
 
 _client: DinaClient | None = None
+_sessions = SessionStore()
+# New IDs carry 128 random bits. Accept the earlier 8-hex shape so an
+# in-flight mapping can still be consumed across a CLI upgrade.
+_PII_ID_RE = re.compile(r"^pii_(?:[0-9a-f]{8}|[0-9a-f]{32})$")
 
 
 def _get_client() -> DinaClient:
@@ -47,7 +53,7 @@ def dina_session_start(name: str = "") -> dict:
 
 @mcp.tool()
 def dina_session_end(session_id: str) -> dict:
-    """End a Dina session. Revokes all grants and closes sensitive vaults."""
+    """End a Dina session and revoke its scoped grants and approvals."""
     c = _get_client()
     c.session_end(session_id)
     return {"status": "ended", "session": session_id}
@@ -70,7 +76,7 @@ def dina_validate(
     """Validate an action before executing it. Dina checks risk and user policy.
 
     CRITICAL: If status is 'pending_approval', do NOT execute the action.
-    The human will be notified via Telegram. Wait for dina_validate_status
+    The human will be notified in Dina. Wait for dina_validate_status
     to return 'approved' before proceeding. Never assume approval.
 
     Args:
@@ -168,7 +174,7 @@ def dina_ask(query: str, session: str) -> dict:
 
 
 @mcp.tool()
-def dina_ask_status(request_id: str) -> dict:
+def dina_ask_status(request_id: str, session: str) -> dict:
     """Poll a previously-issued dina_ask. Returns one of:
 
       - status: 'complete', content: '<answer>'  → use the answer
@@ -185,14 +191,20 @@ def dina_ask_status(request_id: str) -> dict:
     request lapse.
     """
     c = _get_client()
-    return c.ask_status(request_id)
+    return c.ask_status(request_id, session=session)
 
 
 @mcp.tool()
-def dina_remember(text: str, session: str, category: str = "") -> dict:
-    """Store a fact in the vault. Dina classifies it into the right persona."""
+def dina_remember(text: str, session: str, persona: str = "") -> dict:
+    """Store a fact through Dina's session-bound coding-agent memory ingress.
+
+    The default target is the General vault. Supply ``persona`` only when the
+    user or task explicitly identifies the relevant vault. Sensitive or locked
+    vaults can return ``approval_required``; that means no memory was written
+    and the agent must not claim otherwise.
+    """
     c = _get_client()
-    return c.remember(text, session=session)
+    return c.remember(text, session=session, persona=persona)
 
 
 # ---------------------------------------------------------------------------
@@ -254,21 +266,61 @@ def dina_scrub(text: str) -> dict:
     """Remove PII from text. Returns scrubbed text + pii_id for rehydration.
     Always scrub before passing user content to external APIs."""
     c = _get_client()
-    return c.pii_scrub(text)
+    result = c.pii_scrub(text)
+    scrubbed = result.get("scrubbed", text)
+    entities = result.get("entities", [])
+    if not isinstance(scrubbed, str) or not isinstance(entities, list):
+        raise DinaClientError("Core returned a malformed PII scrub response")
+
+    pii_id = _sessions.new_id()
+    # Persist an empty mapping too: rehydrating text with no detected PII
+    # should be a valid identity operation, not a missing-session error.
+    _sessions.save(pii_id, entities)
+    return {"scrubbed": scrubbed, "pii_id": pii_id}
+
+
+@mcp.tool()
+def dina_rehydrate(text: str, pii_id: str) -> dict:
+    """Restore PII tokens after an external API returns.
+
+    Use only the pii_id returned by dina_scrub. Rehydration happens locally;
+    the original values are not sent back to Core or another service.
+    """
+    if _PII_ID_RE.fullmatch(pii_id) is None:
+        raise ValueError("Invalid pii_id; use the value returned by dina_scrub")
+    try:
+        restored = _sessions.rehydrate(text, pii_id, consume=True)
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError(f"PII session {pii_id} was not found or has expired") from exc
+    return {"restored": restored}
 
 
 @mcp.tool()
 def dina_status() -> dict:
-    """Check Dina connectivity and identity."""
+    """Check Dina connectivity, pairing, and identity."""
     c = _get_client()
     try:
         c._request(c._core, "GET", "/healthz")
+        # /healthz is public and proves reachability only. This caller-scoped
+        # route proves the current did:key is actually paired and authorized.
+        c.session_list()
         did = c._identity.did()
-        return {"status": "connected", "did": did}
+        return {"status": "connected", "paired": True, "did": did}
     except Exception as e:
-        return {"status": "unreachable", "error": str(e)}
+        return {"status": "unavailable", "paired": False, "error": str(e)}
 
 
-def run_server():
+def configure_profile(profile: str) -> None:
+    """Remove tools that do not belong to the selected host contract."""
+    if profile == "coding":
+        for name in ("dina_task_complete", "dina_task_fail", "dina_task_progress"):
+            mcp.remove_tool(name)
+        return
+    if profile != "all":
+        raise ValueError(f"unknown MCP profile: {profile}")
+
+
+def run_server(profile: str = "all"):
     """Entry point for `dina mcp-server`. Pure tool server, no background threads."""
+    configure_profile(profile)
     mcp.run(transport="stdio")

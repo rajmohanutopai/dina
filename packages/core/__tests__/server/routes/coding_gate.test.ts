@@ -17,14 +17,28 @@ import {
   type CodingGateResult,
 } from '../../../src/server/routes/coding_gate';
 
-function agentReq(body: unknown, over: Partial<CoreRequest> = {}): CoreRequest {
+function agentReq(
+  body: unknown,
+  over: Partial<CoreRequest> = {},
+  bindSession: boolean = true,
+): CoreRequest {
+  const effectiveBody =
+    bindSession &&
+    body !== null &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    typeof (body as Record<string, unknown>).tool_name === 'string' &&
+    !('session_id' in body) &&
+    !('host_session_id' in body)
+      ? { ...(body as Record<string, unknown>), host_session_id: 'host-test' }
+      : body;
   return {
     method: 'POST',
     path: '/v1/agent/gate',
     headers: {},
     query: {},
-    body,
-    rawBody: new TextEncoder().encode(JSON.stringify(body ?? {})),
+    body: effectiveBody,
+    rawBody: new TextEncoder().encode(JSON.stringify(effectiveBody ?? {})),
     params: {},
     trustedInProcess: true, // bypass the Ed25519 pipeline; DID set explicitly
     callerType: 'agent',
@@ -49,6 +63,7 @@ const allowGate: CodingGateFn = () => ({
 });
 
 describe('POST /v1/agent/gate — wire contract', () => {
+  beforeEach(() => setSessionRegistry(new SessionRegistry()));
   afterEach(() => setSessionRegistry(null));
 
   it('forwards the raw call and returns the decision in snake_case', async () => {
@@ -100,15 +115,45 @@ describe('POST /v1/agent/gate — wire contract', () => {
     expect(called).toBe(false); // gate/permit never reached
   });
 
-  it('defaults mode to enforce and session_id to empty', async () => {
+  it('defaults mode to enforce and resolves a host session to an opaque Core session', async () => {
     let seen: CodingGateInput | undefined;
     const res = await routerWith((i) => {
       seen = i;
       return { action: 'code_read', risk: 'SAFE', outcome: 'allow', enforced: true, reason: 'r' };
     }).handle(agentReq({ tool_name: 'Read', tool_input: { file_path: 'a.ts' } }));
     expect(res.status).toBe(200);
-    expect(seen).toMatchObject({ mode: 'enforce', sessionId: '' });
+    expect(seen?.mode).toBe('enforce');
+    expect(seen?.sessionId).toMatch(/^sess-[0-9a-f]{32}$/);
     expect((res.body as Record<string, unknown>).permit_id).toBeNull(); // no permitId ⇒ null
+  });
+
+  it('requires a session binding instead of falling back to DID-only authority', async () => {
+    let called = false;
+    const res = await routerWith(() => {
+      called = true;
+      return {
+        action: 'code_read',
+        risk: 'SAFE',
+        outcome: 'allow',
+        enforced: true,
+        reason: 'r',
+      };
+    }).handle(agentReq({ tool_name: 'Read', tool_input: {} }, {}, false));
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: 'invalid_session' });
+    expect(called).toBe(false);
+  });
+
+  it('rejects requests that supply both Core and host session ids', async () => {
+    const res = await routerWith(allowGate).handle(
+      agentReq({
+        tool_name: 'Read',
+        tool_input: {},
+        session_id: 'sess-forged',
+        host_session_id: 'host-test',
+      }),
+    );
+    expect(res.status).toBe(400);
   });
 
   it('passes classify_only mode through', async () => {
@@ -142,8 +187,14 @@ describe('POST /v1/agent/gate — wire contract', () => {
 });
 
 describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
-  beforeEach(() => resetAuditState());
-  afterEach(() => resetAuditState());
+  beforeEach(() => {
+    resetAuditState();
+    setSessionRegistry(new SessionRegistry());
+  });
+  afterEach(() => {
+    resetAuditState();
+    setSessionRegistry(null);
+  });
 
   const denyGate: CodingGateFn = () => ({
     action: 'secret_read',
@@ -179,6 +230,9 @@ describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
 });
 
 describe('POST /v1/agent/gate — validation & fail-closed', () => {
+  beforeEach(() => setSessionRegistry(new SessionRegistry()));
+  afterEach(() => setSessionRegistry(null));
+
   it('501 when no gate is wired (never a silent allow)', async () => {
     const res = await routerWith(undefined).handle(agentReq({ tool_name: 'Read', tool_input: {} }));
     expect(res.status).toBe(501);

@@ -37,14 +37,22 @@
 import {
   configureRateLimiter,
   createCoreRouter,
+  deriveServiceKey,
   deriveDIDKey,
   getNodeDID,
   HEALTHZ_PATH,
+  getWorkflowService,
   registerService,
+  SQLiteWorkflowRepository,
+  TaskExpirySweeper,
   setCodingPermitAuthority,
   setNodeDID,
+  setWorkflowRepository,
+  setWorkflowService,
+  WorkflowService,
   type CoreRouter,
 } from '@dina/core';
+import { kvGet, kvSet } from '@dina/core/kv';
 import { listServiceConfigs } from '@dina/core';
 import {
   bootstrapMsgBox,
@@ -64,33 +72,26 @@ import {
 } from './appview/wire_publisher';
 import { deriveIdentity } from './identity/derivations';
 import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
-import {
-  loadOrProvisionPdsIdentity,
-  type PdsIdentity,
-} from './identity/provision_pds';
+import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
 import { createLogger } from './logger';
-import {
-  deliverBootstrapCapability,
-  resolveHandoffFromEnv,
-} from './pair/bootstrap_capability';
+import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
 import { createAgentFacades } from './agent/facades';
+import { makeHttpAskHandler } from './agent/http_ask_handler';
+import { PhoneApprovalMsgBoxClient, parsePhoneSetupCode } from './approval/phone_approval_msgbox';
+import { PhoneApprovalSyncWorker } from './approval/phone_approval_sync';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
 import { initializeStorage } from './storage/init';
-import {
-  wireWorkflowPlane,
-  type WiredWorkflowPlane,
-} from './workflow/wire_workflow_plane';
+import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
 import type { LoadedCoreServerConfig } from './config';
 import type { Logger } from './logger';
 import type { DatabaseAdapter } from '@dina/core/storage';
-
 
 /** The canonical sequence — enumerated once, consulted everywhere. */
 export const BOOT_STEPS = [
@@ -467,6 +468,13 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // Captured during db_open; consumed in the post-core_router wiring
   // block once the CoreRouter is available.
   let identityDBForWorkflow: DatabaseAdapter | undefined;
+  // The local workflow store is available even when PDS provisioning is off or
+  // degraded. Coding approvals and other owner-local tasks must not depend on
+  // public identity/network setup. The full workflow plane replaces this
+  // minimal service below when its PDS prerequisites are available.
+  let localWorkflowService: WorkflowService | undefined;
+  let localTaskExpiry: TaskExpirySweeper | undefined;
+  let phoneApprovalWorker: PhoneApprovalSyncWorker | undefined;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
   // only do this when the master seed is materialized (convenience or
@@ -493,6 +501,21 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         'SQLite repositories wired into Core service modules',
       );
 
+      identityDBForWorkflow = result.identityDB;
+      const localWorkflowRepository = new SQLiteWorkflowRepository(result.identityDB);
+      setWorkflowRepository(localWorkflowRepository);
+      localWorkflowService = new WorkflowService({ repository: localWorkflowRepository });
+      setWorkflowService(localWorkflowService);
+      localTaskExpiry = new TaskExpirySweeper({
+        repository: localWorkflowRepository,
+        onError: (err) =>
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'local workflow expiry sweep failed',
+          ),
+      });
+      localTaskExpiry.start();
+
       // Layer 2: wire the service-profile publisher pipeline. Only
       // runs when PDS provisioning succeeded (`pdsIdentity` set). The
       // publisher subscribes to `onServiceConfigChanged` so every
@@ -510,10 +533,6 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           if (!shouldPublishListing(config)) continue;
           void publishOnce(wiredPublisher.publisher, pdsIdentity, config, logger, rkey);
         }
-        // Workflow plane wiring needs the CoreRouter (created in the
-        // next boot step), so stash the identityDB now and let the
-        // post-core_router block run wireWorkflowPlane.
-        identityDBForWorkflow = result.identityDB;
       }
     } catch (err) {
       trace.push({
@@ -551,7 +570,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // holds it — the brain-server merely byte-pipes the header through.
   const ownerCap = resolveOwnerCapability(process.env, config.storage.vaultDir);
   logger.info(
-    { source: ownerCap.source, ...(ownerCap.filePath !== undefined ? { file: ownerCap.filePath } : {}) },
+    {
+      source: ownerCap.source,
+      ...(ownerCap.filePath !== undefined ? { file: ownerCap.filePath } : {}),
+    },
     'owner capability resolved (value never logged) — paste it into the web UI to control runs',
   );
   // Item 4 — the fs-backed coding gate (`POST /v1/agent/gate`, §12.1). Shares
@@ -567,6 +589,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ownerCapability: ownerCap.capability,
       codingGate: codingGateHandle.gate,
       agentFacades: createAgentFacades(),
+      ask: {
+        handler: makeHttpAskHandler({
+          brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
+        }),
+      },
     });
   } catch (err) {
     trace.push({
@@ -594,6 +621,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     (identity.kind === 'loaded_convenience' || identity.kind === 'generated') &&
     identityDBForWorkflow !== undefined
   ) {
+    // The shared workflow plane owns its own expiry sweeper. Stop the minimal
+    // degraded-mode instance before replacing the global service.
+    localTaskExpiry?.stop();
+    localTaskExpiry = undefined;
     const derivations = deriveIdentity({ masterSeed: identity.seed });
     wiredWorkflow = wireWorkflowPlane({
       identityDB: identityDBForWorkflow,
@@ -637,10 +668,15 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     app.addHook('onClose', async () => {
       if (wiredWorkflow !== undefined) {
         await wiredWorkflow.dispose();
+      } else if (getWorkflowService() === localWorkflowService) {
+        localTaskExpiry?.stop();
+        setWorkflowService(null);
+        setWorkflowRepository(null);
       }
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }
+      await phoneApprovalWorker?.stop();
       await disconnectMsgBox();
       // Item 2c — drop our discovery lock on clean shutdown (registered here,
       // before listen, since Fastify rejects hooks added post-listen). The
@@ -755,9 +791,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // Falls back to env override, then the local did:key for
       // dev-only setups that never minted a did:plc.
       const did =
-        pdsIdentity?.did ??
-        config.msgbox.homeNodeDid ??
-        deriveDIDKey(derivations.root.publicKey);
+        pdsIdentity?.did ?? config.msgbox.homeNodeDid ?? deriveDIDKey(derivations.root.publicKey);
       // Build a real resolveSender so the receive pipeline can verify
       // inbound signatures. Without this every D2D arrival fails at
       // step 2 (signature check) — including our own loopbacks, which
@@ -812,6 +846,69 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         pendingReason,
       });
       logger.warn({ err: (err as Error).message, url: config.msgbox.url }, pendingReason);
+    }
+  }
+
+  // Optional laptop-Core -> owner-phone approval bridge (§13). A one-time
+  // `dina1:` code pairs a dedicated deterministic did:key; only the public
+  // relay URL + phone DID are retained. The pairing code is never persisted.
+  if (identity !== undefined && identity.kind !== 'wrapped' && getWorkflowService() !== null) {
+    try {
+      const persisted = await kvGet('target', 'phone_approval_sync');
+      const setupRaw = process.env.DINA_APPROVAL_PHONE_SETUP_CODE?.trim() ?? '';
+      let target:
+        | { msgboxURL: string; phoneDID: string; code?: string; deviceName?: string }
+        | undefined;
+      if (persisted !== null) {
+        const value = JSON.parse(persisted) as Record<string, unknown>;
+        if (typeof value.msgbox_url === 'string' && typeof value.phone_did === 'string') {
+          target = {
+            msgboxURL: value.msgbox_url,
+            phoneDID: value.phone_did,
+          };
+        }
+      } else if (setupRaw !== '') {
+        const setup = parsePhoneSetupCode(setupRaw);
+        target = {
+          msgboxURL: setup.msgboxURL,
+          phoneDID: setup.phoneDID,
+          code: setup.code,
+          deviceName: setup.deviceName,
+        };
+      }
+
+      if (target !== undefined) {
+        // Reserved service index 2: Core=0, Brain=1, phone-approval device=2.
+        const approvalKey = deriveServiceKey(identity.seed, 2);
+        const client = new PhoneApprovalMsgBoxClient({
+          msgboxURL: target.msgboxURL,
+          phoneDID: target.phoneDID,
+          privateKey: approvalKey.privateKey,
+        });
+        if (target.code !== undefined) {
+          await client.pair(target.code, target.deviceName);
+          await kvSet(
+            'target',
+            JSON.stringify({
+              v: 1,
+              msgbox_url: target.msgboxURL,
+              phone_did: target.phoneDID,
+            }),
+            'phone_approval_sync',
+          );
+        }
+        phoneApprovalWorker = new PhoneApprovalSyncWorker(client);
+        phoneApprovalWorker.start();
+        logger.info(
+          { phoneDid: target.phoneDID, deviceDid: client.did },
+          'owner-phone approval synchronization enabled',
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message },
+        'owner-phone approval synchronization unavailable; local approvals remain pending',
+      );
     }
   }
 

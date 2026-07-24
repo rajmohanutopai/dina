@@ -143,7 +143,7 @@ class DummyRunner:
             for i in range(cycles):
                 time.sleep(3)
                 try:
-                    st = client.ask_status(req_id)
+                    st = client.ask_status(req_id, session=session_name)
                 except Exception as exc:  # noqa: BLE001
                     self._log("poll_error", i=i, error=str(exc))
                     break

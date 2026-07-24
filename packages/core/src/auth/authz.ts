@@ -94,6 +94,10 @@ const AUTHZ_RULES: {
   // Identity — Admin + Brain (read)
   { prefix: '/v1/did', allowed: new Set(['admin', 'brain']) },
 
+  // A paired client may revoke only itself. The route takes no caller-supplied
+  // device id, so this does not widen device management to agents/plugins.
+  { prefix: '/v1/devices/self', method: 'DELETE', exact: true, allowed: new Set(['device', 'agent', 'plugin']) },
+
   // Devices — Admin only
   { prefix: '/v1/devices', allowed: new Set(['admin']) },
 
@@ -212,13 +216,11 @@ const AUTHZ_RULES: {
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },
 
-  // Session lifecycle — paired dina-agent opens a session before
-  // claiming a delegation task (vault scoping) and ends it after
-  // completion. Brain + Admin orchestrate session lifecycle from the
-  // app side. Device (CLI) callers also create sessions to scope
-  // interactive queries — TS Core sessions are currently no-op stubs
-  // so there is no vault-grant risk.
+  // Session lifecycle — paired dina-agent opens a DID-bound, leased session
+  // before work and ends it to revoke its grants. The plural list endpoint is
+  // an exact sibling, not covered by the singular `/v1/session/` prefix.
   { prefix: '/v1/session/', allowed: new Set(['brain', 'admin', 'agent', 'device']) },
+  { prefix: '/v1/sessions', allowed: new Set(['brain', 'admin', 'agent', 'device']) },
 
   // Agent intent validation — `dina validate` from OpenClaw + sample
   // agents. Paired agents POST

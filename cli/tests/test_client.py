@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -49,11 +50,16 @@ def _patch_transport(*return_values, side_effect=None):
 
 # TST-CLI-015
 # TRACE: {"suite": "CLI", "case": "0015", "section": "02", "sectionName": "Client", "subsection": "01", "scenario": "01", "title": "vault_store"}
-def test_vault_store(config):
-    with _patch_transport(_tr(200, json.dumps({"item_id": "abc123"}))):
+def test_vault_store(config, mock_identity):
+    with _patch_transport(_tr(200, json.dumps({"item_id": "abc123"}))) as request:
         client = DinaClient(config)
-        result = client.vault_store("personal", {"type": "note", "summary": "test"})
+        item = {"type": "note", "summary": "test"}
+        result = client.vault_store("personal", item)
         assert result["item_id"] == "abc123"
+        call = request.call_args
+        assert call.args[1] == "/v1/vault/store?persona=personal"
+        assert json.loads(call.kwargs["body"]) == item
+        assert mock_identity.sign_request.call_args.kwargs["query"] == "persona=personal"
         client.close()
 
 
@@ -66,6 +72,36 @@ def test_vault_query(config):
         items = client.vault_query("personal", "test")
         assert len(items) == 1
         assert items[0]["Summary"] == "test"
+        client.close()
+
+
+def test_agent_vault_query_binds_session_in_signed_body(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"items":[]}'),
+    ) as mock_req:
+        client = DinaClient(replace(config, role="agent"))
+        client.vault_query("health", "lab results", session="sess-1")
+
+        call = mock_req.call_args
+        assert call.args[1] == "/v1/vault/query?persona=health"
+        assert json.loads(call.kwargs["body"])["session_id"] == "sess-1"
+        assert "X-Session" not in call.args[2]
+        client.close()
+
+
+def test_agent_vault_query_requires_session(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="requires a session"):
+        client.vault_query("health", "lab results")
+    client.close()
+
+
+def test_query_signing_matches_core_percent_encoding(config, mock_identity):
+    with _patch_transport(_tr(200, '{"items":[]}')):
+        client = DinaClient(config)
+        client.vault_query("health notes", "test")
+        assert mock_identity.sign_request.call_args.kwargs["query"] == "persona=health%20notes"
         client.close()
 
 
@@ -115,6 +151,65 @@ def test_process_event_via_core(config):
         client = DinaClient(config)
         result = client.process_event({"type": "agent_intent"})
         assert result["status"] == "approved"
+        client.close()
+
+
+def test_agent_validation_and_status_bind_session_in_signed_inputs(config):
+    agent_config = replace(config, role="agent")
+    responses = [
+        _tr(200, '{"requires_approval":true,"proposal_id":"prop-1"}'),
+        _tr(200, '{"status":"pending"}'),
+    ]
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        side_effect=responses,
+    ) as mock_req:
+        client = DinaClient(agent_config)
+        client.process_event(
+            {"type": "agent_intent", "action": "send_email"},
+            session="sess-1",
+        )
+        client.get_proposal_status("prop-1", session="sess-1")
+
+        submit = mock_req.call_args_list[0]
+        assert json.loads(submit.kwargs["body"])["session_id"] == "sess-1"
+        assert "X-Session" not in submit.args[2]
+        status = mock_req.call_args_list[1]
+        assert status.args[1] == "/v1/intent/proposals/prop-1/status?session_id=sess-1"
+        assert "X-Session" not in status.args[2]
+        client.close()
+
+
+def test_agent_validation_requires_session_before_transport(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="requires a session"):
+        client.process_event({"type": "agent_intent", "action": "send_email"})
+    with pytest.raises(ValueError, match="requires a session"):
+        client.get_proposal_status("prop-1")
+    client.close()
+
+
+def test_agent_pii_scrub_uses_narrow_coding_facade(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"scrubbed":"[EMAIL_1]","entities":[]}'),
+    ) as mock_req:
+        client = DinaClient(replace(config, role="agent"))
+        client.pii_scrub("raj@example.com")
+
+        assert mock_req.call_args.args[1] == "/v1/agent/scrub"
+        client.close()
+
+
+def test_non_agent_pii_scrub_keeps_internal_route(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"scrubbed":"[EMAIL_1]","entities":[]}'),
+    ) as mock_req:
+        client = DinaClient(config)
+        client.pii_scrub("raj@example.com")
+
+        assert mock_req.call_args.args[1] == "/v1/pii/scrub"
         client.close()
 
 
@@ -192,3 +287,132 @@ def test_extract_body_empty():
     kwargs = {}
     body = DinaClient._extract_body(kwargs)
     assert body == b""
+
+
+def test_agent_remember_uses_session_bound_facade(config):
+    agent_config = replace(config, role="agent")
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"status":"stored","persona":"health"}'),
+    ) as mock_req:
+        client = DinaClient(agent_config)
+        result = client.remember(
+            "Lower back pain",
+            session="sess-1",
+            persona="health",
+        )
+
+        assert result["status"] == "stored"
+        assert mock_req.call_args.args[1] == "/v1/agent/memory"
+        assert json.loads(mock_req.call_args.kwargs["body"]) == {
+            "content": "Lower back pain",
+            "session_id": "sess-1",
+            "persona": "health",
+        }
+        client.close()
+
+
+def test_user_remember_retains_legacy_staging_route(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"status":"stored"}'),
+    ) as mock_req:
+        client = DinaClient(config)
+        client.remember("Buy milk", session="sess-1", source_id="src-1")
+
+        assert mock_req.call_args.args[1] == "/api/v1/remember"
+        assert json.loads(mock_req.call_args.kwargs["body"])["source_id"] == "src-1"
+        client.close()
+
+
+def test_session_wire_contracts(config):
+    responses = [
+        _tr(200, '{"session_id":"sess-1","status":"open"}'),
+        _tr(200, '{"sessions":[]}'),
+        _tr(200, '{"ok":true}'),
+    ]
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        side_effect=responses,
+    ) as mock_req:
+        client = DinaClient(config)
+        client.session_start("host-task")
+        client.session_list()
+        client.session_end("sess-1")
+
+        calls = mock_req.call_args_list
+        assert calls[0].args[1] == "/v1/session/start"
+        assert json.loads(calls[0].kwargs["body"]) == {"host_session_id": "host-task"}
+        assert calls[1].args[0:2] == ("GET", "/v1/sessions")
+        assert calls[2].args[1] == "/v1/session/end"
+        assert json.loads(calls[2].kwargs["body"]) == {"session_id": "sess-1"}
+        client.close()
+
+
+def test_gate_can_bind_the_signed_host_session_without_an_extra_start_call(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"outcome":"allow"}'),
+    ) as mock_req:
+        client = DinaClient(replace(config, role="agent"))
+        client.gate(
+            "Read",
+            {"file_path": "notes.txt"},
+            host_session="claude-abc",
+            cwd="/work",
+        )
+
+        assert mock_req.call_args.args[1] == "/v1/agent/gate"
+        assert json.loads(mock_req.call_args.kwargs["body"]) == {
+            "tool_name": "Read",
+            "tool_input": {"file_path": "notes.txt"},
+            "mode": "enforce",
+            "host_session_id": "claude-abc",
+            "cwd": "/work",
+        }
+        client.close()
+
+
+def test_gate_rejects_ambiguous_session_inputs_before_transport(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="either session or host_session"):
+        client.gate("Read", {}, session="sess-1", host_session="claude-abc")
+    client.close()
+
+
+def test_agent_ask_and_status_bind_the_session_in_signed_inputs(config):
+    agent_config = replace(config, role="agent")
+    responses = [
+        _tr(202, '{"status":"in_flight","request_id":"ask-1"}'),
+        _tr(200, '{"status":"complete","content":"answer"}'),
+    ]
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        side_effect=responses,
+    ) as mock_req:
+        client = DinaClient(agent_config)
+        client.ask("What do I prefer?", session="sess-1")
+        client.ask_status("ask-1", session="sess-1")
+
+        submit, status = mock_req.call_args_list
+        assert submit.args[1] == "/api/v1/ask"
+        assert json.loads(submit.kwargs["body"]) == {
+            "prompt": "What do I prefer?",
+            "session_id": "sess-1",
+        }
+        assert "X-Session" not in submit.args[2]
+        assert status.args[1] == "/api/v1/ask/ask-1/status?session_id=sess-1"
+        client.close()
+
+
+def test_user_ask_retains_legacy_session_header(config):
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"status":"complete"}'),
+    ) as mock_req:
+        client = DinaClient(config)
+        client.ask("Question", session="sess-user")
+
+        assert json.loads(mock_req.call_args.kwargs["body"]) == {"prompt": "Question"}
+        assert mock_req.call_args.args[2]["X-Session"] == "sess-user"
+        client.close()

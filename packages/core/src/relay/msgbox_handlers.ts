@@ -22,6 +22,7 @@ import { extractPublicKey } from '../identity/did';
 import { verifyPairingIdentityBinding } from '../pairing/ceremony';
 
 import { sendEnvelope, getIdentity, type MsgBoxEnvelope } from './msgbox_ws';
+import { buildSignedResponse } from './rpc_response';
 
 import type { D2DPayload } from '../d2d/envelope';
 
@@ -530,7 +531,15 @@ async function sendRPCResponse(
   response: { status: number; headers: Record<string, string>; body: string },
   nonceScheme: 'sha512' | 'blake2b' = 'sha512',
 ): Promise<void> {
-  const responseJSON = JSON.stringify(response);
+  const signedResponse = buildSignedResponse(
+    requestEnv.id,
+    response.status,
+    response.headers,
+    response.body,
+    myDID,
+    privateKey,
+  );
+  const responseJSON = JSON.stringify(signedResponse);
   const responseBytes = new TextEncoder().encode(responseJSON);
 
   // Encrypt response with CLI's public key; mirror the nonce scheme

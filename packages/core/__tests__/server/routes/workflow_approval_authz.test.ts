@@ -21,6 +21,7 @@ import { createPersona, resetPersonaState } from '../../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerVaultRoutes } from '../../../src/server/routes/vault';
 import { registerWorkflowRoutes } from '../../../src/server/routes/workflow';
+import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
 import {
   InMemoryVaultRepository,
   setVaultRepository,
@@ -34,6 +35,7 @@ import {
 } from '../../../src/workflow/service';
 
 const AGENT_DID = 'did:key:agentX';
+let sessionId: string;
 
 function build(): CoreRouter {
   const router = new CoreRouter();
@@ -42,13 +44,13 @@ function build(): CoreRouter {
   return router;
 }
 
-function agentQueryHealth(headers: Record<string, string> = {}): CoreRequest {
+function agentQueryHealth(session: string = sessionId): CoreRequest {
   return {
     method: 'POST',
     path: '/v1/vault/query',
     query: { persona: 'health' },
-    headers,
-    body: { text: 'private health question', mode: 'fts5' },
+    headers: {},
+    body: { text: 'private health question', mode: 'fts5', session_id: session },
     rawBody: new Uint8Array(),
     params: {},
     trustedInProcess: true,
@@ -92,6 +94,9 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     createPersona('health', 'sensitive');
     setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
     setAgentGrantRepository(new InMemoryAgentGrantRepository());
+    const sessions = new SessionRegistry();
+    sessionId = sessions.start({ agentDid: AGENT_DID, hostSessionId: 'workflow-authz-test' }).sessionId;
+    setSessionRegistry(sessions);
     setAgentPersonaUnlockHook(null); // grant row alone gates the in-memory vault
   });
   afterEach(() => {
@@ -99,6 +104,7 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     resetPersonaState();
     setWorkflowService(null);
     setAgentGrantRepository(null);
+    setSessionRegistry(null);
     setAgentPersonaUnlockHook(null);
   });
 
@@ -113,7 +119,13 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
 
     // The grant was NOT written — the agent stays blocked on retry.
     expect(
-      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
+      getAgentGrantRepository()?.findActiveGrant(
+        AGENT_DID,
+        'health',
+        'read',
+        sessionId,
+        Date.now(),
+      ),
     ).toBe(null);
     const retry = await router.handle(agentQueryHealth());
     expect(retry.status).toBe(403);
@@ -159,7 +171,13 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
       expect(approve.status).not.toBe(200);
       // The compensating revoke ran — no active grant survives the failed approve.
       expect(
-        getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
+        getAgentGrantRepository()?.findActiveGrant(
+          AGENT_DID,
+          'health',
+          'read',
+          sessionId,
+          Date.now(),
+        ),
       ).toBe(null);
       // The agent stays blocked on retry.
       expect((await router.handle(agentQueryHealth())).status).toBe(403);
@@ -184,7 +202,9 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
       // Terminal (cancelled), NOT a stranded 'queued' zombie the agent re-dedupes.
       expect(getWorkflowService()?.store().getById(taskId)?.status).toBe('cancelled');
       // No active grant survived the throw.
-      expect(grantRepo.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now())).toBe(null);
+      expect(
+        grantRepo.findActiveGrant(AGENT_DID, 'health', 'read', sessionId, Date.now()),
+      ).toBe(null);
     } finally {
       spy.mockRestore();
     }
@@ -206,7 +226,13 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     expect(approve.status).toBe(200);
 
     expect(
-      getAgentGrantRepository()?.findActiveGrant(AGENT_DID, 'health', 'read', null, Date.now()),
+      getAgentGrantRepository()?.findActiveGrant(
+        AGENT_DID,
+        'health',
+        'read',
+        sessionId,
+        Date.now(),
+      ),
     ).not.toBe(null);
     const retry = await router.handle(agentQueryHealth());
     expect(retry.status).toBe(200);
@@ -219,9 +245,9 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     expect(approve.status).toBe(200);
   });
 
-  it('agent persona-access approval tasks preserve the X-Session header', async () => {
+  it('agent persona-access approval tasks preserve the signed session id', async () => {
     const router = build();
-    const gate = await router.handle(agentQueryHealth({ 'x-session': 'sess-health-123' }));
+    const gate = await router.handle(agentQueryHealth());
     expect(gate.status).toBe(403);
     const taskId = (gate.body as { task_id?: string }).task_id;
     expect(taskId).toBeTruthy();
@@ -229,6 +255,6 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     const task = getWorkflowService()
       ?.store()
       .getById(taskId as string);
-    expect(task?.session_name).toBe('sess-health-123');
+    expect(task?.session_name).toBe(sessionId);
   });
 });

@@ -228,6 +228,9 @@ export function createAskHandler(
       question: req.question,
       requesterDid: req.requesterDid,
     };
+    if (req.sessionId !== undefined && req.sessionId !== '') {
+      enqueueInput.sessionId = req.sessionId;
+    }
     if (req.forcedSources !== undefined && req.forcedSources.length > 0) {
       enqueueInput.forcedSources = req.forcedSources;
     }
@@ -381,13 +384,17 @@ export type AskStatusHandlerEvent =
  */
 export function createAskStatusHandler(
   opts: AskStatusHandlerOptions,
-): (id: string) => Promise<AskStatusOutcome> {
+): (id: string, requesterDid?: string, sessionId?: string) => Promise<AskStatusOutcome> {
   if (!opts?.registry) {
     throw new TypeError('createAskStatusHandler: registry is required');
   }
   const registry = opts.registry;
   const onEvent = opts.onEvent;
-  return async function handleStatus(id: string): Promise<AskStatusOutcome> {
+  return async function handleStatus(
+    id: string,
+    requesterDid?: string,
+    sessionId?: string,
+  ): Promise<AskStatusOutcome> {
     if (typeof id !== 'string' || id.trim() === '') {
       return {
         kind: 'not_found',
@@ -396,7 +403,11 @@ export function createAskStatusHandler(
       };
     }
     const record = await registry.get(id);
-    if (!record) {
+    if (
+      !record ||
+      (requesterDid !== undefined && record.requesterDid !== requesterDid) ||
+      (sessionId !== undefined && record.sessionId !== sessionId)
+    ) {
       onEvent?.({ kind: 'status_not_found', id });
       return {
         kind: 'not_found',

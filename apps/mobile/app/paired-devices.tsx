@@ -3,7 +3,9 @@
  * the user's behalf (port of main-dina `dina-admin device pair` +
  * `device list`). Today every entry here is a `dina-agent` install
  * (or a thing that wraps it like OpenClaw or `dina-cli`); there is
- * no Dina-to-Dina pairing — that's Contacts (DIDs).
+ * no Dina-to-Dina pairing — that's Contacts (DIDs). Mobile supports
+ * the signed agent data APIs, but the filesystem-aware coding gate
+ * itself runs only on Home Node Lite.
  *
  * Mints a pairing code and wraps it (with relay URL + node DID) into a
  * one-paste `dina1:…` setup string the agent consumes via
@@ -32,7 +34,7 @@ import {
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getNodeDID } from '@dina/core';
+import { getNodeDID, type AgentScope } from '@dina/core';
 import {
   generatePairingCode,
   listDevices,
@@ -50,6 +52,7 @@ interface LiveCode {
   expiresAt: number; // unix seconds
   deviceName: string;
   role: DeviceRole;
+  scope: AgentScope;
   /**
    * The one-paste `dina1:…` string bundling relay URL + node DID +
    * this pairing code — the only pairing artifact the UI shows.
@@ -70,6 +73,11 @@ export default function PairedDevicesScreen() {
   // commented-out picker for the seam to restore if we ever add
   // Rich / Thin / CLI roles.
   const role: DeviceRole = 'agent';
+  // This screen installs the Dina skill into interactive coding-agent hosts
+  // (Claude Code, Codex, OpenClaw, etc.). Core derives this privilege from the
+  // paired device record; omitting it would intentionally downgrade the agent
+  // to the legacy `runner` scope and make the installed plugin unusable.
+  const scope: AgentScope = 'coding';
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -173,8 +181,8 @@ export default function PairedDevicesScreen() {
       // generation, and `xcrun simctl log show` would surface a recent
       // code to anyone with simulator access (or anyone reading a
       // device sysdiagnose). Log only the metadata that can't be used
-      // to pair: device name + role.
-      const { code, expiresAt } = generatePairingCode({ deviceName: name, role });
+      // to pair: device name + role + non-secret scope.
+      const { code, expiresAt } = generatePairingCode({ deviceName: name, role, scope });
       // The setup string IS the product — there is no bare-number
       // fallback (greenfield: every dina-agent understands `dina1:`,
       // and the number alone was never enough to configure anyway).
@@ -190,7 +198,7 @@ export default function PairedDevicesScreen() {
         deviceName: name,
         code,
       });
-      setLiveCode({ code, expiresAt, deviceName: name, role, setupCode });
+      setLiveCode({ code, expiresAt, deviceName: name, role, scope, setupCode });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('[paired-devices] generate failed:', message);
@@ -198,7 +206,7 @@ export default function PairedDevicesScreen() {
     } finally {
       setGenerating(false);
     }
-  }, [deviceName, role]);
+  }, [deviceName, role, scope]);
 
   const secondsRemaining = liveCode === null ? 0 : Math.max(0, liveCode.expiresAt - now);
 
@@ -218,7 +226,10 @@ export default function PairedDevicesScreen() {
               <View key={d.deviceId} style={styles.deviceRow}>
                 <View style={styles.deviceRowMain}>
                   <Text style={styles.deviceName}>{d.deviceName}</Text>
-                  <Text style={styles.deviceMeta}>{d.role}</Text>
+                  <Text style={styles.deviceMeta}>
+                    {d.role}
+                    {d.scope !== undefined ? ` · ${d.scope}` : ''}
+                  </Text>
                 </View>
                 <Text style={styles.deviceDID} numberOfLines={1} ellipsizeMode="middle">
                   {d.did}
@@ -260,6 +271,10 @@ export default function PairedDevicesScreen() {
             Agents act on your behalf. They run as <Text style={styles.mono}>dina-agent</Text>,
             submit Ed25519 signed requests to this device, and only do what you allow.
             {'\n\n'}
+            This mobile setup enables Dina memory, Ask, validation, and PII tools. The Claude Code
+            safety-gate plugin requires a Home Node Lite setup code instead; do not enable its
+            fail-closed hook against this mobile node.
+            {'\n\n'}
             To pair a new agent:{'\n'}
             1. Install on the agent host: <Text style={styles.mono}>pip install dina-agent</Text>.
             {'\n'}
@@ -285,11 +300,11 @@ export default function PairedDevicesScreen() {
 
           {/*
             Role picker removed: today every paired entry is a
-            `dina-agent` install, and the legacy `rich` / `thin` /
-            `cli` branches aren't wired into mobile. `generatePairingCode`
-            still takes the role arg, so we hardcode the default
-            ('agent') from useState above — if we add companion-device
-            pairing later, this is the seam to bring the picker back.
+            interactive coding-agent install, and the legacy `rich` /
+            `thin` / `cli` branches aren't wired into mobile. Delegation
+            runners have a different privilege boundary and should get a
+            separate setup surface rather than a picker that can silently
+            mint the wrong authority here.
           */}
 
           <Pressable
@@ -336,7 +351,7 @@ export default function PairedDevicesScreen() {
             </Pressable>
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
-              <Text style={styles.mono}>{liveCode.role}</Text>
+              <Text style={styles.mono}>{liveCode.scope}</Text>
             </Text>
             <Text style={[styles.codeMeta, secondsRemaining < 60 && styles.codeExpiring]}>
               Expires in {formatDuration(secondsRemaining)}

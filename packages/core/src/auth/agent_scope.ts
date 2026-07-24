@@ -48,7 +48,9 @@ interface ScopeRule {
 const SCOPE_RULES: readonly ScopeRule[] = [
   // Coding-agent surfaces (the plugin the coding scope exists for).
   { prefix: '/v1/agent/gate', scope: 'coding' },
+  { prefix: '/v1/agent/audit', scope: 'coding' },
   { prefix: '/v1/agent/memory', scope: 'coding' },
+  { prefix: '/v1/agent/scrub', scope: 'coding' },
   { prefix: '/v1/agent/find-service', scope: 'coding' },
   { prefix: '/v1/agent/talk', scope: 'coding' },
   { prefix: '/v1/agent/delegate', scope: 'coding' },

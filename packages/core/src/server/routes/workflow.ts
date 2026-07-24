@@ -256,6 +256,30 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
   router.post('/v1/workflow/events/:id/fail', failEvent);
 }
 
+/**
+ * Apply an owner decision from a trusted in-process coordinator.
+ *
+ * Remote-approval synchronization uses this after it has verified a
+ * phone-owned, signed/sealed decision. Keeping the transition here is
+ * important: coding approvals must mint the same payload-bound permit as the
+ * normal HTTP approval route, and persona approvals must run the same grant
+ * transaction. This function does not authenticate a remote caller; callers
+ * must establish owner authority before invoking it.
+ */
+export async function applyOwnerWorkflowDecision(
+  taskId: string,
+  decision: 'approve' | 'deny',
+  body: Record<string, unknown> | null = null,
+): Promise<WorkflowTask> {
+  const service = getWorkflowService();
+  if (service === null) {
+    throw new WorkflowValidationError('workflow service not wired', 'service');
+  }
+  return decision === 'approve'
+    ? approveTask(taskId, body, service)
+    : cancelTask(taskId, body, service);
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------

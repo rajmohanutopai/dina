@@ -18,6 +18,7 @@ from typing import Any
 import click
 import httpx
 
+from . import __version__
 from .client import DinaClient, DinaClientError
 from .config import CONFIG_FILE, load_config, save_config, _load_saved
 from . import config as _config_mod
@@ -51,21 +52,8 @@ def _make_client(ctx: click.Context) -> DinaClient:
 
 
 def _cli_version() -> str:
-    """Read version from importlib metadata + git hash."""
-    try:
-        from importlib.metadata import version as pkg_version
-        v = pkg_version("dina-agent")
-    except Exception:
-        v = "dev"
-    try:
-        import subprocess
-        h = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
-                                     stderr=subprocess.DEVNULL, timeout=2).decode().strip()
-        if h:
-            v = f"{v}+{h}"
-    except Exception:
-        pass
-    return v
+    """Return the release version bundled with this CLI."""
+    return __version__
 
 
 @click.group()
@@ -119,24 +107,26 @@ def status(ctx: click.Context) -> None:
     result["home_did"] = ""
 
     if transport_mode == "msgbox":
-        # For msgbox mode the Core has no direct HTTP port — skip the raw health
-        # check and instead probe connectivity through the signed transport.
-        # Use /healthz (allowed for all caller types) then fetch homenode DID
-        # from /v1/did (admin/brain only) via a best-effort request.
+        # For msgbox mode the Core has no direct HTTP port. Health proves relay
+        # reachability only; it is public and therefore cannot prove this key is
+        # paired. Use the caller-scoped session list as the authenticated probe.
         if has_keypair:
             try:
                 client = _make_client(ctx)
                 client._request(client._core, "GET", "/healthz")
                 result["core_reachable"] = True
+                client.session_list()
                 result["authenticated"] = True
-                # Try to read the homenode DID (best-effort; agents may not have access).
+                # Agents cannot read the admin-only DID route. Prefer the
+                # configured Home Node DID, then best-effort the owner route.
+                result["home_did"] = (
+                    os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+                )
                 try:
                     did_doc = client.did_get()
                     result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
                 except Exception:
-                    result["home_did"] = (
-                        os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
-                    )
+                    pass
             except Exception:
                 pass
     else:
@@ -149,9 +139,16 @@ def status(ctx: click.Context) -> None:
         if has_keypair and result["core_reachable"]:
             try:
                 client = _make_client(ctx)
-                did_doc = client.did_get()
+                client.session_list()
                 result["authenticated"] = True
-                result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+                result["home_did"] = (
+                    os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+                )
+                try:
+                    did_doc = client.did_get()
+                    result["home_did"] = did_doc.get("did", did_doc.get("id", ""))
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -221,7 +218,7 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
             output["id"] = item_id
             output["check"] = f"dina remember-status {item_id}"
         print_result_with_trace(output, json_mode, client.req_id)
-    except DinaClientError as exc:
+    except (DinaClientError, ValueError) as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
@@ -321,7 +318,7 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                 time.sleep(interval)
                 elapsed += interval
                 try:
-                    status = client.ask_status(request_id)
+                    status = client.ask_status(request_id, session=session)
                 except DinaClientError:
                     continue  # transient error, keep polling
 
@@ -423,8 +420,9 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
 
 @cli.command("ask-status")
 @click.argument("request_id")
+@click.option("--session", required=True, help="Session ID used for the original ask")
 @click.pass_context
-def ask_status_cmd(ctx: click.Context, request_id: str) -> None:
+def ask_status_cmd(ctx: click.Context, request_id: str, session: str) -> None:
     """Check the status of a pending ask request.
 
     Use this when 'dina ask' timed out waiting for approval. Pass the
@@ -433,7 +431,7 @@ def ask_status_cmd(ctx: click.Context, request_id: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        status = client.ask_status(request_id)
+        status = client.ask_status(request_id, session=session)
         if json_mode:
             print_result_with_trace(status, json_mode, client.req_id)
         elif status.get("status") == "complete":
@@ -646,8 +644,9 @@ def scrub(ctx: click.Context, text: str) -> None:
         entities = result.get("entities", [])
 
         session_id = sessions.new_id()
-        if entities:
-            sessions.save(session_id, entities)
+        # Persist an empty mapping too so a no-PII scrub can still be
+        # rehydrated as an identity operation.
+        sessions.save(session_id, entities)
 
         print_result_with_trace({"scrubbed": scrubbed, "pii_id": session_id}, json_mode, client.req_id)
     except DinaClientError as exc:
@@ -667,10 +666,10 @@ def rehydrate(ctx: click.Context, text: str, session_id: str) -> None:
     json_mode = ctx.obj["json"]
     sessions: SessionStore = ctx.obj["sessions"]
     try:
-        restored = sessions.rehydrate(text, session_id)
+        restored = sessions.rehydrate(text, session_id, consume=True)
         print_result({"restored": restored}, json_mode)
-    except FileNotFoundError:
-        print_error(f"Session {session_id} not found", json_mode)
+    except (FileNotFoundError, ValueError):
+        print_error(f"Session {session_id} not found or expired", json_mode)
         ctx.exit(1)
 
 
@@ -765,12 +764,7 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        # Use audit endpoint, not vault query
-        resp = client._request(
-            client._core, "GET", "/v1/audit/query",
-            params={"action": action_filter, "limit": str(limit)} if action_filter else {"limit": str(limit)},
-        )
-        items = resp.json().get("entries", [])
+        items = client.audit_query(limit=limit, action=action_filter).get("entries", [])
         if json_mode:
             print_result_with_trace(items, json_mode, client.req_id)
         else:
@@ -780,14 +774,15 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
                 for it in items:
                     ts = it.get("timestamp", "")
                     action = it.get("action", "")
-                    persona = it.get("persona", "")
-                    requester = it.get("requester", "")
+                    tool = it.get("tool", "")
+                    risk = it.get("risk", "")
+                    outcome = it.get("outcome", "")
                     reason = it.get("reason", "")
                     line = f"  {ts}  {action}"
-                    if persona:
-                        line += f"  persona={persona}"
-                    if requester:
-                        line += f"  by={requester}"
+                    if tool:
+                        line += f"  tool={tool}"
+                    if risk or outcome:
+                        line += f"  {risk}/{outcome}".rstrip("/")
                     if reason:
                         line += f"  ({reason})"
                     click.echo(line)
@@ -818,13 +813,19 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     help="[headless] Transport mode: direct | msgbox | auto (default: msgbox)",
 )
 @click.option("--device-name", default=None, help="[headless] Device name")
-@click.option("--pairing-code", default=None, help="[headless] Pairing code from the Dina app (Settings → Agents)")
+@click.option(
+    "--pairing-code",
+    default=None,
+    help="[headless] Owner-issued pairing code",
+)
 @click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.option(
     "--setup-code", default=None,
-    help="The `dina1:…` setup code from the Dina app (Settings → Agents). "
-         "Carries relay URL, Home Node DID, transport, device name and the "
-         "pairing code in one string. Individual flags override its fields.",
+    help="An owner-issued `dina1:…` setup code. Mobile runners obtain it from "
+         "the Dina app (Settings → Agents); coding integrations obtain a "
+         "coding-scope code from Home Node Lite. Carries relay URL, Home Node "
+         "DID, transport, device name and pairing code in one string. "
+         "Individual flags override its fields.",
 )
 @click.pass_context
 def configure(
@@ -837,7 +838,7 @@ def configure(
     """Set up connection to a Dina Home Node.
 
     \b
-    Interactive (default — paste the setup code from the Dina app):
+    Interactive (default — paste an owner-issued setup code):
       dina configure
       dina configure --role agent
 
@@ -904,16 +905,15 @@ def configure(
     click.echo()
 
     # ── Quick paste: one setup code replaces every connection prompt ──
-    # The Dina app (Settings → Agents) bundles relay URL + Home Node DID +
-    # transport + suggested name + the pairing code into one `dina1:…`
-    # string. Pasting it here skips straight to keypair + pairing. Enter
-    # falls through to the manual prompts (LAN/dev setups). Skipped when
-    # `--setup-code` already supplied the string on the command line.
+    # The owner-issued code bundles relay URL + Home Node DID + transport +
+    # suggested name + pairing code into one `dina1:…` string. Pasting it here
+    # skips straight to keypair + pairing. Enter falls through to manual
+    # prompts. Skipped when `--setup-code` supplied it on the command line.
     if setup is None and not cfg_input:
         from .setup_code import SetupCodeError, looks_like_setup_code, parse_setup_code
 
         pasted = click.prompt(
-            "Paste the setup code from your Dina app (Settings → Agents),\n"
+            "Paste the owner-issued Dina setup code,\n"
             "or press Enter to set up manually",
             default="",
             show_default=False,
@@ -1057,7 +1057,9 @@ def configure(
         "transport_mode": transport_mode_val,
     }
 
-    path = save_config(values)
+    # `_pair_with_key` persists the server-issued device_id. Preserve it (and
+    # unrelated runner settings) when writing the connection fields.
+    path = save_config({**_load_saved(), **values})
     click.echo()
     click.echo(f"Configuration saved to {path}")
 
@@ -1118,19 +1120,10 @@ def unpair(ctx: click.Context) -> None:
     json_mode = ctx.obj["json"]
     saved = _load_saved()
     device_id = saved.get("device_id", "")
-    core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
-
-    if not device_id:
-        msg = "No device_id saved. Already unpaired or never paired."
-        if json_mode:
-            print_result({"status": "not_paired", "message": msg}, json_mode)
-        else:
-            click.echo(f"  {msg}")
-        return
 
     has_keypair = (_config_mod.IDENTITY_DIR / "ed25519_private.pem").exists()
     if not has_keypair:
-        # Can't sign the revoke request — just clear local state
+        # Can't sign the revoke request — just clear local bookkeeping.
         saved.pop("device_id", None)
         save_config(saved)
         if json_mode:
@@ -1140,42 +1133,49 @@ def unpair(ctx: click.Context) -> None:
             click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.")
         return
 
-    ident = CLIIdentity()
-    ident.ensure_loaded()
-
     try:
-        did, ts, nonce, sig = ident.sign_request("DELETE", f"/v1/devices/{device_id}", b"")
-        resp = httpx.delete(
-            f"{core_url}/v1/devices/{device_id}",
-            headers={"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig},
-            timeout=10.0,
-        )
+        # Use the configured transport. MsgBox is the production default, and
+        # a NAT'd/mobile Home Node is not reachable through core_url directly.
+        client = DinaClient(load_config())
+        # Self-revocation deliberately carries no caller-supplied device id.
+        # Core derives the device from this request's Ed25519-authenticated DID,
+        # so a coding agent cannot revoke or probe another paired device.
+        resp = client._request(client._core, "DELETE", "/v1/devices/self")
         if resp.status_code in (200, 204):
             saved.pop("device_id", None)
             save_config(saved)
             if json_mode:
-                print_result({"status": "unpaired", "device_id": device_id}, json_mode)
+                print_result(
+                    {"status": "unpaired", "device_id": device_id or None},
+                    json_mode,
+                )
             else:
-                click.echo(f"  Unpaired: {device_id}")
+                click.echo(f"  Unpaired: {device_id or 'current device'}")
                 click.echo("  Re-pair with: dina configure")
         elif resp.status_code == 404:
             saved.pop("device_id", None)
             save_config(saved)
             if json_mode:
-                print_result({"status": "not_found", "device_id": device_id}, json_mode)
+                print_result(
+                    {"status": "not_found", "device_id": device_id or None},
+                    json_mode,
+                )
             else:
-                click.echo(f"  Device {device_id} not found on Core (already revoked?).")
+                click.echo(
+                    f"  {device_id or 'Current device'} not found on Core "
+                    "(already revoked?)."
+                )
         else:
             if json_mode:
                 print_error(f"HTTP {resp.status_code}: {resp.text[:100]}", json_mode)
             else:
                 click.echo(f"  Unpair failed: HTTP {resp.status_code}", err=True)
             ctx.exit(1)
-    except httpx.ConnectError:
+    except (DinaClientError, click.UsageError) as exc:
         if json_mode:
-            print_error(f"Cannot reach Core at {core_url}", json_mode)
+            print_error(f"Cannot reach Core: {exc}", json_mode)
         else:
-            click.echo(f"  Cannot reach Core at {core_url}.", err=True)
+            click.echo(f"  Cannot reach Core: {exc}", err=True)
             click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.", err=True)
         ctx.exit(1)
 
@@ -1254,7 +1254,9 @@ def _configure_headless(
         "homenode_did": homenode_did,
         "transport_mode": transport_mode,
     }
-    path = save_config(values)
+    # `_pair_with_key` persists the server-issued device_id. Preserve it (and
+    # unrelated runner settings) when writing the connection fields.
+    path = save_config({**_load_saved(), **values})
     click.echo(f"  Configuration saved to {path}")
 
     # Quick health check — route through the SELECTED transport, not a raw
@@ -1331,23 +1333,33 @@ def _try_unpair(
     core_url: str, identity: Any,
     msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
 ) -> None:
-    """Best-effort unpair: revoke the current device from Core."""
+    """Revoke the current key before replacing it.
+
+    Key rotation must not orphan live authority. If Core cannot confirm the
+    revoke, keep the existing local identity/config and stop reconfiguration.
+    """
     saved = _load_saved()
     device_id = saved.get("device_id", "")
-    if not device_id:
-        click.echo("  No device_id saved — skipping unpair.")
-        return
-    click.echo(f"  Unpairing old device ({device_id})...")
-    from .transport import TransportError
+    click.echo(f"  Unpairing old device ({device_id or identity.did()})...")
     try:
+        # Revoke against the connection that authorized this key, not the new
+        # destination currently being entered. Otherwise a Home Node switch
+        # would probe the new node and leave the old authority alive.
+        old_core_url = str(saved.get("core_url") or core_url)
+        old_msgbox_url = str(saved.get("msgbox_url") or msgbox_url)
+        old_homenode_did = str(saved.get("homenode_did") or homenode_did)
+        old_transport_mode = str(saved.get("transport_mode") or transport_mode)
         transport = _build_pairing_transport(
-            core_url, msgbox_url, homenode_did, transport_mode, identity=identity,
+            old_core_url,
+            old_msgbox_url,
+            old_homenode_did,
+            old_transport_mode,
+            identity=identity,
         )
-        did, ts, nonce, sig = identity.sign_request(
-            "DELETE", f"/v1/devices/{device_id}", b"",
-        )
+        path = "/v1/devices/self"
+        did, ts, nonce, sig = identity.sign_request("DELETE", path, b"")
         resp = transport.request(
-            "DELETE", f"/v1/devices/{device_id}",
+            "DELETE", path,
             headers={
                 "X-DID": did, "X-Timestamp": ts,
                 "X-Nonce": nonce, "X-Signature": sig,
@@ -1357,10 +1369,19 @@ def _try_unpair(
         if resp.status in (200, 204, 404):
             click.echo("  Old device revoked.")
         else:
-            click.echo(f"  Unpair returned {resp.status} — continuing anyway.")
-    except (TransportError, Exception) as exc:
-        click.echo(f"  Could not reach Core to unpair: {exc}")
-        click.echo("  Continuing — revoke the old device in the Dina app: Settings → Agents → Revoke access.")
+            raise click.ClickException(
+                f"Core could not revoke the old device (HTTP {resp.status}). "
+                "Reconfiguration stopped so its key is not orphaned. Revoke "
+                "the device from the owner UI, then retry."
+            )
+    except click.ClickException:
+        raise
+    except Exception as exc:
+        raise click.ClickException(
+            "Could not confirm revocation of the old device. Reconfiguration "
+            "stopped so its key is not orphaned. Restore Home Node connectivity "
+            "or revoke the device from the owner UI, then retry."
+        ) from exc
     # Clear device_id from config
     saved.pop("device_id", None)
     save_config(saved)
@@ -1458,8 +1479,7 @@ def _pair_with_key(
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         if not pairing_code:
-            click.echo("  Enter the pairing code from your Home Node.")
-            click.echo("  (Generate one in the Dina app: Settings → Agents.)")
+            click.echo("  Enter the owner-issued pairing code from your Home Node.")
             pairing_code = click.prompt("  Pairing code")
 
         click.echo("  Registering device...")
@@ -1523,7 +1543,9 @@ def _pair_with_key(
 @cli.command("init")
 @click.option(
     "--setup-code", default=None,
-    help="The `dina1:…` setup code from the Dina app (Settings → Agents). Prompted for if omitted.",
+    help="An owner-issued `dina1:…` setup code. Mobile runners obtain it from "
+         "the Dina app; coding integrations obtain a coding-scope code from "
+         "Home Node Lite. Prompted for if omitted.",
 )
 @click.option(
     "--role", default="agent", type=click.Choice(["user", "agent"]),
@@ -1536,9 +1558,9 @@ def init_cmd(ctx: click.Context, setup_code: str | None, role: str, yes: bool, s
     """One-command quickstart: pair with your Dina, then teach this machine's agents to use it.
 
     \b
-    Step 1 — Pair: `dina configure` (paste the setup code from the Dina
-             app, Settings → Agents). Skipped if this host is already
-             paired — re-pair explicitly with `dina configure`.
+    Step 1 — Pair: `dina configure` with an owner-issued setup code.
+             Skipped if this host is already paired — re-pair explicitly
+             with `dina configure`.
     Step 2 — Skill: detect agent platforms (Claude Code, OpenClaw, Codex,
              Gemini CLI) and install the Dina skill into each one you
              confirm. Same transparency contract as `dina skill install`.
@@ -1548,10 +1570,14 @@ def init_cmd(ctx: click.Context, setup_code: str | None, role: str, yes: bool, s
 
     saved = _load_saved()
     identity = CLIIdentity()
-    # "Already paired" = a keypair exists AND a saved config points it at a
-    # node. (Pairing state itself lives on the Home Node; `device_id` is NOT
-    # persisted by the interactive flow, so don't key off it.)
-    if identity.exists and (saved.get("msgbox_url") or saved.get("core_url")):
+    # `device_id` is the local receipt from a completed pairing. Endpoint + key
+    # alone is insufficient: `dina unpair` deliberately keeps both while
+    # clearing device_id after remote self-revocation.
+    if (
+        identity.exists
+        and bool(saved.get("device_id"))
+        and (saved.get("msgbox_url") or saved.get("core_url"))
+    ):
         click.echo(f"Step 1 — Pair: already paired ({identity.did()}).")
         click.echo("  Re-pair explicitly with: dina configure")
     else:
@@ -1981,16 +2007,13 @@ def session_start(ctx: click.Context, name: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        resp = client._request(
-            client._core, "POST", "/v1/session/start",
-            json={"name": name},
-        )
-        data = resp.json()
+        data = client.session_start(name)
         if json_mode:
             print_result_with_trace(data, json_mode, client.req_id)
         else:
             session_id = data.get('session_id') or data.get('id') or '?'
-            click.echo(f"  Session: {session_id} ({data.get('name', name)}) active")
+            label = name or "default"
+            click.echo(f"  Session: {session_id} ({label}) active")
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
@@ -2004,11 +2027,10 @@ def session_end(ctx: click.Context, session_id: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        client._request(
-            client._core, "POST", "/v1/session/end",
-            json={"id": session_id},
-        )
-        if not json_mode:
+        data = client.session_end(session_id)
+        if json_mode:
+            print_result_with_trace(data, json_mode, client.req_id)
+        else:
             click.echo(f"  Session '{session_id}' ended. All grants revoked.")
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
@@ -2022,8 +2044,7 @@ def session_list(ctx: click.Context) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        resp = client._request(client._core, "GET", "/v1/sessions")
-        data = resp.json()
+        data = client.session_list()
         sessions = data.get("sessions", [])
         if json_mode:
             print_result_with_trace(sessions, json_mode, client.req_id)
@@ -2036,7 +2057,7 @@ def session_list(ctx: click.Context) -> None:
                     g.get("persona_id", "?") for g in s.get("grants", [])
                 ) or "none"
                 click.echo(
-                    f"  {s.get('id', '?'):<16} {s.get('name', '?'):<20} "
+                    f"  {s.get('session_id', s.get('id', '?')):<16} {s.get('name', '?'):<20} "
                     f"{s.get('status', '?'):<10} {grants}"
                 )
     except DinaClientError as exc:
@@ -2214,19 +2235,23 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
 
     client = _make_client(ctx)
     session_name = f"task-{uuid.uuid4().hex[:8]}"
+    session_id = ""
 
     try:
         # 1. Start scoped session.
-        client.session_start(session_name)
+        opened = client.session_start(session_name)
+        session_id = str(opened.get("session_id") or opened.get("id") or "")
+        if session_id == "":
+            raise DinaClientError("Core returned no session_id")
         if not json_mode:
-            click.echo(f"  Session: {session_name}")
+            click.echo(f"  Session: {session_id}")
 
         # 2. Validate the delegation intent.
         decision = client.process_event({
             "type": "agent_intent",
             "action": "research",
             "target": description[:200],
-        }, session=session_name)
+        }, session=session_id)
 
         action = decision.get("action", "")
 
@@ -2300,8 +2325,8 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             return
 
         task_dict = {"id": f"interactive-{uuid.uuid4().hex[:8]}", "description": description}
-        prompt = build_task_prompt(task_dict, session_name, runner_name)
-        runner_result = runner.execute(task_dict, prompt, session_name)
+        prompt = build_task_prompt(task_dict, session_id, runner_name)
+        runner_result = runner.execute(task_dict, prompt, session_id)
 
         if runner_result.state == "failed":
             print_error_with_trace(f"Runner failed: {runner_result.error}", json_mode, client.req_id)
@@ -2326,8 +2351,8 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             "type": "note",
             "summary": f"Task result: {summary}",
             "body": json.dumps(result.get("data", result), indent=2)[:50000],
-            "metadata": json.dumps({"task": description, "session": session_name}),
-        }, session=session_name)
+            "metadata": json.dumps({"task": description, "session": session_id}),
+        }, session=session_id)
 
         # 5. Display.
         print_result_with_trace(result, json_mode, client.req_id)
@@ -2337,16 +2362,198 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
         ctx.exit(1)
     finally:
         try:
-            client.session_end(session_name)
+            if session_id:
+                client.session_end(session_id)
         except Exception:
             pass
+
+
+# ── Coding-agent gate hook (Claude Code / Codex PreToolUse) ───────────────
+
+# Fail-closed self-deadline: resolve Core-slowness to a DENY inside this window,
+# which is shorter than the host hook timeout (Plugin Developer Surface §10 /
+# NEW-27). The supervisor `bin/dina-gate` is the outer backstop for spawn/crash
+# failures — see the plugin's hooks/hooks.json.
+_GATE_DEADLINE_S = 10
+
+
+def _gate_block(reason: str) -> None:
+    """Fail-closed BLOCK. Exit 2 is the ONLY PreToolUse outcome that stops a
+    tool call; stderr becomes the reason Claude Code shows. Never returns."""
+    click.echo(reason, err=True)
+    sys.exit(2)
+
+
+def _gate_ask(reason: str) -> None:
+    """ASK — exit 0 + the PreToolUse JSON decision so the developer approves or
+    denies locally. Used only for MODERATE actions. Never returns."""
+    click.echo(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "ask",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    sys.exit(0)
+
+
+@cli.command("gate-hook")
+def gate_hook() -> None:
+    """Coding-agent gate for a Claude Code / Codex PreToolUse hook.
+
+    Reads the tool call as JSON on stdin, forwards the RAW ``(tool_name,
+    tool_input)`` to Core's ``/v1/agent/gate`` for classification, and enforces
+    the decision:
+
+    \b
+      allow                       -> exit 0 (silent)
+      deny / hard-blocked         -> exit 2 (stderr = reason)
+      MODERATE approval_required  -> `ask` (JSON permissionDecision)
+      HIGH approval_required      -> block pending Dina approval; retry after approval
+      Core unreachable / timeout /
+        malformed / not-configured-> exit 2 (fail-closed — NEVER a silent allow)
+
+    Invoke it through the supervisor ``bin/dina-gate``, which also normalizes
+    a crash/timeout/missing-binary to a block (only exit 2 blocks a PreToolUse
+    call). Config-free of Click state on purpose so every failure path can fail
+    closed.
+    """
+    # Self-deadline so a slow/hung Core resolves to a block inside the window.
+    import signal
+    have_alarm = hasattr(signal, "SIGALRM")
+    if have_alarm:
+        def _deadline(_signum: Any, _frame: Any) -> None:
+            _gate_block("Dina gate timed out reaching Core — blocked (fail-closed)")
+        signal.signal(signal.SIGALRM, _deadline)
+        signal.alarm(_GATE_DEADLINE_S)
+    # Keep the transport timeout under the self-deadline too.
+    os.environ.setdefault("DINA_TIMEOUT", str(_GATE_DEADLINE_S - 2))
+
+    # Read + parse the PreToolUse payload. Malformed/empty/no-tool_name = block.
+    try:
+        raw = sys.stdin.read()
+    except Exception:  # noqa: BLE001 — any read failure is fail-closed
+        _gate_block("Dina gate could not read the tool-call payload — blocked (fail-closed)")
+    try:
+        event = json.loads(raw) if raw.strip() else {}
+    except Exception:  # noqa: BLE001
+        _gate_block("Dina gate could not parse the tool-call payload — blocked (fail-closed)")
+    if not isinstance(event, dict):
+        _gate_block("Dina gate got a non-object tool-call payload — blocked (fail-closed)")
+
+    tool_name = event.get("tool_name")
+    if not isinstance(tool_name, str) or tool_name.strip() == "":
+        _gate_block("Dina gate got no tool_name — blocked (fail-closed)")
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        _gate_block("Dina gate got a non-object tool_input — blocked (fail-closed)")
+    cwd = event.get("cwd")
+    cwd = cwd if isinstance(cwd, str) and cwd else None
+    host_session_id = event.get("session_id")
+    if not isinstance(host_session_id, str) or host_session_id.strip() == "":
+        _gate_block("Dina gate got no host session_id — blocked (fail-closed)")
+
+    # Ask Core. Claude's signed host-session id is resolved atomically to an
+    # opaque DID-bound Core session by the gate route, avoiding an extra relay
+    # round-trip on every tool call while preserving revoke-on-session-end.
+    try:
+        client = DinaClient(load_config())
+        decision = client.gate(
+            tool_name,
+            tool_input,
+            mode="enforce",
+            host_session=host_session_id,
+            cwd=cwd,
+        )
+    except DinaClientError as exc:
+        _gate_block(f"Dina gate could not reach Core ({exc}) — blocked (fail-closed)")
+    except click.UsageError:
+        _gate_block("Dina is not configured (run: dina configure) — blocked (fail-closed)")
+    except Exception as exc:  # noqa: BLE001 — ANY failure fails closed
+        _gate_block(f"Dina gate error ({type(exc).__name__}) — blocked (fail-closed)")
+
+    if have_alarm:
+        signal.alarm(0)  # reached a verdict — cancel the deadline
+
+    outcome = decision.get("outcome") if isinstance(decision, dict) else None
+    risk = (decision.get("risk") if isinstance(decision, dict) else "") or ""
+    reason = (decision.get("reason") if isinstance(decision, dict) else "") or ""
+    action = (decision.get("action") if isinstance(decision, dict) else "") or ""
+
+    if outcome == "allow":
+        sys.exit(0)  # silent allow
+    if outcome == "deny":
+        _gate_block(reason or f"Dina blocked this action ({action})")
+    if outcome == "approval_required":
+        if risk == "MODERATE":
+            _gate_ask(reason or f"Dina flagged this action for your approval ({action})")
+        if risk == "HIGH":
+            task_id = (decision.get("task_id") if isinstance(decision, dict) else "") or ""
+            if task_id:
+                _gate_block(
+                    f"Dina approval required for {action or 'this action'} "
+                    f"(task {task_id}). Approve it in Dina, then retry the tool call"
+                )
+            _gate_block(
+                f"Dina approval is required for {action or 'this action'}, but no "
+                "approval task could be created — blocked (fail-closed)"
+            )
+        _gate_block(
+            f"Dina returned approval_required with an unrecognized risk "
+            f"({risk!r}) — blocked (fail-closed)"
+        )
+    # Unknown result from a REACHABLE Core → never allow (§12.2).
+    _gate_block(f"Dina returned an unrecognized decision ({outcome!r}) — blocked (fail-closed)")
+
+
+@cli.command("session-end-hook", hidden=True)
+def session_end_hook() -> None:
+    """Best-effort Claude SessionEnd bridge.
+
+    Reads Claude's hook payload from stdin, finds this authenticated agent's
+    Core session for that host session id, and ends it so session grants and
+    outstanding gate authority are revoked immediately. Lease expiry remains
+    the crash/forced-exit backstop.
+    """
+    try:
+        raw = sys.stdin.read()
+        event = json.loads(raw) if raw.strip() else {}
+        if not isinstance(event, dict):
+            raise ValueError("hook payload is not an object")
+        host_session_id = event.get("session_id")
+        if not isinstance(host_session_id, str) or host_session_id.strip() == "":
+            raise ValueError("hook payload has no session_id")
+
+        client = DinaClient(load_config())
+        sessions = client.session_list().get("sessions", [])
+        if not isinstance(sessions, list):
+            raise ValueError("Core returned an invalid session list")
+        for session in sessions:
+            if not isinstance(session, dict) or session.get("name") != host_session_id:
+                continue
+            session_id = session.get("session_id")
+            if isinstance(session_id, str) and session_id:
+                client.session_end(session_id)
+    except Exception as exc:  # noqa: BLE001 — SessionEnd must not trap the host
+        click.echo(
+            f"Dina could not end the agent session ({type(exc).__name__}); "
+            "its lease will expire automatically.",
+            err=True,
+        )
 
 
 # ── MCP Server ───────────────────────────────────────────────────────────
 
 
 @cli.command("mcp-server")
-def mcp_server() -> None:
+@click.option(
+    "--profile",
+    type=click.Choice(["all", "coding"], case_sensitive=False),
+    default="all",
+    show_default=True,
+    help="Limit the exposed MCP tools to a host contract.",
+)
+def mcp_server(profile: str) -> None:
     """Run Dina as an MCP server (stdio transport).
 
     \b
@@ -2358,7 +2565,7 @@ def mcp_server() -> None:
       claude mcp add dina -- dina mcp-server
     """
     from .mcp_server import run_server
-    run_server()
+    run_server(profile=profile.lower())
 
 
 @cli.command("agent-daemon")

@@ -16,15 +16,19 @@
  *     a reconciliation sweep ends any session whose lease lapsed (reaps a
  *     vanished Codex thread that has no `SessionEnd` hook).
  *
- * `start` is idempotent on `(agentDid, hostSessionId)` so the per-tool hook and
- * the MCP tools share ONE Core session (F-04) and a reconnect reuses it.
+ * `start` is idempotent on `(agentDid, hostSessionId)` so repeated host-hook
+ * calls and reconnects reuse one Core session. MCP clients can share it when
+ * they know the same host id; otherwise their explicitly started session is a
+ * separate, independently revocable scope.
  *
  * The in-memory Map is authoritative for reads within a process, with an
  * injectable clock. Item D wires an OPTIONAL durable `SessionRepository`: each
  * mutation writes through to SQLite, and `reconcile()` reloads live sessions on
  * boot (reaping any whose lease lapsed while Core was down), so an agent's
- * session survives a restart. The session-bootstrap op is the one op exempt from
- * prior-session validation (§15) — enforced by the caller.
+ * session survives a restart. Durable lifecycle writes are fail-closed: Core
+ * never reports a start/renew/end that SQLite did not record. The
+ * session-bootstrap op is the one op exempt from prior-session validation
+ * (§15) — enforced by the caller.
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
@@ -90,15 +94,17 @@ export class SessionRegistry {
     return this.reapExpired();
   }
 
-  /** Persist a record to the durable store (best-effort — the Map is the
-   *  in-process authority; a transient SQL failure must not break the session). */
+  /**
+   * Persist before publishing a lifecycle mutation to the in-memory map.
+   *
+   * In particular, swallowing an end-tombstone failure can resurrect the old
+   * active row after restart. A storage error therefore aborts the mutation and
+   * reaches the route as a masked 500; the caller may retry, while the previous
+   * session state remains authoritative.
+   */
   private persist(s: SessionRecord): void {
     if (this.repo === null) return;
-    try {
-      this.repo.upsert(s);
-    } catch {
-      /* durable write is best-effort; the in-memory record still stands */
-    }
+    this.repo.upsert(s);
   }
 
   /** Open (or reuse) a session for `(agentDid, hostSessionId)`. Idempotent. */
@@ -106,8 +112,7 @@ export class SessionRegistry {
     const t = this.now();
     const lease = input.leaseMs ?? DEFAULT_LEASE_MS;
 
-    // Reuse a live session for the same principal + host session (F-04): the
-    // hook and the MCP tools must share ONE Core session.
+    // Reuse a live session for the same principal + host session (F-04).
     for (const s of this.byId.values()) {
       if (
         s.agentDid === input.agentDid &&
@@ -115,10 +120,10 @@ export class SessionRegistry {
         s.endedAtMs === null &&
         t < s.leaseExpiresAtMs
       ) {
-        s.lastSeenAtMs = t;
-        s.leaseExpiresAtMs = t + lease;
-        this.persist(s);
-        return s;
+        const renewed = { ...s, lastSeenAtMs: t, leaseExpiresAtMs: t + lease };
+        this.persist(renewed);
+        this.byId.set(renewed.sessionId, renewed);
+        return renewed;
       }
     }
 
@@ -138,8 +143,8 @@ export class SessionRegistry {
       endedAtMs: null,
       endReason: null,
     };
-    this.byId.set(sessionId, record);
     this.persist(record);
+    this.byId.set(sessionId, record);
     return record;
   }
 
@@ -162,10 +167,14 @@ export class SessionRegistry {
     const v = this.validate(sessionId, agentDid);
     if (!v.ok) return v;
     const t = this.now();
-    v.session.lastSeenAtMs = t;
-    v.session.leaseExpiresAtMs = t + leaseMs;
-    this.persist(v.session);
-    return v;
+    const renewed = {
+      ...v.session,
+      lastSeenAtMs: t,
+      leaseExpiresAtMs: t + leaseMs,
+    };
+    this.persist(renewed);
+    this.byId.set(renewed.sessionId, renewed);
+    return { ok: true, session: renewed };
   }
 
   /** End a session explicitly (revokes grants via `onEnd`). DID-bound. */
@@ -174,8 +183,8 @@ export class SessionRegistry {
     if (!s) return { ok: false, reason: 'not_found' };
     if (s.agentDid !== agentDid) return { ok: false, reason: 'principal_mismatch' };
     if (s.endedAtMs !== null) return { ok: false, reason: 'ended' };
-    this.finish(s, 'explicit');
-    return { ok: true, session: s };
+    const ended = this.finish(s, 'explicit');
+    return { ok: true, session: ended };
   }
 
   /** Reconciliation sweep — end every session whose lease has lapsed. */
@@ -195,6 +204,16 @@ export class SessionRegistry {
     return this.byId.get(sessionId);
   }
 
+  /** Active sessions visible to one authenticated principal only. */
+  listActive(agentDid: string): SessionRecord[] {
+    this.reapExpired();
+    const active: SessionRecord[] = [];
+    for (const s of this.byId.values()) {
+      if (s.agentDid === agentDid && s.endedAtMs === null) active.push({ ...s });
+    }
+    return active.sort((a, b) => b.createdAtMs - a.createdAtMs);
+  }
+
   /** Live (not ended, lease valid) session count — for tests/metrics. */
   liveCount(): number {
     const t = this.now();
@@ -203,13 +222,18 @@ export class SessionRegistry {
     return n;
   }
 
-  private finish(s: SessionRecord, reason: EndReason): void {
-    s.endedAtMs = this.now();
-    s.endReason = reason;
+  private finish(s: SessionRecord, reason: EndReason): SessionRecord {
+    const ended: SessionRecord = {
+      ...s,
+      endedAtMs: this.now(),
+      endReason: reason,
+    };
     // Persist the tombstone BEFORE the onEnd side-effects so a durable record of
     // the end exists even if a hook throws.
-    this.persist(s);
-    this.onEnd(s, reason);
+    this.persist(ended);
+    this.byId.set(ended.sessionId, ended);
+    this.onEnd(ended, reason);
+    return ended;
   }
 }
 

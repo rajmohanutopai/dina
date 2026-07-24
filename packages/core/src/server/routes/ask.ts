@@ -19,6 +19,7 @@
  */
 
 import { API_ASK } from './paths';
+import { getSessionRegistry } from '../../session/registry';
 
 import type { CoreRouter } from '../router';
 
@@ -31,8 +32,8 @@ export interface AskSubmitInput {
   requesterDid: string;
   requestIdHeader?: string | null;
   /**
-   * Dina-agent CLI session id (`sess-...`) from the `X-Session`
-   * header. Used by the per-ask persona_guard to scope vault-read
+   * Dina-agent CLI session id (`sess-...`) from the signed JSON body.
+   * Used by the per-ask persona_guard to scope vault-read
    * session approvals to a single CLI session — `dina session start`
    * mints a fresh id and old grants are dropped.
    */
@@ -46,7 +47,11 @@ export interface AskSubmitInput {
  */
 export interface AskRouteHandler {
   handleAsk(req: AskSubmitInput): Promise<{ status: number; body: unknown }>;
-  handleStatus(id: string): Promise<{ status: number; body: unknown }>;
+  handleStatus(
+    id: string,
+    requesterDid?: string,
+    sessionId?: string,
+  ): Promise<{ status: number; body: unknown }>;
 }
 
 export interface AskRouteOptions {
@@ -123,13 +128,18 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     }
     const requestIdHeader =
       typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-    // The dina-agent CLI tags every request with `X-Session: sess-...`
-    // (see client.py:ask). Threading it through the per-ask persona_guard
-    // is how the session-scoped vault-read approval shortcut keys on
-    // (agent, session, persona) — a new `dina session start` mints a
-    // fresh id and old grants no longer match.
-    const sessionId =
-      typeof req.headers['x-session'] === 'string' ? req.headers['x-session'] : '';
+    // Coding agents bind the session inside the signed JSON body. Legacy
+    // device/Brain callers may still use X-Session during the transition.
+    const bodySessionId =
+      typeof body.session_id === 'string' ? body.session_id.trim() : '';
+    const headerSessionId =
+      typeof req.headers['x-session'] === 'string' ? req.headers['x-session'].trim() : '';
+    const sessionId = req.callerType === 'agent' ? bodySessionId : bodySessionId || headerSessionId;
+    if (req.callerType === 'agent') {
+      if (sessionId === '' || !getSessionRegistry().renew(sessionId, requesterDid).ok) {
+        return { status: 401, body: { error: 'invalid_session' } };
+      }
+    }
     const input: AskSubmitInput = {
       question,
       requesterDid,
@@ -150,6 +160,22 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     const id = req.params.id ?? '';
     if (id === '') {
       return { status: 404, body: { error: 'not_found', request_id: '' } };
+    }
+    const requesterDid = typeof req.callerDID === 'string' ? req.callerDID.trim() : '';
+    if (requesterDid === '') {
+      return {
+        status: 401,
+        body: { error: 'unauthenticated: no caller identity resolved' },
+      };
+    }
+    if (req.callerType === 'agent') {
+      const sessionId =
+        typeof req.query.session_id === 'string' ? req.query.session_id.trim() : '';
+      if (sessionId === '' || !getSessionRegistry().renew(sessionId, requesterDid).ok) {
+        return { status: 401, body: { error: 'invalid_session' } };
+      }
+      const result = await handler.handleStatus(id, requesterDid, sessionId);
+      return { status: result.status, body: result.body };
     }
     const result = await handler.handleStatus(id);
     return { status: result.status, body: result.body };

@@ -12,6 +12,23 @@ import {
   type AgentFacadeContext,
   type AgentFacadeHandlers,
 } from '../../../src/server/routes/agent_facades';
+import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
+
+const AGENT_DID = 'did:key:z6MkAgent';
+const OTHER_DID = 'did:key:z6MkOther';
+let sessionId = '';
+
+beforeEach(() => {
+  const registry = new SessionRegistry();
+  setSessionRegistry(registry);
+  sessionId = registry.start({ agentDid: AGENT_DID, hostSessionId: 'host-1' }).sessionId;
+});
+
+afterEach(() => setSessionRegistry(null));
+
+function active(body: Record<string, unknown> = {}): Record<string, unknown> {
+  return { session_id: sessionId, ...body };
+}
 
 function req(path: string, body: unknown, over: Partial<CoreRequest> = {}): CoreRequest {
   return {
@@ -24,7 +41,7 @@ function req(path: string, body: unknown, over: Partial<CoreRequest> = {}): Core
     params: {},
     trustedInProcess: true,
     callerType: 'agent',
-    callerDID: 'did:key:z6MkAgent',
+    callerDID: AGENT_DID,
     agentScope: 'coding',
     ...over,
   } as unknown as CoreRequest;
@@ -44,9 +61,9 @@ const echo = (tag: string) => (ctx: AgentFacadeContext) => ({
 describe('façade registration', () => {
   it('registers only the routes whose backing is provided', async () => {
     const r = routerWith({ memory: echo('memory') }); // only memory
-    const hit = await r.handle(req('/v1/agent/memory', { session_id: 's' }));
+    const hit = await r.handle(req('/v1/agent/memory', active()));
     expect(hit.status).toBe(200);
-    const miss = await r.handle(req('/v1/agent/talk', { to: 'did:x' }));
+    const miss = await r.handle(req('/v1/agent/talk', active({ to: 'did:x' })));
     expect(miss.status).toBe(404); // no talk backing ⇒ unregistered
   });
 
@@ -60,7 +77,7 @@ describe('façade registration', () => {
       ask: echo('a'),
     });
     for (const p of ['/v1/agent/memory', '/v1/agent/find-service', '/v1/agent/talk', '/v1/agent/delegate', '/v1/agent/peerlens', '/v1/agent/ask']) {
-      expect((await r.handle(req(p, {}))).status).toBe(200);
+      expect((await r.handle(req(p, active()))).status).toBe(200);
     }
   });
 });
@@ -69,8 +86,8 @@ describe('façade auth + scope gate', () => {
   const r = () => routerWith({ talk: echo('talk') });
 
   it('delegates to the backing with the authenticated DID + session', async () => {
-    const res = await r().handle(req('/v1/agent/talk', { session_id: 'sess-9', to: 'did:peer', message: 'hi' }));
-    expect(res.body).toMatchObject({ tag: 'talk', agent: 'did:key:z6MkAgent', session: 'sess-9' });
+    const res = await r().handle(req('/v1/agent/talk', active({ to: 'did:peer', message: 'hi' })));
+    expect(res.body).toMatchObject({ tag: 'talk', agent: AGENT_DID, session: sessionId });
   });
 
   it('401 without a caller DID', async () => {
@@ -92,5 +109,28 @@ describe('façade auth + scope gate', () => {
     const big = 'x'.repeat(64 * 1024 + 1);
     const res = await r().handle(req('/v1/agent/talk', {}, { rawBody: new TextEncoder().encode(big) }));
     expect(res.status).toBe(413);
+  });
+
+  it('401 when the session is missing', async () => {
+    const res = await r().handle(req('/v1/agent/talk', { to: 'did:peer' }));
+    expect(res).toMatchObject({ status: 401, body: { error: 'invalid_session' } });
+  });
+
+  it('collapses unknown, foreign, and ended sessions to the same response', async () => {
+    const registry = new SessionRegistry();
+    setSessionRegistry(registry);
+    const own = registry.start({ agentDid: AGENT_DID, hostSessionId: 'own' });
+    const foreign = registry.start({ agentDid: OTHER_DID, hostSessionId: 'foreign' });
+    registry.end(own.sessionId, AGENT_DID);
+
+    const responses = await Promise.all([
+      r().handle(req('/v1/agent/talk', { session_id: 'sess-unknown' })),
+      r().handle(req('/v1/agent/talk', { session_id: foreign.sessionId })),
+      r().handle(req('/v1/agent/talk', { session_id: own.sessionId })),
+    ]);
+
+    for (const response of responses) {
+      expect(response).toMatchObject({ status: 401, body: { error: 'invalid_session' } });
+    }
   });
 });

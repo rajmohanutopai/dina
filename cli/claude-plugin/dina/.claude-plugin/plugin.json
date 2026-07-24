@@ -1,0 +1,9 @@
+{
+  "name": "dina",
+  "displayName": "Dina",
+  "version": "0.1.0",
+  "description": "Your sovereign personal AI, inside the agent you already use. Once Claude Code launches the hook supervisor, every tool call passes a Core-owned deterministic safety gate and gate failures block, with a disclosed host-mediated residual. Includes portable encrypted memory, intent validation, and PII scrubbing over MCP. Requires the `dina` CLI from dina-agent>=0.19.0 paired to a Home Node.",
+  "author": { "name": "Dina" },
+  "keywords": ["security", "gate", "agent-safety", "memory", "privacy", "mcp"],
+  "mcpServers": "./.mcp.json"
+}

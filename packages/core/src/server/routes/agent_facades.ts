@@ -21,6 +21,7 @@
  */
 
 import { isScopeAuthorized } from '../../auth/agent_scope';
+import { getSessionRegistry } from '../../session/registry';
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
@@ -76,6 +77,15 @@ function facade(path: string, handler: AgentFacadeHandler) {
     }
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
+    if (sessionId === '') {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
+    const session = getSessionRegistry().renew(sessionId, agentDid);
+    if (!session.ok) {
+      // Unknown, foreign, ended, and expired sessions intentionally collapse
+      // to one response so this route is not a cross-principal session oracle.
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
     return handler({ agentDid, sessionId, body });
   };
 }

@@ -286,6 +286,43 @@ describe('POST /api/v1/ask — fast-path completion', () => {
     }
   });
 
+  it('preserves requester/session ownership across the split Core bridge', async () => {
+    const h = await buildHarness();
+    h.push(answerResp('private answer'));
+    try {
+      const submit = await h.app.inject({
+        method: 'POST',
+        url: '/api/v1/ask',
+        payload: {
+          question: 'private question',
+          requesterDid: REQUESTER,
+          sessionId: 'sess-good',
+        },
+      });
+      expect(submit.statusCode).toBe(200);
+      const askId: string = submit.json().request_id;
+
+      const wrongSession = await h.app.inject({
+        method: 'GET',
+        url:
+          `/api/v1/ask/${askId}/status?` +
+          `requesterDid=${encodeURIComponent(REQUESTER)}&sessionId=sess-wrong`,
+      });
+      expect(wrongSession.statusCode).toBe(404);
+
+      const owner = await h.app.inject({
+        method: 'GET',
+        url:
+          `/api/v1/ask/${askId}/status?` +
+          `requesterDid=${encodeURIComponent(REQUESTER)}&sessionId=sess-good`,
+      });
+      expect(owner.statusCode).toBe(200);
+      expect(owner.json().answer).toEqual({ text: 'private answer' });
+    } finally {
+      await h.close();
+    }
+  });
+
   it('uses the X-Request-Id header as the ask id (lowercased per inboundRequestId convention)', async () => {
     const h = await buildHarness();
     h.push(answerResp('hi'));

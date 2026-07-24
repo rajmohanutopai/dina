@@ -55,6 +55,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { evaluateIntent } from '../../gatekeeper/intent';
+import { getSessionRegistry } from '../../session/registry';
 import { getWorkflowRepository } from '../../workflow/repository';
 
 import type { WorkflowTask } from '../../workflow/domain';
@@ -134,6 +135,33 @@ export function grantSessionApproval(
 export function resetSessionApprovals(): void {
   sessionApprovals.clear();
   vaultReadSessionApprovals.clear();
+}
+
+/**
+ * Remove every ephemeral approval held by one exact agent session.
+ *
+ * SessionRegistry invokes this from its end hook. The live-session check on
+ * agent routes is the primary authority boundary; deleting these entries keeps
+ * the in-memory projection honest and prevents an ended session from retaining
+ * stale approval state until TTL expiry.
+ */
+export function revokeSessionApprovals(agentDid: string, sessionId: string): number {
+  if (agentDid.trim() === '' || sessionId.trim() === '') return 0;
+  const prefix = `${agentDid}::${sessionId}::`;
+  let removed = 0;
+  for (const key of sessionApprovals.keys()) {
+    if (key.startsWith(prefix)) {
+      sessionApprovals.delete(key);
+      removed++;
+    }
+  }
+  for (const key of vaultReadSessionApprovals.keys()) {
+    if (key.startsWith(prefix)) {
+      vaultReadSessionApprovals.delete(key);
+      removed++;
+    }
+  }
+  return removed;
 }
 
 // ─── Session-scoped vault-read approvals ────────────────────────────────────
@@ -259,7 +287,12 @@ export function registerIntentRoutes(router: CoreRouter): void {
     const target = typeof body.target === 'string' ? body.target.trim() : '';
     const agentDIDFromBody = typeof body.agent_did === 'string' ? body.agent_did : '';
     const trustLevelRaw = typeof body.trust_level === 'string' ? body.trust_level : '';
-    const sessionRaw = typeof body.session === 'string' ? body.session : '';
+    const sessionRaw =
+      typeof body.session_id === 'string'
+        ? body.session_id
+        : typeof body.session === 'string'
+          ? body.session
+          : '';
 
     // Caller identity binding. Go's `agent.go:83-91` overrides
     // body.agent_did with the X-DID header (signature auth) — never
@@ -267,7 +300,17 @@ export function registerIntentRoutes(router: CoreRouter): void {
     // X-DID, fall back to whatever the body shipped.
     const xDID = req.headers['x-did'];
     const agentDID =
-      typeof xDID === 'string' && xDID !== '' ? xDID : agentDIDFromBody;
+      req.callerDID ??
+      (typeof xDID === 'string' && xDID !== '' ? xDID : agentDIDFromBody);
+
+    if (
+      req.callerType === 'agent' &&
+      (sessionRaw === '' ||
+        agentDID === '' ||
+        !getSessionRegistry().renew(sessionRaw, agentDID).ok)
+    ) {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
 
     // Trust level: any caller that passed signature auth is "verified"
     // by definition — auth middleware already rejected untrusted
@@ -380,6 +423,19 @@ export function registerIntentRoutes(router: CoreRouter): void {
     if (proposalId === '') {
       return { status: 400, body: { error: 'proposal_id required' } };
     }
+    const xDID = req.headers['x-did'];
+    const requesterDid =
+      req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : '');
+    const requesterSession =
+      typeof req.query.session_id === 'string' ? req.query.session_id : '';
+    if (
+      req.callerType === 'agent' &&
+      (requesterDid === '' ||
+        requesterSession === '' ||
+        !getSessionRegistry().renew(requesterSession, requesterDid).ok)
+    ) {
+      return { status: 401, body: { error: 'invalid_session' } };
+    }
     const repo = getWorkflowRepository();
     if (!repo) {
       return { status: 503, body: { error: 'proposal status not available' } };
@@ -402,6 +458,16 @@ export function registerIntentRoutes(router: CoreRouter): void {
     const target = typeof payload.target === 'string' ? payload.target : '';
     const agentDID =
       typeof payload.agent_did === 'string' ? payload.agent_did : task.agent_did ?? '';
+    const proposalSession =
+      typeof payload.session === 'string' ? payload.session : '';
+    if (
+      req.callerType === 'agent' &&
+      (agentDID !== requesterDid || proposalSession !== requesterSession)
+    ) {
+      // Collapse ownership mismatch to not-found; status must not become an
+      // oracle for another session's proposal.
+      return { status: 404, body: { error: 'unknown proposal_id' } };
+    }
     const decisionReason = typeof payload.reason === 'string' ? payload.reason : '';
 
     const status = mapTaskStatusToProposalStatus(task);

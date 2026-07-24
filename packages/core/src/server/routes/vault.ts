@@ -10,6 +10,7 @@
  */
 
 import { requireAgentPersonaAccess } from '../../agent/access';
+import { getSessionRegistry } from '../../session/registry';
 import {
   storeItem,
   queryVault,
@@ -98,13 +99,32 @@ function agentGate(
     // fail closed rather than match a stray empty-DID grant.
     return { status: 403, body: { error: 'access_denied', reason: 'agent caller has no DID' } };
   }
-  const sessionId = req.headers['x-session'] ?? '';
+  const body =
+    req.body !== null && typeof req.body === 'object' && !ArrayBuffer.isView(req.body)
+      ? (req.body as Record<string, unknown>)
+      : {};
+  const bodySession = typeof body.session_id === 'string' ? body.session_id : '';
+  const querySession = req.query.session_id ?? '';
+  if (bodySession !== '' && querySession !== '' && bodySession !== querySession) {
+    return { status: 400, body: { error: 'ambiguous_session' } };
+  }
+  // Body bytes and the canonical query string are both covered by the request
+  // signature. X-Session is deliberately ignored for agents because arbitrary
+  // headers are not part of that signature.
+  const sessionId = bodySession || querySession;
+  if (sessionId === '') {
+    return { status: 401, body: { error: 'invalid_session' } };
+  }
+  const liveSession = getSessionRegistry().renew(sessionId, agentDID);
+  if (!liveSession.ok) {
+    return { status: 401, body: { error: 'invalid_session' } };
+  }
   const decision = requireAgentPersonaAccess({
     agentDID,
     persona,
     mode,
     scope,
-    ...(sessionId !== '' ? { sessionId } : {}),
+    sessionId,
   });
   if (decision.kind === 'approval_required') {
     return {
