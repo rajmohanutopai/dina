@@ -3,17 +3,21 @@ import {
   WorkflowService,
   createCodingGateApproval,
   getWorkflowService,
+  remoteApprovalProposalId,
   setCodingPermitAuthority,
   setWorkflowService,
 } from '@dina/core';
+import { resetKVStore } from '@dina/core/kv';
 
 import {
   PhoneApprovalSyncWorker,
   runPhoneApprovalSyncTick,
+  withdrawAllPhoneApprovalMirrors,
   type PhoneApprovalClient,
 } from '../src/approval/phone_approval_sync';
 
 const NOW = 2_000_000_000_000;
+const PHONE_CLIENT_DID = 'did:key:z6MkLaptopApprovalClient';
 
 function createSourceTask(): string {
   const created = createCodingGateApproval({
@@ -31,10 +35,18 @@ function createSourceTask(): string {
 
 function clientFor(decision: 'pending' | 'approved' | 'denied'): PhoneApprovalClient {
   return {
-    request: jest.fn(async () => {
+    did: PHONE_CLIENT_DID,
+    request: jest.fn(async (_method, _path, body) => {
+      const sourceTaskId =
+        body !== null && typeof body === 'object' && 'source_task_id' in body
+          ? String(body.source_task_id)
+          : '';
       return {
         status: 201,
-        body: { proposal_id: 'remote-1', decision },
+        body: {
+          proposal_id: remoteApprovalProposalId(PHONE_CLIENT_DID, sourceTaskId),
+          decision,
+        },
       };
     }),
   };
@@ -45,6 +57,7 @@ describe('phone approval synchronization worker', () => {
 
   beforeEach(() => {
     minted.length = 0;
+    resetKVStore();
     setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
     setCodingPermitAuthority({
       mintApproved: (claim) => minted.push(claim),
@@ -54,6 +67,7 @@ describe('phone approval synchronization worker', () => {
   afterEach(() => {
     setCodingPermitAuthority(null);
     setWorkflowService(null);
+    resetKVStore();
     jest.useRealTimers();
   });
 
@@ -99,6 +113,7 @@ describe('phone approval synchronization worker', () => {
     const id = createSourceTask();
     const result = await runPhoneApprovalSyncTick({
       client: {
+        did: PHONE_CLIENT_DID,
         request: async () => {
           throw new Error('offline');
         },
@@ -109,6 +124,78 @@ describe('phone approval synchronization worker', () => {
     expect(getWorkflowService()?.store().getById(id)?.status).toBe('pending_approval');
   });
 
+  it('withdraws a durable phone mirror after its laptop task is cancelled', async () => {
+    const id = createSourceTask();
+    const pendingClient = clientFor('pending');
+    await runPhoneApprovalSyncTick({ client: pendingClient, nowMs: NOW });
+    getWorkflowService()?.cancel(id, 'owner cancelled locally');
+
+    const request = jest.fn(async (method: 'GET' | 'POST' | 'DELETE') => {
+      if (method === 'DELETE') return { status: 204, body: {} };
+      throw new Error('unexpected request');
+    });
+    const result = await runPhoneApprovalSyncTick({
+      client: { did: PHONE_CLIENT_DID, request },
+      nowMs: NOW,
+    });
+
+    expect(result.withdrawn).toBe(1);
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      expect.stringContaining(`/proposals/${remoteApprovalProposalId(PHONE_CLIENT_DID, id)}`),
+    );
+  });
+
+  it('can withdraw after transport fails because the deterministic receipt is persisted first', async () => {
+    const id = createSourceTask();
+    const offline = jest.fn(async () => {
+      throw new Error('response lost after remote create');
+    });
+    await runPhoneApprovalSyncTick({
+      client: { did: PHONE_CLIENT_DID, request: offline },
+      nowMs: NOW,
+    });
+    getWorkflowService()?.cancel(id, 'owner cancelled locally');
+
+    const request = jest.fn(async (method: 'GET' | 'POST' | 'DELETE') => {
+      if (method === 'DELETE') return { status: 204, body: {} };
+      throw new Error('unexpected request');
+    });
+    const result = await runPhoneApprovalSyncTick({
+      client: { did: PHONE_CLIENT_DID, request },
+      nowMs: NOW,
+    });
+
+    expect(result.withdrawn).toBe(1);
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      expect.stringContaining(`/proposals/${remoteApprovalProposalId(PHONE_CLIENT_DID, id)}`),
+    );
+  });
+
+  it('withdraws pending mirrors before an approval phone is replaced', async () => {
+    const id = createSourceTask();
+    await runPhoneApprovalSyncTick({
+      client: clientFor('pending'),
+      nowMs: NOW,
+    });
+    const request = jest.fn(async (method: 'GET' | 'POST' | 'DELETE') => {
+      if (method === 'DELETE') return { status: 204, body: {} };
+      throw new Error('unexpected request');
+    });
+
+    const result = await withdrawAllPhoneApprovalMirrors({
+      did: PHONE_CLIENT_DID,
+      request,
+    });
+
+    expect(result).toEqual({ withdrawn: 1, failed: 0 });
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      expect.stringContaining(`/proposals/${remoteApprovalProposalId(PHONE_CLIENT_DID, id)}`),
+    );
+  });
+
   it('single-flights overlapping worker ticks', async () => {
     createSourceTask();
     let release!: () => void;
@@ -116,11 +203,19 @@ describe('phone approval synchronization worker', () => {
       release = resolve;
     });
     const client: PhoneApprovalClient = {
-      request: jest.fn(async () => {
+      did: PHONE_CLIENT_DID,
+      request: jest.fn(async (_method, _path, body) => {
         await gate;
+        const sourceTaskId =
+          body !== null && typeof body === 'object' && 'source_task_id' in body
+            ? String(body.source_task_id)
+            : '';
         return {
           status: 201,
-          body: { proposal_id: 'remote-1', decision: 'pending' },
+          body: {
+            proposal_id: remoteApprovalProposalId(PHONE_CLIENT_DID, sourceTaskId),
+            decision: 'pending',
+          },
         };
       }),
     };
@@ -149,7 +244,7 @@ describe('phone approval synchronization worker', () => {
     });
 
     const result = await runPhoneApprovalSyncTick({
-      client: { request },
+      client: { did: PHONE_CLIENT_DID, request },
       nowMs: NOW,
     });
 
@@ -165,11 +260,19 @@ describe('phone approval synchronization worker', () => {
     });
     const worker = new PhoneApprovalSyncWorker(
       {
-        request: async () => {
+        did: PHONE_CLIENT_DID,
+        request: async (_method, _path, body) => {
           await gate;
+          const sourceTaskId =
+            body !== null && typeof body === 'object' && 'source_task_id' in body
+              ? String(body.source_task_id)
+              : '';
           return {
             status: 201,
-            body: { proposal_id: 'remote-1', decision: 'pending' },
+            body: {
+              proposal_id: remoteApprovalProposalId(PHONE_CLIENT_DID, sourceTaskId),
+              decision: 'pending',
+            },
           };
         },
       },

@@ -981,6 +981,7 @@ export * from './task/queue';
 export type { TaskRecord } from './task/queue';
 export * from './pairing/ceremony';
 export type { PairingCode, PairingResult } from './pairing/ceremony';
+export * from './pairing/setup_code';
 export * from './session/lifecycle';
 export type { AgentSession, SessionGrant } from './session/lifecycle';
 export * from './config/loading';
@@ -1061,6 +1062,7 @@ export * from './relay/rpc_response';
 export {
   REMOTE_APPROVAL_API_PREFIX,
   REMOTE_APPROVAL_PAYLOAD_TYPE,
+  remoteApprovalProposalId,
 } from './server/routes/remote_approval';
 export { applyOwnerWorkflowDecision } from './server/routes/workflow';
 export * from './relay/identity_binding';
@@ -1322,10 +1324,7 @@ export type {
 } from './server/router';
 export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
 export type { CoreRouterOptions } from './server/core_server';
-export type {
-  AskRouteHandler,
-  AskSubmitInput,
-} from './server/routes/ask';
+export type { AskRouteHandler, AskSubmitInput } from './server/routes/ask';
 export type { CodingGateFn, CodingGateInput, CodingGateResult } from './server/routes/coding_gate';
 export type {
   AgentFacadeHandlers,

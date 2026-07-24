@@ -12,31 +12,32 @@
 #   - 7.31 Trivy scan on the built image, fails on HIGH/CRITICAL CVEs
 #
 # Triggers:
-#   - `push: tags: v*`       → full release (all tags + push + scan)
+#   - `push: tags: v*` or `home-node-lite-v*`
+#                               → full release (all tags + scan + push)
 #   - `workflow_dispatch`    → manual re-run (dev tags only, no semver)
 
 name: home-node-lite-release
 
 on:
   push:
-    tags: ['v*.*.*']
+    tags: ["v*.*.*", "home-node-lite-v*.*.*"]
   workflow_dispatch:
     inputs:
       push:
-        description: 'Push images to ghcr.io (off = build + scan only)'
+        description: "Push images to ghcr.io (off = build + scan only)"
         type: boolean
         default: false
 
 concurrency:
   group: home-node-lite-release-${{ github.ref }}
-  cancel-in-progress: false  # never cancel a release build mid-push
+  cancel-in-progress: false # never cancel a release build mid-push
 
 # Tokens for ghcr.io + security scanning.
 permissions:
   contents: read
-  packages: write          # ghcr push
-  security-events: write   # upload Trivy SARIF to GitHub code-scanning
-  id-token: write          # cosign keyless signing (future task)
+  packages: write # ghcr push
+  security-events: write # upload Trivy SARIF to GitHub code-scanning
+  id-token: write # cosign keyless signing (future task)
 
 jobs:
   release:
@@ -75,6 +76,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Normalize release version
+        id: version
+        shell: bash
+        run: |
+          ref="${GITHUB_REF_NAME#home-node-lite-}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "value=$ref" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "value=" >> "$GITHUB_OUTPUT"
+          fi
+
       # Task 7.30 — tag strategy. docker/metadata-action computes the
       # full tag set from the git ref + branch context:
       #   - `latest`         on tags matching `v*.*.*`
@@ -89,54 +103,64 @@ jobs:
           images: ghcr.io/rajmohan/dina-home-node-lite-${{ matrix.image }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
+            type=semver,pattern={{major}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
+            type=raw,value=latest,enable=${{ steps.version.outputs.is_release }}
             type=sha,prefix=sha-,format=short
 
-      # Task 7.28 + 7.29 — multi-arch build and push.
-      - name: Build and push
-        id: build
+      # Build one native image into Docker before publishing. Multi-platform
+      # buildx results cannot also be loaded into the local daemon, and Trivy
+      # must scan the exact filesystem before a release is pushed.
+      - name: Build scan image
+        id: scan-build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' || inputs.push == true }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Docker layer cache reuse across runs. GHA cache is free + fast
-          # for the container-image use case.
-          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}
-          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }},mode=max
-          # Provenance + SBOM default-on so supply-chain consumers can
-          # verify what the image was built from.
-          provenance: true
-          sbom: true
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: dina-home-node-lite-${{ matrix.image }}:security-scan
+          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}-scan
+          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }}-scan,mode=max
 
-      # Task 7.31 — Trivy scan. Runs after build; uses the local image
-      # output from buildx (not a registry pull) to keep the scan step
-      # fast + independent of network.
-      #
       # Fails the job on HIGH/CRITICAL findings. Medium/low go to the
       # GitHub security tab via the SARIF upload below but don't block.
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.24.0
         with:
-          image-ref: ghcr.io/rajmohan/dina-home-node-lite-${{ matrix.image }}:sha-${{ github.sha }}
+          image-ref: dina-home-node-lite-${{ matrix.image }}:security-scan
           format: sarif
           output: trivy-results-${{ matrix.image }}.sarif
-          exit-code: '1'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true      # only fail on CVEs that have a fix available
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true # only fail on CVEs that have a fix available
 
       - name: Upload Trivy SARIF to GitHub code-scanning
-        if: always()
+        if: always() && hashFiles(format('trivy-results-{0}.sarif', matrix.image)) != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results-${{ matrix.image }}.sarif
           category: trivy-${{ matrix.image }}
+
+      # Task 7.28 + 7.29 — publish only after the native image passes the
+      # blocking security scan. The build cache keeps the second build cheap.
+      - name: Build and push multi-arch release
+        id: publish
+        if: github.event_name == 'push' || inputs.push == true
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}-release
+          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }}-release,mode=max
+          provenance: true
+          sbom: true
 
       - name: Summary
         if: always()
@@ -149,7 +173,7 @@ jobs:
             echo '${{ steps.meta.outputs.tags }}'
             echo '```'
             echo ""
-            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo "**Published digest:** \`${{ steps.publish.outputs.digest || 'scan-only' }}\`"
             echo ""
             echo "Built for: linux/amd64, linux/arm64"
           } >> "$GITHUB_STEP_SUMMARY"

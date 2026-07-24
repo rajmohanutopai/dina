@@ -66,7 +66,7 @@ jobs:
 
       - name: Test the Core-bound plugin contract
         run: |
-          npm test --workspace @dina/core -- --runInBand --forceExit \
+          npm test --workspace @dina/core -- --runInBand \
             __tests__/agent/coding_permit.test.ts \
             __tests__/auth/agent_scope.test.ts \
             __tests__/auth/agent_scope_derivation.test.ts \
@@ -77,12 +77,15 @@ jobs:
             __tests__/server/routes/pii_agent.test.ts \
             __tests__/server/routes/remote_approval.test.ts \
             __tests__/server/routes/session_route.test.ts
-          npm test --workspace @dina/home-node-lite-core-server -- --runInBand --forceExit \
+          npm test --workspace @dina/home-node-lite-core-server -- --runInBand \
             __tests__/coding_gate_impl.test.ts \
             __tests__/http_ask_handler.test.ts \
+            __tests__/owner_console.test.ts \
+            __tests__/owner_setup.test.ts \
+            __tests__/phone_approval_manager.test.ts \
             __tests__/phone_approval_msgbox.test.ts \
             __tests__/phone_approval_sync.test.ts
-          npm test --workspace @dina/home-node-lite-brain-server -- --runInBand --forceExit \
+          npm test --workspace @dina/home-node-lite-brain-server -- --runInBand \
             __tests__/ask_routes.test.ts
 
       - name: Run the live coding-gate E2E

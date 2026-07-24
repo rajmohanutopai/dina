@@ -3,7 +3,7 @@
 #
 # Phase 7d of docs/HOME_NODE_LITE_TASKS.md (tasks 7.21 – 7.27):
 #   - 7.21 Secret gen (BIP-39) — done by Core on first boot; this script
-#          surfaces the mnemonic the operator must write down.
+#          reads the protected recovery file inside the Core container.
 #   - 7.22 PDS credential prompt.
 #   - 7.23 `.env` creation from .env.example + interactive prompts.
 #   - 7.24 `docker compose up -d` + wait-healthy.
@@ -85,7 +85,7 @@ install-lite.sh — bootstrap Dina Home Node Lite.
 Commands:
   (no flag)        Install or re-run (idempotent). Creates .env if
                    absent, starts the stack, waits for healthz, prints
-                   the first-boot mnemonic + the live DID.
+                   the recovery phrase, owner-console key, and live DID.
 
   --test-infra     Modifier on (no flag) — shifts PDS / MsgBox / AppView
                    defaults to test-*.dinakernel.com instead of
@@ -113,8 +113,9 @@ Environment prerequisites:
 
 The script is idempotent: re-running with an existing .env preserves
 your config + vault; only containers/images are restarted. First boot
-generates a 24-word BIP-39 mnemonic inside the Core container — this
-script echoes it from Core's logs so you can write it down.
+generates a 24-word BIP-39 recovery phrase inside Core's protected
+vault. It is never logged. This script reads it directly from the
+container so you can record it offline.
 USAGE
 }
 
@@ -142,6 +143,10 @@ ensure_env() {
   info "no .env found — generating from .env.example"
 
   cp "$ENV_EXAMPLE" "$ENV_FILE"
+  if [ "$TEST_INFRA" = "true" ]; then
+    sed -i.bak 's|^DINA_ENDPOINT_MODE=.*|DINA_ENDPOINT_MODE=test|' "$ENV_FILE"
+    rm -f "${ENV_FILE}.bak"
+  fi
 
   printf "\n${C_BOLD}%s${C_RESET}\n\n" "Dina Home Node Lite — first-run setup"
 
@@ -204,24 +209,44 @@ wait_healthy() {
 }
 
 print_credentials() {
-  # Task 7.25 — surface the first-boot mnemonic Core emitted as a warn
-  # log line. Only shows a line the first time; re-runs won't re-emit.
-  info "checking Core logs for first-boot mnemonic..."
+  # Core never logs authority. Read the 0600 recovery file directly from the
+  # container's vault and print it only to this interactive terminal.
+  info "checking Core's protected recovery file..."
   local mnemonic
-  mnemonic=$(docker logs dina-core-lite 2>&1 | grep -oE '"mnemonic":"[^"]+"' | head -1 | sed 's/^"mnemonic":"//; s/"$//')
+  mnemonic=$(docker exec dina-core-lite sh -c \
+    'test -r /var/lib/dina/recovery-phrase.txt && tail -n 1 /var/lib/dina/recovery-phrase.txt' \
+    2>/dev/null || true)
   if [ -n "$mnemonic" ]; then
     printf "\n${C_YELLOW}${C_BOLD}%s${C_RESET}\n\n" "⚠  YOUR 24-WORD MNEMONIC — WRITE THIS DOWN NOW"
     printf "${C_BOLD}%s${C_RESET}\n\n" "$mnemonic"
     printf "This is the only recovery path if you lose your vault.\n"
-    printf "It was emitted to Core's logs; it won't be shown again.\n\n"
+    printf "It was read from Core's protected vault and was never logged.\n"
+    printf "After recording it, remove the plaintext file with:\n"
+    printf "  docker exec dina-core-lite rm /var/lib/dina/recovery-phrase.txt\n\n"
   else
-    info "no first-boot mnemonic found in logs — vault already initialised"
+    info "no recovery-phrase file found — it was already removed or this is not first boot"
+  fi
+
+  local owner_capability
+  owner_capability=$(docker exec dina-core-lite sh -c \
+    'if test -r /var/lib/dina/owner_capability; then cat /var/lib/dina/owner_capability; else printenv DINA_OWNER_CAPABILITY; fi' \
+    2>/dev/null || true)
+  local core_port
+  core_port=$(grep -E '^DINA_CORE_PORT_EXTERNAL=' "$ENV_FILE" 2>/dev/null \
+    | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')
+  core_port="${core_port:-8100}"
+  if [ -n "$owner_capability" ]; then
+    printf "${C_BOLD}Owner console:${C_RESET} http://127.0.0.1:%s/owner\n" \
+      "$core_port"
+    printf "${C_BOLD}Owner key:${C_RESET} %s\n\n" "$owner_capability"
+    printf "Use the owner console to pair coding agents and your approval phone.\n"
+    printf "The key is authority; do not paste it into an agent conversation.\n\n"
   fi
 
   # Live-query the DID from Core. The endpoint lands in Phase 4g; if
   # absent we skip silently (not a blocker for install success).
   local did
-  did=$(curl -sf "http://127.0.0.1:${DINA_CORE_PORT_EXTERNAL:-8100}/v1/identity/did" 2>/dev/null \
+  did=$(curl -sf "http://127.0.0.1:${core_port}/v1/identity/did" 2>/dev/null \
         | grep -oE '"did":"did:plc:[^"]+"' | head -1 | sed 's/^"did":"//; s/"$//') || true
   if [ -n "${did:-}" ]; then
     printf "${C_BOLD}DID:${C_RESET} %s\n\n" "$did"
@@ -279,9 +304,17 @@ install() {
 
   print_credentials
 
+  local core_port brain_port
+  core_port=$(grep -E '^DINA_CORE_PORT_EXTERNAL=' "$ENV_FILE" 2>/dev/null \
+    | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')
+  brain_port=$(grep -E '^DINA_BRAIN_PORT_EXTERNAL=' "$ENV_FILE" 2>/dev/null \
+    | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')
+  core_port="${core_port:-8100}"
+  brain_port="${brain_port:-8200}"
   ok "Dina Home Node Lite is running"
-  info "core-lite:  http://127.0.0.1:${DINA_CORE_PORT_EXTERNAL:-8100}"
-  info "brain-lite: http://127.0.0.1:${DINA_BRAIN_PORT_EXTERNAL:-8200}"
+  info "core-lite:  http://127.0.0.1:${core_port}"
+  info "owner:      http://127.0.0.1:${core_port}/owner"
+  info "brain-lite: http://127.0.0.1:${brain_port}"
   info "To tear down later: $0 --uninstall"
 }
 

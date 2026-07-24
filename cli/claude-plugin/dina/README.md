@@ -18,10 +18,10 @@ dina status
 
 For this engineering preview, the setup code must come from Home Node Lite with
 the `coding` agent scope. Pairing directly to mobile Core does not activate the
-filesystem-aware coding gate. The secure Core-side first-boot handoff exists,
-but this plugin does not yet ship the launcher that consumes it, and Home Node
-Lite has no owner-facing “Pair coding agent” UI. An operator/admin must
-currently provision this code; this is not a self-serve fresh-install path.
+filesystem-aware coding gate. Run the Home Node Lite installer, open the
+loopback `/owner` page it prints, enter the owner key, and select **Pair coding
+agent**. The five-minute code creates a separate revocable `did:key` for this
+coding device; it does not expose the owner's identity or vault keys.
 
 After `dina status` reports that Core is reachable:
 
@@ -75,9 +75,8 @@ Uninstalling the plugin removes the Claude Code hook and MCP registration.
 
 ## Preview limitation
 
-The secure first-agent launcher/owner pairing surface is not yet productized.
-The signed laptop-Core-to-phone approval bridge works, but the one-command
-pair-phone UI, owner-facing re-pair/revocation controls, and stale-card cleanup
-are also incomplete. See the repository's
-`docs/DINA_PLUGIN_DEVELOPER_SURFACE.md` for the complete boundary and threat
-model.
+Enrollment and approval-phone lifecycle controls are self-service in Home Node
+Lite's owner console, but this plugin does not install, launch, upgrade, or
+supervise Home Node Lite. V1 supports one approval phone; multi-phone routing is
+deferred. See `docs/DINA_PLUGIN_DEVELOPER_SURFACE.md` for the complete boundary
+and threat model.

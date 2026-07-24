@@ -341,10 +341,13 @@ asks Core "who am I?" and gets back the sovereign DID. Three first-run cases:
 
 **Implemented preview boundary.** The Claude plugin package does not yet spawn or own the Home Node
 Lite lifecycle, so the zero-prompt target above is not the current install path. Today the owner starts
-an already-provisioned Home Node Lite and pairs `dina-agent` with a coding-scope setup code before
-installing the fail-closed hook. The phone-approval bridge links that Home Node to mobile for owner
+Home Node Lite with the source installer, opens its loopback owner console, and mints a five-minute,
+single-use coding-scope setup code before installing the fail-closed hook. No admin-issued code is
+required once the node is running. The phone-approval bridge links that Home Node to mobile for owner
 decisions; it does not merge their identities. Mobile remains reachable at its canonical `did:plc`,
-while the laptop uses a separate paired `did:key` only as its approval client (§13.1).
+while the coding agent and the laptop approval client each use separate, revocable paired `did:key`
+devices (§13.1). Distribution that downloads, launches, upgrades, and supervises Home Node Lite
+without a source checkout remains outside this preview.
 
 **The DID is created immediately in every case — it is FOUNDATIONAL, not deferred.** The gate signs its
 decisions with it, Dina-to-Dina (D2D) needs it, and your own agents address each other by DID. So
@@ -682,9 +685,10 @@ laptop-Core↔phone channel:
   deterministic approval-client `did:key` and pairs that client to the mobile Home Node. Those relay
   addresses are distinct, so the two sockets do not collide. A future multi-phone design may add
   device-specific mobile routing, but that is not required for the tested one-phone V1 path.
-- **Pairing:** `/dina:pair-phone` will automate the existing ceremony: consume the phone Home Node's
-  `dina1:` setup code, pair the laptop Core's dedicated approval-client `did:key`, and retain only the
-  relay URL + phone `did:plc`.
+- **Pairing:** the loopback owner console implements the ceremony: it consumes the phone Home Node's
+  `dina1:` setup code, pairs the laptop Core's dedicated approval-client `did:key`, and retains only the
+  relay URL + phone `did:plc`. `/dina:pair-phone` is a safe guide into that owner-controlled UI; the
+  agent command never receives owner enrollment authority.
 - **Principals:** the phone approves as **owner** — and the decision must be an **authenticated
   owner/device signature bound to {task, decision, scope, session, expiry}**. The current
   `ownerDecisionGuard` blocks `agent`/`plugin`, and `brainAgentTaskGuard` additionally rejects Brain
@@ -717,9 +721,11 @@ The first end-to-end substrate is now implemented:
   is the authoritative single-use ledger: an exact approved retry atomically
   redeems it, including after a laptop-Core restart. Relay, signature, parsing,
   storage, or receipt-CAS failure leaves the action blocked.
-- Initial pairing accepts the existing mobile `dina1:` code through
-  `DINA_APPROVAL_PHONE_SETUP_CODE`; after pairing, only relay URL + phone DID are
-  retained in encrypted Core storage. The one-time pairing code is not stored.
+- Initial pairing accepts the existing mobile `dina1:` code through the
+  owner-capability-protected loopback console. After pairing, only relay URL +
+  phone DID are retained in encrypted Core storage. The one-time pairing code
+  is not stored. `DINA_APPROVAL_PHONE_SETUP_CODE` remains as a legacy first-boot
+  fallback only.
 - The active WebSocket RPC path signs every response with the phone Core
   identity and binds it to the request id, status, and body before sealing it.
   This prevents the relay from fabricating an approval response.
@@ -732,21 +738,14 @@ real pairing on both legs, a blocked HIGH-risk coding action, phone-only owner
 approval, authenticated decision synchronization, laptop-Core restart without
 the setup code, one exact approved retry, and rejection of the second retry.
 
-Four product-integration items remain before this is a polished user feature:
-
-1. Replace the environment-variable bootstrap with the specified
-   `/dina:pair-phone` UI/command.
-2. Define device-specific mobile routing only when multiple simultaneous phone
-   clients under one `did:plc` are supported. The tested V1 one-phone bridge is
-   already collision-free: mobile receives at its `did:plc`, while the laptop
-   approval client uses a separately paired `did:key`.
-3. Add owner-facing revocation/re-pair controls for the dedicated laptop
-   approval device.
-4. Add mirror withdrawal/reconciliation so a phone card is closed when its
-   source laptop task is cancelled or otherwise terminal before the phone
-   decides. This is a stale-card/confusion gap, not an authorization bypass:
-   the laptop-side transition still fails closed and cannot mint a permit from
-   a cancelled source task.
+One product-integration item remains before this is a polished multi-device
+feature: define device-specific mobile routing when multiple simultaneous
+phones under one `did:plc` are supported. The tested V1 one-phone bridge is
+collision-free: mobile receives at its `did:plc`, while the laptop approval
+client uses a separately paired `did:key`. Pair/revoke/re-pair and durable
+mirror withdrawal are implemented. Pairing records cleanup intent before
+remote enrollment, and mirror ids are persisted before proposal transport, so
+crashes cannot silently orphan the normal lifecycle path.
 
 ---
 
@@ -1362,8 +1361,8 @@ plugin to exactly the MCP table, remove broad `agent` from the five prefixes + v
 runner surface (and the suffix rules) as method + single-`:id`-segment templates, add the route-template
 matcher, and object-level ownership on proposal/ask status; positive-principal, coding-scope-denial, and
 nested near-miss tests. (7) laptop-Core↔phone MsgBox approval + versioned pairing +
-signed decisions (**substrate implemented; pair-phone UX remains and multi-phone routing is deferred,
-§13.1**). (8) audit persistence + tests. Then, in order: (9) services — thin publish/invoke
+signed decisions (**owner pairing/revocation and stale-card cleanup implemented; multi-phone routing
+is deferred, §13.1**). (8) audit persistence + tests. Then, in order: (9) services — thin publish/invoke
 authz **plus a new Core find-service (AppView-search) façade** (route, validation, bounded results,
 agent authz, audit) + marketplace/CI + README/demo; (10) Codex host; (11) **new Core façades** for
 Talk (`talk.message.v1` family + `POST /v1/agent/talk`) and delegation (`POST /v1/agent/delegate`),
@@ -1377,10 +1376,11 @@ PeerLens façades** (attest write + search read) + trust.
 **Guards:** build begins when Jiffy ships; the listing says one thing; honesty gate on every claim;
 no in-process third-party code; Dina never touches money.
 
-**Open questions:** (1) the bootstrap enrolment capability (§8) — token lifecycle, lock-file race,
-subsequent-agent enrolment; (2) the laptop-Core↔phone approval product surface (§13.1) —
-`/dina:pair-phone`, multi-phone routing, revocation UX, and orphan mirror cleanup; the sealed,
-idempotent proposal/decision substrate and task sync are implemented; (3) the Bash classifier (§12.3) — safe parsing +
+**Open questions:** (1) Home Node distribution and lifecycle ownership (§8) — the owner console now
+handles subsequent coding-agent enrollment, but the plugin still does not install, launch, upgrade, or
+supervise Core; (2) multi-phone routing for the laptop-Core↔phone approval surface (§13.1); the sealed,
+idempotent proposal/decision substrate, owner lifecycle controls, task sync, and mirror cleanup are
+implemented; (3) the Bash classifier (§12.3) — safe parsing +
 conformance tests; (4) same-UID posture (§16) — OS-keystore/sandbox vs. laptop-keyholder-with-caveat;
 (5) **Resolved as a model (§8), leaving one build detail:** identity is foundational — Core mints/uses a
 DID at first-run in all three cases, so first-run does **not** block on a handle; only _publishing_

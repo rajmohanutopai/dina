@@ -37,7 +37,6 @@
 import {
   configureRateLimiter,
   createCoreRouter,
-  deriveServiceKey,
   deriveDIDKey,
   getNodeDID,
   HEALTHZ_PATH,
@@ -52,7 +51,6 @@ import {
   WorkflowService,
   type CoreRouter,
 } from '@dina/core';
-import { kvGet, kvSet } from '@dina/core/kv';
 import { listServiceConfigs } from '@dina/core';
 import {
   bootstrapMsgBox,
@@ -64,28 +62,28 @@ import {
 import { makeResolveSender } from '@dina/home-node';
 import { makeNodeWebSocketFactory } from '@dina/net-node';
 
+import { createAgentFacades } from './agent/facades';
+import { makeHttpAskHandler } from './agent/http_ask_handler';
+import { PhoneApprovalManager } from './approval/phone_approval_manager';
 import {
   wireServiceProfilePublisher,
   publishOnce,
   shouldPublishListing,
   type WiredServicePublisher,
 } from './appview/wire_publisher';
+import { acquireLock, releaseLock, writeLock } from './core_lock';
+import { createCodingGate } from './gate/coding_gate_impl';
 import { deriveIdentity } from './identity/derivations';
 import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
 import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
 import { createLogger } from './logger';
 import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
-import { acquireLock, releaseLock, writeLock } from './core_lock';
-import { createCodingGate } from './gate/coding_gate_impl';
-import { createAgentFacades } from './agent/facades';
-import { makeHttpAskHandler } from './agent/http_ask_handler';
-import { PhoneApprovalMsgBoxClient, parsePhoneSetupCode } from './approval/phone_approval_msgbox';
-import { PhoneApprovalSyncWorker } from './approval/phone_approval_sync';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
+import { registerOwnerSetupRoutes } from './server/owner_setup';
 import { initializeStorage } from './storage/init';
 import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
@@ -474,7 +472,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // minimal service below when its PDS prerequisites are available.
   let localWorkflowService: WorkflowService | undefined;
   let localTaskExpiry: TaskExpirySweeper | undefined;
-  let phoneApprovalWorker: PhoneApprovalSyncWorker | undefined;
+  let phoneApprovalManager: PhoneApprovalManager | null = null;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
   // only do this when the master seed is materialized (convenience or
@@ -643,6 +641,19 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     });
   }
 
+  if (identity !== undefined && identity.kind !== 'wrapped' && getWorkflowService() !== null) {
+    phoneApprovalManager = new PhoneApprovalManager(identity.seed, logger);
+    try {
+      const setupRaw = process.env.DINA_APPROVAL_PHONE_SETUP_CODE?.trim() ?? '';
+      await phoneApprovalManager.initialize(setupRaw === '' ? undefined : setupRaw);
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message },
+        'owner-phone approval synchronization unavailable; local approvals remain pending',
+      );
+    }
+  }
+
   // Step 7: fastify_start — this runs today, even without the earlier
   // dependencies, so /healthz + /readyz are reachable.
   const fastifyStart = Date.now();
@@ -676,7 +687,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }
-      await phoneApprovalWorker?.stop();
+      await phoneApprovalManager?.stop();
       await disconnectMsgBox();
       // Item 2c — drop our discovery lock on clean shutdown (registered here,
       // before listen, since Fastify rejects hooks added post-listen). The
@@ -697,6 +708,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     // capability lives only on Core's origin and never transits Brain.
     const ownerConsolePath = registerOwnerConsoleRoute(app, {
       enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1',
+    });
+    registerOwnerSetupRoutes(app, {
+      enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1',
+      ownerCapability: ownerCap.capability,
+      msgboxURL: config.msgbox.url,
+      phoneManager: phoneApprovalManager,
     });
     if (ownerConsolePath !== null) {
       logger.info(
@@ -721,6 +738,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     }
     await app.listen({ host: config.network.host, port: config.network.port });
   } catch (err) {
+    await phoneApprovalManager?.stop();
     trace.push({
       step: 'fastify_start',
       status: 'failed',
@@ -846,69 +864,6 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         pendingReason,
       });
       logger.warn({ err: (err as Error).message, url: config.msgbox.url }, pendingReason);
-    }
-  }
-
-  // Optional laptop-Core -> owner-phone approval bridge (§13). A one-time
-  // `dina1:` code pairs a dedicated deterministic did:key; only the public
-  // relay URL + phone DID are retained. The pairing code is never persisted.
-  if (identity !== undefined && identity.kind !== 'wrapped' && getWorkflowService() !== null) {
-    try {
-      const persisted = await kvGet('target', 'phone_approval_sync');
-      const setupRaw = process.env.DINA_APPROVAL_PHONE_SETUP_CODE?.trim() ?? '';
-      let target:
-        | { msgboxURL: string; phoneDID: string; code?: string; deviceName?: string }
-        | undefined;
-      if (persisted !== null) {
-        const value = JSON.parse(persisted) as Record<string, unknown>;
-        if (typeof value.msgbox_url === 'string' && typeof value.phone_did === 'string') {
-          target = {
-            msgboxURL: value.msgbox_url,
-            phoneDID: value.phone_did,
-          };
-        }
-      } else if (setupRaw !== '') {
-        const setup = parsePhoneSetupCode(setupRaw);
-        target = {
-          msgboxURL: setup.msgboxURL,
-          phoneDID: setup.phoneDID,
-          code: setup.code,
-          deviceName: setup.deviceName,
-        };
-      }
-
-      if (target !== undefined) {
-        // Reserved service index 2: Core=0, Brain=1, phone-approval device=2.
-        const approvalKey = deriveServiceKey(identity.seed, 2);
-        const client = new PhoneApprovalMsgBoxClient({
-          msgboxURL: target.msgboxURL,
-          phoneDID: target.phoneDID,
-          privateKey: approvalKey.privateKey,
-        });
-        if (target.code !== undefined) {
-          await client.pair(target.code, target.deviceName);
-          await kvSet(
-            'target',
-            JSON.stringify({
-              v: 1,
-              msgbox_url: target.msgboxURL,
-              phone_did: target.phoneDID,
-            }),
-            'phone_approval_sync',
-          );
-        }
-        phoneApprovalWorker = new PhoneApprovalSyncWorker(client);
-        phoneApprovalWorker.start();
-        logger.info(
-          { phoneDid: target.phoneDID, deviceDid: client.did },
-          'owner-phone approval synchronization enabled',
-        );
-      }
-    } catch (err) {
-      logger.warn(
-        { err: (err as Error).message },
-        'owner-phone approval synchronization unavailable; local approvals remain pending',
-      );
     }
   }
 

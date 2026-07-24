@@ -27,6 +27,10 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('/v1/run/list');
       expect(body).toContain('/v1/run/start');
       expect(body).toContain('/v1/watch/list');
+      expect(body).toContain('/v1/owner/setup/coding-agent');
+      expect(body).toContain('/v1/owner/setup/coding-agent/');
+      expect(body).toContain('/v1/owner/setup/phone');
+      expect(body).toContain('Pair coding agent');
       // The owner can create a poll-mode subscription from this page (Piece 2).
       expect(body).toContain('/v1/watch/create');
       expect(body).toContain('New subscription');
@@ -39,8 +43,14 @@ describe('Core owner console (B-02)', () => {
       expect(body).not.toMatch(/href="https?:\/\//);
       // XSS-safe: builds DOM with textContent, never innerHTML.
       expect(body).not.toContain('innerHTML');
+      const script = body.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+      expect(script).toBeDefined();
+      expect(() => new Function(script as string)).not.toThrow();
       // Framing + CSP hardening headers.
       expect(res.headers['x-frame-options']).toBe('DENY');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['referrer-policy']).toBe('no-referrer');
       expect(String(res.headers['content-security-policy'])).toContain("default-src 'self'");
     } finally {
       await app.close();

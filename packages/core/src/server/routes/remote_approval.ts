@@ -47,6 +47,7 @@ interface RemoteApprovalPayload extends RemoteApprovalProposal {
 export function registerRemoteApprovalRoutes(router: CoreRouter): void {
   router.post(`${REMOTE_APPROVAL_API_PREFIX}/proposals`, createProposal);
   router.get(`${REMOTE_APPROVAL_API_PREFIX}/proposals/:id/status`, getProposalStatus);
+  router.delete(`${REMOTE_APPROVAL_API_PREFIX}/proposals/:id`, withdrawProposal);
 }
 
 async function createProposal(req: CoreRequest): Promise<CoreResponse> {
@@ -58,7 +59,7 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
   const parsed = parseProposal(req.body);
   if ('error' in parsed) return json(400, { error: parsed.error });
   const callerDID = req.callerDID as string;
-  const mirrorId = mirrorTaskId(callerDID, parsed.source_task_id);
+  const mirrorId = remoteApprovalProposalId(callerDID, parsed.source_task_id);
   const payload: RemoteApprovalPayload = {
     type: REMOTE_APPROVAL_PAYLOAD_TYPE,
     source_device_did: callerDID,
@@ -131,6 +132,32 @@ async function getProposalStatus(req: CoreRequest): Promise<CoreResponse> {
     return json(404, { error: 'proposal_not_found' });
   }
   return json(200, proposalResponse(task.status, task.id, payload.expires_at, false, task.error));
+}
+
+async function withdrawProposal(req: CoreRequest): Promise<CoreResponse> {
+  const callerError = requireExternalDevice(req);
+  if (callerError !== null) return callerError;
+  const service = getWorkflowService();
+  if (service === null) return json(503, { error: 'workflow service not wired' });
+
+  const id = req.params.id ?? '';
+  const task = id === '' ? null : service.store().getById(id);
+  if (task === null) return json(404, { error: 'proposal_not_found' });
+  const payload = parseStoredPayload(task.payload);
+  if (payload === null || payload.source_device_did !== req.callerDID) {
+    return json(404, { error: 'proposal_not_found' });
+  }
+
+  if (task.status === WorkflowTaskState.PendingApproval) {
+    try {
+      service.cancel(task.id, 'withdrawn by source device');
+    } catch {
+      return json(409, { error: 'proposal_not_withdrawable' });
+    }
+  }
+  // Idempotent for an already-terminal mirror. The source only needs to know
+  // that no pending owner decision remains.
+  return { status: 204 };
 }
 
 function requireExternalDevice(req: CoreRequest): CoreResponse | null {
@@ -215,7 +242,13 @@ function parseStoredPayload(raw: string): RemoteApprovalPayload | null {
   }
 }
 
-function mirrorTaskId(sourceDID: string, sourceTaskId: string): string {
+/**
+ * Derive the phone-owned mirror id before transport.
+ *
+ * The source persists this id before proposing so cancellation can still
+ * withdraw a remotely-created card after a crash between POST and response.
+ */
+export function remoteApprovalProposalId(sourceDID: string, sourceTaskId: string): string {
   const digest = bytesToHex(sha256(new TextEncoder().encode(`${sourceDID}\n${sourceTaskId}`)));
   return `remote-approval-${digest.slice(0, 32)}`;
 }

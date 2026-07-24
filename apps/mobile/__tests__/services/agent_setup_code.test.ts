@@ -52,5 +52,12 @@ describe('buildAgentSetupCode', () => {
     expect(() => buildAgentSetupCode({ ...VECTOR_INPUT, msgboxUrl: ' ' })).toThrow(/msgboxUrl/);
     expect(() => buildAgentSetupCode({ ...VECTOR_INPUT, homenodeDid: 'plc:nope' })).toThrow(/DID/);
     expect(() => buildAgentSetupCode({ ...VECTOR_INPUT, code: '' })).toThrow(/pairing code/);
+    expect(() => buildAgentSetupCode({ ...VECTOR_INPUT, deviceName: ' ' })).toThrow(/deviceName/);
+    expect(() =>
+      buildAgentSetupCode({
+        ...VECTOR_INPUT,
+        transport: 'carrier-pigeon' as never,
+      }),
+    ).toThrow(/transport/);
   });
 });

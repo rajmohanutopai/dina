@@ -1,3 +1,5 @@
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import {
   buildRPCRequest,
   deriveDIDKey,
@@ -13,10 +15,9 @@ import {
 import { DIDResolver } from '@dina/core/runtime';
 import { pickEd25519VerificationMethod } from '@dina/home-node';
 import { makeNodeWebSocketFactory } from '@dina/net-node';
-import { bytesToHex } from '@noble/hashes/utils.js';
 
-import type { CoreRPCResponse, WSFactory, WSLike } from '@dina/core';
 import type { PhoneApprovalClient, PhoneApprovalResponse } from './phone_approval_sync';
+import type { CoreRPCResponse, WSFactory, WSLike } from '@dina/core';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -69,7 +70,7 @@ export class PhoneApprovalMsgBoxClient implements PhoneApprovalClient {
   }
 
   async request(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     path: string,
     body?: unknown,
   ): Promise<PhoneApprovalResponse> {
@@ -204,7 +205,7 @@ export function parsePhoneSetupCode(raw: string): PhoneSetupCode {
 
 class FrameQueue {
   private readonly frames: string[] = [];
-  private readonly waiters: Array<(value: string) => void> = [];
+  private readonly waiters: ((value: string) => void)[] = [];
   private openResolve: (() => void) | null = null;
   private openReject: ((error: Error) => void) | null = null;
   private readonly openPromise: Promise<void>;

@@ -65,6 +65,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
     manifest = _load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json")
     mcp_config = _load_json(PLUGIN_ROOT / ".mcp.json")
     readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+    normalized_readme = " ".join(readme.lower().split())
     gate = PLUGIN_ROOT / "bin" / "dina-gate"
 
     assert "dina-agent>=0.19.0" in manifest["description"]
@@ -74,9 +75,14 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
         "--profile",
         "coding",
     ]
-    assert "configure dina" in readme.lower()
-    assert "before" in readme.lower()
-    assert "no owner-facing" in readme.lower()
+    assert "configure dina" in normalized_readme
+    assert "before" in normalized_readme
+    assert "owner console" in normalized_readme
+    assert "pair coding agent" in normalized_readme
+    assert (
+        "does not install, launch, upgrade, or supervise home node lite"
+        in normalized_readme
+    )
     assert "dina unpair" in readme
     assert gate.stat().st_mode & stat.S_IXUSR
 

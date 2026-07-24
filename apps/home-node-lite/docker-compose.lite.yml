@@ -60,6 +60,8 @@ services:
       DINA_VAULT_DIR: /var/lib/dina
       DINA_PDS_URL: ${DINA_PDS_URL:-https://bsky.social}
       DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      DINA_ENDPOINT_MODE: ${DINA_ENDPOINT_MODE:-release}
+      DINA_CORE_OWNER_CONSOLE: ${DINA_CORE_OWNER_CONSOLE:-1}
       # PDS credentials — only required when Core needs to createAccount
       # on first boot. Empty values skip publish (dev-mode).
       DINA_PDS_HANDLE: ${DINA_PDS_HANDLE:-}
@@ -68,7 +70,7 @@ services:
     # running both stacks side-by-side override DINA_CORE_PORT_EXTERNAL
     # on the host side.
     ports:
-      - "${DINA_CORE_PORT_EXTERNAL:-8100}:8100"
+      - "127.0.0.1:${DINA_CORE_PORT_EXTERNAL:-8100}:8100"
     networks:
       - dina-lite
     # The image already carries a HEALTHCHECK; compose surfaces its
@@ -120,6 +122,7 @@ services:
       # Docker's embedded DNS resolves `core-lite` to the container IP.
       DINA_CORE_URL: http://core-lite:8100
       DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+      DINA_ENDPOINT_MODE: ${DINA_ENDPOINT_MODE:-release}
       # LLM provider keys — whichever is set gets used. All optional;
       # install-lite.sh prompts the operator to pick one.
       DINA_ANTHROPIC_API_KEY: ${DINA_ANTHROPIC_API_KEY:-}

@@ -132,6 +132,31 @@ describe('remote approval synchronization routes', () => {
     expect((status.body as Record<string, unknown>).decision).toBe('approved');
   });
 
+  it('withdraws only the authenticated source device proposal and is idempotent', async () => {
+    const router = createCoreRouter();
+    const created = await router.handle(
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, proposal()),
+    );
+    const id = String((created.body as Record<string, unknown>).proposal_id);
+
+    const hidden = await router.handle(
+      request('DELETE', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}`, undefined, OTHER),
+    );
+    expect(hidden.status).toBe(404);
+    expect(getTask(id).status).toBe('pending_approval');
+
+    const withdrawn = await router.handle(
+      request('DELETE', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}`, undefined),
+    );
+    expect(withdrawn.status).toBe(204);
+    expect(getTask(id).status).toBe('cancelled');
+
+    const replay = await router.handle(
+      request('DELETE', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}`, undefined),
+    );
+    expect(replay.status).toBe(204);
+  });
+
   it('fails closed for non-HIGH, malformed hashes, excessive TTL, and non-device callers', async () => {
     const router = createCoreRouter();
     const badRisk = await router.handle(

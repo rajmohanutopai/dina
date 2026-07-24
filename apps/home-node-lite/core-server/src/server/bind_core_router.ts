@@ -36,11 +36,7 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 
-import type {
-  CoreRouter,
-  CoreRequest,
-  CoreResponse,
-} from '@dina/core';
+import type { CoreRouter, CoreRequest, CoreResponse } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Augment Fastify's request type surface with our raw-body field. */
@@ -93,10 +89,7 @@ export interface BindCoreRouterOptions {
   };
 }
 
-type FastifyHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type FastifyHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 /**
  * Walk the router's registered routes and bind each onto Fastify.
@@ -173,31 +166,23 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
   if (!app.addContentTypeParser) return; // test doubles don't always provide it
   // JSON + octet-stream: capture raw bytes AND parse JSON for handlers
   // that want a parsed body.
-  app.addContentTypeParser(
-    'application/json',
-    { parseAs: 'buffer' },
-    (req, body, done) => {
-      // `parseAs: 'buffer'` → body is always a Node Buffer.
-      const buf = body as Buffer;
-      req.rawBody = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-      try {
-        const parsed = body.length === 0 ? {} : JSON.parse(body.toString('utf8'));
-        done(null, parsed);
-      } catch (err) {
-        done(err as Error);
-      }
-    },
-  );
-  app.addContentTypeParser(
-    'application/octet-stream',
-    { parseAs: 'buffer' },
-    (req, body, done) => {
-      // `parseAs: 'buffer'` → body is always a Node Buffer.
-      const buf = body as Buffer;
-      req.rawBody = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-      done(null, req.rawBody);
-    },
-  );
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+    // `parseAs: 'buffer'` → body is always a Node Buffer.
+    const buf = body as Buffer;
+    req.rawBody = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    try {
+      const parsed = body.length === 0 ? {} : JSON.parse(body.toString('utf8'));
+      done(null, parsed);
+    } catch (err) {
+      done(err as Error);
+    }
+  });
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (req, body, done) => {
+    // `parseAs: 'buffer'` → body is always a Node Buffer.
+    const buf = body as Buffer;
+    req.rawBody = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    done(null, req.rawBody);
+  });
 }
 
 /** The §12.5 owner-only control surface — the ONLY paths the owner-capability
@@ -209,7 +194,7 @@ function isOwnerSurfacePath(p: string): boolean {
 }
 
 /** Timing-safe capability comparison (hash both sides to fixed length first). */
-function ownerHeaderMatches(header: string | undefined, expected: string): boolean {
+export function ownerHeaderMatches(header: string | undefined, expected: string): boolean {
   if (header === undefined || header === '') return false;
   const a = createHash('sha256').update(header).digest();
   const b = createHash('sha256').update(expected).digest();
