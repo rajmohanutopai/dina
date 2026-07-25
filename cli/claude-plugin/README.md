@@ -18,9 +18,13 @@ It follows the MCP + hooks model (see `docs/DINA_PLUGIN_DEVELOPER_SURFACE.md`):
 
 ## Current integration status
 
-The package is an engineering preview of the hook and CLI integration. Home
-Node Lite now has a self-service, owner-authorized setup flow, but the plugin
-does not yet install or supervise Home Node Lite itself.
+The package is an engineering preview of the hook and CLI integration.
+`dina-agent` now owns a source-free native lifecycle for Home Node Lite:
+verified platform-release installation, health checks, process-crash restart,
+stop, logs, rollback-safe upgrades, and data-preserving removal. The native
+supervisor runs Core and Brain without requiring a separate runtime. The
+plugin's `SessionStart` hook starts or recovers an installed Home Node; V1 does
+not install an OS login/startup service.
 
 - The coding classifier is filesystem-aware and currently runs only in
   **Home Node Lite Core**. Mobile Core deliberately registers no coding gate, so
@@ -31,6 +35,10 @@ does not yet install or supervise Home Node Lite itself.
   with server-fixed `role=agent` and `scope=coding`. The coding device receives
   its own revocable `did:key`; it never receives the owner's identity or vault
   keys.
+- `dina home-node install` uses that same owner-authorized ceremony to enroll
+  the local coding agent automatically. Owner and pairing capabilities remain
+  in memory and never appear in argv, environment variables, logs, or config.
+  Existing CLI configurations are never overwritten.
 - A HIGH-risk call creates a durable Dina approval task and stays blocked until
   that task is approved; an exact retry then redeems a single-use permit.
 - The laptop-Core-to-phone approval substrate in design §13 is implemented:
@@ -44,9 +52,13 @@ does not yet install or supervise Home Node Lite itself.
   `DINA_APPROVAL_PHONE_SETUP_CODE` variable remains only as a legacy first-boot
   fallback.
 
-Do not describe this package as a one-click integration until distribution can
-install and supervise Home Node Lite without a source checkout. Multi-phone
-routing also remains deferred; the tested V1 path supports one approval phone.
+Do not describe this package as a one-click integration yet. Lifecycle,
+local first-agent enrollment, rollback-safe release upgrades, and a manual
+identity/data restore path are implemented, but native release archives must be
+published for each supported platform and automatic identity/vault continuity
+with an existing mobile Dina is not implemented.
+Multi-phone routing also remains deferred; the tested V1 path supports one
+approval phone.
 
 ## Verification
 
@@ -65,20 +77,30 @@ endpoint and handle overrides.
 
 ## Prerequisites
 
-This plugin is a thin wrapper over the `dina` CLI, which holds the agent's key
-and does the signed transport to Home Node Lite Core. For the current preview:
+This plugin is a thin wrapper over the `dina` CLI, which owns the local Home
+Node lifecycle, holds the agent's device key, and performs signed transport.
+For the current preview:
 
-1. Start Home Node Lite with `./apps/home-node-lite/install-lite.sh`.
-2. Open the loopback owner URL printed by the installer and enter the printed
-   owner key.
-3. Select **Pair coding agent** and paste the resulting one-time code into
-   `dina configure`.
+1. Install Home Node Lite with
+   `dina home-node install --pds-handle your-handle.example.com`. No source
+   checkout or external runtime is used; the selected platform archive carries
+   its matching Node runtime and native SQLCipher binding, and every installed
+   file is checked against its manifest. The local coding agent is enrolled
+   automatically. Omit `--pds-handle` only for local-only use.
+2. Record the recovery phrase with `dina home-node show-recovery-phrase`.
+3. Confirm the signed agent connection with `dina status`.
 
 ```bash
-pip install --upgrade "dina-agent>=0.19.0"
-dina configure          # paste the code from Home Node Lite's owner console
+pip install --upgrade "dina-agent>=0.20.0"
+dina home-node install --pds-handle your-handle.example.com
+dina home-node show-recovery-phrase
 dina status             # confirm Core is reachable
 ```
+
+If another Dina CLI configuration already occupies the selected config
+directory, the installer preserves it and fails rather than replacing its key.
+Choose a separate `DINA_CONFIG_DIR`, or install with `--no-enroll` and enroll
+explicitly later.
 
 **Read this before you install:** the gate is **fail-closed**. Until `dina` is
 configured and can reach your Home Node, the hook **blocks every tool call**, so
@@ -106,8 +128,8 @@ For local development, point the marketplace at the folder directly:
   protected path, or an unparseable shell command blocks; ordinary project edits
   and safe reads pass silently; MODERATE actions use Claude's native confirmation,
   while HIGH actions remain blocked until Dina approves the exact call.
-- **MCP tools** — `dina_remember` (portable encrypted memory), `dina_ask`,
-  `dina_validate`, `dina_scrub` / `dina_rehydrate` (PII), and session tools.
+- **MCP tools** — sessions, memory/Ask, validation, PII scrub/rehydrate,
+  Services, Talk, delegation, PeerLens, reminders, and bounded vault metadata.
 - **Usage policy** — a bundled Dina skill tells Claude when to ask personal
   context, remember facts, validate sensitive actions, and scrub external
   egress. It uses the MCP-native tool names and requires explicit session
@@ -128,12 +150,23 @@ For local development, point the marketplace at the folder directly:
   agent's tool calls, which all pass the hook. It does not stop a process that has
   already compromised the agent and calls the OS directly. The real boundary is
   an OS sandbox / non-exportable keystore / phone-held key.
-- **Foundation scope.** v0.1 ships the gate + memory + sessions + the existing
-  agent tools. Services, cross-Dina Talk, delegation, and PeerLens are later build
-  stages; their tools are omitted here rather than shipped as dead stubs.
-- **Home Node installation remains separate.** Enrollment is self-service once
-  Home Node Lite is running, but this plugin does not download, launch, upgrade,
-  or supervise the Home Node process.
+- **Developer-preview scope.** The current preview ships the gate and all nine
+  agent-facing surfaces. Public network writes require a PDS-backed identity;
+  a local-only install reports `not_configured` instead of pretending that a
+  durable publication retry can run.
+- **Lifecycle and local enrollment are installed.** `dina home-node`
+  downloads, verifies, launches, health-checks, and stops the Home Node without
+  a source checkout, then uses the private same-UID installation boundary to
+  enroll a separate coding-scoped key. File modes do not isolate against a
+  compromised process running as the same OS user. Release changes require the
+  explicit `dina home-node upgrade --release <version>` path, which snapshots
+  private data and restores the prior release on failed or interrupted
+  validation.
+- **Native release distribution is a release prerequisite.** Installation
+  cannot succeed until a matching release archive is published for the user's
+  platform and architecture. The current SHA-256 inventory detects archive
+  corruption or file replacement; separate publisher-signature verification is
+  not implemented yet.
 - **One approval phone in V1.** Pair/revoke/re-pair and stale-card cleanup are
   implemented in the owner console. Device-specific routing for several
   simultaneous phones is deferred.

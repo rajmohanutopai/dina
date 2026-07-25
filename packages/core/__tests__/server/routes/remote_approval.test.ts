@@ -1,6 +1,7 @@
 import { createCoreRouter } from '../../../src/server/core_server';
 import {
   REMOTE_APPROVAL_API_PREFIX,
+  REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
   REMOTE_APPROVAL_PAYLOAD_TYPE,
 } from '../../../src/server/routes/remote_approval';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
@@ -104,6 +105,60 @@ describe('remote approval synchronization routes', () => {
     expect(second.status).toBe(200);
     expect((second.body as Record<string, unknown>).deduped).toBe(true);
     expect(conflict.status).toBe(409);
+  });
+
+  it('stores a facade action with its exact bounded owner-visible meaning', async () => {
+    const router = createCoreRouter();
+    const created = await router.handle(
+      request(
+        'POST',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+        proposal({
+          proposal_type: 'facade_action',
+          source_task_id: 'agent-action-talk-1',
+          action: 'talk',
+          tool_name: 'dina_talk',
+          display_title: 'Send a message to Bob',
+          display_detail: 'Can we speak tomorrow?\\nAfter 10am works.',
+        }),
+      ),
+    );
+
+    expect(created.status).toBe(201);
+    const task = getTask(String((created.body as Record<string, unknown>).proposal_id));
+    const payload = JSON.parse(task.payload) as Record<string, unknown>;
+    expect(task.description).toBe('Send a message to Bob');
+    expect(payload).toMatchObject({
+      type: REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
+      proposal_type: 'facade_action',
+      action: 'talk',
+      tool_name: 'dina_talk',
+      display_title: 'Send a message to Bob',
+      display_detail: 'Can we speak tomorrow?\\nAfter 10am works.',
+    });
+  });
+
+  it('rejects unsafe or incomplete facade display fields', async () => {
+    const router = createCoreRouter();
+    const missing = await router.handle(
+      request(
+        'POST',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+        proposal({ proposal_type: 'facade_action' }),
+      ),
+    );
+    const spoofed = await router.handle(
+      request(
+        'POST',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+        proposal({
+          proposal_type: 'facade_action',
+          display_title: 'Send to Bob',
+          display_detail: 'invoice\u202Etxt.exe',
+        }),
+      ),
+    );
+    expect([missing.status, spoofed.status]).toEqual([400, 400]);
   });
 
   it('binds status reads to the authenticated source device', async () => {

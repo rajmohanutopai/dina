@@ -180,4 +180,42 @@ describe('service.profile wire-record parity (HNL ↔ brain)', () => {
       'appointment_availability',
     ]);
   });
+
+  it('both recompute a canonical wire hash instead of trusting a stale cached hash', () => {
+    const cfg = makeConfig({
+      capabilitySchemas: {
+        eta_query: {
+          params: {
+            type: 'object',
+            required: ['route_id'],
+            properties: { route_id: { type: 'string' } },
+          },
+          result: {
+            type: 'object',
+            required: ['status'],
+            properties: { status: { type: 'string' } },
+          },
+          schemaHash: 'stale-non-protocol-cache-value',
+          description: 'Live route ETA',
+        },
+      },
+    });
+
+    const hnlSchemas = wire(cfg).capabilitySchemas as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const brainSchemas = brain(cfg).capabilitySchemas as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(hnlSchemas.eta_query?.schema_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hnlSchemas.eta_query?.schema_hash).toBe(
+      brainSchemas.eta_query?.schema_hash,
+    );
+    expect(hnlSchemas.eta_query?.schema_hash).not.toBe(
+      'stale-non-protocol-cache-value',
+    );
+  });
 });

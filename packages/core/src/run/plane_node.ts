@@ -46,7 +46,7 @@ import type { EmitDelegationEffect, EmitQueryEffect } from './engine';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /** The signed D2D egress the boot already wired (sign + resolve + WS/HTTP). */
-export type SendD2D = (to: string, type: string, body: Record<string, unknown>) => Promise<void>;
+export type SendD2D = (to: string, type: string, body: Record<string, unknown>) => Promise<unknown>;
 
 /** Correlation-id prefix for an action DELEGATION query (§6.3). A provider's
  *  action-result completion echoes it, so the receive path routes it to the

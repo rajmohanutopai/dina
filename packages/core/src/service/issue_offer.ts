@@ -34,7 +34,7 @@ export type ServiceOfferSender = (
   recipientDID: string,
   messageType: 'service.offer',
   body: Record<string, unknown>,
-) => Promise<void>;
+) => Promise<unknown>;
 
 export type IssueOfferErrorCode =
   | 'no_listing'

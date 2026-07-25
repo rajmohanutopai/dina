@@ -38,6 +38,7 @@ import {
   configureRateLimiter,
   createCoreRouter,
   deriveDIDKey,
+  getReviewPublishRepository,
   getNodeDID,
   HEALTHZ_PATH,
   getWorkflowService,
@@ -51,7 +52,10 @@ import {
   WorkflowService,
   type CoreRouter,
 } from '@dina/core';
-import { listServiceConfigs } from '@dina/core';
+import {
+  classifyAttestationPublishError,
+  publishAttestationToPDS,
+} from '@dina/brain';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -67,8 +71,6 @@ import { makeHttpAskHandler } from './agent/http_ask_handler';
 import { PhoneApprovalManager } from './approval/phone_approval_manager';
 import {
   wireServiceProfilePublisher,
-  publishOnce,
-  shouldPublishListing,
   type WiredServicePublisher,
 } from './appview/wire_publisher';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
@@ -84,6 +86,7 @@ import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
 import { registerOwnerSetupRoutes } from './server/owner_setup';
+import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { initializeStorage } from './storage/init';
 import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
@@ -473,6 +476,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let localWorkflowService: WorkflowService | undefined;
   let localTaskExpiry: TaskExpirySweeper | undefined;
   let phoneApprovalManager: PhoneApprovalManager | null = null;
+  let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
   // only do this when the master seed is materialized (convenience or
@@ -523,13 +527,21 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
         wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
-        // If listings were already persisted from a prior boot, fire an
-        // immediate publish for EACH (multi-listing: one record per rkey) so
-        // the AppView reflects current state without waiting for an edit.
-        for (const { rkey, config } of listServiceConfigs()) {
-          // public + unlisted publish; known_only is local-only (catalog §5.2).
-          if (!shouldPublishListing(config)) continue;
-          void publishOnce(wiredPublisher.publisher, pdsIdentity, config, logger, rkey);
+        const reviewRepo = getReviewPublishRepository();
+        if (reviewRepo !== null) {
+          reviewPublishSupervisor = new ReviewPublishSupervisor({
+            ownerDid: pdsIdentity.did,
+            repo: reviewRepo,
+            publish: (job, record) =>
+              publishAttestationToPDS(
+                wiredPublisher!.pdsPublisher,
+                pdsIdentity!.did,
+                record,
+                job.rkey,
+              ),
+            classifyError: classifyAttestationPublishError,
+            logger,
+          });
         }
       }
     } catch (err) {
@@ -586,7 +598,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     coreRouter = createCoreRouter({
       ownerCapability: ownerCap.capability,
       codingGate: codingGateHandle.gate,
-      agentFacades: createAgentFacades(),
+      agentFacades: createAgentFacades({
+        brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
+        appViewUrl: config.endpoints.appViewBaseUrl,
+        ...(wiredPublisher !== undefined && pdsIdentity !== undefined
+          ? {
+              pdsPublisher: wiredPublisher.pdsPublisher,
+              ownerDid: pdsIdentity.did,
+            }
+          : {}),
+      }),
       ask: {
         handler: makeHttpAskHandler({
           brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
@@ -684,6 +705,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         setWorkflowService(null);
         setWorkflowRepository(null);
       }
+      await reviewPublishSupervisor?.stop();
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }
@@ -737,7 +759,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       registerDebugDispatch(app, coreRouter, logger);
     }
     await app.listen({ host: config.network.host, port: config.network.port });
+    reviewPublishSupervisor?.start();
   } catch (err) {
+    await reviewPublishSupervisor?.stop();
     await phoneApprovalManager?.stop();
     trace.push({
       step: 'fastify_start',

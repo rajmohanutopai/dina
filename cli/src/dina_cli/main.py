@@ -22,14 +22,27 @@ from . import __version__
 from .client import DinaClient, DinaClientError
 from .config import CONFIG_FILE, load_config, save_config, _load_saved
 from . import config as _config_mod
-from .output import print_error, print_error_with_trace, print_result, print_result_with_trace
+from .output import (
+    print_error,
+    print_error_with_trace,
+    print_result,
+    print_result_with_trace,
+)
 from .session import SessionStore
 from .signing import CLIIdentity
 
 # Safe actions that auto-approve when Brain is unavailable.
-_SAFE_ACTIONS = frozenset({
-    "search", "lookup", "read", "query", "list", "recall", "remember",
-})
+_SAFE_ACTIONS = frozenset(
+    {
+        "search",
+        "lookup",
+        "read",
+        "query",
+        "list",
+        "recall",
+        "remember",
+    }
+)
 
 
 def _load_cfg(ctx: click.Context):
@@ -39,7 +52,10 @@ def _load_cfg(ctx: click.Context):
             ctx.obj["config"] = load_config()
         except click.UsageError:
             if ctx.obj.get("json"):
-                click.echo(json.dumps({"error": "Not configured. Run: dina configure"}), err=True)
+                click.echo(
+                    json.dumps({"error": "Not configured. Run: dina configure"}),
+                    err=True,
+                )
             raise
     return ctx.obj["config"]
 
@@ -47,7 +63,9 @@ def _load_cfg(ctx: click.Context):
 def _make_client(ctx: click.Context) -> DinaClient:
     """Get or create the DinaClient from Click context."""
     if "client" not in ctx.obj:
-        ctx.obj["client"] = DinaClient(_load_cfg(ctx), verbose=ctx.obj.get("verbose", False))
+        ctx.obj["client"] = DinaClient(
+            _load_cfg(ctx), verbose=ctx.obj.get("verbose", False)
+        )
     return ctx.obj["client"]
 
 
@@ -59,7 +77,9 @@ def _cli_version() -> str:
 @click.group()
 @click.version_option(version=_cli_version(), prog_name="dina-agent")
 @click.option("--json", "json_mode", is_flag=True, help="Machine-readable JSON output")
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed request/response info")
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Show detailed request/response info"
+)
 @click.pass_context
 def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
     """Dina CLI — encrypted memory, PII scrubbing, action gating."""
@@ -67,6 +87,605 @@ def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
     ctx.obj["json"] = json_mode
     ctx.obj["verbose"] = verbose
     ctx.obj["sessions"] = SessionStore()
+
+
+# ── home-node ──────────────────────────────────────────────────────────────
+
+
+@cli.group("home-node")
+def home_node() -> None:
+    """Install and supervise the plugin-owned Home Node Lite."""
+
+
+def _home_node_manager():
+    from .home_node import HomeNodeManager
+
+    return HomeNodeManager()
+
+
+def _home_node_fail(ctx: click.Context, exc: Exception) -> None:
+    if ctx.obj["json"]:
+        click.echo(json.dumps({"error": str(exc)}), err=True)
+    else:
+        click.echo(f"Error: {exc}", err=True)
+    ctx.exit(1)
+
+
+def _enrollment_result(enrollment) -> dict[str, Any]:
+    return {
+        "status": enrollment.status,
+        "device_id": enrollment.device_id,
+        "agent_did": enrollment.agent_did,
+        "home_did": enrollment.home_did,
+        "config_dir": enrollment.config_dir,
+    }
+
+
+def _print_home_node_status(ctx: click.Context, status, enrollment=None) -> None:
+    result = {
+        "installed": status.installed,
+        "running": status.running,
+        "core_healthy": status.core_healthy,
+        "brain_healthy": status.brain_healthy,
+        "core_url": status.core_url,
+        "brain_url": status.brain_url,
+        "install_dir": status.install_dir,
+        "release_version": status.release_version,
+        "autostart_enabled": status.autostart_enabled,
+    }
+    if enrollment is not None:
+        result["agent_enrollment"] = _enrollment_result(enrollment)
+    if ctx.obj["json"]:
+        click.echo(json.dumps(result))
+        return
+    click.echo(f"  Installed: {'yes' if status.installed else 'no'}")
+    click.echo(f"  Running:   {'yes' if status.running else 'no'}")
+    click.echo(f"  Autostart: {'yes' if status.autostart_enabled else 'no'}")
+    click.echo(
+        f"  Core:      {status.core_url} ({'healthy' if status.core_healthy else 'offline'})"
+    )
+    click.echo(
+        f"  Brain:     {status.brain_url} ({'healthy' if status.brain_healthy else 'offline'})"
+    )
+    click.echo(f"  State:     {status.install_dir}")
+    if status.release_version:
+        click.echo(f"  Release:   {status.release_version}")
+    if enrollment is not None:
+        click.echo(f"  Agent:     {enrollment.status} ({enrollment.agent_did})")
+        click.echo(f"  CLI state: {enrollment.config_dir}")
+
+
+def _read_home_node_recovery_entropy(recovery_file: Path | None) -> bytes:
+    """Read a recovery phrase without accepting it through argv or env."""
+    from . import seed_wrap
+
+    if recovery_file is None:
+        phrase = click.prompt(
+            "Recovery phrase",
+            hide_input=True,
+            confirmation_prompt=False,
+            type=str,
+        )
+    else:
+        path = recovery_file.expanduser()
+        if path.is_symlink() or not path.is_file():
+            raise click.UsageError("Recovery file must be a regular, non-symlink file.")
+        if os.name != "nt" and path.stat().st_mode & 0o077:
+            raise click.UsageError(
+                "Recovery file is accessible to group/other users; run chmod 600 first."
+            )
+        lines = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if len(lines) != 1:
+            raise click.UsageError(
+                "Recovery file must contain exactly one non-comment mnemonic line."
+            )
+        phrase = lines[0]
+    try:
+        return seed_wrap.mnemonic_to_seed(phrase.strip().lower().split())
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
+def _prompt_archive_passphrase(*, confirm: bool, err: bool = False) -> str:
+    passphrase = click.prompt(
+        "Archive passphrase",
+        hide_input=True,
+        confirmation_prompt=confirm,
+        type=str,
+        err=err,
+    )
+    if not passphrase:
+        raise click.UsageError("Archive passphrase must not be empty.")
+    return passphrase
+
+
+@home_node.command("install")
+@click.option(
+    "--release",
+    "release_version",
+    default=None,
+    help="Native Home Node release version (default: latest)",
+)
+@click.option(
+    "--bundle",
+    "bundle_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Install a local native release archive instead of downloading one",
+)
+@click.option(
+    "--endpoint-mode",
+    type=click.Choice(["test", "release"]),
+    default="release",
+    show_default=True,
+)
+@click.option(
+    "--core-port", type=click.IntRange(1, 65535), default=8100, show_default=True
+)
+@click.option(
+    "--brain-port", type=click.IntRange(1, 65535), default=8200, show_default=True
+)
+@click.option(
+    "--pds-handle",
+    default=None,
+    help="Existing or new public handle used when network publishing is enabled",
+)
+@click.option("--pds-email", default=None, help="Optional PDS account email")
+@click.option(
+    "--restore-identity",
+    is_flag=True,
+    help="Restore an existing identity; securely prompt for its recovery phrase",
+)
+@click.option(
+    "--recovery-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Mode-0600 recovery phrase file for non-interactive restore",
+)
+@click.option(
+    "--no-start", is_flag=True, help="Install the native runtime without starting it"
+)
+@click.option(
+    "--no-enroll",
+    is_flag=True,
+    help="Do not enroll this machine as the Home Node's coding agent",
+)
+@click.option(
+    "--agent-config-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Exact dina-agent config directory (default: DINA_CONFIG_DIR or ~/.dina/cli)",
+)
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_install(
+    ctx: click.Context,
+    release_version: str | None,
+    bundle_path: Path | None,
+    endpoint_mode: str,
+    core_port: int,
+    brain_port: int,
+    pds_handle: str | None,
+    pds_email: str | None,
+    restore_identity: bool,
+    recovery_file: Path | None,
+    no_start: bool,
+    no_enroll: bool,
+    agent_config_dir: Path | None,
+    wait_timeout: float,
+) -> None:
+    """Install Home Node Lite without a Dina source checkout."""
+    from .home_node import DEFAULT_RELEASE, HomeNodeError
+
+    restore_requested = restore_identity or recovery_file is not None
+    if restore_requested and not pds_handle:
+        raise click.UsageError(
+            "--restore-identity/--recovery-file requires the existing --pds-handle "
+            "so Core can rebind to the same did:plc."
+        )
+    if pds_email and not pds_handle:
+        raise click.UsageError("--pds-email requires --pds-handle.")
+    recovered_seed = (
+        _read_home_node_recovery_entropy(recovery_file) if restore_requested else None
+    )
+
+    try:
+        manager = _home_node_manager()
+        status = manager.install(
+            release_version=release_version
+            or os.environ.get("DINA_HOME_NODE_RELEASE", DEFAULT_RELEASE),
+            bundle_path=bundle_path,
+            endpoint_mode=endpoint_mode,
+            core_port=core_port,
+            brain_port=brain_port,
+            pds_handle=pds_handle,
+            pds_email=pds_email,
+            start=not no_start and recovered_seed is None,
+            wait_timeout=wait_timeout,
+        )
+        if recovered_seed is not None:
+            manager.restore_identity_seed(recovered_seed)
+            if not no_start:
+                status = manager.start(wait_timeout=wait_timeout)
+        enrollment = None
+        if not no_start and not no_enroll:
+            from .home_node_enrollment import HomeNodeAgentEnroller
+
+            enrollment = HomeNodeAgentEnroller(
+                manager,
+                config_dir=agent_config_dir,
+            ).enroll()
+        _print_home_node_status(ctx, status, enrollment)
+        if not no_start and not ctx.obj["json"]:
+            click.echo(f"  Owner:     {status.core_url}/owner")
+            if no_enroll:
+                click.echo(
+                    "\nHome Node is installed. Agent enrollment was skipped; run "
+                    "`dina home-node enroll-agent` when ready."
+                )
+            else:
+                click.echo(
+                    "\nHome Node is installed and this coding agent is enrolled."
+                )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("enroll-agent")
+@click.option(
+    "--config-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Exact dina-agent config directory (default: DINA_CONFIG_DIR or ~/.dina/cli)",
+)
+@click.pass_context
+def home_node_enroll_agent(
+    ctx: click.Context,
+    config_dir: Path | None,
+) -> None:
+    """Enroll this machine as a coding-scoped agent of the local Home Node."""
+    from .home_node import HomeNodeError
+    from .home_node_enrollment import HomeNodeAgentEnroller
+
+    try:
+        enrollment = HomeNodeAgentEnroller(
+            _home_node_manager(),
+            config_dir=config_dir,
+        ).enroll()
+        if ctx.obj["json"]:
+            click.echo(json.dumps(_enrollment_result(enrollment)))
+        else:
+            click.echo(f"  Agent:     {enrollment.status}")
+            click.echo(f"  DID:       {enrollment.agent_did}")
+            click.echo(f"  Home Node: {enrollment.home_did}")
+            click.echo(f"  CLI state: {enrollment.config_dir}")
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("upgrade")
+@click.option(
+    "--release",
+    "release_version",
+    required=True,
+    help="Native Home Node release version to verify and activate",
+)
+@click.option(
+    "--bundle",
+    "bundle_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Use a local native release archive instead of downloading one",
+)
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_upgrade(
+    ctx: click.Context,
+    release_version: str,
+    bundle_path: Path | None,
+    wait_timeout: float,
+) -> None:
+    """Upgrade Home Node with vault backup and automatic rollback."""
+    from .home_node import HomeNodeError
+
+    try:
+        status = _home_node_manager().upgrade(
+            release_version=release_version,
+            bundle_path=bundle_path,
+            wait_timeout=wait_timeout,
+        )
+        _print_home_node_status(ctx, status)
+        if not ctx.obj["json"]:
+            click.echo(
+                "\nHome Node upgrade passed health checks. The prior vault "
+                "snapshot was removed."
+            )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("backup")
+@click.argument("destination", type=click.Path(path_type=Path))
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    help="Replace an existing destination file",
+)
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_backup(
+    ctx: click.Context,
+    destination: Path,
+    overwrite: bool,
+    wait_timeout: float,
+) -> None:
+    """Create a passphrase-encrypted portable .dina data backup."""
+    from .home_node import HomeNodeError
+
+    passphrase = _prompt_archive_passphrase(confirm=True, err=ctx.obj["json"])
+    try:
+        output = _home_node_manager().export_archive(
+            destination,
+            passphrase,
+            overwrite=overwrite,
+            wait_timeout=wait_timeout,
+        )
+        if ctx.obj["json"]:
+            click.echo(json.dumps({"backup_created": True, "path": str(output)}))
+        else:
+            click.echo(f"Encrypted Home Node backup created: {output}")
+            click.echo(
+                "Identity recovery words are separate and are not stored in this archive."
+            )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("verify-backup")
+@click.argument("archive_file", type=click.Path(path_type=Path))
+@click.pass_context
+def home_node_verify_backup(ctx: click.Context, archive_file: Path) -> None:
+    """Verify a .dina backup and passphrase without restoring it."""
+    from .home_node import HomeNodeError
+
+    passphrase = _prompt_archive_passphrase(confirm=False, err=ctx.obj["json"])
+    try:
+        _home_node_manager().verify_archive(archive_file, passphrase)
+        if ctx.obj["json"]:
+            click.echo(json.dumps({"valid": True, "path": str(archive_file)}))
+        else:
+            click.echo("Backup is valid and the passphrase is correct.")
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("restore-backup")
+@click.argument("archive_file", type=click.Path(path_type=Path))
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite existing user data instead of requiring a clean Home Node",
+)
+@click.option("--yes", is_flag=True, help="Confirm destructive --force restore")
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_restore_backup(
+    ctx: click.Context,
+    archive_file: Path,
+    force: bool,
+    yes: bool,
+    wait_timeout: float,
+) -> None:
+    """Restore a portable .dina backup into this Home Node identity."""
+    from .home_node import HomeNodeError
+
+    if force and not yes:
+        if ctx.obj["json"]:
+            raise click.UsageError("--force with --json requires --yes.")
+        click.confirm(
+            "Overwrite current portable user data with this backup?",
+            abort=True,
+        )
+    passphrase = _prompt_archive_passphrase(confirm=False, err=ctx.obj["json"])
+    try:
+        _home_node_manager().import_archive(
+            archive_file,
+            passphrase,
+            force=force,
+            wait_timeout=wait_timeout,
+        )
+        if ctx.obj["json"]:
+            click.echo(json.dumps({"restored": True, "path": str(archive_file)}))
+        else:
+            click.echo("Home Node backup restored successfully.")
+            click.echo(
+                "Paired devices, credentials, live grants, sessions, and pending "
+                "work were not restored and must be re-established."
+            )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("ensure")
+@click.option(
+    "--if-installed",
+    is_flag=True,
+    help="Recover an existing install; do nothing when not installed",
+)
+@click.option("--quiet", is_flag=True, help="Suppress successful output")
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_ensure(
+    ctx: click.Context, if_installed: bool, quiet: bool, wait_timeout: float
+) -> None:
+    """Ensure the Home Node is installed and healthy."""
+    from .home_node import HomeNodeError
+
+    try:
+        status = _home_node_manager().ensure(
+            if_installed=if_installed,
+            wait_timeout=wait_timeout,
+        )
+        if status is not None and not quiet:
+            _print_home_node_status(ctx, status)
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("start")
+@click.option("--wait", "wait_timeout", type=float, default=120.0, show_default=True)
+@click.pass_context
+def home_node_start(ctx: click.Context, wait_timeout: float) -> None:
+    """Start an installed Home Node and wait for readiness."""
+    from .home_node import HomeNodeError
+
+    try:
+        _print_home_node_status(
+            ctx, _home_node_manager().start(wait_timeout=wait_timeout)
+        )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("stop")
+@click.pass_context
+def home_node_stop(ctx: click.Context) -> None:
+    """Stop the Home Node without deleting configuration or vault data."""
+    from .home_node import HomeNodeError
+
+    try:
+        _print_home_node_status(ctx, _home_node_manager().stop())
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("status")
+@click.pass_context
+def home_node_status(ctx: click.Context) -> None:
+    """Show installation and health state."""
+    from .home_node import HomeNodeError
+
+    try:
+        _print_home_node_status(ctx, _home_node_manager().status())
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+@home_node.command("logs")
+@click.option("--follow", "-f", is_flag=True)
+@click.option("--tail", type=click.IntRange(1, 10000), default=200, show_default=True)
+@click.pass_context
+def home_node_logs(ctx: click.Context, follow: bool, tail: int) -> None:
+    """Show native supervisor, Core, and Brain logs."""
+    from .home_node import HomeNodeError
+
+    try:
+        ctx.exit(_home_node_manager().logs(follow=follow, tail=tail))
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
+
+
+def _require_human_terminal() -> None:
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise click.UsageError(
+            "This authority-revealing command only runs in an interactive human terminal."
+        )
+
+
+@home_node.command("show-owner-capability")
+def home_node_show_owner_capability() -> None:
+    """Show the owner-console key in an interactive human terminal."""
+    from .home_node import HomeNodeError
+
+    _require_human_terminal()
+    try:
+        value = _home_node_manager().read_owner_capability()
+    except HomeNodeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("Owner capability (do not paste this into an agent conversation):")
+    click.echo(value)
+
+
+@home_node.command("show-recovery-phrase")
+def home_node_show_recovery_phrase() -> None:
+    """Show and optionally remove Core's first-boot recovery phrase."""
+    from .home_node import HomeNodeError
+
+    _require_human_terminal()
+    manager = _home_node_manager()
+    try:
+        phrase = manager.read_recovery_phrase()
+        if phrase is None:
+            click.echo("No plaintext recovery phrase remains in the Home Node.")
+            return
+        click.echo("Recovery phrase (record it offline; never share it with an agent):")
+        click.echo(phrase)
+        if click.confirm(
+            "Have you recorded it and want to remove Core's plaintext copy?",
+            default=False,
+        ):
+            manager.remove_recovery_phrase()
+            click.echo("Plaintext recovery phrase removed.")
+    except HomeNodeError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@home_node.command("uninstall")
+@click.option(
+    "--purge-data",
+    is_flag=True,
+    help="Also destroy encrypted vault data, keys, and installation files",
+)
+@click.option(
+    "--yes", is_flag=True, help="Confirm destructive --purge-data non-interactively"
+)
+@click.pass_context
+def home_node_uninstall(ctx: click.Context, purge_data: bool, yes: bool) -> None:
+    """Remove native runtime code; preserve vault data unless explicitly purged."""
+    from .home_node import HomeNodeError
+
+    if purge_data and not yes:
+        click.confirm(
+            "Permanently delete Home Node vault data, keys, and installation files?",
+            abort=True,
+        )
+    try:
+        manager = _home_node_manager()
+        managed_cleanup = None
+        if purge_data:
+            from .home_node_enrollment import prepare_managed_enrollment_cleanup
+
+            managed_cleanup = prepare_managed_enrollment_cleanup(manager)
+        manager.uninstall(purge_data=purge_data)
+        credentials_removed = (
+            managed_cleanup.apply() if managed_cleanup is not None else False
+        )
+        if ctx.obj["json"]:
+            click.echo(
+                json.dumps(
+                    {
+                        "uninstalled": True,
+                        "data_purged": purge_data,
+                        "managed_agent_credentials_removed": credentials_removed,
+                    }
+                )
+            )
+        elif purge_data:
+            click.echo("Home Node runtime and vault data were permanently removed.")
+            if credentials_removed:
+                click.echo("Installer-managed coding-agent credentials were removed.")
+        else:
+            click.echo(
+                "Home Node runtime code was removed. Vault data, keys, and "
+                "configuration were preserved; run `dina home-node install` "
+                "to restore the native runtime."
+            )
+    except HomeNodeError as exc:
+        _home_node_fail(ctx, exc)
 
 
 # ── status ────────────────────────────────────────────────────────────────
@@ -85,7 +704,11 @@ def status(ctx: click.Context) -> None:
 
     # Load saved config
     saved = _load_saved()
-    core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
+    core_url = (
+        os.environ.get("DINA_CORE_URL")
+        or saved.get("core_url")
+        or "http://localhost:8100"
+    )
     result["core_url"] = core_url
     result["device_name"] = saved.get("device_name", "")
 
@@ -101,7 +724,9 @@ def status(ctx: click.Context) -> None:
         result["did"] = ""
 
     # Connectivity + auth
-    transport_mode = os.environ.get("DINA_TRANSPORT") or saved.get("transport_mode") or "msgbox"
+    transport_mode = (
+        os.environ.get("DINA_TRANSPORT") or saved.get("transport_mode") or "msgbox"
+    )
     result["core_reachable"] = False
     result["authenticated"] = False
     result["home_did"] = ""
@@ -120,7 +745,9 @@ def status(ctx: click.Context) -> None:
                 # Agents cannot read the admin-only DID route. Prefer the
                 # configured Home Node DID, then best-effort the owner route.
                 result["home_did"] = (
-                    os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+                    os.environ.get("DINA_HOMENODE_DID")
+                    or saved.get("homenode_did")
+                    or ""
                 )
                 try:
                     did_doc = client.did_get()
@@ -142,7 +769,9 @@ def status(ctx: click.Context) -> None:
                 client.session_list()
                 result["authenticated"] = True
                 result["home_did"] = (
-                    os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+                    os.environ.get("DINA_HOMENODE_DID")
+                    or saved.get("homenode_did")
+                    or ""
                 )
                 try:
                     did_doc = client.did_get()
@@ -184,8 +813,14 @@ def status(ctx: click.Context) -> None:
 
 @cli.command()
 @click.argument("text")
-@click.option("--category", default="note", help="Optional metadata label. Ex: fact, preference, decision, relationship, event, note")
-@click.option("--session", required=True, help="Session ID (create with: dina session start)")
+@click.option(
+    "--category",
+    default="note",
+    help="Optional metadata label. Ex: fact, preference, decision, relationship, event, note",
+)
+@click.option(
+    "--session", required=True, help="Session ID (create with: dina session start)"
+)
 @click.pass_context
 def remember(ctx: click.Context, text: str, category: str, session: str) -> None:
     """Store a fact via the staging pipeline.
@@ -207,7 +842,9 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
     try:
         source_id = f"cli-{uuid.uuid4().hex[:12]}"
         metadata = json.dumps({"category": category, "session": session})
-        result = client.remember(text, session=session, source_id=source_id, metadata=metadata)
+        result = client.remember(
+            text, session=session, source_id=source_id, metadata=metadata
+        )
         status = result.get("status", "processing")
         message = result.get("message", "")
         item_id = result.get("id", "")
@@ -225,13 +862,16 @@ def remember(ctx: click.Context, text: str, category: str, session: str) -> None
 
 @cli.command("remember-status")
 @click.argument("item_id")
+@click.option(
+    "--session", required=True, help="Session ID used for the original remember request"
+)
 @click.pass_context
-def remember_status(ctx: click.Context, item_id: str) -> None:
+def remember_status(ctx: click.Context, item_id: str, session: str) -> None:
     """Check the status of a pending remember operation."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        result = client.remember_check(item_id)
+        result = client.remember_check(item_id, session=session)
         print_result_with_trace(result, json_mode, client.req_id)
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
@@ -243,8 +883,15 @@ def remember_status(ctx: click.Context, item_id: str) -> None:
 
 @cli.command()
 @click.argument("query")
-@click.option("--session", required=True, help="Session ID (create with: dina session start)")
-@click.option("--timeout", default=300, type=int, help="Approval poll timeout in seconds (30–1800, default 300)")
+@click.option(
+    "--session", required=True, help="Session ID (create with: dina session start)"
+)
+@click.option(
+    "--timeout",
+    default=300,
+    type=int,
+    help="Approval poll timeout in seconds (30–1800, default 300)",
+)
 @click.pass_context
 def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     """Ask Dina a question - she reasons over your encrypted vault.
@@ -258,7 +905,7 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     dina ask --session sess-123 "When is my daughter's birthday?"
 
     Dina checks all persona to get the data if this session has access.
-    
+
     If session does not have access, the owner approves it in the Dina app
     (Activity → Needs action).
     """
@@ -283,7 +930,10 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
 
             if result_status == "pending_approval":
                 click.echo(f"Access to '{persona}' data requires approval.", err=True)
-                click.echo("A notification has been sent. Open the Dina app → Activity → Needs action to approve.", err=True)
+                click.echo(
+                    "A notification has been sent. Open the Dina app → Activity → Needs action to approve.",
+                    err=True,
+                )
                 banner = "Awaiting approval..."
                 # Poll intervals: be patient — user may take minutes.
                 fast_interval, slow_interval, fast_window = 5, 15, 30
@@ -301,6 +951,7 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
             click.echo(banner, err=True)
 
             import time
+
             timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
             elapsed = 0
             # F-2 follow-up: track the LAST observed server-side status so
@@ -342,7 +993,9 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                     ctx.exit(1)
                     return
                 elif st == "failed":
-                    click.echo(f"Request failed: {status.get('error', 'unknown')}", err=True)
+                    click.echo(
+                        f"Request failed: {status.get('error', 'unknown')}", err=True
+                    )
                     ctx.exit(1)
                     return
                 elif st == "expired":
@@ -358,7 +1011,10 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                 # awaiting approval" instead of "still reasoning".
                 if st != last_st:
                     if st == "pending_approval":
-                        click.echo("Awaiting approval... (open the Dina app and tap Approve)", err=True)
+                        click.echo(
+                            "Awaiting approval... (open the Dina app and tap Approve)",
+                            err=True,
+                        )
                         # Slow the poll: humans don't tap inside one second.
                         fast_interval, slow_interval, fast_window = 5, 15, 30
                     elif st == "in_flight" and last_st == "pending_approval":
@@ -390,7 +1046,9 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
                     "llm_timeout": "LLM request timed out. Try again, or check the provider in the Dina app (AI providers).",
                     "llm_unreachable": "LLM provider unreachable. Check the network, or the provider in the Dina app (AI providers).",
                 }
-                msg = result.get("message") or _ERROR_MESSAGES.get(error_code, f"Error: {error_code}")
+                msg = result.get("message") or _ERROR_MESSAGES.get(
+                    error_code, f"Error: {error_code}"
+                )
                 click.echo(msg, err=True)
                 click.echo(f"  req_id: {client.req_id}", err=True)
             ctx.exit(1)
@@ -409,7 +1067,10 @@ def ask(ctx: click.Context, query: str, session: str, timeout: int) -> None:
     except DinaClientError as exc:
         if "approval_required" in str(exc).lower():
             click.echo("Access to sensitive data requires approval.", err=True)
-            click.echo("A notification has been sent. Open the Dina app → Activity → Needs action to approve.", err=True)
+            click.echo(
+                "A notification has been sent. Open the Dina app → Activity → Needs action to approve.",
+                err=True,
+            )
         elif "persona locked" in str(exc).lower():
             click.echo("Some data is locked. Unlock it in the Dina app.", err=True)
         else:
@@ -474,13 +1135,26 @@ def _extract_category(item: dict) -> str:
 @click.argument("description")
 @click.option("--count", default=1, type=int, help="Number of items affected")
 @click.option("--reversible", is_flag=True, help="Action is reversible")
-@click.option("--session", required=True, help="Session ID (create with: dina session start)")
-@click.option("--context", "context_json", default=None,
-              help="JSON object with action details shown in approval notification "
-                   "(e.g. '{\"to\":\"user@example.com\",\"subject\":\"Report\"}')")
+@click.option(
+    "--session", required=True, help="Session ID (create with: dina session start)"
+)
+@click.option(
+    "--context",
+    "context_json",
+    default=None,
+    help="JSON object with action details shown in approval notification "
+    '(e.g. \'{"to":"user@example.com","subject":"Report"}\')',
+)
 @click.pass_context
-def validate(ctx: click.Context, action: str, description: str, count: int,
-             reversible: bool, session: str, context_json: str | None) -> None:
+def validate(
+    ctx: click.Context,
+    action: str,
+    description: str,
+    count: int,
+    reversible: bool,
+    session: str,
+    context_json: str | None,
+) -> None:
     """Check if an action is approved by user policy.
 
     \b
@@ -500,7 +1174,9 @@ def validate(ctx: click.Context, action: str, description: str, count: int,
         try:
             context = json.loads(context_json)
         except json.JSONDecodeError:
-            raise click.BadParameter(f"Invalid JSON: {context_json}", param_hint="--context")
+            raise click.BadParameter(
+                f"Invalid JSON: {context_json}", param_hint="--context"
+            )
 
     try:
         payload: dict = {
@@ -512,12 +1188,15 @@ def validate(ctx: click.Context, action: str, description: str, count: int,
         if context:
             payload["context"] = context
 
-        result = client.process_event({
-            "type": "agent_intent",
-            "action": action,
-            "target": description,
-            "payload": payload,
-        }, session=session)
+        result = client.process_event(
+            {
+                "type": "agent_intent",
+                "action": action,
+                "target": description,
+                "payload": payload,
+            },
+            session=session,
+        )
         approved = result.get("approved", False)
         requires = result.get("requires_approval", False)
         proposal_id = result.get("proposal_id", "")
@@ -574,11 +1253,25 @@ def validate_actions(ctx: click.Context) -> None:
             # No custom policy — use built-in defaults
             policy = {
                 "blocked": ["access_keys", "export_data", "read_vault"],
-                "high": ["delete_data", "share_data", "sign_contract", "transfer_money"],
+                "high": [
+                    "delete_data",
+                    "share_data",
+                    "sign_contract",
+                    "transfer_money",
+                ],
                 "moderate": [
-                    "calendar_create", "draft_create", "draft_email", "form_fill",
-                    "install_extension", "pay_crypto", "pay_upi", "research",
-                    "send_email", "send_message", "share_location", "web_checkout",
+                    "calendar_create",
+                    "draft_create",
+                    "draft_email",
+                    "form_fill",
+                    "install_extension",
+                    "pay_crypto",
+                    "pay_upi",
+                    "research",
+                    "send_email",
+                    "send_message",
+                    "share_location",
+                    "web_checkout",
                 ],
             }
         else:
@@ -648,7 +1341,9 @@ def scrub(ctx: click.Context, text: str) -> None:
         # rehydrated as an identity operation.
         sessions.save(session_id, entities)
 
-        print_result_with_trace({"scrubbed": scrubbed, "pii_id": session_id}, json_mode, client.req_id)
+        print_result_with_trace(
+            {"scrubbed": scrubbed, "pii_id": session_id}, json_mode, client.req_id
+        )
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
@@ -679,10 +1374,14 @@ def rehydrate(ctx: click.Context, text: str, session_id: str) -> None:
 @cli.command()
 @click.argument("content")
 @click.option("--to", "recipient", required=True, help="Recipient address")
-@click.option("--channel", required=True, type=click.Choice(["email", "sms", "slack", "whatsapp"]))
+@click.option(
+    "--channel", required=True, type=click.Choice(["email", "sms", "slack", "whatsapp"])
+)
 @click.option("--subject", default="", help="Message subject (email)")
 @click.pass_context
-def draft(ctx: click.Context, content: str, recipient: str, channel: str, subject: str) -> None:
+def draft(
+    ctx: click.Context, content: str, recipient: str, channel: str, subject: str
+) -> None:
     """Stage a message for human review."""
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
@@ -697,25 +1396,37 @@ def draft(ctx: click.Context, content: str, recipient: str, channel: str, subjec
             + f": {content}",
         )
         # Stage the draft metadata for Brain classification + vault persistence.
-        client.staging_ingest({
-            "type": "email_draft",
-            "summary": f"Draft to {recipient}: {subject}" if subject else f"Draft to {recipient}",
-            "body": content,
-            "source": "dina-cli",
-            "source_id": draft_id,
-            "sender": "user",
-            "metadata": json.dumps({
-                "to": recipient,
-                "channel": channel,
-                "subject": subject,
+        client.staging_ingest(
+            {
+                "type": "email_draft",
+                "summary": (
+                    f"Draft to {recipient}: {subject}"
+                    if subject
+                    else f"Draft to {recipient}"
+                ),
+                "body": content,
+                "source": "dina-cli",
+                "source_id": draft_id,
+                "sender": "user",
+                "metadata": json.dumps(
+                    {
+                        "to": recipient,
+                        "channel": channel,
+                        "subject": subject,
+                        "draft_id": draft_id,
+                    }
+                ),
+            }
+        )
+        print_result_with_trace(
+            {
                 "draft_id": draft_id,
-            }),
-        })
-        print_result_with_trace({
-            "draft_id": draft_id,
-            "status": "pending_review",
-            "dashboard_url": f"{config.core_url}/drafts/{draft_id}",
-        }, json_mode, client.req_id)
+                "status": "pending_review",
+                "dashboard_url": f"{config.core_url}/drafts/{draft_id}",
+            },
+            json_mode,
+            client.req_id,
+        )
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
@@ -739,11 +1450,14 @@ def sign(ctx: click.Context, content: str) -> None:
         identity = CLIIdentity()
         identity.ensure_loaded()
         signature = identity.sign_data(content.encode())
-        print_result({
-            "signed_by": identity.did(),
-            "signature": signature,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }, json_mode)
+        print_result(
+            {
+                "signed_by": identity.did(),
+                "signature": signature,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            json_mode,
+        )
     except FileNotFoundError:
         print_error("No keypair found. Run 'dina configure' first.", json_mode)
         ctx.exit(1)
@@ -796,19 +1510,41 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 
 @cli.command()
 @click.option(
-    "--role", default="user", type=click.Choice(["user", "agent"]),
+    "--role",
+    default="user",
+    type=click.Choice(["user", "agent"]),
     help="Device role: 'user' (personal CLI) or 'agent' (OpenClaw/bot)",
 )
 @click.option(
-    "--config", "config_file", default=None, type=click.Path(exists=True),
+    "--config",
+    "config_file",
+    default=None,
+    type=click.Path(exists=True),
     help="Non-interactive: JSON config file with keys: core_url, device_name, config_location, pairing_code",
 )
-@click.option("--headless", is_flag=True, default=False, help="Non-interactive mode with CLI flags (no prompts)")
-@click.option("--core-url", default=None, help="[headless] Core URL (e.g. http://localhost:8100)")
-@click.option("--msgbox-url", default=None, help="[headless] MsgBox WebSocket URL (e.g. wss://mailbox.example.com/ws)")
-@click.option("--homenode-did", default=None, help="[headless] DID of the paired Home Node (did:plc:...)")
 @click.option(
-    "--transport", "transport_mode", default=None,
+    "--headless",
+    is_flag=True,
+    default=False,
+    help="Non-interactive mode with CLI flags (no prompts)",
+)
+@click.option(
+    "--core-url", default=None, help="[headless] Core URL (e.g. http://localhost:8100)"
+)
+@click.option(
+    "--msgbox-url",
+    default=None,
+    help="[headless] MsgBox WebSocket URL (e.g. wss://mailbox.example.com/ws)",
+)
+@click.option(
+    "--homenode-did",
+    default=None,
+    help="[headless] DID of the paired Home Node (did:plc:...)",
+)
+@click.option(
+    "--transport",
+    "transport_mode",
+    default=None,
     type=click.Choice(["direct", "msgbox", "auto"]),
     help="[headless] Transport mode: direct | msgbox | auto (default: msgbox)",
 )
@@ -818,22 +1554,34 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
     default=None,
     help="[headless] Owner-issued pairing code",
 )
-@click.option("--config-dir", default=None, help="[headless] Config directory (default: .dina/cli in cwd)")
 @click.option(
-    "--setup-code", default=None,
+    "--config-dir",
+    default=None,
+    help="[headless] Config directory (default: .dina/cli in cwd)",
+)
+@click.option(
+    "--setup-code",
+    default=None,
     help="An owner-issued `dina1:…` setup code. Mobile runners obtain it from "
-         "the Dina app (Settings → Agents); coding integrations obtain a "
-         "coding-scope code from Home Node Lite. Carries relay URL, Home Node "
-         "DID, transport, device name and pairing code in one string. "
-         "Individual flags override its fields.",
+    "the Dina app (Settings → Agents); coding integrations obtain a "
+    "coding-scope code from Home Node Lite. Carries relay URL, Home Node "
+    "DID, transport, device name and pairing code in one string. "
+    "Individual flags override its fields.",
 )
 @click.pass_context
 def configure(
-    ctx: click.Context, role: str, config_file: str | None,
-    headless: bool, core_url: str | None, msgbox_url: str | None,
-    homenode_did: str | None, transport_mode: str | None,
-    device_name: str | None, pairing_code: str | None,
-    config_dir: str | None, setup_code: str | None,
+    ctx: click.Context,
+    role: str,
+    config_file: str | None,
+    headless: bool,
+    core_url: str | None,
+    msgbox_url: str | None,
+    homenode_did: str | None,
+    transport_mode: str | None,
+    device_name: str | None,
+    pairing_code: str | None,
+    config_dir: str | None,
+    setup_code: str | None,
 ) -> None:
     """Set up connection to a Dina Home Node.
 
@@ -927,7 +1675,9 @@ def configure(
                     # re-copy rather than silently dropping into manual mode
                     # with half-remembered values.
                     raise click.UsageError(f"Setup code rejected: {exc}")
-                click.echo(f"  Not a setup code ({exc}) — continuing with manual setup.")
+                click.echo(
+                    f"  Not a setup code ({exc}) — continuing with manual setup."
+                )
         if setup is not None:
             # Same field-by-field merge as the --setup-code flag path:
             # explicit flags win, the pasted string fills the rest.
@@ -947,6 +1697,7 @@ def configure(
 
     # Config location: local (this directory), global (~), or custom path.
     from .config import _GLOBAL_CONFIG_DIR, _LOCAL_CONFIG_DIR, set_config_dir
+
     cwd = Path.cwd()
     home = Path.home()
 
@@ -978,15 +1729,21 @@ def configure(
 
     # Load existing saved config for defaults
     from .config import _load_saved
+
     existing = _load_saved()
 
     if cfg_input:
-        core_url = cfg_input.get("core_url", existing.get("core_url", "http://localhost:8100"))
-        device_name = cfg_input.get("device_name", existing.get("device_name") or _default_device_name())
+        core_url = cfg_input.get(
+            "core_url", existing.get("core_url", "http://localhost:8100")
+        )
+        device_name = cfg_input.get(
+            "device_name", existing.get("device_name") or _default_device_name()
+        )
         msgbox_url = cfg_input.get("msgbox_url", existing.get("msgbox_url", ""))
         homenode_did = cfg_input.get("homenode_did", existing.get("homenode_did", ""))
         transport_mode_val = cfg_input.get(
-            "transport_mode", existing.get("transport_mode", "msgbox"),
+            "transport_mode",
+            existing.get("transport_mode", "msgbox"),
         )
         click.echo(f"  Core URL: {core_url}")
         click.echo(f"  MsgBox: {msgbox_url or '(none)'}")
@@ -998,7 +1755,9 @@ def configure(
         # explicit flags already merged in) — no further prompts.
         core_url = core_url or existing.get("core_url", "http://localhost:8100")
         transport_mode_val = transport_mode or "msgbox"
-        device_name = device_name or existing.get("device_name") or _default_device_name()
+        device_name = (
+            device_name or existing.get("device_name") or _default_device_name()
+        )
     else:
         core_url = click.prompt(
             "Core URL",
@@ -1038,13 +1797,22 @@ def configure(
     click.echo()
     if cfg_input:
         _configure_signature_noninteractive(
-            core_url, device_name, role, cfg_input,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode_val,
+            core_url,
+            device_name,
+            role,
+            cfg_input,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode_val,
         )
     else:
         _configure_signature(
-            core_url, device_name, role,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode_val,
+            core_url,
+            device_name,
+            role,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode_val,
             pairing_code=pairing_code or "",
         )
 
@@ -1064,10 +1832,15 @@ def configure(
     click.echo(f"Configuration saved to {path}")
 
     # Test the connection
-    test_connection = cfg_input.get("test_connection", True) if cfg_input else click.confirm("Test connection now?", default=True)
+    test_connection = (
+        cfg_input.get("test_connection", True)
+        if cfg_input
+        else click.confirm("Test connection now?", default=True)
+    )
     if test_connection:
         click.echo()
         from .config import Config
+
         # Build the test config with the SELECTED transport (mode + relay
         # fields), not just core_url. The product default is now MsgBox-only,
         # so a bare `Config(core_url=...)` would default to transport=msgbox
@@ -1086,7 +1859,8 @@ def configure(
         # probe — "MsgBox" vs the direct Core URL.
         probe_target = (
             f"MsgBox ({msgbox_url})"
-            if transport_mode_val == "msgbox" or (transport_mode_val == "auto" and msgbox_url and not core_url)
+            if transport_mode_val == "msgbox"
+            or (transport_mode_val == "auto" and msgbox_url and not core_url)
             else f"Core ({core_url})"
         )
         try:
@@ -1105,8 +1879,8 @@ def configure(
             click.echo(f"  {probe_target}: {exc}", err=True)
         click.echo()
         click.echo("Ready. Try:")
-        click.echo("  dina session start --name \"my first session\"")
-        click.echo("  dina ask --session <session-id> \"hello\"")
+        click.echo('  dina session start --name "my first session"')
+        click.echo('  dina ask --session <session-id> "hello"')
 
 
 @cli.command()
@@ -1127,7 +1901,13 @@ def unpair(ctx: click.Context) -> None:
         saved.pop("device_id", None)
         save_config(saved)
         if json_mode:
-            print_result({"status": "cleared", "message": "Local state cleared (no keypair to revoke on Core)"}, json_mode)
+            print_result(
+                {
+                    "status": "cleared",
+                    "message": "Local state cleared (no keypair to revoke on Core)",
+                },
+                json_mode,
+            )
         else:
             click.echo("  No keypair — cleared local device_id.")
             click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.")
@@ -1176,20 +1956,28 @@ def unpair(ctx: click.Context) -> None:
             print_error(f"Cannot reach Core: {exc}", json_mode)
         else:
             click.echo(f"  Cannot reach Core: {exc}", err=True)
-            click.echo("  Revoke in the Dina app: Settings → Agents → Revoke access.", err=True)
+            click.echo(
+                "  Revoke in the Dina app: Settings → Agents → Revoke access.", err=True
+            )
         ctx.exit(1)
 
 
 def _default_device_name() -> str:
     """Generate a default device name from hostname."""
     import platform
+
     return f"{platform.node()}-cli"
 
 
 def _configure_headless(
-    core_url: str, msgbox_url: str, homenode_did: str,
-    transport_mode: str, device_name: str, role: str,
-    pairing_code: str, config_dir_path: str | None,
+    core_url: str,
+    msgbox_url: str,
+    homenode_did: str,
+    transport_mode: str,
+    device_name: str,
+    role: str,
+    pairing_code: str,
+    config_dir_path: str | None,
 ) -> None:
     """Headless configure: all params from CLI flags, zero prompts."""
     from .config import set_config_dir
@@ -1229,8 +2017,11 @@ def _configure_headless(
     identity = CLIIdentity()
     if identity.exists:
         _try_unpair(
-            core_url, identity,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            core_url,
+            identity,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode,
         )
     click.echo("  Generating Ed25519 keypair...")
     identity.generate()
@@ -1239,8 +2030,14 @@ def _configure_headless(
     # Pair with Core
     if pairing_code:
         _pair_with_key(
-            core_url, identity, device_name, role, pairing_code=pairing_code,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            core_url,
+            identity,
+            device_name,
+            role,
+            pairing_code=pairing_code,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode,
         )
     else:
         click.echo("  No --pairing-code provided — skipping pairing.")
@@ -1264,9 +2061,11 @@ def _configure_headless(
     # directly would misreport a perfectly good MsgBox setup as "unreachable"
     # (the Core isn't reachable directly when it's behind a relay).
     from .config import Config
+
     probe_target = (
         f"MsgBox ({msgbox_url})"
-        if transport_mode == "msgbox" or (transport_mode == "auto" and msgbox_url and not core_url)
+        if transport_mode == "msgbox"
+        or (transport_mode == "auto" and msgbox_url and not core_url)
         else f"Core ({core_url})"
     )
     try:
@@ -1288,8 +2087,10 @@ def _configure_headless(
 
 
 def _build_pairing_transport(
-    core_url: str, msgbox_url: str = "",
-    homenode_did: str = "", transport_mode: str = "msgbox",
+    core_url: str,
+    msgbox_url: str = "",
+    homenode_did: str = "",
+    transport_mode: str = "msgbox",
     identity: Any = None,
 ):
     """Build a Transport for use during pairing/unpairing.
@@ -1309,7 +2110,9 @@ def _build_pairing_transport(
             raise click.UsageError(
                 "transport=msgbox requires --msgbox-url and --homenode-did"
             )
-        return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=15.0)
+        return MsgBoxTransport(
+            msgbox_url, homenode_did, identity=identity, timeout=15.0
+        )
     if transport_mode == "direct":
         if not core_url:
             raise click.UsageError("transport=direct requires --core-url")
@@ -1323,15 +2126,20 @@ def _build_pairing_transport(
         except (httpx.ConnectError, httpx.TimeoutException):
             pass
     if msgbox_url and homenode_did:
-        return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=15.0)
+        return MsgBoxTransport(
+            msgbox_url, homenode_did, identity=identity, timeout=15.0
+        )
     # Fall back to direct with a reachable-URL check — lets the raw-HTTP
     # request give a clearer error than "Home Node unreachable".
     return DirectTransport(core_url or "http://localhost:8100", timeout=15.0)
 
 
 def _try_unpair(
-    core_url: str, identity: Any,
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
+    core_url: str,
+    identity: Any,
+    msgbox_url: str = "",
+    homenode_did: str = "",
+    transport_mode: str = "msgbox",
 ) -> None:
     """Revoke the current key before replacing it.
 
@@ -1359,10 +2167,13 @@ def _try_unpair(
         path = "/v1/devices/self"
         did, ts, nonce, sig = identity.sign_request("DELETE", path, b"")
         resp = transport.request(
-            "DELETE", path,
+            "DELETE",
+            path,
             headers={
-                "X-DID": did, "X-Timestamp": ts,
-                "X-Nonce": nonce, "X-Signature": sig,
+                "X-DID": did,
+                "X-Timestamp": ts,
+                "X-Nonce": nonce,
+                "X-Signature": sig,
             },
             body=None,
         )
@@ -1388,8 +2199,13 @@ def _try_unpair(
 
 
 def _configure_signature_noninteractive(
-    core_url: str, device_name: str, role: str, cfg: dict,
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
+    core_url: str,
+    device_name: str,
+    role: str,
+    cfg: dict,
+    msgbox_url: str = "",
+    homenode_did: str = "",
+    transport_mode: str = "msgbox",
 ) -> None:
     """Non-interactive keypair generation and pairing from config file."""
     from .signing import CLIIdentity
@@ -1399,8 +2215,11 @@ def _configure_signature_noninteractive(
     if cfg.get("generate_keypair", True) or not identity.exists:
         if identity.exists:
             _try_unpair(
-                core_url, identity,
-                msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+                core_url,
+                identity,
+                msgbox_url=msgbox_url,
+                homenode_did=homenode_did,
+                transport_mode=transport_mode,
             )
         click.echo("  Generating Ed25519 keypair...")
         identity.generate()
@@ -1409,16 +2228,26 @@ def _configure_signature_noninteractive(
     pairing_code = cfg.get("pairing_code", "")
     if pairing_code:
         _pair_with_key(
-            core_url, identity, device_name, role, pairing_code=pairing_code,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            core_url,
+            identity,
+            device_name,
+            role,
+            pairing_code=pairing_code,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode,
         )
     else:
         click.echo("  No pairing_code in config — skipping pairing.")
 
 
 def _configure_signature(
-    core_url: str, device_name: str, role: str = "user",
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
+    core_url: str,
+    device_name: str,
+    role: str = "user",
+    msgbox_url: str = "",
+    homenode_did: str = "",
+    transport_mode: str = "msgbox",
     pairing_code: str = "",
 ) -> None:
     """Generate keypair and pair with Core using Ed25519 public key.
@@ -1436,14 +2265,23 @@ def _configure_signature(
         if not click.confirm("  Generate a new keypair?", default=False):
             # Re-pair with existing key
             _pair_with_key(
-                core_url, identity, device_name, role, pairing_code=pairing_code,
-                msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+                core_url,
+                identity,
+                device_name,
+                role,
+                pairing_code=pairing_code,
+                msgbox_url=msgbox_url,
+                homenode_did=homenode_did,
+                transport_mode=transport_mode,
             )
             return
         # Unpair old device before generating new keypair
         _try_unpair(
-            core_url, identity,
-            msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+            core_url,
+            identity,
+            msgbox_url=msgbox_url,
+            homenode_did=homenode_did,
+            transport_mode=transport_mode,
         )
 
     click.echo("  Generating Ed25519 keypair...")
@@ -1453,15 +2291,26 @@ def _configure_signature(
     click.echo()
 
     _pair_with_key(
-        core_url, identity, device_name, role, pairing_code=pairing_code,
-        msgbox_url=msgbox_url, homenode_did=homenode_did, transport_mode=transport_mode,
+        core_url,
+        identity,
+        device_name,
+        role,
+        pairing_code=pairing_code,
+        msgbox_url=msgbox_url,
+        homenode_did=homenode_did,
+        transport_mode=transport_mode,
     )
 
 
 def _pair_with_key(
-    core_url: str, identity: Any, device_name: str,
-    role: str = "user", pairing_code: str = "",
-    msgbox_url: str = "", homenode_did: str = "", transport_mode: str = "msgbox",
+    core_url: str,
+    identity: Any,
+    device_name: str,
+    role: str = "user",
+    pairing_code: str = "",
+    msgbox_url: str = "",
+    homenode_did: str = "",
+    transport_mode: str = "msgbox",
 ) -> None:
     """Register the public key with Core using a pairing code.
 
@@ -1485,7 +2334,11 @@ def _pair_with_key(
         click.echo("  Registering device...")
         try:
             transport = _build_pairing_transport(
-                core_url, msgbox_url, homenode_did, transport_mode, identity=identity,
+                core_url,
+                msgbox_url,
+                homenode_did,
+                transport_mode,
+                identity=identity,
             )
             body_dict = {
                 "code": pairing_code,
@@ -1494,7 +2347,8 @@ def _pair_with_key(
                 "role": role,
             }
             resp = transport.request(
-                "POST", "/v1/pair/complete",
+                "POST",
+                "/v1/pair/complete",
                 headers={"Content-Type": "application/json"},
                 body=_json.dumps(body_dict),
             )
@@ -1504,7 +2358,8 @@ def _pair_with_key(
                 if remaining > 0:
                     click.echo(
                         "  Pairing failed. Check that the code is correct and "
-                        "the Home Node is reachable.", err=True,
+                        "the Home Node is reachable.",
+                        err=True,
                     )
                     click.echo(f"  {remaining} attempt(s) remaining.", err=True)
                     click.echo()
@@ -1542,19 +2397,34 @@ def _pair_with_key(
 
 @cli.command("init")
 @click.option(
-    "--setup-code", default=None,
+    "--setup-code",
+    default=None,
     help="An owner-issued `dina1:…` setup code. Mobile runners obtain it from "
-         "the Dina app; coding integrations obtain a coding-scope code from "
-         "Home Node Lite. Prompted for if omitted.",
+    "the Dina app; coding integrations obtain a coding-scope code from "
+    "Home Node Lite. Prompted for if omitted.",
 )
 @click.option(
-    "--role", default="agent", type=click.Choice(["user", "agent"]),
+    "--role",
+    default="agent",
+    type=click.Choice(["user", "agent"]),
     help="Device role (default: agent — init is the agent-host quickstart)",
 )
-@click.option("--yes", is_flag=True, default=False, help="Install the skill for all detected platforms without prompting")
-@click.option("--skip-skill", is_flag=True, default=False, help="Pair only; don't touch any agent platform configs")
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Install the skill for all detected platforms without prompting",
+)
+@click.option(
+    "--skip-skill",
+    is_flag=True,
+    default=False,
+    help="Pair only; don't touch any agent platform configs",
+)
 @click.pass_context
-def init_cmd(ctx: click.Context, setup_code: str | None, role: str, yes: bool, skip_skill: bool) -> None:
+def init_cmd(
+    ctx: click.Context, setup_code: str | None, role: str, yes: bool, skip_skill: bool
+) -> None:
     """One-command quickstart: pair with your Dina, then teach this machine's agents to use it.
 
     \b
@@ -1606,9 +2476,15 @@ def skill() -> None:
 
 
 @skill.command("show")
-@click.option("--thin", is_flag=True, default=False, help="Print the thin variant (trigger rules only)")
 @click.option(
-    "--target", default=None,
+    "--thin",
+    is_flag=True,
+    default=False,
+    help="Print the thin variant (trigger rules only)",
+)
+@click.option(
+    "--target",
+    default=None,
     type=click.Choice(["claude-code", "openclaw", "codex", "gemini"]),
     help="Print exactly what `skill install` would write for this platform",
 )
@@ -1626,12 +2502,24 @@ def skill_show(thin: bool, target: str | None) -> None:
 
 @skill.command("install")
 @click.option(
-    "--target", "target_keys", multiple=True,
+    "--target",
+    "target_keys",
+    multiple=True,
     type=click.Choice(["claude-code", "openclaw", "codex", "gemini"]),
     help="Install only for this platform (repeatable). Skips detection.",
 )
-@click.option("--dry-run", is_flag=True, default=False, help="Show what would be written, write nothing")
-@click.option("--yes", is_flag=True, default=False, help="Install for all detected platforms without prompting")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would be written, write nothing",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Install for all detected platforms without prompting",
+)
 def skill_install(target_keys: tuple[str, ...], dry_run: bool, yes: bool) -> None:
     """Detect agent platforms on this machine and install the Dina skill.
 
@@ -1652,8 +2540,12 @@ def skill_install(target_keys: tuple[str, ...], dry_run: bool, yes: bool) -> Non
     else:
         targets = detect_targets(home)
         if not targets:
-            click.echo("No agent platforms detected (~/.claude, ~/.openclaw, ~/.codex, ~/.gemini).")
-            click.echo("Use --target <platform> to install anyway, or `dina skill show` to copy the text.")
+            click.echo(
+                "No agent platforms detected (~/.claude, ~/.openclaw, ~/.codex, ~/.gemini)."
+            )
+            click.echo(
+                "Use --target <platform> to install anyway, or `dina skill show` to copy the text."
+            )
             return
         click.echo("Detected agent platforms:")
         for t in targets:
@@ -1661,7 +2553,8 @@ def skill_install(target_keys: tuple[str, ...], dry_run: bool, yes: bool) -> Non
         click.echo()
         if not yes and not dry_run:
             targets = [
-                t for t in targets
+                t
+                for t in targets
                 if click.confirm(f"Install Dina skill for {t.label}?", default=True)
             ]
             if not targets:
@@ -1681,7 +2574,9 @@ def skill_install(target_keys: tuple[str, ...], dry_run: bool, yes: bool) -> Non
     if dry_run:
         click.echo("\nDry run — nothing was written.")
     else:
-        click.echo("\nDone. The skill text always matches this CLI version; re-run after upgrading dina-agent.")
+        click.echo(
+            "\nDone. The skill text always matches this CLI version; re-run after upgrading dina-agent."
+        )
 
 
 # ── init-identity ────────────────────────────────────────────────────
@@ -1690,10 +2585,14 @@ _IDENTITY_DIR = Path.home() / ".dina" / "cli" / "identity"
 
 
 @cli.command("init-identity", hidden=True)  # Admin operation — use dina-admin
-@click.option("--restore-mnemonic", is_flag=True, help="Restore from a 24-word recovery phrase")
+@click.option(
+    "--restore-mnemonic", is_flag=True, help="Restore from a 24-word recovery phrase"
+)
 @click.option("--restore-hex", is_flag=True, help="Restore from a 64-char hex seed")
 @click.pass_context
-def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool) -> None:
+def init_identity(
+    ctx: click.Context, restore_mnemonic: bool, restore_hex: bool
+) -> None:
     """Generate or restore an identity seed, wrap it with a passphrase.
 
     The raw seed never touches disk. It is wrapped with AES-256-GCM using an
@@ -1712,7 +2611,9 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
 
     # Check if already wrapped
     if (out_dir / "wrapped_seed.bin").exists():
-        if not click.confirm("Identity seed already wrapped. Overwrite?", default=False):
+        if not click.confirm(
+            "Identity seed already wrapped. Overwrite?", default=False
+        ):
             click.echo("Aborted.")
             return
 
@@ -1727,7 +2628,9 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
             words = raw.strip().split()
             try:
                 seed = seed_wrap.mnemonic_to_seed(words)
-                click.echo(click.style("  [ok] Seed restored from recovery phrase", fg="green"))
+                click.echo(
+                    click.style("  [ok] Seed restored from recovery phrase", fg="green")
+                )
                 break
             except ValueError as exc:
                 click.echo(click.style(f"  Error: {exc}", fg="yellow"))
@@ -1739,7 +2642,12 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
         click.echo()
         hex_input = click.prompt("Enter your 64-character hex seed").strip()
         if len(hex_input) != 64:
-            click.echo(click.style(f"Error: expected 64 hex chars, got {len(hex_input)}", fg="red"), err=True)
+            click.echo(
+                click.style(
+                    f"Error: expected 64 hex chars, got {len(hex_input)}", fg="red"
+                ),
+                err=True,
+            )
             ctx.exit(1)
             return
         try:
@@ -1753,7 +2661,9 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
     else:
         # Generate new seed
         seed = seed_wrap.generate_seed()
-        click.echo(click.style("  [ok] Generated new identity (256-bit seed)", fg="green"))
+        click.echo(
+            click.style("  [ok] Generated new identity (256-bit seed)", fg="green")
+        )
 
         # Show mnemonic
         mnemonic = seed_wrap.seed_to_mnemonic(seed)
@@ -1764,13 +2674,16 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
             line = "    ".join(f"{i+j+1:2d}. {mnemonic[i+j]:<12s}" for j in range(4))
             click.echo(f"    {line}")
         click.echo()
-        click.echo(click.style("  SAVE THIS! Write it down on paper.", fg="red", bold=True))
+        click.echo(
+            click.style("  SAVE THIS! Write it down on paper.", fg="red", bold=True)
+        )
         click.echo(click.style("  Do not store it digitally.", fg="red"))
 
         # Verify 3 random words
         click.echo()
         click.echo(click.style("  Let's verify you saved it.", bold=True))
         import random
+
         positions = sorted(random.sample(range(24), 3))
         all_correct = True
         for pos in positions:
@@ -1783,27 +2696,45 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
             click.echo(click.style("  [ok] Recovery phrase verified", fg="green"))
         else:
             click.echo()
-            click.echo(click.style("  Mismatch. Showing the phrase one more time:", fg="yellow"))
+            click.echo(
+                click.style(
+                    "  Mismatch. Showing the phrase one more time:", fg="yellow"
+                )
+            )
             click.echo()
             for i in range(0, 24, 4):
-                line = "    ".join(f"{i+j+1:2d}. {mnemonic[i+j]:<12s}" for j in range(4))
+                line = "    ".join(
+                    f"{i+j+1:2d}. {mnemonic[i+j]:<12s}" for j in range(4)
+                )
                 click.echo(f"    {line}")
             click.echo()
-            click.echo(click.style("  Write it down now. This is your last chance.", fg="red", bold=True))
+            click.echo(
+                click.style(
+                    "  Write it down now. This is your last chance.",
+                    fg="red",
+                    bold=True,
+                )
+            )
             click.prompt("  Press Enter when saved", default="", show_default=False)
 
     # --- Step 2: Passphrase ---
     click.echo()
-    click.echo(click.style("  Choose a passphrase to encrypt your identity seed:", bold=True))
+    click.echo(
+        click.style("  Choose a passphrase to encrypt your identity seed:", bold=True)
+    )
     click.echo("  (minimum 8 characters)")
     while True:
         passphrase = click.prompt("  Passphrase", hide_input=True)
         if len(passphrase) < 8:
-            click.echo(click.style("  Passphrase must be at least 8 characters", fg="yellow"))
+            click.echo(
+                click.style("  Passphrase must be at least 8 characters", fg="yellow")
+            )
             continue
         confirm = click.prompt("  Confirm", hide_input=True)
         if passphrase != confirm:
-            click.echo(click.style("  Passphrases do not match — try again", fg="yellow"))
+            click.echo(
+                click.style("  Passphrases do not match — try again", fg="yellow")
+            )
             continue
         break
 
@@ -1825,7 +2756,9 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
     click.echo(f"    master_seed.salt    (16 bytes)")
     click.echo()
     click.echo("  Next: upload to your Home Node with:")
-    click.echo(click.style("    dina bootstrap-server --host user@mynode.example", fg="cyan"))
+    click.echo(
+        click.style("    dina bootstrap-server --host user@mynode.example", fg="cyan")
+    )
 
 
 # ── bootstrap-server ─────────────────────────────────────────────────
@@ -1833,15 +2766,31 @@ def init_identity(ctx: click.Context, restore_mnemonic: bool, restore_hex: bool)
 
 @cli.command("bootstrap-server", hidden=True)  # Admin operation — use dina-admin
 @click.option("--host", "ssh_host", help="SSH destination (user@host)")
-@click.option("--remote-dir", default="/opt/dina/secrets", show_default=True,
-              help="Remote directory for secrets on the server")
-@click.option("--local-dir", type=click.Path(exists=False),
-              help="Copy to a local path instead of SSH (self-hosted)")
-@click.option("--identity-dir", type=click.Path(exists=True), default=None,
-              help="Local identity directory (default: ~/.dina/cli/identity/)")
+@click.option(
+    "--remote-dir",
+    default="/opt/dina/secrets",
+    show_default=True,
+    help="Remote directory for secrets on the server",
+)
+@click.option(
+    "--local-dir",
+    type=click.Path(exists=False),
+    help="Copy to a local path instead of SSH (self-hosted)",
+)
+@click.option(
+    "--identity-dir",
+    type=click.Path(exists=True),
+    default=None,
+    help="Local identity directory (default: ~/.dina/cli/identity/)",
+)
 @click.pass_context
-def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
-                     local_dir: str | None, identity_dir: str | None) -> None:
+def bootstrap_server(
+    ctx: click.Context,
+    ssh_host: str | None,
+    remote_dir: str,
+    local_dir: str | None,
+    identity_dir: str | None,
+) -> None:
     """Upload wrapped identity seed to a Dina Home Node.
 
     The server never sees the raw seed — only the encrypted blob and salt
@@ -1863,20 +2812,35 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
     wrapped_path = src_dir / "wrapped_seed.bin"
     salt_path = src_dir / "master_seed.salt"
     if not wrapped_path.exists() or not salt_path.exists():
-        click.echo(click.style(
-            "Error: No wrapped seed found. Run 'dina init-identity' first.",
-            fg="red",
-        ), err=True)
+        click.echo(
+            click.style(
+                "Error: No wrapped seed found. Run 'dina init-identity' first.",
+                fg="red",
+            ),
+            err=True,
+        )
         ctx.exit(1)
         return
 
     # Verify file sizes
     if wrapped_path.stat().st_size != 60:
-        click.echo(click.style("Error: wrapped_seed.bin is not 60 bytes — file may be corrupted", fg="red"), err=True)
+        click.echo(
+            click.style(
+                "Error: wrapped_seed.bin is not 60 bytes — file may be corrupted",
+                fg="red",
+            ),
+            err=True,
+        )
         ctx.exit(1)
         return
     if salt_path.stat().st_size != 16:
-        click.echo(click.style("Error: master_seed.salt is not 16 bytes — file may be corrupted", fg="red"), err=True)
+        click.echo(
+            click.style(
+                "Error: master_seed.salt is not 16 bytes — file may be corrupted",
+                fg="red",
+            ),
+            err=True,
+        )
         ctx.exit(1)
         return
 
@@ -1898,37 +2862,57 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
         click.echo(f"  Uploading to {ssh_host}:{remote_dir}/")
 
         # Create remote directory
-        mkdir_cmd = ["ssh", ssh_host, f"mkdir -p {remote_dir} && chmod 700 {remote_dir}"]
+        mkdir_cmd = [
+            "ssh",
+            ssh_host,
+            f"mkdir -p {remote_dir} && chmod 700 {remote_dir}",
+        ]
         result = subprocess.run(mkdir_cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            click.echo(click.style(f"  Error creating remote directory: {result.stderr.strip()}", fg="red"), err=True)
+            click.echo(
+                click.style(
+                    f"  Error creating remote directory: {result.stderr.strip()}",
+                    fg="red",
+                ),
+                err=True,
+            )
             ctx.exit(1)
             return
 
         # SCP the files
         scp_cmd = [
-            "scp", "-q",
-            str(wrapped_path), str(salt_path),
+            "scp",
+            "-q",
+            str(wrapped_path),
+            str(salt_path),
             f"{ssh_host}:{remote_dir}/",
         ]
         result = subprocess.run(scp_cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            click.echo(click.style(f"  Error: {result.stderr.strip()}", fg="red"), err=True)
+            click.echo(
+                click.style(f"  Error: {result.stderr.strip()}", fg="red"), err=True
+            )
             ctx.exit(1)
             return
 
         # Set permissions on remote
-        chmod_cmd = ["ssh", ssh_host,
-                     f"chmod 600 {remote_dir}/wrapped_seed.bin {remote_dir}/master_seed.salt"]
+        chmod_cmd = [
+            "ssh",
+            ssh_host,
+            f"chmod 600 {remote_dir}/wrapped_seed.bin {remote_dir}/master_seed.salt",
+        ]
         subprocess.run(chmod_cmd, capture_output=True)
 
         click.echo(click.style("  [ok] Uploaded to server", fg="green"))
 
     else:
-        click.echo(click.style(
-            "Error: specify --host (SSH) or --local-dir (local copy)",
-            fg="red",
-        ), err=True)
+        click.echo(
+            click.style(
+                "Error: specify --host (SSH) or --local-dir (local copy)",
+                fg="red",
+            ),
+            err=True,
+        )
         ctx.exit(1)
         return
 
@@ -1940,7 +2924,9 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
     mode = click.prompt("  Choice", type=click.IntRange(1, 2), default=1)
 
     if mode == 2:
-        pw = click.prompt("  Enter seed passphrase (to store on server)", hide_input=True)
+        pw = click.prompt(
+            "  Enter seed passphrase (to store on server)", hide_input=True
+        )
         if local_dir:
             dest = Path(local_dir)
             pw_path = dest / "seed_password"
@@ -1951,11 +2937,16 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
                 os.close(fd)
         elif ssh_host:
             # Write passphrase to remote file via ssh
-            write_cmd = ["ssh", ssh_host,
-                         f"printf '%s' '{pw}' > {remote_dir}/seed_password && "
-                         f"chmod 600 {remote_dir}/seed_password"]
+            write_cmd = [
+                "ssh",
+                ssh_host,
+                f"printf '%s' '{pw}' > {remote_dir}/seed_password && "
+                f"chmod 600 {remote_dir}/seed_password",
+            ]
             subprocess.run(write_cmd, capture_output=True)
-        click.echo(click.style("  [ok] Passphrase stored on server (Server Mode)", fg="green"))
+        click.echo(
+            click.style("  [ok] Passphrase stored on server (Server Mode)", fg="green")
+        )
     else:
         # Create empty seed_password file (Docker Secrets needs it)
         if local_dir:
@@ -1963,7 +2954,11 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
             (dest / "seed_password").touch(mode=0o600)
         elif ssh_host:
             subprocess.run(
-                ["ssh", ssh_host, f"touch {remote_dir}/seed_password && chmod 600 {remote_dir}/seed_password"],
+                [
+                    "ssh",
+                    ssh_host,
+                    f"touch {remote_dir}/seed_password && chmod 600 {remote_dir}/seed_password",
+                ],
                 capture_output=True,
             )
 
@@ -1971,7 +2966,11 @@ def bootstrap_server(ctx: click.Context, ssh_host: str | None, remote_dir: str,
     click.echo(click.style("  Done!", bold=True))
     if mode == 1:
         click.echo("  Start your node with:")
-        click.echo(click.style("    DINA_SEED_PASSWORD=<passphrase> docker compose up -d", fg="cyan"))
+        click.echo(
+            click.style(
+                "    DINA_SEED_PASSWORD=<passphrase> docker compose up -d", fg="cyan"
+            )
+        )
     else:
         click.echo("  Start your node with:")
         click.echo(click.style("    docker compose up -d", fg="cyan"))
@@ -2011,7 +3010,7 @@ def session_start(ctx: click.Context, name: str) -> None:
         if json_mode:
             print_result_with_trace(data, json_mode, client.req_id)
         else:
-            session_id = data.get('session_id') or data.get('id') or '?'
+            session_id = data.get("session_id") or data.get("id") or "?"
             label = name or "default"
             click.echo(f"  Session: {session_id} ({label}) active")
     except DinaClientError as exc:
@@ -2053,9 +3052,10 @@ def session_list(ctx: click.Context) -> None:
         else:
             click.echo(f"  {'ID':<16} {'Name':<20} {'Status':<10} {'Grants'}")
             for s in sessions:
-                grants = ", ".join(
-                    g.get("persona_id", "?") for g in s.get("grants", [])
-                ) or "none"
+                grants = (
+                    ", ".join(g.get("persona_id", "?") for g in s.get("grants", []))
+                    or "none"
+                )
                 click.echo(
                     f"  {s.get('session_id', s.get('id', '?')):<16} {s.get('name', '?'):<20} "
                     f"{s.get('status', '?'):<10} {grants}"
@@ -2063,7 +3063,6 @@ def session_list(ctx: click.Context) -> None:
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
-
 
 
 # ── service (WS2 provider-service discovery) ──────────────────────────────
@@ -2085,21 +3084,39 @@ def service() -> None:
 @click.argument("capability")
 @click.argument("params_json")
 @click.option(
-    "--schema-hash", "schema_hash", default="",
+    "--schema-hash",
+    "schema_hash",
+    default="",
     help="Provider's canonical schema_hash for this capability (from AppView).",
 )
 @click.option(
-    "--ttl", default=60, type=int,
+    "--ttl",
+    default=60,
+    type=int,
     help="Max seconds to wait for a response (1..600).",
 )
 @click.option(
-    "--service-name", default="",
+    "--service-name",
+    default="",
     help="Human-readable service name for logs/notifications.",
 )
 @click.option(
-    "--origin-channel", default="",
+    "--origin-channel",
+    default="",
     help="Optional channel tag (e.g. 'cli:session-42') for targeted reply routing.",
 )
+@click.option(
+    "--session",
+    required=True,
+    help="Live Dina session ID (from `dina session start`).",
+)
+@click.option(
+    "--request-id",
+    required=True,
+    help="Stable idempotency key; reuse it while polling/retrying this approval.",
+)
+@click.option("--service-uri", default="", help="Selected listing URI returned by discovery.")
+@click.option("--grant-id", default="", help="Grant ID for an approved/private service.")
 @click.pass_context
 def service_query(
     ctx: click.Context,
@@ -2110,6 +3127,10 @@ def service_query(
     ttl: int,
     service_name: str,
     origin_channel: str,
+    session: str,
+    request_id: str,
+    service_uri: str,
+    grant_id: str,
 ) -> None:
     """Send a schema-driven service query to a provider DID.
 
@@ -2130,14 +3151,17 @@ def service_query(
         params = json.loads(params_json) if params_json else {}
     except json.JSONDecodeError as e:
         print_error_with_trace(
-            f"Invalid params_json: {e}", json_mode, client.req_id,
+            f"Invalid params_json: {e}",
+            json_mode,
+            client.req_id,
         )
         ctx.exit(2)
         return
     if not isinstance(params, dict):
         print_error_with_trace(
-            "params_json must be a JSON object (e.g. '{\"route_id\":\"42\"}')",
-            json_mode, client.req_id,
+            'params_json must be a JSON object (e.g. \'{"route_id":"42"}\')',
+            json_mode,
+            client.req_id,
         )
         ctx.exit(2)
         return
@@ -2147,20 +3171,25 @@ def service_query(
             to_did=to_did,
             capability=capability,
             params=params,
+            session=session,
+            request_id=request_id,
             service_name=service_name,
             ttl_seconds=ttl,
             schema_hash=schema_hash,
+            service_uri=service_uri,
+            grant_id=grant_id,
             origin_channel=origin_channel,
         )
         if json_mode:
             print_result_with_trace(result, json_mode, client.req_id)
         else:
             click.echo(
-                f"  Query sent. task_id={result.get('task_id', '?')} "
-                f"query_id={result.get('query_id', '?')}"
+                f"  Service action: {result.get('status', '?')} "
+                f"task_id={result.get('task_id', '?')}"
             )
             click.echo(
-                f"  Poll: dina service status {result.get('task_id', '?')}"
+                f"  Poll approval: dina action-status service_invoke {request_id} "
+                f"--session {session}"
             )
     except DinaClientError as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
@@ -2169,8 +3198,13 @@ def service_query(
 
 @service.command("status")
 @click.argument("task_id")
+@click.option(
+    "--session",
+    required=True,
+    help="The same live Dina session used to create the query.",
+)
 @click.pass_context
-def service_status(ctx: click.Context, task_id: str) -> None:
+def service_status(ctx: click.Context, task_id: str, session: str) -> None:
     """Fetch the terminal state of a previously-sent service query.
 
     Returns the full workflow_task JSON. When the status is ``completed``
@@ -2180,13 +3214,7 @@ def service_status(ctx: click.Context, task_id: str) -> None:
     client = _make_client(ctx)
     json_mode = ctx.obj["json"]
     try:
-        task = client.get_task(task_id)
-        if task is None:
-            print_error_with_trace(
-                f"No task found with id={task_id}", json_mode, client.req_id,
-            )
-            ctx.exit(1)
-            return
+        task = client.service_query_status(task_id=task_id, session=session)
         if json_mode:
             print_result_with_trace(task, json_mode, client.req_id)
         else:
@@ -2196,10 +3224,195 @@ def service_status(ctx: click.Context, task_id: str) -> None:
                 f"corr: {task.get('correlation_id', '?')}"
             )
             if task.get("status") in ("completed", "failed"):
-                click.echo(
-                    f"  result: {task.get('result_summary', '')[:200]}"
-                )
+                click.echo(f"  result: {task.get('result_summary', '')[:200]}")
     except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+# ── Talk + delegation (owner-approved facade actions) ─────────────────────
+
+
+@cli.command()
+@click.argument("contact")
+@click.argument("text")
+@click.option(
+    "--session",
+    required=True,
+    help="Live Dina session ID (from `dina session start`).",
+)
+@click.option(
+    "--request-id",
+    required=True,
+    help="Stable idempotency key; reuse it for retries and status polls.",
+)
+@click.option(
+    "--in-reply-to",
+    default="",
+    help="Optional stable D2D message ID this message replies to.",
+)
+@click.pass_context
+def talk(
+    ctx: click.Context,
+    contact: str,
+    text: str,
+    session: str,
+    request_id: str,
+    in_reply_to: str,
+) -> None:
+    """Ask Dina to send one exact message to a known contact.
+
+    The first call normally requests owner approval. Do not generate a new
+    REQUEST_ID when retrying: poll with ``dina action-status talk`` using the
+    same request and session.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        result = client.talk(
+            contact=contact,
+            text=text,
+            session=session,
+            request_id=request_id,
+            in_reply_to=in_reply_to,
+        )
+        if json_mode:
+            print_result_with_trace(result, json_mode, client.req_id)
+            return
+        status_value = result.get("status", "unknown")
+        click.echo(f"  status: {status_value}")
+        if status_value == "pending_approval":
+            click.echo("  Waiting for owner approval.")
+            click.echo(
+                f"  Poll: dina action-status talk {request_id} --session {session}"
+            )
+        elif status_value == "completed":
+            click.echo(
+                f"  delivery: {result.get('delivery_status', 'accepted by transport')}"
+            )
+    except (DinaClientError, ValueError) as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+@cli.command()
+@click.argument("runner")
+@click.argument("description")
+@click.argument("input_json")
+@click.option(
+    "--session",
+    required=True,
+    help="Live Dina session ID (from `dina session start`).",
+)
+@click.option(
+    "--request-id",
+    required=True,
+    help="Stable idempotency key; reuse it for retries and status polls.",
+)
+@click.pass_context
+def delegate(
+    ctx: click.Context,
+    runner: str,
+    description: str,
+    input_json: str,
+    session: str,
+    request_id: str,
+) -> None:
+    """Ask Dina to queue one bounded task for an external agent runner.
+
+    INPUT_JSON must be a JSON object. The task is created only after the owner
+    approves the exact runner and description.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        input_data = json.loads(input_json)
+    except json.JSONDecodeError as exc:
+        print_error_with_trace(
+            f"Invalid input_json: {exc}",
+            json_mode,
+            client.req_id,
+        )
+        ctx.exit(2)
+        return
+    if not isinstance(input_data, dict):
+        print_error_with_trace(
+            "input_json must be a JSON object",
+            json_mode,
+            client.req_id,
+        )
+        ctx.exit(2)
+        return
+
+    try:
+        result = client.delegate(
+            runner=runner,
+            description=description,
+            input_data=input_data,
+            session=session,
+            request_id=request_id,
+        )
+        if json_mode:
+            print_result_with_trace(result, json_mode, client.req_id)
+            return
+        status_value = result.get("status", "unknown")
+        click.echo(f"  status: {status_value}")
+        if status_value == "pending_approval":
+            click.echo("  Waiting for owner approval.")
+            click.echo(
+                f"  Poll: dina action-status delegate {request_id} "
+                f"--session {session}"
+            )
+        elif status_value == "completed":
+            click.echo(
+                f"  task: {result.get('delegation_task_id', '?')} "
+                f"({result.get('delegation_status', result.get('delegation_submit_status', 'queued'))})"
+            )
+    except (DinaClientError, ValueError) as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+@cli.command("action-status")
+@click.argument("action", type=click.Choice(["talk", "delegate"]))
+@click.argument("request_id")
+@click.option(
+    "--session",
+    required=True,
+    help="The same live Dina session used to submit the action.",
+)
+@click.pass_context
+def action_status(
+    ctx: click.Context,
+    action: str,
+    request_id: str,
+    session: str,
+) -> None:
+    """Poll and, after approval, idempotently continue Talk or delegation."""
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        result = client.action_status(
+            action=action,
+            request_id=request_id,
+            session=session,
+        )
+        if json_mode:
+            print_result_with_trace(result, json_mode, client.req_id)
+            return
+        click.echo(f"  status: {result.get('status', 'unknown')}")
+        if result.get("status") == "completed":
+            if action == "talk":
+                click.echo(
+                    f"  delivery: "
+                    f"{result.get('delivery_status', 'accepted by transport')}"
+                )
+            else:
+                click.echo(
+                    f"  task: {result.get('delegation_task_id', '?')} "
+                    f"({result.get('delegation_status', result.get('delegation_submit_status', 'queued'))})"
+                )
+    except (DinaClientError, ValueError) as exc:
         print_error_with_trace(str(exc), json_mode, client.req_id)
         ctx.exit(1)
 
@@ -2210,7 +3423,12 @@ def service_status(ctx: click.Context, task_id: str) -> None:
 @cli.command()
 @click.argument("description")
 @click.option("--dry-run", is_flag=True, help="Validate intent without executing")
-@click.option("--timeout", default=300, type=int, help="Approval poll timeout in seconds (30–1800, default 300)")
+@click.option(
+    "--timeout",
+    default=300,
+    type=int,
+    help="Approval poll timeout in seconds (30–1800, default 300)",
+)
 @click.pass_context
 def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> None:
     """Delegate an autonomous task to an agent runner.
@@ -2247,24 +3465,31 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             click.echo(f"  Session: {session_id}")
 
         # 2. Validate the delegation intent.
-        decision = client.process_event({
-            "type": "agent_intent",
-            "action": "research",
-            "target": description[:200],
-        }, session=session_id)
+        decision = client.process_event(
+            {
+                "type": "agent_intent",
+                "action": "research",
+                "target": description[:200],
+            },
+            session=session_id,
+        )
 
         action = decision.get("action", "")
 
         if action == "deny":
             msg = decision.get("reason", "blocked")
             if json_mode:
-                print_result_with_trace({"status": "denied", "reason": msg}, json_mode, client.req_id)
+                print_result_with_trace(
+                    {"status": "denied", "reason": msg}, json_mode, client.req_id
+                )
             else:
                 print_error_with_trace(f"Task denied: {msg}", json_mode, client.req_id)
             return
 
         if dry_run:
-            status = "requires_approval" if decision.get("requires_approval") else "approved"
+            status = (
+                "requires_approval" if decision.get("requires_approval") else "approved"
+            )
             proposal_id = decision.get("proposal_id", "")
             if json_mode:
                 r = {"status": status, "dry_run": True}
@@ -2286,6 +3511,7 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
 
             # Poll for approval (fast then slow, configurable timeout).
             import time
+
             timeout = min(max(timeout, 30), 1800)  # clamp: 30s min, 30min max
             elapsed = 0
             while elapsed < timeout:
@@ -2304,16 +3530,28 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
                 if s in ("denied", "expired"):
                     reason = status.get("decision_reason", s)
                     if json_mode:
-                        print_result_with_trace({"status": s, "reason": reason}, json_mode, client.req_id)
+                        print_result_with_trace(
+                            {"status": s, "reason": reason}, json_mode, client.req_id
+                        )
                     else:
-                        print_error_with_trace(f"Task {s}: {reason}", json_mode, client.req_id)
+                        print_error_with_trace(
+                            f"Task {s}: {reason}", json_mode, client.req_id
+                        )
                     return
             else:
-                print_error_with_trace(f"Approval timeout ({timeout}s). Retry later.", json_mode, client.req_id)
+                print_error_with_trace(
+                    f"Approval timeout ({timeout}s). Retry later.",
+                    json_mode,
+                    client.req_id,
+                )
                 return
 
         # 3. Execute via runner abstraction.
-        runner_name = getattr(config, "agent_runner", "") or os.environ.get("DINA_AGENT_RUNNER", "") or "openclaw"
+        runner_name = (
+            getattr(config, "agent_runner", "")
+            or os.environ.get("DINA_AGENT_RUNNER", "")
+            or "openclaw"
+        )
         if not json_mode:
             click.echo(f"  Delegating to {runner_name}: {description}")
 
@@ -2324,35 +3562,48 @@ def task(ctx: click.Context, description: str, dry_run: bool, timeout: int) -> N
             print_error_with_trace(f"Runner error: {exc}", json_mode, client.req_id)
             return
 
-        task_dict = {"id": f"interactive-{uuid.uuid4().hex[:8]}", "description": description}
+        task_dict = {
+            "id": f"interactive-{uuid.uuid4().hex[:8]}",
+            "description": description,
+        }
         prompt = build_task_prompt(task_dict, session_id, runner_name)
         runner_result = runner.execute(task_dict, prompt, session_id)
 
         if runner_result.state == "failed":
-            print_error_with_trace(f"Runner failed: {runner_result.error}", json_mode, client.req_id)
+            print_error_with_trace(
+                f"Runner failed: {runner_result.error}", json_mode, client.req_id
+            )
             return
 
         if runner_result.state == "running":
             # Fire-and-forget runners (OpenClaw) — task continues in background.
             if not json_mode:
-                click.echo(f"  Task submitted (run_id={runner_result.run_id or 'none'})")
+                click.echo(
+                    f"  Task submitted (run_id={runner_result.run_id or 'none'})"
+                )
                 click.echo(f"  Check status via: dina task-status")
             # For fire-and-forget, we don't store a result yet — it comes via callback.
             result = {"summary": "Task submitted to runner", "status": "running"}
         else:
             # Inline runners (Hermes) — result is already available.
-            result = {"summary": runner_result.summary or description[:200], "data": runner_result.metadata}
+            result = {
+                "summary": runner_result.summary or description[:200],
+                "data": runner_result.metadata,
+            }
 
         # 4. Store final summary via staging (auto-caveated for agent-role CLI).
         summary = result.get("summary", description[:200])
-        client.staging_ingest({
-            "source": runner_name,
-            "source_id": f"task-{uuid.uuid4().hex[:12]}",
-            "type": "note",
-            "summary": f"Task result: {summary}",
-            "body": json.dumps(result.get("data", result), indent=2)[:50000],
-            "metadata": json.dumps({"task": description, "session": session_id}),
-        }, session=session_id)
+        client.staging_ingest(
+            {
+                "source": runner_name,
+                "source_id": f"task-{uuid.uuid4().hex[:12]}",
+                "type": "note",
+                "summary": f"Task result: {summary}",
+                "body": json.dumps(result.get("data", result), indent=2)[:50000],
+                "metadata": json.dumps({"task": description, "session": session_id}),
+            },
+            session=session_id,
+        )
 
         # 5. Display.
         print_result_with_trace(result, json_mode, client.req_id)
@@ -2387,18 +3638,28 @@ def _gate_block(reason: str) -> None:
 def _gate_ask(reason: str) -> None:
     """ASK — exit 0 + the PreToolUse JSON decision so the developer approves or
     denies locally. Used only for MODERATE actions. Never returns."""
-    click.echo(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": reason,
-        }
-    }))
+    click.echo(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "ask",
+                    "permissionDecisionReason": reason,
+                }
+            }
+        )
+    )
     sys.exit(0)
 
 
 @cli.command("gate-hook")
-def gate_hook() -> None:
+@click.option(
+    "--host",
+    type=click.Choice(["claude-code", "codex"], case_sensitive=False),
+    default="claude-code",
+    show_default=True,
+)
+def gate_hook(host: str) -> None:
     """Coding-agent gate for a Claude Code / Codex PreToolUse hook.
 
     Reads the tool call as JSON on stdin, forwards the RAW ``(tool_name,
@@ -2420,10 +3681,13 @@ def gate_hook() -> None:
     """
     # Self-deadline so a slow/hung Core resolves to a block inside the window.
     import signal
+
     have_alarm = hasattr(signal, "SIGALRM")
     if have_alarm:
+
         def _deadline(_signum: Any, _frame: Any) -> None:
             _gate_block("Dina gate timed out reaching Core — blocked (fail-closed)")
+
         signal.signal(signal.SIGALRM, _deadline)
         signal.alarm(_GATE_DEADLINE_S)
     # Keep the transport timeout under the self-deadline too.
@@ -2433,13 +3697,19 @@ def gate_hook() -> None:
     try:
         raw = sys.stdin.read()
     except Exception:  # noqa: BLE001 — any read failure is fail-closed
-        _gate_block("Dina gate could not read the tool-call payload — blocked (fail-closed)")
+        _gate_block(
+            "Dina gate could not read the tool-call payload — blocked (fail-closed)"
+        )
     try:
         event = json.loads(raw) if raw.strip() else {}
     except Exception:  # noqa: BLE001
-        _gate_block("Dina gate could not parse the tool-call payload — blocked (fail-closed)")
+        _gate_block(
+            "Dina gate could not parse the tool-call payload — blocked (fail-closed)"
+        )
     if not isinstance(event, dict):
-        _gate_block("Dina gate got a non-object tool-call payload — blocked (fail-closed)")
+        _gate_block(
+            "Dina gate got a non-object tool-call payload — blocked (fail-closed)"
+        )
 
     tool_name = event.get("tool_name")
     if not isinstance(tool_name, str) or tool_name.strip() == "":
@@ -2464,11 +3734,14 @@ def gate_hook() -> None:
             mode="enforce",
             host_session=host_session_id,
             cwd=cwd,
+            approval_surface="owner" if host == "codex" else "host",
         )
     except DinaClientError as exc:
         _gate_block(f"Dina gate could not reach Core ({exc}) — blocked (fail-closed)")
     except click.UsageError:
-        _gate_block("Dina is not configured (run: dina configure) — blocked (fail-closed)")
+        _gate_block(
+            "Dina is not configured (run: dina configure) — blocked (fail-closed)"
+        )
     except Exception as exc:  # noqa: BLE001 — ANY failure fails closed
         _gate_block(f"Dina gate error ({type(exc).__name__}) — blocked (fail-closed)")
 
@@ -2486,9 +3759,27 @@ def gate_hook() -> None:
         _gate_block(reason or f"Dina blocked this action ({action})")
     if outcome == "approval_required":
         if risk == "MODERATE":
-            _gate_ask(reason or f"Dina flagged this action for your approval ({action})")
+            if host == "codex":
+                task_id = (
+                    decision.get("task_id") if isinstance(decision, dict) else ""
+                ) or ""
+                if task_id:
+                    _gate_block(
+                        f"Dina approval required for {action or 'this action'} "
+                        f"(task {task_id}). Approve it in Dina, then retry the tool call"
+                    )
+                _gate_block(
+                    f"Dina approval is required for {action or 'this action'}, but "
+                    "Codex cannot ask locally and no Dina approval task was created "
+                    "— blocked (fail-closed)"
+                )
+            _gate_ask(
+                reason or f"Dina flagged this action for your approval ({action})"
+            )
         if risk == "HIGH":
-            task_id = (decision.get("task_id") if isinstance(decision, dict) else "") or ""
+            task_id = (
+                decision.get("task_id") if isinstance(decision, dict) else ""
+            ) or ""
             if task_id:
                 _gate_block(
                     f"Dina approval required for {action or 'this action'} "
@@ -2503,7 +3794,9 @@ def gate_hook() -> None:
             f"({risk!r}) — blocked (fail-closed)"
         )
     # Unknown result from a REACHABLE Core → never allow (§12.2).
-    _gate_block(f"Dina returned an unrecognized decision ({outcome!r}) — blocked (fail-closed)")
+    _gate_block(
+        f"Dina returned an unrecognized decision ({outcome!r}) — blocked (fail-closed)"
+    )
 
 
 @cli.command("session-end-hook", hidden=True)
@@ -2565,13 +3858,29 @@ def mcp_server(profile: str) -> None:
       claude mcp add dina -- dina mcp-server
     """
     from .mcp_server import run_server
+
     run_server(profile=profile.lower())
 
 
 @cli.command("agent-daemon")
-@click.option("--poll-interval", default=15, type=int, help="Seconds between claim polls (default 15)")
-@click.option("--lease-duration", default=300, type=int, help="Lease duration in seconds (default 300)")
-@click.option("--runner", default="", type=str, help="Runner: openclaw, hermes, or auto (default from config/env)")
+@click.option(
+    "--poll-interval",
+    default=15,
+    type=int,
+    help="Seconds between claim polls (default 15)",
+)
+@click.option(
+    "--lease-duration",
+    default=300,
+    type=int,
+    help="Lease duration in seconds (default 300)",
+)
+@click.option(
+    "--runner",
+    default="",
+    type=str,
+    help="Runner: openclaw, hermes, or auto (default from config/env)",
+)
 def agent_daemon(poll_interval: int, lease_duration: int, runner: str) -> None:
     """Run the persistent agent daemon.
 
@@ -2585,7 +3894,10 @@ def agent_daemon(poll_interval: int, lease_duration: int, runner: str) -> None:
       - Runner-specific config (OpenClaw: DINA_OPENCLAW_URL; Hermes: hermes package)
     """
     from .agent_daemon import run_daemon
-    run_daemon(poll_interval=poll_interval, lease_duration=lease_duration, runner_name=runner)
+
+    run_daemon(
+        poll_interval=poll_interval, lease_duration=lease_duration, runner_name=runner
+    )
 
 
 # `dina setup-agent` (MCP-era OpenClaw/Hermes registration) was retired:

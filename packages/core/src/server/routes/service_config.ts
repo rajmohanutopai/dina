@@ -16,51 +16,49 @@
  * behaviour so existing clients keep working; new clients use the `:rkey` form.
  */
 
-import { isValidServiceListingRkey, validateServiceListing } from '@dina/protocol';
+import { isValidServiceListingRkey } from '@dina/protocol';
 
 import {
-  type ServiceConfig,
   DEFAULT_LISTING_RKEY,
   getServiceConfig,
   listServiceConfigs,
   setServiceConfigDurable,
   clearServiceConfigDurable,
-  validateServiceConfig,
+  validateServiceConfigForSave,
 } from '../../service/service_config';
 
+import { requireAgentSession } from '../agent_session_guard';
 import type { CoreRouter } from '../router';
 
-/** Persist `config` under `rkey`, mapping outcomes to HTTP results. */
-async function upsertListing(rkey: string, body: unknown): Promise<{ status: number; body: unknown }> {
+/**
+ * Validate and durably persist one listing.
+ *
+ * Exported so narrow, owner-approved agent facades can execute through the
+ * exact same save path as the owner/Brain HTTP routes. Authorization and
+ * approval happen before this function; this is the shared mutation boundary.
+ */
+export async function upsertServiceListing(
+  rkey: string,
+  body: unknown,
+): Promise<{ status: number; body: unknown }> {
   if (body === undefined) {
     return { status: 400, body: { error: 'empty body' } };
   }
-  try {
-    validateServiceConfig(body);
-  } catch (err) {
-    return { status: 400, body: { error: (err as Error).message } };
-  }
-  // Full catalog listing validation — the SAME rules mobile runs at publish, now
-  // enforced at the Core boundary so a direct/paired client can't persist a
-  // listing mobile would reject (unknown flat capability, disallowed category,
-  // write action left on `auto`, public custom capability with no schema). This
-  // is STRICT + always-on (greenfield): every listing must carry explicit
-  // `discoverability` + a per-capability category. Closes the mobile-only-
-  // validation gap (Codex #4) — there is no compatibility bypass.
-  const listing = validateServiceListing(body as ServiceConfig, {
-    requireExplicitDiscoverability: true,
-  });
-  if (!listing.ok) {
+  const validated = validateServiceConfigForSave(body);
+  if (!validated.ok) {
     return {
       status: 400,
-      body: { error: 'invalid service listing', details: listing.errors },
+      body: {
+        error: validated.error,
+        ...(validated.details !== undefined ? { details: validated.details } : {}),
+      },
     };
   }
   // Durable-first (P1.4): persist before reporting success so a provider's
   // published listing can't appear saved here yet vanish on restart. A
   // persistence failure returns 503 rather than a false 200.
   try {
-    await setServiceConfigDurable(body as ServiceConfig, rkey);
+    await setServiceConfigDurable(validated.config, rkey);
   } catch (err) {
     return {
       status: 503,
@@ -93,11 +91,13 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
 
   // Upsert one listing by rkey.
   router.put('/v1/service/config/:rkey', async (req) => {
+    const session = requireAgentSession(req);
+    if (!session.ok) return session.response;
     const rkey = req.params.rkey ?? '';
     if (!isValidServiceListingRkey(rkey)) {
       return { status: 400, body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` } };
     }
-    return upsertListing(rkey, req.body);
+    return upsertServiceListing(rkey, req.body);
   });
 
   // Delete one listing by rkey (idempotent — 200 even if absent).
@@ -131,6 +131,8 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
   });
 
   router.put('/v1/service/config', async (req) => {
-    return upsertListing(DEFAULT_LISTING_RKEY, req.body);
+    const session = requireAgentSession(req);
+    if (!session.ok) return session.response;
+    return upsertServiceListing(DEFAULT_LISTING_RKEY, req.body);
   });
 }

@@ -3,6 +3,7 @@ import {
   applyOwnerWorkflowDecision,
   getWorkflowService,
   parseCodingGateApprovalPayload,
+  parseFacadeActionApprovalPayload,
   remoteApprovalProposalId,
 } from '@dina/core';
 import { kvDelete, kvList, kvSet } from '@dina/core/kv';
@@ -51,6 +52,16 @@ const RECEIPT_NAMESPACE = 'phone_approval_mirrors';
 interface MirrorReceipt {
   sourceTaskId: string;
   proposalId: string;
+}
+
+interface PhoneProposalSource {
+  payloadHash: string;
+  agentDid: string;
+  action: string;
+  toolName: string;
+  proposalType?: 'facade_action';
+  displayTitle?: string;
+  displayDetail?: string;
 }
 
 /**
@@ -105,8 +116,8 @@ export async function runPhoneApprovalSyncTick(
     .listByKindAndState('approval', 'pending_approval', options.limit ?? 50);
 
   for (const task of tasks) {
-    const payload = parseCodingGateApprovalPayload(task.payload);
-    if (payload === null || payload.risk !== 'HIGH') continue;
+    const proposal = proposalForTask(task.payload);
+    if (proposal === null) continue;
     if (typeof task.expires_at !== 'number' || task.expires_at <= nowSec) continue;
 
     try {
@@ -124,12 +135,21 @@ export async function runPhoneApprovalSyncTick(
         `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
         {
           source_task_id: task.id,
-          source_payload_hash: payload.payload_hash,
-          agent_did: payload.agent_did,
-          action: payload.action,
+          source_payload_hash: proposal.payloadHash,
+          agent_did: proposal.agentDid,
+          action: proposal.action,
           risk_level: 'HIGH',
-          tool_name: payload.tool,
+          tool_name: proposal.toolName,
           expires_at: task.expires_at,
+          ...(proposal.proposalType !== undefined
+            ? { proposal_type: proposal.proposalType }
+            : {}),
+          ...(proposal.displayTitle !== undefined
+            ? { display_title: proposal.displayTitle }
+            : {}),
+          ...(proposal.displayDetail !== undefined
+            ? { display_detail: proposal.displayDetail }
+            : {}),
         },
       );
       if (created.status < 200 || created.status >= 300) {
@@ -183,6 +203,29 @@ export async function runPhoneApprovalSyncTick(
     }
   }
   return result;
+}
+
+function proposalForTask(raw: string): PhoneProposalSource | null {
+  const coding = parseCodingGateApprovalPayload(raw);
+  if (coding !== null && coding.risk === 'HIGH') {
+    return {
+      payloadHash: coding.payload_hash,
+      agentDid: coding.agent_did,
+      action: coding.action,
+      toolName: coding.tool,
+    };
+  }
+  const facade = parseFacadeActionApprovalPayload(raw);
+  if (facade === null) return null;
+  return {
+    payloadHash: facade.payload_hash,
+    agentDid: facade.agent_did,
+    action: facade.action,
+    toolName: `dina_${facade.action}`,
+    proposalType: 'facade_action',
+    displayTitle: facade.display_title,
+    displayDetail: facade.display_detail,
+  };
 }
 
 export class PhoneApprovalSyncWorker {

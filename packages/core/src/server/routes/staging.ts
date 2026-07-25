@@ -9,7 +9,7 @@ import {
   ingest,
   claim,
   resolve,
-  resolveMulti,
+  resolveMultiDetailed,
   fail,
   extendLease,
   getItem,
@@ -220,9 +220,19 @@ export function registerStagingRoutes(router: CoreRouter): void {
           }
           targets.push({ persona, personaOpen: open });
         }
-        resolveMulti(id, targets, data);
+        const resolved = resolveMultiDetailed(id, targets, data);
         const item = getItem(id);
-        return { status: 200, body: { id, status: item?.status ?? 'unknown', personas } };
+        return {
+          status: 200,
+          body: {
+            id,
+            status: item?.status ?? 'unknown',
+            personas,
+            stored_personas: resolved.storedPersonas,
+            pending_personas: resolved.pendingPersonas,
+            failed_personas: resolved.failedPersonas,
+          },
+        };
       }
       if (typeof body.persona !== 'string' || body.persona.trim().length === 0) {
         return { status: 400, body: { error: 'persona must be a non-empty string' } };

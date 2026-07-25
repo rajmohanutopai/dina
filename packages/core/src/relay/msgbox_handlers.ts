@@ -255,6 +255,10 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
 
   const controller = new AbortController();
   inFlightRequests.set(env.id, controller);
+  // Once the request decrypts, every response (including auth failures) must
+  // use the sender's sealed-box nonce scheme. dina-cli uses libsodium/BLAKE2b;
+  // replying with the SHA-512 default makes a valid error response undecryptable.
+  let nonceScheme: 'sha512' | 'blake2b' = 'sha512';
 
   try {
     if (!env.ciphertext) {
@@ -272,7 +276,6 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
     const ctBytes = base64ToBytes(env.ciphertext);
     const myPub = getPublicKey(privateKey);
     let plaintext: Uint8Array;
-    let nonceScheme: 'sha512' | 'blake2b' = 'sha512';
     try {
       const decoded = sealDecryptWithScheme(ctBytes, myPub, privateKey);
       plaintext = decoded.plaintext;
@@ -291,11 +294,24 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       typeof inner.path !== 'string' ||
       !inner.headers
     ) {
-      await sendRPCError(env, myDID, privateKey, 400, 'Malformed RPC inner payload');
+      await sendRPCError(
+        env,
+        myDID,
+        privateKey,
+        400,
+        'Malformed RPC inner payload',
+        nonceScheme,
+      );
       return;
     }
 
-    const isPairPath = inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(inner.path);
+    const requestTarget = splitRequestTarget(inner.path);
+    if (requestTarget === null) {
+      await sendRPCError(env, myDID, privateKey, 400, 'Malformed RPC request target', nonceScheme);
+      return;
+    }
+    const isPairPath =
+      inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(requestTarget.path);
 
     console.log(
       `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath} method=${inner.method}`,
@@ -318,7 +334,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       if (publicKeyMultibase === null) {
         console.error(`[RPC] pair reject: no public_key in body`);
         appendAudit(env.from_did, 'pair_identity_mismatch', myDID, `id=${env.id}`);
-        await sendRPCError(env, myDID, privateKey, 403, 'Pair identity binding failed');
+        await sendRPCError(
+          env,
+          myDID,
+          privateKey,
+          403,
+          'Pair identity binding failed',
+          nonceScheme,
+        );
         return;
       }
       if (!verifyPairingIdentityBinding(publicKeyMultibase, env.from_did)) {
@@ -326,7 +349,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
           `[RPC] pair reject: binding mismatch env.from_did=${env.from_did} body.public_key=${publicKeyMultibase}`,
         );
         appendAudit(env.from_did, 'pair_identity_mismatch', myDID, `id=${env.id}`);
-        await sendRPCError(env, myDID, privateKey, 403, 'Pair identity binding failed');
+        await sendRPCError(
+          env,
+          myDID,
+          privateKey,
+          403,
+          'Pair identity binding failed',
+          nonceScheme,
+        );
         return;
       }
       // Inner signature verification — the CLI signs every inner
@@ -344,18 +374,32 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
           const bodyStr =
             typeof inner.body === 'string' ? inner.body : JSON.stringify(inner.body ?? '');
           const bodyHash = bytesToHex(sha256(new TextEncoder().encode(bodyStr)));
-          const canonical = `${inner.method}\n${inner.path}\n\n${inner.headers['X-Timestamp']}\n${inner.headers['X-Nonce']}\n${bodyHash}`;
+          const canonical = `${inner.method}\n${requestTarget.path}\n${requestTarget.query}\n${inner.headers['X-Timestamp']}\n${inner.headers['X-Nonce']}\n${bodyHash}`;
           const sigBytes = hexToBytes(inner.headers['X-Signature']);
           if (!verify(cliPub, new TextEncoder().encode(canonical), sigBytes)) {
             appendAudit(env.from_did, 'pair_sig_invalid', myDID, `id=${env.id}`);
-            await sendRPCError(env, myDID, privateKey, 401, 'Invalid pair signature');
+            await sendRPCError(
+              env,
+              myDID,
+              privateKey,
+              401,
+              'Invalid pair signature',
+              nonceScheme,
+            );
             return;
           }
         } catch {
           // extractPublicKey throws only for non-did:key formats —
           // we've already confirmed the binding so this is very
           // unlikely, but treat as a rejection just in case.
-          await sendRPCError(env, myDID, privateKey, 401, 'Pair signature check failed');
+          await sendRPCError(
+            env,
+            myDID,
+            privateKey,
+            401,
+            'Pair signature check failed',
+            nonceScheme,
+          );
           return;
         }
       }
@@ -366,26 +410,40 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       // Signed-RPC path: requires prior pairing + full auth.
       if (!isDevice(env.from_did)) {
         appendAudit(env.from_did, 'rpc_unregistered_device', myDID, `id=${env.id}`);
-        await sendRPCError(env, myDID, privateKey, 403, 'Device not registered');
+        await sendRPCError(
+          env,
+          myDID,
+          privateKey,
+          403,
+          'Device not registered',
+          nonceScheme,
+        );
         return;
       }
 
       // Identity binding: envelope from_did must match inner X-DID.
       if (env.from_did !== inner.headers?.['X-DID']) {
         appendAudit(env.from_did, 'rpc_identity_mismatch', myDID, `id=${env.id}`);
-        await sendRPCError(env, myDID, privateKey, 403, 'Identity binding failed');
+        await sendRPCError(
+          env,
+          myDID,
+          privateKey,
+          403,
+          'Identity binding failed',
+          nonceScheme,
+        );
         return;
       }
 
       // Inner Ed25519 signature.
       const cliPub = extractPublicKey(env.from_did);
       const bodyHash = bytesToHex(sha256(new TextEncoder().encode(inner.body ?? '')));
-      const canonical = `${inner.method}\n${inner.path}\n\n${inner.headers['X-Timestamp']}\n${inner.headers['X-Nonce']}\n${bodyHash}`;
+      const canonical = `${inner.method}\n${requestTarget.path}\n${requestTarget.query}\n${inner.headers['X-Timestamp']}\n${inner.headers['X-Nonce']}\n${bodyHash}`;
       const sigBytes = hexToBytes(inner.headers['X-Signature']);
 
       if (!verify(cliPub, new TextEncoder().encode(canonical), sigBytes)) {
         appendAudit(env.from_did, 'rpc_sig_invalid', myDID, `id=${env.id}`);
-        await sendRPCError(env, myDID, privateKey, 401, 'Invalid signature');
+        await sendRPCError(env, myDID, privateKey, 401, 'Invalid signature', nonceScheme);
         return;
       }
     }
@@ -431,10 +489,27 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       privateKey,
       500,
       err instanceof Error ? err.message : 'Internal error',
+      nonceScheme,
     );
   } finally {
     inFlightRequests.delete(env.id);
   }
+}
+
+/**
+ * Split the origin-form request target used by RPC into the exact path/query
+ * pair covered by the HTTP signature. The query remains byte-for-byte intact:
+ * sorting or decoding it here would verify a different request than the caller
+ * signed. Fragments and non-origin-form targets are never valid Core routes.
+ */
+function splitRequestTarget(target: string): { path: string; query: string } | null {
+  if (!target.startsWith('/') || target.includes('#')) return null;
+  const separator = target.indexOf('?');
+  if (separator < 0) return { path: target, query: '' };
+  return {
+    path: target.slice(0, separator),
+    query: target.slice(separator + 1),
+  };
 }
 
 /**

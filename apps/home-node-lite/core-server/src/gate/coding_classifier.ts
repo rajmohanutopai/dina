@@ -33,6 +33,7 @@ import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
 const DINA_STATE_ANYWHERE = new Set([
   'wrapped_seed.bin',
   'recovery-phrase.txt',
+  'owner_capability',
   'pds_identity.json',
 ]);
 

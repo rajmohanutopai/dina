@@ -166,6 +166,7 @@ def test_dina_remember_forwards_session_and_optional_persona(fake_client):
     out = mcp_server.dina_remember.fn(
         text="Lower back pain",
         session="sess-1",
+        request_id="remember-0001",
         persona="health",
     )
 
@@ -173,14 +174,332 @@ def test_dina_remember_forwards_session_and_optional_persona(fake_client):
     fake_client.remember.assert_called_once_with(
         "Lower back pain",
         session="sess-1",
+        source_id="remember-0001",
         persona="health",
     )
 
 
 def test_dina_remember_documents_approval_semantics():
     doc = mcp_server.dina_remember.description or ""
-    assert "approval_required" in doc
-    assert "must not claim" in doc
+    assert "pending_approval" in doc
+    assert "do not claim" in doc
+
+
+def test_dina_remember_status_forwards_owned_poll(fake_client):
+    fake_client.remember_check.return_value = {"status": "stored", "id": "stg-1"}
+
+    out = mcp_server.dina_remember_status.fn(item_id="stg-1", session="sess-1")
+
+    assert out["status"] == "stored"
+    fake_client.remember_check.assert_called_once_with("stg-1", session="sess-1")
+
+
+# ---------------------------------------------------------------------------
+# Services — discover, publish, invoke, poll
+# ---------------------------------------------------------------------------
+
+
+def test_dina_find_service_forwards_bounded_search(fake_client):
+    fake_client.find_services.return_value = {
+        "matches": [],
+        "capability_candidates": [],
+    }
+    out = mcp_server.dina_find_service.fn(
+        session="sess-1",
+        intent="book a haircut",
+        query="Alonso",
+        limit=5,
+    )
+    assert out["matches"] == []
+    fake_client.find_services.assert_called_once_with(
+        session="sess-1",
+        intent="book a haircut",
+        capability="",
+        query="Alonso",
+        lat=None,
+        lng=None,
+        radius_km=None,
+        limit=5,
+    )
+
+
+def test_dina_publish_service_preserves_owner_approval_contract(fake_client):
+    fake_client.publish_service.return_value = {
+        "status": "pending_approval",
+        "task_id": "approval-1",
+    }
+    config = {"name": "Alonso Salon"}
+    out = mcp_server.dina_publish_service.fn(
+        rkey="main",
+        config=config,
+        session="sess-1",
+        request_id="publish-1",
+    )
+    assert out["status"] == "pending_approval"
+    fake_client.publish_service.assert_called_once_with(
+        rkey="main",
+        config=config,
+        session="sess-1",
+        request_id="publish-1",
+    )
+
+
+def test_dina_invoke_service_and_status_forward_session(fake_client):
+    fake_client.send_service_query.return_value = {
+        "status": "pending_approval",
+        "task_id": "approval-1",
+    }
+    fake_client.service_query_status.return_value = {
+        "task_id": "sq-1",
+        "status": "running",
+    }
+    params = {"date": "2026-07-26"}
+
+    invoked = mcp_server.dina_invoke_service.fn(
+        to_did="did:plc:salon",
+        capability="appointment_book",
+        params=params,
+        session="sess-1",
+        request_id="invoke-1",
+        service_uri="at://did:plc:salon/com.dinakernel.service.profile/main",
+    )
+    polled = mcp_server.dina_service_status.fn(
+        task_id="sq-1",
+        session="sess-1",
+    )
+
+    assert invoked == {
+        "status": "pending_approval",
+        "task_id": "approval-1",
+    }
+    assert polled["status"] == "running"
+    fake_client.send_service_query.assert_called_once_with(
+        to_did="did:plc:salon",
+        capability="appointment_book",
+        params=params,
+        session="sess-1",
+        request_id="invoke-1",
+        schema_hash="",
+        service_uri="at://did:plc:salon/com.dinakernel.service.profile/main",
+        service_name="",
+        grant_id="",
+        ttl_seconds=60,
+    )
+    fake_client.service_query_status.assert_called_once_with(
+        task_id="sq-1",
+        session="sess-1",
+    )
+
+
+def test_dina_service_publication_status_forwards_listing_and_session(fake_client):
+    fake_client.service_publication_status.return_value = {
+        "rkey": "salon",
+        "publication_status": "pending",
+        "next_retry_at": 123,
+    }
+    out = mcp_server.dina_service_publication_status.fn(
+        rkey="salon",
+        session="sess-1",
+    )
+    assert out["publication_status"] == "pending"
+    fake_client.service_publication_status.assert_called_once_with(
+        rkey="salon",
+        session="sess-1",
+    )
+
+
+def test_service_tool_descriptions_preserve_async_and_privacy_contracts():
+    assert "never sends vault data" in (mcp_server.dina_find_service.description or "")
+    assert "pending" in (mcp_server.dina_publish_service.description or "")
+    assert "asynchronous" in (mcp_server.dina_invoke_service.description or "")
+    assert "same agent session" in (mcp_server.dina_service_status.description or "")
+    assert "committed AT URI" in (
+        mcp_server.dina_service_publication_status.description or ""
+    )
+    assert "pending_approval" in (
+        mcp_server.dina_publish_service.description or ""
+    )
+    assert "service_invoke" in (mcp_server.dina_invoke_service.description or "")
+
+
+# ---------------------------------------------------------------------------
+# Talk + delegation
+# ---------------------------------------------------------------------------
+
+
+def test_dina_talk_forwards_exact_message_and_idempotency_key(fake_client):
+    fake_client.talk.return_value = {
+        "status": "pending_approval",
+        "request_id": "talk-1",
+    }
+    out = mcp_server.dina_talk.fn(
+        contact="Alonso",
+        text="Can we meet tomorrow?",
+        session="sess-1",
+        request_id="talk-1",
+        in_reply_to="msg-previous",
+    )
+
+    assert out["status"] == "pending_approval"
+    fake_client.talk.assert_called_once_with(
+        contact="Alonso",
+        text="Can we meet tomorrow?",
+        session="sess-1",
+        request_id="talk-1",
+        in_reply_to="msg-previous",
+    )
+
+
+def test_dina_delegate_and_status_preserve_approval_contract(fake_client):
+    fake_client.delegate.return_value = {
+        "status": "pending_approval",
+        "request_id": "delegate-1",
+    }
+    fake_client.action_status.return_value = {
+        "status": "completed",
+        "delegation_task_id": "task-1",
+        "delegation_submit_status": "queued",
+    }
+
+    submitted = mcp_server.dina_delegate.fn(
+        runner="codex",
+        description="Compare the proposals",
+        input={"paths": ["a.md", "b.md"]},
+        session="sess-1",
+        request_id="delegate-1",
+    )
+    polled = mcp_server.dina_action_status.fn(
+        action="delegate",
+        request_id="delegate-1",
+        session="sess-1",
+    )
+
+    assert submitted["status"] == "pending_approval"
+    assert polled["delegation_task_id"] == "task-1"
+    fake_client.delegate.assert_called_once_with(
+        runner="codex",
+        description="Compare the proposals",
+        input_data={"paths": ["a.md", "b.md"]},
+        session="sess-1",
+        request_id="delegate-1",
+    )
+    fake_client.action_status.assert_called_once_with(
+        action="delegate",
+        request_id="delegate-1",
+        session="sess-1",
+    )
+
+
+def test_talk_and_delegation_descriptions_forbid_approval_bypass():
+    talk_doc = mcp_server.dina_talk.description or ""
+    delegate_doc = mcp_server.dina_delegate.description or ""
+    status_doc = mcp_server.dina_action_status.description or ""
+    assert "idempotency" in talk_doc.lower()
+    assert "do not bypass" in talk_doc.lower()
+    assert "owner approves" in delegate_doc.lower()
+
+
+def test_peerlens_tools_preserve_search_and_approval_contract(fake_client):
+    fake_client.search_peerlens.return_value = {"results": []}
+    fake_client.publish_review.return_value = {
+        "status": "pending_approval",
+        "request_id": "review-1",
+    }
+    fake_client.review_status.return_value = {
+        "publish_status": "published",
+        "uri": "at://review/1",
+    }
+
+    searched = mcp_server.dina_peerlens.fn(
+        session="sess-1",
+        query="chair",
+        category="furniture",
+        tags=["ergonomic"],
+        limit=5,
+    )
+    submitted = mcp_server.dina_review.fn(
+        record={
+            "subject": {"type": "product", "identifier": "chair-123"},
+            "category": "furniture",
+            "sentiment": "positive",
+        },
+        session="sess-1",
+        request_id="review-1",
+    )
+    status = mcp_server.dina_review_status.fn(
+        request_id="review-1",
+        session="sess-1",
+    )
+
+    assert searched == {"results": []}
+    assert submitted["status"] == "pending_approval"
+    assert status["publish_status"] == "published"
+    fake_client.search_peerlens.assert_called_once_with(
+        session="sess-1",
+        query="chair",
+        category="furniture",
+        domain="",
+        subject_type="",
+        sentiment="",
+        min_confidence="",
+        author_did="",
+        tags=["ergonomic"],
+        sort="relevant",
+        limit=5,
+    )
+    fake_client.publish_review.assert_called_once_with(
+        record={
+            "subject": {"type": "product", "identifier": "chair-123"},
+            "category": "furniture",
+            "sentiment": "positive",
+        },
+        session="sess-1",
+        request_id="review-1",
+    )
+    fake_client.review_status.assert_called_once_with(
+        request_id="review-1",
+        session="sess-1",
+    )
+
+
+def test_review_tool_description_forbids_duplicate_publish():
+    submit_doc = mcp_server.dina_review.description or ""
+    status_doc = mcp_server.dina_review_status.description or ""
+    assert "pending_approval" in submit_doc
+    assert "do not publish" in submit_doc.lower()
+    assert "idempotency" in submit_doc.lower()
+    assert "must not create another review" in status_doc.lower()
+    assert "pending means wait" in status_doc.lower()
+    assert "cancelled" in status_doc.lower()
+
+
+def test_vault_and_reminder_tools_use_narrow_session_projections(fake_client):
+    fake_client.list_vaults.return_value = {
+        "vaults": [{"name": "general", "readable": True}],
+    }
+    fake_client.list_reminders.return_value = {
+        "reminders": [],
+        "restricted_count": 1,
+    }
+
+    vaults = mcp_server.dina_vaults.fn(session="sess-1")
+    reminders = mcp_server.dina_reminders.fn(session="sess-1", limit=25)
+
+    assert vaults["vaults"][0]["readable"] is True
+    assert reminders["restricted_count"] == 1
+    fake_client.list_vaults.assert_called_once_with(session="sess-1")
+    fake_client.list_reminders.assert_called_once_with(
+        session="sess-1",
+        limit=25,
+    )
+
+
+def test_vault_and_reminder_descriptions_forbid_raw_or_restricted_reads():
+    vault_doc = mcp_server.dina_vaults.description or ""
+    reminder_doc = mcp_server.dina_reminders.description or ""
+    assert "without reading their contents" in vault_doc.lower()
+    assert "storage directly" in vault_doc.lower()
+    assert "cannot select or bypass a restricted vault" in reminder_doc.lower()
 
 
 # ---------------------------------------------------------------------------

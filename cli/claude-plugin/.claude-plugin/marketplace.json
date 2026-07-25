@@ -6,7 +6,7 @@
     {
       "name": "dina",
       "source": "./dina",
-      "description": "Your Dina inside Claude Code: every tool call is sent to a Core-owned deterministic gate; once the hook supervisor launches, gate failures block, with a documented host-mediated residual. Includes portable encrypted memory, intent validation, and PII scrubbing over MCP. Requires dina-agent>=0.19.0."
+      "description": "Your Dina inside Claude Code: every tool call is sent to a Core-owned deterministic gate; once the hook supervisor launches, gate failures block, with a documented host-mediated residual. Includes portable encrypted memory, intent validation, and PII scrubbing over MCP. Requires dina-agent>=0.20.0."
     }
   ]
 }

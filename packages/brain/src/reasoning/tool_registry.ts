@@ -14,9 +14,10 @@
  *     `{success: false, error: ...}` — the loop never sees a thrown Error.
  *
  * Schema validation is deliberately LIGHTWEIGHT: required-field presence +
- * top-level type checks. The kernel spec (DINA_AGENT_KERNEL.md point 17)
- * calls for full JSON Schema via ajv; we defer that until a capability
- * needs deep validation and the 200 KB dependency is justified.
+ * top-level type checks, including top-level `anyOf` type alternatives. The
+ * kernel spec (DINA_AGENT_KERNEL.md point 17) calls for full JSON Schema via
+ * ajv; we defer that until a capability needs deep validation and the 200 KB
+ * dependency is justified.
  *
  * Source: DINA_AGENT_KERNEL.md §D (Tool Architecture, points 15–18).
  */
@@ -221,6 +222,8 @@ function isValidToolName(name: string): boolean {
  * Lightweight JSON-Schema-adjacent validation:
  *   - required fields must be present
  *   - when a property declares `type`, the argument's top-level type must match
+ *   - top-level `anyOf` alternatives that declare `type` are treated as a
+ *     union (for example string-or-number timestamps)
  *
  * Returns null when the args pass, otherwise a short error message.
  * Does NOT traverse nested schemas; the tool body can do deeper checks.
@@ -242,14 +245,31 @@ function validateArgs(
   for (const [key, value] of Object.entries(args)) {
     const propSchema = properties[key];
     if (propSchema === undefined) continue; // permissive — extra props allowed
-    const expectedType = typeof propSchema.type === 'string' ? propSchema.type : null;
-    if (expectedType === null) continue;
+    const expectedTypes = declaredTypes(propSchema);
+    if (expectedTypes.length === 0) continue;
     const actualType = jsonTypeOf(value);
-    if (actualType !== expectedType) {
-      return `field "${key}" expected ${expectedType}, got ${actualType}`;
+    if (!expectedTypes.includes(actualType)) {
+      return `field "${key}" expected ${expectedTypes.join(' or ')}, got ${actualType}`;
     }
   }
   return null;
+}
+
+function declaredTypes(schema: Record<string, unknown>): string[] {
+  if (typeof schema.type === 'string') return [schema.type];
+
+  const alternatives = Array.isArray(schema.anyOf) ? schema.anyOf : [];
+  const types: string[] = [];
+  for (const alternative of alternatives) {
+    if (
+      alternative !== null &&
+      typeof alternative === 'object' &&
+      typeof (alternative as Record<string, unknown>).type === 'string'
+    ) {
+      types.push((alternative as Record<string, unknown>).type as string);
+    }
+  }
+  return [...new Set(types)];
 }
 
 function jsonTypeOf(v: unknown): string {

@@ -55,5 +55,9 @@ export { receiveAndStage } from './src/d2d/receive';
 export { DIDResolver } from './src/d2d/resolver';
 export type { ResolvedDID, ResolverConfig } from './src/d2d/resolver';
 export { getD2DSender, setD2DSender } from './src/server/routes/d2d_msg';
-export type { D2DSender } from './src/server/routes/d2d_msg';
+export type {
+  D2DSender,
+  D2DSendOptions,
+  D2DSendOutcome,
+} from './src/server/routes/d2d_msg';
 export type { WSFactory, WSLike } from './src/relay/msgbox_ws';

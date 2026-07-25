@@ -16,6 +16,7 @@ import {
   parseServiceListingUri,
   validateServiceOfferBody,
   validateServiceGrantRequestBody,
+  validateTalkMessageBody,
   type ServiceOfferBody,
   type ServiceGrantRequestBody,
 } from '@dina/protocol';
@@ -45,6 +46,7 @@ import {
   MsgTypeServiceResponse,
   MsgTypeServiceOffer,
   MsgTypeServiceGrantRequest,
+  MsgTypeTalkMessageV1,
 } from './families';
 import { checkScenarioGate } from './gates';
 import { handleServiceGrantRequest } from './grant_request_handler';
@@ -242,6 +244,34 @@ export function receiveD2D(
       signatureValid: true,
       reason: bodyValidationError,
     };
+  }
+
+  if (message.type === MsgTypeTalkMessageV1) {
+    let parsedTalk: unknown;
+    try {
+      parsedTalk = JSON.parse(message.body);
+    } catch {
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'talk.message.v1 body must be valid JSON',
+      };
+    }
+    const talkError = validateTalkMessageBody(parsedTalk);
+    if (talkError !== null) {
+      appendAudit(message.from, 'd2d_recv_talk_invalid', message.to, `id=${message.id}`);
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: talkError,
+      };
+    }
   }
 
   // 5b. Pre-gate: blocked sender is ALWAYS dropped, even for service.* traffic.

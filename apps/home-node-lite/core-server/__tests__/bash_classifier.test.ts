@@ -75,6 +75,10 @@ describe('secret_read / secret_write — protected paths (BLOCKED)', () => {
   it('grep of a vault .sqlite', () =>
     expect(cls(`grep x ${path.join(vaultDir, 'personal.sqlite')}`).risk).toBe('BLOCKED'));
   it('cat of .env', () => expect(cls('cat .env').action).toBe('secret_read'));
+  it('blocks the Home Node owner-capability reveal command', () =>
+    expect(cls('dina home-node show-owner-capability').action).toBe('secret_read'));
+  it('blocks the Home Node recovery-phrase reveal command', () =>
+    expect(cls('dina home-node show-recovery-phrase').action).toBe('secret_read'));
   it('redirect READ from a protected path', () =>
     expect(cls(`tr a b < ${path.join(vaultDir, 'keyfile')}`).action).toBe('secret_read'));
   it('redirect WRITE to a protected path', () => {

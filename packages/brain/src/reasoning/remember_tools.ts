@@ -39,8 +39,9 @@ export interface RememberSideEffects {
   /** Reminder requests — zero or more. */
   reminders: {
     message: string;
-    dueAt: string;
-    persona?: string;
+    dueAtMs: number;
+    persona: string;
+    timezone: string;
   }[];
 
   /**

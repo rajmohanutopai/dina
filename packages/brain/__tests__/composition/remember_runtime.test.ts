@@ -7,7 +7,7 @@
  */
 
 import { clearVaults, storeItem } from '@dina/core';
-import { resetReminderState, listByPersona } from '@dina/core/reminders';
+import { resetReminderState } from '@dina/core/reminders';
 
 import { buildRememberRuntime } from '../../src/composition/remember_runtime';
 import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
@@ -197,14 +197,14 @@ describe('buildRememberRuntime', () => {
 
     expect(result.toolNames).toEqual(['route_to_persona', 'schedule_reminder']);
 
-    // The reminder must land in the ROUTED persona ('health'), carry the
-    // staging id (so the chat "Reminders set" card renders), and exist
-    // exactly once — not silently default to 'general'.
-    const created = listByPersona('health');
-    expect(created).toHaveLength(1);
-    expect(created[0]?.source_item_id).toBe('stage-xyz');
-    expect(created[0]?.message).toBe("Emma's birthday is coming up");
-    expect(listByPersona('general')).toHaveLength(0);
+    // Remember is plan-only until staging storage succeeds. The plan must
+    // target the routed persona and must not write a reminder mid-LLM-turn.
+    expect(result.sideEffects.reminders).toEqual([
+      expect.objectContaining({
+        persona: 'health',
+        message: "Emma's birthday is coming up",
+      }),
+    ]);
   });
 
   it('exposes vault_search so the loop can recall prior memories to enrich (dinosaur fix)', async () => {
@@ -332,13 +332,15 @@ describe('buildRememberRuntime', () => {
 
     // Enrichment: the sender's recalled memory reached the loop's input.
     expect(userMsgSeen).toMatch(/matcha/i);
-    // Reminder: the loop scheduled an arrival reminder, enriched with the
-    // sender context, linked to the D2D item.
+    // Reminder: the loop planned an arrival reminder enriched with sender
+    // context. The staging drain creates it after the memory is stored.
     expect(result.toolNames).toContain('schedule_reminder');
-    const reminders = listByPersona('general');
-    expect(reminders).toHaveLength(1);
-    expect(reminders[0]?.source_item_id).toBe('d2d-1');
-    expect(reminders[0]?.message).toMatch(/matcha/i);
+    expect(result.sideEffects.reminders).toEqual([
+      expect.objectContaining({
+        persona: 'general',
+        message: expect.stringMatching(/matcha/i),
+      }),
+    ]);
   });
 
   it("returns empty side effects when the LLM doesn't call any tools", async () => {

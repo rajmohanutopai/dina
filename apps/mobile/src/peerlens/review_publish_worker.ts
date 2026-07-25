@@ -11,15 +11,15 @@
  */
 
 import {
-  MAX_PUBLISH_ATTEMPTS,
-  PUBLISH_CLAIM_LEASE_MS,
   currentDataScope,
   isGuidedDemoScope,
-  type ClassifiedError,
+  runReviewPublishTick as runSharedReviewPublishTick,
   type ReviewPublishRepository,
 } from '@dina/core';
 
-import { attemptClaimedPublish, type PublishAttemptDeps } from './publish_attempt';
+import { classifyPublishError } from './classify_publish_error';
+import { publishAttestationToPDS } from './publish_attestation';
+import type { PublishAttemptDeps } from './publish_attempt';
 
 import type { PDSPublisher } from '@dina/brain';
 
@@ -39,12 +39,6 @@ export interface DrainResult {
   failed: number;
 }
 
-const RETRIES_EXHAUSTED: ClassifiedError = {
-  class: 'permanent',
-  code: 'retries_exhausted',
-  message: 'retries exhausted',
-};
-
 /**
  * Run ONE worker pass for the booted identity. No-op under a guided-demo scope.
  */
@@ -52,36 +46,13 @@ export async function runReviewPublishTick(deps: ReviewPublishWorkerDeps): Promi
   const result: DrainResult = { reclaimed: 0, published: 0, requeued: 0, failed: 0 };
   const isDemo = deps.isDemoScope ?? (() => isGuidedDemoScope(currentDataScope()));
   if (isDemo()) return result; // never publish real reviews under the demo scope
-  const now = deps.now ?? Date.now;
-
-  // 1. Reap leases whose owner crashed mid-publish (publishing → queued).
-  result.reclaimed = deps.repo.reclaimExpiredLeases(deps.did, now());
-
-  // 2. Claim + attempt each due job. The claim is a CAS → single-flight.
-  for (const due of deps.repo.listDue(deps.did, now())) {
-    if (!deps.repo.claim(due.jobId, now(), PUBLISH_CLAIM_LEASE_MS)) continue; // lost to another claimer
-    const job = deps.repo.getById(due.jobId);
-    if (job === null || job.claimedAt === null) continue; // discarded / not claimed (raced)
-
-    // A job reclaimed past the attempt cap is dead-lettered without re-publishing.
-    // Fenced on the claim we just took (`job.claimedAt`) like every terminal CAS.
-    if (job.attempts >= MAX_PUBLISH_ATTEMPTS) {
-      deps.repo.fail(job.jobId, RETRIES_EXHAUSTED, now(), job.claimedAt);
-      result.failed++;
-      continue;
-    }
-
-    const res = await attemptClaimedPublish(job, {
-      repo: deps.repo,
-      publisher: deps.publisher,
-      publishToPDS: deps.publishToPDS,
-      now: deps.now,
-    });
-    if (res.kind === 'published') result.published++;
-    else if (res.kind === 'requeued') result.requeued++;
-    else if (res.kind === 'failed') result.failed++;
-    // 'lost' → the lease lapsed mid-write and another tick owns the row; not
-    // counted (the owning tick records the real outcome).
-  }
-  return result;
+  const publishToPDS = deps.publishToPDS ?? publishAttestationToPDS;
+  return runSharedReviewPublishTick({
+    repo: deps.repo,
+    ownerDid: deps.did,
+    publish: (job, record) =>
+      publishToPDS(deps.publisher, job.ownerDid, record, job.rkey),
+    classifyError: classifyPublishError,
+    ...(deps.now !== undefined ? { now: deps.now } : {}),
+  });
 }

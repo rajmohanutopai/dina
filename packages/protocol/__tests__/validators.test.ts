@@ -19,6 +19,7 @@ import {
   validateServiceResponseBody,
   validateServiceOfferBody,
   validateServiceGrantRequestBody,
+  validateTalkMessageBody,
   validateFutureSkew,
   verifyMessageSignature,
   buildMessageJSON,
@@ -26,6 +27,23 @@ import {
   parseServiceListingUri,
   type Ed25519VerifyFn,
 } from '../src';
+
+describe('validateTalkMessageBody', () => {
+  it('accepts bounded text and an optional reply reference', () => {
+    expect(validateTalkMessageBody({ text: 'Hello\\nthere', in_reply_to: 'd2d-123' })).toBeNull();
+  });
+
+  it('rejects malformed, extra, empty, oversized, and display-spoofing input', () => {
+    expect(validateTalkMessageBody(null)).toBe('talk.message.v1 body must be an object');
+    expect(validateTalkMessageBody({ text: 'hello', extra: true })).toMatch(/unsupported field/);
+    expect(validateTalkMessageBody({ text: '  ' })).toBe('talk.message.v1 text is required');
+    expect(validateTalkMessageBody({ text: 'x'.repeat(8 * 1024 + 1) })).toMatch(/exceeds/);
+    expect(validateTalkMessageBody({ text: 'pay alice\u202Etxt.exe' })).toMatch(/unsafe control/);
+    expect(validateTalkMessageBody({ text: 'hello', in_reply_to: 'bad\nid' })).toMatch(
+      /in_reply_to/,
+    );
+  });
+});
 
 describe('parseMessageJSON (task 1.20)', () => {
   it('round-trips a buildMessageJSON output losslessly', () => {

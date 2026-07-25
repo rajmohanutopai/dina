@@ -153,6 +153,9 @@ describe('staging routes', () => {
       itemId: ingested.itemId,
       status: 'stored',
       personas: ['general', 'health'],
+      storedPersonas: ['general'],
+      pendingPersonas: ['health'],
+      failedPersonas: [],
     });
     // PLG-29 #3: Core-owned vault id (`stg-<stagingId>`), not the classifier `id`.
     expect(getVaultItem('general', `stg-${ingested.itemId}`)).not.toBeNull();

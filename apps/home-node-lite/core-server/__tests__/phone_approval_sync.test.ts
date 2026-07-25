@@ -1,6 +1,7 @@
 import {
   InMemoryWorkflowRepository,
   WorkflowService,
+  createFacadeActionApproval,
   createCodingGateApproval,
   getWorkflowService,
   remoteApprovalProposalId,
@@ -31,6 +32,24 @@ function createSourceTask(): string {
   });
   if (created.kind !== 'approval_required') throw new Error('source approval was not created');
   return created.taskId;
+}
+
+function createFacadeSourceTask(): string {
+  const created = createFacadeActionApproval({
+    action: 'talk',
+    agentDid: 'did:key:z6MkAgent',
+    sessionId: 'session-1',
+    requestId: 'talk-request-0001',
+    actionPayload: {
+      recipient_did: 'did:plc:bob',
+      body: { text: 'Can we speak tomorrow?' },
+    },
+    displayTitle: 'Send a message to Bob',
+    displayDetail: 'Can we speak tomorrow?',
+    nowMs: NOW,
+  });
+  if (created.kind !== 'created') throw new Error('facade source approval was not created');
+  return created.task.id;
 }
 
 function clientFor(decision: 'pending' | 'approved' | 'denied'): PhoneApprovalClient {
@@ -106,6 +125,37 @@ describe('phone approval synchronization worker', () => {
     });
     expect(result.denied).toBe(1);
     expect(getWorkflowService()?.store().getById(id)?.status).toBe('cancelled');
+    expect(minted).toHaveLength(0);
+  });
+
+  it('mirrors exact facade action copy and approves it without minting a coding permit', async () => {
+    const id = createFacadeSourceTask();
+    const request = jest.fn(async (_method, _path, body) => {
+      const wire = body as Record<string, unknown>;
+      expect(wire).toMatchObject({
+        source_task_id: id,
+        proposal_type: 'facade_action',
+        action: 'talk',
+        tool_name: 'dina_talk',
+        display_title: 'Send a message to Bob',
+        display_detail: 'Can we speak tomorrow?',
+      });
+      return {
+        status: 201,
+        body: {
+          proposal_id: remoteApprovalProposalId(PHONE_CLIENT_DID, id),
+          decision: 'approved',
+        },
+      };
+    });
+
+    const result = await runPhoneApprovalSyncTick({
+      client: { did: PHONE_CLIENT_DID, request },
+      nowMs: NOW,
+    });
+
+    expect(result.approved).toBe(1);
+    expect(getWorkflowService()?.store().getById(id)?.status).toBe('queued');
     expect(minted).toHaveLength(0);
   });
 

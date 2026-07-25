@@ -2,7 +2,11 @@
 
 ## Functional & Technical Specification, v1 — full functionality (July 2026)
 
-**Status:** Design. Build starts when the Jiffy release ships (§22).
+**Status:** Implemented developer preview. The Home Node Lite runtime, automatic
+coding-agent enrollment, Claude Code and Codex packages, and all nine tool
+surfaces are implemented. Public native-release/marketplace publication, automatic
+phone-to-HNL continuity, and multi-phone approval routing remain release work
+(§22).
 **Owner:** Rajmohan H
 **One line:** Your Dina — the whole of her — available inside the agent you already use.
 **Scope of this document:** the **complete** developer surface. Every Dina functionality
@@ -27,6 +31,18 @@ coding agent, plus publish/consume and cross-Dina D2D. The four-density order in
 > **Platform-fact caveat.** Every Claude Code / Codex mechanism cited (hook I/O, matchers, MCP
 > resources vs Tool Search, marketplace schema, Codex hooks) moves fast and MUST be re-verified at
 > build time. Where a claim is load-bearing, the design works regardless of how the detail resolves.
+
+### As-built snapshot (2026-07-25)
+
+| Area | Current state |
+| --- | --- |
+| Home Node lifecycle | Source-free native install/start/ensure/stop/status/logs/uninstall, encrypted backup/restore, manifest-verified upgrade, and rollback are implemented in `dina-agent`. |
+| Enrollment | First install automatically creates a separate revocable `coding`-scoped `did:key`; no owner or one-time pairing capability is printed or persisted by the installer. |
+| Identity | HNL can start immediately with a local `did:key`. Passing `--pds-handle` provisions or rehydrates the owner's `did:plc` for public Services and PeerLens. Existing mobile identity/data can be moved manually with the same recovery phrase plus a `.dina` archive; automatic phone-to-HNL continuity is not implemented. |
+| Host adapters | Claude Code and Codex plugin packages contain MCP, skills, lifecycle hooks, and catch-all local tool gates. Host-mediated enforcement limits remain disclosed in each README. |
+| Nine surfaces | Remember, Ask, reminders, Task/delegation, Talk, PeerLens, security, approvals, and Services are exposed through narrow Core-owned routes and the coding MCP profile. |
+| Network publishing | Services and PeerLens use the owner's PDS and deployed AppView. Their writes are durable and retried; a `did:plc`/PDS configuration is required. |
+| Distribution | Local package validation passes. Platform-specific native release archives and marketplace entries still need to be published from a release commit before a source-free external install can work. |
 
 ---
 
@@ -114,10 +130,12 @@ contact attaches to the single `did:plc`, whichever of your agents acted.
 
 - **3.1 First install** — the plugin auto-bootstraps a local Core and enrols via a single-use
   capability (§8). Core owns identity; the plugin asks it "who am I?" and gets a DID **immediately** —
-  reuse the phone's `did:plc` if paired, use Core's existing identity, or Core mints a fresh one on the
-  spot (§8). Identity is foundational (the gate signs with it, D2D needs it), so first-run **never
-  blocks on picking a public handle** — that's asked for only at first publish (§8/§17). You can start
-  using it the second it's up.
+  use Core's existing identity, provision/restore a `did:plc` when
+  `--pds-handle` is supplied, or mint a local `did:key` on the spot (§8).
+  Identity is foundational (the gate signs with it, D2D needs it), so a
+  local-only first run can start immediately. Public Services and PeerLens
+  require selecting/restoring the handle during install; automatic
+  first-publish prompting is not implemented.
 - **3.2 Second agent (same person)** — a second Claude Code or the CLI discovers the running Core
   and enrols under the same identity; shared vaults, no new identity.
 - **3.3 Pair the phone** — `/dina:pair-phone` establishes an authenticated laptop-Core↔phone channel
@@ -252,71 +270,57 @@ each **before** the plugin rides it:
 for how the plugin's admin-less path and `agent_scope` attach; and the services publish/find paths —
 see §17 for the durable-publish and search-façade corrections (COLD-5/COLD-7).
 
-**What v1 must BUILD (not a repackaging — DPD-001/004/006/007/008/009/011):**
+**What v1 required, with current implementation status
+(DPD-001/004/006/007/008/009/011):**
 
-1. **Core-owned classifier + payload-bound permit** — Core takes the raw `(tool_name, tool_input)`,
-   maps it to a risk action itself, and returns a single-use permit bound to the payload
-   hash/session/tool-call-id/expiry, verified at the execution seam (§12). Today
-   `/v1/agent/validate` trusts a caller-supplied `action` (`intent.ts:255-281`) and returns an
-   unbound verdict — insufficient for an untrusted forwarder.
+1. **Core-owned classifier + payload-bound permit — implemented.** Core takes
+   the raw `(tool_name, tool_input)`, maps it to a risk action, and binds
+   approvals to the exact payload/session/tool-call identity. The host hook
+   forwards raw calls; it does not choose the policy action.
 2. **Agent-safe memory-ingress + Core-mediated ask.** Implemented for the coding-agent P0:
    `POST /v1/agent/memory` is session-bound, persona-gated, and provenance-stamped; Core's
    `/api/v1/ask` adapter forwards an authenticated DID/session DTO to loopback Brain and enforces
    requester + session ownership on status. These are dedicated façades — agents are not widened
    onto raw vault writes or given Brain credentials.
-3. **The missing MCP tools** — `mcp_server.py` lacks `dina_recall`/`dina_vaults`; persona/vault
-   listing (`/v1/personas`, `authz.ts:92`) excludes `agent`.
+3. **Coding MCP profile — implemented.** `dina_ask`, `dina_vaults`,
+   `dina_reminders`, Services, PeerLens, Talk, delegation, validation, audit,
+   and PII tools call dedicated agent-safe façades. Raw persona/vault routes
+   remain closed to coding agents.
 4. **Durable session registry** — implemented: the registry is authenticated and caller-DID-bound,
    rejects unknown/foreign/ended/expired sessions, and revokes session grants/approvals on end
    (§15).
-5. **Laptop-Core↔phone approval transport** — Core is loopback-only; the phone needs an
-   authenticated channel (MsgBox/D2D) to observe + decide (§13).
-6. **PDS-backed bootstrap** — the workflow plane (thus MODERATE/HIGH validation) is wired only with a
-   `did:plc`/PDS identity (`boot.ts:443-456,520-542`; `intent.ts:313-318` → 503); provision `did:plc`
-   at bootstrap (§8/§9).
-7. **A catch-all gate + coverage tests** (§12, DPD-004) and **audit persistence on the validate
-   path** (§20, DPD-013).
-8. **Agent-facing surfaces for services / D2D / PeerLens / delegate — mostly NEW Core work, not
-   wrappers.** Only `dina_publish_service` and `dina_invoke_service` are thin: they reuse the existing
+5. **Laptop-Core↔phone approval transport — implemented for one phone.**
+   MsgBox carries sealed approval cards and signed decisions. Multi-phone
+   routing remains deferred (§13).
+6. **PDS-backed network identity — implemented as an explicit install
+   option.** `dina home-node install --pds-handle ...` provisions or
+   rehydrates `did:plc` and enables public Services/PeerLens. A no-handle HNL
+   deliberately remains local `did:key`; automatic first-publish prompting and
+   automatic phone identity reuse are not implemented.
+7. **Catch-all gates, coverage tests, and audit persistence — implemented.**
+   Claude Code and Codex have separate host adapters and explicitly document
+   paths the host does not expose to hooks.
+8. **Agent-facing Services / D2D / PeerLens / delegation — implemented as
+   Core façades, not broad wrappers.** `dina_publish_service` and
+   `dina_invoke_service` reuse the existing
    service-config PUT + `service.query` D2D routes, gated by a **specific** agent authz row (§14), not
-   a prefix-wide grant. Every other network surface needs a dedicated Core façade:
-   - **Service discovery (NEW-01)** — `dina_find_service` has **no Core route to wrap**:
-     `core_server.ts` registers service-config/query/response only, and Core's `searchServices` is an
-     empty stub (`wire_workflow_plane.ts:226-228`); the real AppView search lives in **Brain**
-     (`brain/src/appview_client/http.ts:287`). Build a **Core-owned, agent-authorized AppView search
-     façade** (input validation, bounded results, metadata audit, defined failure behaviour) — never
-     hand the plugin Brain or the AppView origin directly.
-   - **Talk / D2D (NEW-03)** — the generic send route is unsafe for an agent caller:
-     `/v1/msg/send` (`d2d_msg.ts:39-73`) accepts a caller-selected recipient, message type, and body,
-     and forwards **no** `dataCategories` (`home-node/src/send_d2d.ts:76-87`), so the egress sharing
-     gate checks `[]` and allows it (`d2d/send.ts:154-160`, `d2d/gates.ts:214-221`). Build a
-     **dedicated `dina_talk` Core façade** that pins the message type/schema (§17). Authorization is
-     the **contact gate + the contact's sharing policy — there is no service grant** for plain Talk.
-     Note the honest limit: free text cannot be reliably auto-classified, and the sharing gate denies
-     only categories **exactly** in the contact's restricted set (default `health`/`financial`/
-     `medical_record`, `d2d/gates.ts:40`), so a constant category label would silently pass sensitive
-     text. So the façade does **not** claim payload-derived category protection — it stamps a single
-     disclosed `message_text` category and gates all agent-authored free-text Talk at a fixed,
-     **non-session-scopable MODERATE** (a fresh per-message phone approval, §12.2), so the human sees
-     recipient + text before it leaves. Agents are **not** authorized for generic `/v1/msg/send`.
-   - **PeerLens (F-06)** — there is **no routed, credentialed, durable Core review façade**, though a
-     **low-level Core attestation publisher does exist**: `peerlens/pds_publish.ts:374-424` validates
-     and publishes `com.dinakernel.peerlens.attestation` records **to the owner's PDS** (the AppView
-     then indexes and serves them — the PDS, not the AppView, is the write target). The
-     `com.dinakernel.peerlens.attestation` record **is** the structured review (`subject`, `category`,
-     `sentiment`, `createdAt`; there is no `rating` field — `protocol/src/peerlens/types.ts:92-112`);
-     only the service-profile publisher excludes review support (`brain/src/pds/publisher.ts:25-26`),
-     and search lives in Brain's AppView client. So `dina_review`/`dina_peerlens` need **Core-owned**
-     read + attestation-publication façades (schema-valid attestation input, PDS signing/session,
-     an outbox with durable retry, agent authz, gating, metadata audit) over that low-level publisher
-     — otherwise an implementer bypasses Core or gets handed PDS credentials, breaking the key boundary.
-   - **Delegation (F-07 / NEW-04)** — an agent may claim/complete workflow tasks but **must not** reach
-     the generic create endpoint, which forwards caller-chosen kind/origin/initial-state/policy/runner/
-     payload (`workflow.ts:252`) — widening it would let an untrusted agent inject arbitrary
-     control-plane tasks. Build a **dedicated Core delegation façade** that stamps kind/origin/agent
-     identity/initial-state in Core, validates the target runner and a bounded payload, and requires
-     the classifier permit; generic workflow creation stays closed to agents. This façade constrains
-     **what** is delegated; it does **not** enforce the delegated agent's **downstream** side effects —
+   a prefix-wide grant. Every other network surface uses a dedicated Core façade:
+   - **Service discovery (NEW-01)** validates and bounds search in Core, then
+     calls the shared Brain/AppView adapter. The plugin receives neither Brain
+     credentials nor the AppView origin.
+   - **Talk / D2D (NEW-03)** pins `talk.message.v1`, the recipient, and the exact
+     text in an idempotent owner-approval task. It stamps the disclosed
+     `message_text` category; agents remain unauthorized for generic
+     `/v1/msg/send`.
+   - **PeerLens (F-06)** validates the structured attestation, stamps
+     `createdAt` and `isAgentGenerated`, obtains owner approval, and persists a
+     fenced publish job before writing to the owner's PDS. Search is a bounded
+     Core projection over AppView.
+   - **Delegation (F-07 / NEW-04)** stamps kind/origin/agent
+     identity/initial-state in Core and validates the target runner and bounded
+     payload; generic workflow creation stays closed to coding agents. This
+     façade constrains **what** is delegated; it does **not** enforce the
+     delegated agent's **downstream** side effects —
      today the runner path is cooperative (`dina validate` is voluntary and bypassable,
      `AGENT_CONTROL_PLANE.md:2642-2648`; `agent_daemon.py:139-145` runs the runner directly). Enforced
      downstream gating needs a runner-side PEP + payload-bound execution permits (new work, §17); until
@@ -339,28 +343,40 @@ asks Core "who am I?" and gets back the sovereign DID. Three first-run cases:
 2. **No phone, Core already has an identity → use it.**
 3. **Brand-new, no phone → Core mints a fresh identity right there.** Phone optional, added later.
 
-**Implemented preview boundary.** The Claude plugin package does not yet spawn or own the Home Node
-Lite lifecycle, so the zero-prompt target above is not the current install path. Today the owner starts
-Home Node Lite with the source installer, opens its loopback owner console, and mints a five-minute,
-single-use coding-scope setup code before installing the fail-closed hook. No admin-issued code is
-required once the node is running. The phone-approval bridge links that Home Node to mobile for owner
-decisions; it does not merge their identities. Mobile remains reachable at its canonical `did:plc`,
-while the coding agent and the laptop approval client each use separate, revocable paired `did:key`
-devices (§13.1). Distribution that downloads, launches, upgrades, and supervises Home Node Lite
-without a source checkout remains outside this preview.
+**Implemented preview boundary.** `dina-agent` now owns a source-free native lifecycle for Home Node
+Lite. It downloads one platform/architecture release archive containing bundled Core, Brain, the
+offline archive tool, a matching Node runtime, and the matching native SQLCipher binding. It rejects
+unsafe archive entries, verifies the manifest's SHA-256 inventory, installs the release read-only,
+generates an isolated Brain service key, serializes lifecycle operations, starts a small native
+supervisor, waits for both health endpoints, and preserves encrypted data on ordinary uninstall. A
+destructive `--purge-data` additionally removes local coding-agent credentials only when an
+installer-owned receipt, current config, and current signing key still identify that exact Home Node;
+ordinary uninstall never removes them.
+
+The supervisor restarts Core or Brain after a process crash while it is running. It is not an OS
+login/startup service in V1. Claude and Codex `SessionStart` hooks call
+`dina home-node ensure --if-installed`, which starts an installed Home Node when the agent begins a
+session. Release changes use an explicit upgrade with a consistent private data snapshot and automatic
+failed/interrupted-candidate rollback. Release archives still need to be published for every supported
+platform. The current verifier proves that extracted files match the downloaded manifest, while HTTPS
+protects the GitHub download; a separate publisher signature/attestation check is not implemented and
+must not be claimed. The phone-approval bridge links this Home Node to mobile for owner decisions; it
+does not merge their identities. Mobile remains reachable at its canonical `did:plc`, while the coding
+agent and laptop approval client each use separate, revocable paired `did:key` devices (§13.1).
 
 **The DID is created immediately in every case — it is FOUNDATIONAL, not deferred.** The gate signs its
 decisions with it, Dina-to-Dina (D2D) needs it, and your own agents address each other by DID. So
 identity exists from the first second: a `did:key`/local identity backs the approval plane at once,
 upgraded to `did:plc` in the same first-run. Nothing about _having_ an identity waits.
 
-**Only the public HANDLE is lazy.** A human-readable handle — Login-with-Bluesky or pick-a-name; policy
-**forbids auto-deriving one** (`identity/provision_pds.ts:81-99`) — is the _naming_ layer on top of the
-DID. You need it only when **others must find you**, i.e. to **publish a service or post a PeerLens
-review**. So first-run **never blocks on a handle**: the DID exists, own-agent + D2D work immediately,
-and the plugin asks for the handle **only at first publish** (§17). This is the resolution of the former
-open question — identity is foundational; the handle is the deferred _naming_ step, not a gate on
-starting.
+**Only the public HANDLE is optional for local-only use.** A human-readable
+handle — Login-with-Bluesky or pick-a-name; policy **forbids auto-deriving
+one** (`identity/provision_pds.ts:81-99`) — is the naming layer on top of the
+DID. You need it when **others must find you**, i.e. to publish a service or
+post a PeerLens review. The as-built installer therefore accepts
+`--pds-handle` up front. Without it, local memory/gating still work, but public
+publication returns `not_configured`; there is no fake pending retry.
+First-publish prompting remains future UX, not current behavior.
 
 **Pairing-time signing (build decision).** When the phone pairs, the laptop Core must sign requests
 without you typing your seed. Two options: **(a)** copy the signing key to the laptop — simpler; **(b)**
@@ -368,34 +384,40 @@ give the laptop its **own child key the phone authorizes** — safer, **revocabl
 "each device its own revocable key" principle as F-03). Ship **(b)** eventually; **(a)** is acceptable
 for the earliest cut.
 
-**Zero-prompt enrolment target — the authority problem, and its residual limit (DPD-005, F-03).**
+**Zero-prompt enrolment — the authority problem, native implementation, and residual limit
+(DPD-005, F-03).**
 `/v1/pair/initiate` is admin-only (`authz.ts:100-104`) and Lite has no admin key by default
 (`boot.ts:235-245`), so a bare agent cannot initiate pairing — and a public `initiate`, or a standing
 admin key in the plugin, would let any co-resident process self-enrol. v1 uses a **single-use
-bootstrap capability**: the plugin spawns Core, and Core hands the enrolment token to the plugin over
-a **process-bound handoff** — an inherited anonymous pipe/descriptor between the verified parent
-(plugin) and child (Core), with atomic single-use redemption — **not** merely a `0600` file. A
-`0600` file would NOT close the hole: `0600` excludes other OS _users_ but not other _processes
-running as you_, so a same-UID process could race to read and redeem a file-based token and self-enrol
-(the identical same-UID limitation the seed file documents, `master_seed.ts:12-16`). **Honest residual
-limit:** even a process-bound handoff cannot fully defeat a same-UID attacker that has already
-compromised the plugin process itself — so this is defense against _unrelated_ co-resident processes,
-not against a compromised agent (which §16 already treats as in-scope and not defeated on one
-machine). Specify the lock-file race, how a _subsequent_ same-machine agent enrols (no token →
-owner-approved pair), and revocation. **This — not localhost — is the who-may-enrol boundary, within
-the stated same-UID limit.**
+bootstrap capability**. The plugin-owned installer is already the process that created and owns the
+mode-0700 Home Node directory. After Core is healthy, it reads the owner capability directly from that
+private data directory, sends it only in memory to Core's loopback owner API, mints a five-minute
+single-use setup capability whose server-side intent fixes `role=agent, scope=coding`, and redeems it
+with a newly generated Ed25519 public key. Neither owner capability nor pairing capability appears in
+argv, environment variables, logs, or CLI config. The controller verifies through the owner API that
+the exact key was durably registered as a coding agent before publishing local config. If local
+persistence fails, it revokes that device; if the process dies after pairing but before config, a
+later run matches the retained local key DID against Core's coding-agent list and repairs config
+without minting duplicate authority.
 
-The Core half of this design is implemented by `deliverBootstrapCapability` and its inherited-FD
-handoff. The host-side launcher that spawns Core, receives the capability, and completes pairing is
-not in the Claude plugin yet. Until that exists, the preview deliberately uses an owner/admin-issued
-coding-scope setup code and is not zero-prompt.
+Automatic enrolment never replaces an existing CLI config. A compatible key is reused; an unrelated
+Home Node config fails with an explicit conflict and requires a separate `DINA_CONFIG_DIR` or an
+explicit owner decision. `--no-enroll` keeps installation lifecycle-only, and
+`dina home-node enroll-agent` is the explicit recovery path.
+
+**Honest residual:** mode 0700/0600 protects against other OS users, not another compromised process
+running as the same user. Such a process can read the private Home Node directory, including bootstrap
+authority and local keys. Stronger separation requires a distinct OS account, sandbox, non-exportable
+OS-keystore credential, or phone-held key. Loopback is only transport exposure; the owner capability
+plus single-use ceremony is the HTTP authorization boundary, and same-UID filesystem ownership is the
+local bootstrap boundary in V1.
 
 **Keys at rest — honest posture (DPD-002/003).**
 
 - **Same-UID compromise is in scope and not defeated by file mode.** `0600` excludes other OS
   _users_, not other _processes as you_; the seed file grants the seed to anyone with filesystem read
   (`identity/master_seed.ts:12-16`). A compromised agent/dependency running as you can read the
-  convenience-mode seed **and** the agent key. Strong mitigation = OS account/container/sandbox, a
+  convenience-mode seed **and** the agent key. Strong mitigation = OS account/sandbox, a
   non-exportable OS-keystore credential, or the **phone-held-key** variant. Ship the laptop-keyholder
   model, **name this in the README**, and do not claim same-user process isolation.
 - **Never log the mnemonic.** Fixed: first boot writes the recovery phrase to a `0600` file and logs
@@ -403,10 +425,19 @@ coding-scope setup code and is not zero-prompt.
   wired through boot (`master_seed.ts:18-25`) — keep it marked unavailable until implemented and
   tested.
 
-**Target lifecycle.** Spawn (loopback); provision `did:plc`; deliver the bootstrap token through the
-inherited FD; write a lock/handle file (`core.lock`: port+pid) for discovery; idempotent. The Core
-primitives exist, but the plugin-owned launcher/discovery lifecycle remains product work. **Not**
-`DINA_DEBUG_MODE` (a test-only owner-bypass that refuses production endpoints).
+**Lifecycle status and remaining target.** The source-free install/start/stop/status/logs/uninstall
+controller is implemented in `dina-agent`; its install state and advisory lock replace a raw
+`core.lock`, while a supervisor token, heartbeat, verified process command, and health endpoints are
+the runtime authorities rather than a stale PID. The installed release includes its matching Node
+runtime and native SQLCipher ABI. Automatic first-agent enrollment uses the same-UID private-directory
+boundary above. Every installation has distinct private code, runtime, key, log, and data paths.
+Upgrade snapshots the stopped data directory, health-checks both candidate services, and restores the
+prior release and data after a failure or interruption. `did:plc` provision/rehydration is implemented when install
+receives `--pds-handle`. Remaining: public native release availability and automatic continuity
+with an already-running phone Dina. Manual continuity is supported by restoring
+the same recovery phrase/handle and importing the phone's encrypted `.dina`
+archive. **Not** `DINA_DEBUG_MODE` (a test-only
+owner-bypass that refuses production endpoints).
 
 ---
 
@@ -480,9 +511,9 @@ footprint under current behaviour; keep descriptions terse. Confirm at build.
 
 ## 11. Enrolment & auth
 
-Enrolment uses the pairing ceremony via the **single-use bootstrap capability** (§8), not an
-admin-less `initiate`. The plugin registers an Ed25519 key → a `did:key` device under the one
-`did:plc` root. Every plugin→Core call is signed (canonical
+Enrolment uses the pairing ceremony via a **single-use owner-minted capability** (§8), not an
+admin-less `initiate`. The plugin registers an Ed25519 key → a `did:key` device under the Home Node
+identity. Every plugin→Core call is signed (canonical
 `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}` + `X-DID/X-Timestamp/X-Nonce/
 X-Signature`, ±5-min, nonce-replay-after-signature, per-DID rate limit), even over localhost. **The
 signed key is the wire boundary; the enrolment capability is the who-may-enrol boundary; neither is
@@ -503,14 +534,12 @@ pin that a client-asserted scope cannot escalate, without changing the canonical
 format.
 
 **Where the scope is stamped — on the PRIMARY enrolment path, not just `/v1/pair/initiate` (COLD-10).**
-The plugin's first-install path does **not** traverse `/v1/pair/initiate` (admin-only, and Lite ships
-without an admin key so it 403s — `authz.ts:104`, `core-server/boot.ts:236-237`); it redeems the
-single-use **bootstrap capability** over the process-bound handoff (§8). So Core must stamp
-`agent_scope='coding'` **at capability redemption** — the bootstrap capability itself carries the scope
-Core assigns (Core is the enrolling authority there, mirroring the initiate-time seam), written to the
-device record in the same transaction that creates it. The `/v1/pair/initiate` path (a later
-admin-driven device) stamps at initiate. Either way the completing device never picks its own scope, and
-no device record is created without a scope.
+The plugin's first-install path does **not** traverse public/admin-less `/v1/pair/initiate`. It calls
+the owner-authorized `/v1/owner/setup/coding-agent` route, which creates a single-use pairing intent
+with server-fixed `role='agent'` and `scope='coding'`; `/v1/pair/complete` reads those values from the
+intent and ignores client role/scope claims. The inherited-FD direct-spawn path stamps the same values.
+Either way the completing device never picks its own scope, and no coding device is created without
+owner-authorized scope.
 
 **Durable scope state (implemented).** `paired_devices.scope`, the registry/repository projection,
 pairing-intent binding, signed-request derivation, and route enforcement are wired. This project is
@@ -751,10 +780,9 @@ crashes cannot silently orphan the normal lifecycle path.
 
 ## 14. The MCP surface — memory, and the other functionalities (DPD-007)
 
-`dina mcp-server --profile coding` is the installed Claude P0 surface. It uses dedicated signed Core
-façades for memory, Ask, validation, and PII; it does not expose raw Brain or vault credentials.
-The broader v1 surface below remains the target contract, and rows not present in the P0 MCP server
-must not be described as shipped:
+`dina mcp-server --profile coding` is the installed Claude/Codex surface. It
+uses dedicated signed Core façades and does not expose raw Brain, PDS, or vault
+credentials. Every row below is implemented in the coding profile:
 
 | Tool                                     | Backing (new/existing)                                                                                                                       | Purpose                          |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
@@ -762,13 +790,13 @@ must not be described as shipped:
 | `dina_remember`                          | `POST /v1/agent/memory` (P0 implemented)                                                                                                     | write memory as an agent         |
 | `dina_recall`/`dina_ask`                 | Core-mediated ask into Brain (P0 implemented), persona-enforced                                                                              | read across permitted vaults     |
 | `dina_ask_status`                        | poll an async/approval-gated ask (`GET /api/v1/ask/:id/status`), requester-owned                                                             | fetch a pending answer           |
-| `dina_vaults`                            | agent-safe listing (new authz path)                                                                                                          | what memory exists               |
-| `dina_reminders`                         | existing reminder store, **scoped** agent authz (read own surfaced reminders only — not the mutation/global-pending routes)                  | surface auto-reminders           |
+| `dina_vaults`                            | `POST /v1/agent/vaults`, metadata/access projection only                                                                                     | what memory exists               |
+| `dina_reminders`                         | `POST /v1/agent/reminders`, session-derived readable personas only — not mutation/global-pending routes                                      | surface auto-reminders           |
 | `dina_publish_service`/`_invoke_service` | existing service-config PUT + `service.query` (§17); **specific** agent authz rows                                                           | publish/call a service           |
-| `dina_find_service`                      | **new Core AppView-search façade** (§17, NEW-01) — no Core search route today                                                                | discover services                |
-| `dina_talk`                              | **new Core `dina_talk` façade** (§17, NEW-03) — pins type; per-call phone approval, **not** session-scopable; **not** generic `/v1/msg/send` | message another Dina             |
-| `dina_review`/`dina_peerlens`            | **new Core-owned PeerLens façades** (§18, §7-item-8) over the low-level attestation publisher                                                | write/read trust                 |
-| `dina_delegate`                          | **new Core delegation façade** (§17, §7-item-8) — not the generic create route                                                               | hand a task to an external agent |
+| `dina_find_service`                      | Core-owned bounded Brain/AppView-search façade (§17, NEW-01)                                                                                 | discover services                |
+| `dina_talk`                              | Core façade that pins type/text/recipient; per-call phone approval; **not** generic `/v1/msg/send`                                           | message another Dina             |
+| `dina_review`/`dina_peerlens`            | Core-owned durable PDS-write and bounded AppView-read façades (§18)                                                                          | write/read trust                 |
+| `dina_delegate`                          | Core delegation façade that stamps the task envelope; not generic create                                                                    | hand a task to an external agent |
 | `dina_status`                            | `/healthz` + local `did`                                                                                                                     | reachability                     |
 
 Sensitive/locked reads pass `requireAgentPersonaAccess` (approval without reading). Reads are
@@ -802,14 +830,14 @@ route would deny a retained principal):
 | `dina_remember`             | `POST /v1/agent/memory` (P0 implemented)                                 | agent[coding]                               | session-bound, provenance-stamped; persona-gated                                                              |
 | `dina_recall`/`dina_ask`    | `POST /api/v1/ask` (Core-mediated)                                       | agent[coding, runner], device, admin, brain | persona-enforced; no raw Brain                                                                                |
 | `dina_ask_status`           | `GET /api/v1/ask/:id/status` (route-template, NEW-16)                    | agent[coding, runner], device, admin, brain | **requester-owned**: an agent caller must match the ask's `requesterDid` **+ bound session** or 404           |
-| `dina_vaults`               | `GET /v1/personas` (new agent[coding] row)                               | agent[coding], admin, brain, device         | listing only                                                                                                  |
-| `dina_reminders`            | `GET /v1/agent/reminders` (**new** scoped route)                         | agent[coding]                               | personas derived **in-handler** from the session, never a caller `?persona=`; **not** `/v1/reminders/pending` |
+| `dina_vaults`               | `POST /v1/agent/vaults` (**new** scoped route)                           | agent[coding]                               | metadata/access projection only; no contents, descriptions, or runtime-open state                            |
+| `dina_reminders`            | `POST /v1/agent/reminders` (**new** scoped route)                        | agent[coding]                               | personas derived **in-handler** from the session, never a caller `?persona=`; **not** `/v1/reminders/pending` |
 | `dina_publish_service`      | `PUT /v1/service/config/:rkey` (route-template)                          | agent[coding], brain, admin                 | own listings; **no** DELETE                                                                                   |
 | `dina_invoke_service`       | `POST /v1/service/query`                                                 | agent[coding], brain, admin                 | outbound query only                                                                                           |
 | `dina_find_service`         | `POST /v1/agent/service/search` (**new** façade)                         | agent[coding]                               | bounded results; validated input                                                                              |
 | `dina_talk`                 | `POST /v1/agent/talk` (**new** façade)                                   | agent[coding]                               | pinned type (§17); **not** `/v1/msg/send`                                                                     |
 | `dina_review`               | `POST /v1/agent/peerlens/attest` (**new** façade)                        | agent[coding]                               | schema-valid attestation; Core stamps `createdAt`                                                             |
-| `dina_peerlens`             | `GET /v1/agent/peerlens/search` (**new** façade)                         | agent[coding]                               | AppView read proxy                                                                                            |
+| `dina_peerlens`             | `POST /v1/agent/peerlens/search` (**new** façade)                        | agent[coding]                               | session-bound AppView read proxy with bounded JSON filters                                                     |
 | `dina_delegate`             | `POST /v1/agent/delegate` (**new** façade)                               | agent[coding]                               | stamped fields; bounded payload                                                                               |
 | `dina_session_start`/`_end` | `POST /v1/session/start`, `POST /v1/session/end` (**new** registry, §15) | agent[coding, runner], brain, admin, device | caller-DID-bound; end only own session                                                                        |
 | existing                    | `POST /v1/agent/validate`, `GET /v1/intent/proposals/:id/status`         | agent[coding, runner], brain, admin, device | validate + proposal status (status is caller-owned, NEW-14)                                                   |
@@ -1333,63 +1361,49 @@ general audit-query capability.
 
 ## 21. Build sequencing (engineering milestones)
 
-Foundation: (1) stop logging the mnemonic; decide wrapped-seed. (2) PDS-backed bootstrap + single-use
-enrolment capability + lock-file/second-agent handling. (3) Core-owned classifier + coding action
-keys + payload-bound permit + classification-only mode. (4) catch-all **command** hook via a
-**supervisor that normalizes every _child_ failure to exit 2** (missing gate binary/crash/signal/exit-1/
-timeout → block), gate deadline < host hook timeout; coverage/escape tests + **two conformance classes**
-  — child-gate failures must block (exit 2), and **supervisor-self failures (launch/crash/hang/
-  host-timeout) demonstrate + document the fail-open residual**, blocking only with an independent
-  deny-by-default host enforcement — so the suite does **not** assert an unconditional fail-closed gate
-  (command-only enforcement — HTTP fails open; §10,
-NEW-27). (5) agent memory surface (ingress,
-Core-mediated ask **with a Core-owned persona PEP + Core-minted typed-origin vault capability enforced
-at the storage seam** — `requireAgentPersonaAccess` on the agent-Ask read path, DID/session-bound;
-remove Brain's ambient vault authority so **every** out-of-process Brain read (query/item/list/subjects)
-**and mutation** (store, delete, and the indirect `staging resolve` + `people` link paths) presents a
-read/write capability bound to `{origin_kind ∈ agent_ask|owner_request|service_task|staging_item,
-persona, target/payload hash, expiry, session?, single-use}`, verified + consumed at the storage seam,
-gated per origin by the **origin×operation matrix** before minting (with Core deriving the staging
-source-kind from the authenticated ingress route, never Brain's `source`); audit the complete
-Brain-authorized surface + a coverage test that no Brain route touches storage without a capability;
-test that Brain cannot forge `user_remember`/owner-direct; remove dormant store-batch/kv authz rules
-(§14, NEW-20…25); listing, tools). (6)
-durable session registry + revoke-on-end. (6b) **authz narrowing + agent scope (§14)** — add an
-authenticated `agent_scope` (`coding`|`runner`) fixed by the pairing **initiator** and **derived
-server-side** by Core from the device DID (never a client claim, no new caller type), scope the coding
-plugin to exactly the MCP table, remove broad `agent` from the five prefixes + vault/query, rewrite the
-runner surface (and the suffix rules) as method + single-`:id`-segment templates, add the route-template
-matcher, and object-level ownership on proposal/ask status; positive-principal, coding-scope-denial, and
-nested near-miss tests. (7) laptop-Core↔phone MsgBox approval + versioned pairing +
-signed decisions (**owner pairing/revocation and stale-card cleanup implemented; multi-phone routing
-is deferred, §13.1**). (8) audit persistence + tests. Then, in order: (9) services — thin publish/invoke
-authz **plus a new Core find-service (AppView-search) façade** (route, validation, bounded results,
-agent authz, audit) + marketplace/CI + README/demo; (10) Codex host; (11) **new Core façades** for
-Talk (`talk.message.v1` family + `POST /v1/agent/talk`) and delegation (`POST /v1/agent/delegate`),
-each with route, schema, authz, gating, audit, and conformance tests — not wrappers; (12) **new Core
-PeerLens façades** (attest write + search read) + trust.
+The implementation sequence has completed through the developer-preview
+surface:
+
+1. Home Node installer/supervisor, secret-safe first boot, automatic enrollment,
+   lifecycle recovery, portable backup/restore, and rollback-safe upgrades.
+2. Durable sessions, scoped agent identities, narrow route authorization,
+   Core-owned tool classification, payload-bound approvals, and projected audit.
+3. Memory ingress, Core-mediated Ask, vault metadata, and reminder projections.
+4. Claude Code and Codex catch-all host adapters plus the shared coding MCP
+   profile.
+5. Service publish/find/invoke/status, including durable PDS publication.
+6. Owner-approved Talk and delegation façades.
+7. PeerLens search plus owner-approved durable PDS publication.
+
+Release sequencing is now: publish both Home Node images, publish
+`dina-agent>=0.20.0`, install-test from a machine without the repository,
+publish the Claude/Codex marketplace entries, and then add automatic
+phone-to-HNL identity/data continuity. Wrapped-seed mode, multi-phone approval,
+and OS-level same-UID isolation remain later hardening rather than hidden
+prerequisites.
 
 ---
 
 ## 22. Guards + open questions
 
-**Guards:** build begins when Jiffy ships; the listing says one thing; honesty gate on every claim;
-no in-process third-party code; Dina never touches money.
+**Guards:** the listing says only what the released image/CLI pair proves; no
+in-process third-party code; Dina never touches money; no marketplace claim is
+enabled before a clean-machine source-free acceptance test.
 
-**Open questions:** (1) Home Node distribution and lifecycle ownership (§8) — the owner console now
-handles subsequent coding-agent enrollment, but the plugin still does not install, launch, upgrade, or
-supervise Core; (2) multi-phone routing for the laptop-Core↔phone approval surface (§13.1); the sealed,
+**Open questions:** (1) automatic continuity with an existing mobile Dina:
+phone-authorized seed/data transfer versus the currently supported manual
+recovery-phrase + `.dina` archive path; (2) multi-phone
+routing for the laptop-Core↔phone approval surface (§13.1); the sealed,
 idempotent proposal/decision substrate, owner lifecycle controls, task sync, and mirror cleanup are
 implemented; (3) the Bash classifier (§12.3) — safe parsing +
 conformance tests; (4) same-UID posture (§16) — OS-keystore/sandbox vs. laptop-keyholder-with-caveat;
 (5) **Resolved as a model (§8), leaving one build detail:** identity is foundational — Core mints/uses a
 DID at first-run in all three cases, so first-run does **not** block on a handle; only _publishing_
-needs the human-readable handle, prompted at first publish (§17). The remaining choice is the
+needs the human-readable handle. Today it must be supplied at install with
+`--pds-handle`; first-publish prompting remains a UX follow-up (§17). The remaining choice is the
 **pairing-time signing key** — copy-to-laptop (simple, v0.1) vs. a phone-authorized **child key**
-(safer, revocable); ship the child key eventually; (6) the exact route shapes of the four new Core façades
-(find-service, `dina_talk`,
-PeerLens, delegation) — the per-tool `agent` authz rows are now specified (§14 table), so what remains
-is each façade's request/response contract, not _which_ rows; (7) enforced runner-side downstream
+(safer, revocable); ship the child key eventually; (6) live marketplace
+publication and schema validation for the implemented host packages; (7) enforced runner-side downstream
 gating for delegation (§17, NEW-04) — the PEP + execution-permit design that would move the downstream
 guarantee from cooperative to deterministic; (8) **the Brain→vault capability hardening (§14,
 NEW-20…25)** — this plugin depends on it (a compromised Brain must not read/mutate a persona vault), and
@@ -1397,8 +1411,8 @@ this doc **bounds** it (storage-seam invariant, typed-origin + `staging_item` mo
 matrix, read/write contracts), but the **complete per-pipeline minting spec** (owner/agent/connector/D2D
 → ingest → resolve, and the staging-record lifecycle) is a **separate Core-hardening effort** this doc
 requires as a dependency, not an inline enumeration — a genuine scoping boundary for the human to
-confirm; (9) Codex host surface (§18) and Claude hook/marketplace/MCP specifics (§10/§19) — re-verify at
-build, ship the marketplace/plugin CI gate.
+confirm; (9) release automation for platform-specific native Home Node
+archives and the corresponding marketplace versions.
 
 ---
 
@@ -1411,5 +1425,7 @@ once the host runs it (with the honest Claude-Code residual on supervisor-launch
 §10), an agent-safe memory surface, four new Core façades (find-service, `dina_talk`, PeerLens,
 delegation) with
 per-tool authz, a durable session registry, PDS-backed bootstrap with a safe enrolment capability, and
-a versioned laptop↔phone approval transport. Claims are held to what the code can support today; every
-platform fact is re-verified at build.*
+a versioned laptop↔phone approval transport. The developer-preview
+implementation now contains those façades, both host packages, and the HNL
+lifecycle. Release claims remain gated on public native archives, clean-machine
+installation, and marketplace acceptance tests.*

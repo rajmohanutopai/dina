@@ -26,10 +26,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.31.
  */
 
-import {
-  storedNotificationToWire,
-  wireToStoredNotification,
-} from '../notifications/repository';
+import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
 import { WorkflowConflictError } from './core-client';
 
@@ -97,7 +94,6 @@ import type {
   ServiceOfferView,
 } from './core-client';
 import type { QuarantinedMessage } from '../d2d/quarantine';
-
 
 // ---------------------------------------------------------------------------
 // DI abstractions — injected by the platform
@@ -365,9 +361,7 @@ export class HttpCoreTransport implements CoreClient {
     // Omit rkey ⇒ `self` compat route (single-listing back-compat).
     // Provide rkey ⇒ per-listing route, minting a distinct profile record.
     const path =
-      rkey !== undefined
-        ? `/v1/service/config/${encodeURIComponent(rkey)}`
-        : '/v1/service/config';
+      rkey !== undefined ? `/v1/service/config/${encodeURIComponent(rkey)}` : '/v1/service/config';
     await this.call<unknown>(
       'PUT',
       path,
@@ -379,9 +373,7 @@ export class HttpCoreTransport implements CoreClient {
 
   async serviceConfig(rkey?: string): Promise<ServiceConfig | null> {
     const path =
-      rkey !== undefined
-        ? `/v1/service/config/${encodeURIComponent(rkey)}`
-        : '/v1/service/config';
+      rkey !== undefined ? `/v1/service/config/${encodeURIComponent(rkey)}` : '/v1/service/config';
     const res = await this.callRaw('GET', path, undefined, undefined);
     if (res.status === 404) return null;
     return this.parseOk<ServiceConfig>(res, `serviceConfig(rkey=${rkey ?? 'self'})`);
@@ -495,15 +487,19 @@ export class HttpCoreTransport implements CoreClient {
       if (req.personaOpen !== undefined) body.persona_open = req.personaOpen;
     }
 
-    const raw = await this.call<{ id: string; status: string; personas?: string[] }>(
-      'POST',
-      '/v1/staging/resolve',
-      undefined,
-      body,
-      `stagingResolve(itemId=${req.itemId})`,
-    );
+    const raw = await this.call<{
+      id: string;
+      status: string;
+      personas?: string[];
+      stored_personas?: string[];
+      pending_personas?: string[];
+      failed_personas?: string[];
+    }>('POST', '/v1/staging/resolve', undefined, body, `stagingResolve(itemId=${req.itemId})`);
     const out: StagingResolveResult = { itemId: raw.id, status: raw.status };
     if (raw.personas !== undefined) out.personas = raw.personas;
+    if (raw.stored_personas !== undefined) out.storedPersonas = raw.stored_personas;
+    if (raw.pending_personas !== undefined) out.pendingPersonas = raw.pending_personas;
+    if (raw.failed_personas !== undefined) out.failedPersonas = raw.failed_personas;
     return out;
   }
 
@@ -714,8 +710,7 @@ export class HttpCoreTransport implements CoreClient {
     if (res.status === 409) {
       // Body parses via parseOk's helper but parseOk throws on non-2xx
       // — decode inline instead.
-      const text =
-        res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+      const text = res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
       let parsed: { error?: string; code?: string } = {};
       if (text !== '') {
         try {
@@ -735,8 +730,7 @@ export class HttpCoreTransport implements CoreClient {
       // throws unconditionally on non-2xx so this line NEVER returns.
       this.parseOk<unknown>(res, `createWorkflowTask(id=${input.id})`);
     }
-    const text =
-      res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+    const text = res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
     const raw = (text === '' ? {} : JSON.parse(text)) as {
       task?: WorkflowTask;
       deduped?: boolean;
@@ -751,18 +745,17 @@ export class HttpCoreTransport implements CoreClient {
 
   // ─── Workflow task state transitions ─────────────────────────────────
 
-  async approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask> {
+  async approveWorkflowTask(
+    id: string,
+    opts?: { scope?: 'single' | 'session' },
+  ): Promise<WorkflowTask> {
     const body: Record<string, unknown> | undefined =
       opts?.scope !== undefined ? { scope: opts.scope } : undefined;
     return this.workflowAction(id, 'approve', body);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {
-    return this.workflowAction(
-      id,
-      'cancel',
-      reason !== '' ? { reason } : undefined,
-    );
+    return this.workflowAction(id, 'cancel', reason !== '' ? { reason } : undefined);
   }
 
   async completeWorkflowTask(
@@ -776,11 +769,7 @@ export class HttpCoreTransport implements CoreClient {
     return this.workflowAction(id, 'complete', body);
   }
 
-  async failWorkflowTask(
-    id: string,
-    errorMsg: string,
-    agentDID = '',
-  ): Promise<WorkflowTask> {
+  async failWorkflowTask(id: string, errorMsg: string, agentDID = ''): Promise<WorkflowTask> {
     const body: Record<string, unknown> = { error: errorMsg };
     if (agentDID !== '') body.agent_did = agentDID;
     return this.workflowAction(id, 'fail', body);
@@ -800,9 +789,7 @@ export class HttpCoreTransport implements CoreClient {
       `${action}WorkflowTask(id=${id})`,
     );
     if (raw.task === undefined) {
-      throw new Error(
-        `HttpCoreTransport: ${action}WorkflowTask response missing task`,
-      );
+      throw new Error(`HttpCoreTransport: ${action}WorkflowTask response missing task`);
     }
     return raw.task;
   }
@@ -1213,15 +1200,32 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async getActionPolicy(): Promise<ActionPolicyResult> {
-    return this.call<ActionPolicyResult>('GET', '/v1/policy/actions', undefined, undefined, 'getActionPolicy');
+    return this.call<ActionPolicyResult>(
+      'GET',
+      '/v1/policy/actions',
+      undefined,
+      undefined,
+      'getActionPolicy',
+    );
   }
 
   async setActionRisk(action: string, risk: RiskLevel): Promise<ActionPolicyEntry> {
-    return this.call<ActionPolicyEntry>('PUT', `/v1/policy/actions/${encodeURIComponent(action)}`, undefined, { risk }, `setActionRisk(${action})`);
+    return this.call<ActionPolicyEntry>(
+      'PUT',
+      `/v1/policy/actions/${encodeURIComponent(action)}`,
+      undefined,
+      { risk },
+      `setActionRisk(${action})`,
+    );
   }
 
   async deleteActionOverride(action: string): Promise<void> {
-    const res = await this.callRaw('DELETE', `/v1/policy/actions/${encodeURIComponent(action)}`, undefined, undefined);
+    const res = await this.callRaw(
+      'DELETE',
+      `/v1/policy/actions/${encodeURIComponent(action)}`,
+      undefined,
+      undefined,
+    );
     if (res.status !== 204 && res.status !== 200) {
       throw new Error(`deleteActionOverride(${action}) failed: ${res.status}`);
     }
@@ -1281,14 +1285,15 @@ export class HttpCoreTransport implements CoreClient {
       try {
         parsed = JSON.parse(text);
       } catch {
-        throw new Error(
-          `HttpCoreTransport: ${ctx} returned non-JSON body (status ${res.status})`,
-        );
+        throw new Error(`HttpCoreTransport: ${ctx} returned non-JSON body (status ${res.status})`);
       }
     }
     if (res.status < 200 || res.status >= 300) {
       const err = (parsed as { error?: string } | undefined)?.error ?? 'no error field';
-      throw new CoreHttpError(`HttpCoreTransport: ${ctx} failed ${res.status} — ${err}`, res.status);
+      throw new CoreHttpError(
+        `HttpCoreTransport: ${ctx} failed ${res.status} — ${err}`,
+        res.status,
+      );
     }
     return parsed as T;
   }

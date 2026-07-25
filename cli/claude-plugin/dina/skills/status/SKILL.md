@@ -6,7 +6,7 @@ user-invocable: true
 
 Run `dina status` and report, in one short paragraph:
 
-- whether `dina --version` is at least 0.19.0 (older CLIs do not satisfy this
+- whether `dina --version` is at least 0.20.0 (older CLIs do not satisfy this
   plugin's hook/MCP contract),
 - whether the `dina` CLI is configured and paired to a Home Node (and over which transport),
 - whether Core is reachable,

@@ -82,7 +82,7 @@ wait_health() {
 wait_log() {
   local file="$1" pattern="$2" label="$3" tries="${4:-120}" i
   for i in $(seq 1 "$tries"); do
-    grep -q "$pattern" "$file" 2>/dev/null && return 0
+    grep -Eq "$pattern" "$file" 2>/dev/null && return 0
     sleep 0.5
   done
   fail "$label not observed: $pattern"
@@ -148,7 +148,9 @@ start_laptop() {
   LAPTOP_PID=$!
   wait_health "http://127.0.0.1:$LAPTOP_PORT" laptop
   wait_log "$WORK/laptop.log" '"step":"msgbox_connect","status":"ok"' 'laptop MsgBox subscription'
-  wait_log "$WORK/laptop.log" 'owner-phone approval synchronization enabled' 'phone approval worker'
+  wait_log "$WORK/laptop.log" \
+    'owner-phone approval synchronization (enabled|restored)' \
+    'phone approval worker'
 }
 
 [ -x "$PY" ] || fail "missing $PY"

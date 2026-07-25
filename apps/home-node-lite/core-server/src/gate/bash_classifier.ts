@@ -361,7 +361,7 @@ const PATTERN_FIRST_VERBS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack'
 
 /** Unambiguous secret FILENAMES. Common words (keyfile/credentials) are omitted. */
 const SECRET_NAMES_SRC =
-  String.raw`\.env\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|\.pypirc\b|\.dockercfg\b|id_(?:rsa|ed25519|ecdsa|dsa)\b|wrapped_seed|recovery-phrase|pds_identity|authorized_keys`;
+  String.raw`\.env\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|\.pypirc\b|\.dockercfg\b|id_(?:rsa|ed25519|ecdsa|dsa)\b|wrapped_seed|recovery-phrase|show-recovery-phrase|owner[_-]capability|show-owner-capability|pds_identity|authorized_keys`;
 /** A secret name inside a QUOTED string (awk `ARGV[1]="…"`, `getline < "…"`). */
 const SECRET_QUOTED = new RegExp(`["'][^"']*(?:${SECRET_NAMES_SRC})`, 'i');
 /** A secret name read/written by a sed `r`/`w`/`R`/`W` file command. The `r`/`w`
@@ -541,6 +541,11 @@ function worse(a: RiskLevel, b: RiskLevel): RiskLevel {
 export function classifyBashCommand(input: BashClassifyInput): BashClassification {
   const cmd = input.command.trim();
   if (cmd === '') return blocked('empty command');
+  if (
+    /\bdina\s+home-node\s+(?:show-owner-capability|show-recovery-phrase)\b/i.test(cmd)
+  ) {
+    return blocked('command reveals Home Node owner or recovery authority');
+  }
 
   const tok = tokenizeBash(cmd);
   if (tok.parseError) return blocked('unparseable (unbalanced quotes)');

@@ -79,6 +79,19 @@ export {
   subscribeReviewPublishRegistry,
 } from './src/review/publish_job_repository';
 export type { ReviewPublishRepository } from './src/review/publish_job_repository';
+export {
+  publishClaimedReview,
+  runReviewPublishTick,
+} from './src/review/publish_pipeline';
+export type {
+  PublishReceipt,
+  ReviewRecordWriter,
+  ReviewPublishErrorClassifier,
+  PublishClaimedReviewDeps,
+  PublishClaimedReviewResult,
+  ReviewPublishTickDeps,
+  ReviewPublishTickResult,
+} from './src/review/publish_pipeline';
 export type { DatabaseAdapter } from './src/storage/db_adapter';
 export { setWSDeliverFn } from './src/transport/delivery';
 export { BridgePendingSweeper } from './src/workflow/bridge_pending_sweeper';

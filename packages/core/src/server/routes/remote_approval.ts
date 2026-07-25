@@ -20,6 +20,7 @@ import {
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 export const REMOTE_APPROVAL_PAYLOAD_TYPE = 'remote_coding_gate_v1';
+export const REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE = 'remote_facade_action_v1';
 export const REMOTE_APPROVAL_API_PREFIX = '/v1/agent/approval-sync/v1';
 
 const MAX_TTL_SECONDS = 15 * 60;
@@ -37,10 +38,15 @@ interface RemoteApprovalProposal {
   risk_level: 'HIGH';
   tool_name: string;
   expires_at: number;
+  proposal_type?: 'facade_action';
+  display_title?: string;
+  display_detail?: string;
 }
 
 interface RemoteApprovalPayload extends RemoteApprovalProposal {
-  type: typeof REMOTE_APPROVAL_PAYLOAD_TYPE;
+  type:
+    | typeof REMOTE_APPROVAL_PAYLOAD_TYPE
+    | typeof REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE;
   source_device_did: string;
 }
 
@@ -61,7 +67,10 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
   const callerDID = req.callerDID as string;
   const mirrorId = remoteApprovalProposalId(callerDID, parsed.source_task_id);
   const payload: RemoteApprovalPayload = {
-    type: REMOTE_APPROVAL_PAYLOAD_TYPE,
+    type:
+      parsed.proposal_type === 'facade_action'
+        ? REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE
+        : REMOTE_APPROVAL_PAYLOAD_TYPE,
     source_device_did: callerDID,
     ...parsed,
   };
@@ -80,7 +89,11 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
 
   const pendingForDevice = service
     .store()
-    .listByKindAndState('approval', WorkflowTaskState.PendingApproval, 100)
+    .listByKindAndState(
+      'approval',
+      WorkflowTaskState.PendingApproval,
+      Math.max(1, service.store().size()),
+    )
     .filter((task) => parseStoredPayload(task.payload)?.source_device_did === callerDID).length;
   if (pendingForDevice >= MAX_PENDING_PER_DEVICE) {
     return json(429, {
@@ -185,6 +198,9 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
   const action = bounded(value.action, MAX_LABEL);
   const toolName = bounded(value.tool_name, MAX_LABEL);
   const expiresAt = value.expires_at;
+  const proposalType = value.proposal_type;
+  const displayTitle = bounded(value.display_title, MAX_LABEL);
+  const displayDetail = boundedMultiline(value.display_detail, 4_000);
   const nowSec = Math.floor(Date.now() / 1000);
 
   if (sourceTaskId === '') return { error: 'source_task_id is required' };
@@ -197,6 +213,18 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
     return { error: 'proposal contains control or bidirectional text' };
   }
   if (value.risk_level !== 'HIGH') return { error: 'only HIGH-risk actions may be synchronized' };
+  if (proposalType !== undefined && proposalType !== 'facade_action') {
+    return { error: 'proposal_type is invalid' };
+  }
+  if (
+    proposalType === 'facade_action' &&
+    (displayTitle === '' ||
+      displayDetail === '' ||
+      hasUnsafeText(displayTitle) ||
+      hasUnsafeMultilineText(displayDetail))
+  ) {
+    return { error: 'facade action display fields are required and must be safe' };
+  }
   if (
     typeof expiresAt !== 'number' ||
     !Number.isInteger(expiresAt) ||
@@ -213,10 +241,20 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
     risk_level: 'HIGH',
     tool_name: toolName,
     expires_at: expiresAt,
+    ...(proposalType === 'facade_action'
+      ? {
+          proposal_type: proposalType,
+          display_title: displayTitle,
+          display_detail: displayDetail,
+        }
+      : {}),
   };
 }
 
 function proposalDescription(proposal: RemoteApprovalProposal): string {
+  if (proposal.proposal_type === 'facade_action') {
+    return proposal.display_title as string;
+  }
   const agent =
     proposal.agent_did.length > 28
       ? `${proposal.agent_did.slice(0, 20)}...${proposal.agent_did.slice(-6)}`
@@ -230,7 +268,8 @@ function proposalDescription(proposal: RemoteApprovalProposal): string {
 function parseStoredPayload(raw: string): RemoteApprovalPayload | null {
   try {
     const value = JSON.parse(raw) as Partial<RemoteApprovalPayload>;
-    return value.type === REMOTE_APPROVAL_PAYLOAD_TYPE &&
+    return (value.type === REMOTE_APPROVAL_PAYLOAD_TYPE ||
+      value.type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE) &&
       typeof value.source_device_did === 'string' &&
       typeof value.source_task_id === 'string' &&
       typeof value.source_payload_hash === 'string' &&
@@ -285,11 +324,33 @@ function bounded(value: unknown, max: number): string {
   return typeof value === 'string' && value.length > 0 && value.length <= max ? value : '';
 }
 
+function boundedMultiline(value: unknown, max: number): string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max ? value : '';
+}
+
 function hasUnsafeText(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return true;
     if (
+      (code >= 0x200b && code <= 0x200f) ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069) ||
+      code === 0xfeff
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasUnsafeMultilineText(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code === 0x0a || code === 0x09) continue;
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
       (code >= 0x200b && code <= 0x200f) ||
       (code >= 0x202a && code <= 0x202e) ||
       (code >= 0x2066 && code <= 0x2069) ||

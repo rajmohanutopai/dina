@@ -1,179 +1,153 @@
-# Home Node Lite — release-push pipeline.
+# Publish source-free native Home Node Lite releases.
 #
-# Phase 7e of docs/HOME_NODE_LITE_TASKS.md (tasks 7.28 – 7.31).
-# Complements `.github/workflows/ts-docker-build.yml` (which only does
-# PR/main build validation, no push). This workflow handles the full
-# release push:
-#
-#   - 7.28 Multi-arch buildx (amd64 + arm64)
-#   - 7.29 Push to `ghcr.io/rajmohan/dina-home-node-lite-{core,brain}`
-#   - 7.30 Tag strategy: `latest`, semver (vX.Y.Z + major/minor), and
-#          `sha-<short>` for every push
-#   - 7.31 Trivy scan on the built image, fails on HIGH/CRITICAL CVEs
-#
-# Triggers:
-#   - `push: tags: v*` or `home-node-lite-v*`
-#                               → full release (all tags + scan + push)
-#   - `workflow_dispatch`    → manual re-run (dev tags only, no semver)
+# Each runner builds for its own platform/architecture so the bundled Node
+# runtime and SQLCipher native binding always share an ABI. Release archives
+# contain Core, Brain, the offline archive tool, and their exact runtime.
 
 name: home-node-lite-release
 
 on:
   push:
-    tags: ["v*.*.*", "home-node-lite-v*.*.*"]
+    tags: ["home-node-lite-v*.*.*"]
   workflow_dispatch:
     inputs:
-      push:
-        description: "Push images to ghcr.io (off = build + scan only)"
-        type: boolean
-        default: false
+      version:
+        description: "Version used inside validation artifacts"
+        required: true
+        default: "0.0.0-dev"
 
 concurrency:
   group: home-node-lite-release-${{ github.ref }}
-  cancel-in-progress: false # never cancel a release build mid-push
+  cancel-in-progress: false
 
-# Tokens for ghcr.io + security scanning.
 permissions:
   contents: read
-  packages: write # ghcr push
-  security-events: write # upload Trivy SARIF to GitHub code-scanning
-  id-token: write # cosign keyless signing (future task)
+  id-token: write
+  attestations: write
 
 jobs:
-  release:
-    name: Release ${{ matrix.image }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+  build:
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        image: [core, brain]
+        include:
+          - runner: macos-13
+            platform: darwin
+            arch: x64
+          - runner: macos-14
+            platform: darwin
+            arch: arm64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # QEMU so the amd64 runner can emit arm64 layers without a
-      # cross-compiler in every Dockerfile step. Buildx uses QEMU under
-      # the hood for multi-arch builds.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          platforms: linux/amd64,linux/arm64
+          node-version: 24
+          cache: npm
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Registry login — only when we intend to push. On manual dispatch
-      # without `push: true`, we skip login so the workflow can run in a
-      # fork for validation without needing ghcr credentials.
-      - name: Log in to ghcr.io
-        if: github.event_name == 'push' || inputs.push == true
-        uses: docker/login-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: cli/pyproject.toml
 
-      - name: Normalize release version
+      - name: Resolve release version
         id: version
         shell: bash
         run: |
-          ref="${GITHUB_REF_NAME#home-node-lite-}"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "is_release=true" >> "$GITHUB_OUTPUT"
-            echo "value=$ref" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/home-node-lite-v* ]]; then
+            value="${GITHUB_REF_NAME#home-node-lite-v}"
           else
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-            echo "value=" >> "$GITHUB_OUTPUT"
+            value="${{ inputs.version }}"
           fi
+          if [[ ! "$value" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}$ ]]; then
+            echo "Invalid release version: $value" >&2
+            exit 1
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
 
-      # Task 7.30 — tag strategy. docker/metadata-action computes the
-      # full tag set from the git ref + branch context:
-      #   - `latest`         on tags matching `v*.*.*`
-      #   - `v1.2.3`         literal semver
-      #   - `v1.2`           major.minor convenience
-      #   - `v1`             major convenience
-      #   - `sha-abc1234`    always, for auditability
-      - name: Compute image tags
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/rajmohan/dina-home-node-lite-${{ matrix.image }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
-            type=semver,pattern={{major}},value=${{ steps.version.outputs.value }},enable=${{ steps.version.outputs.is_release }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.is_release }}
-            type=sha,prefix=sha-,format=short
+      - name: Install build dependencies
+        run: npm ci
 
-      # Build one native image into Docker before publishing. Multi-platform
-      # buildx results cannot also be loaded into the local daemon, and Trivy
-      # must scan the exact filesystem before a release is pushed.
-      - name: Build scan image
-        id: scan-build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: dina-home-node-lite-${{ matrix.image }}:security-scan
-          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}-scan
-          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }}-scan,mode=max
-
-      # Fails the job on HIGH/CRITICAL findings. Medium/low go to the
-      # GitHub security tab via the SARIF upload below but don't block.
-      - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0
-        with:
-          image-ref: dina-home-node-lite-${{ matrix.image }}:security-scan
-          format: sarif
-          output: trivy-results-${{ matrix.image }}.sarif
-          exit-code: "1"
-          severity: "CRITICAL,HIGH"
-          ignore-unfixed: true # only fail on CVEs that have a fix available
-
-      - name: Upload Trivy SARIF to GitHub code-scanning
-        if: always() && hashFiles(format('trivy-results-{0}.sarif', matrix.image)) != ''
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results-${{ matrix.image }}.sarif
-          category: trivy-${{ matrix.image }}
-
-      # Task 7.28 + 7.29 — publish only after the native image passes the
-      # blocking security scan. The build cache keeps the second build cheap.
-      - name: Build and push multi-arch release
-        id: publish
-        if: github.event_name == 'push' || inputs.push == true
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/home-node-lite/docker/Dockerfile.${{ matrix.image }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=home-node-lite-${{ matrix.image }}-release
-          cache-to: type=gha,scope=home-node-lite-${{ matrix.image }}-release,mode=max
-          provenance: true
-          sbom: true
-
-      - name: Summary
-        if: always()
+      - name: Build native archive
+        shell: bash
         run: |
-          {
-            echo "### Home Node Lite — ${{ matrix.image }} release"
-            echo ""
-            echo "**Tags:**"
-            echo '```'
-            echo '${{ steps.meta.outputs.tags }}'
-            echo '```'
-            echo ""
-            echo "**Published digest:** \`${{ steps.publish.outputs.digest || 'scan-only' }}\`"
-            echo ""
-            echo "Built for: linux/amd64, linux/arm64"
-          } >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/release/build_home_node_native.py \
+            --version "${{ steps.version.outputs.value }}" \
+            --out-dir dist/home-node-native
+
+      - name: Verify runner matches artifact target
+        shell: bash
+        run: |
+          test -f "dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"
+          test -f "dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz.sha256"
+
+      - name: Smoke-test source-free installation
+        shell: bash
+        run: |
+          python3 -m venv .release-venv
+          .release-venv/bin/pip install --disable-pip-version-check ./cli
+          DINA_HOME_NODE_DIR="$RUNNER_TEMP/dina-home-node" \
+            .release-venv/bin/dina home-node install \
+              --release "${{ steps.version.outputs.value }}" \
+              --bundle "dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" \
+              --endpoint-mode test \
+              --no-start \
+              --no-enroll
+          DINA_HOME_NODE_DIR="$RUNNER_TEMP/dina-home-node" \
+            .release-venv/bin/dina home-node status
+          DINA_HOME_NODE_DIR="$RUNNER_TEMP/dina-home-node" \
+            .release-venv/bin/dina home-node uninstall --purge-data --yes
+
+      - name: Attest native archive
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+
+      - name: Upload native archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+            dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish native release
+    if: startsWith(github.ref, 'refs/tags/home-node-lite-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download native archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: home-node-lite-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/dina-home-node-lite-*.tar.gz
+            dist/dina-home-node-lite-*.tar.gz.sha256

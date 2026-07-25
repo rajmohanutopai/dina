@@ -539,9 +539,7 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     //
     //   config_json        — the ServiceConfig JSON for THIS listing (the rkey
     //                        lives in the row key, NOT inside the JSON).
-    //   last_published_*   — publish bookkeeping (nullable; a future
-    //                        publish-status surface writes these). Unused at
-    //                        write time in V1.
+    //   publication_*      — durable publication receipt + retry state.
     version: 8,
     name: 'service_configs_per_rkey',
     sql: `
@@ -552,9 +550,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         config_json TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
+        publication_state TEXT NOT NULL DEFAULT 'pending'
+          CHECK(publication_state IN ('pending', 'published', 'failed', 'not_published')),
         last_published_uri TEXT,
         last_published_cid TEXT,
-        last_publish_error TEXT
+        last_publish_error TEXT,
+        last_publish_attempt_at INTEGER,
+        next_publish_retry_at INTEGER
       ) WITHOUT ROWID;
     `,
   },

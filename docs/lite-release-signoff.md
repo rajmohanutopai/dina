@@ -23,8 +23,9 @@ persona (one persona, `personal`).
       stack within 120 s + surfaces the 24-word mnemonic + `did:plc`
       (tasks 7.24, 7.25)
 - [ ] Phase 7d: GHA workflow `home-node-lite-release.yml` can publish
-      multi-arch (amd64 + arm64) images to `ghcr.io` with Trivy scan
-      producing 0 HIGH/CRITICAL on the image (tasks 7.28–7.31)
+      source-free native archives for macOS/Linux on x64 + arm64;
+      every matrix build passes the native installer smoke test and
+      publishes GitHub build provenance
 - [ ] Phase 8a: tasks 8.1–8.11 green + task 8.12 M1 gate ≥ 95% pass
       rate on the Phase 8a test files (`test_home_node.py`,
       `test_ingestion.py`, `test_memory_flows.py`, `test_didcomm.py`,
@@ -137,14 +138,14 @@ Applies to every milestone tag.
    git push origin home-node-lite-vX.Y.Z
    ```
    Tag push triggers `home-node-lite-release.yml` which builds +
-   pushes `ghcr.io/rajmohan/dina-home-node-lite-{core,brain}` images
-   with all applicable tags (`latest` + `vX.Y.Z` + `X.Y` + `X` +
-   `sha-<short>`).
-5. **Verify image publish** — `docker pull
-   ghcr.io/rajmohan/dina-home-node-lite-core:vX.Y.Z` works; Trivy
-   scan passed (SARIF in GitHub code-scanning tab).
-6. **Post-release smoke** — `./apps/home-node-lite/install-lite.sh`
-   on a clean VM pulls the just-published images + comes up healthy.
+   publishes `dina-home-node-lite-{darwin,linux}-{x64,arm64}.tar.gz`
+   plus SHA-256 sidecars on the GitHub release.
+5. **Verify archive publish** — all four native archives and checksum
+   files are attached to the GitHub release and have build-provenance
+   attestations.
+6. **Post-release smoke** — on clean macOS and Linux hosts, run
+   `dina home-node install --release X.Y.Z`; Core and Brain must become
+   healthy without a source checkout or external runtime.
 7. **Announce** — release note references the milestone scope +
    CHANGELOG anchor; `CLAUDE.md` + `README.md` already list the
    current recommended stack so they need no edit unless the
@@ -157,10 +158,10 @@ Applies to every milestone tag.
 If a post-release smoke fails (step 6):
 
 1. Mark the release as pre-release in the GitHub release UI so
-   `latest` pointers don't drift to it
+   the `/releases/latest/download/` installer path does not select it
 2. File a blocker issue linking the failure
 3. For the next fix cut, bump patch (`vX.Y.Z+1`) rather than
-   re-cutting the same tag — tag rewrites break image caches
+   re-cutting the same tag — tag rewrites break immutable release provenance
 
 The pre-release mark is reversible; an incorrect tag rewrite isn't.
 
@@ -169,4 +170,4 @@ The pre-release mark is reversible; an incorrect tag rewrite isn't.
 - `docs/HOME_NODE_LITE_TASKS.md` § *Milestone map*
 - `tests/integration/LITE_SKIPS.md` — skip acceptance per milestone
 - `CHANGELOG.md` — release notes
-- `.github/workflows/home-node-lite-release.yml` — image-publish pipeline
+- `.github/workflows/home-node-lite-release.yml` — native release pipeline

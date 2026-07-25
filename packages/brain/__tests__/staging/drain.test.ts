@@ -6,11 +6,10 @@
  * of only covering the direct in-memory processor.
  */
 
+import { listByPersona, resetReminderState } from '@dina/core/reminders';
+
 import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
-import {
-  registerEnrichmentLLM,
-  resetEnrichmentPipeline,
-} from '../../src/enrichment/pipeline';
+import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 import { runStagingDrainTick, type StagingDrainCoreClient } from '../../src/staging/drain';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 
@@ -26,6 +25,10 @@ function makeCore(overrides: {
   items?: unknown[];
   claimError?: Error;
   resolveError?: Error;
+  resolveStatus?: 'stored' | 'pending_unlock' | 'failed';
+  storedPersonas?: string[];
+  pendingPersonas?: string[];
+  failedPersonas?: string[];
   resolveCalls?: ResolveCall[];
   failCalls?: { id: string; reason: string }[];
 }): StagingDrainCoreClient {
@@ -43,7 +46,19 @@ function makeCore(overrides: {
         personaAccess: req.personaAccess,
         data: req.data,
       });
-      return { itemId: req.itemId, status: 'stored' };
+      return {
+        itemId: req.itemId,
+        status: overrides.resolveStatus ?? 'stored',
+        ...(overrides.storedPersonas !== undefined
+          ? { storedPersonas: overrides.storedPersonas }
+          : {}),
+        ...(overrides.pendingPersonas !== undefined
+          ? { pendingPersonas: overrides.pendingPersonas }
+          : {}),
+        ...(overrides.failedPersonas !== undefined
+          ? { failedPersonas: overrides.failedPersonas }
+          : {}),
+      };
     },
     async stagingFail(itemId: string, reason: string) {
       overrides.failCalls?.push({ id: itemId, reason });
@@ -66,13 +81,22 @@ function makeCore(overrides: {
  * "routed" the item to — these tests assert the drain forwards it to
  * Core resolve.
  */
-function stubRuntime(primary = 'general') {
+function stubRuntime(
+  primary = 'general',
+  reminders: {
+    message: string;
+    dueAtMs: number;
+    persona: string;
+    timezone: string;
+  }[] = [],
+  secondary: string[] = [],
+) {
   return {
     async run() {
       return {
         sideEffects: {
-          routes: [{ primary, secondary: [] as string[] }],
-          reminders: [],
+          routes: [{ primary, secondary }],
+          reminders,
           people: [],
           preferences: [],
         },
@@ -87,6 +111,7 @@ describe('runStagingDrainTick', () => {
   beforeEach(() => {
     resetEnrichmentPipeline();
     resetProviders();
+    resetReminderState();
     setAccessiblePersonas(['general']);
   });
 
@@ -144,6 +169,166 @@ describe('runStagingDrainTick', () => {
     expect(enrichment.stages.fallback_reasons).toEqual(
       expect.arrayContaining(['llm_unavailable', 'embedding_unavailable']),
     );
+  });
+
+  it('creates a planned reminder only after Core confirms the memory was stored', async () => {
+    const dueAtMs = Date.now() + 60_000;
+    const core = makeCore({
+      items: [
+        {
+          id: 'item-reminder',
+          data: {
+            type: 'note',
+            source: 'agent_remember',
+            body: 'Remind me shortly',
+            summary: 'Reminder',
+          },
+        },
+      ],
+    });
+
+    const result = await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime('general', [
+        {
+          message: 'Do the thing',
+          dueAtMs,
+          persona: 'general',
+          timezone: 'UTC',
+        },
+      ]),
+    });
+
+    expect(result.stored).toBe(1);
+    expect(result.results[0]?.postPublish?.remindersCreated).toBe(1);
+    expect(listByPersona('general')).toEqual([
+      expect.objectContaining({
+        message: 'Do the thing',
+        due_at: dueAtMs,
+        source_item_id: 'item-reminder',
+      }),
+    ]);
+  });
+
+  it('does not create a planned reminder while Core parks the memory for approval', async () => {
+    const core = makeCore({
+      items: [
+        {
+          id: 'item-gated-reminder',
+          data: {
+            type: 'note',
+            source: 'agent_remember',
+            body: 'Private medical appointment tomorrow',
+            summary: 'Appointment',
+          },
+        },
+      ],
+      resolveStatus: 'pending_unlock',
+    });
+
+    const result = await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime('health', [
+        {
+          message: 'Medical appointment',
+          dueAtMs: Date.now() + 60_000,
+          persona: 'health',
+          timezone: 'UTC',
+        },
+      ]),
+    });
+
+    expect(result.stored).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: 'pending_unlock' });
+    expect(listByPersona('health')).toHaveLength(0);
+  });
+
+  it('creates reminders only for the exact personas Core stored during partial fan-out', async () => {
+    setAccessiblePersonas(['general']);
+    const dueAtMs = Date.now() + 90_000;
+    const core = makeCore({
+      items: [
+        {
+          id: 'item-partial-reminder',
+          type: 'note',
+          source: 'agent_remember',
+          body: 'Remember the medical bill and remind me tomorrow.',
+        },
+      ],
+      resolveStatus: 'stored',
+      storedPersonas: ['general'],
+      pendingPersonas: ['health'],
+    });
+
+    const result = await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime(
+        'general',
+        [
+          {
+            message: 'General follow-up',
+            dueAtMs,
+            persona: 'general',
+            timezone: 'UTC',
+          },
+          {
+            message: 'Health follow-up',
+            dueAtMs,
+            persona: 'health',
+            timezone: 'UTC',
+          },
+        ],
+        ['health'],
+      ),
+    });
+
+    expect(result.results[0]?.postPublish?.remindersCreated).toBe(1);
+    expect(listByPersona('general')).toEqual([
+      expect.objectContaining({ message: 'General follow-up', persona: 'general' }),
+    ]);
+    expect(listByPersona('health')).toHaveLength(0);
+  });
+
+  it('creates an authorized secondary reminder even when the primary row is pending', async () => {
+    setAccessiblePersonas(['general']);
+    const dueAtMs = Date.now() + 120_000;
+    const core = makeCore({
+      items: [
+        {
+          id: 'item-secondary-reminder',
+          type: 'note',
+          source: 'agent_remember',
+          body: 'Remember the health and general follow-ups.',
+        },
+      ],
+      resolveStatus: 'pending_unlock',
+      storedPersonas: ['general'],
+      pendingPersonas: ['health'],
+    });
+
+    const result = await runStagingDrainTick(core, {
+      rememberRuntime: stubRuntime(
+        'health',
+        [
+          {
+            message: 'Health follow-up',
+            dueAtMs,
+            persona: 'health',
+            timezone: 'UTC',
+          },
+          {
+            message: 'General follow-up',
+            dueAtMs,
+            persona: 'general',
+            timezone: 'UTC',
+          },
+        ],
+        ['general'],
+      ),
+    });
+
+    expect(result.results[0]).toMatchObject({ status: 'pending_unlock' });
+    expect(listByPersona('general')).toEqual([
+      expect.objectContaining({ message: 'General follow-up', persona: 'general' }),
+    ]);
+    expect(listByPersona('health')).toHaveLength(0);
   });
 
   it('runs L1 and embedding before Core resolve when providers are registered', async () => {

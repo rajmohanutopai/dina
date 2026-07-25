@@ -19,7 +19,12 @@ import { DIDResolver, sendD2D as coreSendD2D } from '@dina/core/runtime';
 
 import { pickEd25519VerificationMethod } from './resolve_sender';
 
-import type { AppViewServiceResolver, D2DOutboxRow, RedeliverOutcome } from '@dina/core';
+import type {
+  AppViewServiceResolver,
+  D2DOutboxRow,
+  RedeliverOutcome,
+  SendResult,
+} from '@dina/core';
 
 
 export interface MakeSendD2DOptions {
@@ -49,7 +54,8 @@ export type SendD2D = (
   to: string,
   type: string,
   body: Record<string, unknown>,
-) => Promise<void>;
+  options?: { dataCategories?: string[]; messageId?: string },
+) => Promise<SendResult>;
 
 const sharedResolver = new DIDResolver();
 
@@ -62,7 +68,7 @@ const sharedResolver = new DIDResolver();
 export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
   const resolver = opts.resolver ?? sharedResolver;
 
-  return async (to, type, body) => {
+  return async (to, type, body, options) => {
     const resolved = await resolver.resolve(to);
     const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
     if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
@@ -81,6 +87,10 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
       senderPrivateKey: opts.senderPrivateKey,
       recipientPublicKey,
       endpoint,
+      ...(options?.dataCategories !== undefined
+        ? { dataCategories: options.dataCategories }
+        : {}),
+      ...(options?.messageId !== undefined ? { messageId: options.messageId } : {}),
       ...(opts.providerServiceResolver !== undefined
         ? { providerServiceResolver: opts.providerServiceResolver }
         : {}),
@@ -93,6 +103,7 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
         }`,
       );
     }
+    return result;
   };
 }
 

@@ -122,6 +122,7 @@ export * from './d2d/envelope';
 export type { DinaMessage, D2DPayload } from './d2d/envelope';
 export * from './d2d/families';
 export * from './d2d/service_bodies';
+export type { SendResult } from './d2d/send';
 export type {
   ServiceQueryBody,
   ServiceResponseBody,
@@ -199,6 +200,19 @@ export {
   rowToPublishJob,
 } from './review/publish_job_repository';
 export type { ReviewPublishRepository } from './review/publish_job_repository';
+export {
+  publishClaimedReview,
+  runReviewPublishTick,
+} from './review/publish_pipeline';
+export type {
+  PublishReceipt,
+  ReviewRecordWriter,
+  ReviewPublishErrorClassifier,
+  PublishClaimedReviewDeps,
+  PublishClaimedReviewResult,
+  ReviewPublishTickDeps,
+  ReviewPublishTickResult,
+} from './review/publish_pipeline';
 export {
   WorkflowService,
   WorkflowValidationError,
@@ -492,10 +506,17 @@ export type {
 export {
   setServiceQuerySender,
   getServiceQuerySender,
+  submitServiceQuery,
+  validateServiceQueryRequest,
   canonicalJSON as serviceQueryCanonicalJSON,
   computeIdempotencyKey as computeServiceQueryIdempotencyKey,
 } from './server/routes/service_query';
-export type { ServiceQuerySender } from './server/routes/service_query';
+export type {
+  ServiceQueryRequest,
+  ServiceQuerySender,
+  SubmitServiceQueryOptions,
+} from './server/routes/service_query';
+export { upsertServiceListing } from './server/routes/service_config';
 export { setServiceRespondSender, getServiceRespondSender } from './server/routes/service_respond';
 export type { ServiceRespondSender } from './server/routes/service_respond';
 // Session-scoped approvals (in-memory, process-lifetime). The persona_guard
@@ -532,6 +553,7 @@ export {
   onServiceConfigChanged,
   isCapabilityConfigured,
   validateServiceConfig,
+  validateServiceConfigForSave,
   resetServiceConfigState,
   DEFAULT_LISTING_RKEY,
 } from './service/service_config';
@@ -541,6 +563,7 @@ export type {
   ServiceCapabilitySchemas,
   ServiceResponsePolicy,
   ConfigChangeListener,
+  ServiceConfigForSaveValidation,
 } from './service/service_config';
 export {
   setServiceConfigRepository,
@@ -548,7 +571,12 @@ export {
   SQLiteServiceConfigRepository,
   InMemoryServiceConfigRepository,
 } from './service/service_config_repository';
-export type { ServiceConfigRepository } from './service/service_config_repository';
+export type {
+  ServiceConfigRepository,
+  ServicePublicationState,
+  ServicePublicationStatus,
+  SetServicePublicationStatusInput,
+} from './service/service_config_repository';
 export * from './d2d/gates';
 export type { EgressCheckResult } from './d2d/gates';
 export * from './d2d/signature';
@@ -929,9 +957,11 @@ export {
   fail as stagingFail,
   extendLease,
   extendLease as stagingExtendLease,
+  computeSourceHash as computeStagingSourceHash,
   getItem as stagingGetItem,
   drainForPersona,
   drainForPersona as stagingDrainForPersona,
+  drainForApprovalWithEffects,
   listByStatus,
   listByStatus as stagingListByStatus,
   resetStagingState,
@@ -1028,6 +1058,21 @@ export {
   codingGateIdemKey,
   CODING_GATE_APPROVAL_TYPE,
 } from './agent/coding_permit';
+export {
+  FACADE_ACTION_APPROVAL_TYPE,
+  FACADE_ACTION_APPROVAL_TTL_SEC,
+  MAX_PENDING_FACADE_ACTIONS_PER_AGENT,
+  createFacadeActionApproval,
+  facadeActionPayloadHash,
+  facadeActionTaskId,
+  isFacadeActionApproval,
+  parseFacadeActionApprovalPayload,
+} from './agent/facade_action';
+export type {
+  CreateFacadeActionApprovalResult,
+  FacadeAction,
+  FacadeActionApprovalPayload,
+} from './agent/facade_action';
 export type {
   CodingPermitAuthority,
   CodingPermitClaim,
@@ -1062,6 +1107,7 @@ export * from './relay/rpc_response';
 export {
   REMOTE_APPROVAL_API_PREFIX,
   REMOTE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
   remoteApprovalProposalId,
 } from './server/routes/remote_approval';
 export { applyOwnerWorkflowDecision } from './server/routes/workflow';

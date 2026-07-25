@@ -5,6 +5,11 @@
  */
 
 import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
+import { setReminderRepository } from '../../src/reminders/repository';
+import {
+  listByPersona as listRemindersByPersona,
+  resetReminderState,
+} from '../../src/reminders/service';
 import { currentDataScope, resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 import { InMemoryStagingRepository, setStagingRepository } from '../../src/staging/repository';
 import {
@@ -27,6 +32,7 @@ import {
   resumeAfterApprovalGranted,
   hydrateStagingFromRepository,
   drainForApproval,
+  drainForApprovalWithEffects,
   denyApproval,
   type StagingItem,
   clearOnDrainCallback,
@@ -48,6 +54,8 @@ describe('Staging Service', () => {
     setWorkflowRepository(workflowRepo);
     setWorkflowService(new WorkflowService({ repository: workflowRepo }));
     clearVaults();
+    resetReminderState();
+    setReminderRepository(null);
   });
 
   afterEach(() => {
@@ -56,6 +64,8 @@ describe('Staging Service', () => {
     resetDataScope();
     setWorkflowService(null);
     setWorkflowRepository(null);
+    resetReminderState();
+    setReminderRepository(null);
   });
 
   describe('data-scope isolation (guided demo)', () => {
@@ -510,15 +520,120 @@ describe('Staging Service', () => {
         type: 'note',
         summary: 'Cardiologist appointment',
       });
-      const approvalId = getItem(id)!.approval_id!;
+      const approvalId = getItem(id)?.approval_id;
+      if (!approvalId) throw new Error('expected a deferred Remember approval');
 
       resetStagingState({ preserveRepositoryRows: true });
       hydrateStagingFromRepository();
 
       const result = drainForApproval(approvalId);
       expect(result).toMatchObject({ matched: 1, drained: 1, alreadyStored: 0 });
-      expect(getItem(id)!.status).toBe('stored');
+      expect(getItem(id)?.status).toBe('stored');
       expect(getVaultItem('health', `stg-${id}`)).not.toBeNull(); // PLG-29 #3: Core-owned id
+    });
+
+    it('approval resume creates a deferred reminder only after the memory is stored', async () => {
+      const { id } = ingest({
+        source: 'agent_remember',
+        source_id: 'approval-reminder',
+        data: { body: 'remember my appointment tomorrow' },
+      });
+      claim(10);
+      const dueAtMs = Date.now() + 86_400_000;
+      resolve(id, 'health', false, {
+        type: 'note',
+        summary: 'Appointment tomorrow',
+        staging_id: id,
+        metadata: JSON.stringify({
+          remember: {
+            version: 1,
+            reminders: [
+              {
+                message: 'Appointment tomorrow',
+                dueAtMs,
+                persona: 'health',
+                timezone: 'Asia/Kolkata',
+              },
+            ],
+          },
+        }),
+      });
+      const approvalId = getItem(id)!.approval_id!;
+
+      expect(listRemindersByPersona('health')).toHaveLength(0);
+      const first = await drainForApprovalWithEffects(approvalId);
+
+      expect(first).toMatchObject({
+        matched: 1,
+        drained: 1,
+        remindersCreated: 1,
+        postErrors: [],
+      });
+      expect(getItem(id)!.status).toBe('stored');
+      expect(listRemindersByPersona('health')).toEqual([
+        expect.objectContaining({
+          message: 'Appointment tomorrow',
+          due_at: dueAtMs,
+          persona: 'health',
+          source_item_id: id,
+          source: 'remember_runtime',
+        }),
+      ]);
+
+      // Approval completion is recovery-safe: a repeated call observes the
+      // stored row but does not create or report a second reminder.
+      const repeated = await drainForApprovalWithEffects(approvalId);
+      expect(repeated).toMatchObject({
+        matched: 1,
+        drained: 0,
+        alreadyStored: 1,
+        remindersCreated: 0,
+        postErrors: [],
+      });
+      expect(listRemindersByPersona('health')).toHaveLength(1);
+    });
+
+    it('approval resume ignores malformed plans and plans for another persona', async () => {
+      const { id } = ingest({
+        source: 'agent_remember',
+        source_id: 'approval-reminder-scope',
+      });
+      claim(10);
+      resolve(id, 'health', false, {
+        type: 'note',
+        summary: 'Scoped reminder',
+        staging_id: id,
+        metadata: JSON.stringify({
+          remember: {
+            version: 1,
+            reminders: [
+              {
+                message: 'Financial follow-up',
+                dueAtMs: Date.now() + 60_000,
+                persona: 'financial',
+                timezone: 'UTC',
+              },
+              {
+                message: '',
+                dueAtMs: Number.NaN,
+                persona: 'health',
+                timezone: '',
+              },
+            ],
+          },
+        }),
+      });
+
+      const approvalId = getItem(id)?.approval_id;
+      if (!approvalId) throw new Error('expected a deferred Remember approval');
+      const result = await drainForApprovalWithEffects(approvalId);
+      expect(result).toMatchObject({
+        drained: 1,
+        remindersCreated: 0,
+        postErrors: [],
+      });
+      expect(listRemindersByPersona('health')).toHaveLength(0);
+      expect(listRemindersByPersona('financial')).toHaveLength(0);
     });
 
     it('PLG-27 #6: an id-less classified item is stored under a DETERMINISTIC stg-<id> (so a recovery re-drive upserts, never duplicates)', () => {

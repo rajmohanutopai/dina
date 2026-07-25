@@ -39,7 +39,7 @@ const FALLBACK_LOCATION = { lat: 37.762, lng: -122.435 } as const;
 /** Origin pin for the map deep link (Civic Center, SF). */
 const MAP_ORIGIN = { lat: 37.7793, lng: -122.4193 } as const;
 
-type SendD2DFn = (to: string, type: string, body: Record<string, unknown>) => Promise<void>;
+type SendD2DFn = (to: string, type: string, body: Record<string, unknown>) => Promise<unknown>;
 
 interface DemoLogEntry {
   event: string;

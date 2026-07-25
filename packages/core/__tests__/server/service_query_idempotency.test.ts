@@ -1,8 +1,8 @@
 /**
  * `computeIdempotencyKey` — the dedupe identity for outbound service.query
  * tasks. It must segregate by the dimensions that change the response/authority:
- * schema_hash, service_uri (chosen listing), AND grant_id (the exercised grant,
- * for one-time/quota/paid grants later).
+ * schema_hash, service_uri (chosen listing), grant_id (the exercised grant),
+ * and the requester principal when Core projects results per agent session.
  */
 
 import { computeIdempotencyKey } from '../../src/server/routes/service_query';
@@ -41,5 +41,28 @@ describe('computeIdempotencyKey', () => {
     const s1 = computeIdempotencyKey(DID, CAP, PARAMS, 'sha-1');
     const s2 = computeIdempotencyKey(DID, CAP, PARAMS, 'sha-2');
     expect(s1).not.toBe(s2);
+  });
+
+  it('segregates agent sessions so each requester can poll its own task', () => {
+    const first = computeIdempotencyKey(
+      DID,
+      CAP,
+      PARAMS,
+      undefined,
+      undefined,
+      undefined,
+      'did:key:zAgent\u0000sess-1',
+    );
+    const second = computeIdempotencyKey(
+      DID,
+      CAP,
+      PARAMS,
+      undefined,
+      undefined,
+      undefined,
+      'did:key:zAgent\u0000sess-2',
+    );
+    expect(first).not.toBe(second);
+    expect(computeIdempotencyKey(DID, CAP, PARAMS)).not.toBe(first);
   });
 });

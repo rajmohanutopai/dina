@@ -18,11 +18,25 @@
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 /** Callback that performs the actual D2D send. */
+export interface D2DSendOptions {
+  dataCategories?: string[];
+  /** Stable logical id for recipient-side replay suppression. */
+  messageId?: string;
+}
+
+export interface D2DSendOutcome {
+  messageId: string;
+  delivered: boolean;
+  buffered: boolean;
+  queued: boolean;
+}
+
 export type D2DSender = (
   recipientDID: string,
   messageType: string,
   body: Record<string, unknown>,
-) => Promise<void>;
+  options?: D2DSendOptions,
+) => Promise<D2DSendOutcome | void>;
 
 let senderInstance: D2DSender | null = null;
 

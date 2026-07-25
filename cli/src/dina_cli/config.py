@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,26 +68,76 @@ class Config:
 
 def _load_saved() -> dict:
     """Load saved config from ~/.dina/cli/config.json, or empty dict."""
-    if CONFIG_FILE.exists():
+    return load_saved_from(CONFIG_DIR)
+
+
+def save_config(values: dict) -> Path:
+    """Write config values to ~/.dina/cli/config.json. Returns the path."""
+    return save_config_to(CONFIG_DIR, values)
+
+
+def load_saved_from(config_dir: Path) -> dict:
+    """Load a saved config from an explicit directory.
+
+    Lifecycle/bootstrap code must not mutate the module-global config directory
+    merely to inspect another profile.
+    """
+    config_file = config_dir / "config.json"
+    if config_file.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text())
+            value = json.loads(config_file.read_text())
+            return value if isinstance(value, dict) else {}
         except (json.JSONDecodeError, OSError):
             pass
     return {}
 
 
-def save_config(values: dict) -> Path:
-    """Write config values to ~/.dina/cli/config.json. Returns the path."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = CONFIG_FILE.with_suffix(".tmp")
+def save_config_to(config_dir: Path, values: dict) -> Path:
+    """Atomically write config values to an explicit directory."""
+    config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(config_dir, 0o700)
+    config_file = config_dir / "config.json"
+    tmp = config_file.with_suffix(".tmp")
     old_umask = os.umask(0o077)
     try:
         tmp.write_text(json.dumps(values, indent=2))
-        os.replace(tmp, CONFIG_FILE)
+        os.replace(tmp, config_file)
     finally:
         os.umask(old_umask)
-    CONFIG_FILE.chmod(0o600)
-    return CONFIG_FILE
+    config_file.chmod(0o600)
+    return config_file
+
+
+def save_new_config_to(config_dir: Path, values: dict) -> Path:
+    """Create config atomically without replacing a concurrently-created file."""
+    config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(config_dir, 0o700)
+    config_file = config_dir / "config.json"
+    temp = config_dir / f".config.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    payload = json.dumps(values, indent=2).encode("utf-8")
+    old_umask = os.umask(0o077)
+    try:
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            view = memoryview(payload)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError("short write while persisting Dina config")
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        # A hard link is an atomic no-replace publish on the same filesystem.
+        os.link(temp, config_file)
+        os.chmod(config_file, 0o600)
+    finally:
+        os.umask(old_umask)
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
+    return config_file
 
 
 def save_openclaw_device_token(token: str) -> Path:

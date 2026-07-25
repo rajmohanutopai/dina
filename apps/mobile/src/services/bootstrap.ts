@@ -107,7 +107,7 @@ export type AppD2DSender = (
   to: string,
   messageType: string,
   body: Record<string, unknown>,
-) => Promise<void>;
+) => Promise<unknown>;
 import {
   createCoordinatorAskHandler,
   makeAgenticAskHandler,

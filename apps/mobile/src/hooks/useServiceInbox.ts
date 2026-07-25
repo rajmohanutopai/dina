@@ -34,6 +34,8 @@ import type { CoreClient, WorkflowTask } from '@dina/core';
  *   every other approval kind.
  * - `remote_coding_gate` — a HIGH-risk coding action proposed by a paired
  *   laptop Core. The phone owns the decision; raw tool arguments never cross.
+ * - `agent_action` — an exact, bounded Talk or delegation action. It is always
+ *   one-shot and shows its human-visible recipient/task detail.
  * - `unknown` — payload doesn't match a known shape; render with what
  *   we can read and surface a generic deny.
  */
@@ -43,6 +45,7 @@ export type InboxEntryKind =
   | 'staging_persona_access'
   | 'vault_read'
   | 'remote_coding_gate'
+  | 'agent_action'
   | 'unknown';
 
 export interface InboxEntry {
@@ -269,7 +272,10 @@ function executionResultForTask(task: WorkflowTask): ExecutionResult | undefined
   // A remote coding-gate mirror is a phone-owned decision receipt, not work
   // that runs on the phone. Its queued state means "approved"; rendering an
   // execution result of "pending" would imply an executor is stuck here.
-  if (safeParse(task.payload).type === 'remote_coding_gate_v1') return undefined;
+  const payloadType = safeParse(task.payload).type;
+  if (payloadType === 'remote_coding_gate_v1' || payloadType === 'remote_facade_action_v1') {
+    return undefined;
+  }
   switch (task.status) {
     case 'completed':
     case 'recorded': // archival of a finished task
@@ -499,6 +505,37 @@ function toEntry(task: WorkflowTask): InboxEntry {
       // transport-authenticated principal in the approval card.
       requesterDID: sourceDeviceDID,
       paramsPreview: toolName,
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'agent_facade_action_v1' || payloadType === 'remote_facade_action_v1') {
+    const action = parsed.action === 'talk' || parsed.action === 'delegate' ? parsed.action : '';
+    const title =
+      typeof parsed.display_title === 'string'
+        ? parsed.display_title
+        : action === 'talk'
+          ? 'Send a message'
+          : 'Delegate a task';
+    const detail = typeof parsed.display_detail === 'string' ? parsed.display_detail : '';
+    const requesterDID =
+      payloadType === 'remote_facade_action_v1'
+        ? typeof parsed.source_device_did === 'string'
+          ? parsed.source_device_did
+          : ''
+        : typeof parsed.agent_did === 'string'
+          ? parsed.agent_did
+          : '';
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: action,
+      serviceName: title,
+      description: title,
+      requesterDID,
+      paramsPreview: detail,
       riskLevel: 'HIGH',
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),

@@ -18,6 +18,11 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
+  createPersona,
+  getPersonaTier,
+  hydratePersonas,
+  listPersonas,
+  personaExists,
   RunService,
   SQLiteClassificationJobRepository,
   SQLiteCommandReceiptRepository,
@@ -25,6 +30,7 @@ import {
   SQLiteErasureKeyStore,
   SQLiteMessageRepository,
   SQLiteReservationRepository,
+  SQLiteReviewPublishRepository,
   SQLiteRunRepository,
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
@@ -40,6 +46,7 @@ import {
   registerPersonaDEK,
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
+  setArchiveDataSource,
   SQLitePushSubscriptionRepository,
   setClassificationJobRepository,
   setCommandReceiptRepository,
@@ -51,11 +58,15 @@ import {
   setMessageRepository,
   setPluginDeviceVerifier,
   setReservationRepository,
+  setReviewPublishRepository,
   setRunRepository,
   setRunService,
+  setPersonaDescription,
   setServiceConfigRepository,
   setNotificationLogRepository,
   SqliteNotificationLogRepository,
+  type ArchivePersonaSource,
+  type PersonaTier,
 } from '@dina/core';
 import { getDeviceByDID } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
@@ -75,6 +86,7 @@ import {
   SQLiteDeviceRepository,
   SQLiteKVRepository,
   SQLitePeopleRepository,
+  SQLitePersonaRepository,
   SQLiteReminderRepository,
   SQLiteStagingRepository,
   SQLiteTopicRepository,
@@ -92,12 +104,12 @@ import {
   setDeviceRepository,
   setKVRepository,
   setPeopleRepository,
+  setPersonaRepository,
   setReminderRepository,
   setStagingRepository,
   setTopicRepository,
   setVaultRepository,
   type DatabaseAdapter,
-  type DBProvider,
 } from '@dina/core/storage';
 import { NodeDBProvider } from '@dina/storage-node';
 
@@ -139,9 +151,20 @@ const DEFAULT_PERSONAS: readonly {
   },
 ];
 
+const RESTORE_VALID_TIERS: ReadonlySet<string> = new Set([
+  'default',
+  'standard',
+  'sensitive',
+  'locked',
+]);
+
+function restoreTier(tier: string): PersonaTier {
+  return (RESTORE_VALID_TIERS.has(tier) ? tier : 'locked') as PersonaTier;
+}
+
 export interface StorageInitResult {
-  /** The `DBProvider` instance — kept so caller can open more personas later. */
-  provider: DBProvider;
+  /** The provider instance — callers such as the archive tool also close it. */
+  provider: NodeDBProvider;
   /** The identity DB adapter — needed for any future identity-scoped wiring. */
   identityDB: DatabaseAdapter;
   /** Personas that were opened (default + standard tier). */
@@ -199,6 +222,11 @@ export async function initializeStorage(
 
   // Wire every identity-scoped repository the Core HTTP surface uses.
   setKVRepository(new SQLiteKVRepository(identityDB));
+  // User-created personas are part of the durable identity catalog. Hydrate
+  // them before seeding/opening the built-ins below so custom vaults survive
+  // process restarts and participate in archive export.
+  setPersonaRepository(new SQLitePersonaRepository(identityDB));
+  hydratePersonas();
   setContactRepository(new SQLiteContactRepository(identityDB));
   setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
   setServiceDecisionRepository(new SQLiteServiceDecisionRepository(identityDB));
@@ -279,6 +307,9 @@ export async function initializeStorage(
   setErasureKeyStore(new SQLiteErasureKeyStore(identityDB));
   // Reservation store — the atomic bounded-queue admission slot (§7).
   setReservationRepository(new SQLiteReservationRepository(identityDB));
+  // PeerLens writes from coding agents and the web client share the same
+  // durable, lease-fenced publish queue used by mobile.
+  setReviewPublishRepository(new SQLiteReviewPublishRepository(identityDB));
   // Per-message lifecycle + Brain-classify job stores (§6.3/§12.6).
   setMessageRepository(new SQLiteMessageRepository(identityDB));
   setClassificationJobRepository(new SQLiteClassificationJobRepository(identityDB));
@@ -323,7 +354,6 @@ export async function initializeStorage(
   // test it (`packages/home-node/__tests__/persona_lifecycle.test.ts`).
   // The `openVaultDB` callback wires the per-persona SQLite vault
   // handle + the topic repo after the registry marks it open.
-  const { createPersona, personaExists, setPersonaDescription } = await import('@dina/core');
   const { openAllPersonasForInAppUser } = await import('@dina/home-node');
   for (const spec of DEFAULT_PERSONAS) {
     if (!personaExists(spec.name)) {
@@ -342,6 +372,76 @@ export async function initializeStorage(
   // issues.txt §2 — approving an agent locked-persona request also opens
   // that persona's vault (DEK into RAM) so the agent's retry can decrypt.
   setAgentPersonaUnlockHook(openVaultDB);
+
+  // Encrypted .dina backup/restore. The one-shot Home Node archive tool invokes
+  // this same initializer offline, so export/import stays inside Core and no
+  // vault dump or passphrase is exposed over HTTP.
+  setArchiveDataSource({
+    identityAdapter: () => identityDB,
+    personaSources: async (): Promise<ArchivePersonaSource[]> => {
+      const sources: ArchivePersonaSource[] = [];
+      for (const persona of listPersonas()) {
+        const adapter = await openPersonaVault(provider, persona.name);
+        sources.push({
+          name: persona.name,
+          tier: getPersonaTier(persona.name),
+          adapter,
+        });
+      }
+      return sources;
+    },
+    openPersonaForRestore: async (name, tier) => {
+      if (!personaExists(name)) {
+        // Restoring only the in-memory registration would make this vault
+        // disappear from the catalog at the next process boot.
+        createPersona(name, restoreTier(tier), undefined, { persist: true });
+      }
+      const adapter = await openPersonaVault(provider, name);
+      setVaultRepository(name, new SQLiteVaultRepository(adapter));
+      setTopicRepository(name, new SQLiteTopicRepository(adapter));
+      return adapter;
+    },
+    hasExistingUserData: async () => {
+      const identityTables = [
+        'reminders',
+        'contacts',
+        'people',
+        'person_identities',
+        'chat_messages',
+        'service_configs',
+        'contact_service_offers',
+        'service_grants',
+        'plugin_installs',
+        'plugin_grants',
+        'paired_devices',
+        'agent_persona_grants',
+      ];
+      for (const table of identityTables) {
+        try {
+          if (identityDB.query(`SELECT 1 FROM ${table} LIMIT 1`).length > 0) {
+            return true;
+          }
+        } catch {
+          // An absent table on an older schema contains no user data.
+        }
+      }
+      for (const persona of listPersonas()) {
+        try {
+          const adapter = await openPersonaVault(provider, persona.name);
+          if (adapter.query('SELECT 1 FROM vault_items LIMIT 1').length > 0) {
+            return true;
+          }
+        } catch {
+          // Opening creates a missing file, so an error here means an unreadable
+          // existing vault or storage failure. Treat that as occupied; a
+          // non-force restore must never overwrite uncertainty.
+          return true;
+        }
+      }
+      return false;
+    },
+    appVersion: 'home-node-lite',
+  });
 
   return { provider, identityDB, openedPersonas: opened };
 }

@@ -9,12 +9,14 @@ Lite Core, not mobile Core. Pairing the agent CLI directly to the Dina mobile
 app therefore does not activate the coding gate; the hook correctly blocks
 when mobile Core returns `501`.
 
-1. Confirm `dina --version` is at least 0.19.0. If missing or older:
-   `pip install --upgrade "dina-agent>=0.19.0"`.
-2. Confirm Home Node Lite Core is running. Open its loopback `/owner` page,
-   enter the owner key printed by `install-lite.sh`, and select **Pair coding
-   agent**.
-3. Run `dina configure` and paste that setup code (or `dina configure --setup-code dina1:…`).
+1. Confirm `dina --version` is at least 0.20.0. If missing or older:
+   `pip install --upgrade "dina-agent>=0.20.0"`.
+2. Confirm Home Node Lite Core is running with `dina home-node status`.
+   `dina home-node install` normally enrolls the local coding agent
+   automatically.
+3. If enrollment metadata needs repair, run `dina home-node enroll-agent` in a
+   normal terminal. It preserves any configuration belonging to another Home
+   Node.
 4. Verify with `dina status`.
 
 Explain the trust model briefly: the agent gets **its own** Ed25519 key and never sees the vault keys; every action it takes still passes the Core-owned gate on the Home Node. Remind them that until pairing is complete, the gate blocks tool calls fail-closed.
@@ -26,7 +28,7 @@ Explain that HIGH approvals can be synchronized to mobile:
    **Pair phone**.
 3. Use the same owner page to revoke before pairing a replacement.
 
-This skill only guides the owner; it must not receive or handle either setup
+This skill only guides the owner; it must not receive or handle the phone setup
 code. The V1 phone endpoint is the mobile Home Node's canonical `did:plc`; the
 laptop approval client has its own revocable `did:key`. V1 supports one phone.
 Point to `docs/DINA_PLUGIN_DEVELOPER_SURFACE.md` §13.1.

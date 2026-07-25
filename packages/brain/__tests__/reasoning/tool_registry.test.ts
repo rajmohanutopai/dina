@@ -117,6 +117,37 @@ describe('ToolRegistry — execute', () => {
     }
   });
 
+  it('accepts anyOf type alternatives and rejects values outside the union', async () => {
+    const r = new ToolRegistry();
+    r.register(
+      makeTool({
+        parameters: {
+          type: 'object',
+          properties: {
+            text: {
+              anyOf: [{ type: 'string' }, { type: 'number' }],
+            },
+          },
+          required: ['text'],
+        },
+      }),
+    );
+
+    await expect(r.execute('echo', { text: 'hello' })).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(r.execute('echo', { text: 42 })).resolves.toMatchObject({
+      success: true,
+    });
+    await expect(r.execute('echo', { text: false })).resolves.toEqual(
+      expect.objectContaining({
+        success: false,
+        code: 'invalid_args',
+        error: expect.stringContaining('expected string or number'),
+      }),
+    );
+  });
+
   it('returns execution_failed when the tool body throws', async () => {
     const r = new ToolRegistry();
     r.register(

@@ -14,10 +14,16 @@
  *   tool                 route                     backing (injected)
  *   ──────────────────── ───────────────────────── ──────────────────────────
  *   dina_remember        POST /v1/agent/memory      provenance-preserving ingress (origin staging)
- *   dina_find_service    POST /v1/agent/find-service Core AppView-search façade
+ *   dina_remember_status POST /v1/agent/memory/status owned staging projection
+ *   dina_find_service    POST /v1/agent/service/search Core AppView-search façade
+ *   dina_service_status POST /v1/agent/service/status requester-owned result projection
  *   dina_talk            POST /v1/agent/talk         Core dina_talk façade (per-call phone approval)
  *   dina_delegate        POST /v1/agent/delegate     Core delegation façade
- *   dina_peerlens/review POST /v1/agent/peerlens     Core PeerLens façades
+ *   dina_peerlens       POST /v1/agent/peerlens/search Core PeerLens read façade
+ *   dina_review         POST /v1/agent/peerlens/attest Core PeerLens write façade
+ *   dina_review_status  POST /v1/agent/peerlens/status owned publish projection
+ *   dina_vaults         POST /v1/agent/vaults          metadata-only vault projection
+ *   dina_reminders      POST /v1/agent/reminders       session-readable active reminders
  */
 
 import { isScopeAuthorized } from '../../auth/agent_scope';
@@ -42,14 +48,34 @@ export type AgentFacadeHandler = (
 export interface AgentFacadeHandlers {
   /** 5c — dina_remember: provenance-preserving agent memory ingress. */
   memory?: AgentFacadeHandler;
+  /** Poll an agent-owned staged memory without exposing another producer's row. */
+  memoryStatus?: AgentFacadeHandler;
   /** 9 — dina_find_service: AppView service search. */
   findService?: AgentFacadeHandler;
+  /** Service-query status, ownership checked by the injected backing. */
+  serviceStatus?: AgentFacadeHandler;
+  /** Durable publication receipt for an owned service listing. */
+  servicePublicationStatus?: AgentFacadeHandler;
+  /** Owner-approved service listing mutation. */
+  servicePublish?: AgentFacadeHandler;
+  /** Owner-approved outbound service invocation. */
+  serviceInvoke?: AgentFacadeHandler;
   /** 11 — dina_talk: message another Dina (per-call phone approval). */
   talk?: AgentFacadeHandler;
   /** 11 — dina_delegate: hand a bounded task to an external agent. */
   delegate?: AgentFacadeHandler;
-  /** 12 — dina_peerlens / dina_review: read/write trust. */
-  peerlens?: AgentFacadeHandler;
+  /** Poll a Talk/delegation approval or execution using its stable request id. */
+  actionStatus?: AgentFacadeHandler;
+  /** 12 — dina_peerlens: bounded AppView search. */
+  peerlensSearch?: AgentFacadeHandler;
+  /** 12 — dina_review: owner-approved, durable PeerLens publish. */
+  peerlensAttest?: AgentFacadeHandler;
+  /** Poll an owned review approval/publish using its stable request id. */
+  peerlensStatus?: AgentFacadeHandler;
+  /** Metadata-only vault list with session-derived access state. */
+  vaults?: AgentFacadeHandler;
+  /** Active reminders from personas readable by this exact agent session. */
+  reminders?: AgentFacadeHandler;
   /** 5d — dina_recall/dina_ask: Core-mediated ask (the backing runs the persona PEP). */
   ask?: AgentFacadeHandler;
 }
@@ -96,10 +122,20 @@ export function registerAgentFacadeRoutes(
 ): void {
   const routes: Array<[keyof AgentFacadeHandlers, string]> = [
     ['memory', '/v1/agent/memory'],
-    ['findService', '/v1/agent/find-service'],
+    ['memoryStatus', '/v1/agent/memory/status'],
+    ['findService', '/v1/agent/service/search'],
+    ['serviceStatus', '/v1/agent/service/status'],
+    ['servicePublicationStatus', '/v1/agent/service/publication-status'],
+    ['servicePublish', '/v1/agent/service/publish'],
+    ['serviceInvoke', '/v1/agent/service/invoke'],
     ['talk', '/v1/agent/talk'],
     ['delegate', '/v1/agent/delegate'],
-    ['peerlens', '/v1/agent/peerlens'],
+    ['actionStatus', '/v1/agent/action/status'],
+    ['peerlensSearch', '/v1/agent/peerlens/search'],
+    ['peerlensAttest', '/v1/agent/peerlens/attest'],
+    ['peerlensStatus', '/v1/agent/peerlens/status'],
+    ['vaults', '/v1/agent/vaults'],
+    ['reminders', '/v1/agent/reminders'],
     ['ask', '/v1/agent/ask'],
   ];
   for (const [key, path] of routes) {

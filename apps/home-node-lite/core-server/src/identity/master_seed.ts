@@ -1,7 +1,7 @@
 /**
  * Task 4.51 + 4.52 — master-seed load / generate + convenience keyfile.
  *
- * The Home Node's root secret is a 64-byte BIP-39-derived master seed.
+ * The Home Node's root secret is the mnemonic's 32-byte BIP-39 entropy.
  * Every identity, persona DEK, and service key is SLIP-0010-derived
  * from it (see tasks 4.54-4.55). On first boot the server generates
  * a fresh mnemonic + prints the phrase exactly once for the operator
@@ -46,7 +46,7 @@ import * as path from 'node:path';
 
 import {
   generateMnemonic as coreGenerateMnemonic,
-  mnemonicToSeed,
+  mnemonicToEntropy,
   validateMnemonic,
 } from '@dina/core';
 
@@ -63,8 +63,8 @@ export const WRAPPED_SEED_NAME = 'wrapped_seed.bin';
  * The operator records it offline and deletes the file.
  */
 export const RECOVERY_PHRASE_NAME = 'recovery-phrase.txt';
-/** Expected seed length — BIP-39 with the default entropy produces 64 bytes. */
-export const SEED_LEN_BYTES = 64;
+/** Expected master-seed length — Dina uses raw 256-bit mnemonic entropy. */
+export const SEED_LEN_BYTES = 32;
 
 export type SeedSource =
   | { kind: 'generated'; mnemonic: string; seed: Uint8Array; recoveryPhrasePath: string }
@@ -107,7 +107,10 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
   if (!validateMnemonic(mnemonic)) {
     throw new Error('loadOrGenerateSeed: generated mnemonic failed self-check');
   }
-  const seed = mnemonicToSeed(mnemonic);
+  // Dina's canonical cross-runtime master seed is raw BIP-39 entropy, not
+  // the unrelated 64-byte PBKDF2 seed. This keeps HNL, mobile, recovery, and
+  // the legacy Go implementation on the same phrase -> keys -> DID mapping.
+  const seed = mnemonicToEntropy(mnemonic);
   if (seed.length !== SEED_LEN_BYTES) {
     throw new Error(
       `loadOrGenerateSeed: generated seed has wrong length (${seed.length}, want ${SEED_LEN_BYTES})`,

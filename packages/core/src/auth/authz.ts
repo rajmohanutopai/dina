@@ -57,6 +57,8 @@ const AUTHZ_RULES: {
    * today (no such route → 404) but a latent over-authorization if a
    * `/claim/*` sub-route is ever added. Exact-match closes it. */
   exact?: boolean;
+  /** Require exactly one non-empty path segment after `prefix`. */
+  singleSegmentTail?: boolean;
   allowed: Set<CallerType>;
 }[] = [
   // Interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md §12.5) —
@@ -164,6 +166,8 @@ const AUTHZ_RULES: {
 
   // Service discovery + workflow (service discovery scenario) — Brain owns publish
   // flow + orchestrates queries; Admin can read/write config from the UI.
+  // Coding agents use the payload-bound, owner-approved `/v1/agent/service/*`
+  // facades instead of these direct mutation routes.
   { prefix: '/v1/service/', allowed: new Set(['brain', 'admin']) },
 
   // Workflow-task lifecycle — Brain owns the surface; Admin reads for
@@ -279,6 +283,10 @@ export function isAuthorized(callerType: CallerType, method: string, path: strin
     // An `exact` rule claims ONLY its literal path — a longer path
     // sharing the prefix falls through to later rules.
     if (rule.exact === true && path !== rule.prefix) continue;
+    if (rule.singleSegmentTail === true) {
+      const tail = path.slice(rule.prefix.length);
+      if (tail === '' || tail.includes('/')) continue;
+    }
     // Suffix/method rules only claim their exact verb shape; a
     // non-match falls through to later (more generic) rules for the
     // same prefix.
@@ -303,6 +311,7 @@ export function getAuthorizationMatrix(): Record<string, CallerType[]> {
     const key =
       rule.prefix +
       (rule.suffix !== undefined ? `*${rule.suffix}` : '') +
+      (rule.singleSegmentTail === true ? ':segment' : '') +
       (rule.method !== undefined ? ` [${rule.method}]` : '');
     matrix[key] = Array.from(rule.allowed);
   }

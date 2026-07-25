@@ -218,11 +218,12 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
     setSessionRegistry(null);
   });
 
-  function gateReq(toolName = 'Risky'): CoreRequest {
+  function gateReq(toolName = 'Risky', approvalSurface: 'host' | 'owner' = 'host'): CoreRequest {
     const body = {
       tool_name: toolName,
       tool_input: { x: 'y' },
       mode: 'enforce',
+      approval_surface: approvalSurface,
       host_session_id: 'coding-permit-test',
     };
     return {
@@ -310,6 +311,18 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
       risk: 'MODERATE',
       task_id: null,
     });
+  });
+
+  it('MODERATE → durable Dina task when the host cannot ask locally', async () => {
+    const result = await router.handle(gateReq('Moderate', 'owner'));
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      outcome: 'approval_required',
+      risk: 'MODERATE',
+    });
+    const taskId = (result.body as { task_id: string | null }).task_id;
+    expect(taskId).toBeTruthy();
+    expect(repo.getById(taskId as string)?.status).toBe('pending_approval');
   });
 
   it('fails closed: approving a coding card with NO authority wired does not commit', async () => {

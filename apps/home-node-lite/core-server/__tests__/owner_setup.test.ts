@@ -158,6 +158,8 @@ describe('owner setup routes', () => {
       });
       expect(status.statusCode).toBe(200);
       expect(status.json()).toMatchObject({
+        home_did: NODE_DID,
+        msgbox_url: 'wss://mailbox.example/ws',
         coding_agents: [
           {
             device_id: 'coding-device-1',

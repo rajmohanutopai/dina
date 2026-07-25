@@ -8,9 +8,10 @@
  * Output of `runRememberTurn`:
  *   - `sideEffects` — the `RememberSideEffects` collector after the
  *     loop. Drain reads `routes`, `people`, `preferences` to apply
- *     them. `reminders` is empty — `schedule_reminder` actually
- *     creates the reminder mid-loop via Core (timing is fine: a
- *     reminder doesn't depend on vault storage).
+ *     them. `schedule_reminder` records a validated reminder plan;
+ *     the staging drain creates it only after Core confirms the memory
+ *     was stored. This prevents an unapproved staged write from causing
+ *     an independent reminder side effect.
  *   - `text` — the LLM's final user-facing acknowledgement (e.g.
  *     "Saved to finance — I'll remind you a week before Emma's
  *     birthday."). May be empty.
@@ -183,6 +184,17 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
           // (the most recent `route_to_persona` call) instead of the
           // static default — keeps reminder + item in the same vault.
           resolvePersona: () => collect.routes[collect.routes.length - 1]?.primary,
+          deferCreate: (plan) => {
+            const duplicate = collect.reminders.some(
+              (candidate) =>
+                candidate.message === plan.message &&
+                candidate.dueAtMs === plan.dueAtMs &&
+                candidate.persona === plan.persona,
+            );
+            if (!duplicate) {
+              collect.reminders.push(plan);
+            }
+          },
         }),
       );
 

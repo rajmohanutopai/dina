@@ -25,6 +25,7 @@ import {
   updateContact,
   getVaultRepository,
   getPeopleRepository,
+  resolvePersonaName,
 } from '@dina/core';
 import { type Reminder } from '@dina/core/reminders';
 
@@ -35,7 +36,7 @@ import {
 } from '../enrichment/topic_touch_pipeline';
 import { scoreSender } from '../peerlens/scorer';
 import { processEvent } from '../pipeline/event_processor';
-import { listRemindersByPersonaRouted } from '../reminders/backend';
+import { createReminderRouted, listRemindersByPersonaRouted } from '../reminders/backend';
 import { getAccessiblePersonas } from '../vault_context/assembly';
 import {
   recallSenderSubjectMemories,
@@ -477,9 +478,36 @@ export async function runStagingDrainTick(
       // can flush queued touches/paints before the embedding enrichment below.
       await yieldToHost();
 
-      const routedPrimary = turn.sideEffects.routes[0]?.primary;
-      const routedSecondary = turn.sideEffects.routes[0]?.secondary ?? [];
-      const personas: string[] = [routedPrimary ?? 'general', ...routedSecondary];
+      // An owner/agent may explicitly select a destination persona at ingress.
+      // That explicit target is authoritative; otherwise use the LLM route.
+      // Canonicalize before both Core resolve and reminder creation so aliases
+      // such as "work" cannot store the memory in "professional" while leaving
+      // its reminder in a different logical vault.
+      const requestedPersona = pickString('requested_persona').trim();
+      const routedPrimary =
+        requestedPersona !== ''
+          ? requestedPersona
+          : (turn.sideEffects.routes[0]?.primary ?? 'general');
+      const routedSecondary =
+        requestedPersona !== '' ? [] : (turn.sideEffects.routes[0]?.secondary ?? []);
+      const personas = Array.from(
+        new Set(
+          [routedPrimary, ...routedSecondary]
+            .map((persona) => resolvePersonaName(persona.trim()))
+            .filter((persona) => persona !== ''),
+        ),
+      );
+      if (personas.length === 0) personas.push('general');
+      const routedPersonaSet = new Set(personas);
+      const normalizedReminderPlans = turn.sideEffects.reminders.map((plan) => {
+        const requestedReminderPersona = resolvePersonaName(plan.persona.trim());
+        return {
+          ...plan,
+          persona: routedPersonaSet.has(requestedReminderPersona)
+            ? requestedReminderPersona
+            : (personas[0] ?? 'general'),
+        };
+      });
       const classifierMethod = 'agentic';
       const classifierConfidence = 1;
       const classifierReason = turn.text ?? '';
@@ -596,12 +624,21 @@ export async function runStagingDrainTick(
           const parsed = JSON.parse(mergedMetadata) as Record<string, unknown>;
           parsed.routing = routingMeta;
           parsed.enrichment = enrichmentMeta;
+          parsed.remember = { version: 1, reminders: normalizedReminderPlans };
           mergedMetadata = JSON.stringify(parsed);
         } catch {
-          mergedMetadata = JSON.stringify({ routing: routingMeta, enrichment: enrichmentMeta });
+          mergedMetadata = JSON.stringify({
+            routing: routingMeta,
+            enrichment: enrichmentMeta,
+            remember: { version: 1, reminders: normalizedReminderPlans },
+          });
         }
       } else {
-        mergedMetadata = JSON.stringify({ routing: routingMeta, enrichment: enrichmentMeta });
+        mergedMetadata = JSON.stringify({
+          routing: routingMeta,
+          enrichment: enrichmentMeta,
+          remember: { version: 1, reminders: normalizedReminderPlans },
+        });
       }
 
       // Build the vault row with fields flattened from data so storeItem
@@ -672,6 +709,44 @@ export async function runStagingDrainTick(
         personaAccess,
         data: enriched,
       });
+
+      // Multi-vault resolution can be partial: an open target may store while a
+      // sensitive target waits for approval (or one open target may fail while
+      // another succeeds). The aggregate `status` describes the primary row, so
+      // it is not sufficient evidence for per-vault side effects. Newer Core
+      // transports return the exact stored set; the fallback preserves
+      // compatibility with older/simplified test clients.
+      const storedPersonaSet = new Set(
+        resolveResult.storedPersonas ?? (resolveResult.status === 'stored' ? personas : []),
+      );
+
+      // `schedule_reminder` is plan-only inside the Remember runtime. Apply
+      // each plan only after Core confirms that exact persona accepted the
+      // memory. Plans for pending targets remain embedded in the staged row and
+      // are applied by Core after the owner approves that target.
+      const reminderPlanErrors: string[] = [];
+      let remindersCreated = 0;
+      for (const plan of normalizedReminderPlans) {
+        if (!storedPersonaSet.has(plan.persona)) continue;
+        try {
+          await createReminderRouted({
+            message: plan.message,
+            due_at: plan.dueAtMs,
+            persona: plan.persona,
+            kind: 'manual',
+            source_item_id: itemId,
+            source: 'remember_runtime',
+            timezone: plan.timezone,
+          });
+          remindersCreated++;
+        } catch (err) {
+          // The memory is already durable. Do not fail/retry the whole staging
+          // item (which would rerun the LLM and duplicate unrelated effects);
+          // retain explicit telemetry for the host/operator.
+          reminderPlanErrors.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+
       if (resolveResult.status !== 'stored') {
         // Report the storage target (`personas[0]`, the agentic loop's
         // routed primary), which targets a real, installed persona.
@@ -686,6 +761,7 @@ export async function runStagingDrainTick(
           event: 'staging.drain.deferred',
           item_id: itemId,
           personas,
+          stored_personas: [...storedPersonaSet],
           status: resolveResult.status,
         });
         continue;
@@ -731,12 +807,12 @@ export async function runStagingDrainTick(
 
       // ────────────────────────────────────────────────────────────────
       // Post-storage side effects (agentic). Apply the loop's collected
-      // side effects: people-graph link, reminders already fired mid-loop,
-      // preferences logged. The contact last-seen update is deterministic
+      // side effects: people-graph links, durable reminder plans, and
+      // preference telemetry. The contact last-seen update is deterministic
       // and runs regardless.
       // ────────────────────────────────────────────────────────────────
       {
-        const postErrors: string[] = [];
+        const postErrors: string[] = reminderPlanErrors.map((error) => `reminder: ${error}`);
         let peopleGraphTelemetry: {
           applied: number;
           created: number;
@@ -845,7 +921,7 @@ export async function runStagingDrainTick(
         }
 
         result.postPublish = {
-          remindersCreated: turn.toolNames.filter((n) => n === 'schedule_reminder').length,
+          remindersCreated,
           identityLinksFound: turn.sideEffects.people.length,
           contactUpdated,
           ambiguousRouting,

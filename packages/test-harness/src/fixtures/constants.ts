@@ -294,12 +294,14 @@ export const D2D_V1_MESSAGE_TYPES = [
   'coordination.request',
   'coordination.response',
   'social.update',
+  'talk.message.v1',
   'safety.alert',
   'peerlens.vouch.request',
   'peerlens.vouch.response',
   'service.query',
   'service.response',
   'service.offer',
+  'service.grant_request',
 ] as const;
 
 /**
@@ -315,10 +317,12 @@ export const D2D_EPHEMERAL_MESSAGE_TYPES = [
   // service.offer is not staged to the vault — it is persisted as contact
   // metadata (contact_service_offers) by the receive pipeline instead.
   'service.offer',
+  'service.grant_request',
 ] as const;
 
 export const D2D_MEMORY_TYPE_MAP: Record<string, string> = {
   'social.update': 'relationship_note',
+  'talk.message.v1': 'message',
   'peerlens.vouch.response': 'trust_attestation',
 };
 

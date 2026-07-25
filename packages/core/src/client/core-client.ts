@@ -79,11 +79,7 @@ export interface CoreClient {
    * to surface notes about an inbound DID's person (the structured
    * `did → person_id → subjects` edge) without name/FTS guessing.
    */
-  vaultItemsForPerson(
-    persona: string,
-    personId: string,
-    limit: number,
-  ): Promise<VaultQueryItem[]>;
+  vaultItemsForPerson(persona: string, personId: string, limit: number): Promise<VaultQueryItem[]>;
 
   /** Remove a vault item by id. No-op if the id doesn't exist. */
   vaultDelete(persona: string, itemId: string): Promise<VaultDeleteResult>;
@@ -378,10 +374,7 @@ export interface CoreClient {
    * so subsequent `needs_delivery=true` reads honour backoff. Returns
    * `true` on 200, `false` on 404 (unknown event).
    */
-  failWorkflowEventDelivery(
-    eventId: number,
-    opts?: FailWorkflowEventOptions,
-  ): Promise<boolean>;
+  failWorkflowEventDelivery(eventId: number, opts?: FailWorkflowEventOptions): Promise<boolean>;
 
   // ─── Workflow tasks — reads + create (task 1.32 slice C) ──────────────
 
@@ -880,7 +873,7 @@ export interface PIIRehydrateResult {
 
 // ─── Notify method types (task 1.29d) ────────────────────────────────────
 
-import type { NotifyPriority , ServiceConfig } from '@dina/protocol';
+import type { NotifyPriority, ServiceConfig } from '@dina/protocol';
 export type { NotifyPriority };
 
 export interface NotifyRequest {
@@ -1078,9 +1071,7 @@ export interface StagingIngestResult {
   status: string;
 }
 
-export type StagingResolveRequest =
-  | StagingResolveSingleRequest
-  | StagingResolveMultiRequest;
+export type StagingResolveRequest = StagingResolveSingleRequest | StagingResolveMultiRequest;
 
 interface StagingResolveBaseRequest {
   /** Staging inbox row id (Core's `id` field on the envelope). */
@@ -1126,6 +1117,12 @@ export interface StagingResolveResult {
    * their input.
    */
   personas?: string[];
+  /** Persona vaults that durably accepted the classified row. */
+  storedPersonas?: string[];
+  /** Persona vaults waiting on an owner approval. */
+  pendingPersonas?: string[];
+  /** Open persona vaults whose write failed while another target succeeded. */
+  failedPersonas?: string[];
 }
 
 export interface StagingFailResult {
@@ -1321,11 +1318,7 @@ import type { QuarantinedMessage } from '../d2d/quarantine';
 export type { Contact };
 
 /** People-graph types crossing the Core HTTP boundary. */
-import type {
-  ExtractionResult,
-  ApplyExtractionResponse,
-  Person,
-} from '../people/domain';
+import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
 export type { ExtractionResult, ApplyExtractionResponse, Person };
 
 /** Reminder types crossing the Core HTTP boundary. Re-exported so Brain

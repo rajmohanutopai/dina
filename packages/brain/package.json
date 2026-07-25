@@ -43,6 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dina/core": "*",
     "@dina/protocol": "*",
     "@dina/test-harness": "*"
   },

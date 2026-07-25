@@ -1,7 +1,17 @@
 export { AppViewClient, AppViewError } from './src/appview_client/http';
+export {
+  AttestationIdentityMismatchError,
+  AttestationLexiconError,
+  attestationLexiconErrors,
+  classifyAttestationPublishError,
+  publishAttestationToPDS,
+} from './src/peerlens/publisher';
 export type {
   AppViewClientOptions,
   IsDiscoverableResult,
+  PeerlensAttestation,
+  SearchPeerlensParams,
+  SearchPeerlensResponse,
   SearchServicesParams,
   ServiceProfile,
 } from './src/appview_client/http';

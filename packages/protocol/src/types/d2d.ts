@@ -22,6 +22,13 @@ export interface D2DPayload {
   s: string;
 }
 
+/** Body carried by the contact-only `talk.message.v1` D2D family. */
+export interface TalkMessageBody {
+  text: string;
+  /** Correlation only; never an authorization field. */
+  in_reply_to?: string;
+}
+
 /** Valid response statuses on the wire. */
 export type ServiceResponseStatus = 'success' | 'unavailable' | 'error';
 

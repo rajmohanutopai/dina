@@ -28,7 +28,12 @@ def config():
 def mock_identity():
     """Mock CLIIdentity so DinaClient doesn't need real keypair on disk."""
     mock_id = MagicMock()
-    mock_id.sign_request.return_value = ("did:key:z6MkTest", "2026-01-01T00:00:00Z", "cc" * 16, "aabb" * 32)
+    mock_id.sign_request.return_value = (
+        "did:key:z6MkTest",
+        "2026-01-01T00:00:00Z",
+        "cc" * 16,
+        "aabb" * 32,
+    )
     mock_id.did.return_value = "did:key:z6MkTest"
     with patch("dina_cli.client.CLIIdentity", return_value=mock_id):
         yield mock_id
@@ -42,10 +47,16 @@ def _tr(status: int, body: str = "", headers: dict | None = None) -> TransportRe
 def _patch_transport(*return_values, side_effect=None):
     """Patch DirectTransport.request — one call or a sequence."""
     if side_effect is not None:
-        return patch("dina_cli.transport.DirectTransport.request", side_effect=side_effect)
+        return patch(
+            "dina_cli.transport.DirectTransport.request", side_effect=side_effect
+        )
     if len(return_values) == 1:
-        return patch("dina_cli.transport.DirectTransport.request", return_value=return_values[0])
-    return patch("dina_cli.transport.DirectTransport.request", side_effect=list(return_values))
+        return patch(
+            "dina_cli.transport.DirectTransport.request", return_value=return_values[0]
+        )
+    return patch(
+        "dina_cli.transport.DirectTransport.request", side_effect=list(return_values)
+    )
 
 
 # TST-CLI-015
@@ -59,7 +70,9 @@ def test_vault_store(config, mock_identity):
         call = request.call_args
         assert call.args[1] == "/v1/vault/store?persona=personal"
         assert json.loads(call.kwargs["body"]) == item
-        assert mock_identity.sign_request.call_args.kwargs["query"] == "persona=personal"
+        assert (
+            mock_identity.sign_request.call_args.kwargs["query"] == "persona=personal"
+        )
         client.close()
 
 
@@ -101,7 +114,10 @@ def test_query_signing_matches_core_percent_encoding(config, mock_identity):
     with _patch_transport(_tr(200, '{"items":[]}')):
         client = DinaClient(config)
         client.vault_query("health notes", "test")
-        assert mock_identity.sign_request.call_args.kwargs["query"] == "persona=health%20notes"
+        assert (
+            mock_identity.sign_request.call_args.kwargs["query"]
+            == "persona=health%20notes"
+        )
         client.close()
 
 
@@ -199,6 +215,358 @@ def test_agent_pii_scrub_uses_narrow_coding_facade(config):
 
         assert mock_req.call_args.args[1] == "/v1/agent/scrub"
         client.close()
+
+
+def test_agent_service_discovery_uses_narrow_session_bound_facade(config):
+    with _patch_transport(
+        _tr(200, '{"matches":[],"capability_candidates":[]}')
+    ) as request:
+        client = DinaClient(replace(config, role="agent"))
+        result = client.find_services(
+            session="sess-1",
+            intent="book a haircut",
+            limit=5,
+        )
+
+        assert result["matches"] == []
+        call = request.call_args
+        assert call.args[1] == "/v1/agent/service/search"
+        assert json.loads(call.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "limit": 5,
+            "intent": "book a haircut",
+        }
+        client.close()
+
+
+def test_agent_service_publish_uses_owner_approved_facade(config):
+    with _patch_transport(
+        _tr(
+            202,
+            '{"status":"pending_approval","task_id":"approval-1",'
+            '"request_id":"publish-1"}',
+        )
+    ) as request:
+        client = DinaClient(replace(config, role="agent"))
+        result = client.publish_service(
+            rkey="salon/main",
+            config={"name": "Salon"},
+            session="sess-1",
+            request_id="publish-1",
+        )
+
+        assert request.call_args.args[1] == "/v1/agent/service/publish"
+        assert json.loads(request.call_args.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "request_id": "publish-1",
+            "rkey": "salon/main",
+            "config": {"name": "Salon"},
+        }
+        assert result == {
+            "status": "pending_approval",
+            "task_id": "approval-1",
+            "request_id": "publish-1",
+        }
+        client.close()
+
+
+def test_agent_service_publish_reports_missing_pds_identity(config):
+    with _patch_transport(
+        _tr(202, '{"status":"pending_approval","task_id":"approval-1"}'),
+        _tr(
+            200,
+            '{"rkey":"salon","publication_status":"not_configured",'
+            '"stored_status":"pending","can_publish":false,'
+            '"last_error":"PDS identity is not configured"}',
+        ),
+    ):
+        client = DinaClient(replace(config, role="agent"))
+        result = client.publish_service(
+            rkey="salon",
+            config={"name": "Salon"},
+            session="sess-1",
+            request_id="publish-2",
+        )
+        assert result["status"] == "pending_approval"
+        publication = client.service_publication_status(
+            rkey="salon",
+            session="sess-1",
+        )
+        assert publication["publication_status"] == "not_configured"
+        assert publication["stored_status"] == "pending"
+        assert publication["can_publish"] is False
+        client.close()
+
+
+def test_agent_service_invoke_and_status_bind_the_session(config):
+    responses = [
+        _tr(202, '{"status":"pending_approval","task_id":"approval-1"}'),
+        _tr(
+            200,
+            '{"status":"completed","service_task_id":"sq-1","query_id":"q-1"}',
+        ),
+        _tr(200, '{"task_id":"sq-1","status":"running"}'),
+    ]
+    with _patch_transport(*responses) as request:
+        client = DinaClient(replace(config, role="agent"))
+        client.send_service_query(
+            to_did="did:plc:salon",
+            capability="appointment_book",
+            params={"date": "2026-07-26"},
+            session="sess-1",
+            request_id="invoke-1",
+            service_uri=(
+                "at://did:plc:salon/com.dinakernel.service.profile/main"
+            ),
+        )
+        client.action_status(
+            action="service_invoke",
+            request_id="invoke-1",
+            session="sess-1",
+        )
+        client.service_query_status(task_id="sq-1", session="sess-1")
+
+        invoke = request.call_args_list[0]
+        assert invoke.args[1] == "/v1/agent/service/invoke"
+        assert json.loads(invoke.kwargs["body"])["request_id"] == "invoke-1"
+        action = request.call_args_list[1]
+        assert action.args[1] == "/v1/agent/action/status"
+        status = request.call_args_list[2]
+        assert status.args[1] == "/v1/agent/service/status"
+        assert json.loads(status.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "task_id": "sq-1",
+        }
+        client.close()
+
+
+def test_agent_service_publication_status_uses_narrow_facade(config):
+    with _patch_transport(
+        _tr(200, '{"rkey":"salon","publication_status":"published"}')
+    ) as request:
+        client = DinaClient(replace(config, role="agent"))
+        result = client.service_publication_status(
+            rkey="salon",
+            session="sess-1",
+        )
+        assert result["publication_status"] == "published"
+        assert request.call_args.args[1] == (
+            "/v1/agent/service/publication-status"
+        )
+        assert json.loads(request.call_args.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "rkey": "salon",
+        }
+        client.close()
+
+
+def test_agent_service_methods_fail_before_transport_without_session(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="service discovery requires a session"):
+        client.find_services(session="", intent="salon")
+    with pytest.raises(ValueError, match="service publication requires a session"):
+        client.publish_service(
+            rkey="main", config={}, session="", request_id="publish-1"
+        )
+    with pytest.raises(ValueError, match="stable request_id"):
+        client.publish_service(rkey="main", config={}, session="sess-1")
+    with pytest.raises(ValueError, match="service query requires a session"):
+        client.send_service_query(
+            to_did="did:plc:salon",
+            capability="appointment_book",
+            params={},
+        )
+    with pytest.raises(ValueError, match="stable request_id"):
+        client.send_service_query(
+            to_did="did:plc:salon",
+            capability="appointment_book",
+            params={},
+            session="sess-1",
+        )
+    with pytest.raises(ValueError, match="service status requires a session"):
+        client.service_query_status(task_id="sq-1", session="")
+    with pytest.raises(
+        ValueError, match="service publication status requires a session"
+    ):
+        client.service_publication_status(rkey="main", session="")
+    client.close()
+
+
+def test_talk_delegate_and_action_status_bind_exact_session_and_request(config):
+    responses = [
+        _tr(202, '{"status":"pending_approval","request_id":"talk-1"}'),
+        _tr(202, '{"status":"pending_approval","request_id":"delegate-1"}'),
+        _tr(200, '{"status":"completed","delivery_status":"delivered"}'),
+    ]
+    with _patch_transport(*responses) as request:
+        client = DinaClient(replace(config, role="agent"))
+        client.talk(
+            contact="Alonso",
+            text="Can we meet tomorrow?",
+            session="sess-1",
+            request_id="talk-1",
+            in_reply_to="msg-previous",
+        )
+        client.delegate(
+            runner="codex",
+            description="Compare the two proposals",
+            input_data={"paths": ["a.md", "b.md"]},
+            session="sess-1",
+            request_id="delegate-1",
+        )
+        result = client.action_status(
+            action="talk",
+            request_id="talk-1",
+            session="sess-1",
+        )
+
+        assert result["delivery_status"] == "delivered"
+        talk_request, delegate_request, status_request = request.call_args_list
+        assert talk_request.args[1] == "/v1/agent/talk"
+        assert json.loads(talk_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "request_id": "talk-1",
+            "contact": "Alonso",
+            "text": "Can we meet tomorrow?",
+            "in_reply_to": "msg-previous",
+        }
+        assert delegate_request.args[1] == "/v1/agent/delegate"
+        assert json.loads(delegate_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "request_id": "delegate-1",
+            "runner": "codex",
+            "description": "Compare the two proposals",
+            "input": {"paths": ["a.md", "b.md"]},
+        }
+        assert status_request.args[1] == "/v1/agent/action/status"
+        assert json.loads(status_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "action": "talk",
+            "request_id": "talk-1",
+        }
+        client.close()
+
+
+def test_talk_and_delegate_require_stable_request_and_session(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="live Dina session"):
+        client.talk(
+            contact="Alonso",
+            text="Hello",
+            session="",
+            request_id="talk-1",
+        )
+    with pytest.raises(ValueError, match="stable request_id"):
+        client.delegate(
+            runner="codex",
+            description="Check docs",
+            input_data={},
+            session="sess-1",
+            request_id="",
+        )
+    with pytest.raises(ValueError, match="action must be"):
+        client.action_status(
+            action="other",
+            request_id="req-1",
+            session="sess-1",
+        )
+
+
+def test_peerlens_search_review_and_status_use_narrow_facades(config):
+    responses = [
+        _tr(200, '{"results":[],"total_estimate":0}'),
+        _tr(202, '{"status":"pending_approval","request_id":"review-1"}'),
+        _tr(200, '{"publish_status":"published","uri":"at://review/1"}'),
+    ]
+    with _patch_transport(*responses) as request:
+        client = DinaClient(replace(config, role="agent"))
+        client.search_peerlens(
+            session="sess-1",
+            query="ergonomic chair",
+            subject_type="product",
+            sentiment="positive",
+            tags=["back-support"],
+            limit=5,
+        )
+        client.publish_review(
+            record={
+                "subject": {"type": "product", "identifier": "chair-123"},
+                "category": "furniture",
+                "sentiment": "positive",
+                "text": "Supportive.",
+            },
+            session="sess-1",
+            request_id="review-1",
+        )
+        status = client.review_status(request_id="review-1", session="sess-1")
+
+        assert status["publish_status"] == "published"
+        search_request, review_request, status_request = request.call_args_list
+        assert search_request.args[1] == "/v1/agent/peerlens/search"
+        assert json.loads(search_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "sort": "relevant",
+            "limit": 5,
+            "q": "ergonomic chair",
+            "subject_type": "product",
+            "sentiment": "positive",
+            "tags": ["back-support"],
+        }
+        assert review_request.args[1] == "/v1/agent/peerlens/attest"
+        assert json.loads(review_request.kwargs["body"])["request_id"] == "review-1"
+        assert status_request.args[1] == "/v1/agent/peerlens/status"
+        assert json.loads(status_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "request_id": "review-1",
+        }
+        client.close()
+
+
+def test_peerlens_methods_require_session_and_stable_request(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="live Dina session"):
+        client.search_peerlens(session="", query="chair")
+    with pytest.raises(ValueError, match="stable request_id"):
+        client.publish_review(record={}, session="sess-1", request_id="")
+    with pytest.raises(ValueError, match="live Dina session"):
+        client.review_status(request_id="review-1", session="")
+
+
+def test_vaults_and_reminders_use_session_bound_facades(config):
+    responses = [
+        _tr(200, '{"vaults":[{"name":"general","readable":true}]}'),
+        _tr(200, '{"reminders":[],"restricted_count":1}'),
+    ]
+    with _patch_transport(*responses) as request:
+        client = DinaClient(replace(config, role="agent"))
+        vaults = client.list_vaults(session="sess-1")
+        reminders = client.list_reminders(session="sess-1", limit=25)
+
+        assert vaults["vaults"][0]["name"] == "general"
+        assert reminders["restricted_count"] == 1
+        vault_request, reminder_request = request.call_args_list
+        assert vault_request.args[1] == "/v1/agent/vaults"
+        assert json.loads(vault_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+        }
+        assert reminder_request.args[1] == "/v1/agent/reminders"
+        assert json.loads(reminder_request.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "limit": 25,
+        }
+        client.close()
+
+
+def test_vaults_and_reminders_require_session_and_bounded_limit(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="live Dina session"):
+        client.list_vaults(session="")
+    with pytest.raises(ValueError, match="live Dina session"):
+        client.list_reminders(session="")
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        client.list_reminders(session="sess-1", limit=101)
+    client.close()
+    client.close()
 
 
 def test_non_agent_pii_scrub_keeps_internal_route(config):
@@ -299,6 +667,7 @@ def test_agent_remember_uses_session_bound_facade(config):
         result = client.remember(
             "Lower back pain",
             session="sess-1",
+            source_id="remember-0001",
             persona="health",
         )
 
@@ -307,7 +676,33 @@ def test_agent_remember_uses_session_bound_facade(config):
         assert json.loads(mock_req.call_args.kwargs["body"]) == {
             "content": "Lower back pain",
             "session_id": "sess-1",
+            "request_id": "remember-0001",
             "persona": "health",
+        }
+        client.close()
+
+
+def test_agent_remember_requires_stable_request_id(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="stable source_id/request_id"):
+        client.remember("Lower back pain", session="sess-1")
+    client.close()
+
+
+def test_agent_remember_status_uses_owned_facade(config):
+    agent_config = replace(config, role="agent")
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        return_value=_tr(200, '{"status":"stored","id":"stg-1"}'),
+    ) as mock_req:
+        client = DinaClient(agent_config)
+        result = client.remember_check("stg-1", session="sess-1")
+
+        assert result["status"] == "stored"
+        assert mock_req.call_args.args[1] == "/v1/agent/memory/status"
+        assert json.loads(mock_req.call_args.kwargs["body"]) == {
+            "item_id": "stg-1",
+            "session_id": "sess-1",
         }
         client.close()
 
@@ -367,6 +762,7 @@ def test_gate_can_bind_the_signed_host_session_without_an_extra_start_call(confi
             "tool_name": "Read",
             "tool_input": {"file_path": "notes.txt"},
             "mode": "enforce",
+            "approval_surface": "host",
             "host_session_id": "claude-abc",
             "cwd": "/work",
         }

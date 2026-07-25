@@ -51,11 +51,13 @@ const SCOPE_RULES: readonly ScopeRule[] = [
   { prefix: '/v1/agent/audit', scope: 'coding' },
   { prefix: '/v1/agent/memory', scope: 'coding' },
   { prefix: '/v1/agent/scrub', scope: 'coding' },
-  { prefix: '/v1/agent/find-service', scope: 'coding' },
+  { prefix: '/v1/agent/service', scope: 'coding' },
   { prefix: '/v1/agent/talk', scope: 'coding' },
   { prefix: '/v1/agent/delegate', scope: 'coding' },
+  { prefix: '/v1/agent/action', scope: 'coding' },
   { prefix: '/v1/agent/peerlens', scope: 'coding' },
   { prefix: '/v1/agent/ask', scope: 'coding' },
+  { prefix: '/v1/agent/vaults', scope: 'coding' },
   { prefix: '/v1/agent/reminders', scope: 'coding' },
   // Delegation-runner surface: claiming a workflow task is a RUNNER action, not
   // a coding one (Item C — narrow the broad agent authz). A coding agent that

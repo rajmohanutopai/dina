@@ -111,17 +111,30 @@ function buildSealedD2DEnvelope(): MsgBoxEnvelope {
 }
 
 /** Build a sealed RPC envelope (simulating a CLI device request). */
-function buildSealedRPCEnvelope(cliSeed: Uint8Array, cliDID: string): MsgBoxEnvelope {
+function buildSealedRPCEnvelope(
+  cliSeed: Uint8Array,
+  cliDID: string,
+  options: {
+    target?: string;
+    signedTarget?: string;
+    scheme?: 'sha512' | 'blake2b';
+  } = {},
+): MsgBoxEnvelope {
   const body = '{"query":"test"}';
+  const target = options.target ?? '/v1/vault';
+  const signedTarget = options.signedTarget ?? target;
+  const separator = signedTarget.indexOf('?');
+  const signedPath = separator < 0 ? signedTarget : signedTarget.slice(0, separator);
+  const signedQuery = separator < 0 ? '' : signedTarget.slice(separator + 1);
   const timestamp = new Date().toISOString();
   const nonce = bytesToHex(randomBytes(16));
   const bodyHash = bytesToHex(sha256(new TextEncoder().encode(body)));
-  const canonical = `GET\n/v1/vault\n\n${timestamp}\n${nonce}\n${bodyHash}`;
+  const canonical = `GET\n${signedPath}\n${signedQuery}\n${timestamp}\n${nonce}\n${bodyHash}`;
   const sigBytes = sign(cliSeed, new TextEncoder().encode(canonical));
 
   const inner = {
     method: 'GET',
-    path: '/v1/vault',
+    path: target,
     headers: {
       'X-DID': cliDID,
       'X-Timestamp': timestamp,
@@ -132,7 +145,7 @@ function buildSealedRPCEnvelope(cliSeed: Uint8Array, cliDID: string): MsgBoxEnve
   };
 
   const plainBytes = new TextEncoder().encode(JSON.stringify(inner));
-  const sealed = sealEncrypt(plainBytes, HOME_PUB);
+  const sealed = sealEncrypt(plainBytes, HOME_PUB, options.scheme);
   const ciphertext = Buffer.from(sealed).toString('base64');
 
   return {
@@ -266,6 +279,51 @@ describe('MsgBox Envelope Handlers', () => {
         expect.any(String),
         expect.any(Object), // AbortSignal
       );
+    });
+
+    it('verifies query-bearing requests against separate path and query components', async () => {
+      const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID, {
+        target: '/v1/service/config/salon?session_id=session-1&retry=true',
+      });
+      await handleInboundRPC(env);
+      expect(mockRouter).toHaveBeenCalledWith(
+        'GET',
+        '/v1/service/config/salon?session_id=session-1&retry=true',
+        expect.objectContaining({ 'X-DID': CLI_DID }),
+        expect.any(String),
+        expect.any(Object),
+      );
+    });
+
+    it('encrypts post-decryption auth errors with the request nonce scheme', async () => {
+      const { ws, sent } = createCapturingWS();
+      setWSFactory(() => ws);
+
+      const { connectToMsgBox } = await import('../../src/relay/msgbox_ws');
+      await connectToMsgBox('wss://test.relay/ws');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      ws.onmessage?.({
+        data: JSON.stringify({ type: 'auth_challenge', nonce: 'test', ts: 12345 }),
+      });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+
+      const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID, {
+        target: '/v1/vault?limit=1',
+        signedTarget: '/v1/vault?limit=2',
+        scheme: 'blake2b',
+      });
+      await handleInboundRPC(env);
+
+      expect(mockRouter).not.toHaveBeenCalled();
+      const responseEnvelope = JSON.parse(sent[sent.length - 1]) as MsgBoxEnvelope;
+      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext!, 'base64'));
+      const decoded = sealDecrypt(sealed, CLI_PUB, CLI_SEED);
+      const response = JSON.parse(new TextDecoder().decode(decoded)) as CoreRPCResponse;
+      expect(response).toMatchObject({
+        request_id: env.id,
+        status: 401,
+        body: JSON.stringify({ error: 'Invalid signature' }),
+      });
     });
 
     it('identity-signs the response sent by the production WebSocket handler', async () => {

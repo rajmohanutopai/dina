@@ -90,6 +90,11 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     if (modeRaw !== 'enforce' && modeRaw !== 'classify_only') {
       return { status: 400, body: { error: `invalid mode: ${modeRaw}` } };
     }
+    const approvalSurface =
+      typeof body.approval_surface === 'string' ? body.approval_surface : 'host';
+    if (approvalSurface !== 'host' && approvalSurface !== 'owner') {
+      return { status: 400, body: { error: `invalid approval_surface: ${approvalSurface}` } };
+    }
     const cwd = typeof body.cwd === 'string' && body.cwd !== '' ? body.cwd : undefined;
 
     if (!gate) {
@@ -120,10 +125,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       hostSessionId !== ''
         ? getSessionRegistry().start({ agentDid, hostSessionId }).sessionId
         : sessionIdRaw;
-    if (
-      hostSessionId === '' &&
-      !getSessionRegistry().renew(sessionId, agentDid).ok
-    ) {
+    if (hostSessionId === '' && !getSessionRegistry().renew(sessionId, agentDid).ok) {
       return { status: 401, body: { error: 'invalid_session' } };
     }
 
@@ -136,17 +138,18 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       mode: modeRaw,
     });
 
-    // Item B — an enforce-mode HIGH call that the gate could NOT redeem against
-    // an already-approved permit needs the owner's Dina decision. MODERATE calls
-    // are confirmed by the host's native permission UI and must not create an
-    // orphaned Core task. Create the HIGH-risk card idempotently, bound to the
-    // payload hash (never the raw input), so an approved retry can redeem it.
+    // Item B — an enforce-mode call that the gate could NOT redeem against an
+    // already-approved permit needs either the host's native confirmation UI or
+    // the owner's Dina. Claude Code can ask locally for MODERATE calls; Codex
+    // currently cannot, so its adapter explicitly selects the owner surface.
+    // HIGH always uses the owner surface. Create the card idempotently, bound to
+    // the payload hash (never the raw input), so an approved retry can redeem it.
     // Fail CLOSED: if approval is unavailable we return approval_required with
     // no task rather than silently allow.
     let approvalTaskId: string | undefined;
     if (
       modeRaw === 'enforce' &&
-      result.risk === 'HIGH' &&
+      (result.risk === 'HIGH' || (result.risk === 'MODERATE' && approvalSurface === 'owner')) &&
       typeof result.payloadHash === 'string' &&
       result.payloadHash !== ''
     ) {

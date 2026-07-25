@@ -195,16 +195,311 @@ def dina_ask_status(request_id: str, session: str) -> dict:
 
 
 @mcp.tool()
-def dina_remember(text: str, session: str, persona: str = "") -> dict:
+def dina_remember(
+    text: str, session: str, request_id: str, persona: str = ""
+) -> dict:
     """Store a fact through Dina's session-bound coding-agent memory ingress.
 
-    The default target is the General vault. Supply ``persona`` only when the
-    user or task explicitly identifies the relevant vault. Sensitive or locked
-    vaults can return ``approval_required``; that means no memory was written
-    and the agent must not claim otherwise.
+    Dina classifies the memory into the appropriate vault unless ``persona`` is
+    explicitly supplied. ``request_id`` must be stable across retries. The
+    result can be ``processing`` or ``pending_approval``; poll
+    ``dina_remember_status`` and do not claim the memory was stored until that
+    tool returns ``stored``.
     """
     c = _get_client()
-    return c.remember(text, session=session, persona=persona)
+    return c.remember(
+        text, session=session, source_id=request_id, persona=persona
+    )
+
+
+@mcp.tool()
+def dina_remember_status(item_id: str, session: str) -> dict:
+    """Poll an agent-owned Remember operation until it is stored or terminal.
+
+    ``pending_approval`` means the owner must decide on their phone. Never
+    bypass it. ``denied`` and ``failed`` are terminal and mean the memory was
+    not stored.
+    """
+    c = _get_client()
+    return c.remember_check(item_id, session=session)
+
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_find_service(
+    session: str,
+    intent: str = "",
+    capability: str = "",
+    query: str = "",
+    lat: float | None = None,
+    lng: float | None = None,
+    radius_km: float | None = None,
+    limit: int = 10,
+) -> dict:
+    """Find a Dina service by natural-language intent or exact capability.
+
+    Supply exactly one of ``intent`` or ``capability``. Results include the
+    provider DID, listing URI, capability schema, and schema hash needed by
+    ``dina_invoke_service``. Discovery is read-only and never sends vault data.
+    """
+    return _get_client().find_services(
+        session=session,
+        intent=intent,
+        capability=capability,
+        query=query,
+        lat=lat,
+        lng=lng,
+        radius_km=radius_km,
+        limit=limit,
+    )
+
+
+@mcp.tool()
+def dina_publish_service(
+    rkey: str, config: dict, session: str, request_id: str
+) -> dict:
+    """Ask the owner to save one service listing owned by this Dina.
+
+    ``request_id`` is a stable idempotency key and must be reused on retries.
+    ``pending_approval`` means wait for the owner and poll
+    ``dina_action_status(action="service_publish")``. Only a completed action
+    means the exact approved config was saved. Public/unlisted PDS publication
+    remains asynchronous; then poll ``dina_service_publication_status``.
+    """
+    return _get_client().publish_service(
+        rkey=rkey,
+        config=config,
+        session=session,
+        request_id=request_id,
+    )
+
+
+@mcp.tool()
+def dina_invoke_service(
+    to_did: str,
+    capability: str,
+    params: dict,
+    session: str,
+    request_id: str,
+    schema_hash: str = "",
+    service_uri: str = "",
+    service_name: str = "",
+    grant_id: str = "",
+    ttl_seconds: int = 60,
+) -> dict:
+    """Invoke a selected Dina service through signed D2D messaging.
+
+    Use provider/listing/schema fields returned by ``dina_find_service``.
+    ``request_id`` must be stable across retries. ``pending_approval`` means do
+    not invoke or bypass; poll ``dina_action_status(action="service_invoke")``.
+    Once completed, the result remains asynchronous; poll
+    ``dina_service_status`` with ``service_task_id``.
+    """
+    return _get_client().send_service_query(
+        to_did=to_did,
+        capability=capability,
+        params=params,
+        session=session,
+        request_id=request_id,
+        schema_hash=schema_hash,
+        service_uri=service_uri,
+        service_name=service_name,
+        grant_id=grant_id,
+        ttl_seconds=ttl_seconds,
+    )
+
+
+@mcp.tool()
+def dina_service_status(task_id: str, session: str) -> dict:
+    """Poll an invocation created by this same agent session."""
+    return _get_client().service_query_status(task_id=task_id, session=session)
+
+
+@mcp.tool()
+def dina_service_publication_status(rkey: str, session: str) -> dict:
+    """Check whether an owned listing reached its PDS.
+
+    ``pending`` may include a retry time after a transient outage.
+    ``published`` includes the committed AT URI and CID. ``failed`` is a
+    permanent validation/credential rejection that needs owner action.
+    ``not_configured`` means no PDS identity is wired, so no retry can run.
+    """
+    return _get_client().service_publication_status(rkey=rkey, session=session)
+
+
+# ---------------------------------------------------------------------------
+# PeerLens
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_peerlens(
+    session: str,
+    query: str = "",
+    category: str = "",
+    domain: str = "",
+    subject_type: str = "",
+    sentiment: str = "",
+    min_confidence: str = "",
+    author_did: str = "",
+    tags: list[str] | None = None,
+    sort: str = "relevant",
+    limit: int = 10,
+) -> dict:
+    """Search signed public PeerLens reviews through Dina.
+
+    This is a bounded, read-only AppView query. Results are public review
+    evidence, not private vault context. Use ``dina_ask`` separately when the
+    answer also needs the owner's private preferences or history.
+    """
+    return _get_client().search_peerlens(
+        session=session,
+        query=query,
+        category=category,
+        domain=domain,
+        subject_type=subject_type,
+        sentiment=sentiment,
+        min_confidence=min_confidence,
+        author_did=author_did,
+        tags=tags,
+        sort=sort,
+        limit=limit,
+    )
+
+
+@mcp.tool()
+def dina_review(record: dict, session: str, request_id: str) -> dict:
+    """Ask the owner to publish one public PeerLens review.
+
+    ``record`` may contain only subject, category, sentiment, dimensions, text,
+    tags, domain, evidence, and confidence. Core stamps createdAt and marks the
+    review as agent-generated. ``request_id`` is a stable idempotency key:
+    generate it once and reuse it for every retry and ``dina_review_status``
+    poll. A ``pending_approval`` result means nothing has been published. Do
+    not claim success while approval is pending, and do not publish by another
+    route.
+    """
+    return _get_client().publish_review(
+        record=record,
+        session=session,
+        request_id=request_id,
+    )
+
+
+@mcp.tool()
+def dina_review_status(request_id: str, session: str) -> dict:
+    """Poll an owner-approved review through durable PDS publication.
+
+    Pending means wait, including ``pending_approval``. ``cancelled`` means the
+    owner denied or withdrew the request. ``queued`` or ``publishing`` means
+    Core owns the durable retry and the agent must not create another review.
+    ``published`` includes the AT URI/CID. ``failed`` is terminal and includes
+    an actionable error code.
+    """
+    return _get_client().review_status(request_id=request_id, session=session)
+
+
+# ---------------------------------------------------------------------------
+# Vault metadata + reminders
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_vaults(session: str) -> dict:
+    """List the owner's Dina vaults without reading their contents.
+
+    The result contains metadata and whether this exact agent session may read
+    each vault. ``approval_required`` is informational; use ``dina_ask`` for a
+    real question and follow its approval flow rather than trying to access
+    storage directly.
+    """
+    return _get_client().list_vaults(session=session)
+
+
+@mcp.tool()
+def dina_reminders(session: str, limit: int = 50) -> dict:
+    """List active reminders visible to this exact Dina session.
+
+    Core derives readable vaults from the authenticated agent and session. The
+    caller cannot select or bypass a restricted vault. The response may report
+    that additional reminders are restricted; use ``dina_ask`` and its normal
+    approval flow if the user asks about protected context.
+    """
+    return _get_client().list_reminders(session=session, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# Talk + delegation
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_talk(
+    contact: str,
+    text: str,
+    session: str,
+    request_id: str,
+    in_reply_to: str = "",
+) -> dict:
+    """Ask Dina to send one exact message to a known contact.
+
+    ``request_id`` is an idempotency key chosen by the caller. Generate it once
+    for this intended message and reuse it for every retry and status poll.
+    A normal first response is ``pending_approval``. Do not claim the message
+    was sent and do not bypass the decision; poll ``dina_action_status`` until
+    it returns ``completed`` or a terminal denial/failure.
+    """
+    return _get_client().talk(
+        contact=contact,
+        text=text,
+        session=session,
+        request_id=request_id,
+        in_reply_to=in_reply_to,
+    )
+
+
+@mcp.tool()
+def dina_delegate(
+    runner: str,
+    description: str,
+    input: dict,
+    session: str,
+    request_id: str,
+) -> dict:
+    """Ask Dina to queue one bounded task for an external agent runner.
+
+    ``request_id`` must be generated once and reused. The task is not created
+    until the owner approves the exact runner and description. Poll
+    ``dina_action_status`` with action ``delegate``; a completed facade action
+    includes ``delegation_task_id`` and the delegated task's live status.
+    """
+    return _get_client().delegate(
+        runner=runner,
+        description=description,
+        input_data=input,
+        session=session,
+        request_id=request_id,
+    )
+
+
+@mcp.tool()
+def dina_action_status(action: str, request_id: str, session: str) -> dict:
+    """Poll a bounded facade request and continue it only after approval.
+
+    ``action`` is ``talk``, ``delegate``, ``service_publish``, or
+    ``service_invoke``. Pending means wait. Cancelled means the owner denied or
+    withdrew it. Completed means the exact approved action reached Dina's
+    durable transport/store; inspect the action-specific receipt.
+    """
+    return _get_client().action_status(
+        action=action,
+        request_id=request_id,
+        session=session,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -77,13 +77,15 @@ export const DEFAULT_BRAIN_PORT = 8200;
 export const DEFAULT_MSGBOX_PORT = 7700;
 
 // ─── D2D message-type strings ────────────────────────────────────────────
-// Ten V1 message families. Wire values are locked — any change is a
+// V1 message families. Wire values are locked — any change is a
 // protocol break. Matches core/internal/domain/d2d.go.
 
 export const MSG_TYPE_PRESENCE_SIGNAL = 'presence.signal' as const;
 export const MSG_TYPE_COORDINATION_REQUEST = 'coordination.request' as const;
 export const MSG_TYPE_COORDINATION_RESPONSE = 'coordination.response' as const;
 export const MSG_TYPE_SOCIAL_UPDATE = 'social.update' as const;
+/** Human-visible contact message sent through the narrow Talk facade. */
+export const MSG_TYPE_TALK_MESSAGE_V1 = 'talk.message.v1' as const;
 export const MSG_TYPE_SAFETY_ALERT = 'safety.alert' as const;
 export const MSG_TYPE_PEERLENS_VOUCH_REQUEST = 'peerlens.vouch.request' as const;
 export const MSG_TYPE_PEERLENS_VOUCH_RESPONSE = 'peerlens.vouch.response' as const;
@@ -115,6 +117,7 @@ export type D2DMessageType =
   | typeof MSG_TYPE_COORDINATION_REQUEST
   | typeof MSG_TYPE_COORDINATION_RESPONSE
   | typeof MSG_TYPE_SOCIAL_UPDATE
+  | typeof MSG_TYPE_TALK_MESSAGE_V1
   | typeof MSG_TYPE_SAFETY_ALERT
   | typeof MSG_TYPE_PEERLENS_VOUCH_REQUEST
   | typeof MSG_TYPE_PEERLENS_VOUCH_RESPONSE
@@ -176,6 +179,9 @@ export const MAX_MESSAGE_BODY_SIZE = 256 * 1024;
 
 /** Maximum `ttl_seconds` on `service.query` (5 minutes). */
 export const MAX_SERVICE_TTL = 300;
+
+/** Maximum UTF-8 size of human text in a `talk.message.v1` body. */
+export const MAX_TALK_MESSAGE_BYTES = 8 * 1024;
 
 // ─── Core RPC envelope type strings ──────────────────────────────────────
 

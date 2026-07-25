@@ -20,6 +20,7 @@ export type {
   ServiceResponseBody,
   ServiceOfferBody,
   ServiceGrantRequestBody,
+  TalkMessageBody,
 } from './types/d2d';
 export type {
   AuthChallengeFrame,
@@ -101,6 +102,7 @@ export {
   MSG_TYPE_COORDINATION_REQUEST,
   MSG_TYPE_COORDINATION_RESPONSE,
   MSG_TYPE_SOCIAL_UPDATE,
+  MSG_TYPE_TALK_MESSAGE_V1,
   MSG_TYPE_SAFETY_ALERT,
   MSG_TYPE_PEERLENS_VOUCH_REQUEST,
   MSG_TYPE_PEERLENS_VOUCH_RESPONSE,
@@ -110,6 +112,7 @@ export {
   MSG_TYPE_SERVICE_GRANT_REQUEST,
   MAX_MESSAGE_BODY_SIZE,
   MAX_SERVICE_TTL,
+  MAX_TALK_MESSAGE_BYTES,
   RPC_REQUEST_TYPE,
   RPC_RESPONSE_TYPE,
   NOTIFY_PRIORITY_FIDUCIARY,
@@ -171,6 +174,7 @@ export {
   validateServiceResponseBody,
   validateServiceOfferBody,
   validateServiceGrantRequestBody,
+  validateTalkMessageBody,
   validateFutureSkew,
   verifyMessageSignature,
   parseServiceListingUri,

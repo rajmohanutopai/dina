@@ -61,7 +61,9 @@ class _ClientResponse:
                 request=fake_req,
             )
             raise httpx.HTTPStatusError(
-                f"HTTP {self.status_code}", request=fake_req, response=fake_resp,
+                f"HTTP {self.status_code}",
+                request=fake_req,
+                response=fake_resp,
             )
 
 
@@ -137,7 +139,8 @@ class DinaClient:
         """
         if "json" in kwargs:
             body_bytes = _json.dumps(
-                kwargs.pop("json"), separators=(",", ":"),
+                kwargs.pop("json"),
+                separators=(",", ":"),
             ).encode("utf-8")
             kwargs["content"] = body_bytes
             headers = kwargs.get("headers") or {}
@@ -166,12 +169,16 @@ class DinaClient:
         query = ""
         if "params" in kwargs and kwargs["params"]:
             from urllib.parse import quote, urlencode
+
             # Core's canonical query serializer follows encodeURIComponent
             # (spaces are %20), not form encoding (spaces are +). Sign and send
             # the exact representation Core reconstructs.
             query = urlencode(kwargs["params"], doseq=True, quote_via=quote)
         did, ts, nonce, sig = self._identity.sign_request(
-            method, path, body_bytes, query=query,
+            method,
+            path,
+            body_bytes,
+            query=query,
         )
         headers = dict(kwargs.get("headers") or {})
         headers["X-DID"] = did
@@ -185,6 +192,7 @@ class DinaClient:
 
         if self._verbose:
             import sys
+
             via = getattr(self._transport, "transport_name", "?")
             print(f"  >> {method} {path} [via {via}]", file=sys.stderr)
             print(f"     DID: {did}", file=sys.stderr)
@@ -206,16 +214,18 @@ class DinaClient:
         # Let MsgBoxTransport.request generate a fresh UUID per call.
         try:
             tr = self._transport.request(
-                method, full_path, headers, body=body_str,
+                method,
+                full_path,
+                headers,
+                body=body_str,
             )
         except TransportError as exc:
-            raise DinaClientError(
-                f"Cannot reach Dina: {exc}"
-            ) from exc
+            raise DinaClientError(f"Cannot reach Dina: {exc}") from exc
 
         response = _ClientResponse(tr)
         if self._verbose:
             import sys
+
             print(
                 f"  << {response.status_code} ({len(response.content)} bytes)",
                 file=sys.stderr,
@@ -223,7 +233,9 @@ class DinaClient:
             if response.status_code >= 400:
                 # Metadata only — don't echo the error response body to logs
                 # even on failure; it may carry vault/error context (CLI.5).
-                print(f"     (error body: {len(response.content)} bytes)", file=sys.stderr)
+                print(
+                    f"     (error body: {len(response.content)} bytes)", file=sys.stderr
+                )
 
         if response.status_code < 400:
             return response
@@ -263,8 +275,11 @@ class DinaClient:
         elif session:
             headers["X-Session"] = session
         resp = self._request(
-            self._core, "POST", "/api/v1/ask",
-            json=body, headers=headers,
+            self._core,
+            "POST",
+            "/api/v1/ask",
+            json=body,
+            headers=headers,
         )
         return resp.json()
 
@@ -272,7 +287,9 @@ class DinaClient:
         """Poll the status of a pending ask request."""
         params = {"session_id": session} if self._config.role == "agent" else None
         resp = self._request(
-            self._core, "GET", f"/api/v1/ask/{request_id}/status",
+            self._core,
+            "GET",
+            f"/api/v1/ask/{request_id}/status",
             params=params,
         )
         return resp.json()
@@ -287,6 +304,7 @@ class DinaClient:
         session: str = "",
         host_session: str = "",
         cwd: str | None = None,
+        approval_surface: str = "host",
     ) -> dict:
         """Classify a raw coding-agent tool call via POST /v1/agent/gate.
 
@@ -306,6 +324,7 @@ class DinaClient:
             "tool_name": tool_name,
             "tool_input": tool_input,
             "mode": mode,
+            "approval_surface": approval_surface,
         }
         if session:
             body["session_id"] = session
@@ -409,7 +428,9 @@ class DinaClient:
             extra["X-Session"] = session
         try:
             resp = self._request(
-                self._core, "GET", f"/v1/vault/kv/{key}",
+                self._core,
+                "GET",
+                f"/v1/vault/kv/{key}",
                 headers=extra if extra else None,
             )
             try:
@@ -452,7 +473,15 @@ class DinaClient:
         memory asynchronously.
         """
         if self._config.role == "agent":
-            body: dict[str, Any] = {"content": text, "session_id": session}
+            if not source_id:
+                raise ValueError(
+                    "agent remember requires a stable source_id/request_id for idempotency"
+                )
+            body: dict[str, Any] = {
+                "content": text,
+                "session_id": session,
+                "request_id": source_id,
+            }
             if persona:
                 body["persona"] = persona
             resp = self._request(
@@ -477,8 +506,16 @@ class DinaClient:
         )
         return resp.json()
 
-    def remember_check(self, item_id: str) -> dict:
-        """Check status of a pending remember via GET /api/v1/remember/{id}."""
+    def remember_check(self, item_id: str, session: str = "") -> dict:
+        """Check status of a pending remember through the caller's owned surface."""
+        if self._config.role == "agent":
+            resp = self._request(
+                self._core,
+                "POST",
+                "/v1/agent/memory/status",
+                json={"item_id": item_id, "session_id": session},
+            )
+            return resp.json()
         resp = self._request(
             self._core,
             "GET",
@@ -579,13 +616,17 @@ class DinaClient:
     def proposal_status(self, proposal_id: str) -> dict:
         """Poll intent proposal status (GET /v1/intent/proposals/{id}/status)."""
         resp = self._request(
-            self._core, "GET", f"/v1/intent/proposals/{proposal_id}/status",
+            self._core,
+            "GET",
+            f"/v1/intent/proposals/{proposal_id}/status",
         )
         return resp.json()
 
     # -- Delegated tasks -------------------------------------------------------
 
-    def claim_task(self, lease_seconds: int = 300, runner_filter: str = "") -> dict | None:
+    def claim_task(
+        self, lease_seconds: int = 300, runner_filter: str = ""
+    ) -> dict | None:
         """Claim the next queued delegated task (POST /v1/workflow/tasks/claim).
         If runner_filter is set, only claims tasks matching that runner.
         Returns task dict or None if no work available."""
@@ -593,7 +634,9 @@ class DinaClient:
         if runner_filter:
             body["runner_filter"] = runner_filter
         resp = self._request(
-            self._core, "POST", "/v1/workflow/tasks/claim",
+            self._core,
+            "POST",
+            "/v1/workflow/tasks/claim",
             json=body,
         )
         if resp.status_code == 204:
@@ -603,17 +646,23 @@ class DinaClient:
     def task_heartbeat(self, task_id: str, lease_seconds: int = 300) -> None:
         """Extend lease on a claimed task (POST /v1/workflow/tasks/{id}/heartbeat)."""
         self._request(
-            self._core, "POST", f"/v1/workflow/tasks/{task_id}/heartbeat",
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/heartbeat",
             json={"lease_seconds": lease_seconds},
         )
 
-    def task_complete(self, task_id: str, result: str, assigned_runner: str = "") -> None:
+    def task_complete(
+        self, task_id: str, result: str, assigned_runner: str = ""
+    ) -> None:
         """Mark task as completed (POST /v1/workflow/tasks/{id}/complete)."""
         body: dict = {"result": result}
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/workflow/tasks/{task_id}/complete",
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/complete",
             json=body,
         )
 
@@ -623,24 +672,32 @@ class DinaClient:
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/workflow/tasks/{task_id}/fail",
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/fail",
             json=body,
         )
 
-    def mark_running(self, task_id: str, run_id: str = "", assigned_runner: str = "") -> None:
+    def mark_running(
+        self, task_id: str, run_id: str = "", assigned_runner: str = ""
+    ) -> None:
         """Mark task as running (POST /v1/workflow/tasks/{id}/running)."""
         body: dict = {"run_id": run_id}
         if assigned_runner:
             body["assigned_runner"] = assigned_runner
         self._request(
-            self._core, "POST", f"/v1/workflow/tasks/{task_id}/running",
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/running",
             json=body,
         )
 
     def task_progress(self, task_id: str, message: str) -> None:
         """Update progress on a claimed task (POST /v1/workflow/tasks/{id}/progress)."""
         self._request(
-            self._core, "POST", f"/v1/workflow/tasks/{task_id}/progress",
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/progress",
             json={"message": message},
         )
 
@@ -649,7 +706,9 @@ class DinaClient:
         Returns None only for 404. Other errors are raised."""
         try:
             resp = self._request(
-                self._core, "GET", f"/v1/workflow/tasks/{task_id}",
+                self._core,
+                "GET",
+                f"/v1/workflow/tasks/{task_id}",
             )
             return resp.json()
         except DinaClientError as e:
@@ -663,7 +722,10 @@ class DinaClient:
         if status:
             params["status"] = status
         resp = self._request(
-            self._core, "GET", "/v1/workflow/tasks", params=params,
+            self._core,
+            "GET",
+            "/v1/workflow/tasks",
+            params=params,
         )
         return resp.json().get("tasks", [])
 
@@ -675,9 +737,13 @@ class DinaClient:
         to_did: str,
         capability: str,
         params: dict,
+        session: str = "",
+        request_id: str = "",
         service_name: str = "",
         ttl_seconds: int = 60,
         schema_hash: str = "",
+        service_uri: str = "",
+        grant_id: str = "",
         origin_channel: str = "",
     ) -> dict:
         """POST /v1/service/query — send a schema-driven service query.
@@ -689,25 +755,350 @@ class DinaClient:
         surfaces as ``schema_version_mismatch`` rather than silently
         executing against a newer schema.
 
-        Returns ``{"task_id": "...", "query_id": "..."}``. The response
-        arrives asynchronously via a workflow_event — poll ``get_task``
-        with the returned task_id to observe the terminal status.
+        Coding agents first receive a payload-bound owner approval and must poll
+        :meth:`action_status` with action ``service_invoke``. A completed action
+        contains ``service_task_id``; poll :meth:`service_query_status` with that
+        id for the asynchronous service result.
         """
         import uuid as _uuid
+
+        if self._config.role == "agent" and not session:
+            raise ValueError("agent service query requires a session")
+        if self._config.role == "agent" and not request_id:
+            raise ValueError("agent service query requires a stable request_id")
+
         body: dict[str, Any] = {
             "to_did": to_did,
             "capability": capability,
             "params": params,
-            "query_id": str(_uuid.uuid4()),
             "ttl_seconds": ttl_seconds,
             "service_name": service_name or capability,
         }
         if schema_hash:
             body["schema_hash"] = schema_hash
+        if service_uri:
+            body["service_uri"] = service_uri
+        if grant_id:
+            body["grant_id"] = grant_id
         if origin_channel:
             body["origin_channel"] = origin_channel
-        resp = self._request(
-            self._core, "POST", "/v1/service/query",
-            json=body,
-        )
+        if self._config.role == "agent":
+            body["session_id"] = session
+            body["request_id"] = request_id
+            path = "/v1/agent/service/invoke"
+        else:
+            body["query_id"] = str(_uuid.uuid4())
+            path = "/v1/service/query"
+        resp = self._request(self._core, "POST", path, json=body)
         return resp.json()
+
+    def find_services(
+        self,
+        *,
+        session: str,
+        intent: str = "",
+        capability: str = "",
+        query: str = "",
+        lat: float | None = None,
+        lng: float | None = None,
+        radius_km: float | None = None,
+        limit: int = 10,
+    ) -> dict:
+        """Discover services through Core's bounded AppView façade."""
+        if self._config.role == "agent" and not session:
+            raise ValueError("agent service discovery requires a session")
+        body: dict[str, Any] = {"session_id": session, "limit": limit}
+        if intent:
+            body["intent"] = intent
+        if capability:
+            body["capability"] = capability
+        if query:
+            body["q"] = query
+        if lat is not None:
+            body["lat"] = lat
+        if lng is not None:
+            body["lng"] = lng
+        if radius_km is not None:
+            body["radius_km"] = radius_km
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/service/search",
+            json=body,
+        ).json()
+
+    def publish_service(
+        self,
+        *,
+        rkey: str,
+        config: dict,
+        session: str,
+        request_id: str = "",
+    ) -> dict:
+        """Request an owned listing save; PDS publication is asynchronous."""
+        from urllib.parse import quote
+
+        if self._config.role == "agent" and not session:
+            raise ValueError("agent service publication requires a session")
+        if self._config.role == "agent" and not request_id:
+            raise ValueError("agent service publication requires a stable request_id")
+        if self._config.role == "agent":
+            return self._request(
+                self._core,
+                "POST",
+                "/v1/agent/service/publish",
+                json={
+                    "session_id": session,
+                    "request_id": request_id,
+                    "rkey": rkey,
+                    "config": config,
+                },
+            ).json()
+        saved = self._request(
+            self._core,
+            "PUT",
+            f"/v1/service/config/{quote(rkey, safe='')}",
+            json=config,
+            params={"session_id": session} if self._config.role == "agent" else None,
+        ).json()
+        publication = self.service_publication_status(
+            rkey=rkey,
+            session=session,
+        )
+        publication_status = publication.get("publication_status")
+        messages = {
+            "published": "saved locally and published",
+            "not_published": "saved locally; listing is not publicly published",
+            "not_configured": (
+                "saved locally; public publication requires a PDS identity"
+            ),
+            "failed": "saved locally; publication failed",
+        }
+        return {
+            **saved,
+            **publication,
+            "rkey": rkey,
+            "message": messages.get(
+                publication_status,
+                "saved locally; publication pending",
+            ),
+        }
+
+    def service_query_status(self, *, task_id: str, session: str) -> dict:
+        """Read an agent-owned service query without exposing its stored params."""
+        if self._config.role == "agent" and not session:
+            raise ValueError("agent service status requires a session")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/service/status",
+            json={"session_id": session, "task_id": task_id},
+        ).json()
+
+    def service_publication_status(self, *, rkey: str, session: str) -> dict:
+        """Read the durable PDS publication receipt for one owned listing."""
+        if self._config.role == "agent" and not session:
+            raise ValueError("agent service publication status requires a session")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/service/publication-status",
+            json={"session_id": session, "rkey": rkey},
+        ).json()
+
+    # -- PeerLens (bounded read + owner-approved durable publish) ----------
+
+    def search_peerlens(
+        self,
+        *,
+        session: str,
+        query: str = "",
+        category: str = "",
+        domain: str = "",
+        subject_type: str = "",
+        sentiment: str = "",
+        min_confidence: str = "",
+        author_did: str = "",
+        tags: list[str] | None = None,
+        sort: str = "relevant",
+        limit: int = 10,
+    ) -> dict:
+        """Search public PeerLens reviews through Core's bounded AppView proxy."""
+        if not session:
+            raise ValueError("PeerLens search requires a live Dina session")
+        body: dict[str, Any] = {
+            "session_id": session,
+            "sort": sort,
+            "limit": limit,
+        }
+        for key, value in (
+            ("q", query),
+            ("category", category),
+            ("domain", domain),
+            ("subject_type", subject_type),
+            ("sentiment", sentiment),
+            ("min_confidence", min_confidence),
+            ("author_did", author_did),
+        ):
+            if value:
+                body[key] = value
+        if tags:
+            body["tags"] = tags
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/peerlens/search",
+            json=body,
+        ).json()
+
+    def publish_review(
+        self,
+        *,
+        record: dict,
+        session: str,
+        request_id: str,
+    ) -> dict:
+        """Request owner approval for one public, durable PeerLens review."""
+        if not session:
+            raise ValueError("review publication requires a live Dina session")
+        if not request_id:
+            raise ValueError("review publication requires a stable request_id")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/peerlens/attest",
+            json={
+                "session_id": session,
+                "request_id": request_id,
+                "record": record,
+            },
+        ).json()
+
+    def review_status(self, *, request_id: str, session: str) -> dict:
+        """Poll approval and durable PDS publication for one owned review."""
+        if not session:
+            raise ValueError("review status requires a live Dina session")
+        if not request_id:
+            raise ValueError("review status requires a stable request_id")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/peerlens/status",
+            json={"session_id": session, "request_id": request_id},
+        ).json()
+
+    # -- Vault metadata + reminders (session-scoped read projections) ------
+
+    def list_vaults(self, *, session: str) -> dict:
+        """List vault metadata and this session's read access, never contents."""
+        if not session:
+            raise ValueError("vault listing requires a live Dina session")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/vaults",
+            json={"session_id": session},
+        ).json()
+
+    def list_reminders(self, *, session: str, limit: int = 50) -> dict:
+        """List active reminders from vaults readable by this exact session."""
+        if not session:
+            raise ValueError("reminder listing requires a live Dina session")
+        if limit < 1 or limit > 100:
+            raise ValueError("reminder limit must be between 1 and 100")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/reminders",
+            json={"session_id": session, "limit": limit},
+        ).json()
+
+    # -- Talk + delegation (owner-approved facade actions) -----------------
+
+    def talk(
+        self,
+        *,
+        contact: str,
+        text: str,
+        session: str,
+        request_id: str,
+        in_reply_to: str = "",
+    ) -> dict:
+        """Ask this Dina to send one exact message to a known contact.
+
+        The first call normally returns ``pending_approval``. Poll
+        :meth:`action_status` with the same request id; the first poll after
+        owner approval performs the idempotent send.
+        """
+        if not session:
+            raise ValueError("Talk requires a live Dina session")
+        if not request_id:
+            raise ValueError("Talk requires a stable request_id")
+        body: dict[str, Any] = {
+            "session_id": session,
+            "request_id": request_id,
+            "contact": contact,
+            "text": text,
+        }
+        if in_reply_to:
+            body["in_reply_to"] = in_reply_to
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/talk",
+            json=body,
+        ).json()
+
+    def delegate(
+        self,
+        *,
+        runner: str,
+        description: str,
+        input_data: dict,
+        session: str,
+        request_id: str,
+    ) -> dict:
+        """Create one owner-approved task for a named external agent runner."""
+        if not session:
+            raise ValueError("delegation requires a live Dina session")
+        if not request_id:
+            raise ValueError("delegation requires a stable request_id")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/delegate",
+            json={
+                "session_id": session,
+                "request_id": request_id,
+                "runner": runner,
+                "description": description,
+                "input": input_data,
+            },
+        ).json()
+
+    def action_status(self, *, action: str, request_id: str, session: str) -> dict:
+        """Poll and idempotently continue an owner-approved facade action."""
+        if action not in (
+            "talk",
+            "delegate",
+            "service_publish",
+            "service_invoke",
+        ):
+            raise ValueError(
+                "action must be 'talk', 'delegate', 'service_publish', or "
+                "'service_invoke'"
+            )
+        if not session:
+            raise ValueError("action status requires a live Dina session")
+        if not request_id:
+            raise ValueError("action status requires a stable request_id")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/action/status",
+            json={
+                "session_id": session,
+                "action": action,
+                "request_id": request_id,
+            },
+        ).json()

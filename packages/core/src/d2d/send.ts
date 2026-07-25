@@ -55,6 +55,8 @@ export interface SendRequest {
    * failure paths skip the outbox enqueue and just report the outcome.
    */
   suppressEnqueue?: boolean;
+  /** Stable logical id used by a durable facade for idempotent retries. */
+  messageId?: string;
 }
 
 export interface SendResult {
@@ -73,7 +75,10 @@ export interface SendResult {
  * Never throws — all errors are returned in the result.
  */
 export async function sendD2D(req: SendRequest): Promise<SendResult> {
-  const messageId = `d2d-${bytesToHex(randomBytes(8))}`;
+  const messageId =
+    req.messageId !== undefined && /^d2d-[A-Za-z0-9._:-]{1,120}$/.test(req.messageId)
+      ? req.messageId
+      : `d2d-${bytesToHex(randomBytes(8))}`;
 
   // 0. V1 type enforcement — reject non-V1 message types before any further processing.
   // Matches Go's Gate 3 (V1MessageFamilies check in SendMessage).

@@ -30,6 +30,7 @@ import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/r
 import { getWorkflowService } from '../../workflow/service';
 
 import { getD2DSender } from './d2d_msg';
+import { requireAgentSession } from '../agent_session_guard';
 import type { ServiceQueryBody } from '../../d2d/service_bodies';
 
 
@@ -95,6 +96,7 @@ export function computeIdempotencyKey(
   schemaHash?: string,
   serviceUri?: string,
   grantId?: string,
+  requesterPrincipal?: string,
 ): string {
   // Namespace the dedupe key by `schema_hash` when present (review #8).
   // Two requests targeting the same (to_did, capability, params) but
@@ -119,7 +121,16 @@ export function computeIdempotencyKey(
   // in-flight task. Standing grants in V1 rarely collide, but the dedupe
   // identity must track the grant for the grant model to stay correct.
   const grantFragment = grantId !== undefined && grantId !== '' ? `|grant=${grantId}` : '';
-  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}`;
+  // Agent-facing requests are projected back only to the authenticated
+  // agent/session that created them. Namespace dedupe by that principal;
+  // otherwise a second session can receive the first session's task id but is
+  // correctly forbidden from polling it. Non-agent callers omit this fragment
+  // and keep the existing dedupe contract.
+  const requesterFragment =
+    requesterPrincipal !== undefined && requesterPrincipal !== ''
+      ? `|requester=${requesterPrincipal}`
+      : '';
+  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}${requesterFragment}`;
   return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
@@ -136,7 +147,7 @@ export interface ServiceQueryRouteOptions {
   isContact?: (did: string) => boolean;
 }
 
-interface ServiceQueryRequest {
+export interface ServiceQueryRequest {
   to_did: string;
   capability: string;
   params: unknown;
@@ -160,7 +171,7 @@ interface ServiceQueryRequest {
   grant_id?: string;
 }
 
-function validateRequest(
+export function validateServiceQueryRequest(
   body: unknown,
 ): { ok: true; req: ServiceQueryRequest } | { ok: false; error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -236,6 +247,164 @@ function validateRequest(
   };
 }
 
+export interface SubmitServiceQueryOptions {
+  sender?: ServiceQuerySender;
+  nowSecFn?: () => number;
+  /**
+   * Authenticated agent ownership for requester-side result projection.
+   * Both fields must be present together; body-supplied provenance is ignored.
+   */
+  requesterAgentDid?: string;
+  requesterSessionId?: string;
+}
+
+/**
+ * Validate, persist, and send one outbound service query.
+ *
+ * This is the single mutation path used by both the regular Core route and the
+ * owner-approved coding-agent facade. Callers remain responsible for their own
+ * authentication/approval boundary; requester ownership is supplied only from
+ * authenticated server state.
+ */
+export async function submitServiceQuery(
+  body: unknown,
+  options: SubmitServiceQueryOptions = {},
+): Promise<{ status: number; body: unknown }> {
+  const service = getWorkflowService();
+  if (service === null) {
+    return { status: 503, body: { error: 'workflow service not wired' } };
+  }
+  const sender = options.sender ?? senderInstance;
+  if (sender === null) {
+    return { status: 503, body: { error: 'service-query sender not wired' } };
+  }
+  if (body === undefined) {
+    return { status: 400, body: { error: 'empty body' } };
+  }
+  const validated = validateServiceQueryRequest(body);
+  if (!validated.ok) return { status: 400, body: { error: validated.error } };
+  const q = validated.req;
+
+  const hasRequester =
+    typeof options.requesterAgentDid === 'string' &&
+    options.requesterAgentDid !== '' &&
+    typeof options.requesterSessionId === 'string' &&
+    options.requesterSessionId !== '';
+  if (
+    (options.requesterAgentDid !== undefined ||
+      options.requesterSessionId !== undefined) &&
+    !hasRequester
+  ) {
+    return { status: 500, body: { error: 'incomplete requester principal' } };
+  }
+  const requesterDid = hasRequester ? options.requesterAgentDid! : '';
+  const requesterSession = hasRequester ? options.requesterSessionId! : '';
+  const requesterPrincipal = hasRequester
+    ? `${requesterDid}\u0000${requesterSession}`
+    : undefined;
+
+  const idemKey = computeIdempotencyKey(
+    q.to_did,
+    q.capability,
+    q.params,
+    q.schema_hash,
+    q.service_uri,
+    q.grant_id,
+    requesterPrincipal,
+  );
+  const repo: WorkflowRepository = service.store();
+  const existing = repo.getActiveByIdempotencyKey(idemKey);
+  if (existing !== null) {
+    return {
+      status: 200,
+      body: {
+        task_id: existing.id,
+        query_id: existing.correlation_id ?? q.query_id,
+        deduped: true,
+      },
+    };
+  }
+
+  const nowSecFn = options.nowSecFn ?? (() => Math.floor(Date.now() / 1000));
+  const nowSec = nowSecFn();
+  const taskId = `sq-${q.query_id}-${bytesToHex(
+    sha256(new TextEncoder().encode(`${q.to_did}|${q.capability}|${q.query_id}`)),
+  ).slice(0, 8)}`;
+  const payload = {
+    to_did: q.to_did,
+    capability: q.capability,
+    params: q.params,
+    service_name: q.service_name ?? '',
+    query_id: q.query_id,
+    ttl_seconds: q.ttl_seconds,
+    origin_channel: q.origin_channel ?? '',
+    schema_hash: q.schema_hash ?? '',
+    service_uri: q.service_uri ?? '',
+    grant_id: q.grant_id ?? '',
+    requester_agent_did: requesterDid,
+    requester_session_id: requesterSession,
+  };
+
+  try {
+    service.create({
+      id: taskId,
+      kind: WorkflowTaskKind.ServiceQuery,
+      description: `Service query: ${q.capability} to ${q.service_name ?? q.to_did}`,
+      payload: canonicalJSON(payload),
+      priority: WorkflowTaskPriority.Normal,
+      correlationId: q.query_id,
+      idempotencyKey: idemKey,
+      expiresAtSec: nowSec + q.ttl_seconds,
+      origin: 'api',
+    });
+  } catch (err) {
+    if (err instanceof WorkflowConflictError) {
+      const raced = repo.getActiveByIdempotencyKey(idemKey);
+      if (raced !== null) {
+        return {
+          status: 200,
+          body: {
+            task_id: raced.id,
+            query_id: raced.correlation_id ?? q.query_id,
+            deduped: true,
+          },
+        };
+      }
+      return { status: 409, body: { error: 'duplicate query_id', code: err.code } };
+    }
+    return { status: 500, body: { error: (err as Error).message } };
+  }
+
+  const d2dBody: ServiceQueryBody = {
+    query_id: q.query_id,
+    capability: q.capability,
+    params: q.params,
+    ttl_seconds: q.ttl_seconds,
+  };
+  if (q.schema_hash !== undefined) d2dBody.schema_hash = q.schema_hash;
+  if (q.service_uri !== undefined) d2dBody.service_uri = q.service_uri;
+  if (q.grant_id !== undefined) d2dBody.grant_id = q.grant_id;
+
+  try {
+    await sender(q.to_did, 'service.query', d2dBody);
+  } catch (err) {
+    const msg = (err as Error).message ?? String(err);
+    try {
+      service.fail(taskId, `send_failed: ${msg}`);
+    } catch {
+      /* fail-fail is non-fatal — sweeper handles stuck tasks */
+    }
+    return { status: 502, body: { error: `send failed: ${msg}` } };
+  }
+
+  void repo.transition(taskId, WorkflowTaskState.Created, WorkflowTaskState.Running, Date.now());
+
+  return {
+    status: 200,
+    body: { task_id: taskId, query_id: q.query_id },
+  };
+}
+
 export function registerServiceQueryRoutes(
   router: CoreRouter,
   options: ServiceQueryRouteOptions = {},
@@ -243,127 +412,18 @@ export function registerServiceQueryRoutes(
   const nowSecFn = options.nowSecFn ?? (() => Math.floor(Date.now() / 1000));
 
   router.post('/v1/service/query', async (req) => {
-    const service = getWorkflowService();
-    if (service === null) {
-      return { status: 503, body: { error: 'workflow service not wired' } };
-    }
-    const sender = options.sender ?? senderInstance;
-    if (sender === null) {
-      return { status: 503, body: { error: 'service-query sender not wired' } };
-    }
-
-    if (req.body === undefined) {
-      return { status: 400, body: { error: 'empty body' } };
-    }
-    const v = validateRequest(req.body);
-    if (!v.ok) return { status: 400, body: { error: v.error } };
-    const q = v.req;
-
-    const idemKey = computeIdempotencyKey(
-      q.to_did,
-      q.capability,
-      q.params,
-      q.schema_hash,
-      q.service_uri,
-      q.grant_id,
-    );
-    const repo: WorkflowRepository = service.store();
-    const existing = repo.getActiveByIdempotencyKey(idemKey);
-    if (existing !== null) {
-      return {
-        status: 200,
-        body: {
-          task_id: existing.id,
-          query_id: existing.correlation_id ?? q.query_id,
-          deduped: true,
-        },
-      };
-    }
-
-    const nowSec = nowSecFn();
-    // Namespace the task id by (to_did, capability, query_id). A naked
-    // `sq-${query_id}` collides when a client reuses the same query_id
-    // against different recipients or capabilities (issue #20). The
-    // hash suffix stays short (8 hex chars ≈ 32 bits) — collision
-    // probability across one requester's task space is negligible.
-    const taskId = `sq-${q.query_id}-${bytesToHex(
-      sha256(new TextEncoder().encode(`${q.to_did}|${q.capability}|${q.query_id}`)),
-    ).slice(0, 8)}`;
-    const payload = {
-      to_did: q.to_did,
-      capability: q.capability,
-      params: q.params,
-      service_name: q.service_name ?? '',
-      query_id: q.query_id,
-      ttl_seconds: q.ttl_seconds,
-      origin_channel: q.origin_channel ?? '',
-      schema_hash: q.schema_hash ?? '',
-      service_uri: q.service_uri ?? '',
-      // Provenance: which grant this query exercised (a known_only/contact
-      // service). Already carried on the D2D body; stamping it on the task
-      // payload keeps the audit trail complete on the requester side. P3-c.
-      grant_id: q.grant_id ?? '',
-    };
-
-    try {
-      service.create({
-        id: taskId,
-        kind: WorkflowTaskKind.ServiceQuery,
-        description: `Service query: ${q.capability} to ${q.service_name ?? q.to_did}`,
-        payload: canonicalJSON(payload),
-        priority: WorkflowTaskPriority.Normal,
-        correlationId: q.query_id,
-        idempotencyKey: idemKey,
-        expiresAtSec: nowSec + q.ttl_seconds,
-        origin: 'api',
-      });
-    } catch (err) {
-      if (err instanceof WorkflowConflictError) {
-        const raced = repo.getActiveByIdempotencyKey(idemKey);
-        if (raced !== null) {
-          return {
-            status: 200,
-            body: {
-              task_id: raced.id,
-              query_id: raced.correlation_id ?? q.query_id,
-              deduped: true,
-            },
-          };
-        }
-        return { status: 409, body: { error: 'duplicate query_id', code: err.code } };
-      }
-      return { status: 500, body: { error: (err as Error).message } };
-    }
-
-    const d2dBody: ServiceQueryBody = {
-      query_id: q.query_id,
-      capability: q.capability,
-      params: q.params,
-      ttl_seconds: q.ttl_seconds,
-    };
-    if (q.schema_hash !== undefined) d2dBody.schema_hash = q.schema_hash;
-    if (q.service_uri !== undefined) d2dBody.service_uri = q.service_uri;
-    if (q.grant_id !== undefined) d2dBody.grant_id = q.grant_id;
-
-    try {
-      await sender(q.to_did, 'service.query', d2dBody);
-    } catch (err) {
-      const msg = (err as Error).message ?? String(err);
-      try {
-        service.fail(taskId, `send_failed: ${msg}`);
-      } catch {
-        /* fail-fail is non-fatal — sweeper handles stuck tasks */
-      }
-      return { status: 502, body: { error: `send failed: ${msg}` } };
-    }
-
-    // created → running; fast-response race is acceptable.
-    void repo.transition(taskId, WorkflowTaskState.Created, WorkflowTaskState.Running, Date.now());
-
-    return {
-      status: 200,
-      body: { task_id: taskId, query_id: q.query_id },
-    };
+    const session = requireAgentSession(req);
+    if (!session.ok) return session.response;
+    return submitServiceQuery(req.body, {
+      sender: options.sender,
+      nowSecFn,
+      ...(req.callerType === 'agent'
+        ? {
+            requesterAgentDid: req.callerDID ?? '',
+            requesterSessionId: session.sessionId,
+          }
+        : {}),
+    });
   });
 
   // GET /v1/service/offers — list known_only service offers received over D2D

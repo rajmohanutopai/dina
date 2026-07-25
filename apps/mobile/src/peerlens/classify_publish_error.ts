@@ -14,39 +14,11 @@
  *   permanent: identity mismatch, lexicon/text-too-long, 400, 401, 403
  */
 
-import { PDSPublisherError } from '@dina/brain';
+import { classifyAttestationPublishError } from '@dina/brain';
 import { FEATURE_NAMES, type ClassifiedError, type PublishErrorCode } from '@dina/core';
 
-import { AttestationIdentityMismatchError, AttestationLexiconError } from './publish_attestation';
-
 export function classifyPublishError(err: unknown): ClassifiedError {
-  if (err instanceof AttestationIdentityMismatchError) {
-    return { class: 'permanent', code: 'identity_mismatch', message: err.message };
-  }
-  if (err instanceof AttestationLexiconError) {
-    return { class: 'permanent', code: 'lexicon_invalid', message: err.message };
-  }
-  if (err instanceof PDSPublisherError) {
-    const s = err.status;
-    if (s === null) return { class: 'retryable', code: 'network', message: err.message };
-    if (s === 408) return { class: 'retryable', code: 'request_timeout', message: err.message };
-    if (s === 429) return { class: 'retryable', code: 'rate_limited', message: err.message };
-    if (s >= 500) return { class: 'retryable', code: 'server_5xx', message: err.message };
-    if (s === 401) return { class: 'permanent', code: 'unauthorized', message: err.message };
-    if (s === 403) return { class: 'permanent', code: 'forbidden', message: err.message };
-    // 400 and any other 4xx — the request itself is rejected; retrying it as-is
-    // can't succeed without the user changing something.
-    return { class: 'permanent', code: 'bad_request', message: err.message };
-  }
-  // Unknown / unexpected: treat as transient. The durable queue exists to retry
-  // transient faults; a deterministic permanent rejection arrives typed (above),
-  // so an untyped error is more likely a flaky native/network hiccup. Bounded by
-  // MAX_PUBLISH_ATTEMPTS → it still dead-letters to "Needs attention", never loops.
-  return {
-    class: 'retryable',
-    code: 'unknown',
-    message: err instanceof Error ? err.message : String(err),
-  };
+  return classifyAttestationPublishError(err);
 }
 
 /**

@@ -83,6 +83,26 @@ export interface ScheduleReminderToolOptions {
   resolvePersona?: () => string | undefined;
   /** Clock hook for tests. Defaults to `Date.now`. */
   nowMsFn?: () => number;
+  /**
+   * Optional plan-only seam used by the /remember staging pipeline.
+   *
+   * A staged memory may still require owner approval after Brain has
+   * classified it. Creating a reminder while classification is in flight
+   * would let an unapproved agent/connector cause a durable side effect.
+   * When this callback is present, the tool validates and records the plan
+   * but does not read or write the reminder repository. The staging drain
+   * applies the plan only after Core confirms the memory was stored.
+   *
+   * /ask omits this callback and retains its immediate-create behavior.
+   */
+  deferCreate?: (plan: DeferredReminderPlan) => Promise<void> | void;
+}
+
+export interface DeferredReminderPlan {
+  message: string;
+  dueAtMs: number;
+  persona: string;
+  timezone: string;
 }
 
 export interface ScheduleReminderOutcome {
@@ -115,9 +135,7 @@ function parseDueAt(raw: unknown): number | null {
   return null;
 }
 
-export function createScheduleReminderTool(
-  opts: ScheduleReminderToolOptions = {},
-): AgentTool {
+export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {}): AgentTool {
   const defaultPersona = opts.defaultPersona ?? 'general';
   const defaultTimezone =
     opts.defaultTimezone ??
@@ -145,7 +163,7 @@ export function createScheduleReminderTool(
             "What the reminder should say when it fires. Phrase as the user will read it — e.g. 'Test reminders' or 'Call mum about birthday', NOT 'Reminder set' or 'User wants to be reminded'.",
         },
         due_at: {
-          type: 'string',
+          anyOf: [{ type: 'string' }, { type: 'number' }],
           description:
             "When the reminder should fire. Preferred: ISO-8601 with timezone offset (e.g. '2026-05-06T18:00:00-07:00'). Also accepted: epoch milliseconds as a number or numeric string. Resolve relative phrases ('in 5 minutes', 'tomorrow at 9am') into a concrete value BEFORE calling — this tool will not re-interpret natural language.",
         },
@@ -167,8 +185,7 @@ export function createScheduleReminderTool(
       if (dueAtMs === null) {
         return {
           status: 'rejected',
-          error:
-            'due_at is required and must be epoch milliseconds or an ISO-8601 datetime string',
+          error: 'due_at is required and must be epoch milliseconds or an ISO-8601 datetime string',
         };
       }
       // Past due_at would never fire — return cleanly so the LLM can
@@ -195,6 +212,28 @@ export function createScheduleReminderTool(
           : fallbackPersona !== ''
             ? fallbackPersona
             : defaultPersona;
+
+      if (opts.deferCreate !== undefined) {
+        try {
+          await opts.deferCreate({
+            message,
+            dueAtMs,
+            persona,
+            timezone: defaultTimezone,
+          });
+        } catch (err) {
+          return {
+            status: 'rejected',
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+        return {
+          status: 'scheduled',
+          due_at_ms: dueAtMs,
+          message,
+          persona,
+        };
+      }
 
       // Detect a true duplicate reliably + deterministically: check whether
       // an identical manual reminder already exists BEFORE creating. The

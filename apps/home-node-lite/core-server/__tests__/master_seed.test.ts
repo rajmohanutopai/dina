@@ -6,7 +6,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { validateMnemonic, mnemonicToSeed } from '@dina/core';
+import { validateMnemonic, mnemonicToEntropy } from '@dina/core';
 
 import {
   loadOrGenerateSeed,
@@ -23,7 +23,7 @@ async function mkTmpDir(): Promise<string> {
 
 describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
   describe('first-boot generation', () => {
-    it('generates a valid BIP-39 mnemonic + 64-byte seed when vaultDir is empty', async () => {
+    it('generates a valid BIP-39 mnemonic + 32-byte entropy when vaultDir is empty', async () => {
       const dir = await mkTmpDir();
       try {
         const res = await loadOrGenerateSeed(dir);
@@ -33,13 +33,13 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
         expect(res.seed.length).toBe(SEED_LEN_BYTES);
         // Seed is derived deterministically from the mnemonic — recomputing
         // must give the same bytes.
-        expect(Array.from(mnemonicToSeed(res.mnemonic))).toEqual(Array.from(res.seed));
+        expect(Array.from(mnemonicToEntropy(res.mnemonic))).toEqual(Array.from(res.seed));
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
     });
 
-    it('persists the seed as raw 64 bytes in `<vaultDir>/keyfile`', async () => {
+    it('persists the seed as raw 32-byte entropy in `<vaultDir>/keyfile`', async () => {
       const dir = await mkTmpDir();
       try {
         const res = await loadOrGenerateSeed(dir);
@@ -177,11 +177,11 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
     it('rejects keyfile of the wrong length', async () => {
       const dir = await mkTmpDir();
       try {
-        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(32), {
+        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(64), {
           mode: KEYFILE_MODE,
         });
         await expect(loadOrGenerateSeed(dir)).rejects.toThrow(
-          /keyfile length is 32 bytes, expected 64/,
+          /keyfile length is 64 bytes, expected 32/,
         );
       } finally {
         await fs.rm(dir, { recursive: true, force: true });

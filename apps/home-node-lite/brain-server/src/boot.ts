@@ -81,6 +81,7 @@ import { registerPeerlensProxyRoutes } from './routes/peerlens_proxy';
 import { registerQuarantineApiRoutes } from './routes/quarantine';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerServiceConfigProxyRoutes } from './routes/service_config_proxy';
+import { registerServiceSearchRoutes } from './routes/service_search';
 import { registerWebRoutes } from './routes/web';
 import { registerWorkflowApiRoutes } from './routes/workflow';
 
@@ -461,6 +462,7 @@ export async function bootServer(
   // is likewise treated as stale.
   const brainStartedAt = Date.now();
   app.get('/healthz', async () => ({ status: 'ok', role: 'brain', startedAt: brainStartedAt }));
+  registerServiceSearchRoutes(app, { appView: clients.appView });
 
   if (options.serviceRuntime !== undefined) {
     if (clients.core === undefined) {

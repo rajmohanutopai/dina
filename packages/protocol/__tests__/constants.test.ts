@@ -17,11 +17,14 @@ import {
   MSG_TYPE_COORDINATION_REQUEST,
   MSG_TYPE_COORDINATION_RESPONSE,
   MSG_TYPE_SOCIAL_UPDATE,
+  MSG_TYPE_TALK_MESSAGE_V1,
   MSG_TYPE_SAFETY_ALERT,
   MSG_TYPE_PEERLENS_VOUCH_REQUEST,
   MSG_TYPE_PEERLENS_VOUCH_RESPONSE,
   MSG_TYPE_SERVICE_QUERY,
   MSG_TYPE_SERVICE_RESPONSE,
+  MSG_TYPE_SERVICE_OFFER,
+  MSG_TYPE_SERVICE_GRANT_REQUEST,
 } from '../src';
 
 import type { D2DScenario, D2DMessageType } from '../src';
@@ -63,7 +66,7 @@ describe('@dina/protocol constants', () => {
   });
 
   describe('D2D message type ↔ scenario relationship', () => {
-    it('every V1 message type is one of the nine declared types', () => {
+    it('every V1 message type is one of the twelve declared types', () => {
       // Drift detector for the message-type union itself. If a port
       // adds a new V1 type without updating this list, the assertion
       // count below catches it.
@@ -72,15 +75,18 @@ describe('@dina/protocol constants', () => {
         MSG_TYPE_COORDINATION_REQUEST,
         MSG_TYPE_COORDINATION_RESPONSE,
         MSG_TYPE_SOCIAL_UPDATE,
+        MSG_TYPE_TALK_MESSAGE_V1,
         MSG_TYPE_SAFETY_ALERT,
         MSG_TYPE_PEERLENS_VOUCH_REQUEST,
         MSG_TYPE_PEERLENS_VOUCH_RESPONSE,
         MSG_TYPE_SERVICE_QUERY,
         MSG_TYPE_SERVICE_RESPONSE,
+        MSG_TYPE_SERVICE_OFFER,
+        MSG_TYPE_SERVICE_GRANT_REQUEST,
       ];
-      expect(types).toHaveLength(9);
+      expect(types).toHaveLength(12);
       // No duplicates either.
-      expect(new Set(types).size).toBe(9);
+      expect(new Set(types).size).toBe(12);
     });
   });
 });

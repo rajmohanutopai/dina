@@ -58,6 +58,18 @@ describe('Authorization Matrix', () => {
       path: '/api/v1/ask',
       label: 'Agent → api/ask (MT-38: session-scoped vault query via Brain)',
     },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/agent/service/publish',
+      label: 'Agent → owner-approved service publish facade',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/agent/service/invoke',
+      label: 'Agent → owner-approved service invoke facade',
+    },
     // Owner-private decision log: the OWNER's surfaces may read it.
     {
       caller: 'admin',
@@ -169,6 +181,54 @@ describe('Authorization Matrix', () => {
       method: 'POST',
       path: '/v1/d2d/quarantine/accept',
       label: 'Agent x d2d/quarantine/accept (owner-private action)',
+    },
+    {
+      caller: 'agent',
+      method: 'GET',
+      path: '/v1/service/config',
+      label: 'Agent x read provider service config',
+    },
+    {
+      caller: 'agent',
+      method: 'PUT',
+      path: '/v1/service/config',
+      label: 'Agent x bypass service publish approval',
+    },
+    {
+      caller: 'agent',
+      method: 'PUT',
+      path: '/v1/service/config/salon',
+      label: 'Agent x bypass named-listing publish approval',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/service/query',
+      label: 'Agent x bypass service invoke approval',
+    },
+    {
+      caller: 'agent',
+      method: 'DELETE',
+      path: '/v1/service/config/salon',
+      label: 'Agent x delete provider service config',
+    },
+    {
+      caller: 'agent',
+      method: 'PUT',
+      path: '/v1/service/config/salon/extra',
+      label: 'Agent x nested path under a listing rkey',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/service/respond',
+      label: 'Agent x forge a provider service response',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/service/offer',
+      label: 'Agent x mint a private-service offer',
     },
     {
       caller: 'connector',

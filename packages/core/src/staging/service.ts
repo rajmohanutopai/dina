@@ -18,6 +18,10 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
 import { isPersonaOpen, personaExists } from '../persona/service';
+import {
+  createReminderDurable,
+  listByPersona as listRemindersByPersona,
+} from '../reminders/service';
 import { currentDataScope, setCurrentDataScope, type DataScope } from '../scope/data_scope';
 import { storeItem } from '../vault/crud';
 import {
@@ -86,6 +90,18 @@ export interface StagingApprovalActionResult {
   drained: number;
   alreadyStored: number;
   denied: number;
+}
+
+export interface StagingApprovalDrainResult extends StagingApprovalActionResult {
+  remindersCreated: number;
+  postErrors: string[];
+}
+
+export interface StagingResolveMultiResult {
+  count: number;
+  storedPersonas: string[];
+  pendingPersonas: string[];
+  failedPersonas: string[];
 }
 
 const LEASE_DURATION_S = STAGING_LEASE_DURATION_S;
@@ -597,11 +613,11 @@ export function resolve(
  * @param targets — array of { persona, personaOpen } for each target vault
  * @returns count of personas the item was resolved into
  */
-export function resolveMulti(
+export function resolveMultiDetailed(
   id: string,
   claimedTargets: { persona: string; personaOpen: boolean }[],
   classifiedItem?: Record<string, unknown>,
-): number {
+): StagingResolveMultiResult {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
@@ -766,7 +782,25 @@ export function resolveMulti(
   }
   cacheItem(item);
   for (const storedPersona of storedPersonas) fireOnDrain(item, storedPersona);
-  return targets.length;
+  return {
+    count: targets.length,
+    storedPersonas,
+    pendingPersonas: lockedTargets,
+    failedPersonas: failures.map((failure) => failure.persona),
+  };
+}
+
+/**
+ * Compatibility wrapper for callers that only need the target count.
+ * The HTTP/CoreClient path uses `resolveMultiDetailed` so Brain can apply
+ * post-storage effects only to the vaults that actually accepted the row.
+ */
+export function resolveMulti(
+  id: string,
+  claimedTargets: { persona: string; personaOpen: boolean }[],
+  classifiedItem?: Record<string, unknown>,
+): number {
+  return resolveMultiDetailed(id, claimedTargets, classifiedItem).count;
 }
 
 /**
@@ -1012,6 +1046,117 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     result.drained++;
   }
   return result;
+}
+
+/**
+ * Production approval resume, including deferred Remember side effects.
+ *
+ * Brain records validated reminder plans in the classified row but does not
+ * execute them before Core authorizes storage. Once the owner approves and
+ * `drainForApproval` commits the memory, Core durably creates only the plans
+ * bound to that exact stored persona. Reminder creation is idempotent through
+ * `(source_item_id, kind, due_at, persona, message)`.
+ *
+ * A reminder failure does not lie about the already-committed memory: the
+ * memory remains `stored`, while the workflow receipt reports `postErrors`.
+ */
+export async function drainForApprovalWithEffects(
+  approvalId: string,
+): Promise<StagingApprovalDrainResult> {
+  const result = drainForApproval(approvalId);
+  let remindersCreated = 0;
+  const postErrors: string[] = [];
+
+  for (const item of itemsByApprovalId(approvalId)) {
+    if (item.status !== 'stored' || item.classified_item === undefined) continue;
+    const plans = rememberReminderPlans(item.classified_item).filter(
+      (plan) => plan.persona === item.persona,
+    );
+    const sourceItemId =
+      typeof item.classified_item.staging_id === 'string' &&
+      item.classified_item.staging_id.trim() !== ''
+        ? item.classified_item.staging_id
+        : item.id;
+    for (const plan of plans) {
+      try {
+        const existingIds = new Set(
+          listRemindersByPersona(item.persona)
+            .filter(
+              (reminder) =>
+                reminder.source_item_id === sourceItemId &&
+                reminder.kind === 'manual' &&
+                reminder.due_at === plan.dueAtMs &&
+                reminder.message === plan.message,
+            )
+            .map((reminder) => reminder.id),
+        );
+        const reminder = await createReminderDurable({
+          message: plan.message,
+          due_at: plan.dueAtMs,
+          persona: item.persona,
+          kind: 'manual',
+          source_item_id: sourceItemId,
+          source: 'remember_runtime',
+          timezone: plan.timezone,
+        });
+        if (!existingIds.has(reminder.id)) remindersCreated++;
+      } catch (err) {
+        postErrors.push(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }
+
+  return { ...result, remindersCreated, postErrors };
+}
+
+interface StoredRememberReminderPlan {
+  message: string;
+  dueAtMs: number;
+  persona: string;
+  timezone: string;
+}
+
+function rememberReminderPlans(
+  classifiedItem: Record<string, unknown>,
+): StoredRememberReminderPlan[] {
+  const metadataRaw = classifiedItem.metadata;
+  if (typeof metadataRaw !== 'string' || metadataRaw === '') return [];
+  let metadata: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(metadataRaw);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+    metadata = parsed as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const remember = metadata.remember;
+  if (remember === null || typeof remember !== 'object' || Array.isArray(remember)) return [];
+  const rows = (remember as Record<string, unknown>).reminders;
+  if (!Array.isArray(rows)) return [];
+
+  const plans: StoredRememberReminderPlan[] = [];
+  for (const raw of rows.slice(0, 10)) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    const message = typeof row.message === 'string' ? row.message.trim() : '';
+    const dueAtMs = row.dueAtMs;
+    const persona = typeof row.persona === 'string' ? row.persona.trim() : '';
+    const timezone = typeof row.timezone === 'string' ? row.timezone.trim() : '';
+    if (
+      message === '' ||
+      message.length > 2_000 ||
+      typeof dueAtMs !== 'number' ||
+      !Number.isFinite(dueAtMs) ||
+      dueAtMs <= 0 ||
+      persona === '' ||
+      timezone === '' ||
+      timezone.length > 100
+    ) {
+      continue;
+    }
+    plans.push({ message, dueAtMs, persona, timezone });
+  }
+  return plans;
 }
 
 /**

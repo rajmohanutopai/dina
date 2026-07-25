@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@dina/adapters-node": "*",
+    "@dina/brain": "*",
     "@dina/core": "*",
     "@dina/home-node": "*",
     "@dina/net-node": "*",

@@ -185,6 +185,118 @@ def test_remember_with_category():
     mc.remember.assert_called_once()
 
 
+# ── Talk + delegation ────────────────────────────────────────────────────
+
+
+def test_talk_json_forwards_exact_request_and_session():
+    mc = MagicMock()
+    mc.talk.return_value = {
+        "status": "pending_approval",
+        "request_id": "talk-1",
+    }
+    result = _invoke(
+        [
+            "--json",
+            "talk",
+            "Alonso",
+            "Can we meet tomorrow?",
+            "--session",
+            "sess-1",
+            "--request-id",
+            "talk-1",
+            "--in-reply-to",
+            "msg-previous",
+        ],
+        mock_client=mc,
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["status"] == "pending_approval"
+    mc.talk.assert_called_once_with(
+        contact="Alonso",
+        text="Can we meet tomorrow?",
+        session="sess-1",
+        request_id="talk-1",
+        in_reply_to="msg-previous",
+    )
+
+
+def test_delegate_rejects_non_object_input_before_submission():
+    mc = MagicMock()
+    result = _invoke(
+        [
+            "--json",
+            "delegate",
+            "codex",
+            "Compare proposals",
+            '["a.md","b.md"]',
+            "--session",
+            "sess-1",
+            "--request-id",
+            "delegate-1",
+        ],
+        mock_client=mc,
+    )
+
+    assert result.exit_code == 2
+    assert "JSON object" in result.output
+    mc.delegate.assert_not_called()
+
+
+def test_delegate_and_action_status_use_same_request_id():
+    mc = MagicMock()
+    mc.delegate.return_value = {
+        "status": "pending_approval",
+        "request_id": "delegate-1",
+    }
+    submitted = _invoke(
+        [
+            "delegate",
+            "codex",
+            "Compare proposals",
+            '{"paths":["a.md","b.md"]}',
+            "--session",
+            "sess-1",
+            "--request-id",
+            "delegate-1",
+        ],
+        mock_client=mc,
+    )
+    assert submitted.exit_code == 0
+    assert "action-status delegate delegate-1" in submitted.output
+    mc.delegate.assert_called_once_with(
+        runner="codex",
+        description="Compare proposals",
+        input_data={"paths": ["a.md", "b.md"]},
+        session="sess-1",
+        request_id="delegate-1",
+    )
+
+    mc.action_status.return_value = {
+        "status": "completed",
+        "delegation_task_id": "task-1",
+        "delegation_status": "running",
+    }
+    polled = _invoke(
+        [
+            "--json",
+            "action-status",
+            "delegate",
+            "delegate-1",
+            "--session",
+            "sess-1",
+        ],
+        mock_client=mc,
+    )
+    assert polled.exit_code == 0
+    assert json.loads(polled.output)["delegation_task_id"] == "task-1"
+    mc.action_status.assert_called_once_with(
+        action="delegate",
+        request_id="delegate-1",
+        session="sess-1",
+    )
+
+
 # ── ask ────────────────────────────────────────────────────────────────
 
 

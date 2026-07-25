@@ -35,7 +35,7 @@ import { getPluginInstallRepository } from '../../plugins/registry';
 import {
   STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
   denyApproval,
-  drainForApproval,
+  drainForApprovalWithEffects,
 } from '../../staging/service';
 import {
   WorkflowTaskKind,
@@ -205,8 +205,7 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     // not reach an agent-origin task here either — same owner-authority rule as
     // /approve + /cancel (audit finding). A runner (agent/plugin) failing its
     // OWN claimed work is unaffected (the guard fires only for callerType brain).
-    const guard =
-      brainAgentTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
+    const guard = brainAgentTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
     const claimId = extractClaimId(req);
     if (claimId instanceof Object) return claimId;
     return (
@@ -808,7 +807,7 @@ async function approveTask(
   // rather than leaving a permanent 'running' zombie the owner can't recover.
   let resume;
   try {
-    resume = drainForApproval(id);
+    resume = await drainForApprovalWithEffects(id);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     denyApproval(id, `drain failed after approval: ${reason}`);
@@ -829,6 +828,8 @@ async function approveTask(
       status: 'stored',
       drained: resume.drained,
       already_stored: resume.alreadyStored,
+      reminders_created: resume.remindersCreated,
+      post_errors: resume.postErrors,
     }),
     resume.drained > 0 ? 'staging memory stored' : 'staging memory already stored',
     'system',

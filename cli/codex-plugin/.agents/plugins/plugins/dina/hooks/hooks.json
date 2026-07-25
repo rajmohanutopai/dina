@@ -1,0 +1,42 @@
+{
+  "description": "Recover the local Dina Home Node, gate local Codex tools, and revoke the host-bound session on close.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dina home-node ensure --if-installed --quiet",
+            "timeout": 120,
+            "statusMessage": "Checking Dina Home Node"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${PLUGIN_ROOT}/bin/dina-gate",
+            "timeout": 20,
+            "statusMessage": "Checking Dina policy"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dina session-end-hook",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

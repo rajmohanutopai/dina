@@ -35,7 +35,13 @@
  */
 
 import { PDSPublisher } from '@dina/brain';
-import { onServiceConfigChanged, type ServiceConfig } from '@dina/core';
+import {
+  getServiceConfigRepository,
+  listServiceConfigs,
+  onServiceConfigChanged,
+  type ServiceConfig,
+  type SetServicePublicationStatusInput,
+} from '@dina/core';
 import {
   effectiveDiscoverability,
   isListingPublishable,
@@ -68,11 +74,30 @@ export interface WireServicePublisherOptions {
 }
 
 export interface WiredServicePublisher {
+  /** Shared authenticated writer for other owner-PDS records (PeerLens, etc.). */
+  pdsPublisher: PDSPublisher;
   /** Direct handle for one-shot publishes (boot-time, /admin actions). */
   publisher: ServiceProfilePublisher;
+  /** Queue the latest desired state for one listing. Single-flight per rkey. */
+  reconcile(rkey: string, config: ServiceConfig | null): void;
   /** Stop listening for config-change events. */
   dispose(): void;
 }
+
+const RETRY_BASE_MS = 2_000;
+const RETRY_MAX_MS = 5 * 60_000;
+
+interface PublicationSlot {
+  desired: ServiceConfig | null;
+  version: number;
+  attempt: number;
+  running: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+type UnpublishOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'network_error' | 'rejected_by_pds'; error: string; status?: number };
 
 /**
  * Stand up the publish pipeline + subscribe to `onServiceConfigChanged`.
@@ -124,24 +149,142 @@ export function wireServiceProfilePublisher(
     },
   });
 
-  // 3. Subscribe to config changes. When `setServiceConfig` fires for a
-  //    listing, (re)publish THAT listing's record under its rkey; when a
-  //    listing is cleared (config === null) or is known-only, unpublish that
-  //    one rkey — siblings are untouched (one row → one record). First-fire
-  //    happens AFTER `hydrateServiceConfig` reads the persisted catalog during
-  //    boot, so each listing reflects persisted state on every restart even
-  //    when no edit happens.
-  const unsubscribe = onServiceConfigChanged((rkey, config) => {
-    if (config === null || !shouldPublishListing(config)) {
-      void unpublishOnce(pdsPublisher, rkey, logger);
+  const slots = new Map<string, PublicationSlot>();
+  let disposed = false;
+
+  const persistStatus = async (
+    rkey: string,
+    status: SetServicePublicationStatusInput,
+  ): Promise<void> => {
+    try {
+      await getServiceConfigRepository()?.setPublicationStatus(rkey, status);
+    } catch (error) {
+      logger.warn(
+        { rkey, error: error instanceof Error ? error.message : String(error) },
+        'service publication status persistence failed',
+      );
+    }
+  };
+
+  const run = async (rkey: string): Promise<void> => {
+    const slot = slots.get(rkey);
+    if (disposed || slot === undefined || slot.running) return;
+    slot.running = true;
+    if (slot.timer !== null) {
+      clearTimeout(slot.timer);
+      slot.timer = null;
+    }
+    const version = slot.version;
+    const desired = slot.desired;
+    const attemptedAtMs = Date.now();
+    await persistStatus(rkey, {
+      state: 'pending',
+      attemptedAtMs,
+      nextRetryAtMs: null,
+    });
+
+    const publishing = desired !== null && shouldPublishListing(desired);
+    const outcome =
+      publishing
+        ? await publishOnce(publisher, pdsIdentity, desired, logger, rkey)
+        : await unpublishOnce(pdsPublisher, rkey, logger);
+
+    slot.running = false;
+    if (disposed) return;
+    if (slot.version !== version) {
+      slot.attempt = 0;
+      void run(rkey);
       return;
     }
-    void publishOnce(publisher, pdsIdentity, config, logger, rkey);
-  });
+
+    if (outcome.ok) {
+      slot.attempt = 0;
+      if (publishing) {
+        const published = outcome as Extract<PublishOutcome, { ok: true }>;
+        await persistStatus(rkey, {
+          state: 'published',
+          uri: published.uri,
+          cid: published.cid,
+          attemptedAtMs,
+        });
+      } else if (desired !== null) {
+        await persistStatus(rkey, {
+          state: 'not_published',
+          attemptedAtMs,
+        });
+      }
+      return;
+    }
+
+    const permanent =
+      outcome.reason === 'malformed_profile' ||
+      (outcome.reason === 'rejected_by_pds' &&
+        outcome.status !== undefined &&
+        outcome.status >= 400 &&
+        outcome.status < 500 &&
+        outcome.status !== 408 &&
+        outcome.status !== 429);
+    const error = 'detail' in outcome ? outcome.detail : outcome.error;
+    if (permanent) {
+      await persistStatus(rkey, {
+        state: 'failed',
+        error,
+        attemptedAtMs,
+      });
+      return;
+    }
+
+    slot.attempt += 1;
+    const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(slot.attempt - 1, 8));
+    const nextRetryAtMs = Date.now() + delay;
+    await persistStatus(rkey, {
+      state: 'pending',
+      error,
+      attemptedAtMs,
+      nextRetryAtMs,
+    });
+    slot.timer = setTimeout(() => {
+      slot.timer = null;
+      void run(rkey);
+    }, delay);
+    slot.timer.unref?.();
+  };
+
+  const reconcile = (rkey: string, config: ServiceConfig | null): void => {
+    let slot = slots.get(rkey);
+    if (slot === undefined) {
+      slot = { desired: config, version: 0, attempt: 0, running: false, timer: null };
+      slots.set(rkey, slot);
+    } else {
+      slot.desired = config;
+      slot.version += 1;
+      slot.attempt = 0;
+      if (slot.timer !== null) {
+        clearTimeout(slot.timer);
+        slot.timer = null;
+      }
+    }
+    void run(rkey);
+  };
+
+  // 3. Subscribe to config changes, then reconcile every hydrated listing.
+  // Per-rkey single-flight prevents overlapping saves/retries from allowing an
+  // older publish attempt to become the final PDS state.
+  const unsubscribe = onServiceConfigChanged(reconcile);
+  for (const { rkey, config } of listServiceConfigs()) reconcile(rkey, config);
 
   return {
+    pdsPublisher,
     publisher,
-    dispose: () => unsubscribe(),
+    reconcile,
+    dispose: () => {
+      disposed = true;
+      unsubscribe();
+      for (const slot of slots.values()) {
+        if (slot.timer !== null) clearTimeout(slot.timer);
+      }
+      slots.clear();
+    },
   };
 }
 
@@ -222,7 +365,22 @@ export async function publishOnce(
     return { ok: true, uri: result.uri, cid: result.cid };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const status =
+      err !== null &&
+      typeof err === 'object' &&
+      typeof (err as { status?: unknown }).status === 'number'
+        ? (err as { status: number }).status
+        : undefined;
     logger.warn({ error: message }, 'service profile publish rejected');
+    if (
+      status !== undefined &&
+      status >= 400 &&
+      status < 500 &&
+      status !== 408 &&
+      status !== 429
+    ) {
+      return { ok: false, reason: 'rejected_by_pds', status, error: message };
+    }
     return { ok: false, reason: 'network_error', error: message };
   }
 }
@@ -237,17 +395,37 @@ export async function unpublishOnce(
   pdsPublisher: PDSPublisher,
   rkey: string,
   logger: Logger,
-): Promise<void> {
+): Promise<UnpublishOutcome> {
   if (!isValidServiceListingRkey(rkey)) {
     logger.warn({ rkey }, 'service profile unpublish skipped (invalid rkey)');
-    return;
+    return { ok: false, reason: 'rejected_by_pds', error: 'invalid service listing rkey' };
   }
   try {
     await pdsPublisher.deleteRecordIdempotent('com.dinakernel.service.profile', rkey);
     logger.info({ rkey }, 'service profile unpublished from PDS');
+    return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const status =
+      err !== null &&
+      typeof err === 'object' &&
+      typeof (err as { status?: unknown }).status === 'number'
+        ? (err as { status: number }).status
+        : undefined;
     logger.warn({ rkey, error: message }, 'service profile unpublish failed');
+    return {
+      ok: false,
+      reason:
+        status !== undefined &&
+        status >= 400 &&
+        status < 500 &&
+        status !== 408 &&
+        status !== 429
+          ? 'rejected_by_pds'
+          : 'network_error',
+      error: message,
+      ...(status !== undefined ? { status } : {}),
+    };
   }
 }
 
@@ -280,20 +458,15 @@ export function buildWireServiceProfile(
     const wireEntry: Record<string, unknown> = {
       params: localSchema.params,
       result: localSchema.result,
-      // Fallback hash MUST use the canonical {description, params, result}
-      // shape — the same input Brain's ServicePublisher and the lite
-      // profile_builder.hashCapabilitySchema hash. The previous fallback
-      // hashed only `params`, producing a hash no other component would
-      // ever reproduce (so a requester's version check would always
-      // mismatch). In practice schemaHash is pre-computed; the fallback
-      // must still be the RIGHT hash, not a wrong one.
-      schema_hash:
-        localSchema.schemaHash ??
-        computeSchemaHash({
-          description: localSchema.description ?? '',
-          params: localSchema.params,
-          result: localSchema.result,
-        }),
+      // The wire hash is derived from the schema, never trusted from the
+      // caller's cached `schemaHash`. AppView rejects malformed hashes and a
+      // stale-but-well-formed hash makes every invocation fail version
+      // negotiation. This mirrors Brain's ServicePublisher exactly.
+      schema_hash: computeSchemaHash({
+        description: localSchema.description ?? '',
+        params: localSchema.params,
+        result: localSchema.result,
+      }),
     };
     if (localSchema.description !== undefined) {
       wireEntry.description = localSchema.description;

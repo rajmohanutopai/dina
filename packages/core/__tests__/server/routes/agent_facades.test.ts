@@ -67,16 +67,41 @@ describe('façade registration', () => {
     expect(miss.status).toBe(404); // no talk backing ⇒ unregistered
   });
 
-  it('wires all six façades', async () => {
+  it('wires every narrow façade', async () => {
     const r = routerWith({
       memory: echo('m'),
       findService: echo('f'),
+      serviceStatus: echo('s'),
+      servicePublicationStatus: echo('ps'),
+      servicePublish: echo('sp'),
+      serviceInvoke: echo('si'),
       talk: echo('t'),
       delegate: echo('d'),
-      peerlens: echo('p'),
+      actionStatus: echo('as'),
+      peerlensSearch: echo('prs'),
+      peerlensAttest: echo('pra'),
+      peerlensStatus: echo('prx'),
+      vaults: echo('v'),
+      reminders: echo('r'),
       ask: echo('a'),
     });
-    for (const p of ['/v1/agent/memory', '/v1/agent/find-service', '/v1/agent/talk', '/v1/agent/delegate', '/v1/agent/peerlens', '/v1/agent/ask']) {
+    for (const p of [
+      '/v1/agent/memory',
+      '/v1/agent/service/search',
+      '/v1/agent/service/status',
+      '/v1/agent/service/publication-status',
+      '/v1/agent/service/publish',
+      '/v1/agent/service/invoke',
+      '/v1/agent/talk',
+      '/v1/agent/delegate',
+      '/v1/agent/action/status',
+      '/v1/agent/peerlens/search',
+      '/v1/agent/peerlens/attest',
+      '/v1/agent/peerlens/status',
+      '/v1/agent/vaults',
+      '/v1/agent/reminders',
+      '/v1/agent/ask',
+    ]) {
       expect((await r.handle(req(p, active()))).status).toBe(200);
     }
   });

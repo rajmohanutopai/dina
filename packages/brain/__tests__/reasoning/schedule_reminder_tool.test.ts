@@ -20,10 +20,7 @@
 
 import { describe, expect, it, beforeEach } from '@jest/globals';
 
-import {
-  resetReminderState,
-  listByPersona,
-} from '@dina/core/reminders';
+import { resetReminderState, listByPersona } from '@dina/core/reminders';
 
 function listAllReminders() {
   // Tests stage reminders into a small set of personas; this covers
@@ -39,6 +36,7 @@ import {
   type ScheduleReminderOutcome,
   type ScheduleReminderToolOptions,
 } from '../../src/reasoning/schedule_reminder_tool';
+import { ToolRegistry } from '../../src/reasoning/tool_registry';
 
 const FIXED_NOW = Date.UTC(2026, 4, 6, 12, 0, 0); // 2026-05-06T12:00:00Z
 
@@ -126,6 +124,46 @@ describe('schedule_reminder tool', () => {
 
     expect(out.status).toBe('scheduled');
     expect(out.due_at_ms).toBe(dueAt);
+  });
+
+  it('accepts numeric epoch milliseconds through the production registry validator', async () => {
+    const registry = new ToolRegistry();
+    registry.register(build());
+    const dueAt = FIXED_NOW + 5 * 60_000;
+
+    const outcome = await registry.execute('schedule_reminder', {
+      message: 'Take pills',
+      due_at: dueAt,
+    });
+
+    expect(outcome.success).toBe(true);
+    if (outcome.success) {
+      expect(outcome.result).toEqual(
+        expect.objectContaining({
+          status: 'scheduled',
+          due_at_ms: dueAt,
+        }),
+      );
+    }
+  });
+
+  it('rejects unsupported due_at types through the production registry validator', async () => {
+    const registry = new ToolRegistry();
+    registry.register(build());
+
+    const outcome = await registry.execute('schedule_reminder', {
+      message: 'Take pills',
+      due_at: false,
+    });
+
+    expect(outcome).toEqual(
+      expect.objectContaining({
+        success: false,
+        code: 'invalid_args',
+        error: expect.stringContaining('expected string or number'),
+      }),
+    );
+    expect(listAllReminders()).toHaveLength(0);
   });
 
   it('accepts a numeric string for due_at (LLM sometimes stringifies)', async () => {
@@ -278,6 +316,11 @@ describe('schedule_reminder tool', () => {
     expect(schema.required).toEqual(['message', 'due_at']);
     expect(Object.keys(schema.properties)).toEqual(
       expect.arrayContaining(['message', 'due_at', 'persona']),
+    );
+    expect(schema.properties.due_at).toEqual(
+      expect.objectContaining({
+        anyOf: [{ type: 'string' }, { type: 'number' }],
+      }),
     );
   });
 });

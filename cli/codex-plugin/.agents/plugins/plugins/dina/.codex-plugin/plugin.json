@@ -1,0 +1,38 @@
+{
+  "name": "dina",
+  "version": "0.2.0",
+  "description": "Add Dina's Core-owned safety gate, encrypted memory, services, PeerLens, approvals, contact messaging, delegation, and PII controls to Codex.",
+  "author": {
+    "name": "Dina",
+    "url": "https://github.com/rajmohanutopai/dina"
+  },
+  "homepage": "https://github.com/rajmohanutopai/dina",
+  "repository": "https://github.com/rajmohanutopai/dina",
+  "license": "MIT",
+  "keywords": ["security", "agent-safety", "memory", "approvals", "privacy", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Dina",
+    "shortDescription": "Safety, memory, services, and approvals for Codex.",
+    "longDescription": "Connect Codex to a user-owned Dina Home Node. Local tool calls pass a deterministic Core-owned safety gate, while MCP exposes encrypted memory, services, signed public reviews, owner-approved contact messaging and delegation, approval validation, and local PII scrubbing.",
+    "developerName": "Dina",
+    "category": "Productivity",
+    "capabilities": [
+      "Agent safety",
+      "Encrypted memory",
+      "Human approvals",
+      "Dina services",
+      "PeerLens reviews",
+      "Contact messaging",
+      "Agent delegation",
+      "PII scrubbing"
+    ],
+    "defaultPrompt": [
+      "Check whether Dina is connected and protecting this session.",
+      "Ask Dina for the personal context relevant to this task.",
+      "Find a Dina service or safely coordinate with a contact."
+    ],
+    "brandColor": "#B38B2E"
+  },
+  "mcpServers": "./.mcp.json"
+}

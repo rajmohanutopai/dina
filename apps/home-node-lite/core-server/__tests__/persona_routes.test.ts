@@ -7,14 +7,8 @@ import { pino } from 'pino';
 import { ApprovalRegistry } from '../src/persona/approval_registry';
 import { AutoLockRegistry } from '../src/persona/auto_lock';
 import { PassphraseRegistry } from '../src/persona/passphrase_unlock';
-import {
-  loadPersonaConfig,
-  type LoadedPersonaConfig,
-} from '../src/persona/persona_config';
-import {
-  registerPersonaRoutes,
-  type PersonaListEntry,
-} from '../src/persona/routes';
+import { loadPersonaConfig, type LoadedPersonaConfig } from '../src/persona/persona_config';
+import { registerPersonaRoutes, type PersonaListEntry } from '../src/persona/routes';
 import { SessionGrantRegistry } from '../src/persona/session_grants';
 import { createServer } from '../src/server';
 
@@ -37,7 +31,9 @@ function silentLogger() {
 const fastParams = { memory: 1024, iterations: 1, parallelism: 1 };
 
 /** Helper: load a persona config from a literal. */
-function makeConfig(personas: Record<string, { tier: string; description?: string }>): LoadedPersonaConfig {
+function makeConfig(
+  personas: Record<string, { tier: string; description?: string }>,
+): LoadedPersonaConfig {
   return loadPersonaConfig({
     path: '/test.json',
     readFile: () => JSON.stringify({ version: 1, personas }),
@@ -75,12 +71,7 @@ describe('GET /v1/personas (task 4.92)', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/personas' });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { personas: PersonaListEntry[] };
-    expect(body.personas.map((p) => p.name)).toEqual([
-      'financial',
-      'general',
-      'health',
-      'work',
-    ]);
+    expect(body.personas.map((p) => p.name)).toEqual(['financial', 'general', 'health', 'work']);
     await app.close();
   });
 
@@ -112,9 +103,9 @@ describe('GET /v1/personas (task 4.92)', () => {
       b: { tier: 'default' },
     });
     const app = await buildApp({ config });
-    const body = (
-      await app.inject({ method: 'GET', url: '/v1/personas' })
-    ).json() as { personas: PersonaListEntry[] };
+    const body = (await app.inject({ method: 'GET', url: '/v1/personas' })).json() as {
+      personas: PersonaListEntry[];
+    };
     const a = body.personas.find((p) => p.name === 'a')!;
     const b = body.personas.find((p) => p.name === 'b')!;
     expect(a.description).toBe('hello');
@@ -127,12 +118,13 @@ describe('GET /v1/personas (task 4.92)', () => {
     const autoLock = new AutoLockRegistry({ lockFn: () => undefined });
     autoLock.unlock('health', { ttlMs: 60_000 });
     const app = await buildApp({ config, autoLock });
-    const body = (
-      await app.inject({ method: 'GET', url: '/v1/personas' })
-    ).json() as { personas: PersonaListEntry[] };
+    const body = (await app.inject({ method: 'GET', url: '/v1/personas' })).json() as {
+      personas: PersonaListEntry[];
+    };
     const h = body.personas.find((p) => p.name === 'health')!;
     expect(h.is_open).toBe(true);
     expect(typeof h.auto_locks_at_ms).toBe('number');
+    autoLock.lockAll();
     await app.close();
   });
 });
@@ -178,6 +170,7 @@ describe('POST /v1/personas/:name/unlock (task 4.92)', () => {
       expect(body.name).toBe('financial');
       expect(body.is_open).toBe(true);
       expect(autoLock.isUnlocked('financial')).toBe(true);
+      autoLock.lockAll();
       await app.close();
     });
 
@@ -252,6 +245,7 @@ describe('POST /v1/personas/:name/unlock (task 4.92)', () => {
       });
       expect(res.statusCode).toBe(200);
       expect(autoLock.isUnlocked('health')).toBe(true);
+      autoLock.lockAll();
       await app.close();
     });
 
@@ -300,6 +294,7 @@ describe('POST /v1/personas/:name/unlock (task 4.92)', () => {
       });
       expect(res.statusCode).toBe(200);
       expect(autoLock.isUnlocked('health')).toBe(true);
+      autoLock.lockAll();
       await app.close();
     });
 

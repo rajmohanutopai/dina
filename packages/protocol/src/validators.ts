@@ -18,7 +18,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1b task 1.20.
  */
 
-import { MAX_SERVICE_TTL } from './constants';
+import { MAX_SERVICE_TTL, MAX_TALK_MESSAGE_BYTES } from './constants';
 import { buildMessageJSON } from './envelope_builder';
 
 // ---------------------------------------------------------------------------
@@ -99,6 +99,57 @@ function isStringArray(v: unknown): v is string[] {
 // ---------------------------------------------------------------------------
 
 const VALID_SERVICE_STATUSES: ReadonlySet<string> = new Set(['success', 'unavailable', 'error']);
+
+/**
+ * Validate the frozen `talk.message.v1` body. Unknown fields are rejected so
+ * the narrow Talk route cannot become an attachment or command tunnel.
+ */
+export function validateTalkMessageBody(body: unknown): string | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return 'talk.message.v1 body must be an object';
+  }
+  const value = body as Record<string, unknown>;
+  if (Object.keys(value).some((key) => key !== 'text' && key !== 'in_reply_to')) {
+    return 'talk.message.v1 body contains an unsupported field';
+  }
+  if (typeof value.text !== 'string' || value.text.trim() === '') {
+    return 'talk.message.v1 text is required';
+  }
+  if (new TextEncoder().encode(value.text).byteLength > MAX_TALK_MESSAGE_BYTES) {
+    return `talk.message.v1 text exceeds ${MAX_TALK_MESSAGE_BYTES} UTF-8 bytes`;
+  }
+  if (hasUnsafeTalkText(value.text, true)) {
+    return 'talk.message.v1 text contains unsafe control characters';
+  }
+  if (
+    value.in_reply_to !== undefined &&
+    (typeof value.in_reply_to !== 'string' ||
+      value.in_reply_to === '' ||
+      value.in_reply_to.length > 200 ||
+      hasUnsafeTalkText(value.in_reply_to, false))
+  ) {
+    return 'talk.message.v1 in_reply_to is invalid';
+  }
+  return null;
+}
+
+function hasUnsafeTalkText(value: string, allowNewlineAndTab: boolean): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (allowNewlineAndTab && (code === 0x0a || code === 0x09)) continue;
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      (code >= 0x200b && code <= 0x200f) ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069) ||
+      code === 0xfeff
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * Validate a `service.query` D2D body. `null` on success, error

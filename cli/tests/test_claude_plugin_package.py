@@ -33,6 +33,36 @@ def test_cli_runtime_version_matches_package_metadata() -> None:
     assert result.output.strip() == f"dina-agent, version {__version__}"
 
 
+def test_home_node_status_is_available_before_pairing(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        cli,
+        ["--json", "home-node", "status"],
+        env={"DINA_HOME_NODE_DIR": str(tmp_path / "home-node")},
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "installed": False,
+        "running": False,
+        "core_healthy": False,
+        "brain_healthy": False,
+        "core_url": "http://127.0.0.1:8100",
+        "brain_url": "http://127.0.0.1:8200",
+        "install_dir": str(tmp_path / "home-node"),
+        "release_version": None,
+        "autostart_enabled": False,
+    }
+
+
+def test_authority_reveal_commands_require_a_human_tty() -> None:
+    runner = CliRunner()
+
+    for command in ("show-owner-capability", "show-recovery-phrase"):
+        result = runner.invoke(cli, ["home-node", command])
+        assert result.exit_code != 0
+        assert "interactive human terminal" in result.output
+
+
 def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
     manifest = _load_json(PLUGIN_ROOT / ".claude-plugin" / "plugin.json")
     hooks = _load_json(PLUGIN_ROOT / "hooks" / "hooks.json")
@@ -40,6 +70,16 @@ def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
     # Claude Code loads hooks/hooks.json automatically. Declaring it again in the
     # manifest causes duplicate hook registration in an installed plugin.
     assert "hooks" not in manifest
+    session_start = hooks["hooks"]["SessionStart"]
+    assert len(session_start) == 1
+    assert "matcher" not in session_start[0]
+    assert session_start[0]["hooks"] == [
+        {
+            "type": "command",
+            "command": "dina home-node ensure --if-installed --quiet",
+            "timeout": 120,
+        }
+    ]
     pre_tool_use = hooks["hooks"]["PreToolUse"]
     assert len(pre_tool_use) == 1
     assert pre_tool_use[0]["matcher"] == "*"
@@ -68,21 +108,19 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
     normalized_readme = " ".join(readme.lower().split())
     gate = PLUGIN_ROOT / "bin" / "dina-gate"
 
-    assert "dina-agent>=0.19.0" in manifest["description"]
+    assert manifest["version"] == "0.2.0"
+    assert "dina-agent>=0.20.0" in manifest["description"]
     assert mcp_config["mcpServers"]["dina"]["command"] == "dina"
     assert mcp_config["mcpServers"]["dina"]["args"] == [
         "mcp-server",
         "--profile",
         "coding",
     ]
-    assert "configure dina" in normalized_readme
     assert "before" in normalized_readme
-    assert "owner console" in normalized_readme
-    assert "pair coding agent" in normalized_readme
-    assert (
-        "does not install, launch, upgrade, or supervise home node lite"
-        in normalized_readme
-    )
+    assert "automatically enrolls" in normalized_readme
+    assert "home-node enroll-agent" in normalized_readme
+    assert "home node installation and supervision are owned by" in normalized_readme
+    assert "automatic local coding-agent enrollment is implemented" in normalized_readme
     assert "dina unpair" in readme
     assert gate.stat().st_mode & stat.S_IXUSR
 
@@ -96,6 +134,10 @@ def test_plugin_bundles_mcp_native_usage_instructions() -> None:
     assert "dina_validate" in skill
     assert "pending_approval" in skill
     assert "dina_scrub" in skill
+    assert "dina_find_service" in skill
+    assert "dina_talk" in skill
+    assert "dina_delegate" in skill
+    assert "only `completed` proves" in skill
     assert "PreToolUse" in skill
 
 
@@ -108,4 +150,5 @@ def test_marketplace_points_at_the_self_contained_plugin() -> None:
     assert len(plugins) == 1
     assert plugins[0]["name"] == "dina"
     assert plugins[0]["source"] == "./dina"
+    assert "dina-agent>=0.20.0" in plugins[0]["description"]
     assert (PLUGIN_ROOT / "README.md").is_file()

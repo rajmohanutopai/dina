@@ -21,10 +21,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.30.
  */
 
-import {
-  storedNotificationToWire,
-  wireToStoredNotification,
-} from '../notifications/repository';
+import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
 import { WorkflowConflictError } from './core-client';
 import { CoreHttpError } from './http-transport';
@@ -145,7 +142,10 @@ function expectOk<T>(res: CoreResponse, context: string): T {
     const err = (res.body as { error?: string } | undefined)?.error ?? 'no error field';
     // CoreHttpError (not bare Error) so proxies can forward Core's business
     // status — parity with HttpCoreTransport.parseOk.
-    throw new CoreHttpError(`InProcessTransport: ${context} failed ${res.status} — ${err}`, res.status);
+    throw new CoreHttpError(
+      `InProcessTransport: ${context} failed ${res.status} — ${err}`,
+      res.status,
+    );
   }
   return res.body as T;
 }
@@ -365,12 +365,8 @@ export class InProcessTransport implements CoreClient {
     // Omit rkey ⇒ `self` compat route (single-listing back-compat).
     // Provide rkey ⇒ per-listing route, minting a distinct profile record.
     const path =
-      rkey !== undefined
-        ? `/v1/service/config/${encodeURIComponent(rkey)}`
-        : '/v1/service/config';
-    const res = await this.router.handle(
-      blankRequest({ method: 'PUT', path, body: config }),
-    );
+      rkey !== undefined ? `/v1/service/config/${encodeURIComponent(rkey)}` : '/v1/service/config';
+    const res = await this.router.handle(blankRequest({ method: 'PUT', path, body: config }));
     expectOk<unknown>(res, `putServiceConfig(rkey=${rkey ?? 'self'})`);
   }
 
@@ -379,9 +375,7 @@ export class InProcessTransport implements CoreClient {
     // so Brain can branch without try/catch on a non-exceptional
     // state. Other non-2xx (500, 503) still throw via expectOk.
     const path =
-      rkey !== undefined
-        ? `/v1/service/config/${encodeURIComponent(rkey)}`
-        : '/v1/service/config';
+      rkey !== undefined ? `/v1/service/config/${encodeURIComponent(rkey)}` : '/v1/service/config';
     const res = await this.router.handle(blankRequest({ method: 'GET', path }));
     if (res.status === 404) return null;
     return expectOk<ServiceConfig>(res, `serviceConfig(rkey=${rkey ?? 'self'})`);
@@ -501,12 +495,19 @@ export class InProcessTransport implements CoreClient {
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/staging/resolve', body }),
     );
-    const raw = expectOk<{ id: string; status: string; personas?: string[] }>(
-      res,
-      `stagingResolve(itemId=${req.itemId})`,
-    );
+    const raw = expectOk<{
+      id: string;
+      status: string;
+      personas?: string[];
+      stored_personas?: string[];
+      pending_personas?: string[];
+      failed_personas?: string[];
+    }>(res, `stagingResolve(itemId=${req.itemId})`);
     const out: StagingResolveResult = { itemId: raw.id, status: raw.status };
     if (raw.personas !== undefined) out.personas = raw.personas;
+    if (raw.stored_personas !== undefined) out.storedPersonas = raw.stored_personas;
+    if (raw.pending_personas !== undefined) out.pendingPersonas = raw.pending_personas;
+    if (raw.failed_personas !== undefined) out.failedPersonas = raw.failed_personas;
     return out;
   }
 
@@ -518,10 +519,7 @@ export class InProcessTransport implements CoreClient {
         body: { id: itemId, reason },
       }),
     );
-    const raw = expectOk<{ id: string; retry_count: number }>(
-      res,
-      `stagingFail(itemId=${itemId})`,
-    );
+    const raw = expectOk<{ id: string; retry_count: number }>(res, `stagingFail(itemId=${itemId})`);
     return { itemId: raw.id, retryCount: raw.retry_count };
   }
 
@@ -755,9 +753,7 @@ export class InProcessTransport implements CoreClient {
     // Route returns 201 on fresh create + 200 on idempotent dedupe.
     if (res.status !== 200 && res.status !== 201) {
       const err = (res.body as { error?: string } | undefined)?.error ?? 'no error field';
-      throw new Error(
-        `InProcessTransport: createWorkflowTask failed ${res.status} — ${err}`,
-      );
+      throw new Error(`InProcessTransport: createWorkflowTask failed ${res.status} — ${err}`);
     }
     const raw = (res.body ?? {}) as { task?: WorkflowTask; deduped?: boolean };
     if (raw.task === undefined) {
@@ -768,18 +764,17 @@ export class InProcessTransport implements CoreClient {
 
   // ─── Workflow task state transitions ─────────────────────────────────
 
-  async approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask> {
+  async approveWorkflowTask(
+    id: string,
+    opts?: { scope?: 'single' | 'session' },
+  ): Promise<WorkflowTask> {
     const body: Record<string, unknown> | undefined =
       opts?.scope !== undefined ? { scope: opts.scope } : undefined;
     return this.workflowAction(id, 'approve', body);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {
-    return this.workflowAction(
-      id,
-      'cancel',
-      reason !== '' ? { reason } : undefined,
-    );
+    return this.workflowAction(id, 'cancel', reason !== '' ? { reason } : undefined);
   }
 
   async completeWorkflowTask(
@@ -796,11 +791,7 @@ export class InProcessTransport implements CoreClient {
     return this.workflowAction(id, 'complete', body);
   }
 
-  async failWorkflowTask(
-    id: string,
-    errorMsg: string,
-    agentDID = '',
-  ): Promise<WorkflowTask> {
+  async failWorkflowTask(id: string, errorMsg: string, agentDID = ''): Promise<WorkflowTask> {
     const body: Record<string, unknown> = { error: errorMsg };
     if (agentDID !== '') body.agent_did = agentDID;
     return this.workflowAction(id, 'fail', body);
@@ -824,14 +815,9 @@ export class InProcessTransport implements CoreClient {
         body: body ?? {},
       }),
     );
-    const raw = expectOk<{ task?: WorkflowTask }>(
-      res,
-      `${action}WorkflowTask(id=${id})`,
-    );
+    const raw = expectOk<{ task?: WorkflowTask }>(res, `${action}WorkflowTask(id=${id})`);
     if (raw.task === undefined) {
-      throw new Error(
-        `InProcessTransport: ${action}WorkflowTask response missing task`,
-      );
+      throw new Error(`InProcessTransport: ${action}WorkflowTask response missing task`);
     }
     return raw.task;
   }
@@ -947,9 +933,7 @@ export class InProcessTransport implements CoreClient {
     // THROWS on non-2xx via expectOk (mirrors HttpCoreTransport.listContacts).
     // Its sole consumer is the web People screen's data fetch, where a Core
     // 500/403 must surface as an error state, not be masked as "No contacts".
-    const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/contacts' }),
-    );
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/contacts' }));
     const raw = expectOk<{ contacts?: Contact[] }>(res, 'listContacts');
     return raw.contacts ?? [];
   }
@@ -978,7 +962,10 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: '/v1/d2d/quarantine/accept',
-        body: { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+        body: {
+          sender_did: senderDID,
+          ...(senderLabel !== '' ? { sender_label: senderLabel } : {}),
+        },
       }),
     );
     const raw = expectOk<{ released?: QuarantinedMessage[]; requarantined?: number }>(
@@ -993,7 +980,10 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: '/v1/d2d/quarantine/block',
-        body: { sender_did: senderDID, ...(senderLabel !== '' ? { sender_label: senderLabel } : {}) },
+        body: {
+          sender_did: senderDID,
+          ...(senderLabel !== '' ? { sender_label: senderLabel } : {}),
+        },
       }),
     );
     const raw = expectOk<{ blocked_count?: number }>(res, 'blockQuarantinedSender');
@@ -1022,9 +1012,7 @@ export class InProcessTransport implements CoreClient {
   }
 
   async personasList(): Promise<PersonaListEntry[]> {
-    const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/personas' }),
-    );
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/personas' }));
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { personas?: unknown };
     return Array.isArray(raw.personas) ? (raw.personas as PersonaListEntry[]) : [];
@@ -1197,7 +1185,11 @@ export class InProcessTransport implements CoreClient {
 
   async notificationMarkRead(id: string, readAt: number): Promise<boolean> {
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: '/v1/notifications/read', body: { id, read_at: readAt } }),
+      blankRequest({
+        method: 'POST',
+        path: '/v1/notifications/read',
+        body: { id, read_at: readAt },
+      }),
     );
     if (res.status !== 200) throw new Error(`notificationMarkRead failed: ${res.status}`);
     return Boolean((res.body as { changed?: boolean } | undefined)?.changed);
@@ -1268,5 +1260,4 @@ export class InProcessTransport implements CoreClient {
       throw new Error(`deleteActionOverride(${action}) failed: ${res.status}`);
     }
   }
-
 }

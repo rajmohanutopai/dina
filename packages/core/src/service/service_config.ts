@@ -21,7 +21,9 @@ import {
   isListingPublic,
   isListingPublishable,
   resolveCanonicalCapability,
+  validateServiceListing,
 } from '@dina/protocol';
+import type { ListingValidationError } from '@dina/protocol';
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
@@ -176,6 +178,39 @@ export async function setServiceConfigDurable(
   configs.set(rkey, config);
   notifyListeners(rkey, config);
   configEventChannel().emitConfigChanged();
+}
+
+export type ServiceConfigForSaveValidation =
+  | { ok: true; config: ServiceConfig }
+  | {
+      ok: false;
+      error: string;
+      details?: readonly ListingValidationError[];
+    };
+
+/**
+ * Shared save-boundary validation for every service editor/agent surface.
+ * Structural validation and catalog policy must not drift between the owner
+ * HTTP route and narrow agent facade.
+ */
+export function validateServiceConfigForSave(
+  value: unknown,
+): ServiceConfigForSaveValidation {
+  try {
+    validateServiceConfig(value);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+  const listing = validateServiceListing(value, {
+    requireExplicitDiscoverability: true,
+  });
+  return listing.ok
+    ? { ok: true, config: value }
+    : {
+        ok: false,
+        error: 'invalid service listing',
+        details: listing.errors,
+      };
 }
 
 /**

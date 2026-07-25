@@ -23,7 +23,21 @@ describe('resolveAgentScope — device-record derivation', () => {
 
 describe('requiredScopeFor', () => {
   it('maps the coding tool façades to coding', () => {
-    for (const p of ['/v1/agent/audit', '/v1/agent/memory', '/v1/agent/find-service', '/v1/agent/talk', '/v1/agent/delegate', '/v1/agent/peerlens', '/v1/agent/ask', '/v1/agent/reminders']) {
+    for (const p of [
+      '/v1/agent/audit',
+      '/v1/agent/memory',
+      '/v1/agent/service/search',
+      '/v1/agent/service/status',
+      '/v1/agent/service/publish',
+      '/v1/agent/service/invoke',
+      '/v1/agent/talk',
+      '/v1/agent/delegate',
+      '/v1/agent/action/status',
+      '/v1/agent/peerlens',
+      '/v1/agent/ask',
+      '/v1/agent/vaults',
+      '/v1/agent/reminders',
+    ]) {
       expect(requiredScopeFor(p)).toBe('coding');
     }
   });
@@ -33,6 +47,8 @@ describe('requiredScopeFor', () => {
   });
   it('returns null for unconstrained routes', () => {
     expect(requiredScopeFor('/v1/vault/query')).toBeNull();
+    expect(requiredScopeFor('/v1/service/config/self')).toBeNull();
+    expect(requiredScopeFor('/v1/service/query')).toBeNull();
     expect(requiredScopeFor('/healthz')).toBeNull();
   });
   it('matches subpaths', () => {

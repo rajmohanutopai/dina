@@ -182,12 +182,22 @@ export type {
   AppViewClientOptions,
   SearchServicesParams,
   SearchCapabilitiesParams,
+  SearchPeerlensParams,
+  SearchPeerlensResponse,
+  PeerlensAttestation,
   CapabilityCandidate,
   ServiceProfile,
   IsDiscoverableResult,
 } from './appview_client/http';
 export { PDSPublisher, PDSPublisherError } from './pds/publisher';
 export type { PDSPublisherOptions, PutRecordResult } from './pds/publisher';
+export {
+  AttestationIdentityMismatchError,
+  AttestationLexiconError,
+  attestationLexiconErrors,
+  classifyAttestationPublishError,
+  publishAttestationToPDS,
+} from './peerlens/publisher';
 export { PDSAccountClient, PDSAccountError } from './pds/account';
 export type {
   PDSSession,

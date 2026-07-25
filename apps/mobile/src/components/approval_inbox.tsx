@@ -146,11 +146,15 @@ export function useApprovalInbox(): ApprovalInbox {
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
       const headline =
-        entry.kind === 'intent_validation' || entry.kind === 'remote_coding_gate'
+        entry.kind === 'intent_validation' ||
+        entry.kind === 'remote_coding_gate' ||
+        entry.kind === 'agent_action'
           ? `${verb} "${entry.capability}"?`
           : `${verb} "${entry.serviceName || entry.capability}"?`;
       const subline =
-        entry.kind === 'intent_validation' || entry.kind === 'remote_coding_gate'
+        entry.kind === 'intent_validation' ||
+        entry.kind === 'remote_coding_gate' ||
+        entry.kind === 'agent_action'
           ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
           : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
@@ -291,7 +295,10 @@ export function ApprovalActionCard({
     item.expiresAt !== undefined
       ? ` · expires in ${Math.max(0, item.expiresAt - Math.floor(Date.now() / 1000))}s`
       : '';
-  const isIntent = item.kind === 'intent_validation' || item.kind === 'remote_coding_gate';
+  const isIntent =
+    item.kind === 'intent_validation' ||
+    item.kind === 'remote_coding_gate' ||
+    item.kind === 'agent_action';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
@@ -345,7 +352,10 @@ export function ApprovalActionCard({
         </Text>
       ) : null}
       {item.paramsPreview !== '' ? (
-        <Text style={styles.paramsPreview} numberOfLines={3}>
+        <Text
+          style={styles.paramsPreview}
+          numberOfLines={item.kind === 'agent_action' ? undefined : 3}
+        >
           {item.paramsPreview}
         </Text>
       ) : null}
@@ -418,7 +428,10 @@ export function ApprovalActionCard({
  */
 export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): React.JSX.Element {
   const item = entry;
-  const isIntent = item.kind === 'intent_validation' || item.kind === 'remote_coding_gate';
+  const isIntent =
+    item.kind === 'intent_validation' ||
+    item.kind === 'remote_coding_gate' ||
+    item.kind === 'agent_action';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
   // PLG-29 #1: mirror the pending card — a resolved WRITE grant must read WRITE.
@@ -470,7 +483,10 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         <Text style={styles.intentAction}>{item.capability}</Text>
       ) : null}
       {item.paramsPreview !== '' ? (
-        <Text style={styles.paramsPreview} numberOfLines={2}>
+        <Text
+          style={styles.paramsPreview}
+          numberOfLines={item.kind === 'agent_action' ? undefined : 2}
+        >
           {item.paramsPreview}
         </Text>
       ) : null}

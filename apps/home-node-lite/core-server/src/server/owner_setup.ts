@@ -50,8 +50,11 @@ export function registerOwnerSetupRoutes(
   app.get(`${OWNER_SETUP_PREFIX}/status`, async (req, reply) => {
     if (!requireOwner(req as OwnerSetupRequest, reply, options.ownerCapability)) return;
     noStore(reply);
+    const nodeDID = getNodeDID();
     return {
-      coding_agent_pairing_available: getNodeDID() !== null,
+      coding_agent_pairing_available: nodeDID !== null,
+      home_did: nodeDID,
+      msgbox_url: options.msgboxURL,
       coding_agents: codingAgents(),
       phone: options.phoneManager?.status() ?? unavailablePhoneStatus(),
     };
