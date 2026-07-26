@@ -15,6 +15,9 @@ PLUGIN_ARCHITECTURE.md
 Guided demo bottom should show current page changes, not next page
 > Done I think
 
+# Bugs to fix
+Bugs.md
+
 # First request takes time
 
 # test-pds is not flippable
