@@ -67,6 +67,19 @@ describe('requireAgentPersonaAccess', () => {
     expect(d.kind).toBe('allow');
   });
 
+  it('binds a canonical alias to the installed legacy persona name', () => {
+    createPersona('work', 'standard');
+
+    expect(
+      requireAgentPersonaAccess({
+        agentDID: AGENT_A,
+        persona: 'professional',
+        mode: 'read',
+        scope: 'project status',
+      }),
+    ).toEqual({ kind: 'allow' });
+  });
+
   it('requires approval for a sensitive persona with no grant — and never reads the vault', () => {
     const d = requireAgentPersonaAccess({
       agentDID: AGENT_A,

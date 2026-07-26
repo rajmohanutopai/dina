@@ -26,9 +26,9 @@
  * proceed, warn, or block.
  */
 
-import { buildRememberRuntime } from '@dina/brain';
-import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
+import { buildRememberRuntime, createAppViewReasoningEvidenceSource } from '@dina/brain';
 import { addMessage, postReminderCard } from '@dina/brain/chat';
+import { notifyRunMessageClassified, notifyRunResponseLost } from '@dina/brain/runtime';
 import { listPersonas } from '@dina/core';
 import {
   MemoryService,
@@ -60,6 +60,7 @@ import {
   wireRunPlaneNode,
   InProcessOwnerRunClient,
   createCoreRouter,
+  createConnectedBrainAgentFacades,
   createInProcessDispatch,
   getTopicRepository,
   listTopicRepositoryPersonas,
@@ -260,6 +261,15 @@ export interface BootServiceInputs {
    * populated (i.e. `approvalManager` was passed).
    */
   askCoordinator?: CreateNodeOptions['askCoordinator'];
+  /**
+   * Optional built-in Brain backend. Unlike `agenticAsk`, this provider runs
+   * only behind Core's durable reasoning broker and receives a bounded context
+   * projection. Boot creates a stable local service principal and never revives
+   * a backend the owner disabled.
+   */
+  internalReasoning?: {
+    provider: LLMProvider;
+  };
 
   // --- Execution plane (issue #9) --------------------------------------
   /**
@@ -363,8 +373,22 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // SECURITY.md. Defense-in-depth, honestly scoped.
   const ownerCapBytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(ownerCapBytes);
-  const ownerCapability = Array.from(ownerCapBytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  const router = inputs.coreRouter ?? createCoreRouter({ ownerCapability });
+  const ownerCapability = Array.from(ownerCapBytes, (b) => b.toString(16).padStart(2, '0')).join(
+    '',
+  );
+  const router =
+    inputs.coreRouter ??
+    createCoreRouter({
+      ownerCapability,
+      agentFacades: createConnectedBrainAgentFacades(),
+      ...(inputs.appViewClient === undefined
+        ? {}
+        : {
+            reasoningPublicEvidenceSource: createAppViewReasoningEvidenceSource(
+              inputs.appViewClient,
+            ),
+          }),
+    });
   const coreDispatch = createInProcessDispatch({ router });
   const signedDispatch = async (
     method: string,
@@ -753,6 +777,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
           }
         : undefined,
     askCoordinator: inputs.askCoordinator,
+    internalReasoning: inputs.internalReasoning,
     localDelegationRunner: inputs.localDelegationRunner,
     localDelegationAgentDID: inputs.localDelegationAgentDID,
     stagingDrain: stagingDrainOption,

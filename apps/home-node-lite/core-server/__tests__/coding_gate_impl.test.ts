@@ -33,12 +33,28 @@ describe('createCodingGate — real classify + permit', () => {
   it('allows a project read and mints a redeemable permit', () => {
     const { gate, permits } = createCodingGate({ vaultDir });
     const toolInput = { file_path: 'index.ts' };
-    const res = gate({ toolName: 'Read', toolInput, agentDid: AGENT, sessionId: 's1', cwd: projectDir, mode: 'enforce' });
-    expect(res).toMatchObject({ action: 'code_read', risk: 'SAFE', outcome: 'allow', enforced: true });
+    const res = gate({
+      toolName: 'Read',
+      toolInput,
+      agentDid: AGENT,
+      sessionId: 's1',
+      cwd: projectDir,
+      mode: 'enforce',
+    });
+    expect(res).toMatchObject({
+      action: 'code_read',
+      risk: 'SAFE',
+      outcome: 'allow',
+      enforced: true,
+    });
     expect(res.permitId).toBeDefined();
 
     // the minted permit redeems for the exact payload
-    const redeem = permits.consume({ agentDid: AGENT, sessionId: 's1', payload: { tool: 'Read', input: toolInput } });
+    const redeem = permits.consume({
+      agentDid: AGENT,
+      sessionId: 's1',
+      payload: { tool: 'Read', input: toolInput },
+    });
     expect(redeem.ok).toBe(true);
   });
 
@@ -67,7 +83,11 @@ describe('createCodingGate — real classify + permit', () => {
       cwd: projectDir,
       mode: 'enforce',
     });
-    expect(res).toMatchObject({ action: 'package_install', risk: 'MODERATE', outcome: 'approval_required' });
+    expect(res).toMatchObject({
+      action: 'package_install',
+      risk: 'MODERATE',
+      outcome: 'approval_required',
+    });
     expect(permits.size()).toBe(0);
   });
 
@@ -101,9 +121,21 @@ describe('createCodingGate — real classify + permit', () => {
 
   it('honours a network host allowlist', () => {
     const { gate } = createCodingGate({ vaultDir, allowedHosts: ['api.trusted.test'] });
-    const ok = gate({ toolName: 'WebFetch', toolInput: { url: 'https://api.trusted.test/v1' }, agentDid: AGENT, sessionId: 's1', mode: 'enforce' });
+    const ok = gate({
+      toolName: 'WebFetch',
+      toolInput: { url: 'https://api.trusted.test/v1' },
+      agentDid: AGENT,
+      sessionId: 's1',
+      mode: 'enforce',
+    });
     expect(ok.risk).toBe('MODERATE');
-    const bad = gate({ toolName: 'WebFetch', toolInput: { url: 'https://evil.test/x' }, agentDid: AGENT, sessionId: 's1', mode: 'enforce' });
+    const bad = gate({
+      toolName: 'WebFetch',
+      toolInput: { url: 'https://evil.test/x' },
+      agentDid: AGENT,
+      sessionId: 's1',
+      mode: 'enforce',
+    });
     expect(bad.risk).toBe('HIGH');
   });
 });
@@ -141,6 +173,9 @@ describe('createCodingGate — owner-approval permit loop (Item B)', () => {
     authority.mintApproved({
       agentDid: AGENT,
       sessionId: 's1',
+      effectiveProfile: 'full_supervision',
+      policyVersion: 0,
+      authorityOrigin: 'unknown',
       payloadHash: first.payloadHash as string,
       action: first.action,
       risk: 'MODERATE',
@@ -163,6 +198,9 @@ describe('createCodingGate — owner-approval permit loop (Item B)', () => {
     authority.mintApproved({
       agentDid: AGENT,
       sessionId: 's1',
+      effectiveProfile: 'full_supervision',
+      policyVersion: 0,
+      authorityOrigin: 'unknown',
       payloadHash: first.payloadHash as string,
       action: first.action,
       risk: 'MODERATE',
@@ -178,6 +216,9 @@ describe('createCodingGate — owner-approval permit loop (Item B)', () => {
     authority.mintApproved({
       agentDid: AGENT,
       sessionId: 's1',
+      effectiveProfile: 'full_supervision',
+      policyVersion: 0,
+      authorityOrigin: 'unknown',
       payloadHash: first.payloadHash as string,
       action: first.action,
       risk: 'MODERATE',

@@ -102,6 +102,31 @@ describe('core-server config (task 4.4/4.5)', () => {
       const cfg = loadConfig({ ...minimalEnv(), DINA_MSGBOX_ENABLED: input });
       expect(cfg.msgbox.enabled).toBe(expected);
     });
+
+    it('requires the signed Brain DID when always-on reasoning is enabled', () => {
+      expect(() => loadConfig({ ...minimalEnv(), DINA_INTERNAL_BRAIN_ENABLED: 'true' })).toThrow(
+        ConfigError,
+      );
+      expect(
+        loadConfig({
+          ...minimalEnv(),
+          DINA_INTERNAL_BRAIN_ENABLED: 'true',
+          DINA_BRAIN_DID: 'did:key:z6MkBrain',
+        }).services,
+      ).toMatchObject({
+        brainDid: 'did:key:z6MkBrain',
+        internalBrainEnabled: true,
+      });
+    });
+
+    it('rejects a Brain DID that is not bound directly to the service key', () => {
+      expect(() =>
+        loadConfig({
+          ...minimalEnv(),
+          DINA_BRAIN_DID: 'did:plc:not-a-key-bound-service',
+        }),
+      ).toThrow(ConfigError);
+    });
   });
 
   describe('required fields', () => {
@@ -138,45 +163,37 @@ describe('core-server config (task 4.4/4.5)', () => {
     });
 
     it('rejects invalid log level', () => {
-      const err = captureError(() =>
-        loadConfig({ ...minimalEnv(), DINA_LOG_LEVEL: 'verbose' }),
-      );
+      const err = captureError(() => loadConfig({ ...minimalEnv(), DINA_LOG_LEVEL: 'verbose' }));
       expect(err).toBeInstanceOf(ConfigError);
       expect(err?.issues.some((i) => i.path === 'runtime.logLevel')).toBe(true);
     });
 
     it('rejects invalid boolean', () => {
-      expect(() =>
-        loadConfig({ ...minimalEnv(), DINA_PRETTY_LOGS: 'maybe' }),
-      ).toThrow(/DINA_PRETTY_LOGS must be a boolean/);
+      expect(() => loadConfig({ ...minimalEnv(), DINA_PRETTY_LOGS: 'maybe' })).toThrow(
+        /DINA_PRETTY_LOGS must be a boolean/,
+      );
     });
 
     it('rejects invalid MsgBox enabled boolean', () => {
-      expect(() =>
-        loadConfig({ ...minimalEnv(), DINA_MSGBOX_ENABLED: 'maybe' }),
-      ).toThrow(/DINA_MSGBOX_ENABLED must be a boolean/);
+      expect(() => loadConfig({ ...minimalEnv(), DINA_MSGBOX_ENABLED: 'maybe' })).toThrow(
+        /DINA_MSGBOX_ENABLED must be a boolean/,
+      );
     });
 
     it('rejects cachePages below minimum', () => {
-      const err = captureError(() =>
-        loadConfig({ ...minimalEnv(), DINA_CACHE_PAGES: '5' }),
-      );
+      const err = captureError(() => loadConfig({ ...minimalEnv(), DINA_CACHE_PAGES: '5' }));
       expect(err).toBeInstanceOf(ConfigError);
       expect(err?.issues.some((i) => i.path === 'storage.cachePages')).toBe(true);
     });
 
     it('rejects non-URL msgbox', () => {
-      const err = captureError(() =>
-        loadConfig({ ...minimalEnv(), DINA_MSGBOX_URL: 'not a url' }),
-      );
+      const err = captureError(() => loadConfig({ ...minimalEnv(), DINA_MSGBOX_URL: 'not a url' }));
       expect(err).toBeInstanceOf(ConfigError);
       expect(err?.issues.some((i) => i.path === 'DINA_MSGBOX_URL')).toBe(true);
     });
 
     it('rejects invalid endpoint mode', () => {
-      const err = captureError(() =>
-        loadConfig({ ...minimalEnv(), DINA_ENDPOINT_MODE: 'prod' }),
-      );
+      const err = captureError(() => loadConfig({ ...minimalEnv(), DINA_ENDPOINT_MODE: 'prod' }));
       expect(err).toBeInstanceOf(ConfigError);
       expect(err?.issues.some((i) => i.path === 'DINA_ENDPOINT_MODE')).toBe(true);
     });

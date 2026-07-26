@@ -26,19 +26,21 @@ import { WorkflowConflictError } from '@dina/core';
 import {
   validateServiceQueryBody,
   resolveCanonicalCapability,
+  resolveCatalogCapability,
+  getCatalogCapability,
   parseServiceListingUri,
   effectiveListingStatus,
   LOCAL_RUNNER_NAME,
   buildServiceQueryExecutionPayload,
 } from '@dina/protocol';
 
-
 import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
 import { canonicalCapabilitySchemaHash } from './service_publisher';
 
-import type { CoreClient } from '@dina/core';
-import type { ServiceQueryExecutionPayload ,
+import type { CoreClient, ServiceReasoningSubmission, ServiceReasoningSubmitter } from '@dina/core';
+import type {
+  ServiceQueryExecutionPayload,
   ServiceConfig,
   ServiceCapabilityConfig,
   ServiceCapabilitySchemas,
@@ -211,6 +213,12 @@ export interface ServiceHandlerOptions {
    * Supplying this closes the loop with an immediate error notification.
    */
   rejectResponder?: ServiceRejectResponder;
+  /**
+   * Optional Core-owned reasoning executor. The handler offers it only
+   * instruction-backed official read/quote capabilities. `null` means the
+   * existing Tier-1/agent workflow remains the execution path.
+   */
+  reasoningSubmitter?: ServiceReasoningSubmitter;
   /** Structured log sink. Defaults to no-op. */
   logger?: (entry: Record<string, unknown>) => void;
   /** Wall-clock source (seconds). Defaults to `Math.floor(Date.now()/1000)`. */
@@ -228,6 +236,7 @@ export class ServiceHandler {
   private readonly notifier: ApprovalNotifier | null;
   private readonly inboundNotifier: ServiceInboundNotifier | null;
   private readonly rejectResponder: ServiceRejectResponder | null;
+  private readonly reasoningSubmitter: ServiceReasoningSubmitter | null;
   private readonly log: (entry: Record<string, unknown>) => void;
   private readonly nowSecFn: () => number;
   private readonly generateUUID: () => string;
@@ -240,6 +249,7 @@ export class ServiceHandler {
     this.notifier = options.notifier ?? null;
     this.inboundNotifier = options.inboundNotifier ?? null;
     this.rejectResponder = options.rejectResponder ?? null;
+    this.reasoningSubmitter = options.reasoningSubmitter ?? null;
     this.log =
       options.logger ??
       (() => {
@@ -348,6 +358,54 @@ export class ServiceHandler {
         ? payload.ttl_seconds
         : getTTL(payload.capability);
 
+    const config = this.readConfig(
+      payload.service_uri === undefined
+        ? undefined
+        : parseServiceListingUri(payload.service_uri)?.rkey,
+    );
+    const cap = findCapabilityConfig(config, payload.capability);
+    const reasoning =
+      cap === null
+        ? null
+        : await this.tryCreateReasoningExecution({
+            fromDID: payload.from_did,
+            queryId: payload.query_id,
+            capability: payload.capability,
+            params: payload.params,
+            ttlSeconds: ttl,
+            cap,
+            config,
+            schemaSnapshot: payload.schema_snapshot,
+            serviceUri: payload.service_uri,
+            grantId: payload.grant_id,
+            operatorApproved: true,
+          });
+    if (reasoning === 'conflict' || reasoning === 'unavailable') {
+      await this.sendError(
+        payload.from_did,
+        {
+          query_id: payload.query_id,
+          capability: payload.capability,
+          params: payload.params,
+          ttl_seconds: ttl,
+          ...(payload.schema_hash === undefined ? {} : { schema_hash: payload.schema_hash }),
+          ...(payload.service_uri === undefined ? {} : { service_uri: payload.service_uri }),
+          ...(payload.grant_id === undefined ? {} : { grant_id: payload.grant_id }),
+        },
+        'error',
+        reasoning === 'conflict' ? 'reasoning_request_conflict' : 'service_unavailable',
+      );
+      await this.cancelApprovalAfterExecution(
+        approvalTaskId,
+        reasoning === 'conflict' ? 'reasoning_request_conflict' : 'service_unavailable',
+      );
+      return;
+    }
+    if (reasoning !== null) {
+      await this.cancelApprovalAfterExecution(approvalTaskId, 'executed_via_reasoning');
+      return;
+    }
+
     try {
       await this.createExecutionTaskRaw({
         fromDID: payload.from_did,
@@ -361,6 +419,7 @@ export class ServiceHandler {
         serviceName: payload.service_name,
         schemaSnapshot: payload.schema_snapshot,
         serviceUri: payload.service_uri,
+        grantId: payload.grant_id,
         // This delegation exists BECAUSE the operator approved — let the
         // Tier 1 runtime (and any agent) know the human gate is passed.
         operatorApproved: true,
@@ -380,18 +439,7 @@ export class ServiceHandler {
       }
     }
 
-    try {
-      await this.core.cancelWorkflowTask(approvalTaskId, 'executed_via_delegation');
-    } catch (err) {
-      // Tolerate "already terminal" / 404. Approval task cleanup is
-      // best-effort because the delegation is what actually resolves the
-      // query.
-      this.log({
-        event: 'service.query.approval_cancel_failed',
-        approval_task_id: approvalTaskId,
-        error: (err as Error).message ?? String(err),
-      });
-    }
+    await this.cancelApprovalAfterExecution(approvalTaskId, 'executed_via_delegation');
   }
 
   // -------------------------------------------------------------------------
@@ -406,6 +454,38 @@ export class ServiceHandler {
     const taskId = `svc-exec-${this.generateUUID()}`;
     const config = this.readConfig(this.rkeyForQuery(query));
     const serviceName = config?.name ?? '';
+    const reasoning = await this.tryCreateReasoningExecution({
+      fromDID,
+      queryId: query.query_id,
+      capability: query.capability,
+      params: query.params,
+      ttlSeconds: query.ttl_seconds,
+      cap,
+      config,
+      schemaSnapshot: snapshotForCapability(config, query.capability),
+      serviceUri: query.service_uri,
+      grantId: query.grant_id,
+      operatorApproved: false,
+    });
+    if (reasoning === 'conflict' || reasoning === 'unavailable') {
+      await this.sendError(
+        fromDID,
+        query,
+        'error',
+        reasoning === 'conflict' ? 'reasoning_request_conflict' : 'service_unavailable',
+      );
+      return;
+    }
+    if (reasoning !== null) {
+      await this.fireInboundNotifier({
+        kind: 'execution',
+        taskId: reasoning.taskId,
+        fromDID,
+        capability: query.capability,
+        serviceName,
+      });
+      return;
+    }
     await this.createExecutionTaskRaw({
       fromDID,
       queryId: query.query_id,
@@ -427,6 +507,129 @@ export class ServiceHandler {
       capability: query.capability,
       serviceName,
     });
+  }
+
+  private async tryCreateReasoningExecution(args: {
+    fromDID: string;
+    queryId: string;
+    capability: string;
+    params: unknown;
+    ttlSeconds: number;
+    cap: ServiceCapabilityConfig;
+    config: ServiceConfig | null;
+    schemaSnapshot?: SchemaSnapshot;
+    serviceUri?: string;
+    grantId?: string;
+    operatorApproved: boolean;
+  }): Promise<ServiceReasoningSubmission | 'conflict' | 'unavailable' | null> {
+    if (this.reasoningSubmitter === null) return null;
+    const instruction = typeof args.cap.instruction === 'string' ? args.cap.instruction.trim() : '';
+    const hasAgentPlane =
+      typeof args.cap.mcpServer === 'string' &&
+      args.cap.mcpServer !== '' &&
+      typeof args.cap.mcpTool === 'string' &&
+      args.cap.mcpTool !== '';
+    if (instruction === '' || hasAgentPlane) return null;
+
+    // Unknown/custom capabilities have no trusted action classification. They
+    // keep using the established Tier-1 lane until an owner-approved manifest
+    // can supply equivalent execution semantics.
+    const canonical = resolveCatalogCapability(args.capability);
+    const definition = canonical === null ? undefined : getCatalogCapability(canonical);
+    if (
+      definition == null ||
+      (definition.action_class !== 'read' && definition.action_class !== 'quote')
+    ) {
+      return null;
+    }
+    const responseSchema =
+      args.schemaSnapshot?.result ?? getCapability(args.capability)?.resultSchema;
+    if (
+      responseSchema === undefined ||
+      args.params === null ||
+      typeof args.params !== 'object' ||
+      Array.isArray(args.params)
+    ) {
+      return null;
+    }
+    try {
+      const submitted = await this.reasoningSubmitter({
+        requesterDid: args.fromDID,
+        queryId: args.queryId,
+        capabilityId: args.capability,
+        params: args.params as Record<string, unknown>,
+        instructions: instruction,
+        serviceName: args.config?.name ?? '',
+        ...(args.serviceUri === undefined ? {} : { serviceUri: args.serviceUri }),
+        ...(args.grantId === undefined ? {} : { grantId: args.grantId }),
+        ttlSeconds: args.ttlSeconds,
+        responseSchema,
+        ...(args.schemaSnapshot?.schema_hash === undefined
+          ? {}
+          : { responseSchemaHash: args.schemaSnapshot.schema_hash }),
+        vaultPersona: args.config?.vaultPersona ?? 'general',
+        operatorApproved: args.operatorApproved,
+      });
+      if (submitted !== null) {
+        this.log({
+          event: 'service.query.reasoning_created',
+          task_id: submitted.taskId,
+          backend_id: submitted.backendId,
+          capability: args.capability,
+          query_id: args.queryId,
+          deduplicated: submitted.deduplicated,
+        });
+      }
+      return submitted;
+    } catch (err) {
+      const code =
+        err !== null && typeof err === 'object' && 'code' in err
+          ? String((err as { code: unknown }).code)
+          : '';
+      if (code === 'conflict') {
+        this.log({
+          event: 'service.query.reasoning_conflict',
+          capability: args.capability,
+          query_id: args.queryId,
+        });
+        return 'conflict';
+      }
+      if (code === 'authority_unavailable') {
+        this.log({
+          event: 'service.query.reasoning_authority_unavailable',
+          capability: args.capability,
+          query_id: args.queryId,
+        });
+        return 'unavailable';
+      }
+      // Only an explicit `null` from the submitter means that no live
+      // reasoning backend accepted the work. Unexpected failures must not
+      // silently downgrade into the less constrained legacy execution lane.
+      this.log({
+        event: 'service.query.reasoning_unavailable',
+        capability: args.capability,
+        query_id: args.queryId,
+        reason: 'reasoning_submission_failed',
+      });
+      return 'unavailable';
+    }
+  }
+
+  private async cancelApprovalAfterExecution(
+    approvalTaskId: string,
+    reason: string,
+  ): Promise<void> {
+    try {
+      await this.core.cancelWorkflowTask(approvalTaskId, reason);
+    } catch {
+      // Tolerate "already terminal" / 404. Downstream execution is what
+      // resolves the query; approval cleanup is best effort.
+      this.log({
+        event: 'service.query.approval_cancel_failed',
+        approval_task_id: approvalTaskId,
+        reason: 'approval_cleanup_failed',
+      });
+    }
   }
 
   /**
@@ -458,6 +661,7 @@ export class ServiceHandler {
     /** AT-URI of the chosen listing (multi-listing per DID). Carried onto the
      *  task payload so the agent knows which listing the query is for. */
     serviceUri?: string;
+    grantId?: string;
     /** True when this delegation was spawned by `executeAndRespond` —
      *  i.e. the operator personally approved the request. The Tier 1
      *  runtime reads `payload.operator_approved` so an instruction like
@@ -481,6 +685,7 @@ export class ServiceHandler {
       ...(args.mcpTool !== undefined ? { mcp_tool: args.mcpTool } : {}),
       ...(args.schemaSnapshot !== undefined ? { schema_snapshot: args.schemaSnapshot } : {}),
       ...(args.serviceUri !== undefined ? { service_uri: args.serviceUri } : {}),
+      ...(args.grantId !== undefined ? { grant_id: args.grantId } : {}),
       ...(args.operatorApproved === true ? { operator_approved: true } : {}),
     });
     const expiresAtSec = this.nowSecFn() + args.ttlSeconds;
@@ -541,6 +746,7 @@ export class ServiceHandler {
       ...(cap.mcpServer !== undefined ? { mcp_server: cap.mcpServer } : {}),
       ...(snapshot !== undefined ? { schema_snapshot: snapshot } : {}),
       ...(query.service_uri !== undefined ? { service_uri: query.service_uri } : {}),
+      ...(query.grant_id !== undefined ? { grant_id: query.grant_id } : {}),
     });
     await this.core.createWorkflowTask({
       id: taskId,

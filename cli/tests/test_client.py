@@ -761,7 +761,6 @@ def test_gate_can_bind_the_signed_host_session_without_an_extra_start_call(confi
         assert json.loads(mock_req.call_args.kwargs["body"]) == {
             "tool_name": "Read",
             "tool_input": {"file_path": "notes.txt"},
-            "mode": "enforce",
             "approval_surface": "host",
             "host_session_id": "claude-abc",
             "cwd": "/work",
@@ -773,6 +772,141 @@ def test_gate_rejects_ambiguous_session_inputs_before_transport(config):
     client = DinaClient(replace(config, role="agent"))
     with pytest.raises(ValueError, match="either session or host_session"):
         client.gate("Read", {}, session="sess-1", host_session="claude-abc")
+    client.close()
+
+
+def test_gate_rejects_caller_selected_mode(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="resolved by Dina Core"):
+        client.gate("Read", {}, mode="classify_only", host_session="claude-abc")
+    client.close()
+
+
+def test_reasoning_backend_wire_contracts(config):
+    responses = [
+        _tr(200, '{"status":"complete","items":[]}'),
+        _tr(200, '{"status":"stored","proposal_id":"stg-1"}'),
+        _tr(200, '{"queued":1}'),
+        _tr(200, '{"submission":{"taskId":"r-1"},"claim":null}'),
+        _tr(200, '{"claim":{"taskId":"r-1"}}'),
+        _tr(200, '{"ok":true}'),
+        _tr(200, '{"accepted":true}'),
+        _tr(200, '{"accepted":true,"terminal":false}'),
+    ]
+    with patch(
+        "dina_cli.transport.DirectTransport.request",
+        side_effect=responses,
+    ) as mock_req:
+        client = DinaClient(replace(config, role="agent"))
+        client.context_prepare(
+            session="sess-1",
+            query="What chair fits me?",
+            purpose="Recommend a chair",
+            personas=["health", "financial"],
+            limit=8,
+        )
+        client.memory_propose(
+            session="sess-1",
+            request_id="memory-request-1",
+            source_text="I have back pain.",
+            proposal={
+                "persona": "health",
+                "subject": {"kind": "health", "label": "Lower back pain"},
+                "facts": [{"text": "I have back pain.", "confidence": 1}],
+                "reminderCandidates": [],
+            },
+        )
+        client.reasoning_status("backend-1", "sess-1")
+        client.reasoning_begin(
+            backend_id="backend-1",
+            session="sess-1",
+            task_kind="answer.compose",
+            input_data={"prompt": "Question"},
+            purpose="Answer the owner",
+            idempotency_key="inline-1",
+        )
+        client.reasoning_claim(
+            backend_id="backend-1",
+            session="sess-1",
+            lease_ms=60_000,
+        )
+        client.reasoning_heartbeat(
+            task_id="r-1",
+            backend_id="backend-1",
+            session="sess-1",
+            claim_id="claim-1",
+            context_ticket_id="ticket-1",
+            lease_ms=60_000,
+        )
+        client.reasoning_complete(
+            task_id="r-1",
+            backend_id="backend-1",
+            session="sess-1",
+            claim_id="claim-1",
+            context_ticket_id="ticket-1",
+            execution_id="exec-1",
+            policy_snapshot_hash="a" * 64,
+            context_projection_hash=None,
+            result={"answer": "Result"},
+            evidence_ids=[],
+        )
+        client.reasoning_fail(
+            task_id="r-1",
+            backend_id="backend-1",
+            session="sess-1",
+            claim_id="claim-1",
+            context_ticket_id="ticket-1",
+            error="temporary model failure",
+            retryable=True,
+        )
+
+        calls = mock_req.call_args_list
+        assert calls[0].args[0:2] == (
+            "POST",
+            "/v1/agent/context/prepare",
+        )
+        assert json.loads(calls[0].kwargs["body"]) == {
+            "session_id": "sess-1",
+            "query": "What chair fits me?",
+            "purpose": "Recommend a chair",
+            "personas": ["health", "financial"],
+            "limit": 8,
+        }
+        assert calls[1].args[0:2] == (
+            "POST",
+            "/v1/agent/memory/propose",
+        )
+        assert json.loads(calls[1].kwargs["body"])["request_id"] == "memory-request-1"
+        assert calls[2].args[0:2] == (
+            "GET",
+            "/v1/reasoning/status?backend_id=backend-1&session_id=sess-1",
+        )
+        assert json.loads(calls[3].kwargs["body"]) == {
+            "backend_id": "backend-1",
+            "session_id": "sess-1",
+            "task_kind": "answer.compose",
+            "input": {"prompt": "Question"},
+            "purpose": "Answer the owner",
+            "idempotency_key": "inline-1",
+        }
+        assert calls[4].args[1] == "/v1/reasoning/claim"
+        assert json.loads(calls[5].kwargs["body"])["claim_id"] == "claim-1"
+        completion = json.loads(calls[6].kwargs["body"])
+        assert completion["context_projection_hash"] is None
+        assert completion["evidence_ids"] == []
+        failure = json.loads(calls[7].kwargs["body"])
+        assert failure["retryable"] is True
+        client.close()
+
+
+def test_reasoning_claim_rejects_invalid_lease_locally(config):
+    client = DinaClient(replace(config, role="agent"))
+    with pytest.raises(ValueError, match="lease_ms"):
+        client.reasoning_claim(
+            backend_id="backend-1",
+            session="sess-1",
+            lease_ms=999,
+        )
     client.close()
 
 

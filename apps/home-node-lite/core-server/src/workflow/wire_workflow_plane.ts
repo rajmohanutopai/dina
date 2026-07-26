@@ -34,7 +34,9 @@ import {
   WatchPollSweeper,
   WatchService,
   buildWatchPollHandler,
+  createServiceReasoningSubmitter,
   getServiceConfig,
+  getReasoningBroker,
   getWatchService,
   registerPublicKeyResolver,
   registerService,
@@ -44,6 +46,7 @@ import {
   wireRunPlaneNode,
   type CoreRouter,
   type ServiceConfig,
+  type ResponseBridgeSender,
 } from '@dina/core';
 // `setD2DSender` registers the generic D2D egress callback for the `/v1/msg/send`
 // route. It lives on the runtime subpath (route module), not the main barrel.
@@ -60,11 +63,7 @@ import { makeHttpTier1Runner } from './http_tier1_runner';
 
 import type { PdsIdentity } from '../identity/provision_pds';
 import type { Logger } from '../logger';
-import type {
-  ApprovalNotifier,
-  OrchestratorAppView,
-  ServiceInboundNotifier,
-} from '@dina/brain';
+import type { ApprovalNotifier, OrchestratorAppView, ServiceInboundNotifier } from '@dina/brain';
 import type { DinaMessage } from '@dina/core/runtime';
 import type { DatabaseAdapter } from '@dina/core/storage';
 
@@ -103,11 +102,9 @@ export interface WiredWorkflowPlane {
    * which fans out to `ServiceHandler`. Without this wiring, inbound
    * service traffic is decrypted + validated then silently dropped.
    */
-  onBypassedD2D(info: {
-    senderDID: string;
-    messageType: string;
-    body: unknown;
-  }): Promise<void>;
+  onBypassedD2D(info: { senderDID: string; messageType: string; body: unknown }): Promise<void>;
+  /** Shared service-response egress for Core-owned reasoning commits. */
+  responseBridgeSender: ResponseBridgeSender;
   /** Stop sweepers + runtime, deregister singletons. */
   dispose(): Promise<void>;
 }
@@ -128,9 +125,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
   // (Response Bridge outbound, dina-agent calling /v1/workflow/...)
   // needs to verify against our pubkey. Without this, verifyRequest
   // treats the home node's own DID as unknown and 401s.
-  registerPublicKeyResolver((did) =>
-    did === pdsIdentity.did ? signingKeypair.publicKey : null,
-  );
+  registerPublicKeyResolver((did) => (did === pdsIdentity.did ? signingKeypair.publicKey : null));
   // Register ourselves as a brain-class caller so signed internal
   // calls pass the authz allowlist.
   registerService(pdsIdentity.did, 'brain');
@@ -305,7 +300,10 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
         let watchPolicy: { active: boolean; filter?: { contains: string } } | undefined;
         try {
           const origin = JSON.parse(task.payload) as { origin_channel?: unknown };
-          if (typeof origin.origin_channel === 'string' && origin.origin_channel.startsWith('watch:')) {
+          if (
+            typeof origin.origin_channel === 'string' &&
+            origin.origin_channel.startsWith('watch:')
+          ) {
             const subId = origin.origin_channel.slice('watch:'.length);
             watchPolicy = getWatchService()?.deliveryPolicyFor(subId) ?? { active: false };
           }
@@ -331,6 +329,9 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       },
       approvalNotifier,
       inboundNotifier,
+      reasoningSubmitter: createServiceReasoningSubmitter({
+        ownerDid: pdsIdentity.did,
+      }),
       logger: (entry) => logger.info(entry, 'service-runtime'),
       onWorkflowError: (err) =>
         logger.warn(
@@ -343,6 +344,8 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
           'approval reconciler error',
         ),
     },
+    onTaskExpired: (task) => getReasoningBroker()?.releaseSessionAuthorityForTask(task),
+    onLeaseReverted: (task) => getReasoningBroker()?.releaseSessionAuthorityForTask(task),
     logger: (entry) => logger.info(entry, 'workflow-plane'),
   });
 
@@ -367,6 +370,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
   tier1Runner.start();
 
   return {
+    responseBridgeSender: shared.responseBridgeSender,
     async onBypassedD2D(info): Promise<void> {
       // ISVC-10 — a run-correlated provider `service.response` (the reply to a
       // pacer-emitted `service.query`) is consumed by the run plane's trust

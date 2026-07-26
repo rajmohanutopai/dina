@@ -84,6 +84,13 @@ import type {
   ActionPolicyResult,
   RiskLevel,
   ServiceOfferView,
+  ReasoningClaim,
+  ReasoningClaimRequest,
+  ReasoningHeartbeatRequest,
+  ReasoningCompleteRequest,
+  ReasoningCompletion,
+  ReasoningFailRequest,
+  ReasoningFailure,
 } from '@dina/core';
 
 /** One captured call — method name + positional args passed. */
@@ -256,6 +263,19 @@ export class MockCoreClient implements CoreClient {
    *  filtered by providerDid / capability at call time. */
   serviceOffersResult: ServiceOfferView[] = [];
   actionPolicyResult: ActionPolicyResult = { actions: [] };
+  reasoningClaimResult: ReasoningClaim | null = null;
+  reasoningHeartbeatResult = false;
+  reasoningCompletionResult: ReasoningCompletion = {
+    accepted: false,
+    state: 'rejected',
+    code: 'stale_claim',
+    committed: false,
+  };
+  reasoningFailureResult: ReasoningFailure = {
+    accepted: false,
+    state: 'rejected',
+    code: 'stale_claim',
+  };
 
   /**
    * In-memory reminder store backing `reminderCreate` /
@@ -473,10 +493,7 @@ export class MockCoreClient implements CoreClient {
     }));
   }
 
-  async stagingExtendLease(
-    itemId: string,
-    seconds: number,
-  ): Promise<StagingExtendLeaseResult> {
+  async stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult> {
     return this.dispatch('stagingExtendLease', [itemId, seconds], () => ({
       ...this.stagingExtendLeaseResult,
       itemId,
@@ -609,13 +626,8 @@ export class MockCoreClient implements CoreClient {
       // Idempotency short-circuit — if the caller gave an idempotency
       // key that matches a live task in the buffer, return it with
       // deduped=true, matching the real route's 200+deduped path.
-      if (
-        input.idempotencyKey !== undefined &&
-        input.idempotencyKey !== ''
-      ) {
-        const existing = this.workflowTasks.find(
-          (t) => t.idempotency_key === input.idempotencyKey,
-        );
+      if (input.idempotencyKey !== undefined && input.idempotencyKey !== '') {
+        const existing = this.workflowTasks.find((t) => t.idempotency_key === input.idempotencyKey);
         if (existing !== undefined) {
           return { task: existing, deduped: true };
         }
@@ -623,10 +635,7 @@ export class MockCoreClient implements CoreClient {
       // Id conflict — match the route's 409 → throw path.
       const idClash = this.workflowTasks.find((t) => t.id === input.id);
       if (idClash !== undefined) {
-        throw new WorkflowConflictError(
-          `duplicate task id: ${input.id}`,
-          'duplicate_id',
-        );
+        throw new WorkflowConflictError(`duplicate task id: ${input.id}`, 'duplicate_id');
       }
       // Fresh create — stamp a minimal-but-valid WorkflowTask, push
       // into the buffer, and echo it back. Tests that care about full
@@ -720,11 +729,7 @@ export class MockCoreClient implements CoreClient {
     );
   }
 
-  async failWorkflowTask(
-    id: string,
-    errorMsg: string,
-    agentDID = '',
-  ): Promise<WorkflowTask> {
+  async failWorkflowTask(id: string, errorMsg: string, agentDID = ''): Promise<WorkflowTask> {
     return this.workflowAction(
       'failWorkflowTask',
       id,
@@ -734,6 +739,33 @@ export class MockCoreClient implements CoreClient {
       },
       [id, errorMsg, agentDID],
     );
+  }
+
+  async reasoningClaim(input: ReasoningClaimRequest): Promise<ReasoningClaim | null> {
+    return this.dispatch('reasoningClaim', [input], () => this.reasoningClaimResult);
+  }
+
+  async reasoningHeartbeat(taskId: string, input: ReasoningHeartbeatRequest): Promise<boolean> {
+    return this.dispatch(
+      'reasoningHeartbeat',
+      [taskId, input],
+      () => this.reasoningHeartbeatResult,
+    );
+  }
+
+  async reasoningComplete(
+    taskId: string,
+    input: ReasoningCompleteRequest,
+  ): Promise<ReasoningCompletion> {
+    return this.dispatch(
+      'reasoningComplete',
+      [taskId, input],
+      () => this.reasoningCompletionResult,
+    );
+  }
+
+  async reasoningFail(taskId: string, input: ReasoningFailRequest): Promise<ReasoningFailure> {
+    return this.dispatch('reasoningFail', [taskId, input], () => this.reasoningFailureResult);
   }
 
   async memoryTouch(params: MemoryTouchParams): Promise<MemoryTouchResult> {
@@ -866,9 +898,7 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('peopleFindByName', [surface], () => {
       const needle = surface.trim().toLowerCase();
       return this.peopleListResult.filter((p) =>
-        (p.surfaces ?? []).some(
-          (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
-        ),
+        (p.surfaces ?? []).some((s) => s.status !== 'rejected' && s.normalizedSurface === needle),
       );
     });
   }
@@ -881,9 +911,8 @@ export class MockCoreClient implements CoreClient {
       const wanted = did.trim();
       // Match against the canned people list by their contactDid.
       return (
-        this.peopleListResult.find(
-          (p) => p.status !== 'rejected' && p.contactDid === wanted,
-        ) ?? null
+        this.peopleListResult.find((p) => p.status !== 'rejected' && p.contactDid === wanted) ??
+        null
       );
     });
   }

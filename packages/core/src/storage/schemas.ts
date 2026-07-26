@@ -1388,6 +1388,114 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_notification_log_scope ON notification_log(data_scope);
     `,
   },
+  {
+    version: 28,
+    name: 'connected_agent_gating',
+    // CONNECTED_AGENT_GATING_AND_BRAIN.md Phase 1. The policy is owned by Core,
+    // not the host adapter. Session-bound authority provenance preserves the
+    // non-owner Full-Supervision floor when work runs inside an otherwise
+    // owner-facing coding session.
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_gating_policies (
+        agent_did TEXT PRIMARY KEY,
+        profile TEXT NOT NULL
+          CHECK (profile IN ('network_protection','sensitive_boundaries','full_supervision')),
+        policy_version INTEGER NOT NULL,
+        selected_by_owner_did TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_gating_policies_updated
+        ON agent_gating_policies(updated_at DESC);
+
+      ALTER TABLE agent_sessions ADD COLUMN authority_origin_json TEXT;
+    `,
+  },
+  {
+    version: 29,
+    name: 'connected_agent_reasoning',
+    // CONNECTED_AGENT_GATING_AND_BRAIN.md Phases 2/3. The identity database is
+    // SQLCipher-backed, so short-lived input/context projections are encrypted
+    // at rest. workflow_tasks stores only opaque ids and hashes.
+    sql: `
+      CREATE TABLE IF NOT EXISTS reasoning_backends (
+        backend_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL
+          CHECK (kind IN ('connected_host','internal_brain','local_model','remote_provider')),
+        principal_did TEXT NOT NULL,
+        allowed_task_kinds_json TEXT NOT NULL,
+        max_sensitivity TEXT NOT NULL
+          CHECK (max_sensitivity IN ('public','personal','sensitive')),
+        availability TEXT NOT NULL
+          CHECK (availability IN ('foreground','always_on')),
+        model_class TEXT,
+        policy_version INTEGER NOT NULL,
+        selected_by_owner_did TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        revoked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_reasoning_backends_principal
+        ON reasoning_backends(principal_did, enabled, revoked_at);
+
+      CREATE TABLE IF NOT EXISTS reasoning_projections (
+        projection_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES workflow_tasks(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('input','context')),
+        owner_did TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        sensitivity TEXT NOT NULL
+          CHECK (sensitivity IN ('public','personal','sensitive')),
+        content_json TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        scrubbed INTEGER NOT NULL CHECK (scrubbed IN (0,1)),
+        allowed_evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_reasoning_projections_task
+        ON reasoning_projections(task_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_reasoning_projections_expiry
+        ON reasoning_projections(expires_at);
+
+      CREATE TABLE IF NOT EXISTS reasoning_context_tickets (
+        ticket_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL REFERENCES workflow_tasks(id) ON DELETE CASCADE,
+        claim_id TEXT NOT NULL,
+        backend_id TEXT NOT NULL REFERENCES reasoning_backends(backend_id),
+        principal_did TEXT NOT NULL,
+        owner_did TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        policy_version INTEGER NOT NULL,
+        input_projection_id TEXT NOT NULL REFERENCES reasoning_projections(projection_id),
+        context_projection_id TEXT REFERENCES reasoning_projections(projection_id),
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        revoked_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reasoning_ticket_claim
+        ON reasoning_context_tickets(task_id, claim_id);
+      CREATE INDEX IF NOT EXISTS idx_reasoning_ticket_expiry
+        ON reasoning_context_tickets(expires_at);
+    `,
+  },
+  {
+    version: 30,
+    name: 'reasoning_ticket_session_binding',
+    // A connected-host context ticket is authority from one exact Core
+    // session, not a reusable credential for every future session held by the
+    // same paired DID. Managed always-on workers store NULL.
+    sql: `
+      ALTER TABLE reasoning_context_tickets ADD COLUMN session_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_reasoning_ticket_session
+        ON reasoning_context_tickets(session_id, revoked_at);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

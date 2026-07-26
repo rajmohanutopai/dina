@@ -5,6 +5,7 @@ export {
   setDeviceScopeResolver,
   resetCallerTypeState,
 } from './src/auth/caller_type';
+export { revokeReasoningAuthorityForPrincipal } from './src/reasoning/authority_revocation';
 export {
   hydrateDeviceRegistry,
   getDeviceByDID,
@@ -51,6 +52,27 @@ export {
 } from './src/relay/msgbox_ws';
 export type { WSFactory } from './src/relay/msgbox_ws';
 export { createCoreRouter, setAskRouteHandler } from './src/server/core_server';
+export {
+  createConnectedBrainAgentFacades,
+  prepareConnectedBrainContext,
+  prepareOwnerReasoningContext,
+  prepareServiceReasoningContext,
+  persistConnectedBrainMemoryProposal,
+} from './src/agent/connected_brain_facades';
+export { createReasoningCommitBridge } from './src/reasoning/commit_bridge';
+export { getSessionRegistry } from './src/session/registry';
+export {
+  createReasoningPolicySnapshotResolver,
+  createServiceReasoningCommitter,
+  createServiceReasoningSubmitter,
+} from './src/reasoning/service_execution';
+export { ReasoningBackendWorker } from './src/reasoning/backend_worker';
+export type {
+  ReasoningBackendExecutor,
+  ReasoningBackendWorkerOptions,
+  ReasoningExecutionProposal,
+  ReasoningWorkerResult,
+} from './src/reasoning/backend_worker';
 export type { AskRouteHandler } from './src/server/core_server';
 export { createInProcessDispatch } from './src/server/in_process_dispatch';
 export { setD2DSender } from './src/server/routes/d2d_msg';
@@ -79,10 +101,7 @@ export {
   subscribeReviewPublishRegistry,
 } from './src/review/publish_job_repository';
 export type { ReviewPublishRepository } from './src/review/publish_job_repository';
-export {
-  publishClaimedReview,
-  runReviewPublishTick,
-} from './src/review/publish_pipeline';
+export { publishClaimedReview, runReviewPublishTick } from './src/review/publish_pipeline';
 export type {
   PublishReceipt,
   ReviewRecordWriter,
@@ -150,7 +169,14 @@ export { hasDEK, wrapWithPersonaDEK, unwrapWithPersonaDEK } from './src/persona/
 export { wireRunPlaneNode } from './src/run/plane_node';
 export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './src/run/plane_node';
 export { InProcessOwnerRunClient } from './src/client/owner-run-client';
-export type { OwnerRunClient } from './src/client/owner-run-client';
+export type {
+  OwnerReasoningSubmitRequest,
+  OwnerReasoningSubmitResult,
+  OwnerReasoningBackendView,
+  OwnerReasoningBackendRegisterRequest,
+  OwnerReasoningClient,
+  OwnerRunClient,
+} from './src/client/owner-run-client';
 // Poll-mode watches (PSVC-0)
 export { WatchService, setWatchService, getWatchService } from './src/watch/service';
 export { WatchPollSweeper } from './src/watch/poll_sweeper';

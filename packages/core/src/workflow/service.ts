@@ -277,6 +277,7 @@ const VALID_KINDS = new Set<string>([
   WorkflowTaskKind.Delegation,
   WorkflowTaskKind.Approval,
   WorkflowTaskKind.ServiceQuery,
+  WorkflowTaskKind.Reasoning,
   WorkflowTaskKind.Timer,
   WorkflowTaskKind.Watch,
   WorkflowTaskKind.Generic,
@@ -512,23 +513,7 @@ export class WorkflowService {
       schemaSnapshot: payload.schema_snapshot,
     };
 
-    // Durable stash BEFORE send. The prefix `bridge_pending:` lets
-    // the retry sweeper find this entry via `listTasksWithStashPrefix`.
-    //
-    // Review #4: if the initial stash write fails, fall back to an
-    // in-memory queue so we don't lose the retry record if the send
-    // then also fails. `retryPendingBridges` walks both surfaces.
-    let stashWritten = false;
-    try {
-      this.repo.setInternalStash(
-        task.id,
-        BRIDGE_PENDING_PREFIX + serialiseBridgeCtx(ctx),
-        this.nowMsFn(),
-      );
-      stashWritten = true;
-    } catch {
-      this.bridgeInMemoryFallback.set(task.id, ctx);
-    }
+    const stashWritten = this.persistBridgeRecord(task, ctx, false);
 
     // Claim in-flight BEFORE firing the detached send (review #1).
     // `retryPendingBridges` checks `bridgeInFlight` and skips any
@@ -566,6 +551,70 @@ export class WorkflowService {
     detachedContainer.promise = detached;
     this.bridgeDetached.add(detached);
     void detached;
+  }
+
+  /**
+   * Durably hand a Core-owned service response to the existing bridge worker.
+   *
+   * Unlike the legacy post-delegation convenience path, this method never
+   * falls back to process memory and never starts network I/O inline. A
+   * reasoning commit is accepted only after the retry record is durable; the
+   * BridgePendingSweeper sends it after the broker records its commit receipt.
+   * Re-staging the exact context is idempotent, which closes crash recovery
+   * between model completion and commit receipt persistence.
+   */
+  stageServiceQueryResponse(ctx: ServiceQueryBridgeContext): void {
+    if (this.responseBridgeSender === null) {
+      throw new Error('service response bridge is unavailable');
+    }
+    const task = this.repo.getById(ctx.taskId);
+    let reasoningTaskKind: unknown = null;
+    try {
+      const payload = JSON.parse(task?.payload ?? '') as unknown;
+      reasoningTaskKind =
+        payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).taskKind
+          : null;
+    } catch {
+      reasoningTaskKind = null;
+    }
+    if (
+      task === null ||
+      task.kind !== 'reasoning' ||
+      task.status !== WorkflowTaskState.Completed ||
+      reasoningTaskKind !== 'service.respond'
+    ) {
+      throw new Error('service response task is not completed');
+    }
+    this.persistBridgeRecord(task, ctx, true);
+  }
+
+  private persistBridgeRecord(
+    task: WorkflowTask,
+    ctx: ServiceQueryBridgeContext,
+    requireDurable: boolean,
+  ): boolean {
+    const encoded = serialiseBridgeCtx(ctx);
+    if (deserialiseBridgeCtx(encoded) === null) {
+      throw new Error('invalid service response bridge context');
+    }
+    const pending = BRIDGE_PENDING_PREFIX + encoded;
+    if (task.internal_stash === pending) return true;
+    if (requireDurable && task.internal_stash !== undefined && task.internal_stash !== '') {
+      throw new Error('service response task already holds different recovery state');
+    }
+    try {
+      const written = this.repo.setInternalStash(task.id, pending, this.nowMsFn());
+      if (!written) throw new Error('service response task disappeared before durable handoff');
+      return true;
+    } catch (error) {
+      if (requireDurable) throw error;
+      // Legacy delegation completion is already terminal and cannot report a
+      // bridge-stash failure to its caller. Preserve its prior best-effort
+      // in-memory fallback; reasoning commits use the strict branch above.
+      this.bridgeInMemoryFallback.set(task.id, ctx);
+      return false;
+    }
   }
 
   /**

@@ -6,6 +6,11 @@
 
 **Normative language:** `MUST`, `MUST NOT`, `SHOULD`, and `MAY` have their RFC 2119 meanings. A statement labeled **Current** describes shipping code. A statement labeled **Target** describes the architecture this document selects. A statement labeled **Deferred** is intentionally outside the first implementation.
 
+**Companion specification:** `docs/CONNECTED_AGENT_GATING_AND_BRAIN.md`
+defines the three owner-facing gating profiles and the protocol for using a
+foreground Claude Code, Codex, or compatible agent as a bounded reasoning
+backend without transferring Core authority.
+
 ---
 
 ## 1. Executive decision

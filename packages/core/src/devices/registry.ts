@@ -17,7 +17,6 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { getAgentGrantRepository } from '../agent/grant_repository';
 import { appendAudit } from '../audit/service';
-import type { AgentScope } from '../auth/agent_scope';
 import {
   registerDevice as registerDeviceAuth,
   unregisterDevice as unregisterDeviceAuth,
@@ -27,8 +26,11 @@ import { recordDecisionSafe } from '../plugins/decisions';
 import { getPluginGrantRepository } from '../plugins/grants';
 import { terminateInstallInFlight } from '../plugins/install_service';
 import { getPluginInstallRepository } from '../plugins/registry';
+import { revokeReasoningAuthorityForPrincipal } from '../reasoning/authority_revocation';
 
 import { getDeviceRepository } from './repository';
+
+import type { AgentScope } from '../auth/agent_scope';
 
 /**
  * Device roles. `plugin` (PLUGIN_ARCHITECTURE.md §7) is a runner-plugin
@@ -284,6 +286,16 @@ export function revokeDevice(deviceId: string): boolean {
 
   cutDeviceAccess(device);
   device.revoked = true;
+  if (device.did !== '') {
+    // Legacy sync callers cannot report cascade durability, but they must still
+    // cut live reasoning authority immediately. The durable path below repeats
+    // this idempotently and reports partial-repository failures.
+    try {
+      revokeReasoningAuthorityForPrincipal(device.did);
+    } catch {
+      /* durable callers use revokeDeviceDurable and receive an explicit failure */
+    }
+  }
 
   // SQL write-through (fire-and-forget) so a revoke survives restart even
   // on this legacy sync path (issues.txt §5). The DURABLE guarantee — fail
@@ -432,6 +444,22 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
     if (error === undefined) error = `plugin cascade failed: ${errMsg(err)}`;
   }
 
+  // Step 5: revoke connected-Brain bindings and every outstanding context
+  // ticket for this principal. Both repositories are wired before device
+  // hydration in production; a partial repository pair is a failed cascade.
+  try {
+    if (device.did !== '') {
+      const result = revokeReasoningAuthorityForPrincipal(device.did, Date.now());
+      if (result.available && !result.ok) {
+        cascadesOk = false;
+        if (error === undefined) error = 'reasoning cascade failed: repository unavailable';
+      }
+    }
+  } catch (err) {
+    cascadesOk = false;
+    if (error === undefined) error = `reasoning cascade failed: ${errMsg(err)}`;
+  }
+
   notifyListeners();
   // Round-6 #4: durable = device SQL persisted AND authority cascades completed.
   // A cascade failure means old grants/installs may survive, so report NOT
@@ -558,6 +586,7 @@ export function reconcileRevokedDeviceAuthority(): number {
       try {
         const pluginOk = disablePluginAuthorityForDevice(device.did, nowMs);
         const ok = disableAgentGrantsForDevice(device.did, nowMs);
+        const reasoning = revokeReasoningAuthorityForPrincipal(device.did, nowMs);
         // Round-9 #13: don't count an AGENT device as reconciled if its
         // persona-grant repo was absent — the agent-grant half didn't run, so
         // leave it for the next boot rather than reporting it as cleaned.
@@ -565,6 +594,7 @@ export function reconcileRevokedDeviceAuthority(): number {
         // Round-12 #13: same for a PLUGIN device whose install repo was absent —
         // the plugin half didn't run; leave it for the next boot to retry.
         if (!pluginOk && device.role === 'plugin') continue;
+        if (reasoning.available && !reasoning.ok) continue;
         reconciled += 1;
       } catch {
         /* best-effort per device; the next boot retries */

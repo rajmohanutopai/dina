@@ -37,8 +37,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { appendAudit } from '../audit/service';
-import { resolvePersonaName } from '../persona/names';
-import { getPersonaTier } from '../persona/service';
+import { getPersonaTier, resolveInstalledPersonaName } from '../persona/service';
 import { agentCanAccess } from '../vault/lifecycle';
 import {
   WorkflowTaskKind,
@@ -138,7 +137,7 @@ export function requireAgentPersonaAccess(
   // key, the approval payload, and the grant row — so ' health ' minted a task
   // whose payload later FAILS strict parse (approve-but-never-grant loop), and
   // 'Health' vs 'health' split into two grants/cards for one logical persona.
-  const persona = resolvePersonaName(params.persona.trim());
+  const persona = resolveInstalledPersonaName(params.persona);
   const tier = getPersonaTier(persona);
 
   // An active durable grant bound to this exact agent + persona + mode is the

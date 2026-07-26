@@ -12,10 +12,23 @@ import {
   type SessionRecord,
   type EndReason,
 } from '../../src/session/registry';
+
+import type { AuthorityOrigin } from '../../src/agent/gating_policy';
 import type { SessionRepository } from '../../src/session/repository';
 
 const A = 'did:key:z6MkAgentA';
 const B = 'did:key:z6MkAgentB';
+
+function serviceOrigin(correlationId = 'query-1'): AuthorityOrigin {
+  return {
+    kind: 'service_request',
+    ownerDid: 'did:plc:owner',
+    requesterDid: 'did:plc:requester',
+    ingress: 'd2d',
+    correlationId,
+    authenticatedAtMs: 1_000,
+  };
+}
 
 function makeClock(start = 1000) {
   let t = start;
@@ -48,13 +61,54 @@ describe('start', () => {
     const sb = reg.start({ agentDid: B, hostSessionId: 'host-1' });
     expect(sa.sessionId).not.toBe(sb.sessionId);
   });
+
+  it('cannot mint a second owner session while the host carries non-owner authority', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const first = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    expect(reg.activateAuthorityOrigin(first.sessionId, A, serviceOrigin())).toBe(true);
+
+    const restarted = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    expect(restarted.sessionId).toBe(first.sessionId);
+    expect(restarted.authorityOrigin).toEqual(serviceOrigin());
+    expect(reg.liveCount()).toBe(1);
+  });
+});
+
+describe('authority origin reservation', () => {
+  it('binds one exact non-owner origin and rejects an overwrite', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const session = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    const first = serviceOrigin('query-1');
+    const second = serviceOrigin('query-2');
+
+    expect(reg.activateAuthorityOrigin(session.sessionId, A, first)).toBe(true);
+    expect(reg.activateAuthorityOrigin(session.sessionId, A, first)).toBe(true);
+    expect(reg.activateAuthorityOrigin(session.sessionId, A, second)).toBe(false);
+    expect(reg.authorizesAuthorityOrigin(session.sessionId, A, first)).toBe(true);
+    expect(reg.authorizesAuthorityOrigin(session.sessionId, A, second)).toBe(false);
+  });
+
+  it('only an exact origin can release the reservation', () => {
+    const reg = new SessionRegistry(makeClock().now);
+    const session = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    const first = serviceOrigin('query-1');
+    expect(reg.activateAuthorityOrigin(session.sessionId, A, first)).toBe(true);
+
+    expect(reg.clearAuthorityOrigin(session.sessionId, A, serviceOrigin('query-2')).ok).toBe(true);
+    expect(reg.get(session.sessionId)?.authorityOrigin).toEqual(first);
+    expect(reg.clearAuthorityOrigin(session.sessionId, A, first).ok).toBe(true);
+    expect(reg.get(session.sessionId)?.authorityOrigin).toBeNull();
+  });
 });
 
 describe('validate — DID binding + lifecycle', () => {
   it('accepts the owning DID', () => {
     const reg = new SessionRegistry(makeClock().now);
     const s = reg.start({ agentDid: A, hostSessionId: 'h' });
-    expect(reg.validate(s.sessionId, A)).toEqual({ ok: true, session: expect.objectContaining({ sessionId: s.sessionId }) });
+    expect(reg.validate(s.sessionId, A)).toEqual({
+      ok: true,
+      session: expect.objectContaining({ sessionId: s.sessionId }),
+    });
   });
 
   it('rejects a different agent (cross-agent isolation)', () => {
@@ -96,7 +150,7 @@ describe('renew — heartbeat', () => {
     expect(reg.validate(s.sessionId, A).ok).toBe(true);
   });
 
-  it('cannot renew another agent\'s session', () => {
+  it("cannot renew another agent's session", () => {
     const reg = new SessionRegistry(makeClock().now);
     const s = reg.start({ agentDid: A, hostSessionId: 'h' });
     expect(reg.renew(s.sessionId, B)).toEqual({ ok: false, reason: 'principal_mismatch' });
@@ -105,7 +159,7 @@ describe('renew — heartbeat', () => {
 
 describe('end — revoke-on-end', () => {
   it('fires the onEnd hook with reason=explicit', () => {
-    const ended: Array<{ id: string; reason: EndReason }> = [];
+    const ended: { id: string; reason: EndReason }[] = [];
     const reg = new SessionRegistry(makeClock().now, (s: SessionRecord, reason) =>
       ended.push({ id: s.sessionId, reason }),
     );
@@ -121,6 +175,25 @@ describe('end — revoke-on-end', () => {
     expect(reg.end(s.sessionId, A).ok).toBe(true);
     expect(reg.end(s.sessionId, A)).toEqual({ ok: false, reason: 'ended' });
   });
+
+  it('ends every session for a revoked principal and leaves other principals live', () => {
+    const ended: { agentDid: string; reason: EndReason }[] = [];
+    const reg = new SessionRegistry(makeClock().now, (session, reason) => {
+      ended.push({ agentDid: session.agentDid, reason });
+    });
+    const first = reg.start({ agentDid: A, hostSessionId: 'host-1' });
+    const second = reg.start({ agentDid: A, hostSessionId: 'host-2' });
+    const other = reg.start({ agentDid: B, hostSessionId: 'host-1' });
+
+    expect(reg.endAllForPrincipal(A)).toEqual({ ended: 2, ok: true });
+    expect(reg.get(first.sessionId)?.endReason).toBe('authority_revoked');
+    expect(reg.get(second.sessionId)?.endReason).toBe('authority_revoked');
+    expect(reg.validate(other.sessionId, B).ok).toBe(true);
+    expect(ended).toEqual([
+      { agentDid: A, reason: 'authority_revoked' },
+      { agentDid: A, reason: 'authority_revoked' },
+    ]);
+  });
 });
 
 describe('durable lifecycle writes — fail closed', () => {
@@ -135,9 +208,7 @@ describe('durable lifecycle writes — fail closed', () => {
 
   it('does not publish a newly-started session in memory when persistence fails', () => {
     const reg = new SessionRegistry(makeClock().now, undefined, throwingRepo());
-    expect(() => reg.start({ agentDid: A, hostSessionId: 'host-1' })).toThrow(
-      'disk unavailable',
-    );
+    expect(() => reg.start({ agentDid: A, hostSessionId: 'host-1' })).toThrow('disk unavailable');
     expect(reg.liveCount()).toBe(0);
   });
 

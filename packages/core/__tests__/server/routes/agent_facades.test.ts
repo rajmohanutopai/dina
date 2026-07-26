@@ -84,6 +84,8 @@ describe('façade registration', () => {
       vaults: echo('v'),
       reminders: echo('r'),
       ask: echo('a'),
+      contextPrepare: echo('cp'),
+      memoryPropose: echo('mp'),
     });
     for (const p of [
       '/v1/agent/memory',
@@ -101,6 +103,8 @@ describe('façade registration', () => {
       '/v1/agent/vaults',
       '/v1/agent/reminders',
       '/v1/agent/ask',
+      '/v1/agent/context/prepare',
+      '/v1/agent/memory/propose',
     ]) {
       expect((await r.handle(req(p, active()))).status).toBe(200);
     }
@@ -132,7 +136,9 @@ describe('façade auth + scope gate', () => {
 
   it('413 when the body is too large', async () => {
     const big = 'x'.repeat(64 * 1024 + 1);
-    const res = await r().handle(req('/v1/agent/talk', {}, { rawBody: new TextEncoder().encode(big) }));
+    const res = await r().handle(
+      req('/v1/agent/talk', {}, { rawBody: new TextEncoder().encode(big) }),
+    );
     expect(res.status).toBe(413);
   });
 
@@ -156,6 +162,43 @@ describe('façade auth + scope gate', () => {
 
     for (const response of responses) {
       expect(response).toMatchObject({ status: 401, body: { error: 'invalid_session' } });
+    }
+  });
+
+  it('closes every owner façade while the principal carries non-owner authority', async () => {
+    const registry = new SessionRegistry();
+    setSessionRegistry(registry);
+    const reserved = registry.start({
+      agentDid: AGENT_DID,
+      hostSessionId: 'service-worker',
+    });
+    const alternate = registry.start({
+      agentDid: AGENT_DID,
+      hostSessionId: 'alternate-owner-session',
+    });
+    expect(
+      registry.activateAuthorityOrigin(reserved.sessionId, AGENT_DID, {
+        kind: 'service_request',
+        ownerDid: 'did:plc:owner',
+        requesterDid: 'did:plc:requester',
+        ingress: 'd2d',
+        correlationId: 'service-query-1',
+        authenticatedAtMs: 1,
+      }),
+    ).toBe(true);
+
+    for (const candidate of [reserved.sessionId, alternate.sessionId]) {
+      const response = await r().handle(
+        req('/v1/agent/talk', {
+          session_id: candidate,
+          to: 'did:peer',
+          message: 'must not escape non-owner authority',
+        }),
+      );
+      expect(response).toEqual({
+        status: 403,
+        body: { error: 'non_owner_session_restricted' },
+      });
     }
   });
 });

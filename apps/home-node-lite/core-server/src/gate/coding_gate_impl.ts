@@ -9,10 +9,10 @@
  * redeemable on the execution seam.
  */
 
-import type { CodingGateInput, CodingGateResult, CodingPermitAuthority } from '@dina/core';
-
-import { gateToolCall } from './gate_decision';
+import { gateProfiledToolCall, gateToolCall } from './gate_decision';
 import { PermitStore } from './permit';
+
+import type { CodingGateInput, CodingGateResult, CodingPermitAuthority } from '@dina/core';
 
 /** Synchronous concrete gate — assignable to @dina/core's `CodingGateFn`. */
 type SyncCodingGate = (input: CodingGateInput) => CodingGateResult;
@@ -41,28 +41,49 @@ export interface CodingGateHandle {
 export function createCodingGate(config: CodingGateConfig): CodingGateHandle {
   const permits = new PermitStore();
   const gate: SyncCodingGate = (input) => {
-    const decision = gateToolCall(
-      {
-        toolName: input.toolName,
-        toolInput: input.toolInput,
-        agentDid: input.agentDid,
-        sessionId: input.sessionId,
-        vaultDir: config.vaultDir,
-        cwd: input.cwd,
-        keyDirs: config.keyDirs,
-        allowedHosts: config.allowedHosts,
-        mode: input.mode,
-      },
-      permits,
-    );
+    const common = {
+      toolName: input.toolName,
+      toolInput: input.toolInput,
+      agentDid: input.agentDid,
+      sessionId: input.sessionId,
+      vaultDir: config.vaultDir,
+      cwd: input.cwd,
+      keyDirs: config.keyDirs,
+      allowedHosts: config.allowedHosts,
+    };
+    if (input.profile !== undefined && input.authorityOrigin !== undefined) {
+      const decision = gateProfiledToolCall(
+        {
+          ...common,
+          profile: input.profile,
+          authorityOrigin: input.authorityOrigin,
+          policyVersion: input.policyVersion ?? 0,
+        },
+        permits,
+      );
+      return {
+        action: decision.action,
+        risk: decision.risk,
+        outcome: decision.outcome,
+        enforced: decision.enforced,
+        permitId: decision.permit?.permitId,
+        payloadHash: decision.payloadHash,
+        reason: decision.reason,
+        profile: decision.profile,
+        authorityOriginKind: decision.authorityOriginKind,
+        policyVersion: decision.policyVersion,
+        auditLevel: decision.auditLevel,
+      };
+    }
+    const legacyDecision = gateToolCall({ ...common, mode: input.mode }, permits);
     return {
-      action: decision.action,
-      risk: decision.risk,
-      outcome: decision.outcome,
-      enforced: decision.enforced,
-      permitId: decision.permit?.permitId,
-      payloadHash: decision.payloadHash,
-      reason: decision.reason,
+      action: legacyDecision.action,
+      risk: legacyDecision.risk,
+      outcome: legacyDecision.outcome,
+      enforced: legacyDecision.enforced,
+      permitId: legacyDecision.permit?.permitId,
+      payloadHash: legacyDecision.payloadHash,
+      reason: legacyDecision.reason,
     };
   };
   const authority: CodingPermitAuthority = {

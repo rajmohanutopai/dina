@@ -87,6 +87,34 @@ describe('session durability (Item D)', () => {
     }
   });
 
+  it('persists a non-owner authority origin across restart', () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteSessionRepository(adapter);
+      const before = new SessionRegistry(undefined, undefined, repo);
+      const session = before.start({ agentDid: AGENT, hostSessionId: 'host-origin' });
+      expect(
+        before.bindNonOwnerAuthorityOrigin(session.sessionId, AGENT, {
+          kind: 'delegated_task',
+          ownerDid: 'did:plc:owner',
+          requesterDid: 'did:key:delegator',
+          ingress: 'workflow',
+          correlationId: 'task-42',
+          authenticatedAtMs: 1234,
+        }).ok,
+      ).toBe(true);
+
+      const after = new SessionRegistry(undefined, undefined, repo);
+      after.reconcile();
+      expect(after.get(session.sessionId)?.authorityOrigin).toMatchObject({
+        kind: 'delegated_task',
+        correlationId: 'task-42',
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
   it('reaps a session whose lease lapsed while Core was down', () => {
     const { adapter, cleanup } = openId();
     try {

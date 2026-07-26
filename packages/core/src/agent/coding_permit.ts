@@ -33,6 +33,13 @@ import { appendAudit } from '../audit/service';
 import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
+import {
+  AUTHORITY_ORIGIN_KINDS,
+  isAgentGatingProfile,
+  type AgentGatingProfile,
+  type AuthorityOriginKind,
+} from './gating_policy';
+
 import type { RiskLevel } from '../gatekeeper/intent';
 
 /** Approval-task payload discriminator for a coding-gate approval request. */
@@ -52,6 +59,9 @@ export interface CodingGateApprovalPayload {
   type: typeof CODING_GATE_APPROVAL_TYPE;
   agent_did: string;
   session: string;
+  effective_profile: AgentGatingProfile;
+  policy_version: number;
+  authority_origin: AuthorityOriginKind;
   action: string;
   risk: RiskLevel;
   payload_hash: string;
@@ -62,6 +72,9 @@ export interface CodingGateApprovalPayload {
 export interface CodingPermitClaim {
   agentDid: string;
   sessionId: string;
+  effectiveProfile: AgentGatingProfile;
+  policyVersion: number;
+  authorityOrigin: AuthorityOriginKind;
   payloadHash: string;
   action: string;
   risk: RiskLevel;
@@ -125,8 +138,25 @@ export function parseCodingGateApprovalPayload(
   const risk = p.risk;
   const payload_hash = p.payload_hash;
   const tool = p.tool;
+  const effective_profile = p.effective_profile;
+  const policy_version = p.policy_version;
+  const authority_origin = p.authority_origin;
   if (typeof agent_did !== 'string' || agent_did === '' || hasControlOrBidi(agent_did)) return null;
   if (typeof session !== 'string' || hasControlOrBidi(session)) return null;
+  if (!isAgentGatingProfile(effective_profile)) return null;
+  if (
+    typeof policy_version !== 'number' ||
+    !Number.isSafeInteger(policy_version) ||
+    policy_version < 0
+  ) {
+    return null;
+  }
+  if (
+    typeof authority_origin !== 'string' ||
+    !(AUTHORITY_ORIGIN_KINDS as readonly string[]).includes(authority_origin)
+  ) {
+    return null;
+  }
   if (typeof action !== 'string' || action === '' || hasControlOrBidi(action)) return null;
   if (typeof risk !== 'string' || !RISK_VALUES.has(risk as RiskLevel)) return null;
   if (typeof payload_hash !== 'string' || !/^[0-9a-f]{64}$/.test(payload_hash)) return null;
@@ -135,6 +165,9 @@ export function parseCodingGateApprovalPayload(
     type: CODING_GATE_APPROVAL_TYPE,
     agent_did,
     session,
+    effective_profile,
+    policy_version,
+    authority_origin: authority_origin as AuthorityOriginKind,
     action,
     risk: risk as RiskLevel,
     payload_hash,
@@ -160,8 +193,19 @@ export function codingGateIdemKey(
   agentDid: string,
   sessionId: string,
   payloadHash: string,
+  effectiveProfile: AgentGatingProfile,
+  policyVersion: number,
+  authorityOrigin: AuthorityOriginKind,
 ): string {
-  return `${CODING_GATE_APPROVAL_TYPE}:${agentDid}:${sessionId}:${payloadHash}`;
+  return [
+    CODING_GATE_APPROVAL_TYPE,
+    agentDid,
+    sessionId,
+    effectiveProfile,
+    String(policyVersion),
+    authorityOrigin,
+    payloadHash,
+  ].join(':');
 }
 
 export type RedeemCodingApprovalResult =
@@ -186,6 +230,9 @@ export type RedeemCodingApprovalResult =
 export function redeemApprovedCodingGateApproval(params: {
   agentDid: string;
   sessionId: string;
+  effectiveProfile: AgentGatingProfile;
+  policyVersion: number;
+  authorityOrigin: AuthorityOriginKind;
   payloadHash: string;
   tool: string;
   action: string;
@@ -195,7 +242,14 @@ export function redeemApprovedCodingGateApproval(params: {
   const service = getWorkflowService();
   if (service === null) return { kind: 'not_ready' };
 
-  const idemKey = codingGateIdemKey(params.agentDid, params.sessionId, params.payloadHash);
+  const idemKey = codingGateIdemKey(
+    params.agentDid,
+    params.sessionId,
+    params.payloadHash,
+    params.effectiveProfile,
+    params.policyVersion,
+    params.authorityOrigin,
+  );
   const task = service.store().getActiveByIdempotencyKey(idemKey);
   if (task === null) return { kind: 'not_ready' };
 
@@ -204,6 +258,9 @@ export function redeemApprovedCodingGateApproval(params: {
     payload === null ||
     payload.agent_did !== params.agentDid ||
     payload.session !== params.sessionId ||
+    payload.effective_profile !== params.effectiveProfile ||
+    payload.policy_version !== params.policyVersion ||
+    payload.authority_origin !== params.authorityOrigin ||
     payload.payload_hash !== params.payloadHash ||
     payload.tool !== params.tool ||
     payload.action !== params.action ||
@@ -266,6 +323,9 @@ export type CreateCodingApprovalResult =
 export function createCodingGateApproval(params: {
   agentDid: string;
   sessionId: string;
+  effectiveProfile: AgentGatingProfile;
+  policyVersion: number;
+  authorityOrigin: AuthorityOriginKind;
   payloadHash: string;
   tool: string;
   action: string;
@@ -276,7 +336,14 @@ export function createCodingGateApproval(params: {
   if (service === null) return { kind: 'unavailable' };
   const now = params.now ?? Date.now();
 
-  const idemKey = codingGateIdemKey(params.agentDid, params.sessionId, params.payloadHash);
+  const idemKey = codingGateIdemKey(
+    params.agentDid,
+    params.sessionId,
+    params.payloadHash,
+    params.effectiveProfile,
+    params.policyVersion,
+    params.authorityOrigin,
+  );
   const existing = service.store().getActiveByIdempotencyKey(idemKey);
   if (existing !== null) return { kind: 'approval_required', taskId: existing.id };
 
@@ -285,6 +352,9 @@ export function createCodingGateApproval(params: {
     type: CODING_GATE_APPROVAL_TYPE,
     agent_did: params.agentDid,
     session: params.sessionId,
+    effective_profile: params.effectiveProfile,
+    policy_version: params.policyVersion,
+    authority_origin: params.authorityOrigin,
     action: params.action,
     risk: params.risk,
     payload_hash: params.payloadHash,
@@ -326,6 +396,9 @@ export function mintApprovedCodingPermit(task: WorkflowTask): boolean {
   auth.mintApproved({
     agentDid: payload.agent_did,
     sessionId: payload.session,
+    effectiveProfile: payload.effective_profile,
+    policyVersion: payload.policy_version,
+    authorityOrigin: payload.authority_origin,
     payloadHash: payload.payload_hash,
     action: payload.action,
     risk: payload.risk,

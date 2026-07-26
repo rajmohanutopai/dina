@@ -438,6 +438,25 @@ export interface CoreClient {
   /** POST /v1/workflow/tasks/:id/fail — any state → failed with error message. */
   failWorkflowTask(id: string, errorMsg: string, agentDID?: string): Promise<WorkflowTask>;
 
+  // ─── Reasoning backend worker plane ──────────────────────────────────
+
+  /**
+   * Claim the next Core-authorized reasoning job for this transport's
+   * authenticated backend principal. `principalDid` is deliberately absent:
+   * HTTP derives it from the request signature and mobile binds it when the
+   * in-process transport is constructed.
+   */
+  reasoningClaim(input: ReasoningClaimRequest): Promise<ReasoningClaim | null>;
+
+  /** Extend the exact claim + context-ticket lease. False means ownership is lost. */
+  reasoningHeartbeat(taskId: string, input: ReasoningHeartbeatRequest): Promise<boolean>;
+
+  /** Submit a proposal through Core's schema, evidence, policy, and commit fences. */
+  reasoningComplete(taskId: string, input: ReasoningCompleteRequest): Promise<ReasoningCompletion>;
+
+  /** Fail or explicitly requeue the exact claimed reasoning job. */
+  reasoningFail(taskId: string, input: ReasoningFailRequest): Promise<ReasoningFailure>;
+
   // ─── Working-memory + contacts (task 1.32 slice E) ────────────────────
   //
   // `memoryTouch` is WM-BRAIN-08's write-path — staging enrichment calls
@@ -1278,6 +1297,48 @@ export interface CreateWorkflowTaskResult {
    * Callers use this to suppress duplicate "created!" toasts on retry.
    */
   deduped: boolean;
+}
+
+// ─── Reasoning backend worker wire types ───────────────────────────────
+
+export type ReasoningClaim = import('../reasoning/domain').ReasoningClaim;
+export type ReasoningCompletion = import('../reasoning/broker').ReasoningCompletion;
+export type ReasoningFailure = import('../reasoning/broker').ReasoningFailure;
+
+export interface ReasoningClaimRequest {
+  backendId: string;
+  leaseMs?: number;
+  /** Required only for a foreground `connected_host` binding. */
+  sessionId?: string;
+}
+
+export interface ReasoningHeartbeatRequest {
+  backendId: string;
+  claimId: string;
+  contextTicketId: string;
+  leaseMs?: number;
+  sessionId?: string;
+}
+
+export interface ReasoningCompleteRequest {
+  backendId: string;
+  claimId: string;
+  contextTicketId: string;
+  executionId: string;
+  contextProjectionHash: string | null;
+  policySnapshotHash: string;
+  result: unknown;
+  evidenceIds?: string[];
+  sessionId?: string;
+}
+
+export interface ReasoningFailRequest {
+  backendId: string;
+  claimId: string;
+  contextTicketId: string;
+  error: string;
+  retryable: boolean;
+  sessionId?: string;
 }
 
 // ─── Memory + contact types (task 1.32 slice E) ─────────────────────────

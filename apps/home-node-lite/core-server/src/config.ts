@@ -104,11 +104,19 @@ const CorsSchema = z.object({
  * present, the DID must be a `did:key:` (canonical-sign requirement).
  */
 const ServicesSchema = z.object({
-  brainDid: z.string().optional(),
+  brainDid: z
+    .string()
+    .refine((value) => value.startsWith('did:key:'), 'must be a did:key')
+    .optional(),
   // Base URL of the co-located lite Brain. Core's Tier-1 `dina.local` runner
   // posts claimed capability executions here (the Brain has the LLM). Optional
   // — defaults to the brain's default port at boot when unset.
   brainUrl: z.string().url().optional(),
+  /**
+   * Explicitly provision the co-located Brain as an always-on reasoning
+   * backend. Omitted/false keeps the durable backend policy untouched.
+   */
+  internalBrainEnabled: z.boolean().optional(),
 });
 
 /** Full server config — every subsection required. */
@@ -164,11 +172,7 @@ export const DEFAULTS = Object.freeze({
 // Env coercion helpers
 // ---------------------------------------------------------------------------
 
-function readInt(
-  env: NodeJS.ProcessEnv,
-  key: string,
-  defaultValue?: number,
-): number | undefined {
+function readInt(env: NodeJS.ProcessEnv, key: string, defaultValue?: number): number | undefined {
   const raw = env[key];
   if (raw === undefined || raw === '') return defaultValue;
   const n = Number(raw);
@@ -180,11 +184,7 @@ function readInt(
   return n;
 }
 
-function readBool(
-  env: NodeJS.ProcessEnv,
-  key: string,
-  defaultValue: boolean,
-): boolean {
+function readBool(env: NodeJS.ProcessEnv, key: string, defaultValue: boolean): boolean {
   const raw = env[key];
   if (raw === undefined || raw === '') return defaultValue;
   const normalized = raw.toLowerCase().trim();
@@ -244,8 +244,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
   //   DINA_HOMENODE_DID    → msgbox.homeNodeDid (optional)
   //   DINA_CORS_ORIGIN     → cors.allowOrigin   (optional; matches Go's AllowOrigin)
   //   DINA_BRAIN_DID       → services.brainDid  (optional; install-lite + paired-stack tests set this)
+  //   DINA_INTERNAL_BRAIN_ENABLED → services.internalBrainEnabled (default false)
 
   const endpoints = readEndpoints(env);
+  const internalBrainEnabled = readBool(env, 'DINA_INTERNAL_BRAIN_ENABLED', false);
   const draft = {
     endpoints,
     network: {
@@ -258,11 +260,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     },
     runtime: {
       logLevel: readString(env, 'DINA_LOG_LEVEL', DEFAULTS.runtime.logLevel),
-      rateLimitPerMinute: readInt(
-        env,
-        'DINA_RATE_LIMIT',
-        DEFAULTS.runtime.rateLimitPerMinute,
-      ),
+      rateLimitPerMinute: readInt(env, 'DINA_RATE_LIMIT', DEFAULTS.runtime.rateLimitPerMinute),
       prettyLogs: readBool(env, 'DINA_PRETTY_LOGS', DEFAULTS.runtime.prettyLogs),
     },
     msgbox: {
@@ -276,6 +274,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     services: {
       brainDid: readString(env, 'DINA_BRAIN_DID'),
       brainUrl: readString(env, 'DINA_BRAIN_URL'),
+      ...(internalBrainEnabled ? { internalBrainEnabled: true } : {}),
     },
   };
 
@@ -289,6 +288,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
       })),
     );
   }
+  if (parsed.data.services?.internalBrainEnabled && !parsed.data.services.brainDid) {
+    throw new ConfigError('DINA_INTERNAL_BRAIN_ENABLED requires DINA_BRAIN_DID', [
+      { path: 'services.brainDid', message: 'required when internal Brain is enabled' },
+    ]);
+  }
   return parsed.data as LoadedCoreServerConfig;
 }
 
@@ -297,9 +301,7 @@ function readEndpoints(env: NodeJS.ProcessEnv) {
     return resolveServerHostedDinaEndpoints(env);
   } catch (err) {
     if (err instanceof HomeNodeEndpointConfigError) {
-      throw new ConfigError(err.message, [
-        { path: err.key ?? 'endpoints', message: err.message },
-      ]);
+      throw new ConfigError(err.message, [{ path: err.key ?? 'endpoints', message: err.message }]);
     }
     throw err;
   }

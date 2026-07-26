@@ -1,14 +1,8 @@
 export { SQLiteAuditRepository, setAuditRepository } from './src/audit/repository';
 export type { AuditRepository } from './src/audit/repository';
-export {
-  SQLiteChatMessageRepository,
-  setChatMessageRepository,
-} from './src/chat/repository';
+export { SQLiteChatMessageRepository, setChatMessageRepository } from './src/chat/repository';
 export type { ChatMessageRepository, StoredChatMessage } from './src/chat/repository';
-export {
-  SQLiteContactRepository,
-  setContactRepository,
-} from './src/contacts/repository';
+export { SQLiteContactRepository, setContactRepository } from './src/contacts/repository';
 export type { ContactRepository } from './src/contacts/repository';
 export {
   SQLitePersonaRepository,
@@ -42,10 +36,7 @@ export {
   setServiceGrantRepository,
   getServiceGrantRepository,
 } from './src/service/service_grant_repository';
-export type {
-  ServiceGrant,
-  ServiceGrantRepository,
-} from './src/service/service_grant_repository';
+export type { ServiceGrant, ServiceGrantRepository } from './src/service/service_grant_repository';
 export { SQLiteDeviceRepository, setDeviceRepository } from './src/devices/repository';
 export type { DeviceRepository } from './src/devices/repository';
 export { SQLiteKVRepository } from './src/kv/repository';
@@ -59,15 +50,9 @@ export {
 } from './src/memory/repository';
 export type { TopicRepository } from './src/memory/repository';
 export { setMemoryService } from './src/memory/service';
-export {
-  SQLitePeopleRepository,
-  setPeopleRepository,
-} from './src/people/repository';
+export { SQLitePeopleRepository, setPeopleRepository } from './src/people/repository';
 export type { PeopleRepository } from './src/people/repository';
-export {
-  SQLiteReminderRepository,
-  setReminderRepository,
-} from './src/reminders/repository';
+export { SQLiteReminderRepository, setReminderRepository } from './src/reminders/repository';
 export type { ReminderRepository } from './src/reminders/repository';
 export { hydrateRemindersFromRepo } from './src/reminders/service';
 export {
@@ -85,10 +70,7 @@ export {
   setDBProvider,
 } from './src/storage/db_provider';
 export type { DBProvider } from './src/storage/db_provider';
-export {
-  SQLiteStagingRepository,
-  setStagingRepository,
-} from './src/staging/repository';
+export { SQLiteStagingRepository, setStagingRepository } from './src/staging/repository';
 export type { StagingRepository } from './src/staging/repository';
 export { hydrateStagingFromRepository, resetStagingState } from './src/staging/service';
 export {
@@ -104,18 +86,24 @@ export {
   setVaultRepository,
 } from './src/vault/repository';
 export type { VaultRepository } from './src/vault/repository';
-export {
-  SQLitePluginInstallRepository,
-  setPluginInstallRepository,
-} from './src/plugins/registry';
+export { SQLitePluginInstallRepository, setPluginInstallRepository } from './src/plugins/registry';
 export type { PluginInstallRepository } from './src/plugins/registry';
-export {
-  SQLitePluginGrantRepository,
-  setPluginGrantRepository,
-} from './src/plugins/grants';
+export { SQLitePluginGrantRepository, setPluginGrantRepository } from './src/plugins/grants';
 export type { PluginGrantRepository } from './src/plugins/grants';
 export {
   SQLitePluginDecisionRepository,
   setPluginDecisionRepository,
 } from './src/plugins/decisions';
 export type { PluginDecisionRepository } from './src/plugins/decisions';
+export { SQLiteAgentGatingPolicyRepository } from './src/agent/gating_policy_repository';
+export type { AgentGatingPolicyRepository } from './src/agent/gating_policy';
+export {
+  SQLiteReasoningBackendRepository,
+  setReasoningBackendRepository,
+} from './src/reasoning/backend_repository';
+export type { ReasoningBackendRepository } from './src/reasoning/backend_repository';
+export {
+  SQLiteReasoningContextRepository,
+  setReasoningContextRepository,
+} from './src/reasoning/context_repository';
+export type { ReasoningContextRepository } from './src/reasoning/context_repository';

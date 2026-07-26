@@ -185,11 +185,23 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
   });
 }
 
-/** The §12.5 owner-only control surface — the ONLY paths the owner-capability
- *  header can authenticate (boundary-safe prefix match). */
+/** Owner-only control surfaces that may consume the browser-held capability.
+ *
+ * Mixed reasoning worker routes remain excluded. Only backend configuration
+ * is owner-controlled here; claim/complete/fail still require a signed backend
+ * DID and can never be reached with the owner capability.
+ */
 function isOwnerSurfacePath(p: string): boolean {
   return (
-    p === '/v1/run' || p.startsWith('/v1/run/') || p === '/v1/watch' || p.startsWith('/v1/watch/')
+    p === '/v1/run' ||
+    p.startsWith('/v1/run/') ||
+    p === '/v1/watch' ||
+    p.startsWith('/v1/watch/') ||
+    p === '/v1/owner' ||
+    p.startsWith('/v1/owner/') ||
+    p === '/v1/reasoning/backends' ||
+    p === '/v1/reasoning/backends/register' ||
+    (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))
   );
 }
 

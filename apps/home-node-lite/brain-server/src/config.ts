@@ -12,10 +12,7 @@
 
 import { z } from 'zod';
 
-import {
-  HomeNodeEndpointConfigError,
-  resolveServerHostedDinaEndpoints,
-} from '@dina/home-node';
+import { HomeNodeEndpointConfigError, resolveServerHostedDinaEndpoints } from '@dina/home-node';
 
 const NetworkSchema = z.object({
   /** Bind address. Default: loopback only. */
@@ -34,6 +31,11 @@ const RuntimeSchema = z.object({
   prettyLogs: z.boolean(),
 });
 
+const ReasoningSchema = z.object({
+  /** Start the co-located Brain's durable always-on reasoning worker. */
+  internalBrainEnabled: z.boolean(),
+});
+
 const CoreSchema = z.object({
   baseUrl: z.string().url().refine(isHTTPURL, 'must use http or https'),
   serviceKeyDir: z.string().min(1),
@@ -43,7 +45,11 @@ const CoreSchema = z.object({
     .refine((value) => !value.includes('/') && !value.includes('\\'), {
       message: 'must be a filename, not a path',
     }),
-  serviceDid: z.string().min(1).refine((value) => value.startsWith('did:'), 'must be a DID').optional(),
+  serviceDid: z
+    .string()
+    .min(1)
+    .refine((value) => value.startsWith('did:key:'), 'must be a did:key')
+    .optional(),
   httpTimeoutMs: z.number().int().positive(),
 });
 
@@ -77,18 +83,15 @@ const BrainServerConfigSchema = z.object({
   endpoints: EndpointSchema,
   llm: LLMSchema,
   network: NetworkSchema,
+  reasoning: ReasoningSchema,
   runtime: RuntimeSchema,
 });
 
 export type BrainServerConfig = z.infer<typeof BrainServerConfigSchema>;
 
 export class ConfigError extends Error {
-  constructor(
-    public readonly issues: { path: string; message: string }[],
-  ) {
-    super(
-      `brain-server config invalid (${issues.length} issue${issues.length === 1 ? '' : 's'})`,
-    );
+  constructor(public readonly issues: { path: string; message: string }[]) {
+    super(`brain-server config invalid (${issues.length} issue${issues.length === 1 ? '' : 's'})`);
     this.name = 'ConfigError';
   }
 }
@@ -99,6 +102,7 @@ export class ConfigError extends Error {
  * without mutating process state.
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerConfig {
+  const internalBrainEnabled = readBool(env, 'DINA_INTERNAL_BRAIN_ENABLED', false);
   const candidate = {
     core: {
       baseUrl: normalizeBaseUrl(env.DINA_CORE_URL ?? 'http://127.0.0.1:8100'),
@@ -112,6 +116,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerCon
     network: {
       host: env.DINA_BRAIN_HOST ?? '127.0.0.1',
       port: parseInt(env.DINA_BRAIN_PORT ?? '8200', 10),
+    },
+    reasoning: {
+      internalBrainEnabled,
     },
     runtime: {
       logLevel: (env.DINA_BRAIN_LOG_LEVEL ?? 'info') as 'info',
@@ -127,6 +134,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerCon
       })),
     );
   }
+  if (result.data.reasoning.internalBrainEnabled && result.data.llm.provider === 'none') {
+    throw new ConfigError([
+      {
+        path: 'llm.provider',
+        message: 'an LLM provider is required when the internal Brain is enabled',
+      },
+    ]);
+  }
   return result.data;
 }
 
@@ -135,9 +150,7 @@ function readEndpoints(env: NodeJS.ProcessEnv) {
     return resolveServerHostedDinaEndpoints(env);
   } catch (err) {
     if (err instanceof HomeNodeEndpointConfigError) {
-      throw new ConfigError([
-        { path: err.key ?? 'endpoints', message: err.message },
-      ]);
+      throw new ConfigError([{ path: err.key ?? 'endpoints', message: err.message }]);
     }
     throw err;
   }
@@ -151,9 +164,7 @@ function readLLM(env: NodeJS.ProcessEnv) {
   if (provider === 'gemini') {
     return {
       provider: 'gemini',
-      apiKey: blankToUndefined(
-        env.DINA_GEMINI_API_KEY ?? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY,
-      ),
+      apiKey: blankToUndefined(env.DINA_GEMINI_API_KEY ?? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY),
       model: blankToUndefined(env.DINA_GEMINI_MODEL),
     };
   }
@@ -174,6 +185,15 @@ function blankToUndefined(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
   return trimmed === '' ? undefined : trimmed;
+}
+
+function readBool(env: NodeJS.ProcessEnv, key: string, defaultValue: boolean): boolean {
+  const raw = env[key];
+  if (raw === undefined || raw.trim() === '') return defaultValue;
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new ConfigError([{ path: key, message: 'must be a boolean' }]);
 }
 
 function isHTTPURL(value: string): boolean {

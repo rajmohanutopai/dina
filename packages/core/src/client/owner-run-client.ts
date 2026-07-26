@@ -8,6 +8,14 @@
  * marked owner; the `/v1/run/*` handlers reject any other caller.
  */
 
+import type { ReasoningSubmission } from '../reasoning/broker';
+import type {
+  ReasoningAvailability,
+  ReasoningBackendKind,
+  ReasoningSensitivity,
+  ReasoningTaskKind,
+} from '../reasoning/domain';
+import type { OwnerReasoningJobView } from '../reasoning/job_projection';
 import type { RunListItem } from '../run/list';
 import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
 import type { WatchListItem } from '../watch/list';
@@ -102,6 +110,73 @@ export interface RunDecideRequest {
   decision_revision: number;
 }
 
+export interface OwnerReasoningSubmitRequest {
+  task_kind: ReasoningTaskKind;
+  input: unknown;
+  idempotency_key: string;
+  purpose?: string;
+  backend_id?: string | null;
+  personas?: string[];
+  limit?: number;
+}
+
+export interface OwnerReasoningSubmitResult {
+  submission: ReasoningSubmission;
+  job: OwnerReasoningJobView | null;
+  restricted_personas: {
+    persona: string;
+    status: 'pending_approval' | 'denied' | 'locked' | 'unavailable';
+    taskId?: string;
+  }[];
+}
+
+/**
+ * Owner-safe projection of a configured reasoning backend.
+ *
+ * This mirrors the owner route's snake-case wire contract and deliberately
+ * excludes worker credentials, sessions, claims, and context tickets.
+ */
+export interface OwnerReasoningBackendView {
+  backend_id: string;
+  kind: ReasoningBackendKind;
+  principal_did: string;
+  allowed_task_kinds: ReasoningTaskKind[];
+  max_sensitivity: ReasoningSensitivity;
+  availability: ReasoningAvailability;
+  model_class: string | null;
+  policy_version: number;
+  selected_by_owner_did: string;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+  expires_at: number | null;
+  revoked_at: number | null;
+}
+
+export interface OwnerReasoningBackendRegisterRequest {
+  backend_id: string;
+  kind: ReasoningBackendKind;
+  principal_did: string;
+  allowed_task_kinds: ReasoningTaskKind[];
+  max_sensitivity: ReasoningSensitivity;
+  availability: ReasoningAvailability;
+  model_class?: string | null;
+  expires_at: number | null;
+  expected_version: number | null;
+}
+
+export interface OwnerReasoningClient {
+  reasoningBackends(): Promise<{ backends: OwnerReasoningBackendView[] }>;
+  reasoningRegisterBackend(
+    req: OwnerReasoningBackendRegisterRequest,
+  ): Promise<OwnerReasoningBackendView>;
+  reasoningRevokeBackend(backendId: string, expectedVersion: number): Promise<{ ok: true }>;
+  reasoningSubmit(req: OwnerReasoningSubmitRequest): Promise<OwnerReasoningSubmitResult>;
+  reasoningList(limit?: number): Promise<{ jobs: OwnerReasoningJobView[] }>;
+  reasoningGet(taskId: string): Promise<{ job: OwnerReasoningJobView }>;
+  reasoningCancel(taskId: string, reason?: string): Promise<{ ok: boolean }>;
+}
+
 /** The owner-only run-control surface. */
 export interface OwnerRunClient {
   runList(): Promise<{ runs: RunListItem[] }>;
@@ -110,7 +185,10 @@ export interface OwnerRunClient {
   runResume(runId: string): Promise<{ state: string }>;
   runStop(runId: string, onStop?: string): Promise<{ state: string }>;
   runUpdate(runId: string, req: RunUpdateRequest): Promise<{ config_version: number }>;
-  runDecide(runId: string, req: RunDecideRequest): Promise<{ state: string; decision_revision: number }>;
+  runDecide(
+    runId: string,
+    req: RunDecideRequest,
+  ): Promise<{ state: string; decision_revision: number }>;
   /** Owner confirm of a MODERATE/HIGH action: `risk_pending → risk_authorized` (E76-08). */
   confirmRisk(runId: string, messageId: string): Promise<{ state: string; authorized: boolean }>;
   /** R5-01/§7 — give up on a `response_lost` slot (terminal `skipped`; fetch
@@ -168,7 +246,7 @@ function expectOk<T>(res: CoreResponse, ctx: string): T {
 
 /** In-process implementation — dispatches owner-marked requests through the
  *  CoreRouter. Wired only to the owner UI. */
-export class InProcessOwnerRunClient implements OwnerRunClient {
+export class InProcessOwnerRunClient implements OwnerRunClient, OwnerReasoningClient {
   private seq = 0;
   private readonly boot: string;
   /**
@@ -200,20 +278,106 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
     const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/run/list' }));
     return expectOk<{ runs: RunListItem[] }>(res, 'runList');
   }
+
+  async reasoningBackends(): Promise<{ backends: OwnerReasoningBackendView[] }> {
+    const res = await this.router.handle(
+      this.stampReq({ method: 'GET', path: '/v1/reasoning/backends' }),
+    );
+    return expectOk<{ backends: OwnerReasoningBackendView[] }>(res, 'reasoningBackends');
+  }
+
+  async reasoningRegisterBackend(
+    req: OwnerReasoningBackendRegisterRequest,
+  ): Promise<OwnerReasoningBackendView> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: '/v1/reasoning/backends/register',
+        body: req,
+      }),
+    );
+    return expectOk<OwnerReasoningBackendView>(res, 'reasoningRegisterBackend');
+  }
+
+  async reasoningRevokeBackend(backendId: string, expectedVersion: number): Promise<{ ok: true }> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/reasoning/backends/${encodeURIComponent(backendId)}/revoke`,
+        body: { expected_version: expectedVersion },
+      }),
+    );
+    expectOk<null>(res, 'reasoningRevokeBackend');
+    return { ok: true };
+  }
+
+  async reasoningSubmit(req: OwnerReasoningSubmitRequest): Promise<OwnerReasoningSubmitResult> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: '/v1/owner/reasoning/jobs',
+        body: req,
+      }),
+    );
+    return expectOk<OwnerReasoningSubmitResult>(res, 'reasoningSubmit');
+  }
+
+  async reasoningList(limit?: number): Promise<{ jobs: OwnerReasoningJobView[] }> {
+    const query: Record<string, string> = limit === undefined ? {} : { limit: String(limit) };
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'GET',
+        path: '/v1/owner/reasoning/jobs',
+        query,
+      }),
+    );
+    return expectOk<{ jobs: OwnerReasoningJobView[] }>(res, 'reasoningList');
+  }
+
+  async reasoningGet(taskId: string): Promise<{ job: OwnerReasoningJobView }> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'GET',
+        path: `/v1/owner/reasoning/jobs/${encodeURIComponent(taskId)}`,
+      }),
+    );
+    return expectOk<{ job: OwnerReasoningJobView }>(res, 'reasoningGet');
+  }
+
+  async reasoningCancel(taskId: string, reason?: string): Promise<{ ok: boolean }> {
+    const res = await this.router.handle(
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/owner/reasoning/${encodeURIComponent(taskId)}/cancel`,
+        body: reason === undefined ? {} : { reason },
+      }),
+    );
+    return expectOk<{ ok: boolean }>(res, 'reasoningCancel');
+  }
   async runStart(req: RunStartRequest): Promise<RunStartResult> {
     // `start` already carries the run's `idempotency_key` — it IS the command key.
-    const res = await this.router.handle(this.stampReq({ method: 'POST', path: '/v1/run/start', body: req }));
+    const res = await this.router.handle(
+      this.stampReq({ method: 'POST', path: '/v1/run/start', body: req }),
+    );
     return expectOk<RunStartResult>(res, 'runStart');
   }
   async runPause(runId: string): Promise<{ state: string }> {
     const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: `/v1/run/${runId}/pause`, body: { idempotency_key: this.nextKey() } }),
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/pause`,
+        body: { idempotency_key: this.nextKey() },
+      }),
     );
     return expectOk<{ state: string }>(res, 'runPause');
   }
   async runResume(runId: string): Promise<{ state: string }> {
     const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: `/v1/run/${runId}/resume`, body: { idempotency_key: this.nextKey() } }),
+      this.stampReq({
+        method: 'POST',
+        path: `/v1/run/${runId}/resume`,
+        body: { idempotency_key: this.nextKey() },
+      }),
     );
     return expectOk<{ state: string }>(res, 'runResume');
   }
@@ -222,7 +386,10 @@ export class InProcessOwnerRunClient implements OwnerRunClient {
       this.stampReq({
         method: 'POST',
         path: `/v1/run/${runId}/stop`,
-        body: { idempotency_key: this.nextKey(), ...(onStop !== undefined ? { on_stop: onStop } : {}) },
+        body: {
+          idempotency_key: this.nextKey(),
+          ...(onStop !== undefined ? { on_stop: onStop } : {}),
+        },
       }),
     );
     return expectOk<{ state: string }>(res, 'runStop');

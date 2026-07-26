@@ -52,7 +52,7 @@ def test_manifest_and_mcp_server_match_the_supported_cli_contract() -> None:
         "mcpServers": {
             "dina": {
                 "command": "dina",
-                "args": ["mcp-server", "--profile", "coding"],
+                "args": ["mcp-server", "--profile", "connected"],
             }
         }
     }
@@ -105,6 +105,7 @@ def test_plugin_documents_codex_specific_security_boundaries() -> None:
     assert "dina_talk" in skill
     assert "dina_delegate" in skill
     assert "only `completed` proves" in skill
+    assert (PLUGIN_ROOT / "skills" / "dina-work" / "SKILL.md").is_file()
 
 
 @pytest.mark.skipif(os.name != "posix", reason="supervisor is a POSIX sh script")

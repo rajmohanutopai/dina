@@ -13,6 +13,12 @@
  * session writes ride the inline start/heartbeat/end path.
  */
 
+import {
+  makeUnknownAuthorityOrigin,
+  parseAuthorityOrigin,
+  type AuthorityOrigin,
+} from '../agent/gating_policy';
+
 import type { EndReason, SessionRecord } from './registry';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -27,7 +33,25 @@ export interface SessionRepository {
 }
 
 const COLS =
-  'session_id, agent_did, host_session_id, created_at, last_seen_at, lease_expires_at, ended_at, end_reason';
+  'session_id, agent_did, host_session_id, created_at, last_seen_at, lease_expires_at, ended_at, end_reason, authority_origin_json';
+
+function parsePersistedAuthority(row: DBRow): AuthorityOrigin | null {
+  const raw = row.authority_origin_json;
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = parseAuthorityOrigin(JSON.parse(raw));
+      if (parsed !== null) return parsed;
+    } catch {
+      // Fall through to a fail-closed unknown origin.
+    }
+  }
+  return makeUnknownAuthorityOrigin({
+    ownerDid: 'did:unknown',
+    correlationId: 'corrupt-session-origin',
+    authenticatedAtMs: 0,
+  });
+}
 
 function rowToSession(row: DBRow): SessionRecord {
   const endedAt = row.ended_at;
@@ -40,11 +64,12 @@ function rowToSession(row: DBRow): SessionRecord {
     lastSeenAtMs: Number(row.last_seen_at ?? 0),
     leaseExpiresAtMs: Number(row.lease_expires_at ?? 0),
     endedAtMs: endedAt == null ? null : Number(endedAt),
-    // Only the two canonical reasons survive; anything else (drift) → null.
+    // Only canonical reasons survive; anything else (drift) → null.
     endReason:
-      endReason === 'explicit' || endReason === 'lease_lapsed'
+      endReason === 'explicit' || endReason === 'lease_lapsed' || endReason === 'authority_revoked'
         ? (endReason as EndReason)
         : null,
+    authorityOrigin: parsePersistedAuthority(row),
   };
 }
 
@@ -54,7 +79,7 @@ export class SQLiteSessionRepository implements SessionRepository {
   upsert(s: SessionRecord): void {
     this.db.execute(
       `INSERT OR REPLACE INTO agent_sessions (${COLS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         s.sessionId,
         s.agentDid,
@@ -64,6 +89,7 @@ export class SQLiteSessionRepository implements SessionRepository {
         s.leaseExpiresAtMs,
         s.endedAtMs ?? null,
         s.endReason ?? null,
+        s.authorityOrigin === null ? null : JSON.stringify(s.authorityOrigin),
       ],
     );
   }

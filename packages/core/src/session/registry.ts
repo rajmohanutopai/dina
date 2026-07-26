@@ -34,9 +34,13 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { isOwnerAuthority, type AuthorityOrigin } from '../agent/gating_policy';
+
 import type { SessionRepository } from './repository';
 
 export const DEFAULT_LEASE_MS = 15 * 60 * 1000; // 15 min — matches §15 Codex reap default
+
+export type EndReason = 'explicit' | 'lease_lapsed' | 'authority_revoked';
 
 export interface SessionRecord {
   sessionId: string;
@@ -49,20 +53,35 @@ export interface SessionRecord {
   leaseExpiresAtMs: number;
   endedAtMs: number | null;
   /** Why it ended — for the audit trail. */
-  endReason: 'explicit' | 'lease_lapsed' | null;
+  endReason: EndReason | null;
+  /**
+   * Core-bound task provenance. Null means no non-owner task is currently
+   * attached; it does not itself prove owner presence.
+   */
+  authorityOrigin: AuthorityOrigin | null;
 }
 
 export interface StartSessionInput {
   agentDid: string;
   hostSessionId: string;
   leaseMs?: number;
+  /**
+   * Optional origin stamped by a trusted Core adapter when creating a session.
+   * Public session routes never copy this from request bodies.
+   */
+  authorityOrigin?: AuthorityOrigin;
 }
-
-export type EndReason = 'explicit' | 'lease_lapsed';
 
 export type SessionValidation =
   | { ok: true; session: SessionRecord }
   | { ok: false; reason: 'not_found' | 'principal_mismatch' | 'ended' | 'lease_lapsed' };
+
+export type SessionAuthorityBinding =
+  | { ok: true; session: SessionRecord }
+  | {
+      ok: false;
+      reason: 'not_found' | 'principal_mismatch' | 'ended' | 'lease_lapsed' | 'authority_conflict';
+    };
 
 /** Called when a session ends — the composition root wires grant revocation. */
 export type SessionEndHook = (session: SessionRecord, reason: EndReason) => void;
@@ -112,7 +131,9 @@ export class SessionRegistry {
     const t = this.now();
     const lease = input.leaseMs ?? DEFAULT_LEASE_MS;
 
-    // Reuse a live session for the same principal + host session (F-04).
+    // Reuse the one live Core session for this principal + host session
+    // (F-04), even while it carries a non-owner authority reservation. A host
+    // must not escape that reservation by calling session-start again.
     for (const s of this.byId.values()) {
       if (
         s.agentDid === input.agentDid &&
@@ -120,7 +141,20 @@ export class SessionRegistry {
         s.endedAtMs === null &&
         t < s.leaseExpiresAtMs
       ) {
-        const renewed = { ...s, lastSeenAtMs: t, leaseExpiresAtMs: t + lease };
+        const requestedOrigin = input.authorityOrigin ?? null;
+        if (
+          requestedOrigin !== null &&
+          s.authorityOrigin !== null &&
+          !sameAuthorityOrigin(s.authorityOrigin, requestedOrigin)
+        ) {
+          throw new Error('session: host session already carries another authority origin');
+        }
+        const renewed = {
+          ...s,
+          lastSeenAtMs: t,
+          leaseExpiresAtMs: t + lease,
+          authorityOrigin: s.authorityOrigin ?? requestedOrigin,
+        };
         this.persist(renewed);
         this.byId.set(renewed.sessionId, renewed);
         return renewed;
@@ -142,6 +176,7 @@ export class SessionRegistry {
       leaseExpiresAtMs: t + lease,
       endedAtMs: null,
       endReason: null,
+      authorityOrigin: input.authorityOrigin ?? null,
     };
     this.persist(record);
     this.byId.set(sessionId, record);
@@ -163,7 +198,11 @@ export class SessionRegistry {
   }
 
   /** Heartbeat — extend the lease on a valid signed call. */
-  renew(sessionId: string, agentDid: string, leaseMs: number = DEFAULT_LEASE_MS): SessionValidation {
+  renew(
+    sessionId: string,
+    agentDid: string,
+    leaseMs: number = DEFAULT_LEASE_MS,
+  ): SessionValidation {
     const v = this.validate(sessionId, agentDid);
     if (!v.ok) return v;
     const t = this.now();
@@ -200,8 +239,153 @@ export class SessionRegistry {
     return reaped;
   }
 
+  /**
+   * End every live session for one authenticated principal.
+   *
+   * Device/backend revocation is principal-wide authority revocation. Merely
+   * revoking context tickets is insufficient because re-pairing the same key
+   * recreates the same DID and could make a pre-revocation session usable
+   * again. Each tombstone is persisted before its cleanup hook runs.
+   *
+   * Cleanup is best-effort across all matching sessions: one failed durable
+   * write or hook must not prevent later sessions from being cut. `ok: false`
+   * tells the durable revocation caller to retry the cascade.
+   */
+  endAllForPrincipal(agentDid: string): { ended: number; ok: boolean } {
+    const sessions = [...this.byId.values()].filter(
+      (session) => session.agentDid === agentDid && session.endedAtMs === null,
+    );
+    let ended = 0;
+    let ok = true;
+    for (const session of sessions) {
+      try {
+        this.finish(session, 'authority_revoked');
+        ended += 1;
+      } catch {
+        // `finish` publishes the tombstone before invoking cleanup. Count a
+        // committed tombstone even when a cleanup hook failed, but still report
+        // the cascade as incomplete so callers retry ancillary cleanup.
+        if (this.byId.get(session.sessionId)?.endedAtMs !== null) ended += 1;
+        ok = false;
+      }
+    }
+    return { ended, ok };
+  }
+
   get(sessionId: string): SessionRecord | undefined {
     return this.byId.get(sessionId);
+  }
+
+  /**
+   * True only when this exact live session may act under the requested origin.
+   *
+   * An ordinary owner session has no bound non-owner origin. Once Core binds a
+   * service/contact/delegation origin, the session may act only for that exact
+   * task provenance until it is cleared.
+   */
+  authorizesAuthorityOrigin(sessionId: string, agentDid: string, origin: AuthorityOrigin): boolean {
+    const validation = this.validate(sessionId, agentDid);
+    if (!validation.ok) return false;
+    return isOwnerAuthority(origin)
+      ? validation.session.authorityOrigin === null
+      : sameAuthorityOrigin(validation.session.authorityOrigin, origin);
+  }
+
+  /** Whether any live session for this principal carries the exact origin. */
+  hasSessionAuthorizing(agentDid: string, origin: AuthorityOrigin): boolean {
+    return this.listActive(agentDid).some((session) =>
+      isOwnerAuthority(origin)
+        ? session.authorityOrigin === null
+        : sameAuthorityOrigin(session.authorityOrigin, origin),
+    );
+  }
+
+  /**
+   * Attach a non-owner task origin to a live session.
+   *
+   * Owner authority cannot be manufactured through this method. Foreground
+   * owner status is resolved separately from an owner-selected agent binding.
+   */
+  bindNonOwnerAuthorityOrigin(
+    sessionId: string,
+    agentDid: string,
+    origin: AuthorityOrigin,
+  ): SessionAuthorityBinding {
+    if (isOwnerAuthority(origin)) {
+      throw new Error('session: owner authority cannot be bound as task context');
+    }
+    const v = this.validate(sessionId, agentDid);
+    if (!v.ok) return v;
+    if (v.session.authorityOrigin !== null) {
+      return sameAuthorityOrigin(v.session.authorityOrigin, origin)
+        ? v
+        : { ok: false, reason: 'authority_conflict' };
+    }
+    const updated = { ...v.session, authorityOrigin: { ...origin } };
+    this.persist(updated);
+    this.byId.set(sessionId, updated);
+    return { ok: true, session: updated };
+  }
+
+  /**
+   * Reserve a live session for one exact authority origin.
+   *
+   * Owner work may use only an unreserved session. Non-owner work atomically
+   * binds an unreserved session, or reuses an identical reservation after a
+   * process/transport retry. It can never overwrite another task's origin.
+   */
+  activateAuthorityOrigin(sessionId: string, agentDid: string, origin: AuthorityOrigin): boolean {
+    if (isOwnerAuthority(origin)) {
+      return this.authorizesAuthorityOrigin(sessionId, agentDid, origin);
+    }
+    return this.bindNonOwnerAuthorityOrigin(sessionId, agentDid, origin).ok;
+  }
+
+  /**
+   * Clear only the exact task context the caller expects to own. Comparing the
+   * complete origin, rather than only a correlation id, prevents a stale
+   * completion from clearing a newer task's non-owner safety floor.
+   */
+  clearAuthorityOrigin(
+    sessionId: string,
+    agentDid: string,
+    origin: AuthorityOrigin,
+  ): SessionValidation {
+    const v = this.validate(sessionId, agentDid);
+    if (!v.ok) return v;
+    if (!sameAuthorityOrigin(v.session.authorityOrigin, origin)) {
+      return v;
+    }
+    const updated = { ...v.session, authorityOrigin: null };
+    this.persist(updated);
+    this.byId.set(sessionId, updated);
+    return { ok: true, session: updated };
+  }
+
+  /**
+   * Whether a live session can accept this work without overwriting another
+   * task. Used only for routing eligibility; claim still performs the durable
+   * activation CAS.
+   */
+  hasSessionAvailableForAuthority(agentDid: string, origin: AuthorityOrigin): boolean {
+    return this.listActive(agentDid).some((session) =>
+      isOwnerAuthority(origin)
+        ? session.authorityOrigin === null
+        : session.authorityOrigin === null || sameAuthorityOrigin(session.authorityOrigin, origin),
+    );
+  }
+
+  /**
+   * Whether this authenticated principal is currently executing any non-owner
+   * work.
+   *
+   * The floor is principal-wide for shared agent façades and host tool gates.
+   * Otherwise a compromised host could reserve one session for a service task,
+   * mint/use a second session, and regain owner-level facade access while the
+   * non-owner task was still active.
+   */
+  hasActiveNonOwnerAuthority(agentDid: string): boolean {
+    return this.listActive(agentDid).some((session) => session.authorityOrigin !== null);
   }
 
   /** Active sessions visible to one authenticated principal only. */
@@ -237,6 +421,19 @@ export class SessionRegistry {
   }
 }
 
+function sameAuthorityOrigin(left: AuthorityOrigin | null, right: AuthorityOrigin | null): boolean {
+  if (left === null || right === null) return left === right;
+  return (
+    left.kind === right.kind &&
+    left.ownerDid === right.ownerDid &&
+    left.requesterDid === right.requesterDid &&
+    left.ingress === right.ingress &&
+    left.correlationId === right.correlationId &&
+    left.authenticatedAtMs === right.authenticatedAtMs &&
+    left.evidenceHash === right.evidenceHash
+  );
+}
+
 // ─── Module-global registry (matches the codebase's service-global pattern) ───
 
 let registry: SessionRegistry | null = null;
@@ -244,6 +441,11 @@ let registry: SessionRegistry | null = null;
 /** The process session registry; auto-provisions an in-memory one on first use. */
 export function getSessionRegistry(): SessionRegistry {
   if (registry === null) registry = new SessionRegistry();
+  return registry;
+}
+
+/** Return the installed registry without manufacturing authority during teardown. */
+export function getSessionRegistryIfConfigured(): SessionRegistry | null {
   return registry;
 }
 

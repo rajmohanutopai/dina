@@ -5,12 +5,27 @@
  */
 
 import { InProcessOwnerRunClient, OwnerRunHttpError } from '../../src/client/owner-run-client';
-import { InMemoryMessageRepository, setMessageRepository, type MessageRecord } from '../../src/run/message';
+import { setNodeDID } from '../../src/pairing/ceremony';
+import {
+  InMemoryReasoningBackendRepository,
+  setReasoningBackendRepository,
+} from '../../src/reasoning/backend_repository';
+import {
+  InMemoryReasoningContextRepository,
+  setReasoningContextRepository,
+} from '../../src/reasoning/context_repository';
+import {
+  InMemoryMessageRepository,
+  setMessageRepository,
+  type MessageRecord,
+} from '../../src/run/message';
 import { InMemoryRunRepository, setRunRepository } from '../../src/run/repository';
 import { RunService, setRunService } from '../../src/run/service';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
+import { registerReasoningRoutes } from '../../src/server/routes/reasoning';
 import { registerRunRoutes } from '../../src/server/routes/run';
 import { registerWatchRoutes } from '../../src/server/routes/watch';
+import { SessionRegistry, setSessionRegistry } from '../../src/session/registry';
 import { WatchService, setWatchService, getWatchService } from '../../src/watch/service';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 
@@ -25,12 +40,29 @@ const MSG_EXPIRES_AT = Date.now() + 3_600_000;
 
 function makeMsg(over: Partial<MessageRecord>): MessageRecord {
   return {
-    message_id: 'm1', run_id: 'r', reservation_id: null, dedup_key: 'd', sequence: 1,
-    kind: 'action', action_type: 'book', risk_class: 'SAFE', state: 'classified',
-    decision: null, decision_revision: 0, delegation_id: null, expires_at: MSG_EXPIRES_AT,
-    payload_ref: null, tier_candidate: null, final_tier: 2, tier_source: 'action_base',
+    message_id: 'm1',
+    run_id: 'r',
+    reservation_id: null,
+    dedup_key: 'd',
+    sequence: 1,
+    kind: 'action',
+    action_type: 'book',
+    risk_class: 'SAFE',
+    state: 'classified',
+    decision: null,
+    decision_revision: 0,
+    delegation_id: null,
+    expires_at: MSG_EXPIRES_AT,
+    payload_ref: null,
+    tier_candidate: null,
+    final_tier: 2,
+    tier_source: 'action_base',
     content_digest: null,
-    reconciliation_evidence: '[]', shred_after: null, created_at: NOW, updated_at: NOW, ...over,
+    reconciliation_evidence: '[]',
+    shred_after: null,
+    created_at: NOW,
+    updated_at: NOW,
+    ...over,
   };
 }
 
@@ -43,10 +75,31 @@ beforeEach(() => {
   setRunService(new RunService({ repository: repo, nowMsFn: () => NOW }));
   messages = new InMemoryMessageRepository();
   setMessageRepository(messages);
-  setWatchService(new WatchService({ repository: new InMemoryWorkflowRepository(), nowMsFn: () => NOW }));
+  setWatchService(
+    new WatchService({ repository: new InMemoryWorkflowRepository(), nowMsFn: () => NOW }),
+  );
+  const reasoningBackends = new InMemoryReasoningBackendRepository();
+  reasoningBackends.register({
+    backendId: 'connected-1',
+    kind: 'connected_host',
+    principalDid: 'did:key:connected-agent',
+    allowedTaskKinds: ['answer.compose'],
+    maxSensitivity: 'sensitive',
+    availability: 'foreground',
+    modelClass: 'claude',
+    selectedByOwnerDid: 'did:plc:owner',
+    expiresAtMs: null,
+    expectedVersion: null,
+    nowMs: NOW,
+  });
+  setReasoningBackendRepository(reasoningBackends);
+  setReasoningContextRepository(new InMemoryReasoningContextRepository());
+  setSessionRegistry(new SessionRegistry());
+  setNodeDID('did:plc:owner');
   router = new CoreRouter();
   registerRunRoutes(router, OWNER_CAP);
   registerWatchRoutes(router, OWNER_CAP);
+  registerReasoningRoutes(router, OWNER_CAP);
 });
 
 afterEach(() => {
@@ -54,6 +107,9 @@ afterEach(() => {
   setWatchService(null);
   setRunRepository(null);
   setMessageRepository(null);
+  setReasoningBackendRepository(null);
+  setReasoningContextRepository(null);
+  setSessionRegistry(null);
 });
 
 function startBody() {
@@ -108,7 +164,10 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     // Rebinding a real grant WITHOUT an explicit expiry is rejected — an omitted
     // expiry can never be silently read as "never expires".
     await expect(
-      client.runUpdate(started.run_id, { config_version: upd.config_version, provider_grant_id: 'g3' }),
+      client.runUpdate(started.run_id, {
+        config_version: upd.config_version,
+        provider_grant_id: 'g3',
+      }),
     ).rejects.toThrow(OwnerRunHttpError);
   });
 
@@ -123,11 +182,69 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     expect(runs.every((r) => r.state === 'active')).toBe(true);
   });
 
+  it('lists owner-safe connected reasoning backends through the typed client', async () => {
+    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const { backends } = await client.reasoningBackends();
+    expect(backends).toEqual([
+      expect.objectContaining({
+        backend_id: 'connected-1',
+        kind: 'connected_host',
+        principal_did: 'did:key:connected-agent',
+        allowed_task_kinds: ['answer.compose'],
+        enabled: true,
+      }),
+    ]);
+    expect(backends[0]).not.toHaveProperty('credential');
+    expect(backends[0]).not.toHaveProperty('session');
+  });
+
+  it('registers and revokes a reasoning backend through the typed owner client', async () => {
+    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const registered = await client.reasoningRegisterBackend({
+      backend_id: 'remote-test',
+      kind: 'remote_provider',
+      principal_did: 'did:key:remote-provider',
+      allowed_task_kinds: ['answer.compose', 'review.summarize'],
+      max_sensitivity: 'personal',
+      availability: 'always_on',
+      model_class: 'test-provider',
+      expires_at: null,
+      expected_version: null,
+    });
+
+    expect(registered).toMatchObject({
+      backend_id: 'remote-test',
+      principal_did: 'did:key:remote-provider',
+      policy_version: 1,
+      enabled: true,
+    });
+    expect(await client.reasoningRevokeBackend('remote-test', 1)).toEqual({ ok: true });
+    const revoked = (await client.reasoningBackends()).backends.find(
+      (backend) => backend.backend_id === 'remote-test',
+    );
+    expect(revoked).toMatchObject({
+      enabled: false,
+      policy_version: 2,
+    });
+    expect(revoked?.revoked_at).not.toBeNull();
+  });
+
   it('records an owner decision on a classified action message', async () => {
     const client = new InProcessOwnerRunClient(router, OWNER_CAP);
     const started = await client.runStart(startBody());
-    messages.create(makeMsg({ message_id: 'm1', run_id: started.run_id, state: 'classified', decision_revision: 0 }));
-    const decided = await client.runDecide(started.run_id, { message_id: 'm1', decision: 'approve', decision_revision: 0 });
+    messages.create(
+      makeMsg({
+        message_id: 'm1',
+        run_id: started.run_id,
+        state: 'classified',
+        decision_revision: 0,
+      }),
+    );
+    const decided = await client.runDecide(started.run_id, {
+      message_id: 'm1',
+      decision: 'approve',
+      decision_revision: 0,
+    });
     expect(decided.state).toBe('approved');
     expect(decided.decision_revision).toBe(1);
     expect(messages.getById('m1')?.state).toBe('approved');
@@ -136,13 +253,28 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   it('a deny/acknowledge kind-mismatch is rejected', async () => {
     const client = new InProcessOwnerRunClient(router, OWNER_CAP);
     const started = await client.runStart(startBody());
-    messages.create(makeMsg({ message_id: 'info', run_id: started.run_id, kind: 'informational', state: 'classified' }));
-    // approve on an informational message → 400
-    await expect(client.runDecide(started.run_id, { message_id: 'info', decision: 'approve', decision_revision: 0 })).rejects.toThrow(
-      OwnerRunHttpError,
+    messages.create(
+      makeMsg({
+        message_id: 'info',
+        run_id: started.run_id,
+        kind: 'informational',
+        state: 'classified',
+      }),
     );
+    // approve on an informational message → 400
+    await expect(
+      client.runDecide(started.run_id, {
+        message_id: 'info',
+        decision: 'approve',
+        decision_revision: 0,
+      }),
+    ).rejects.toThrow(OwnerRunHttpError);
     // acknowledge is valid for informational
-    const ack = await client.runDecide(started.run_id, { message_id: 'info', decision: 'acknowledge', decision_revision: 0 });
+    const ack = await client.runDecide(started.run_id, {
+      message_id: 'info',
+      decision: 'acknowledge',
+      decision_revision: 0,
+    });
     expect(ack.state).toBe('acknowledged');
   });
 
@@ -177,8 +309,14 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     // A plain trustedInProcess request WITHOUT the owner marker (i.e. what
     // Brain's shared transport produces) must be 403 on the run routes.
     const brainish: CoreRequest = {
-      method: 'POST', path: '/v1/run/start', query: {}, headers: {}, body: startBody(),
-      rawBody: new Uint8Array(), params: {}, trustedInProcess: true,
+      method: 'POST',
+      path: '/v1/run/start',
+      query: {},
+      headers: {},
+      body: startBody(),
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
     };
     const res = await router.handle(brainish);
     expect(res.status).toBe(403);
@@ -189,8 +327,15 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     // What a compromised co-resident Brain could construct: it sets the forgeable
     // owner marker, but it does NOT hold the boot-minted capability secret.
     const forged: CoreRequest = {
-      method: 'POST', path: '/v1/run/start', query: {}, headers: {}, body: startBody(),
-      rawBody: new Uint8Array(), params: {}, trustedInProcess: true, callerType: 'owner',
+      method: 'POST',
+      path: '/v1/run/start',
+      query: {},
+      headers: {},
+      body: startBody(),
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'owner',
       // no ownerCapability (or a guessed wrong one) →
     };
     expect((await router.handle(forged)).status).toBe(403);

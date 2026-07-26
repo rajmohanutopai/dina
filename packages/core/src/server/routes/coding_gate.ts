@@ -21,7 +21,15 @@ import {
   createCodingGateApproval,
   redeemApprovedCodingGateApproval,
 } from '../../agent/coding_permit';
+import {
+  makeUnknownAuthorityOrigin,
+  resolveConfiguredGatingProfile,
+  resolveEffectiveGatingProfile,
+  type AgentGatingProfile,
+  type AuthorityOrigin,
+} from '../../agent/gating_policy';
 import { appendAudit } from '../../audit/service';
+import { getNodeDID } from '../../pairing/ceremony';
 import { getSessionRegistry } from '../../session/registry';
 
 import type { RiskLevel } from '../../gatekeeper/intent';
@@ -43,6 +51,11 @@ export interface CodingGateResult {
    */
   payloadHash?: string;
   reason: string;
+  /** Optional on legacy injected gates; the route stamps server-owned values. */
+  profile?: AgentGatingProfile;
+  authorityOriginKind?: AuthorityOrigin['kind'];
+  policyVersion?: number;
+  auditLevel?: 'none' | 'kernel' | 'boundary' | 'full';
 }
 
 export interface CodingGateInput {
@@ -54,6 +67,12 @@ export interface CodingGateInput {
   sessionId: string;
   /** Agent working dir for relative-path resolution; undefined ⇒ Core cwd. */
   cwd?: string;
+  /** Effective server-owned profile, after applying the origin safety floor. */
+  profile?: AgentGatingProfile;
+  /** Core-owned provenance; never copied from the request body. */
+  authorityOrigin?: AuthorityOrigin;
+  policyVersion?: number;
+  /** Internal compatibility marker. Production routes always pass enforce. */
   mode: 'enforce' | 'classify_only';
 }
 
@@ -90,6 +109,23 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     if (modeRaw !== 'enforce' && modeRaw !== 'classify_only') {
       return { status: 400, body: { error: `invalid mode: ${modeRaw}` } };
     }
+    // Wire compatibility only: old adapters still send `mode=enforce`. The
+    // caller can no longer select advisory/classification-only behavior.
+    if (modeRaw === 'classify_only') {
+      return {
+        status: 403,
+        body: { error: 'client_mode_not_authoritative', reason: 'Core owns gate enforcement' },
+      };
+    }
+    if (body.profile !== undefined || body.authority_origin !== undefined) {
+      return {
+        status: 400,
+        body: {
+          error: 'server_owned_gate_context',
+          reason: 'profile and authority_origin are resolved by Core',
+        },
+      };
+    }
     const approvalSurface =
       typeof body.approval_surface === 'string' ? body.approval_surface : 'host';
     if (approvalSurface !== 'host' && approvalSurface !== 'owner') {
@@ -125,18 +161,77 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       hostSessionId !== ''
         ? getSessionRegistry().start({ agentDid, hostSessionId }).sessionId
         : sessionIdRaw;
-    if (hostSessionId === '' && !getSessionRegistry().renew(sessionId, agentDid).ok) {
+    const sessionValidation =
+      hostSessionId === ''
+        ? getSessionRegistry().renew(sessionId, agentDid)
+        : getSessionRegistry().validate(sessionId, agentDid);
+    if (!sessionValidation.ok) {
       return { status: 401, body: { error: 'invalid_session' } };
     }
 
-    let result = await gate({
+    const configured = resolveConfiguredGatingProfile(agentDid);
+    const currentOwnerDid = getNodeDID();
+    const ownerBindingValid =
+      configured.policy !== null &&
+      currentOwnerDid !== null &&
+      configured.policy.selectedByOwnerDid === currentOwnerDid;
+    const principalHasNonOwnerAuthority = getSessionRegistry().hasActiveNonOwnerAuthority(agentDid);
+    const authorityOrigin: AuthorityOrigin =
+      sessionValidation.session.authorityOrigin ??
+      (principalHasNonOwnerAuthority
+        ? makeUnknownAuthorityOrigin({
+            ownerDid: currentOwnerDid ?? 'did:unknown',
+            correlationId: sessionId,
+            authenticatedAtMs: sessionValidation.session.createdAtMs,
+            ingress: 'coding_host',
+          })
+        : ownerBindingValid
+          ? {
+              kind: 'owner_interactive',
+              ownerDid: currentOwnerDid,
+              requesterDid: currentOwnerDid,
+              ingress: 'coding_host',
+              correlationId: sessionId,
+              authenticatedAtMs: sessionValidation.session.createdAtMs,
+            }
+          : makeUnknownAuthorityOrigin({
+              ownerDid: currentOwnerDid ?? 'did:unknown',
+              correlationId: sessionId,
+              authenticatedAtMs: sessionValidation.session.createdAtMs,
+              ingress: 'coding_host',
+            }));
+    const effectiveProfile = resolveEffectiveGatingProfile(
+      ownerBindingValid ? configured.profile : 'full_supervision',
+      authorityOrigin,
+    );
+
+    const rawResult = await gate({
       toolName,
       toolInput,
       agentDid,
       sessionId,
       cwd,
-      mode: modeRaw,
+      profile: effectiveProfile,
+      authorityOrigin,
+      policyVersion: ownerBindingValid ? configured.policyVersion : 0,
+      mode: 'enforce',
     });
+    let result: Required<
+      Pick<CodingGateResult, 'profile' | 'authorityOriginKind' | 'policyVersion' | 'auditLevel'>
+    > &
+      CodingGateResult = {
+      ...rawResult,
+      profile: effectiveProfile,
+      authorityOriginKind: authorityOrigin.kind,
+      policyVersion: ownerBindingValid ? configured.policyVersion : 0,
+      auditLevel:
+        rawResult.auditLevel ??
+        (effectiveProfile === 'full_supervision'
+          ? 'full'
+          : rawResult.risk === 'BLOCKED'
+            ? 'kernel'
+            : 'boundary'),
+    };
 
     // Item B — an enforce-mode call that the gate could NOT redeem against an
     // already-approved permit needs either the host's native confirmation UI or
@@ -148,7 +243,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     // no task rather than silently allow.
     let approvalTaskId: string | undefined;
     if (
-      modeRaw === 'enforce' &&
+      result.enforced &&
       (result.risk === 'HIGH' || (result.risk === 'MODERATE' && approvalSurface === 'owner')) &&
       typeof result.payloadHash === 'string' &&
       result.payloadHash !== ''
@@ -157,6 +252,9 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       const redemption = redeemApprovedCodingGateApproval({
         agentDid,
         sessionId,
+        effectiveProfile,
+        policyVersion: result.policyVersion,
+        authorityOrigin: authorityOrigin.kind,
         payloadHash,
         tool: toolName,
         action: result.action,
@@ -186,6 +284,9 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
           const created = createCodingGateApproval({
             agentDid,
             sessionId,
+            effectiveProfile,
+            policyVersion: result.policyVersion,
+            authorityOrigin: authorityOrigin.kind,
             payloadHash,
             tool: toolName,
             action: result.action,
@@ -200,7 +301,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     // tool_input (a Bash command / file path can carry a secret literal, §20);
     // only action / risk / outcome / reason / mode. Best-effort — an audit
     // failure must never change the gate decision.
-    if (result.risk !== 'SAFE') {
+    if (result.auditLevel !== 'none') {
       try {
         appendAudit(
           agentDid,
@@ -210,7 +311,9 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
             risk: result.risk,
             outcome: result.outcome,
             reason: result.reason,
-            mode: modeRaw,
+            profile: result.profile,
+            policy_version: result.policyVersion,
+            authority_origin: result.authorityOriginKind,
             enforced: result.enforced,
             ...(result.permitId ? { permit_id: result.permitId } : {}),
             ...(approvalTaskId ? { task_id: approvalTaskId } : {}),
@@ -232,6 +335,9 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
         permit_id: result.permitId ?? null,
         task_id: approvalTaskId ?? null,
         reason: result.reason,
+        profile: result.profile,
+        policy_version: result.policyVersion,
+        authority_origin: result.authorityOriginKind,
       },
     };
   });

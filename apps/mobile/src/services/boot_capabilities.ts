@@ -642,6 +642,8 @@ export async function buildBootInputs(
     databaseAdapter,
     agenticAsk,
     askCoordinator,
+    internalReasoning:
+      agenticAskBundle === undefined ? undefined : { provider: agenticAskBundle.provider },
     stagingEnrichment,
     logger: options.logger,
     msgboxURL,

@@ -2,14 +2,18 @@
  * ServiceHandler tests.
  */
 
-import { WorkflowConflictError } from '@dina/core';
+import {
+  WorkflowConflictError,
+  type ServiceConfig,
+  type ServiceReasoningSubmitter,
+} from '@dina/core';
 
-import { ServiceHandler, type ServiceHandlerCoreClient } from '../../src/service/service_handler';
+import {
+  ServiceHandler,
+  type ServiceHandlerCoreClient,
+  type ServiceRejectResponder,
+} from '../../src/service/service_handler';
 import { canonicalCapabilitySchemaHash } from '../../src/service/service_publisher';
-
-// ServiceHandler catches `WorkflowConflictError` from `@dina/core`.
-// The test throws the same class so `instanceof` matches.
-import type { ServiceConfig } from '@dina/core';
 
 interface CreateCall {
   id: string;
@@ -137,6 +141,8 @@ function makeHandler(opts: {
   config?: ServiceConfig | null;
   nowSec?: number;
   uuid?: string;
+  reasoningSubmitter?: ServiceReasoningSubmitter;
+  rejectResponder?: ServiceRejectResponder;
   notifier?: Parameters<typeof ServiceHandler.prototype.handleQuery>[0] extends infer _
     ? never
     : never;
@@ -148,6 +154,10 @@ function makeHandler(opts: {
     readConfig: () => opts.config ?? baseConfig,
     nowSecFn: () => opts.nowSec ?? 1_700_000_000,
     generateUUID: () => uuids[i++ % uuids.length],
+    ...(opts.reasoningSubmitter === undefined
+      ? {}
+      : { reasoningSubmitter: opts.reasoningSubmitter }),
+    ...(opts.rejectResponder === undefined ? {} : { rejectResponder: opts.rejectResponder }),
   });
 }
 
@@ -273,7 +283,12 @@ describe('ServiceHandler.handleQuery — auto path', () => {
     const core = stubCore();
     const handler = makeHandler({
       core,
-      config: { ...baseConfig, isDiscoverable: false, discoverability: 'unlisted', status: 'active' },
+      config: {
+        ...baseConfig,
+        isDiscoverable: false,
+        discoverability: 'unlisted',
+        status: 'active',
+      },
     });
     await handler.handleQuery(REQUESTER, validQuery);
     expect(core.createCalls).toHaveLength(1);
@@ -1080,6 +1095,13 @@ describe('ServiceHandler.executeAndRespond', () => {
 
     expect(core.createCalls).toHaveLength(1); // delegation still created
     expect(logs.some((l) => l.event === 'service.query.approval_cancel_failed')).toBe(true);
+    expect(logs).toContainEqual(
+      expect.objectContaining({
+        event: 'service.query.approval_cancel_failed',
+        reason: 'approval_cleanup_failed',
+      }),
+    );
+    expect(JSON.stringify(logs)).not.toContain('already terminal');
   });
 
   it('throws WorkflowValidationError-like error on incomplete payload', async () => {
@@ -1122,11 +1144,13 @@ describe('ServiceHandler — service_uri threading (P1, multi-listing per DID)',
       params: { route_id: 'r-1' },
       ttl_seconds: 60,
       service_uri: LISTING,
+      grant_id: 'grant-review-1',
     });
     const call = core.createCalls[0];
     expect(call.kind).toBe('approval');
     const payload = JSON.parse(call.payload as string);
     expect(payload.service_uri).toBe(LISTING);
+    expect(payload.grant_id).toBe('grant-review-1');
   });
 
   it('executeAndRespond forwards service_uri from the approval payload into the delegation', async () => {
@@ -1140,9 +1164,11 @@ describe('ServiceHandler — service_uri threading (P1, multi-listing per DID)',
       ttl_seconds: 60,
       mcp_tool: 'get_route',
       service_uri: LISTING,
+      grant_id: 'grant-review-1',
     });
     const payload = JSON.parse(core.createCalls[0].payload as string);
     expect(payload.service_uri).toBe(LISTING);
+    expect(payload.grant_id).toBe('grant-review-1');
   });
 });
 
@@ -1379,5 +1405,270 @@ describe('ServiceHandler — Tier 1 execution-plane routing (docs/SERVICE_PROVID
       schema_hash: canonical,
     });
     expect(core.createCalls).toHaveLength(1);
+  });
+});
+
+describe('ServiceHandler connected-Brain execution strategy', () => {
+  const instructionConfig: ServiceConfig = {
+    isDiscoverable: true,
+    name: 'Alonso Salon',
+    vaultPersona: 'salon',
+    capabilities: {
+      appointment_availability: {
+        responsePolicy: 'auto',
+        category: 'appointments',
+        instruction: 'Use the salon schedule notes to answer availability.',
+      },
+    },
+  };
+
+  it('offers an instruction-backed read capability to reasoning instead of creating a delegation', async () => {
+    const core = stubCore();
+    const offered: Parameters<ServiceReasoningSubmitter>[0][] = [];
+    const handler = makeHandler({
+      core,
+      config: instructionConfig,
+      reasoningSubmitter: async (input) => {
+        offered.push(input);
+        return {
+          taskId: 'reason-service-1',
+          backendId: 'connected-agent',
+          deduplicated: false,
+        };
+      },
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-reason-1',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+    });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(offered).toEqual([
+      expect.objectContaining({
+        requesterDid: REQUESTER,
+        queryId: 'q-reason-1',
+        capabilityId: 'appointment_availability',
+        params: { date: 'tomorrow' },
+        serviceName: 'Alonso Salon',
+        vaultPersona: 'salon',
+        operatorApproved: false,
+        responseSchema: expect.objectContaining({ type: 'object' }),
+      }),
+    ]);
+  });
+
+  it('preserves the Tier-1 fallback when no live reasoning backend accepts the work', async () => {
+    const core = stubCore();
+    const handler = makeHandler({
+      core,
+      config: instructionConfig,
+      reasoningSubmitter: async () => null,
+      uuid: 'fallback',
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-reason-fallback',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+    });
+
+    expect(core.createCalls).toHaveLength(1);
+    expect(core.createCalls[0]).toMatchObject({
+      id: 'svc-exec-fallback',
+      kind: 'delegation',
+      requestedRunner: 'dina.local',
+    });
+  });
+
+  it('returns an error instead of executing changed work under a conflicting query id', async () => {
+    const core = stubCore();
+    const rejected = jest.fn(async () => undefined);
+    const handler = makeHandler({
+      core,
+      config: instructionConfig,
+      reasoningSubmitter: async () => {
+        throw Object.assign(new Error('must not reach logs or fallback'), {
+          code: 'conflict',
+        });
+      },
+      rejectResponder: rejected,
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-reason-conflict',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+    });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(rejected).toHaveBeenCalledWith(
+      REQUESTER,
+      expect.objectContaining({
+        query_id: 'q-reason-conflict',
+        status: 'error',
+        error: 'reasoning_request_conflict',
+      }),
+    );
+  });
+
+  it('does not downgrade stale service authority to the legacy executor', async () => {
+    const core = stubCore();
+    const rejected = jest.fn(async () => undefined);
+    const handler = makeHandler({
+      core,
+      config: instructionConfig,
+      reasoningSubmitter: async () => {
+        throw Object.assign(new Error('grant or listing changed'), {
+          code: 'authority_unavailable',
+        });
+      },
+      rejectResponder: rejected,
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-reason-stale-authority',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+    });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(rejected).toHaveBeenCalledWith(
+      REQUESTER,
+      expect.objectContaining({
+        query_id: 'q-reason-stale-authority',
+        status: 'error',
+        error: 'service_unavailable',
+      }),
+    );
+  });
+
+  it('does not downgrade unexpected reasoning failures to the legacy executor', async () => {
+    const core = stubCore();
+    const rejected = jest.fn(async () => undefined);
+    const logs: Record<string, unknown>[] = [];
+    const handler = new ServiceHandler({
+      coreClient: core.client,
+      readConfig: () => instructionConfig,
+      reasoningSubmitter: async () => {
+        throw new Error('database path and requester content must stay private');
+      },
+      rejectResponder: rejected,
+      logger: (event) => {
+        logs.push(event);
+      },
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-reason-submit-error',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+    });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(rejected).toHaveBeenCalledWith(
+      REQUESTER,
+      expect.objectContaining({
+        query_id: 'q-reason-submit-error',
+        status: 'error',
+        error: 'service_unavailable',
+      }),
+    );
+    expect(logs).toContainEqual(
+      expect.objectContaining({
+        event: 'service.query.reasoning_unavailable',
+        reason: 'reasoning_submission_failed',
+      }),
+    );
+    expect(JSON.stringify(logs)).not.toContain('database path');
+  });
+
+  it('keeps booking capabilities on the established effect-capable lane', async () => {
+    const core = stubCore();
+    const offered: unknown[] = [];
+    const config: ServiceConfig = {
+      ...instructionConfig,
+      capabilities: {
+        appointment_book: {
+          responsePolicy: 'review',
+          category: 'appointments',
+          instruction: 'Book approved salon appointments.',
+        },
+      },
+    };
+    const handler = makeHandler({
+      core,
+      config,
+      reasoningSubmitter: async (input) => {
+        offered.push(input);
+        return {
+          taskId: 'must-not-run',
+          backendId: 'connected-agent',
+          deduplicated: false,
+        };
+      },
+      uuid: 'booking',
+    });
+
+    await handler.executeAndRespond('approval-booking', {
+      from_did: REQUESTER,
+      query_id: 'q-booking',
+      capability: 'appointment_book',
+      params: { time: '4pm' },
+      ttl_seconds: 120,
+      service_name: 'Alonso Salon',
+    });
+
+    expect(offered).toHaveLength(0);
+    expect(core.createCalls).toHaveLength(1);
+    expect(core.createCalls[0]).toMatchObject({
+      id: 'svc-exec-from-approval-booking',
+      requestedRunner: 'dina.local',
+    });
+  });
+
+  it('routes an approved read capability to reasoning and then closes the approval task', async () => {
+    const core = stubCore();
+    const offered: Parameters<ServiceReasoningSubmitter>[0][] = [];
+    const reviewConfig: ServiceConfig = {
+      ...instructionConfig,
+      capabilities: {
+        appointment_availability: {
+          ...instructionConfig.capabilities.appointment_availability,
+          responsePolicy: 'review',
+        },
+      },
+    };
+    const handler = makeHandler({
+      core,
+      config: reviewConfig,
+      reasoningSubmitter: async (input) => {
+        offered.push(input);
+        return {
+          taskId: 'reason-approved',
+          backendId: 'connected-agent',
+          deduplicated: false,
+        };
+      },
+    });
+
+    await handler.executeAndRespond('approval-read', {
+      from_did: REQUESTER,
+      query_id: 'q-approved-read',
+      capability: 'appointment_availability',
+      params: { date: 'tomorrow' },
+      ttl_seconds: 120,
+      service_name: 'Alonso Salon',
+    });
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(offered[0]).toMatchObject({ operatorApproved: true });
+    expect(core.cancelCalls).toEqual([{ id: 'approval-read', reason: 'executed_via_reasoning' }]);
   });
 });

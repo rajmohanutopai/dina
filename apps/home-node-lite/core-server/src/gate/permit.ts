@@ -202,6 +202,18 @@ export class PermitStore {
     return this.permits.size;
   }
 
+  /** Revoke every transient permit for one authenticated agent binding. */
+  revokeForAgent(agentDid: string): number {
+    let removed = 0;
+    for (const [id, permit] of this.permits) {
+      if (permit.agentDid === agentDid) {
+        this.permits.delete(id);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   /** Newest un-consumed, un-expired permit matching principal + payload. */
   private newestMatch(
     agentDid: string,

@@ -61,11 +61,9 @@ describe('bindCoreRouter (task 4.13)', () => {
 
   it('binds a GET handler that returns a CoreResponse', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/thing',
-      () => ({ status: 200, body: { ok: true, via: 'core' } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/thing', () => ({ status: 200, body: { ok: true, via: 'core' } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     const count = bindCoreRouter({ coreRouter, app });
@@ -99,11 +97,9 @@ describe('bindCoreRouter (task 4.13)', () => {
 
   it('passes path params through', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/items/:id',
-      (req) => ({ status: 200, body: { id: req.params['id'] } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/items/:id', (req) => ({ status: 200, body: { id: req.params['id'] } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });
@@ -115,11 +111,9 @@ describe('bindCoreRouter (task 4.13)', () => {
 
   it('passes query string through as Record<string,string>', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/search',
-      (req) => ({ status: 200, body: { q: req.query } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/search', (req) => ({ status: 200, body: { q: req.query } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });
@@ -248,11 +242,7 @@ describe('bindCoreRouter (task 4.13)', () => {
   it('binding 10 routes returns count 10', async () => {
     const coreRouter = new CoreRouter();
     for (let i = 0; i < 10; i++) {
-      coreRouter.get(
-        `/v1/r${i}`,
-        () => ({ status: 200, body: { i } }),
-        { auth: 'public' },
-      );
+      coreRouter.get(`/v1/r${i}`, () => ({ status: 200, body: { i } }), { auth: 'public' });
     }
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
@@ -357,6 +347,53 @@ describe('bindCoreRouter (task 4.13)', () => {
       error: 'Missing required auth headers (X-DID, X-Timestamp, X-Nonce, X-Signature)',
       rejected_at: 'headers',
     });
+    await app.close();
+  });
+
+  it('stamps owner authority only on explicit owner-control paths', async () => {
+    const coreRouter = new CoreRouter();
+    const project = (req: { callerType?: string }) => ({
+      status: 200,
+      body: { caller: req.callerType ?? null },
+    });
+    coreRouter
+      .get('/v1/owner/agent-policies', project as never, { auth: 'public' })
+      .post('/v1/reasoning/backends/register', project as never, { auth: 'public' })
+      .post('/v1/reasoning/claim', project as never, { auth: 'public' });
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app, ownerCapability: 'owner-secret' });
+
+    const headers = { 'x-dina-owner-capability': 'owner-secret' };
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v1/owner/agent-policies',
+          headers,
+        })
+      ).json(),
+    ).toEqual({ caller: 'owner' });
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/reasoning/backends/register',
+          headers,
+          payload: {},
+        })
+      ).json(),
+    ).toEqual({ caller: 'owner' });
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/reasoning/claim',
+          headers,
+          payload: {},
+        })
+      ).json(),
+    ).toEqual({ caller: null });
     await app.close();
   });
 });

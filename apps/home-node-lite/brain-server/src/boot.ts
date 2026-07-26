@@ -33,7 +33,10 @@ import {
   AppViewClient,
   StagingDrainScheduler,
   buildRememberRuntime,
+  classifyInternalBrainError,
   createCoordinatorAskHandler,
+  createInternalBrainExecutor,
+  createProviderReasoningLLM,
   resetAskCommandHandler,
   setAccessiblePersonas,
   setAskCommandHandler,
@@ -42,13 +45,17 @@ import {
   setReminderBackend,
   setVaultReadBackend,
 } from '@dina/brain';
-import {
-  registerEngagementProvider,
-  collectNotificationBriefingItems,
-} from '@dina/brain/briefing';
+import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
 import { hydrateNotifications, mergeNotifications } from '@dina/brain/notifications';
-import { createPersona, getPersona, setNotificationLogRepository } from '@dina/core';
+import {
+  createCoreClientReasoningAuthority,
+  createPersona,
+  getPersona,
+  ReasoningBackendSupervisor,
+  ReasoningBackendWorker,
+  setNotificationLogRepository,
+} from '@dina/core';
 import {
   buildHomeNodeAskRuntime,
   type HomeNodeAskRuntime,
@@ -147,6 +154,7 @@ export interface BrainServerDependencyStatus {
 
 export interface BrainServerSchedulers {
   stagingDrain?: StagingDrainScheduler;
+  reasoningBackend?: ReasoningBackendSupervisor;
 }
 
 export interface BrainServerCompositions {
@@ -244,6 +252,7 @@ export async function bootServer(
   if (coreResult.core !== undefined) {
     clients.core = coreResult.core;
   }
+  const configuredLLMRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
   let chatRememberRuntime: ChatRememberRuntimeHandle | undefined;
@@ -310,7 +319,7 @@ export async function bootServer(
     // Build the LLM runtime early so the staging drain can use it
     // for the per-item agentic loop (rememberRuntime below). The
     // ask coordinator further down reuses the same instance.
-    const llmRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
+    const llmRuntime = configuredLLMRuntime;
 
     // Mirror Core's persona registry into Brain's `accessiblePersonas`
     // state. Brain runs in a separate Node process from Core in lite,
@@ -452,6 +461,7 @@ export async function bootServer(
 
   app.addHook('onClose', async () => {
     schedulers.stagingDrain?.stop();
+    await schedulers.reasoningBackend?.stop();
     chatRememberRuntime?.dispose();
     await compositions.service?.dispose();
   });
@@ -489,7 +499,7 @@ export async function bootServer(
     }
   }
 
-  const askRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
+  const askRuntime = configuredLLMRuntime;
   let askCoordinator = options.askCoordinator;
   if (askCoordinator === undefined && askRuntime !== undefined) {
     if (clients.core === undefined) {
@@ -609,9 +619,8 @@ export async function bootServer(
   // needs are the module globals wired above (setVaultReadBackend + the
   // persona mirror). Core resolves + passes the listing config in the request,
   // so this route needs no Core round-trip.
-  const capabilityLLM = buildBrainServerLLMRuntime(config.llm);
   registerCapabilityRoutes(app, {
-    getLLM: () => capabilityLLM?.llm ?? null,
+    getLLM: () => configuredLLMRuntime?.llm ?? null,
     // Core client → an APPROVED capability can persist its outcome to the
     // provider's vault (record_to_vault write tool) over Core HTTP.
     ...(clients.core !== undefined ? { core: clients.core } : {}),
@@ -807,6 +816,47 @@ export async function bootServer(
   if (schedulers.stagingDrain !== undefined) {
     schedulers.stagingDrain.start();
     dependencyStatus.stagingDrain = 'running';
+  }
+  if (
+    config.reasoning.internalBrainEnabled &&
+    clients.core !== undefined &&
+    coreResult.did !== undefined &&
+    configuredLLMRuntime !== undefined
+  ) {
+    const worker = new ReasoningBackendWorker({
+      authority: createCoreClientReasoningAuthority(clients.core),
+      backendId: 'dina.internal-brain',
+      principalDid: coreResult.did,
+      execute: createInternalBrainExecutor({
+        provider: configuredLLMRuntime.providerName,
+        llm: createProviderReasoningLLM(configuredLLMRuntime.llm),
+      }),
+      classifyError: classifyInternalBrainError,
+    });
+    schedulers.reasoningBackend = new ReasoningBackendSupervisor({
+      worker,
+      ...(options.setInterval === undefined ? {} : { setInterval: options.setInterval }),
+      ...(options.clearInterval === undefined ? {} : { clearInterval: options.clearInterval }),
+      onResult: (result) => {
+        if (result.state === 'outcome_unknown') {
+          logger.warn(
+            { taskId: result.taskId },
+            'internal Brain completion outcome is unknown; Core recovery will reconcile it',
+          );
+        }
+      },
+      onError: () => {
+        // Do not log raw transport/provider text: provider SDK errors can echo
+        // prompts. The worker persists a classified safe failure when it owns
+        // a claim; this hook is only a coarse availability signal.
+        logger.warn('internal Brain worker tick failed');
+      },
+    });
+    schedulers.reasoningBackend.start();
+    logger.info(
+      { backendId: 'dina.internal-brain', principalDid: coreResult.did },
+      'internal Brain reasoning worker started',
+    );
   }
   compositions.service?.start();
   // Boot finished — `/readyz` now reflects "runtime ok" rather than

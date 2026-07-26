@@ -88,6 +88,13 @@ import type {
   ActionPolicyResult,
   RiskLevel,
   ServiceOfferView,
+  ReasoningClaim,
+  ReasoningClaimRequest,
+  ReasoningHeartbeatRequest,
+  ReasoningCompleteRequest,
+  ReasoningCompletion,
+  ReasoningFailRequest,
+  ReasoningFailure,
 } from './core-client';
 import type { QuarantinedMessage } from '../d2d/quarantine';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
@@ -176,7 +183,10 @@ function expectOk<T>(res: CoreResponse, context: string): T {
  * the read genuinely wants graceful-empty degradation.
  */
 export class InProcessTransport implements CoreClient {
-  constructor(private readonly router: CoreRouter) {}
+  constructor(
+    private readonly router: CoreRouter,
+    private readonly reasoningPrincipalDid?: string,
+  ) {}
 
   async healthz(): Promise<CoreHealth> {
     const res = await this.router.handle(blankRequest({ method: 'GET', path: '/healthz' }));
@@ -822,6 +832,96 @@ export class InProcessTransport implements CoreClient {
     return raw.task;
   }
 
+  // ─── Reasoning backend worker plane ──────────────────────────────────
+
+  async reasoningClaim(input: ReasoningClaimRequest): Promise<ReasoningClaim | null> {
+    const raw = expectOk<{ claim: ReasoningClaim | null }>(
+      await this.router.handle(
+        this.reasoningRequest({
+          method: 'POST',
+          path: '/v1/reasoning/claim',
+          body: {
+            backend_id: input.backendId,
+            ...(input.leaseMs === undefined ? {} : { lease_ms: input.leaseMs }),
+            ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+          },
+        }),
+      ),
+      `reasoningClaim(${input.backendId})`,
+    );
+    return raw.claim ?? null;
+  }
+
+  async reasoningHeartbeat(taskId: string, input: ReasoningHeartbeatRequest): Promise<boolean> {
+    const response = await this.router.handle(
+      this.reasoningRequest({
+        method: 'POST',
+        path: `/v1/reasoning/${encodeURIComponent(taskId)}/heartbeat`,
+        body: {
+          backend_id: input.backendId,
+          claim_id: input.claimId,
+          context_ticket_id: input.contextTicketId,
+          ...(input.leaseMs === undefined ? {} : { lease_ms: input.leaseMs }),
+          ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+        },
+      }),
+    );
+    if (
+      response.status === 409 &&
+      (response.body as { error?: unknown } | undefined)?.error === 'stale_claim'
+    ) {
+      return false;
+    }
+    const raw = expectOk<{ ok: boolean }>(response, `reasoningHeartbeat(${taskId})`);
+    return raw.ok === true;
+  }
+
+  async reasoningComplete(
+    taskId: string,
+    input: ReasoningCompleteRequest,
+  ): Promise<ReasoningCompletion> {
+    return expectOk<ReasoningCompletion>(
+      await this.router.handle(
+        this.reasoningRequest({
+          method: 'POST',
+          path: `/v1/reasoning/${encodeURIComponent(taskId)}/complete`,
+          body: {
+            backend_id: input.backendId,
+            claim_id: input.claimId,
+            context_ticket_id: input.contextTicketId,
+            execution_id: input.executionId,
+            context_projection_hash: input.contextProjectionHash,
+            policy_snapshot_hash: input.policySnapshotHash,
+            result: input.result,
+            ...(input.evidenceIds === undefined ? {} : { evidence_ids: input.evidenceIds }),
+            ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+          },
+        }),
+      ),
+      `reasoningComplete(${taskId})`,
+    );
+  }
+
+  async reasoningFail(taskId: string, input: ReasoningFailRequest): Promise<ReasoningFailure> {
+    return expectOk<ReasoningFailure>(
+      await this.router.handle(
+        this.reasoningRequest({
+          method: 'POST',
+          path: `/v1/reasoning/${encodeURIComponent(taskId)}/fail`,
+          body: {
+            backend_id: input.backendId,
+            claim_id: input.claimId,
+            context_ticket_id: input.contextTicketId,
+            error: input.error,
+            retryable: input.retryable,
+            ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+          },
+        }),
+      ),
+      `reasoningFail(${taskId})`,
+    );
+  }
+
   // ─── Working-memory + contacts ───────────────────────────────────────
 
   async memoryTouch(params: MemoryTouchParams): Promise<MemoryTouchResult> {
@@ -1259,5 +1359,16 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 204 && res.status !== 200) {
       throw new Error(`deleteActionOverride(${action}) failed: ${res.status}`);
     }
+  }
+
+  private reasoningRequest(overrides: Partial<CoreRequest>): CoreRequest {
+    if (this.reasoningPrincipalDid === undefined || this.reasoningPrincipalDid.trim() === '') {
+      throw new Error('InProcessTransport: reasoning backend principal is not configured');
+    }
+    return blankRequest({
+      ...overrides,
+      callerDID: this.reasoningPrincipalDid,
+      callerType: 'brain',
+    });
   }
 }

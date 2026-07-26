@@ -35,27 +35,41 @@
  */
 
 import {
+  AppViewClient,
+  classifyAttestationPublishError,
+  createAppViewReasoningEvidenceSource,
+  createReasoningOutputGuard,
+  publishAttestationToPDS,
+} from '@dina/brain';
+import {
   configureRateLimiter,
+  CoreReasoningBroker,
+  createReasoningCommitBridge,
+  createReasoningPolicySnapshotResolver,
+  createServiceReasoningCommitter,
   createCoreRouter,
   deriveDIDKey,
+  ensureReasoningBackendForBoot,
+  getReasoningBackendRepository,
+  getReasoningBroker,
+  getReasoningContextRepository,
   getReviewPublishRepository,
+  getSessionRegistry,
   getNodeDID,
   HEALTHZ_PATH,
+  getWorkflowRepository,
   getWorkflowService,
   registerService,
   SQLiteWorkflowRepository,
   TaskExpirySweeper,
   setCodingPermitAuthority,
   setNodeDID,
+  setReasoningBroker,
   setWorkflowRepository,
   setWorkflowService,
   WorkflowService,
   type CoreRouter,
 } from '@dina/core';
-import {
-  classifyAttestationPublishError,
-  publishAttestationToPDS,
-} from '@dina/brain';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -69,10 +83,7 @@ import { makeNodeWebSocketFactory } from '@dina/net-node';
 import { createAgentFacades } from './agent/facades';
 import { makeHttpAskHandler } from './agent/http_ask_handler';
 import { PhoneApprovalManager } from './approval/phone_approval_manager';
-import {
-  wireServiceProfilePublisher,
-  type WiredServicePublisher,
-} from './appview/wire_publisher';
+import { wireServiceProfilePublisher, type WiredServicePublisher } from './appview/wire_publisher';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
 import { deriveIdentity } from './identity/derivations';
@@ -80,13 +91,14 @@ import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
 import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
 import { createLogger } from './logger';
 import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
+import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
+import { ReasoningCommitSupervisor } from './reasoning/reasoning_commit_supervisor';
 import { createServer } from './server';
 import { bindCoreRouter } from './server/bind_core_router';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
 import { registerOwnerSetupRoutes } from './server/owner_setup';
-import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { initializeStorage } from './storage/init';
 import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
@@ -474,6 +486,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // public identity/network setup. The full workflow plane replaces this
   // minimal service below when its PDS prerequisites are available.
   let localWorkflowService: WorkflowService | undefined;
+  let localReasoningBroker: CoreReasoningBroker | undefined;
+  let reasoningCommitSupervisor: ReasoningCommitSupervisor | null = null;
   let localTaskExpiry: TaskExpirySweeper | undefined;
   let phoneApprovalManager: PhoneApprovalManager | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
@@ -598,6 +612,14 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     coreRouter = createCoreRouter({
       ownerCapability: ownerCap.capability,
       codingGate: codingGateHandle.gate,
+      onAgentGatingPolicyChanged: (agentDid) => {
+        codingGateHandle.permits.revokeForAgent(agentDid);
+      },
+      reasoningPublicEvidenceSource: createAppViewReasoningEvidenceSource(
+        new AppViewClient({
+          appViewURL: config.endpoints.appViewBaseUrl,
+        }),
+      ),
       agentFacades: createAgentFacades({
         brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
         appViewUrl: config.endpoints.appViewBaseUrl,
@@ -662,6 +684,81 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     });
   }
 
+  const reasoningWorkflowService = getWorkflowService();
+  const reasoningWorkflowRepository = getWorkflowRepository();
+  const reasoningBackendRepository = getReasoningBackendRepository();
+  const reasoningContextRepository = getReasoningContextRepository();
+  if (config.services?.internalBrainEnabled === true && reasoningBackendRepository !== null) {
+    const ownerDid = getNodeDID();
+    const brainDid = config.services.brainDid;
+    if (ownerDid === null || brainDid === undefined) {
+      logger.warn(
+        { ownerIdentityAvailable: ownerDid !== null, brainDidConfigured: brainDid !== undefined },
+        'internal Brain backend not provisioned because identity is unavailable',
+      );
+    } else {
+      const ensured = ensureReasoningBackendForBoot(reasoningBackendRepository, {
+        backendId: 'dina.internal-brain',
+        kind: 'internal_brain',
+        principalDid: brainDid,
+        allowedTaskKinds: ['answer.compose'],
+        maxSensitivity: 'sensitive',
+        availability: 'always_on',
+        modelClass: 'dina-internal-brain',
+        selectedByOwnerDid: ownerDid,
+      });
+      const details = {
+        status: ensured.status,
+        backendId: ensured.binding.backendId,
+        policyVersion: ensured.binding.policyVersion,
+      };
+      if (ensured.status === 'created' || ensured.status === 'ready') {
+        logger.info(details, 'internal Brain reasoning backend provisioned');
+      } else {
+        logger.warn(
+          { ...details, reason: 'reason' in ensured ? ensured.reason : 'policy unavailable' },
+          'internal Brain remains unavailable; boot did not override owner policy',
+        );
+      }
+    }
+  }
+  if (
+    reasoningWorkflowService !== null &&
+    reasoningWorkflowRepository !== null &&
+    reasoningBackendRepository !== null &&
+    reasoningContextRepository !== null
+  ) {
+    localReasoningBroker = new CoreReasoningBroker({
+      workflowService: reasoningWorkflowService,
+      workflowRepository: reasoningWorkflowRepository,
+      backendRepository: reasoningBackendRepository,
+      contextRepository: reasoningContextRepository,
+      resolvePolicySnapshotHash: createReasoningPolicySnapshotResolver(),
+      isAuthenticatedSessionActive: ({ sessionId, principalDid, authorityOrigin }) =>
+        getSessionRegistry().authorizesAuthorityOrigin(sessionId, principalDid, authorityOrigin),
+      activateAuthenticatedSessionAuthority: ({ sessionId, principalDid, authorityOrigin }) =>
+        getSessionRegistry().activateAuthorityOrigin(sessionId, principalDid, authorityOrigin),
+      releaseAuthenticatedSessionAuthority: ({ sessionId, principalDid, authorityOrigin }) =>
+        getSessionRegistry().clearAuthorityOrigin(sessionId, principalDid, authorityOrigin).ok,
+      outputGuard: createReasoningOutputGuard(),
+      commitValidatedProposal: createReasoningCommitBridge({
+        ...(wiredWorkflow === undefined
+          ? {}
+          : {
+              commitServiceResponse: createServiceReasoningCommitter({
+                workflowService: reasoningWorkflowService,
+              }),
+            }),
+      }),
+    });
+    setReasoningBroker(localReasoningBroker);
+    localReasoningBroker.reconcileSessionAuthorities();
+    reasoningCommitSupervisor = new ReasoningCommitSupervisor({
+      broker: localReasoningBroker,
+      logger,
+    });
+  }
+
   if (identity !== undefined && identity.kind !== 'wrapped' && getWorkflowService() !== null) {
     phoneApprovalManager = new PhoneApprovalManager(identity.seed, logger);
     try {
@@ -698,6 +795,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ],
     });
     app.addHook('onClose', async () => {
+      await reasoningCommitSupervisor?.stop();
+      if (getReasoningBroker() === localReasoningBroker) {
+        setReasoningBroker(null);
+      }
       if (wiredWorkflow !== undefined) {
         await wiredWorkflow.dispose();
       } else if (getWorkflowService() === localWorkflowService) {
@@ -759,8 +860,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       registerDebugDispatch(app, coreRouter, logger);
     }
     await app.listen({ host: config.network.host, port: config.network.port });
+    reasoningCommitSupervisor?.start();
     reviewPublishSupervisor?.start();
   } catch (err) {
+    await reasoningCommitSupervisor?.stop();
     await reviewPublishSupervisor?.stop();
     await phoneApprovalManager?.stop();
     trace.push({

@@ -20,11 +20,7 @@
  * Source: brain/src/adapter/appview_client.py
  */
 
-import {
-  httpBackoff as backoff,
-  isRetryableStatus,
-  parseResponseBody,
-} from '@dina/core';
+import { httpBackoff as backoff, isRetryableStatus, parseResponseBody } from '@dina/core';
 
 import { defaultFetch } from '../runtime/fetch';
 
@@ -218,6 +214,8 @@ export interface SearchPeerlensParams {
   tags?: string[];
   sort?: 'recent' | 'relevant';
   limit?: number;
+  /** Viewer DID used only for AppView's one-hop friend ranking boost. */
+  viewerDid?: string;
 }
 
 /** Configuration for `AppViewClient`. */
@@ -462,6 +460,7 @@ export class AppViewClient {
     }
     if (params.sort !== undefined) query.sort = params.sort;
     if (params.limit !== undefined) query.limit = String(params.limit);
+    if (params.viewerDid !== undefined) query.viewerDid = params.viewerDid;
 
     const body = await this.get('/xrpc/com.dinakernel.peerlens.search', query);
     const r = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;

@@ -60,6 +60,209 @@ def dina_session_end(session_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Connected reasoning backend
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_context_prepare(
+    session: str,
+    query: str,
+    purpose: str = "",
+    personas: list[str] | None = None,
+    limit: int | None = None,
+) -> dict:
+    """Request bounded Dina context for this active owner conversation.
+
+    Core decides which personas may be read, performs retrieval, minimizes and
+    scrubs the returned items, and records only opaque identifiers/counts in
+    audit. ``partial_pending_approval`` means some requested context is waiting
+    for the owner; do not infer or replace the restricted data.
+
+    This is the lighter context-assisted path: an answer written directly by
+    this host is an agent answer using Dina context, not a Core-validated Dina
+    result. Use ``dina_reasoning_begin`` and ``dina_reasoning_complete`` when
+    the result must carry connected-Brain provenance and validation.
+    """
+    return _get_client().context_prepare(
+        session=session,
+        query=query,
+        purpose=purpose,
+        personas=personas,
+        limit=limit,
+    )
+
+
+@mcp.tool()
+def dina_memory_propose(
+    session: str,
+    request_id: str,
+    source_text: str,
+    proposal: dict[str, Any],
+) -> dict:
+    """Propose structured memory for Dina Core to validate and commit.
+
+    Generate ``request_id`` once and reuse it for an exact retry. ``proposal``
+    must match Core's ``memory.structure`` schema: persona, subject, facts, and
+    reminderCandidates. The proposal grants no storage access. Core validates
+    the persona, checks approval/lock state, writes through staging, and
+    creates reminders only after the memory is stored.
+
+    If the response is ``pending_approval``, stop and wait for the owner. A
+    changed payload must use a new request ID; Core rejects changed replays.
+    """
+    return _get_client().memory_propose(
+        session=session,
+        request_id=request_id,
+        source_text=source_text,
+        proposal=proposal,
+    )
+
+
+@mcp.tool()
+def dina_reasoning_status(backend_id: str, session: str) -> dict:
+    """Show pending Dina reasoning work for this owner-enabled backend.
+
+    This does not expose jobs belonging to another backend or owner. A missing
+    or revoked binding is reported by Core as unavailable.
+    """
+    return _get_client().reasoning_status(backend_id, session)
+
+
+@mcp.tool()
+def dina_reasoning_begin(
+    backend_id: str,
+    session: str,
+    task_kind: str,
+    input: Any,
+    purpose: str = "",
+    idempotency_key: str = "",
+) -> dict:
+    """Begin one connected-Brain operation in the current active host turn.
+
+    Core returns ``submission`` plus either a ``claim`` or null. If a claim is
+    present, reason only from its ``input`` and optional ``context``. Produce
+    JSON matching ``resultSchema`` exactly, then call
+    ``dina_reasoning_complete`` with every opaque claim field unchanged.
+
+    The result is a proposal. Do not perform external effects, write Dina
+    storage, use owner keys, or claim authority from this operation.
+    """
+    return _get_client().reasoning_begin(
+        backend_id=backend_id,
+        session=session,
+        task_kind=task_kind,
+        input_data=input,
+        purpose=purpose,
+        idempotency_key=idempotency_key,
+    )
+
+
+@mcp.tool()
+def dina_reasoning_claim(
+    backend_id: str,
+    session: str,
+    lease_ms: int = 120_000,
+) -> dict:
+    """Claim one queued Dina reasoning job for this exact backend.
+
+    A null ``claim`` means no eligible work. For a claim, use only its bounded
+    input/context and return JSON matching ``resultSchema``. Never infer access
+    to a vault, identity key, effect, or source not included in the claim.
+    """
+    return _get_client().reasoning_claim(
+        backend_id=backend_id,
+        session=session,
+        lease_ms=lease_ms,
+    )
+
+
+@mcp.tool()
+def dina_reasoning_heartbeat(
+    task_id: str,
+    backend_id: str,
+    session: str,
+    claim_id: str,
+    context_ticket_id: str,
+    lease_ms: int = 120_000,
+) -> dict:
+    """Renew the exact reasoning claim while work is still in progress.
+
+    A stale-claim response is final for this attempt. Stop immediately and do
+    not submit its result.
+    """
+    return _get_client().reasoning_heartbeat(
+        task_id=task_id,
+        backend_id=backend_id,
+        session=session,
+        claim_id=claim_id,
+        context_ticket_id=context_ticket_id,
+        lease_ms=lease_ms,
+    )
+
+
+@mcp.tool()
+def dina_reasoning_complete(
+    task_id: str,
+    backend_id: str,
+    session: str,
+    claim_id: str,
+    context_ticket_id: str,
+    execution_id: str,
+    policy_snapshot_hash: str,
+    context_projection_hash: str | None,
+    result: Any,
+    evidence_ids: list[str] | None = None,
+) -> dict:
+    """Submit a schema-conforming reasoning proposal to Dina Core.
+
+    Copy all opaque IDs and hashes from the claim exactly. Cite only IDs in
+    ``allowedEvidenceIds``. ``accepted: true`` means Core accepted the
+    reasoning completion; it does not prove any later external effect unless
+    the returned Core-owned receipt explicitly says so.
+    """
+    return _get_client().reasoning_complete(
+        task_id=task_id,
+        backend_id=backend_id,
+        session=session,
+        claim_id=claim_id,
+        context_ticket_id=context_ticket_id,
+        execution_id=execution_id,
+        policy_snapshot_hash=policy_snapshot_hash,
+        context_projection_hash=context_projection_hash,
+        result=result,
+        evidence_ids=evidence_ids,
+    )
+
+
+@mcp.tool()
+def dina_reasoning_fail(
+    task_id: str,
+    backend_id: str,
+    session: str,
+    claim_id: str,
+    context_ticket_id: str,
+    error: str,
+    retryable: bool = True,
+) -> dict:
+    """Report that this exact reasoning attempt could not be completed.
+
+    Use ``retryable=false`` only for a permanent incompatibility such as an
+    unsupported task contract. Core, not the model, decides whether work is
+    requeued or terminal.
+    """
+    return _get_client().reasoning_fail(
+        task_id=task_id,
+        backend_id=backend_id,
+        session=session,
+        claim_id=claim_id,
+        context_ticket_id=context_ticket_id,
+        error=error,
+        retryable=retryable,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Action validation (safety layer)
 # ---------------------------------------------------------------------------
 
@@ -607,8 +810,54 @@ def dina_status() -> dict:
 
 def configure_profile(profile: str) -> None:
     """Remove tools that do not belong to the selected host contract."""
+    reasoning_tools = (
+        "dina_context_prepare",
+        "dina_memory_propose",
+        "dina_reasoning_status",
+        "dina_reasoning_begin",
+        "dina_reasoning_claim",
+        "dina_reasoning_heartbeat",
+        "dina_reasoning_complete",
+        "dina_reasoning_fail",
+    )
+    runner_tools = (
+        "dina_task_complete",
+        "dina_task_fail",
+        "dina_task_progress",
+    )
     if profile == "coding":
-        for name in ("dina_task_complete", "dina_task_fail", "dina_task_progress"):
+        for name in (*runner_tools, *reasoning_tools):
+            mcp.remove_tool(name)
+        return
+    if profile == "connected":
+        for name in runner_tools:
+            mcp.remove_tool(name)
+        return
+    if profile == "brain":
+        for name in (
+            "dina_validate",
+            "dina_validate_status",
+            "dina_ask",
+            "dina_ask_status",
+            "dina_remember",
+            "dina_remember_status",
+            "dina_find_service",
+            "dina_publish_service",
+            "dina_invoke_service",
+            "dina_service_status",
+            "dina_service_publication_status",
+            "dina_peerlens",
+            "dina_review",
+            "dina_review_status",
+            "dina_vaults",
+            "dina_reminders",
+            "dina_talk",
+            "dina_delegate",
+            "dina_action_status",
+            *runner_tools,
+            "dina_scrub",
+            "dina_rehydrate",
+        ):
             mcp.remove_tool(name)
         return
     if profile != "all":

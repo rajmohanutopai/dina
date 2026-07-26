@@ -40,9 +40,7 @@ export interface AgentFacadeContext {
   body: Record<string, unknown>;
 }
 
-export type AgentFacadeHandler = (
-  ctx: AgentFacadeContext,
-) => Promise<CoreResponse> | CoreResponse;
+export type AgentFacadeHandler = (ctx: AgentFacadeContext) => Promise<CoreResponse> | CoreResponse;
 
 /** Injected backings; a façade route is registered only when its handler exists. */
 export interface AgentFacadeHandlers {
@@ -78,6 +76,10 @@ export interface AgentFacadeHandlers {
   reminders?: AgentFacadeHandler;
   /** 5d — dina_recall/dina_ask: Core-mediated ask (the backing runs the persona PEP). */
   ask?: AgentFacadeHandler;
+  /** Bounded, scrubbed vault projection for an owner-interactive host turn. */
+  contextPrepare?: AgentFacadeHandler;
+  /** Schema-valid structured memory proposal; Core owns the eventual commit. */
+  memoryPropose?: AgentFacadeHandler;
 }
 
 const MAX_FACADE_BODY_BYTES = 64 * 1024;
@@ -112,6 +114,14 @@ function facade(path: string, handler: AgentFacadeHandler) {
       // to one response so this route is not a cross-principal session oracle.
       return { status: 401, body: { error: 'invalid_session' } };
     }
+    // Non-owner reasoning jobs receive their bounded projection through the
+    // reasoning claim. The broad owner-agent facades are intentionally closed
+    // while this principal carries any non-owner reservation. Checking the
+    // whole principal, rather than only this session, prevents minting a second
+    // session to escape the service/contact/delegation authority floor.
+    if (getSessionRegistry().hasActiveNonOwnerAuthority(agentDid)) {
+      return { status: 403, body: { error: 'non_owner_session_restricted' } };
+    }
     return handler({ agentDid, sessionId, body });
   };
 }
@@ -120,7 +130,7 @@ export function registerAgentFacadeRoutes(
   router: CoreRouter,
   handlers: AgentFacadeHandlers = {},
 ): void {
-  const routes: Array<[keyof AgentFacadeHandlers, string]> = [
+  const routes: [keyof AgentFacadeHandlers, string][] = [
     ['memory', '/v1/agent/memory'],
     ['memoryStatus', '/v1/agent/memory/status'],
     ['findService', '/v1/agent/service/search'],
@@ -137,6 +147,8 @@ export function registerAgentFacadeRoutes(
     ['vaults', '/v1/agent/vaults'],
     ['reminders', '/v1/agent/reminders'],
     ['ask', '/v1/agent/ask'],
+    ['contextPrepare', '/v1/agent/context/prepare'],
+    ['memoryPropose', '/v1/agent/memory/propose'],
   ];
   for (const [key, path] of routes) {
     const handler = handlers[key];

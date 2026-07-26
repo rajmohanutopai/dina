@@ -38,6 +38,7 @@ import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
+import { InlineReasoningJobCard } from '../src/components/InlineReasoningJobCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
@@ -50,6 +51,10 @@ import { useCredits } from '../src/hooks/useCredits';
 import { useHasActiveAgent } from '../src/hooks/useHasActiveAgent';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { reviewSourceLabel } from '../src/peerlens/review_source_label';
+import {
+  trySubmitConnectedBrainAsk,
+  useConnectedBrainChatReconciler,
+} from '../src/reasoning/connected_brain_chat';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 import type { ChatMessage } from '@dina/brain/chat';
@@ -73,6 +78,7 @@ type UiMessage = ChatMessage & {
     | 'service-query'
     | 'missing-capability'
     | 'ask-pending'
+    | 'reasoning-job'
     | 'review-draft'
     | 'quarantine-request'
     | 'nudge'
@@ -128,6 +134,9 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
   // 'dina' branch so the same row renders as a normal reply.
   if (m.type === 'dina' && lifecycle?.kind === 'ask_pending' && lifecycle.status === 'pending') {
     return 'ask-pending';
+  }
+  if (m.type === 'dina' && lifecycle?.kind === 'reasoning_job' && lifecycle.status !== 'complete') {
+    return 'reasoning-job';
   }
   // review_draft card — chat-driven `/ask write a review of <X>`
   // flow. Renders editable sentiment / headline / body + Publish.
@@ -268,6 +277,7 @@ export default function ChatScreen() {
   // - `messages` re-renders on every thread write, including async
   //   arrivals from `WorkflowEventConsumer.deliver` (Bus 42 replies).
   const { messages: threadMessages, send, sending } = useLiveThread('main');
+  useConnectedBrainChatReconciler('main');
   // Starter Credits cards (wall / low-balance) — re-evaluated as the
   // thread grows so exhaustion surfaces at the send that hit the cap
   // (each send/answer/error appends a message → refreshBalance runs).
@@ -317,13 +327,21 @@ export default function ChatScreen() {
 
       // Build the full command: prefix + user content. handleChat recognises
       // /remember, /ask, /service, /service_approve, /service_deny, /help.
-      const fullText = activeAction ? `${activeAction.prefix}${content}` : content;
+      const selectedAction = activeAction;
+      const fullText = selectedAction ? `${selectedAction.prefix}${content}` : content;
 
       setInputText('');
       setActiveAction(null);
 
       try {
-        await send(fullText);
+        // An explicitly enabled connected host can serve the Ask lane without
+        // a second model API key. The trusted mobile edge creates the
+        // Core-owned durable job; every other mode keeps its existing path.
+        const connected =
+          !demoActive && selectedAction?.key === 'ask'
+            ? await trySubmitConnectedBrainAsk(content, 'main')
+            : { handled: false };
+        if (!connected.handled) await send(fullText);
       } catch {
         // Provider/runtime errors are normally handled inside the ask
         // pipeline (it writes a friendly reply to the thread). This
@@ -336,7 +354,7 @@ export default function ChatScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     },
-    [inputText, activeAction, send],
+    [inputText, activeAction, demoActive, send],
   );
 
   const handleAction = useCallback((action: (typeof ACTIONS)[number]) => {
@@ -390,241 +408,250 @@ export default function ChatScreen() {
     }
   }, []);
 
-  const renderMessage = useCallback(({ item }: { item: UiMessage }) => {
-    // Skip empty Dina rows. A resolved ask placeholder is blanked when a
-    // service-query card carries the turn's message (see
-    // coordinator_ask_handler) — rendering it would leave a stray empty
-    // bubble above the card.
-    if (item.displayType === 'dina' && (item.content ?? '').trim() === '') {
-      return null;
-    }
-    // Pattern A inline approval card — 5.21-H. The bridge writes
-    // `'approval'`-typed messages with `metadata.kind === 'ask_approval'`
-    // when the agentic loop bails on a sensitive persona; render an
-    // inline card with Approve / Deny buttons instead of a plain bubble.
-    if (item.displayType === 'ask-approval') {
-      const node = getBootedNode();
-      const approverDID = node?.did ?? '';
-      // E2E: `chat-card-<type>` wraps every inline card so tests can assert
-      // "the right card showed up for the scenario" by a stable id.
-      return (
-        <View testID="chat-card-ask-approval">
-          <InlineApprovalCard message={item} approverDID={approverDID} />
-        </View>
-      );
-    }
-    // Service-capability approval card — 5.65. `defaultApprovalNotifier`
-    // writes these when a peer's D2D `service.query` lands and the
-    // operator's review policy says "ask". Same dispatch shape, but
-    // routes Approve/Deny to the orchestrator's service handlers.
-    if (item.displayType === 'service-approval') {
-      return (
-        <View testID="chat-card-service-approval">
-          <InlineServiceApprovalCard message={item} />
-        </View>
-      );
-    }
-    // F-AGENT-VAULT-GATE round-2: agent-driven vault-read approval
-    // card. Posted by `installWorkflowApprovalChatBridge` when an
-    // external dina-agent hits a sensitive persona. Approve/Deny drive
-    // the same `approveWorkflowTask` / `cancelWorkflowTask` path the
-    // Approvals tab uses (via `approvePending` / `denyPending`).
-    if (item.displayType === 'vault-read-approval') {
-      return (
-        <View testID="chat-card-vault-read-approval">
-          <InlineVaultReadApprovalCard message={item} />
-        </View>
-      );
-    }
-    if (item.displayType === 'demo-approval') {
-      return (
-        <View testID="chat-card-demo-approval">
-          <InlineDemoApprovalCard message={item} />
-        </View>
-      );
-    }
-    if (item.displayType === 'demo-review') {
-      return (
-        <View testID="chat-card-demo-review">
-          <InlineDemoReviewCard message={item} />
-        </View>
-      );
-    }
-    if (item.displayType === 'demo-service-preview') {
-      return (
-        <View testID="chat-card-demo-service-preview">
-          <InlineDemoServicePreviewCard message={item} />
-        </View>
-      );
-    }
-    // Lifecycle-tracked service-query message. Posted as a regular
-    // 'dina' message tagged with `metadata.lifecycle.kind ===
-    // 'service_query'` at dispatch time (`/ask` agentic OR `/service`),
-    // patched in place by the WorkflowEventConsumer when the response
-    // lands. One message for the whole lifecycle replaces the prior
-    // LLM-narrative + workflow-event-push double message.
-    if (item.displayType === 'service-query') {
-      return (
-        <View testID="chat-card-service-query">
-          <InlineServiceQueryCard message={item} />
-        </View>
-      );
-    }
-    if (item.displayType === 'missing-capability') {
-      return (
-        <View testID="chat-card-missing-capability">
-          <InlineMissingCapabilityCard message={item} />
-        </View>
-      );
-    }
-    // review_draft card — chat-driven `/ask write a review of <X>`
-    // flow. Editable sentiment / headline / body inline; Publish
-    // calls injectAttestation directly. State machine drafting →
-    // ready → publishing → published / discarded / failed lives on
-    // the lifecycle metadata, the card renders the matching variant.
-    if (item.displayType === 'review-draft') {
-      return (
-        <View testID="chat-card-review-draft">
-          <InlineReviewDraftCard message={item} />
-        </View>
-      );
-    }
-    // Unknown-sender review card — Add to contacts / Block.
-    if (item.displayType === 'quarantine-request') {
-      return (
-        <View testID="chat-card-quarantine">
-          <InlineQuarantineCard message={item} />
-        </View>
-      );
-    }
-    // ask_pending placeholder — Dina hasn't returned the answer in
-    // the fast-path window. Render as animated typing dots inside a
-    // dina-style bubble; when the bridge patches lifecycle.status to
-    // 'complete', toDisplayType falls through to 'dina' and this row
-    // re-renders as a normal reply with the answer text.
-    if (item.displayType === 'ask-pending') {
-      return (
-        <View testID="chat-msg-ask-pending" style={[styles.messageBubble, styles.dinaBubble]}>
-          <View style={styles.typingDots}>
-            <View style={[styles.typingDot, { opacity: 0.4 }]} />
-            <View style={[styles.typingDot, { opacity: 0.6 }]} />
-            <View style={[styles.typingDot, { opacity: 0.8 }]} />
+  const renderMessage = useCallback(
+    ({ item }: { item: UiMessage }) => {
+      // Skip empty Dina rows. A resolved ask placeholder is blanked when a
+      // service-query card carries the turn's message (see
+      // coordinator_ask_handler) — rendering it would leave a stray empty
+      // bubble above the card.
+      if (item.displayType === 'dina' && (item.content ?? '').trim() === '') {
+        return null;
+      }
+      // Pattern A inline approval card — 5.21-H. The bridge writes
+      // `'approval'`-typed messages with `metadata.kind === 'ask_approval'`
+      // when the agentic loop bails on a sensitive persona; render an
+      // inline card with Approve / Deny buttons instead of a plain bubble.
+      if (item.displayType === 'ask-approval') {
+        const node = getBootedNode();
+        const approverDID = node?.did ?? '';
+        // E2E: `chat-card-<type>` wraps every inline card so tests can assert
+        // "the right card showed up for the scenario" by a stable id.
+        return (
+          <View testID="chat-card-ask-approval">
+            <InlineApprovalCard message={item} approverDID={approverDID} />
           </View>
-        </View>
-      );
-    }
-    // Proactive nudge card — 5.62. Reconnection / reminder context /
-    // pending promise / health alert. Tier dot indicates urgency.
-    if (item.displayType === 'nudge') {
-      return (
-        <View testID="chat-card-nudge">
-          <InlineNudgeCard message={item} />
-        </View>
-      );
-    }
-    // Fired reminder — 5.64. Posted by `useReminderFireWatcher` when
-    // a pending reminder's due_at elapses. Mark done / Snooze 1h.
-    if (item.displayType === 'reminder') {
-      return (
-        <View testID="chat-card-reminder">
-          <InlineReminderCard message={item} />
-        </View>
-      );
-    }
-    // Daily briefing card — 5.63. Collapsible aggregate of recent
-    // activity; tap-through links route per-item via expo-router.
-    if (item.displayType === 'briefing') {
-      return (
-        <View testID="chat-card-briefing">
-          <InlineBriefingCard message={item} />
-        </View>
-      );
-    }
-
-    const isUser = item.displayType === 'user';
-    const isSystem = item.displayType === 'system';
-    // A peer's D2D message surfaced in the main thread (type='dina' +
-    // metadata.source='d2d'). Attribute it to the sender, not "Dina", and
-    // render its text literally — it's the peer's words, not LLM output.
-    const fromD2DPeer = !isUser && !isSystem && item.metadata?.source === 'd2d';
-    const d2dSenderName =
-      typeof item.metadata?.senderName === 'string' ? item.metadata.senderName : '';
-    const peerLabel = d2dSenderName !== '' ? d2dSenderName : 'A contact';
-    // Source pill: when network reviews informed a Dina answer, attribute them.
-    const sourceLabel = !isUser && !isSystem ? reviewSourceLabel(item.sources) : null;
-
-    // Mode chip on a user message: clean content + a mode chip, never a leaked
-    // slash prefix (docs/COMPOSER_MODES_DESIGN.md 7.1). Logic lives in the pure,
-    // unit-tested `resolveUserChip` (prefers metadata.mode, legacy prefix-strip
-    // fallback) so the contract is covered without rendering this whole screen.
-    let chipLabel: string | null = null;
-    let displayContent = item.content;
-    if (isUser) {
-      ({ chipLabel, displayContent } = resolveUserChip(item.content, item.metadata?.mode));
-    }
-
-    return (
-      <Pressable
-        // E2E: a stable, type-keyed handle for transient chat bubbles so
-        // tests can assert "a Dina/user message appeared" without matching
-        // on volatile LLM text. `chat-msg-dina` / `chat-msg-user` /
-        // `chat-msg-system`. Cards use `chat-card-<type>` (see Inline*Card).
-        testID={`chat-msg-${fromD2DPeer ? 'd2d' : item.displayType}`}
-        // Deep-press opens the action menu (Copy). onLongPress only — a normal
-        // tap does nothing, so list scrolling is unaffected.
-        onLongPress={(e) => onBubbleLongPress(displayContent, e)}
-        delayLongPress={300}
-        style={[
-          styles.messageBubble,
-          isUser ? styles.userBubble : styles.dinaBubble,
-          isSystem && styles.systemBubble,
-        ]}
-      >
-        {!isUser && !isSystem && (
-          <Text style={styles.senderLabel}>{fromD2DPeer ? peerLabel : 'Dina'}</Text>
-        )}
-        {isSystem && <Text style={styles.systemLabel}>System</Text>}
-        {isUser && chipLabel && (
-          <View style={styles.msgChip}>
-            <Text style={styles.msgChipText}>{chipLabel}</Text>
+        );
+      }
+      // Service-capability approval card — 5.65. `defaultApprovalNotifier`
+      // writes these when a peer's D2D `service.query` lands and the
+      // operator's review policy says "ask". Same dispatch shape, but
+      // routes Approve/Deny to the orchestrator's service handlers.
+      if (item.displayType === 'service-approval') {
+        return (
+          <View testID="chat-card-service-approval">
+            <InlineServiceApprovalCard message={item} />
           </View>
-        )}
-        {/* E2E: `row-primary-text` is the clean, chrome-free handle the
+        );
+      }
+      // F-AGENT-VAULT-GATE round-2: agent-driven vault-read approval
+      // card. Posted by `installWorkflowApprovalChatBridge` when an
+      // external dina-agent hits a sensitive persona. Approve/Deny drive
+      // the same `approveWorkflowTask` / `cancelWorkflowTask` path the
+      // Approvals tab uses (via `approvePending` / `denyPending`).
+      if (item.displayType === 'vault-read-approval') {
+        return (
+          <View testID="chat-card-vault-read-approval">
+            <InlineVaultReadApprovalCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'demo-approval') {
+        return (
+          <View testID="chat-card-demo-approval">
+            <InlineDemoApprovalCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'demo-review') {
+        return (
+          <View testID="chat-card-demo-review">
+            <InlineDemoReviewCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'demo-service-preview') {
+        return (
+          <View testID="chat-card-demo-service-preview">
+            <InlineDemoServicePreviewCard message={item} />
+          </View>
+        );
+      }
+      // Lifecycle-tracked service-query message. Posted as a regular
+      // 'dina' message tagged with `metadata.lifecycle.kind ===
+      // 'service_query'` at dispatch time (`/ask` agentic OR `/service`),
+      // patched in place by the WorkflowEventConsumer when the response
+      // lands. One message for the whole lifecycle replaces the prior
+      // LLM-narrative + workflow-event-push double message.
+      if (item.displayType === 'service-query') {
+        return (
+          <View testID="chat-card-service-query">
+            <InlineServiceQueryCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'missing-capability') {
+        return (
+          <View testID="chat-card-missing-capability">
+            <InlineMissingCapabilityCard message={item} />
+          </View>
+        );
+      }
+      // review_draft card — chat-driven `/ask write a review of <X>`
+      // flow. Editable sentiment / headline / body inline; Publish
+      // calls injectAttestation directly. State machine drafting →
+      // ready → publishing → published / discarded / failed lives on
+      // the lifecycle metadata, the card renders the matching variant.
+      if (item.displayType === 'review-draft') {
+        return (
+          <View testID="chat-card-review-draft">
+            <InlineReviewDraftCard message={item} />
+          </View>
+        );
+      }
+      // Unknown-sender review card — Add to contacts / Block.
+      if (item.displayType === 'quarantine-request') {
+        return (
+          <View testID="chat-card-quarantine">
+            <InlineQuarantineCard message={item} />
+          </View>
+        );
+      }
+      // ask_pending placeholder — Dina hasn't returned the answer in
+      // the fast-path window. Render as animated typing dots inside a
+      // dina-style bubble; when the bridge patches lifecycle.status to
+      // 'complete', toDisplayType falls through to 'dina' and this row
+      // re-renders as a normal reply with the answer text.
+      if (item.displayType === 'ask-pending') {
+        return (
+          <View testID="chat-msg-ask-pending" style={[styles.messageBubble, styles.dinaBubble]}>
+            <View style={styles.typingDots}>
+              <View style={[styles.typingDot, { opacity: 0.4 }]} />
+              <View style={[styles.typingDot, { opacity: 0.6 }]} />
+              <View style={[styles.typingDot, { opacity: 0.8 }]} />
+            </View>
+          </View>
+        );
+      }
+      if (item.displayType === 'reasoning-job') {
+        return <InlineReasoningJobCard message={item} />;
+      }
+      // Proactive nudge card — 5.62. Reconnection / reminder context /
+      // pending promise / health alert. Tier dot indicates urgency.
+      if (item.displayType === 'nudge') {
+        return (
+          <View testID="chat-card-nudge">
+            <InlineNudgeCard message={item} />
+          </View>
+        );
+      }
+      // Fired reminder — 5.64. Posted by `useReminderFireWatcher` when
+      // a pending reminder's due_at elapses. Mark done / Snooze 1h.
+      if (item.displayType === 'reminder') {
+        return (
+          <View testID="chat-card-reminder">
+            <InlineReminderCard message={item} />
+          </View>
+        );
+      }
+      // Daily briefing card — 5.63. Collapsible aggregate of recent
+      // activity; tap-through links route per-item via expo-router.
+      if (item.displayType === 'briefing') {
+        return (
+          <View testID="chat-card-briefing">
+            <InlineBriefingCard message={item} />
+          </View>
+        );
+      }
+
+      const isUser = item.displayType === 'user';
+      const isSystem = item.displayType === 'system';
+      // A peer's D2D message surfaced in the main thread (type='dina' +
+      // metadata.source='d2d'). Attribute it to the sender, not "Dina", and
+      // render its text literally — it's the peer's words, not LLM output.
+      const fromD2DPeer = !isUser && !isSystem && item.metadata?.source === 'd2d';
+      const d2dSenderName =
+        typeof item.metadata?.senderName === 'string' ? item.metadata.senderName : '';
+      const peerLabel = d2dSenderName !== '' ? d2dSenderName : 'A contact';
+      // Source pill: when network reviews informed a Dina answer, attribute them.
+      const sourceLabel = !isUser && !isSystem ? reviewSourceLabel(item.sources) : null;
+
+      // Mode chip on a user message: clean content + a mode chip, never a leaked
+      // slash prefix (docs/COMPOSER_MODES_DESIGN.md 7.1). Logic lives in the pure,
+      // unit-tested `resolveUserChip` (prefers metadata.mode, legacy prefix-strip
+      // fallback) so the contract is covered without rendering this whole screen.
+      let chipLabel: string | null = null;
+      let displayContent = item.content;
+      if (isUser) {
+        ({ chipLabel, displayContent } = resolveUserChip(item.content, item.metadata?.mode));
+      }
+
+      return (
+        <Pressable
+          // E2E: a stable, type-keyed handle for transient chat bubbles so
+          // tests can assert "a Dina/user message appeared" without matching
+          // on volatile LLM text. `chat-msg-dina` / `chat-msg-user` /
+          // `chat-msg-system`. Cards use `chat-card-<type>` (see Inline*Card).
+          testID={`chat-msg-${fromD2DPeer ? 'd2d' : item.displayType}`}
+          // Deep-press opens the action menu (Copy). onLongPress only — a normal
+          // tap does nothing, so list scrolling is unaffected.
+          onLongPress={(e) => onBubbleLongPress(displayContent, e)}
+          delayLongPress={300}
+          style={[
+            styles.messageBubble,
+            isUser ? styles.userBubble : styles.dinaBubble,
+            isSystem && styles.systemBubble,
+          ]}
+        >
+          {!isUser && !isSystem && (
+            <Text style={styles.senderLabel}>{fromD2DPeer ? peerLabel : 'Dina'}</Text>
+          )}
+          {isSystem && <Text style={styles.systemLabel}>System</Text>}
+          {isUser && chipLabel && (
+            <View style={styles.msgChip}>
+              <Text style={styles.msgChipText}>{chipLabel}</Text>
+            </View>
+          )}
+          {/* E2E: `row-primary-text` is the clean, chrome-free handle the
             Playwright suite scrapes and hands to the Gemini judge — it
             wraps ONLY the message body (no sender label, source pill, or
             timestamp), across all three render branches. See
             docs/E2E_TESTING.md §5. A style-less View is layout-neutral:
             the inner Text was already a block child of the bubble. */}
-        <View testID="row-primary-text">
-          {isUser ? (
-            // User-typed bubbles render literal — never reinterpret what
-            // the user typed (typing `**foo**` should stay visible as-is,
-            // not silently bolded).
-            <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
-          ) : fromD2DPeer ? (
-            // A peer's literal words — render verbatim (no markdown
-            // interpretation), in the standard left-bubble text colour.
-            <Text style={styles.messageText}>{displayContent}</Text>
-          ) : (
-            // Dina + system bubbles: the LLM frequently emits `**bold**`
-            // for entity emphasis (names, numbers, dates). Render it
-            // inline instead of leaking literal asterisks into the UI.
-            <InlineMarkdownText style={[styles.messageText, isSystem && styles.systemText]}>
-              {displayContent}
-            </InlineMarkdownText>
-          )}
-        </View>
-        {sourceLabel !== null && (
-          <View style={styles.sourcePill} testID="chat-source-pill">
-            <Text style={styles.sourcePillText}>{sourceLabel} · from other Dinas</Text>
+          <View testID="row-primary-text">
+            {isUser ? (
+              // User-typed bubbles render literal — never reinterpret what
+              // the user typed (typing `**foo**` should stay visible as-is,
+              // not silently bolded).
+              <Text style={[styles.messageText, styles.userText]}>{displayContent}</Text>
+            ) : fromD2DPeer ? (
+              // A peer's literal words — render verbatim (no markdown
+              // interpretation), in the standard left-bubble text colour.
+              <Text style={styles.messageText}>{displayContent}</Text>
+            ) : (
+              // Dina + system bubbles: the LLM frequently emits `**bold**`
+              // for entity emphasis (names, numbers, dates). Render it
+              // inline instead of leaking literal asterisks into the UI.
+              <InlineMarkdownText style={[styles.messageText, isSystem && styles.systemText]}>
+                {displayContent}
+              </InlineMarkdownText>
+            )}
           </View>
-        )}
-        <Text style={[styles.timestamp, isUser && styles.timestampUser]}>
-          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      </Pressable>
-    );
-  }, [onBubbleLongPress]);
+          {sourceLabel !== null && (
+            <View style={styles.sourcePill} testID="chat-source-pill">
+              <Text style={styles.sourcePillText}>{sourceLabel} · from other Dinas</Text>
+            </View>
+          )}
+          <Text style={[styles.timestamp, isUser && styles.timestampUser]}>
+            {new Date(item.timestamp).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+        </Pressable>
+      );
+    },
+    [onBubbleLongPress],
+  );
 
   // E2E: wrap every rendered row once in the `chat-row` contract (see the
   // helpers above). Preserves the skip-empty behavior (renderMessage

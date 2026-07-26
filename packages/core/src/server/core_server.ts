@@ -12,37 +12,47 @@
  */
 
 import { CoreRouter } from './router';
-import { registerAskRoutes, setAskRouteHandler, type AskRouteHandler, type AskRouteOptions } from './routes/ask';
+import { registerAgentAuditRoutes } from './routes/agent_audit';
+import { registerAgentFacadeRoutes, type AgentFacadeHandlers } from './routes/agent_facades';
+import {
+  registerAgentGatingPolicyRoutes,
+  type AgentGatingPolicyChanged,
+} from './routes/agent_gating_policy';
+import {
+  registerAskRoutes,
+  setAskRouteHandler,
+  type AskRouteHandler,
+  type AskRouteOptions,
+} from './routes/ask';
+import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerDevicesRoutes } from './routes/devices';
 import { registerIntentRoutes } from './routes/intent';
-import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
-import { registerAgentFacadeRoutes, type AgentFacadeHandlers } from './routes/agent_facades';
 import { registerMemoryRoutes } from './routes/memory';
+import { registerNotificationRoutes } from './routes/notifications';
+import { registerPairRoutes } from './routes/pair';
 import { registerPeopleRoutes } from './routes/people';
+import { registerPersonasRoutes } from './routes/personas';
 import { registerPIIRoutes } from './routes/pii';
+import { registerPolicyRoutes } from './routes/policy';
+import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
+import { registerReminderRoutes } from './routes/reminders';
+import { registerRemoteApprovalRoutes } from './routes/remote_approval';
+import { registerRunRoutes } from './routes/run';
+import { registerServiceConfigRoutes } from './routes/service_config';
 import { registerStagingRoutes } from './routes/staging';
 import { registerVaultRoutes } from './routes/vault';
-import { registerServiceConfigRoutes } from './routes/service_config';
-import { registerRunRoutes } from './routes/run';
 import { registerWatchRoutes } from './routes/watch';
 import { registerWorkflowRoutes } from './routes/workflow';
-import { registerRemoteApprovalRoutes } from './routes/remote_approval';
-import { registerAgentAuditRoutes } from './routes/agent_audit';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
 import {
   registerServiceRespondRoutes,
   type ServiceRespondRouteOptions,
 } from './routes/service_respond';
-import { registerPersonasRoutes } from './routes/personas';
-import { registerReminderRoutes } from './routes/reminders';
-import { registerNotificationRoutes } from './routes/notifications';
-import { registerPairRoutes } from './routes/pair';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerSessionRoutes } from './routes/session';
-import { registerPolicyRoutes } from './routes/policy';
 
 export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver, setDeviceScopeResolver } from '../auth/caller_type';
@@ -66,10 +76,15 @@ export interface CoreRouterOptions {
    *  by the Node Core process; when omitted (e.g. mobile) the route reports 501,
    *  never a silent allow. */
   codingGate?: CodingGateFn;
+  /** Revoke transient permits when the owner changes an agent policy. */
+  onAgentGatingPolicyChanged?: AgentGatingPolicyChanged;
   /** Items 5c/9/11/12 — coding-agent façade backings (memory ingress, find-
    *  service, talk, delegate, peerlens). Each route is registered only when its
    *  handler is provided; all are scope-gated to `coding` (item 6b). */
   agentFacades?: AgentFacadeHandlers;
+  /** Core-owned projection uses this read-only source for public review and
+   * service evidence. App-specific AppView clients adapt to this interface. */
+  reasoningPublicEvidenceSource?: ReasoningRouteOptions['publicEvidenceSource'];
 }
 
 /**
@@ -204,6 +219,15 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerAskRoutes(router, options.ask ?? {});
 
   registerPolicyRoutes(router);
+  registerAgentGatingPolicyRoutes(
+    router,
+    options.ownerCapability,
+    options.onAgentGatingPolicyChanged,
+  );
+  registerReasoningRoutes(router, {
+    ownerCapability: options.ownerCapability,
+    publicEvidenceSource: options.reasoningPublicEvidenceSource,
+  });
 
   return router;
 }

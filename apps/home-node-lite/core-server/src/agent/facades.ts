@@ -52,6 +52,7 @@ import {
   type ReviewRecordWriter,
   type ReviewPublishRepository,
   type StagingItem,
+  createConnectedBrainAgentFacades,
 } from '@dina/core';
 import { getD2DSender } from '@dina/core/d2d';
 import { listByPersona as listRemindersByPersona } from '@dina/core/reminders';
@@ -96,8 +97,7 @@ export interface CreateAgentFacadesOptions {
 }
 
 export function createAgentFacades(options: CreateAgentFacadesOptions = {}): AgentFacadeHandlers {
-  const hasNetworkPublisher =
-    options.pdsPublisher !== undefined && options.ownerDid !== undefined;
+  const hasNetworkPublisher = options.pdsPublisher !== undefined && options.ownerDid !== undefined;
   const findService =
     options.brainUrl !== undefined
       ? makeHttpServiceSearchHandler({
@@ -114,25 +114,22 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       : undefined;
   const reviewRepo = (): ReviewPublishRepository | null =>
     options.reviewPublishRepository ?? getReviewPublishRepository();
+  const pdsPublisher = options.pdsPublisher;
+  const ownerDid = options.ownerDid;
   const publishReview =
-    options.pdsPublisher !== undefined && options.ownerDid !== undefined
+    pdsPublisher !== undefined && ownerDid !== undefined
       ? async (
           job: { rkey: string },
           record: Record<string, unknown>,
         ): Promise<{ uri: string; cid: string }> =>
-          publishAttestationToPDS(
-            options.pdsPublisher!,
-            options.ownerDid!,
-            record,
-            job.rkey,
-          )
+          publishAttestationToPDS(pdsPublisher, ownerDid, record, job.rkey)
       : undefined;
   return {
+    ...createConnectedBrainAgentFacades(),
     // 5c — dina_remember: provenance-preserving ingress.
     memory: (ctx) => {
       const unsupported = Object.keys(ctx.body).find(
-        (key) =>
-          !new Set(['session_id', 'request_id', 'content', 'summary', 'persona']).has(key),
+        (key) => !new Set(['session_id', 'request_id', 'content', 'summary', 'persona']).has(key),
       );
       if (unsupported !== undefined) {
         return { status: 400, body: { error: `unsupported memory field: ${unsupported}` } };
@@ -146,8 +143,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       if (new TextEncoder().encode(content).byteLength > MAX_MEMORY_BYTES) {
         return { status: 413, body: { error: 'content too large' } };
       }
-      const rawPersona =
-        typeof ctx.body.persona === 'string' ? ctx.body.persona.trim() : '';
+      const rawPersona = typeof ctx.body.persona === 'string' ? ctx.body.persona.trim() : '';
       const persona = rawPersona === '' ? '' : resolvePersonaName(rawPersona);
       if (persona !== '' && !listPersonas().some((candidate) => candidate.name === persona)) {
         return { status: 400, body: { error: `unknown persona: ${persona}` } };
@@ -176,10 +172,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         if (item === null) {
           return { status: 500, body: { error: 'staged memory could not be read after ingest' } };
         }
-        if (
-          accepted.duplicate &&
-          item.source_hash !== computeStagingSourceHash(stagedData)
-        ) {
+        if (accepted.duplicate && item.source_hash !== computeStagingSourceHash(stagedData)) {
           return {
             status: 409,
             body: {
@@ -223,7 +216,10 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       const allowed = new Set(['session_id', 'request_id', 'rkey', 'config']);
       const unsupported = Object.keys(ctx.body).find((key) => !allowed.has(key));
       if (unsupported !== undefined) {
-        return { status: 400, body: { error: `unsupported service publish field: ${unsupported}` } };
+        return {
+          status: 400,
+          body: { error: `unsupported service publish field: ${unsupported}` },
+        };
       }
       const requestId = readRequestId(ctx.body);
       if (requestId === null) return invalidRequestId();
@@ -252,7 +248,10 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         ...(config.description !== undefined ? [`Description: ${config.description}`] : []),
       ].join('\n');
       if (hasUnsafeDisplayText(detail, true) || detail.length > 4_000) {
-        return { status: 400, body: { error: 'service listing is too large or unsafe to approve' } };
+        return {
+          status: 400,
+          body: { error: 'service listing is too large or unsafe to approve' },
+        };
       }
       return runFacadeAction({
         action: 'service_publish',
@@ -390,8 +389,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         return { status: 404, body: { error: 'service listing not found' } };
       }
       const config = getServiceConfig(rkey);
-      const needsNetworkPublication =
-        config !== null && isListingPublishable(config);
+      const needsNetworkPublication = config !== null && isListingPublishable(config);
       const publicationBlocked =
         !hasNetworkPublisher && status.state === 'pending' && needsNetworkPublication;
       const intentionallyLocal =
@@ -406,9 +404,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
               ? 'not_published'
               : status.state,
           can_publish: hasNetworkPublisher,
-          ...(publicationBlocked || intentionallyLocal
-            ? { stored_status: status.state }
-            : {}),
+          ...(publicationBlocked || intentionallyLocal ? { stored_status: status.state } : {}),
           uri: status.uri,
           cid: status.cid,
           last_error:
@@ -424,8 +420,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
     talk: async (ctx) => {
       const requestId = readRequestId(ctx.body);
       if (requestId === null) return invalidRequestId();
-      const contactInput =
-        typeof ctx.body.contact === 'string' ? ctx.body.contact.trim() : '';
+      const contactInput = typeof ctx.body.contact === 'string' ? ctx.body.contact.trim() : '';
       if (
         contactInput === '' ||
         contactInput.length > 300 ||
@@ -445,11 +440,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         ...(inReplyTo !== undefined && inReplyTo !== '' ? { in_reply_to: inReplyTo } : {}),
       };
       const talkError = validateTalkMessageBody(talkBody);
-      if (
-        talkError !== null ||
-        text.length > MAX_TALK_CHARS ||
-        hasUnsafeDisplayText(text, true)
-      ) {
+      if (talkError !== null || text.length > MAX_TALK_CHARS || hasUnsafeDisplayText(text, true)) {
         return { status: 400, body: { error: talkError ?? 'talk text is invalid or too long' } };
       }
       return runFacadeAction({
@@ -471,11 +462,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       const requestId = readRequestId(ctx.body);
       if (requestId === null) return invalidRequestId();
       const runner = typeof ctx.body.runner === 'string' ? ctx.body.runner.trim() : '';
-      if (
-        !RUNNER_RE.test(runner) ||
-        runner === 'dina.local' ||
-        runner.startsWith('plugin:')
-      ) {
+      if (!RUNNER_RE.test(runner) || runner === 'dina.local' || runner.startsWith('plugin:')) {
         return {
           status: 400,
           body: { error: 'runner must name a bounded external agent runner' },
@@ -572,9 +559,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
                     .slice(0, params.limit ?? MAX_PEERLENS_RESULTS)
                     .map(projectPeerlensResult),
                   cursor:
-                    typeof result.cursor === 'string'
-                      ? result.cursor.slice(0, 1_000)
-                      : undefined,
+                    typeof result.cursor === 'string' ? result.cursor.slice(0, 1_000) : undefined,
                   total_estimate: result.totalEstimate,
                 },
               };
@@ -610,12 +595,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       if ('error' in parsed) {
         return { status: 400, body: { error: 'lexicon_invalid', detail: parsed.error } };
       }
-      const taskId = facadeActionTaskId(
-        ctx.agentDid,
-        ctx.sessionId,
-        'review',
-        requestId,
-      );
+      const taskId = facadeActionTaskId(ctx.agentDid, ctx.sessionId, 'review', requestId);
       const jobId = reviewJobId(taskId);
       if (
         reviewRepo()!.getById(jobId) === null &&
@@ -703,13 +683,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       const personas = listPersonas()
         .map((persona) => {
           const grant =
-            grants?.findActiveGrant(
-              ctx.agentDid,
-              persona.name,
-              'read',
-              ctx.sessionId,
-              now,
-            ) ?? null;
+            grants?.findActiveGrant(ctx.agentDid, persona.name, 'read', ctx.sessionId, now) ?? null;
           return {
             name: persona.name,
             tier: persona.tier,
@@ -746,13 +720,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       const restricted: string[] = [];
       for (const persona of listPersonas()) {
         const grant =
-          grants?.findActiveGrant(
-            ctx.agentDid,
-            persona.name,
-            'read',
-            ctx.sessionId,
-            now,
-          ) ?? null;
+          grants?.findActiveGrant(ctx.agentDid, persona.name, 'read', ctx.sessionId, now) ?? null;
         if (agentCanAccess(persona.tier, grant !== null)) readable.push(persona.name);
         else restricted.push(persona.name);
       }
@@ -822,10 +790,7 @@ function projectAgentMemory(
         },
       };
     }
-    if (
-      task?.status === WorkflowTaskState.Cancelled ||
-      task?.status === WorkflowTaskState.Failed
-    ) {
+    if (task?.status === WorkflowTaskState.Cancelled || task?.status === WorkflowTaskState.Failed) {
       return {
         status: 200,
         body: {
@@ -912,10 +877,7 @@ async function runFacadeAction(input: RunFacadeActionInput): Promise<AgentAction
       },
     };
   }
-  if (
-    task.status === WorkflowTaskState.Completed ||
-    task.status === WorkflowTaskState.Recorded
-  ) {
+  if (task.status === WorkflowTaskState.Completed || task.status === WorkflowTaskState.Recorded) {
     return projectActionTask(task, created.payload);
   }
   if (
@@ -1239,8 +1201,7 @@ function projectActionTask(
   const terminalError =
     task.status === WorkflowTaskState.Cancelled
       ? 403
-      : task.status === WorkflowTaskState.Failed ||
-          task.status === WorkflowTaskState.OutcomeUnknown
+      : task.status === WorkflowTaskState.Failed || task.status === WorkflowTaskState.OutcomeUnknown
         ? 409
         : task.status === WorkflowTaskState.PendingApproval ||
             task.status === WorkflowTaskState.Queued ||
@@ -1352,12 +1313,7 @@ function projectReviewStatus(
   if (job.lastErrorMessage !== null) body.error = job.lastErrorMessage;
   if (job.nextAttemptAt !== null) body.next_retry_at = job.nextAttemptAt;
   return {
-    status:
-      job.status === 'published'
-        ? 200
-        : job.status === 'failed'
-          ? 409
-          : 202,
+    status: job.status === 'published' ? 200 : job.status === 'failed' ? 409 : 202,
     body,
   };
 }
@@ -1641,11 +1597,7 @@ function sanitizeEvidence(value: unknown): Attestation['evidence'] | null {
   for (const item of value) {
     if (item === null || typeof item !== 'object' || Array.isArray(item)) return null;
     const row = item as Record<string, unknown>;
-    if (
-      Object.keys(row).some(
-        (key) => !['type', 'uri', 'hash', 'description'].includes(key),
-      )
-    ) {
+    if (Object.keys(row).some((key) => !['type', 'uri', 'hash', 'description'].includes(key))) {
       return null;
     }
     result.push(row as unknown as NonNullable<Attestation['evidence']>[number]);

@@ -11,16 +11,18 @@
  * raw `CoreRouter`, which Brain never receives — it only gets a `CoreClient`.)
  */
 
-import type { OwnerRunClient } from '@dina/core';
+import type { OwnerReasoningClient, OwnerRunClient } from '@dina/core';
 
-let ownerRunClient: OwnerRunClient | null = null;
+export type OwnerControlClient = OwnerRunClient & Partial<OwnerReasoningClient>;
+
+let ownerRunClient: OwnerControlClient | null = null;
 
 /** Boot installs the owner client after building the router. */
 export function setOwnerRunClient(c: OwnerRunClient | null): void {
-  ownerRunClient = c;
+  ownerRunClient = c as OwnerControlClient | null;
 }
 
 /** The owner UI hooks resolve it lazily. */
-export function getOwnerRunClient(): OwnerRunClient | null {
+export function getOwnerRunClient(): OwnerControlClient | null {
   return ownerRunClient;
 }

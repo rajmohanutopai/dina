@@ -91,6 +91,7 @@ describe('parseServiceQueryExecutionPayload', () => {
       service_name: "Alonso's Salon",
       schema_snapshot: SNAPSHOT,
       service_uri: 'at://did:plc:x/com.dinakernel.service.profile/alonso-s-salon',
+      grant_id: 'grant-known-only-1',
       operator_approved: true,
     });
     const parsed = parseServiceQueryExecutionPayload(JSON.stringify(wire));
@@ -107,6 +108,7 @@ describe('parseServiceQueryExecutionPayload', () => {
       mcp_server: undefined,
       schema_snapshot: SNAPSHOT,
       service_uri: 'at://did:plc:x/com.dinakernel.service.profile/alonso-s-salon',
+      grant_id: 'grant-known-only-1',
       operator_approved: true,
     });
   });
@@ -137,7 +139,9 @@ describe('parseServiceQueryExecutionPayload', () => {
   });
 
   it('degrades a malformed snapshot to undefined (registry fallback downstream)', () => {
-    expect(parseServiceExecutionSchemaSnapshot({ params: {}, result: null, schema_hash: 'x' })).toBeUndefined();
+    expect(
+      parseServiceExecutionSchemaSnapshot({ params: {}, result: null, schema_hash: 'x' }),
+    ).toBeUndefined();
     expect(parseServiceExecutionSchemaSnapshot('nope')).toBeUndefined();
     expect(parseServiceExecutionSchemaSnapshot(SNAPSHOT)).toEqual(SNAPSHOT);
   });

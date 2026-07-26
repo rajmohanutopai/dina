@@ -92,6 +92,13 @@ import type {
   ActionPolicyResult,
   RiskLevel,
   ServiceOfferView,
+  ReasoningClaim,
+  ReasoningClaimRequest,
+  ReasoningHeartbeatRequest,
+  ReasoningCompleteRequest,
+  ReasoningCompletion,
+  ReasoningFailRequest,
+  ReasoningFailure,
 } from './core-client';
 import type { QuarantinedMessage } from '../d2d/quarantine';
 
@@ -792,6 +799,93 @@ export class HttpCoreTransport implements CoreClient {
       throw new Error(`HttpCoreTransport: ${action}WorkflowTask response missing task`);
     }
     return raw.task;
+  }
+
+  // ─── Reasoning backend worker plane ──────────────────────────────────
+
+  async reasoningClaim(input: ReasoningClaimRequest): Promise<ReasoningClaim | null> {
+    const raw = await this.call<{ claim: ReasoningClaim | null }>(
+      'POST',
+      '/v1/reasoning/claim',
+      undefined,
+      {
+        backend_id: input.backendId,
+        ...(input.leaseMs === undefined ? {} : { lease_ms: input.leaseMs }),
+        ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+      },
+      `reasoningClaim(${input.backendId})`,
+    );
+    return raw.claim ?? null;
+  }
+
+  async reasoningHeartbeat(taskId: string, input: ReasoningHeartbeatRequest): Promise<boolean> {
+    try {
+      const raw = await this.call<{ ok: boolean }>(
+        'POST',
+        `/v1/reasoning/${encodeURIComponent(taskId)}/heartbeat`,
+        undefined,
+        {
+          backend_id: input.backendId,
+          claim_id: input.claimId,
+          context_ticket_id: input.contextTicketId,
+          ...(input.leaseMs === undefined ? {} : { lease_ms: input.leaseMs }),
+          ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+        },
+        `reasoningHeartbeat(${taskId})`,
+      );
+      return raw.ok === true;
+    } catch (error) {
+      // Core uses this exact conflict to fence a worker whose lease was
+      // reclaimed. Other conflicts and transport failures remain exceptional.
+      if (
+        error instanceof CoreHttpError &&
+        error.status === 409 &&
+        error.message.includes('stale_claim')
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async reasoningComplete(
+    taskId: string,
+    input: ReasoningCompleteRequest,
+  ): Promise<ReasoningCompletion> {
+    return this.call<ReasoningCompletion>(
+      'POST',
+      `/v1/reasoning/${encodeURIComponent(taskId)}/complete`,
+      undefined,
+      {
+        backend_id: input.backendId,
+        claim_id: input.claimId,
+        context_ticket_id: input.contextTicketId,
+        execution_id: input.executionId,
+        context_projection_hash: input.contextProjectionHash,
+        policy_snapshot_hash: input.policySnapshotHash,
+        result: input.result,
+        ...(input.evidenceIds === undefined ? {} : { evidence_ids: input.evidenceIds }),
+        ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+      },
+      `reasoningComplete(${taskId})`,
+    );
+  }
+
+  async reasoningFail(taskId: string, input: ReasoningFailRequest): Promise<ReasoningFailure> {
+    return this.call<ReasoningFailure>(
+      'POST',
+      `/v1/reasoning/${encodeURIComponent(taskId)}/fail`,
+      undefined,
+      {
+        backend_id: input.backendId,
+        claim_id: input.claimId,
+        context_ticket_id: input.contextTicketId,
+        error: input.error,
+        retryable: input.retryable,
+        ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+      },
+      `reasoningFail(${taskId})`,
+    );
   }
 
   // ─── Working-memory + contacts ───────────────────────────────────────

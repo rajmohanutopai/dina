@@ -14,6 +14,7 @@ export { PerDIDRateLimiter } from './auth/ratelimit';
 export type { RateLimitConfig } from './auth/ratelimit';
 export * from './identity/did';
 export * from './identity/did_document';
+export * from './identity/local_service_identity';
 // Key-rotation lifecycle helpers — gen-aware signing keys + history
 // for verification of older messages. Exposed so integration tests
 // (and future operator UI) can drive a rotation cycle and inspect
@@ -200,10 +201,7 @@ export {
   rowToPublishJob,
 } from './review/publish_job_repository';
 export type { ReviewPublishRepository } from './review/publish_job_repository';
-export {
-  publishClaimedReview,
-  runReviewPublishTick,
-} from './review/publish_pipeline';
+export { publishClaimedReview, runReviewPublishTick } from './review/publish_pipeline';
 export type {
   PublishReceipt,
   ReviewRecordWriter,
@@ -901,6 +899,7 @@ export {
   openBootPersonas,
   openPersona,
   personaExists,
+  resolveInstalledPersonaName,
   resetPersonaState,
   setPersonaDescription,
   validatePersonaName,
@@ -927,6 +926,9 @@ export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
 export * from './vault/crud';
 export * from './vault/origin_capability';
 export * from './session/registry';
+export * from './agent/gating_policy';
+export * from './agent/gating_policy_repository';
+export * from './agent/connected_brain_facades';
 export { SQLiteSessionRepository } from './session/repository';
 export type { SessionRepository } from './session/repository';
 export * from './staging/state_machine';
@@ -952,6 +954,8 @@ export {
   ingest as stagingIngest,
   claim,
   claim as stagingClaim,
+  claimById,
+  claimById as stagingClaimById,
   resolve as stagingResolve,
   resolveMulti as stagingResolveMulti,
   fail as stagingFail,
@@ -1247,6 +1251,10 @@ export type {
   Reminder,
   RecurringFrequency,
   ReminderCreateInput,
+  ReasoningClaimRequest,
+  ReasoningHeartbeatRequest,
+  ReasoningCompleteRequest,
+  ReasoningFailRequest,
 } from './client/core-client';
 // Relay / MsgBox RPC envelope helpers — used by the home-node-lite
 // core-server's MsgBox client to seal/unseal CoreRPCRequest +
@@ -1276,6 +1284,11 @@ export type {
   RunStartResult,
   RunUpdateRequest,
   RunDecideRequest,
+  OwnerReasoningSubmitRequest,
+  OwnerReasoningSubmitResult,
+  OwnerReasoningBackendView,
+  OwnerReasoningBackendRegisterRequest,
+  OwnerReasoningClient,
   WatchCreateRequest,
   WatchCreateResult,
 } from './client/owner-run-client';
@@ -1448,3 +1461,19 @@ export {
 // Plugin substrate (docs/PLUGIN_ARCHITECTURE.md): dynamic registry,
 // grants (constraints + per-execution consumption), decision log.
 export * from './plugins';
+
+// Connected-agent Brain contracts and broker.
+export * from './reasoning/domain';
+export * from './reasoning/backend_repository';
+export * from './reasoning/backend_registration';
+export * from './reasoning/backend_selection';
+export * from './reasoning/backend_presence';
+export * from './reasoning/authority_revocation';
+export * from './reasoning/backend_worker';
+export * from './reasoning/backend_supervisor';
+export * from './reasoning/context_repository';
+export * from './reasoning/schema_registry';
+export * from './reasoning/broker';
+export * from './reasoning/commit_bridge';
+export * from './reasoning/service_execution';
+export * from './reasoning/job_projection';

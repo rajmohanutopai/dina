@@ -141,6 +141,32 @@ export interface AskPendingLifecycle {
 }
 
 /**
+ * Owner-facing projection of a Core reasoning job. Core owns the authoritative
+ * task, result validation, and commit receipt; chat persists only this bounded
+ * lifecycle so a mobile Ask remains understandable across restart.
+ */
+export type ReasoningJobStatus =
+  | 'queued'
+  | 'working'
+  | 'pending_approval'
+  | 'complete'
+  | 'failed'
+  | 'cancelled'
+  | 'expired';
+
+export interface ReasoningJobLifecycle {
+  kind: 'reasoning_job';
+  status: ReasoningJobStatus;
+  taskId: string;
+  taskKind: 'answer.compose';
+  /** User-message identity used to recover the chat projection after a crash. */
+  userMessageId: string;
+  backendId: string;
+  /** Safe, bounded error copy from the owner projection. */
+  error?: string;
+}
+
+/**
  * Terminal states for a `/ask write a review of <X>` draft. The mobile
  * chat handler posts the card at `drafting`, flips to `ready` once the
  * inferer settles, and `published` / `discarded` are terminal.
@@ -196,6 +222,7 @@ export interface ReviewDraftLifecycle {
  *                            first-party developer onboarding card.
  *   - `ask_pending`   — async `/ask` deferrals (coordinator fast-path
  *                      timeout + pending_approval flows).
+ *   - `reasoning_job` — Core-owned connected-Brain Ask lifecycle.
  *   - `review_draft`  — chat-driven `/ask write a review of <X>` flow.
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
@@ -204,6 +231,7 @@ export type MessageLifecycle =
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
   | AskPendingLifecycle
+  | ReasoningJobLifecycle
   | ReviewDraftLifecycle;
 
 export interface ChatMessage {
@@ -674,6 +702,9 @@ export function addLifecycleMessage(
     case 'ask_pending':
       key = lifecycle.askId;
       break;
+    case 'reasoning_job':
+      key = lifecycle.taskId;
+      break;
     case 'review_draft':
       key = lifecycle.draftId;
       break;
@@ -707,6 +738,29 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
   if (lc.kind === 'ask_pending') {
     if (typeof lc.askId !== 'string' || lc.askId === '') return null;
     return lc as unknown as AskPendingLifecycle;
+  }
+  if (lc.kind === 'reasoning_job') {
+    const validStatus =
+      lc.status === 'queued' ||
+      lc.status === 'working' ||
+      lc.status === 'pending_approval' ||
+      lc.status === 'complete' ||
+      lc.status === 'failed' ||
+      lc.status === 'cancelled' ||
+      lc.status === 'expired';
+    if (
+      !validStatus ||
+      typeof lc.taskId !== 'string' ||
+      lc.taskId === '' ||
+      lc.taskKind !== 'answer.compose' ||
+      typeof lc.userMessageId !== 'string' ||
+      lc.userMessageId === '' ||
+      typeof lc.backendId !== 'string' ||
+      lc.backendId === ''
+    ) {
+      return null;
+    }
+    return lc as unknown as ReasoningJobLifecycle;
   }
   if (lc.kind === 'review_draft') {
     if (typeof lc.draftId !== 'string' || lc.draftId === '') return null;
@@ -758,6 +812,17 @@ export function findMessageByAskId(threadId: string, askId: string): ChatMessage
   for (const msg of thread) {
     const lc = readLifecycle(msg);
     if (lc !== null && lc.kind === 'ask_pending' && lc.askId === askId) return msg;
+  }
+  return null;
+}
+
+/** Locate the chat projection for one authoritative Core reasoning task. */
+export function findMessageByReasoningTaskId(threadId: string, taskId: string): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  for (const msg of thread) {
+    const lc = readLifecycle(msg);
+    if (lc !== null && lc.kind === 'reasoning_job' && lc.taskId === taskId) return msg;
   }
   return null;
 }
@@ -838,6 +903,52 @@ export function updateAskLifecycle(
     // review pill reads `sources`). Merge over the placeholder's identity-key
     // sources (the askId index) so both survive.
     ...(sources !== undefined ? { sources: [...(old.sources ?? []), ...sources] } : {}),
+    metadata: {
+      ...(old.metadata ?? {}),
+      lifecycle: newLc as unknown as Record<string, unknown>,
+    },
+  };
+  thread[idx] = newMsg;
+  persistMessage(newMsg);
+  fireSubscribers(newMsg);
+  return newMsg;
+}
+
+/**
+ * Patch a Core reasoning-job chat projection. The authoritative transition has
+ * already occurred in Core; this function only updates the durable UI mirror.
+ */
+export function updateReasoningJobLifecycle(
+  threadId: string,
+  taskId: string,
+  patch: Partial<Omit<ReasoningJobLifecycle, 'kind' | 'taskId' | 'taskKind'>>,
+  newContent?: string,
+  sources?: string[],
+): ChatMessage | null {
+  const thread = threads.get(threadId);
+  if (!thread) return null;
+  const idx = thread.findIndex((msg) => {
+    const lc = readLifecycle(msg);
+    return lc !== null && lc.kind === 'reasoning_job' && lc.taskId === taskId;
+  });
+  if (idx === -1) return null;
+
+  const old = thread[idx];
+  const oldLc = readLifecycle(old);
+  if (oldLc === null || oldLc.kind !== 'reasoning_job') return null;
+  const newLc: ReasoningJobLifecycle = {
+    ...oldLc,
+    ...patch,
+    kind: 'reasoning_job',
+    taskId,
+    taskKind: 'answer.compose',
+  };
+  const newMsg: ChatMessage = {
+    ...old,
+    content: newContent ?? old.content,
+    ...(sources === undefined
+      ? {}
+      : { sources: [...new Set([...(old.sources ?? []), ...sources])] }),
     metadata: {
       ...(old.metadata ?? {}),
       lifecycle: newLc as unknown as Record<string, unknown>,

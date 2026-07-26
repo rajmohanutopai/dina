@@ -30,6 +30,14 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('/v1/owner/setup/coding-agent');
       expect(body).toContain('/v1/owner/setup/coding-agent/');
       expect(body).toContain('/v1/owner/setup/phone');
+      expect(body).toContain('/v1/owner/agent-policies');
+      expect(body).toContain('/v1/reasoning/backends/register');
+      expect(body).toContain('/v1/owner/reasoning/jobs?limit=50');
+      expect(body).toContain('/v1/owner/reasoning/');
+      expect(body).toContain('Connected Brain work');
+      expect(body).toContain('pending');
+      expect(body).toContain('Network protection');
+      expect(body).toContain('Use this agent as Brain');
       expect(body).toContain('Pair coding agent');
       // The owner can create a poll-mode subscription from this page (Piece 2).
       expect(body).toContain('/v1/watch/create');

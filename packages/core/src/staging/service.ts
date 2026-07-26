@@ -529,6 +529,38 @@ export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] 
 }
 
 /**
+ * Claim one exact staging item without touching the FIFO around it.
+ *
+ * Connected-Brain proposal commits know the id they just ingested. Using the
+ * batch `claim()` API there would also lease older connector/remember rows and
+ * leave them stranded. This exact variant is atomic in both repositories and
+ * may recover only an expired lease.
+ */
+export function claimById(id: string, leaseDurationSeconds?: number): StagingItem | null {
+  const now = nowSeconds();
+  const leaseDuration = leaseDurationSeconds ?? LEASE_DURATION_S;
+  const scope = currentDataScope();
+  const repo = getStagingRepository();
+  if (repo) {
+    const claimed = repo.claimById(id, leaseDuration, now, scope);
+    if (claimed !== null) cacheItem(claimed);
+    return claimed;
+  }
+  const item = inbox.get(id);
+  if (
+    item === undefined ||
+    item.data_scope !== scope ||
+    (item.status !== 'received' && !(item.status === 'classifying' && item.lease_until < now))
+  ) {
+    return null;
+  }
+  item.status = 'classifying';
+  item.lease_until = now + leaseDuration;
+  cacheItem(item);
+  return item;
+}
+
+/**
  * Resolve a claimed item — store in vault or mark pending_unlock.
  *
  * Optionally accepts classifiedItem — the enriched VaultItem JSON to

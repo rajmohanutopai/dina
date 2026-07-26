@@ -281,8 +281,14 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
       status: 200,
       body: {
         listings: [
-          { rkey: 'self', config: { isDiscoverable: true, name: 'SF Transit Authority', capabilities: {} } },
-          { rkey: 'corner-market', config: { isDiscoverable: true, name: 'Corner Market', capabilities: {} } },
+          {
+            rkey: 'self',
+            config: { isDiscoverable: true, name: 'SF Transit Authority', capabilities: {} },
+          },
+          {
+            rkey: 'corner-market',
+            config: { isDiscoverable: true, name: 'Corner Market', capabilities: {} },
+          },
         ],
       },
     }),
@@ -295,7 +301,12 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
       req.params.rkey === 'corner-market'
         ? {
             status: 200,
-            body: { isDiscoverable: true, name: 'Corner Market', capabilities: {}, rkeyEcho: req.params.rkey },
+            body: {
+              isDiscoverable: true,
+              name: 'Corner Market',
+              capabilities: {},
+              rkeyEcho: req.params.rkey,
+            },
           }
         : { status: 404, body: { error: 'service_config: not set' } },
     { auth: 'public' },
@@ -661,16 +672,18 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
         ...(typeof body.idempotency_key === 'string'
           ? { idempotency_key: body.idempotency_key }
           : {}),
-        ...(typeof body.correlation_id === 'string'
-          ? { correlation_id: body.correlation_id }
-          : {}),
+        ...(typeof body.correlation_id === 'string' ? { correlation_id: body.correlation_id } : {}),
       };
       workflowTasks.push(task);
       return { status: 201, body: { task } };
     },
     { auth: 'public' },
   );
-  const transition = (newStatus: string, mutator?: (task: Record<string, unknown>, body: Record<string, unknown>) => void) =>
+  const transition =
+    (
+      newStatus: string,
+      mutator?: (task: Record<string, unknown>, body: Record<string, unknown>) => void,
+    ) =>
     (req: { params: Record<string, string>; body?: unknown }) => {
       const id = req.params.id ?? '';
       const task = workflowTasks.find((t) => t.id === id);
@@ -1539,9 +1552,7 @@ describe('InProcessTransport (task 1.30)', () => {
     // The fake route records cancel_reason on the task — proves the
     // `{reason}` body translation landed. Read it back via getWorkflowTask.
     const after = await t.getWorkflowTask('wf-cancel');
-    expect((after as unknown as { cancel_reason?: string })?.cancel_reason).toBe(
-      'user requested',
-    );
+    expect((after as unknown as { cancel_reason?: string })?.cancel_reason).toBe('user requested');
   });
 
   it('cancelWorkflowTask without reason omits the field (defaults apply server-side)', async () => {
@@ -1566,11 +1577,7 @@ describe('InProcessTransport (task 1.30)', () => {
       description: 'complete-test',
       payload: '{}',
     });
-    const r = await t.completeWorkflowTask(
-      'wf-complete',
-      '{"eta_minutes":12}',
-      '12 min ETA',
-    );
+    const r = await t.completeWorkflowTask('wf-complete', '{"eta_minutes":12}', '12 min ETA');
     expect(r.status).toBe('completed');
     expect(r.result).toBe('{"eta_minutes":12}');
     expect(r.result_summary).toBe('12 min ETA');
@@ -1636,9 +1643,9 @@ describe('InProcessTransport (task 1.30)', () => {
 
   it('memoryTouch throws when route validator returns 400', async () => {
     const t = new InProcessTransport(buildRouter());
-    await expect(
-      t.memoryTouch({ persona: '', topic: 'x', kind: 'entity' }),
-    ).rejects.toThrow(/persona, topic, and kind are required/);
+    await expect(t.memoryTouch({ persona: '', topic: 'x', kind: 'entity' })).rejects.toThrow(
+      /persona, topic, and kind are required/,
+    );
   });
 
   it('updateContact clears preferredFor when sent as []', async () => {
@@ -1667,19 +1674,15 @@ describe('InProcessTransport (task 1.30)', () => {
 
   it('updateContact throws on unknown DID (404)', async () => {
     const t = new InProcessTransport(buildRouter());
-    await expect(
-      t.updateContact('did:plc:unknown', { preferredFor: ['dental'] }),
-    ).rejects.toThrow(/contact not found/);
+    await expect(t.updateContact('did:plc:unknown', { preferredFor: ['dental'] })).rejects.toThrow(
+      /contact not found/,
+    );
   });
 
   it('updateContact rejects empty DID client-side', async () => {
     const t = new InProcessTransport(buildRouter());
-    await expect(t.updateContact('', { preferredFor: [] })).rejects.toThrow(
-      /did is required/,
-    );
-    await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(
-      /did is required/,
-    );
+    await expect(t.updateContact('', { preferredFor: [] })).rejects.toThrow(/did is required/);
+    await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(/did is required/);
   });
 
   it('issueServiceOffer POSTs snake_case body and maps {grant_id, service_uri} → camelCase', async () => {
@@ -1739,5 +1742,83 @@ describe('InProcessTransport (task 1.30)', () => {
     await t.issueServiceOffer({ toDID: 'did:plc:emma', rkey: 'r', capability: 'c' });
     expect(received).toEqual({ to_did: 'did:plc:emma', rkey: 'r', capability: 'c' });
     expect(received).not.toHaveProperty('expires_at');
+  });
+
+  it('binds reasoning calls to the configured in-process Brain principal', async () => {
+    const seen: { path: string; did?: string; body: unknown }[] = [];
+    const r = buildRouter();
+    for (const [path, body] of [
+      ['/v1/reasoning/claim', { claim: null }],
+      ['/v1/reasoning/:id/heartbeat', { ok: true }],
+      [
+        '/v1/reasoning/:id/complete',
+        { accepted: true, state: 'completed', code: 'completed', committed: true },
+      ],
+      ['/v1/reasoning/:id/fail', { accepted: true, state: 'failed', code: 'failed' }],
+    ] as const) {
+      r.post(path, (req) => {
+        seen.push({ path: req.path, did: req.callerDID, body: req.body });
+        return { status: 200, body };
+      });
+    }
+    const t = new InProcessTransport(r, 'did:key:z6MkInternalBrain');
+
+    await t.reasoningClaim({ backendId: 'internal' });
+    await t.reasoningHeartbeat('task-1', {
+      backendId: 'internal',
+      claimId: 'claim-1',
+      contextTicketId: 'ticket-1',
+    });
+    await t.reasoningComplete('task-1', {
+      backendId: 'internal',
+      claimId: 'claim-1',
+      contextTicketId: 'ticket-1',
+      executionId: 'exec-1',
+      contextProjectionHash: null,
+      policySnapshotHash: 'a'.repeat(64),
+      result: { answer: 'done' },
+    });
+    await t.reasoningFail('task-1', {
+      backendId: 'internal',
+      claimId: 'claim-1',
+      contextTicketId: 'ticket-1',
+      error: 'failed',
+      retryable: false,
+    });
+
+    expect(seen).toHaveLength(4);
+    expect(seen.every((entry) => entry.did === 'did:key:z6MkInternalBrain')).toBe(true);
+    expect(seen.every((entry) => !(entry.body as Record<string, unknown>).principal_did)).toBe(
+      true,
+    );
+  });
+
+  it('fails closed when no in-process reasoning principal was bound', async () => {
+    const t = new InProcessTransport(buildRouter());
+    await expect(t.reasoningClaim({ backendId: 'internal' })).rejects.toThrow(
+      'reasoning backend principal is not configured',
+    );
+  });
+
+  it('maps only a stale-claim heartbeat conflict to false', async () => {
+    const r = buildRouter();
+    let error = 'stale_claim';
+    r.post('/v1/reasoning/:id/heartbeat', () => ({
+      status: 409,
+      body: { ok: false, error },
+    }));
+    const t = new InProcessTransport(r, 'did:key:z6MkInternalBrain');
+    const input = {
+      backendId: 'internal',
+      claimId: 'claim-1',
+      contextTicketId: 'ticket-1',
+    };
+
+    await expect(t.reasoningHeartbeat('task-1', input)).resolves.toBe(false);
+
+    error = 'conflict';
+    await expect(t.reasoningHeartbeat('task-1', input)).rejects.toMatchObject({
+      status: 409,
+    });
   });
 });

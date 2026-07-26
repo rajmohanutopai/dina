@@ -61,6 +61,7 @@ export type WorkflowTaskKind =
   | 'delegation'
   | 'approval'
   | 'service_query'
+  | 'reasoning'
   | 'timer'
   | 'watch'
   | 'generic';
@@ -69,6 +70,7 @@ export const WorkflowTaskKind = Object.freeze({
   Delegation: 'delegation',
   Approval: 'approval',
   ServiceQuery: 'service_query',
+  Reasoning: 'reasoning',
   Timer: 'timer',
   Watch: 'watch',
   Generic: 'generic',

@@ -41,7 +41,12 @@ function makeStubClient(responder: (call: RecordedCall) => HttpResponse): {
   return { client, calls };
 }
 
-interface SignerArgs { method: string; path: string; query: string; body: Uint8Array }
+interface SignerArgs {
+  method: string;
+  path: string;
+  query: string;
+  body: Uint8Array;
+}
 
 /** Deterministic signer — returns fixed headers + captures last inputs. */
 function makeStubSigner(): {
@@ -172,7 +177,9 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await t.vaultList('personal', { limit: 50, offset: 10, type: 'note' });
 
     // Keys sorted alphabetically: limit, offset, persona, type.
-    expect(calls[0]?.url).toBe('http://core/v1/vault/list?limit=50&offset=10&persona=personal&type=note');
+    expect(calls[0]?.url).toBe(
+      'http://core/v1/vault/list?limit=50&offset=10&persona=personal&type=note',
+    );
     // Signer sees the same query string (no leading ?) — keeps canonical
     // string construction deterministic.
     expect(stub.lastArgs?.query).toBe('limit=50&offset=10&persona=personal&type=note');
@@ -475,9 +482,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('stagingFail translates retry_count → retryCount', async () => {
-    const { client, calls } = makeStubClient(() =>
-      ok({ id: 'stg-c', retry_count: 3 }),
-    );
+    const { client, calls } = makeStubClient(() => ok({ id: 'stg-c', retry_count: 3 }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -491,9 +496,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('stagingExtendLease translates extended_by → extendedBySeconds', async () => {
-    const { client, calls } = makeStubClient(() =>
-      ok({ id: 'stg-d', extended_by: 600 }),
-    );
+    const { client, calls } = makeStubClient(() => ok({ id: 'stg-d', extended_by: 600 }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -531,9 +534,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('msgSend surfaces 503 (no D2D sender wired) as thrown error', async () => {
-    const { client } = makeStubClient(() =>
-      ok({ error: 'D2D sender not wired' }, 503),
-    );
+    const { client } = makeStubClient(() => ok({ error: 'D2D sender not wired' }, 503));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -639,9 +640,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('scratchpadCheckpoint surfaces 413 (body too large) as thrown error', async () => {
-    const { client } = makeStubClient(() =>
-      ok({ error: 'body exceeds 262144 bytes' }, 413),
-    );
+    const { client } = makeStubClient(() => ok({ error: 'body exceeds 262144 bytes' }, 413));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -656,9 +655,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   // ─── Service respond (task 1.32 slice A) ──────────────────────────────
 
   it('sendServiceRespond POSTs {task_id, response_body} + surfaces {status, taskId, alreadyProcessed}', async () => {
-    const { client, calls } = makeStubClient(() =>
-      ok({ status: 'sent', task_id: 'svc-task-1' }),
-    );
+    const { client, calls } = makeStubClient(() => ok({ status: 'sent', task_id: 'svc-task-1' }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -680,9 +677,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('sendServiceRespond returns alreadyProcessed:true on Core retry-path response', async () => {
-    const { client } = makeStubClient(() =>
-      ok({ already_processed: true, status: 'completed' }),
-    );
+    const { client } = makeStubClient(() => ok({ already_processed: true, status: 'completed' }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -722,7 +717,9 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await t.listWorkflowEvents({ since: 10, limit: 50, needsDeliveryOnly: true });
     // Sorted keys — proves the canonical-signing path gets a
     // deterministic query string.
-    expect(calls[0]!.url).toBe('http://core/v1/workflow/events?limit=50&needs_delivery=true&since=10');
+    const call = calls[0];
+    if (call === undefined) throw new Error('workflow event request was not sent');
+    expect(call.url).toBe('http://core/v1/workflow/events?limit=50&needs_delivery=true&since=10');
   });
 
   it('listWorkflowEvents needsDeliveryOnly:false omits the flag (route treats absence as "full stream")', async () => {
@@ -1122,9 +1119,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   // ─── Memory + contacts (task 1.32 slice E) ────────────────────────────
 
   it('memoryTouch POSTs snake_case body + parses status/canonical', async () => {
-    const { client, calls } = makeStubClient(() =>
-      ok({ status: 'ok', canonical: 'dentist' }),
-    );
+    const { client, calls } = makeStubClient(() => ok({ status: 'ok', canonical: 'dentist' }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -1183,9 +1178,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('memoryTouch surfaces skipped status + reason from server', async () => {
-    const { client } = makeStubClient(() =>
-      ok({ status: 'skipped', reason: 'persona locked' }),
-    );
+    const { client } = makeStubClient(() => ok({ status: 'skipped', reason: 'persona locked' }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
       baseUrl: 'http://core',
@@ -1225,7 +1218,7 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(sent).toEqual({ preferred_for: [] });
   });
 
-  it('updateContact preferredFor=undefined omits field entirely (don\'t-touch)', async () => {
+  it("updateContact preferredFor=undefined omits field entirely (don't-touch)", async () => {
     const { client, calls } = makeStubClient(() => ok({ ok: true }));
     const stub = makeStubSigner();
     const t = new HttpCoreTransport({
@@ -1246,9 +1239,9 @@ describe('HttpCoreTransport (task 1.31)', () => {
       httpClient: client,
       signer: stub.signer,
     });
-    await expect(
-      t.updateContact('did:plc:unknown', { preferredFor: ['dental'] }),
-    ).rejects.toThrow(/updateContact.*404.*contact not found/);
+    await expect(t.updateContact('did:plc:unknown', { preferredFor: ['dental'] })).rejects.toThrow(
+      /updateContact.*404.*contact not found/,
+    );
   });
 
   it('updateContact rejects empty/whitespace DID client-side', async () => {
@@ -1259,12 +1252,8 @@ describe('HttpCoreTransport (task 1.31)', () => {
       httpClient: client,
       signer: stub.signer,
     });
-    await expect(t.updateContact('', { preferredFor: [] })).rejects.toThrow(
-      /did is required/,
-    );
-    await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(
-      /did is required/,
-    );
+    await expect(t.updateContact('', { preferredFor: [] })).rejects.toThrow(/did is required/);
+    await expect(t.updateContact('   ', { preferredFor: [] })).rejects.toThrow(/did is required/);
   });
 
   // Contact Services — issueServiceOffer parity with InProcessTransport: the
@@ -1323,5 +1312,84 @@ describe('HttpCoreTransport (task 1.31)', () => {
     const sent = JSON.parse(new TextDecoder().decode(body1));
     expect(sent).toEqual({ to_did: 'did:plc:emma', rkey: 'r', capability: 'c' });
     expect(sent).not.toHaveProperty('expires_at');
+  });
+
+  it('maps the reasoning worker plane without sending caller authority fields', async () => {
+    const { client, calls } = makeStubClient((call) => {
+      if (call.url.endsWith('/claim')) return ok({ claim: null });
+      if (call.url.endsWith('/heartbeat')) return ok({ ok: true });
+      if (call.url.endsWith('/complete')) {
+        return ok({ accepted: true, state: 'completed', code: 'completed', committed: true });
+      }
+      return ok({ accepted: true, state: 'failed', code: 'failed' });
+    });
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+
+    await expect(t.reasoningClaim({ backendId: 'internal', leaseMs: 30_000 })).resolves.toBeNull();
+    await expect(
+      t.reasoningHeartbeat('task/1', {
+        backendId: 'internal',
+        claimId: 'claim-1',
+        contextTicketId: 'ticket-1',
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      t.reasoningComplete('task/1', {
+        backendId: 'internal',
+        claimId: 'claim-1',
+        contextTicketId: 'ticket-1',
+        executionId: 'exec-1',
+        contextProjectionHash: null,
+        policySnapshotHash: 'a'.repeat(64),
+        result: { answer: 'done' },
+      }),
+    ).resolves.toMatchObject({ accepted: true, committed: true });
+    await expect(
+      t.reasoningFail('task/1', {
+        backendId: 'internal',
+        claimId: 'claim-1',
+        contextTicketId: 'ticket-1',
+        error: 'failed',
+        retryable: false,
+      }),
+    ).resolves.toMatchObject({ accepted: true, state: 'failed' });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'http://core/v1/reasoning/claim',
+      'http://core/v1/reasoning/task%2F1/heartbeat',
+      'http://core/v1/reasoning/task%2F1/complete',
+      'http://core/v1/reasoning/task%2F1/fail',
+    ]);
+    for (const call of calls) {
+      const body = JSON.parse(new TextDecoder().decode(call.init.body));
+      expect(body).not.toHaveProperty('principal_did');
+      expect(body.backend_id).toBe('internal');
+    }
+  });
+
+  it('maps only a stale-claim heartbeat conflict to false', async () => {
+    let response = ok({ ok: false, error: 'stale_claim' }, 409);
+    const { client } = makeStubClient(() => response);
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    const input = {
+      backendId: 'internal',
+      claimId: 'claim-1',
+      contextTicketId: 'ticket-1',
+    };
+
+    await expect(t.reasoningHeartbeat('task-1', input)).resolves.toBe(false);
+
+    response = ok({ error: 'conflict' }, 409);
+    await expect(t.reasoningHeartbeat('task-1', input)).rejects.toMatchObject({
+      status: 409,
+    });
   });
 });

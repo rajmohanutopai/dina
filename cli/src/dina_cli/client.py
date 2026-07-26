@@ -320,10 +320,11 @@ class DinaClient:
         """
         if session and host_session:
             raise ValueError("pass either session or host_session, not both")
+        if mode != "enforce":
+            raise ValueError("gate mode is resolved by Dina Core")
         body: dict[str, Any] = {
             "tool_name": tool_name,
             "tool_input": tool_input,
-            "mode": mode,
             "approval_surface": approval_surface,
         }
         if session:
@@ -612,6 +613,232 @@ class DinaClient:
         """List this authenticated caller's active Core sessions."""
         resp = self._request(self._core, "GET", "/v1/sessions")
         return resp.json()
+
+    # -- Connected reasoning backend -----------------------------------------
+
+    def context_prepare(
+        self,
+        *,
+        session: str,
+        query: str,
+        purpose: str = "",
+        personas: list[str] | None = None,
+        limit: int | None = None,
+    ) -> dict:
+        """Request a bounded, scrubbed context projection from Dina Core."""
+        if not session or not query.strip():
+            raise ValueError("context prepare requires session and query")
+        body: dict[str, Any] = {
+            "session_id": session,
+            "query": query,
+        }
+        if purpose:
+            body["purpose"] = purpose
+        if personas is not None:
+            body["personas"] = personas
+        if limit is not None:
+            body["limit"] = limit
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/context/prepare",
+            json=body,
+        ).json()
+
+    def memory_propose(
+        self,
+        *,
+        session: str,
+        request_id: str,
+        source_text: str,
+        proposal: dict[str, Any],
+    ) -> dict:
+        """Submit a structured memory proposal for Core-owned validation/commit."""
+        if not session or not request_id or not source_text.strip():
+            raise ValueError(
+                "memory propose requires session, request_id, and source_text"
+            )
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/agent/memory/propose",
+            json={
+                "session_id": session,
+                "request_id": request_id,
+                "source_text": source_text,
+                "proposal": proposal,
+            },
+        ).json()
+
+    def reasoning_status(self, backend_id: str, session: str) -> dict:
+        """Return this bound backend's pending-work and availability status."""
+        if not backend_id or not session:
+            raise ValueError("reasoning status requires backend_id and session")
+        return self._request(
+            self._core,
+            "GET",
+            "/v1/reasoning/status",
+            params={"backend_id": backend_id, "session_id": session},
+        ).json()
+
+    def reasoning_begin(
+        self,
+        *,
+        backend_id: str,
+        session: str,
+        task_kind: str,
+        input_data: Any,
+        purpose: str = "",
+        idempotency_key: str = "",
+    ) -> dict:
+        """Create and claim one inline reasoning job for this active host turn."""
+        if not backend_id or not session or not task_kind:
+            raise ValueError(
+                "reasoning begin requires backend_id, session, and task_kind"
+            )
+        body: dict[str, Any] = {
+            "backend_id": backend_id,
+            "session_id": session,
+            "task_kind": task_kind,
+            "input": input_data,
+        }
+        if purpose:
+            body["purpose"] = purpose
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/reasoning/begin",
+            json=body,
+        ).json()
+
+    def reasoning_claim(
+        self,
+        *,
+        backend_id: str,
+        session: str,
+        lease_ms: int = 120_000,
+    ) -> dict:
+        """Claim one eligible durable reasoning job for this exact backend."""
+        if not backend_id or not session:
+            raise ValueError("reasoning claim requires backend_id and session")
+        if lease_ms < 1_000 or lease_ms > 300_000:
+            raise ValueError("reasoning lease_ms must be between 1000 and 300000")
+        return self._request(
+            self._core,
+            "POST",
+            "/v1/reasoning/claim",
+            json={
+                "backend_id": backend_id,
+                "session_id": session,
+                "lease_ms": lease_ms,
+            },
+        ).json()
+
+    def reasoning_heartbeat(
+        self,
+        *,
+        task_id: str,
+        backend_id: str,
+        session: str,
+        claim_id: str,
+        context_ticket_id: str,
+        lease_ms: int = 120_000,
+    ) -> dict:
+        """Renew an exact reasoning claim without weakening its policy snapshot."""
+        if not all((task_id, backend_id, session, claim_id, context_ticket_id)):
+            raise ValueError("reasoning heartbeat requires all claim identifiers")
+        if lease_ms < 1_000 or lease_ms > 300_000:
+            raise ValueError("reasoning lease_ms must be between 1000 and 300000")
+        return self._request(
+            self._core,
+            "POST",
+            f"/v1/reasoning/{task_id}/heartbeat",
+            json={
+                "backend_id": backend_id,
+                "session_id": session,
+                "claim_id": claim_id,
+                "context_ticket_id": context_ticket_id,
+                "lease_ms": lease_ms,
+            },
+        ).json()
+
+    def reasoning_complete(
+        self,
+        *,
+        task_id: str,
+        backend_id: str,
+        session: str,
+        claim_id: str,
+        context_ticket_id: str,
+        execution_id: str,
+        policy_snapshot_hash: str,
+        context_projection_hash: str | None,
+        result: Any,
+        evidence_ids: list[str] | None = None,
+    ) -> dict:
+        """Submit a proposal for Core validation and claim-fenced completion."""
+        if not all(
+            (
+                task_id,
+                backend_id,
+                session,
+                claim_id,
+                context_ticket_id,
+                execution_id,
+                policy_snapshot_hash,
+            )
+        ):
+            raise ValueError("reasoning completion requires all claim identifiers")
+        body: dict[str, Any] = {
+            "backend_id": backend_id,
+            "session_id": session,
+            "claim_id": claim_id,
+            "context_ticket_id": context_ticket_id,
+            "execution_id": execution_id,
+            "policy_snapshot_hash": policy_snapshot_hash,
+            "context_projection_hash": context_projection_hash,
+            "result": result,
+        }
+        if evidence_ids is not None:
+            body["evidence_ids"] = evidence_ids
+        return self._request(
+            self._core,
+            "POST",
+            f"/v1/reasoning/{task_id}/complete",
+            json=body,
+        ).json()
+
+    def reasoning_fail(
+        self,
+        *,
+        task_id: str,
+        backend_id: str,
+        session: str,
+        claim_id: str,
+        context_ticket_id: str,
+        error: str,
+        retryable: bool,
+    ) -> dict:
+        """Report an exact reasoning attempt failure to Core."""
+        if not all(
+            (task_id, backend_id, session, claim_id, context_ticket_id, error)
+        ):
+            raise ValueError("reasoning failure requires all claim identifiers")
+        return self._request(
+            self._core,
+            "POST",
+            f"/v1/reasoning/{task_id}/fail",
+            json={
+                "backend_id": backend_id,
+                "session_id": session,
+                "claim_id": claim_id,
+                "context_ticket_id": context_ticket_id,
+                "error": error,
+                "retryable": retryable,
+            },
+        ).json()
 
     def proposal_status(self, proposal_id: str) -> dict:
         """Poll intent proposal status (GET /v1/intent/proposals/{id}/status)."""

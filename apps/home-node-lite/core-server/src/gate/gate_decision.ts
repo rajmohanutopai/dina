@@ -18,15 +18,16 @@
  * and whether a permit is issued differ.
  */
 
+import { type AgentGatingProfile, type AuthorityOrigin, type RiskLevel } from '@dina/core';
+
+import { classifyBashCommand } from './bash_classifier';
 import {
   classifyFileToolCall,
   isProtectedPath,
   canonicalizePath,
   type ProtectedPathOptions,
 } from './coding_classifier';
-import { classifyBashCommand } from './bash_classifier';
 import { PermitStore, hashPayload, type PermitRecord, type ToolPayload } from './permit';
-import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
 
 export type GateMode = 'enforce' | 'classify_only';
 export type GateOutcome = 'allow' | 'approval_required' | 'deny';
@@ -62,6 +63,20 @@ export interface GateDecision {
   reason: string;
 }
 
+export interface ProfiledGateInput extends Omit<GateInput, 'mode'> {
+  profile: AgentGatingProfile;
+  authorityOrigin: AuthorityOrigin;
+  policyVersion: number;
+}
+
+export interface ProfiledGateDecision extends GateDecision {
+  profile: AgentGatingProfile;
+  authorityOriginKind: AuthorityOrigin['kind'];
+  policyVersion: number;
+  /** Controls metadata retention in the Core route. */
+  auditLevel: 'none' | 'kernel' | 'boundary' | 'full';
+}
+
 function riskToOutcome(risk: RiskLevel): GateOutcome {
   if (risk === 'SAFE') return 'allow';
   if (risk === 'BLOCKED') return 'deny';
@@ -91,7 +106,8 @@ function extractPaths(toolName: string, input: Record<string, unknown>): string[
   const out: string[] = [];
   const push = (v: unknown) => {
     if (typeof v === 'string' && v !== '') out.push(v);
-    else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string' && x !== '') out.push(x);
+    else if (Array.isArray(v))
+      for (const x of v) if (typeof x === 'string' && x !== '') out.push(x);
   };
   push(input.file_path);
   push(input.notebook_path);
@@ -182,7 +198,11 @@ export function classifyToolCall(input: {
     const host = hostOf(url);
     const allow = new Set((input.allowedHosts ?? []).map((h) => h.toLowerCase()));
     if (host && allow.has(host))
-      return { action: 'network_egress', risk: 'MODERATE', reason: `${toolName} → allowlisted host` };
+      return {
+        action: 'network_egress',
+        risk: 'MODERATE',
+        reason: `${toolName} → allowlisted host`,
+      };
     return {
       action: 'network_egress_untrusted',
       risk: 'HIGH',
@@ -201,9 +221,89 @@ export function classifyToolCall(input: {
   // its input: if any resolves to a protected path, fail closed to BLOCKED.
   for (const p of deepStrings(input.toolInput, [])) {
     if (isProtectedPath(canonicalizePath(p, cwd), opts))
-      return { action: 'secret_read', risk: 'BLOCKED', reason: `${toolName} names a protected path` };
+      return {
+        action: 'secret_read',
+        risk: 'BLOCKED',
+        reason: `${toolName} names a protected path`,
+      };
   }
-  return { action: 'code_edit_external', risk: 'MODERATE', reason: `unrecognised tool (${toolName})` };
+  return {
+    action: 'code_edit_external',
+    risk: 'MODERATE',
+    reason: `unrecognised tool (${toolName})`,
+  };
+}
+
+/**
+ * Immutable protection shared by every profile.
+ *
+ * The existing Bash parser is intentionally reused because it contains the
+ * audited path canonicalisation, redirect, glob, symlink and obfuscation nets.
+ * Only a BLOCKED result escapes this function; ordinary classifications are
+ * discarded and are neither returned nor audited in Network Protection.
+ */
+export function kernelPrecheck(input: {
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  vaultDir: string;
+  cwd?: string;
+  keyDirs?: string[];
+  allowedHosts?: string[];
+}): { allowed: true } | { allowed: false; action: string; reason: string } {
+  const classified = classifyToolCall(input);
+  if (classified.risk !== 'BLOCKED') return { allowed: true };
+  return {
+    allowed: false,
+    action: classified.action,
+    reason: classified.reason,
+  };
+}
+
+const STRUCTURED_TOOL_NAMES = new Set([
+  ...FILE_READ_TOOLS,
+  ...FILE_WRITE_TOOLS,
+  ...NETWORK_TOOLS,
+  'Bash',
+]);
+
+/**
+ * Conservative V1 boundary detector.
+ *
+ * This is intentionally action/rule based, never model based. Unknown tools
+ * escalate. Local reads/edits/VCS and recognized build/test/script execution
+ * stay host-managed; external disclosure, authority/system mutation, broad
+ * destruction and package installation remain gated.
+ */
+export function isSensitiveBoundary(
+  input: Pick<ProfiledGateInput, 'toolName'>,
+  classified: { action: string; risk: RiskLevel; reason: string },
+): boolean {
+  if (classified.risk === 'BLOCKED') return true;
+  if (!STRUCTURED_TOOL_NAMES.has(input.toolName)) return true;
+  if (
+    classified.action === 'code_read' ||
+    classified.action === 'code_edit' ||
+    classified.action === 'vcs_local'
+  ) {
+    return false;
+  }
+  if (classified.action === 'code_edit_external' && input.toolName === 'Bash') {
+    return !(
+      classified.reason.includes('runs a build/task runner') ||
+      classified.reason.includes('runs a local script') ||
+      classified.reason.includes('(runs code)')
+    );
+  }
+  // A generic WebSearch/WebFetch is a read performed under the host's own
+  // permissions. Bash network commands remain gated because they can carry
+  // arbitrary inline request bodies.
+  if (
+    (input.toolName === 'WebSearch' || input.toolName === 'WebFetch') &&
+    (classified.action === 'network_egress' || classified.action === 'network_egress_untrusted')
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -268,6 +368,142 @@ export function gateToolCall(input: GateInput, permits: PermitStore): GateDecisi
   return { mode: 'enforce', action, risk, outcome, enforced: true, payloadHash, reason };
 }
 
+/**
+ * Profile-aware entry point used by production.
+ *
+ * The public caller never supplies `profile` or `authorityOrigin`; Core resolves
+ * both before invoking this Node/fs-backed function.
+ */
+export function gateProfiledToolCall(
+  input: ProfiledGateInput,
+  permits: PermitStore,
+): ProfiledGateDecision {
+  const kernel = kernelPrecheck(input);
+  if (!kernel.allowed) {
+    return {
+      mode: 'enforce',
+      action: kernel.action,
+      risk: 'BLOCKED',
+      outcome: 'deny',
+      enforced: true,
+      payloadHash: hashPayload(toPayload(input)),
+      reason: kernel.reason,
+      profile: input.profile,
+      authorityOriginKind: input.authorityOrigin.kind,
+      policyVersion: input.policyVersion,
+      auditLevel: 'kernel',
+    };
+  }
+
+  if (input.profile === 'network_protection') {
+    return {
+      mode: 'enforce',
+      action: 'host_managed',
+      risk: 'SAFE',
+      outcome: 'allow',
+      enforced: false,
+      reason: 'owner-interactive call delegated to host permissions',
+      profile: input.profile,
+      authorityOriginKind: input.authorityOrigin.kind,
+      policyVersion: input.policyVersion,
+      auditLevel: 'none',
+    };
+  }
+
+  if (input.profile === 'sensitive_boundaries') {
+    const classified = classifyToolCall(input);
+    if (!isSensitiveBoundary(input, classified)) {
+      return {
+        mode: 'enforce',
+        action: 'host_managed',
+        risk: 'SAFE',
+        outcome: 'allow',
+        enforced: false,
+        reason: 'ordinary owner work delegated to host permissions',
+        profile: input.profile,
+        authorityOriginKind: input.authorityOrigin.kind,
+        policyVersion: input.policyVersion,
+        auditLevel: 'none',
+      };
+    }
+    const decision = decideFromClassification(input, classified, permits);
+    return {
+      ...decision,
+      profile: input.profile,
+      authorityOriginKind: input.authorityOrigin.kind,
+      policyVersion: input.policyVersion,
+      auditLevel: 'boundary',
+    };
+  }
+
+  const decision = gateToolCall({ ...input, mode: 'enforce' }, permits);
+  return {
+    ...decision,
+    profile: input.profile,
+    authorityOriginKind: input.authorityOrigin.kind,
+    policyVersion: input.policyVersion,
+    auditLevel: 'full',
+  };
+}
+
+function decideFromClassification(
+  input: ProfiledGateInput,
+  classified: { action: string; risk: RiskLevel; reason: string },
+  permits: PermitStore,
+): GateDecision {
+  const outcome = riskToOutcome(classified.risk);
+  const payload = toPayload(input);
+  const payloadHash = hashPayload(payload);
+  if (outcome === 'allow') {
+    const permit = permits.mint({
+      action: classified.action,
+      risk: classified.risk,
+      payload,
+      agentDid: input.agentDid,
+      sessionId: input.sessionId,
+      decision: 'auto',
+    });
+    return {
+      mode: 'enforce',
+      action: classified.action,
+      risk: classified.risk,
+      outcome,
+      enforced: true,
+      permit,
+      payloadHash,
+      reason: classified.reason,
+    };
+  }
+  if (outcome === 'approval_required') {
+    const redeemed = permits.consume({
+      agentDid: input.agentDid,
+      sessionId: input.sessionId,
+      payload,
+    });
+    if (redeemed.ok && redeemed.permit.decision === 'approved') {
+      return {
+        mode: 'enforce',
+        action: classified.action,
+        risk: classified.risk,
+        outcome: 'allow',
+        enforced: true,
+        permit: redeemed.permit,
+        payloadHash,
+        reason: `${classified.reason} (redeemed owner-approved permit)`,
+      };
+    }
+  }
+  return {
+    mode: 'enforce',
+    action: classified.action,
+    risk: classified.risk,
+    outcome,
+    enforced: true,
+    payloadHash,
+    reason: classified.reason,
+  };
+}
+
 /** Mint the permit that redeems an owner-approved MODERATE/HIGH call. */
 export function mintApprovedPermit(input: GateInput, permits: PermitStore): PermitRecord {
   const { action, risk } = classifyToolCall(input);
@@ -281,6 +517,6 @@ export function mintApprovedPermit(input: GateInput, permits: PermitStore): Perm
   });
 }
 
-function toPayload(input: GateInput): ToolPayload {
+function toPayload(input: Pick<GateInput, 'toolName' | 'toolInput'>): ToolPayload {
   return { tool: input.toolName, input: input.toolInput };
 }

@@ -17,14 +17,7 @@
  * Source: core/internal/middleware/authz.go, ARCHITECTURE.md Section 18.4
  */
 
-export type CallerType =
-  | 'owner'
-  | 'brain'
-  | 'admin'
-  | 'connector'
-  | 'device'
-  | 'agent'
-  | 'plugin';
+export type CallerType = 'owner' | 'brain' | 'admin' | 'connector' | 'device' | 'agent' | 'plugin';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of
@@ -73,6 +66,22 @@ const AUTHZ_RULES: {
   // standing work — same boundary as /v1/run: every signed caller is denied
   // here, and the in-process owner path is enforced by the in-handler guard.
   { prefix: '/v1/watch', allowed: new Set(['owner']) },
+  // Connected-agent policy is owner-only in-handler. Signed access is limited
+  // to the node's own admin/device DID; the handler verifies the exact DID.
+  { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/reasoning', allowed: new Set(['owner', 'admin', 'device']) },
+
+  // Reasoning backend administration is owner-only in-handler. A connected
+  // backend can use the worker routes below but cannot create or widen its own
+  // binding.
+  {
+    prefix: '/v1/reasoning/backends',
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  // Connected coding hosts and the split internal Brain may process only
+  // dedicated reasoning jobs. Exact backend/principal/session checks live in
+  // the route and broker.
+  { prefix: '/v1/reasoning', allowed: new Set(['brain', 'agent']) },
 
   // Vault — Brain reads/writes, device reads, agent reads (via grant)
   { prefix: '/v1/vault/store/batch', allowed: new Set(['brain']) },
@@ -98,7 +107,12 @@ const AUTHZ_RULES: {
 
   // A paired client may revoke only itself. The route takes no caller-supplied
   // device id, so this does not widen device management to agents/plugins.
-  { prefix: '/v1/devices/self', method: 'DELETE', exact: true, allowed: new Set(['device', 'agent', 'plugin']) },
+  {
+    prefix: '/v1/devices/self',
+    method: 'DELETE',
+    exact: true,
+    allowed: new Set(['device', 'agent', 'plugin']),
+  },
 
   // Devices — Admin only
   { prefix: '/v1/devices', allowed: new Set(['admin']) },

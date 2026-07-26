@@ -50,6 +50,12 @@ export interface StagingRepository {
    * versa). Atomically leases them.
    */
   claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[];
+  /**
+   * Claim one exact row. Used by Core-owned proposal commit bridges where
+   * claiming an unrelated FIFO row would strand somebody else's work.
+   * An expired claim may be reclaimed; a live claim never may.
+   */
+  claimById(id: string, leaseDuration: number, now: number, scope: DataScope): StagingItem | null;
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void;
   sweep(now: number): {
     expired: number;
@@ -166,6 +172,29 @@ export class SQLiteStagingRepository implements StagingRepository {
       [...ids, leaseUntil],
     );
     return mapStagingItems(rows);
+  }
+
+  claimById(id: string, leaseDuration: number, now: number, scope: DataScope): StagingItem | null {
+    const leaseUntil = now + leaseDuration;
+    const changed = this.db.run(
+      `UPDATE staging_inbox
+       SET status = 'classifying', lease_until = ?
+       WHERE id = ? AND data_scope = ?
+         AND (
+           status = 'received'
+           OR (status = 'classifying' AND lease_until < ?)
+         )`,
+      [leaseUntil, id, scope, now],
+    );
+    if (changed !== 1) return null;
+    const row = this.db.query(
+      `SELECT * FROM staging_inbox
+       WHERE id = ? AND data_scope = ?
+         AND status = 'classifying' AND lease_until = ?
+       LIMIT 1`,
+      [id, scope, leaseUntil],
+    )[0];
+    return row ? rowToStagingItem(row) : null;
   }
 
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void {
@@ -315,6 +344,25 @@ export class InMemoryStagingRepository implements StagingRepository {
       claimed.push(cloneItem(next));
     }
     return claimed;
+  }
+
+  claimById(id: string, leaseDuration: number, now: number, scope: DataScope): StagingItem | null {
+    const current = this.rows.get(id);
+    if (
+      current === undefined ||
+      current.data_scope !== scope ||
+      (current.status !== 'received' &&
+        !(current.status === 'classifying' && current.lease_until < now))
+    ) {
+      return null;
+    }
+    const next: StagingItem = {
+      ...current,
+      status: 'classifying',
+      lease_until: now + leaseDuration,
+    };
+    this.rows.set(id, cloneItem(next));
+    return cloneItem(next);
   }
 
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void {

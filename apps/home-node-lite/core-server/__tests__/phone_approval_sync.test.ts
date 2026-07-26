@@ -24,6 +24,9 @@ function createSourceTask(): string {
   const created = createCodingGateApproval({
     agentDid: 'did:key:z6MkAgent',
     sessionId: 'session-1',
+    effectiveProfile: 'full_supervision',
+    policyVersion: 1,
+    authorityOrigin: 'owner_interactive',
     payloadHash: 'a'.repeat(64),
     tool: 'Write',
     action: 'filesystem.write',
@@ -283,6 +286,9 @@ describe('phone approval synchronization worker', () => {
     createCodingGateApproval({
       agentDid: 'did:key:z6MkAgent',
       sessionId: 'session-1',
+      effectiveProfile: 'full_supervision',
+      policyVersion: 1,
+      authorityOrigin: 'owner_interactive',
       payloadHash: 'b'.repeat(64),
       tool: 'Bash',
       action: 'network.write',

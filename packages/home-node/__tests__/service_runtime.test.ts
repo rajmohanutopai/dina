@@ -3,7 +3,6 @@ import { buildHomeNodeServiceRuntime } from '../service-runtime';
 import type { CoreClient } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
-
 const REQUESTER = 'did:plc:requester';
 
 const SERVICE_CONFIG: ServiceConfig = {
@@ -45,6 +44,19 @@ const VALID_QUERY = {
   params: { location: { lat: 37.77, lng: -122.41 } },
   ttl_seconds: 60,
   schema_hash: 'hash-v1',
+};
+
+const INSTRUCTION_CONFIG: ServiceConfig = {
+  isDiscoverable: true,
+  name: 'Alonso Salon',
+  vaultPersona: 'salon',
+  capabilities: {
+    appointment_availability: {
+      responsePolicy: 'auto',
+      category: 'appointments',
+      instruction: 'Use the salon schedule notes to answer availability.',
+    },
+  },
 };
 
 describe('@dina/home-node/service-runtime', () => {
@@ -197,6 +209,46 @@ describe('@dina/home-node/service-runtime', () => {
     });
   });
 
+  it('forwards the optional reasoning strategy through the shared runtime', async () => {
+    const core = stubCore();
+    const reasoningSubmitter = jest.fn(async () => ({
+      taskId: 'reason-service-1',
+      backendId: 'connected-brain',
+      deduplicated: false,
+    }));
+    const runtime = buildHomeNodeServiceRuntime({
+      core: core.client,
+      appView: stubAppView(),
+      readConfig: () => INSTRUCTION_CONFIG,
+      rejectResponder: jest.fn(),
+      deliver: jest.fn(),
+      reasoningSubmitter,
+    });
+
+    await runtime.dispatcher.dispatch(
+      REQUESTER,
+      { type: 'service.query', from: REQUESTER, to: 'did:plc:server' } as never,
+      {
+        query_id: 'q-reasoning',
+        capability: 'appointment_availability',
+        params: { date: 'tomorrow' },
+        ttl_seconds: 300,
+      },
+    );
+
+    expect(reasoningSubmitter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requesterDid: REQUESTER,
+        queryId: 'q-reasoning',
+        capabilityId: 'appointment_availability',
+        serviceName: 'Alonso Salon',
+        vaultPersona: 'salon',
+        ttlSeconds: 300,
+      }),
+    );
+    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+  });
+
   it('fails fast when required runtime dependencies are omitted', () => {
     const base = {
       core: stubCore().client,
@@ -209,8 +261,9 @@ describe('@dina/home-node/service-runtime', () => {
     expect(() =>
       buildHomeNodeServiceRuntime({ ...base, rejectResponder: undefined as never }),
     ).toThrow(/rejectResponder is required/);
-    expect(() => buildHomeNodeServiceRuntime({ ...base, deliver: undefined as never }))
-      .toThrow(/deliver is required/);
+    expect(() => buildHomeNodeServiceRuntime({ ...base, deliver: undefined as never })).toThrow(
+      /deliver is required/,
+    );
   });
 });
 

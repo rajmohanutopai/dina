@@ -43,8 +43,15 @@ import {
   type PairedDevice,
 } from '@dina/core/devices';
 
+import {
+  activeConnectedBrainForPrincipal,
+  disableConnectedBrain,
+  enableConnectedBrain,
+  type ConnectedBrainOwnerClient,
+} from '../src/reasoning/connected_brain_control';
 import { buildAgentSetupCode } from '../src/services/agent_setup_code';
 import { resolveMsgBoxURL } from '../src/services/msgbox_wiring';
+import { getOwnerRunClient } from '../src/services/owner_run_client';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 interface LiveCode {
@@ -82,6 +89,37 @@ export default function PairedDevicesScreen() {
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const [sharedSetup, setSharedSetup] = useState(false);
+  const [reasoningBackends, setReasoningBackends] = useState<
+    Awaited<ReturnType<ConnectedBrainOwnerClient['reasoningBackends']>>['backends']
+  >([]);
+  const [brainBusyDid, setBrainBusyDid] = useState<string | null>(null);
+
+  const getBrainClient = useCallback((): ConnectedBrainOwnerClient | null => {
+    const client = getOwnerRunClient();
+    return client !== null &&
+      typeof client.reasoningBackends === 'function' &&
+      typeof client.reasoningRegisterBackend === 'function' &&
+      typeof client.reasoningRevokeBackend === 'function'
+      ? (client as ConnectedBrainOwnerClient)
+      : null;
+  }, []);
+
+  const refreshBrainBindings = useCallback(async () => {
+    const client = getBrainClient();
+    if (client === null) {
+      setReasoningBackends([]);
+      return;
+    }
+    try {
+      setReasoningBackends((await client.reasoningBackends()).backends);
+    } catch (err) {
+      console.warn(
+        '[paired-devices] reasoning backend list failed',
+        err instanceof Error ? err.message : String(err),
+      );
+      setReasoningBackends([]);
+    }
+  }, [getBrainClient]);
 
   const refreshDevices = useCallback(() => {
     try {
@@ -119,12 +157,25 @@ export default function PairedDevicesScreen() {
               // but we must NOT claim a durable revoke — surface a warning.
               void (async () => {
                 try {
+                  let brainCleanupFailed = false;
+                  const brainClient = getBrainClient();
+                  if (brainClient !== null) {
+                    try {
+                      await disableConnectedBrain(brainClient, device.did);
+                    } catch {
+                      // Device revocation remains the hard security boundary:
+                      // continue even when the convenience-policy cleanup
+                      // conflicts, then tell the owner it needs attention.
+                      brainCleanupFailed = true;
+                    }
+                  }
                   const result = await revokeDeviceDurable(device.deviceId);
                   refreshDevices();
-                  if (!result.durable) {
+                  await refreshBrainBindings();
+                  if (!result.durable || brainCleanupFailed) {
                     Alert.alert(
                       'Revoke not fully saved',
-                      'Access was cut on this device, but the change could not be saved durably. It may not survive a restart, so please retry.',
+                      'Agent access was cut, but every related policy change could not be confirmed. Please retry after the app is fully available.',
                     );
                   }
                 } catch (err) {
@@ -136,12 +187,39 @@ export default function PairedDevicesScreen() {
         ],
       );
     },
-    [refreshDevices],
+    [getBrainClient, refreshBrainBindings, refreshDevices],
   );
 
   useEffect(() => {
     refreshDevices();
-  }, [refreshDevices]);
+    void refreshBrainBindings();
+  }, [refreshBrainBindings, refreshDevices]);
+
+  const handleToggleBrain = useCallback(
+    async (device: PairedDevice) => {
+      const client = getBrainClient();
+      if (client === null || device.revoked) return;
+      setBrainBusyDid(device.did);
+      try {
+        const active = activeConnectedBrainForPrincipal(reasoningBackends, device.did);
+        if (active === null) {
+          await enableConnectedBrain(client, device);
+        } else {
+          await disableConnectedBrain(client, device.did);
+        }
+        await refreshBrainBindings();
+      } catch (err) {
+        Alert.alert(
+          'Could not update Brain access',
+          err instanceof Error ? err.message : String(err),
+        );
+        await refreshBrainBindings();
+      } finally {
+        setBrainBusyDid(null);
+      }
+    },
+    [getBrainClient, reasoningBackends, refreshBrainBindings],
+  );
 
   // Tick the expiry countdown every second while a code is live.
   useEffect(() => {
@@ -222,43 +300,83 @@ export default function PairedDevicesScreen() {
           {devices.length === 0 ? (
             <Text style={styles.empty}>No agents connected yet.</Text>
           ) : (
-            devices.map((d) => (
-              <View key={d.deviceId} style={styles.deviceRow}>
-                <View style={styles.deviceRowMain}>
-                  <Text style={styles.deviceName}>{d.deviceName}</Text>
-                  <Text style={styles.deviceMeta}>
-                    {d.role}
-                    {d.scope !== undefined ? ` · ${d.scope}` : ''}
+            devices.map((d) => {
+              const activeBrain = activeConnectedBrainForPrincipal(reasoningBackends, d.did);
+              const brainBusy = brainBusyDid === d.did;
+              return (
+                <View key={d.deviceId} style={styles.deviceRow}>
+                  <View style={styles.deviceRowMain}>
+                    <Text style={styles.deviceName}>{d.deviceName}</Text>
+                    <Text style={styles.deviceMeta}>
+                      {d.role}
+                      {d.scope !== undefined ? ` · ${d.scope}` : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.deviceDID} numberOfLines={1} ellipsizeMode="middle">
+                    {d.did}
                   </Text>
+                  <Text style={styles.deviceMeta}>
+                    Paired {new Date(d.createdAt).toLocaleDateString()}
+                    {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
+                    {d.revoked ? ' • revoked' : ''}
+                  </Text>
+                  {!d.revoked && getBrainClient() !== null && (
+                    <>
+                      <Pressable
+                        testID={`paired-devices-brain-${d.deviceId}`}
+                        onPress={() => void handleToggleBrain(d)}
+                        disabled={brainBusy}
+                        style={({ pressed }) => [
+                          styles.brainButton,
+                          activeBrain !== null && styles.brainButtonActive,
+                          (pressed || brainBusy) && styles.brainButtonPressed,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          activeBrain === null
+                            ? `Use ${d.deviceName} as Brain`
+                            : `Stop using ${d.deviceName} as Brain`
+                        }
+                      >
+                        {brainBusy ? (
+                          <ActivityIndicator size="small" color={colors.textPrimary} />
+                        ) : (
+                          <Text style={styles.brainButtonText}>
+                            {activeBrain === null ? 'Use as Brain' : 'Stop using as Brain'}
+                          </Text>
+                        )}
+                      </Pressable>
+                      <Text style={styles.brainHelp}>
+                        {activeBrain === null
+                          ? 'Let this active Claude, Codex, or other coding-agent session perform bounded reasoning for Dina.'
+                          : 'Foreground only. Dina still controls identity, context, approvals, state, and actions.'}
+                      </Text>
+                    </>
+                  )}
+                  {!d.revoked && (
+                    <Pressable
+                      testID="paired-devices-revoke"
+                      onPress={() => handleRevoke(d)}
+                      style={({ pressed }) => [
+                        styles.revokeButton,
+                        pressed && styles.revokeButtonPressed,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Revoke ${d.deviceName}`}
+                    >
+                      <Text style={styles.revokeText}>Revoke access</Text>
+                    </Pressable>
+                  )}
                 </View>
-                <Text style={styles.deviceDID} numberOfLines={1} ellipsizeMode="middle">
-                  {d.did}
-                </Text>
-                <Text style={styles.deviceMeta}>
-                  Paired {new Date(d.createdAt).toLocaleDateString()}
-                  {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
-                  {d.revoked ? ' • revoked' : ''}
-                </Text>
-                {!d.revoked && (
-                  <Pressable
-                    testID="paired-devices-revoke"
-                    onPress={() => handleRevoke(d)}
-                    style={({ pressed }) => [
-                      styles.revokeButton,
-                      pressed && styles.revokeButtonPressed,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Revoke ${d.deviceName}`}
-                  >
-                    <Text style={styles.revokeText}>Revoke access</Text>
-                  </Pressable>
-                )}
-              </View>
-            ))
+              );
+            })
           )}
           <Pressable
             testID="paired-devices-refresh"
-            onPress={refreshDevices}
+            onPress={() => {
+              refreshDevices();
+              void refreshBrainBindings();
+            }}
             style={styles.refreshButton}
             accessibilityRole="button"
           >
@@ -279,9 +397,8 @@ export default function PairedDevicesScreen() {
             1. Install on the agent host: <Text style={styles.mono}>pip install dina-agent</Text>.
             {'\n'}
             2. Generate a setup code below.{'\n'}
-            3. On the agent host, run <Text style={styles.mono}>dina init</Text> and paste the
-            setup code when asked — it pairs, then installs the Dina skill for the agents on that
-            machine.
+            3. On the agent host, run <Text style={styles.mono}>dina init</Text> and paste the setup
+            code when asked — it pairs, then installs the Dina skill for the agents on that machine.
             {'\n\n'}
             The agent then registers its own keypair against the embedded pairing code. The code
             expires shortly after it's issued.
@@ -498,6 +615,29 @@ const styles = StyleSheet.create({
   revokeText: {
     ...textStyles.caption,
     color: colors.error,
+  },
+  brainButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingVertical: 7,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgPrimary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  brainButtonActive: {
+    borderColor: colors.accent,
+  },
+  brainButtonPressed: { opacity: 0.6 },
+  brainButtonText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+  },
+  brainHelp: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   mono: textStyles.monoSmall,
 });

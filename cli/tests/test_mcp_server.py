@@ -612,7 +612,7 @@ def test_dina_rehydrate_reports_missing_session(pii_sessions):
         mcp_server.dina_rehydrate.fn(text="[EMAIL_1]", pii_id="pii_deadbeef")
 
 
-def test_coding_profile_removes_runner_task_tools(monkeypatch):
+def test_coding_profile_removes_runner_and_reasoning_tools(monkeypatch):
     removed = []
     monkeypatch.setattr(mcp_server.mcp, "remove_tool", removed.append)
 
@@ -622,4 +622,132 @@ def test_coding_profile_removes_runner_task_tools(monkeypatch):
         "dina_task_complete",
         "dina_task_fail",
         "dina_task_progress",
+        "dina_context_prepare",
+        "dina_memory_propose",
+        "dina_reasoning_status",
+        "dina_reasoning_begin",
+        "dina_reasoning_claim",
+        "dina_reasoning_heartbeat",
+        "dina_reasoning_complete",
+        "dina_reasoning_fail",
     ]
+
+
+def test_connected_profile_keeps_reasoning_but_removes_runner_tools(monkeypatch):
+    removed = []
+    monkeypatch.setattr(mcp_server.mcp, "remove_tool", removed.append)
+
+    mcp_server.configure_profile("connected")
+
+    assert removed == [
+        "dina_task_complete",
+        "dina_task_fail",
+        "dina_task_progress",
+    ]
+
+
+def test_reasoning_mcp_tools_forward_only_claim_contract_fields(fake_client):
+    fake_client.context_prepare.return_value = {"status": "complete", "items": []}
+    fake_client.memory_propose.return_value = {"status": "stored"}
+    fake_client.reasoning_begin.return_value = {"submission": {}, "claim": None}
+    fake_client.reasoning_complete.return_value = {"accepted": True}
+
+    context = mcp_server.dina_context_prepare.fn(
+        session="sess-1",
+        query="What should I buy?",
+        purpose="Recommend",
+        personas=["health"],
+        limit=5,
+    )
+    memory = mcp_server.dina_memory_propose.fn(
+        session="sess-1",
+        request_id="memory-request-1",
+        source_text="I have back pain.",
+        proposal={
+            "persona": "health",
+            "subject": {"kind": "health", "label": "Back pain"},
+            "facts": [{"text": "I have back pain.", "confidence": 1}],
+            "reminderCandidates": [],
+        },
+    )
+    begun = mcp_server.dina_reasoning_begin.fn(
+        backend_id="backend-1",
+        session="sess-1",
+        task_kind="answer.compose",
+        input={"prompt": "Question"},
+        purpose="Answer",
+        idempotency_key="turn-1",
+    )
+    completed = mcp_server.dina_reasoning_complete.fn(
+        task_id="task-1",
+        backend_id="backend-1",
+        session="sess-1",
+        claim_id="claim-1",
+        context_ticket_id="ticket-1",
+        execution_id="exec-1",
+        policy_snapshot_hash="a" * 64,
+        context_projection_hash=None,
+        result={"answer": "Result"},
+        evidence_ids=["review-1"],
+    )
+
+    assert context == {"status": "complete", "items": []}
+    assert memory == {"status": "stored"}
+    assert begun["claim"] is None
+    assert completed == {"accepted": True}
+    fake_client.context_prepare.assert_called_once_with(
+        session="sess-1",
+        query="What should I buy?",
+        purpose="Recommend",
+        personas=["health"],
+        limit=5,
+    )
+    fake_client.memory_propose.assert_called_once_with(
+        session="sess-1",
+        request_id="memory-request-1",
+        source_text="I have back pain.",
+        proposal={
+            "persona": "health",
+            "subject": {"kind": "health", "label": "Back pain"},
+            "facts": [{"text": "I have back pain.", "confidence": 1}],
+            "reminderCandidates": [],
+        },
+    )
+    fake_client.reasoning_begin.assert_called_once_with(
+        backend_id="backend-1",
+        session="sess-1",
+        task_kind="answer.compose",
+        input_data={"prompt": "Question"},
+        purpose="Answer",
+        idempotency_key="turn-1",
+    )
+    fake_client.reasoning_complete.assert_called_once_with(
+        task_id="task-1",
+        backend_id="backend-1",
+        session="sess-1",
+        claim_id="claim-1",
+        context_ticket_id="ticket-1",
+        execution_id="exec-1",
+        policy_snapshot_hash="a" * 64,
+        context_projection_hash=None,
+        result={"answer": "Result"},
+        evidence_ids=["review-1"],
+    )
+
+
+def test_reasoning_tool_docs_preserve_worker_security_contract():
+    context = mcp_server.dina_context_prepare.description or ""
+    memory = mcp_server.dina_memory_propose.description or ""
+    begin = mcp_server.dina_reasoning_begin.description or ""
+    complete = mcp_server.dina_reasoning_complete.description or ""
+    heartbeat = mcp_server.dina_reasoning_heartbeat.description or ""
+    normalized_context = " ".join(context.split())
+
+    assert "not a Core-validated Dina result" in normalized_context
+    assert "Core validates" in memory
+    assert "changed replays" in memory
+    assert "Do not perform external effects" in begin
+    assert "resultSchema" in begin
+    assert "allowedEvidenceIds" in complete
+    assert "does not prove any later external effect" in complete
+    assert "stale-claim" in heartbeat

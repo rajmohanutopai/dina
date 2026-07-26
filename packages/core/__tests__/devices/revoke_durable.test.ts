@@ -19,6 +19,17 @@ import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
+  InMemoryReasoningBackendRepository,
+  InMemoryReasoningContextRepository,
+  isReasoningBackendPresent,
+  markReasoningBackendPresent,
+  resetReasoningBackendPresence,
+  SessionRegistry,
+  setReasoningBackendRepository,
+  setReasoningContextRepository,
+  setSessionRegistry,
+} from '../../src';
+import {
   InMemoryAgentGrantRepository,
   SQLiteAgentGrantRepository,
   setAgentGrantRepository,
@@ -74,6 +85,10 @@ beforeEach(() => {
   setPluginInstallRepository(null);
   setPluginGrantRepository(null);
   setPluginDecisionRepository(null);
+  setReasoningBackendRepository(null);
+  setReasoningContextRepository(null);
+  setSessionRegistry(null);
+  resetReasoningBackendPresence();
 });
 
 describe('revokeDeviceDurable — restart safety', () => {
@@ -335,6 +350,74 @@ describe('revokeDeviceDurable — cascades to agent grants (§2/§5)', () => {
         }
       })();
     });
+  });
+});
+
+describe('revokeDeviceDurable — cascades to connected-Brain authority', () => {
+  it('revokes the device binding and its outstanding context tickets', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-reasoning-revoke-'));
+    const db = openId(path.join(dir, 'identity.sqlite'));
+    try {
+      setDeviceRepository(new SQLiteDeviceRepository(db));
+      setAgentGrantRepository(new InMemoryAgentGrantRepository());
+      const backends = new InMemoryReasoningBackendRepository();
+      const contexts = new InMemoryReasoningContextRepository();
+      setReasoningBackendRepository(backends);
+      setReasoningContextRepository(contexts);
+      const device = registerDevice('Claude', 'z6MkReasoningDevice', 'agent', 'coding');
+      const sessions = new SessionRegistry();
+      setSessionRegistry(sessions);
+      const session = sessions.start({
+        agentDid: device.did,
+        hostSessionId: 'claude-session',
+      });
+      const binding = backends.register({
+        backendId: 'claude',
+        kind: 'connected_host',
+        principalDid: device.did,
+        allowedTaskKinds: ['answer.compose'],
+        maxSensitivity: 'personal',
+        availability: 'foreground',
+        selectedByOwnerDid: 'did:plc:owner',
+        expectedVersion: null,
+        nowMs: 1_000,
+      });
+      contexts.createTicket({
+        ticketId: 'ticket-device',
+        taskId: 'task-device',
+        claimId: 'claim-device',
+        backendId: binding.backendId,
+        principalDid: device.did,
+        authenticatedSessionId: null,
+        ownerDid: 'did:plc:owner',
+        purpose: 'owner ask',
+        policyVersion: binding.policyVersion,
+        inputProjectionId: 'projection-device',
+        contextProjectionId: null,
+        createdAtMs: 1_000,
+        expiresAtMs: Date.now() + 60_000,
+        consumedAtMs: null,
+        revokedAtMs: null,
+      });
+      markReasoningBackendPresent(binding.backendId, device.did);
+
+      await expect(revokeDeviceDurable(device.deviceId)).resolves.toMatchObject({
+        durable: true,
+      });
+      expect(backends.get(binding.backendId)).toMatchObject({
+        enabled: false,
+        revokedAtMs: expect.any(Number),
+      });
+      expect(contexts.getTicket('ticket-device')?.revokedAtMs).toEqual(expect.any(Number));
+      expect(sessions.get(session.sessionId)).toMatchObject({
+        endedAtMs: expect.any(Number),
+        endReason: 'authority_revoked',
+      });
+      expect(isReasoningBackendPresent(binding.backendId, device.did)).toBe(false);
+    } finally {
+      db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

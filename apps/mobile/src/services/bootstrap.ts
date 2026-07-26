@@ -40,6 +40,7 @@ import {
   getWatchService,
   disconnectMsgBox,
   getReviewPublishRepository,
+  getSessionRegistry,
   getServiceConfig,
   listServiceConfigs,
   hydrateServiceConfig,
@@ -110,6 +111,10 @@ export type AppD2DSender = (
 ) => Promise<unknown>;
 import {
   createCoordinatorAskHandler,
+  classifyInternalBrainError,
+  createInternalBrainExecutor,
+  createProviderReasoningLLM,
+  createReasoningOutputGuard,
   makeAgenticAskHandler,
   makeServiceApproveHandler,
   makeServiceDenyHandler,
@@ -144,12 +149,12 @@ import {
   resetAskCommandHandler,
   setContactServiceHandler,
   resetContactServiceHandler,
-
   addApprovalMessage,
   addMessage,
   addSystemMessage,
   hydrateThread,
-  createServiceQueryDeliverer} from '@dina/brain/chat';
+  createServiceQueryDeliverer,
+} from '@dina/brain/chat';
 import { deliverWatchResult } from '@dina/brain/notifications';
 import {
   installWorkflowApprovalInboxBridge,
@@ -157,7 +162,26 @@ import {
   StagingDrainScheduler,
   type StagingDrainOptions,
 } from '@dina/brain/runtime';
-import { stagingGetItem, getContact, MsgTypeServiceResponse } from '@dina/core';
+import {
+  CoreReasoningBroker,
+  ReasoningBackendSupervisor,
+  ReasoningBackendWorker,
+  createReasoningCommitBridge,
+  createReasoningPolicySnapshotResolver,
+  createServiceReasoningCommitter,
+  createServiceReasoningSubmitter,
+  deriveLocalServiceIdentity,
+  ensureReasoningBackendForBoot,
+  getContact,
+  getReasoningBackendRepository,
+  getReasoningBroker,
+  getReasoningContextRepository,
+  markReasoningBackendPresent,
+  clearReasoningBackendPresence,
+  MsgTypeServiceResponse,
+  setReasoningBroker,
+  stagingGetItem,
+} from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
 import { resolveSearchableCapability } from '@dina/protocol';
@@ -174,14 +198,14 @@ import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
 import { postGrantPromptOnce } from './grant_prompt';
 import { resolveInboxCoreClient } from './inbox_client_resolver';
-import { resolveServiceConfigCoreClient } from './service_config_resolver';
-import { installServerNotifications } from './server_notifications';
 import {
   resetPendingPreflights,
   stashPendingPreflight,
   takePendingPreflight,
 } from './pending_preflight';
 import { clearRuntimeWarning } from './runtime_warnings';
+import { installServerNotifications } from './server_notifications';
+import { resolveServiceConfigCoreClient } from './service_config_resolver';
 
 import type { IdentityKeypair } from '@dina/core';
 
@@ -351,6 +375,14 @@ export interface CreateNodeOptions {
     CreateCoordinatorAskHandlerOptions,
     'defaultThreadId' | 'formatPendingMessage' | 'formatResumeHeader' | 'formatFailureMessage'
   >;
+  /**
+   * Built-in reasoning provider executed through Core's durable job broker.
+   * It is deliberately separate from the direct chat coordinator so revocation,
+   * lease fencing, bounded context, output validation, and commit rules apply.
+   */
+  internalReasoning?: {
+    provider: LLMProvider;
+  };
   /** Optional approval-operator notifier. Defaults to chat-thread system msg. */
   approvalNotifier?: ApprovalNotifier;
   /**
@@ -451,6 +483,8 @@ export interface DinaNode extends HomeNodeLifecycle {
     stagingDrain: StagingDrainScheduler | null;
     /** Present only when `localDelegationRunner` was supplied. */
     localRunner: LocalDelegationRunner | null;
+    /** Built-in Brain worker cadence, present only when its binding is active. */
+    reasoningBackend: ReasoningBackendSupervisor | null;
   };
   /** Connect MsgBox, publish profile (if provider), start runners. */
   start(): Promise<void>;
@@ -463,6 +497,7 @@ export interface DinaNode extends HomeNodeLifecycle {
 }
 
 const DEFAULT_THREAD_ID = 'main';
+const INTERNAL_REASONING_BACKEND_ID = 'dina.internal-brain';
 
 /**
  * The single, neutral acknowledgement shown to the REQUESTER when a contact
@@ -610,6 +645,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // `getWorkflowService()` / `getWorkflowRepository()`. Installed
     // last so every dependent layer above has wired up first.
     setWorkflowService(workflowService);
+    if (reasoningBroker !== null) {
+      setReasoningBroker(reasoningBroker);
+      reasoningBroker.reconcileSessionAuthorities();
+    }
   };
 
   // 1. WorkflowService with Response Bridge — completion on a delegation
@@ -664,6 +703,105 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     nowMsFn,
     responseBridgeSender,
   });
+  const reasoningBackendRepository = getReasoningBackendRepository();
+  const reasoningContextRepository = getReasoningContextRepository();
+  const reasoningBroker =
+    reasoningBackendRepository !== null && reasoningContextRepository !== null
+      ? new CoreReasoningBroker({
+          workflowService,
+          workflowRepository: options.workflowRepository,
+          backendRepository: reasoningBackendRepository,
+          contextRepository: reasoningContextRepository,
+          nowMs: nowMsFn,
+          resolvePolicySnapshotHash: createReasoningPolicySnapshotResolver({
+            nowMs: nowMsFn,
+          }),
+          isAuthenticatedSessionActive: ({ sessionId, principalDid, authorityOrigin }) =>
+            getSessionRegistry().authorizesAuthorityOrigin(
+              sessionId,
+              principalDid,
+              authorityOrigin,
+            ),
+          activateAuthenticatedSessionAuthority: ({ sessionId, principalDid, authorityOrigin }) =>
+            getSessionRegistry().activateAuthorityOrigin(sessionId, principalDid, authorityOrigin),
+          releaseAuthenticatedSessionAuthority: ({ sessionId, principalDid, authorityOrigin }) =>
+            getSessionRegistry().clearAuthorityOrigin(sessionId, principalDid, authorityOrigin).ok,
+          outputGuard: createReasoningOutputGuard(),
+          commitValidatedProposal: createReasoningCommitBridge({
+            commitServiceResponse: createServiceReasoningCommitter({
+              workflowService,
+            }),
+          }),
+        })
+      : null;
+  let reasoningBackend: ReasoningBackendSupervisor | null = null;
+  let reasoningBackendPrincipalDid: string | null = null;
+  if (
+    options.internalReasoning !== undefined &&
+    reasoningBroker !== null &&
+    reasoningBackendRepository !== null
+  ) {
+    const identity = deriveLocalServiceIdentity(
+      options.signingKeypair.privateKey,
+      'internal-brain',
+    );
+    const ensured = ensureReasoningBackendForBoot(reasoningBackendRepository, {
+      backendId: INTERNAL_REASONING_BACKEND_ID,
+      kind: 'internal_brain',
+      principalDid: identity.did,
+      allowedTaskKinds: ['answer.compose'],
+      maxSensitivity: 'sensitive',
+      availability: 'always_on',
+      modelClass: 'dina-internal-brain',
+      selectedByOwnerDid: options.did,
+      nowMs: nowMsFn(),
+    });
+    if (ensured.status === 'created' || ensured.status === 'ready') {
+      const provider = options.internalReasoning.provider;
+      const worker = new ReasoningBackendWorker({
+        broker: reasoningBroker,
+        backendId: INTERNAL_REASONING_BACKEND_ID,
+        principalDid: identity.did,
+        execute: createInternalBrainExecutor({
+          provider: provider.name,
+          llm: createProviderReasoningLLM(provider),
+        }),
+        classifyError: classifyInternalBrainError,
+        setInterval: options.setInterval,
+        clearInterval: options.clearInterval,
+      });
+      reasoningBackend = new ReasoningBackendSupervisor({
+        worker,
+        setInterval: options.setInterval,
+        clearInterval: options.clearInterval,
+        onResult: (result) => {
+          if (
+            result.state === 'failed' ||
+            result.state === 'lost' ||
+            result.state === 'outcome_unknown'
+          ) {
+            log({
+              event: 'node.internal_brain_result',
+              state: result.state,
+              task_id: result.taskId,
+            });
+          }
+        },
+        onError: () => {
+          // Never persist or log raw provider/transport errors; they may
+          // contain prompt fragments or credentials from an SDK response.
+          log({ event: 'node.internal_brain_worker_error' });
+        },
+      });
+      reasoningBackendPrincipalDid = identity.did;
+    } else {
+      log({
+        event: 'node.internal_brain_not_started',
+        status: ensured.status,
+        reason: 'reason' in ensured ? ensured.reason : 'backend unavailable',
+      });
+    }
+  }
   // `setWorkflowService` is deferred to start() via installCoreGlobals.
 
   // ServiceHandler reads config through a thunk. Default to Core's
@@ -733,6 +871,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     deliver,
     approvalNotifier: options.approvalNotifier ?? defaultApprovalNotifier(threadId),
     inboundNotifier: defaultInboundNotifier(threadId),
+    reasoningSubmitter: createServiceReasoningSubmitter({
+      ownerDid: options.did,
+      getBroker: () => reasoningBroker,
+      getBackendRepository: () => reasoningBackendRepository,
+      nowMs: nowMsFn,
+    }),
     logger: log,
     nowMsFn,
     ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
@@ -747,6 +891,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const taskExpiry = new TaskExpirySweeper({
     repository: options.workflowRepository,
     nowMsFn,
+    onExpired: (task) => reasoningBroker?.releaseSessionAuthorityForTask(task),
     setInterval: options.setInterval,
     clearInterval: options.clearInterval,
   });
@@ -757,6 +902,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const leaseExpiry = new LeaseExpirySweeper({
     repository: options.workflowRepository,
     nowMsFn,
+    onReverted: (task) => reasoningBroker?.releaseSessionAuthorityForTask(task),
     setInterval: options.setInterval,
     clearInterval: options.clearInterval,
   });
@@ -1125,7 +1271,17 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     orchestrator,
     handler,
     dispatcher,
-    runners: { events, approvals, taskExpiry, leaseExpiry, bridgeRetry, watchPoll, stagingDrain, localRunner },
+    runners: {
+      events,
+      approvals,
+      taskExpiry,
+      leaseExpiry,
+      bridgeRetry,
+      watchPoll,
+      stagingDrain,
+      localRunner,
+      reasoningBackend,
+    },
 
     async start(): Promise<void> {
       if (started) return;
@@ -1368,6 +1524,19 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       watchPoll.start();
       if (stagingDrain !== null) stagingDrain.start();
       if (localRunner !== null) localRunner.start();
+      if (reasoningBackend !== null && reasoningBackendPrincipalDid !== null) {
+        markReasoningBackendPresent(INTERNAL_REASONING_BACKEND_ID, reasoningBackendPrincipalDid);
+        try {
+          reasoningBackend.start();
+        } catch (error) {
+          clearReasoningBackendPresence(
+            INTERNAL_REASONING_BACKEND_ID,
+            reasoningBackendPrincipalDid,
+          );
+          await reasoningBackend.stop();
+          throw error;
+        }
+      }
 
       // Only flip the idempotency flag once every boot step has landed
       // so a throw mid-boot does not leave the node half-wired while
@@ -1377,6 +1546,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     },
 
     async stop(): Promise<void> {
+      if (reasoningBackendPrincipalDid !== null) {
+        clearReasoningBackendPresence(INTERNAL_REASONING_BACKEND_ID, reasoningBackendPrincipalDid);
+      }
+      await reasoningBackend?.stop();
       if (!started) return;
       started = false;
       // Stop scheduling new ticks, then wait for any in-flight ticks
@@ -1494,6 +1667,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // the check, dispose() would clobber Boot 2's singleton with null,
       // leaving its WorkflowEventConsumer permanently failing with 503.
       if (coreGlobals) {
+        if (reasoningBroker !== null && getReasoningBroker() === reasoningBroker) {
+          setReasoningBroker(null);
+        }
         if (getWorkflowService() === workflowService) setWorkflowService(null);
         setWorkflowRepository(null);
         setServiceQuerySender(null);

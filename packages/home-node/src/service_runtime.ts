@@ -11,7 +11,7 @@ import {
   type WorkflowEventDeliverer,
 } from '@dina/brain';
 
-import type { CoreClient } from '@dina/core';
+import type { CoreClient, ServiceReasoningSubmitter } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 export interface HomeNodeServiceRuntimeOptions {
@@ -31,6 +31,8 @@ export interface HomeNodeServiceRuntimeOptions {
    * they see who is asking what; server callers usually omit it.
    */
   inboundNotifier?: ServiceInboundNotifier;
+  /** Optional shared connected-Brain execution strategy. */
+  reasoningSubmitter?: ServiceReasoningSubmitter;
   workflowEventIntervalMs?: number;
   approvalReconcileIntervalMs?: number;
   nowMsFn?: () => number;
@@ -71,8 +73,9 @@ export function buildHomeNodeServiceRuntime(
     readConfig: options.readConfig,
     rejectResponder: options.rejectResponder,
     ...(options.approvalNotifier !== undefined ? { notifier: options.approvalNotifier } : {}),
-    ...(options.inboundNotifier !== undefined
-      ? { inboundNotifier: options.inboundNotifier }
+    ...(options.inboundNotifier !== undefined ? { inboundNotifier: options.inboundNotifier } : {}),
+    ...(options.reasoningSubmitter !== undefined
+      ? { reasoningSubmitter: options.reasoningSubmitter }
       : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.nowSecFn !== undefined ? { nowSecFn: options.nowSecFn } : {}),

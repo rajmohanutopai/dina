@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { getPersona, resetPersonaState } from '@dina/core';
+import { deriveDIDKey, getPersona, getPublicKey, resetPersonaState } from '@dina/core';
 
 import { bootServer, ConfigError, loadConfig } from '../src/main';
 
@@ -124,6 +124,7 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
 
   it('throws ConfigError on invalid Core service-key config', () => {
     expect(() => loadConfig({ DINA_BRAIN_DID: 'brain' })).toThrow(ConfigError);
+    expect(() => loadConfig({ DINA_BRAIN_DID: 'did:plc:not-key-bound' })).toThrow(ConfigError);
     expect(() => loadConfig({ DINA_BRAIN_SERVICE_KEY_FILE: '../brain.ed25519' })).toThrow(
       ConfigError,
     );
@@ -145,6 +146,16 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
   it('throws ConfigError when an explicit LLM provider is incomplete or unknown', () => {
     expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'gemini' })).toThrow(ConfigError);
     expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'openai' })).toThrow(ConfigError);
+  });
+
+  it('requires an explicit LLM when the internal Brain worker is enabled', () => {
+    expect(() => loadConfig({ DINA_INTERNAL_BRAIN_ENABLED: 'true' })).toThrow(ConfigError);
+    expect(
+      loadConfig({
+        DINA_INTERNAL_BRAIN_ENABLED: 'true',
+        DINA_BRAIN_LLM_PROVIDER: 'scripted',
+      }).reasoning.internalBrainEnabled,
+    ).toBe(true);
   });
 });
 
@@ -705,6 +716,84 @@ describe('brain-server — boot (task 5.1)', () => {
       if (booted !== undefined) {
         expect(clearIntervalFn).toHaveBeenCalledWith(timerHandle);
       }
+      globalThis.fetch = originalFetch;
+      await rm(keyDir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts and stops the split-process internal Brain worker when explicitly enabled', async () => {
+    const keyDir = await mkdtemp(join(tmpdir(), 'dina-brain-worker-key-'));
+    const seed = Uint8Array.from({ length: 32 }, (_v, i) => i + 11);
+    const brainDid = deriveDIDKey(getPublicKey(seed));
+    await writeFile(join(keyDir, 'brain.ed25519'), seed);
+
+    const originalFetch = globalThis.fetch;
+    const fetchFn = jest.fn(async (url: string) => {
+      if (url === 'http://core.example:8100/v1/personas') {
+        return new Response(JSON.stringify({ personas: [] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === 'http://core.example:8100/v1/notifications') {
+        return new Response(JSON.stringify({ notifications: [] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === 'http://core.example:8100/v1/staging/claim?limit=10') {
+        return new Response(JSON.stringify({ items: [], count: 0 }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url === 'http://core.example:8100/v1/reasoning/claim') {
+        return new Response(JSON.stringify({ claim: null }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchFn as unknown as typeof globalThis.fetch;
+    const timerHandles = [{ id: 'staging' }, { id: 'reasoning' }];
+    const setIntervalFn = jest.fn(() => {
+      const handle = timerHandles.shift();
+      if (handle === undefined) throw new Error('unexpected scheduler registration');
+      return handle;
+    });
+    const clearIntervalFn = jest.fn();
+    let booted: Awaited<ReturnType<typeof bootServer>> | undefined;
+    try {
+      booted = await bootServer(
+        {
+          DINA_BRAIN_HOST: '127.0.0.1',
+          DINA_BRAIN_PORT: '0',
+          DINA_BRAIN_LOG_LEVEL: 'silent',
+          DINA_BRAIN_PRETTY_LOGS: 'false',
+          DINA_CORE_URL: 'http://core.example:8100/',
+          DINA_SERVICE_KEY_DIR: keyDir,
+          DINA_BRAIN_DID: brainDid,
+          DINA_INTERNAL_BRAIN_ENABLED: 'true',
+          DINA_BRAIN_LLM_PROVIDER: 'scripted',
+        },
+        {
+          askRuntime: { llm: makeStubLLM(), providerName: 'scripted' },
+          setInterval: setIntervalFn,
+          clearInterval: clearIntervalFn,
+        },
+      );
+
+      expect(booted.schedulers.reasoningBackend).toBeDefined();
+      expect(setIntervalFn).toHaveBeenCalledTimes(2);
+      const reasoningBackend = booted.schedulers.reasoningBackend;
+      if (reasoningBackend === undefined) throw new Error('reasoning scheduler is unavailable');
+      await reasoningBackend.tick();
+      expect(fetchFn.mock.calls.map((call) => call[0])).toContain(
+        'http://core.example:8100/v1/reasoning/claim',
+      );
+    } finally {
+      await booted?.app.close();
+      if (booted !== undefined) expect(clearIntervalFn).toHaveBeenCalledTimes(2);
       globalThis.fetch = originalFetch;
       await rm(keyDir, { recursive: true, force: true });
     }

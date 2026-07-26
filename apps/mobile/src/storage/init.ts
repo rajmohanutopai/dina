@@ -13,10 +13,7 @@
 
 import { Paths } from 'expo-file-system';
 
-import {
-  registerEngagementProvider,
-  collectNotificationBriefingItems,
-} from '@dina/brain/briefing';
+import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
 import { resetThreads } from '@dina/brain/chat';
 import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/notifications';
 import {
@@ -31,11 +28,14 @@ import {
   recoverOutboxOnBoot,
   SQLiteAgentGrantRepository,
   getAgentGrantRepository,
+  getReasoningContextRepository,
   setAgentGrantRepository,
   setAgentPersonaUnlockHook,
   SessionRegistry,
   SQLiteSessionRepository,
+  SQLiteAgentGatingPolicyRepository,
   setSessionRegistry,
+  setAgentGatingPolicyRepository,
   revokeSessionApprovals,
   resetSessionApprovals,
   setArchiveDataSource,
@@ -90,6 +90,8 @@ import {
   SQLitePersonaRepository,
   SQLiteQuarantineRepository,
   SQLiteReminderRepository,
+  SQLiteReasoningBackendRepository,
+  SQLiteReasoningContextRepository,
   SQLiteStagingRepository,
   SQLiteTopicRepository,
   SQLiteVaultRepository,
@@ -116,6 +118,8 @@ import {
   setPersonaRepository,
   setQuarantineRepository,
   setReminderRepository,
+  setReasoningBackendRepository,
+  setReasoningContextRepository,
   setStagingRepository,
   setTopicRepository,
   setVaultRepository,
@@ -290,6 +294,9 @@ export async function initializePersistence(
   // in-memory fallback would lose the grant on restart). Installing the
   // SQL repo makes `requireAgentPersonaAccess` durable end-to-end.
   setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+  setAgentGatingPolicyRepository(new SQLiteAgentGatingPolicyRepository(identityDB));
+  setReasoningBackendRepository(new SQLiteReasoningBackendRepository(identityDB));
+  setReasoningContextRepository(new SQLiteReasoningContextRepository(identityDB));
   // Plugin/coding-agent sessions use the same durable, DID-bound lifecycle on
   // mobile as on Home Node Lite. Without this wiring, inbound MsgBox agent
   // requests fell back to the process-global in-memory registry and session end
@@ -304,6 +311,12 @@ export async function initializePersistence(
           Date.now(),
         );
       } finally {
+        try {
+          getReasoningContextRepository()?.revokeTicketsForSession(session.sessionId, Date.now());
+        } catch {
+          // The session tombstone is already durable. The ticket also remains
+          // unusable through session-bound routes and expires with its lease.
+        }
         revokeSessionApprovals(session.agentDid, session.sessionId);
       }
     },
@@ -626,6 +639,9 @@ export async function shutdownAllPersistence(): Promise<void> {
     // identity can boot in the same JS process.
     setSessionRegistry(null);
     setAgentGrantRepository(null);
+    setAgentGatingPolicyRepository(null);
+    setReasoningBackendRepository(null);
+    setReasoningContextRepository(null);
     resetSessionApprovals();
     // PLG-30 #1: clear the DEVICE registry + repo + caller-role map on teardown.
     // These are module-global in-memory Maps (devices/keyIndex/didIndex + the auth

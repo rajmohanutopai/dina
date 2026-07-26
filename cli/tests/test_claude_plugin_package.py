@@ -114,7 +114,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
     assert mcp_config["mcpServers"]["dina"]["args"] == [
         "mcp-server",
         "--profile",
-        "coding",
+        "connected",
     ]
     assert "before" in normalized_readme
     assert "automatically enrolls" in normalized_readme
@@ -139,6 +139,7 @@ def test_plugin_bundles_mcp_native_usage_instructions() -> None:
     assert "dina_delegate" in skill
     assert "only `completed` proves" in skill
     assert "PreToolUse" in skill
+    assert (PLUGIN_ROOT / "skills" / "dina-work" / "SKILL.md").is_file()
 
 
 def test_marketplace_points_at_the_self_contained_plugin() -> None:

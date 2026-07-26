@@ -7,8 +7,13 @@
  * gate, and reports 501 when no gate is wired (never a silent allow).
  */
 
+import {
+  setAgentGatingPolicyRepository,
+  type AgentGatingPolicy,
+  type AgentGatingPolicyRepository,
+} from '../../../src/agent/gating_policy';
 import { queryAudit, resetAuditState, auditCount } from '../../../src/audit/service';
-import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
+import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import {
   registerCodingGateRoutes,
@@ -16,12 +21,9 @@ import {
   type CodingGateInput,
   type CodingGateResult,
 } from '../../../src/server/routes/coding_gate';
+import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
 
-function agentReq(
-  body: unknown,
-  over: Partial<CoreRequest> = {},
-  bindSession: boolean = true,
-): CoreRequest {
+function agentReq(body: unknown, over: Partial<CoreRequest> = {}, bindSession = true): CoreRequest {
   const effectiveBody =
     bindSession &&
     body !== null &&
@@ -53,6 +55,17 @@ function routerWith(gate?: CodingGateFn): CoreRouter {
   return router;
 }
 
+function policyRepo(policy: AgentGatingPolicy | null): AgentGatingPolicyRepository {
+  return {
+    get: () => policy,
+    list: () => (policy === null ? [] : [policy]),
+    set: () => {
+      throw new Error('not used');
+    },
+    revoke: () => false,
+  };
+}
+
 const allowGate: CodingGateFn = () => ({
   action: 'code_read',
   risk: 'SAFE',
@@ -63,8 +76,15 @@ const allowGate: CodingGateFn = () => ({
 });
 
 describe('POST /v1/agent/gate — wire contract', () => {
-  beforeEach(() => setSessionRegistry(new SessionRegistry()));
-  afterEach(() => setSessionRegistry(null));
+  beforeEach(() => {
+    setSessionRegistry(new SessionRegistry());
+    setAgentGatingPolicyRepository(null);
+    setNodeDID('did:plc:owner');
+  });
+  afterEach(() => {
+    setSessionRegistry(null);
+    setAgentGatingPolicyRepository(null);
+  });
 
   it('forwards the raw call and returns the decision in snake_case', async () => {
     // A supplied session must be a live session bound to this DID (audit).
@@ -101,6 +121,9 @@ describe('POST /v1/agent/gate — wire contract', () => {
       // Item B — an allow decision creates no approval card.
       task_id: null,
       reason: 'r',
+      profile: 'full_supervision',
+      policy_version: 0,
+      authority_origin: 'unknown',
     });
     // Core owns classification: it got the RAW call + the authenticated DID.
     expect(seen).toMatchObject({
@@ -110,6 +133,9 @@ describe('POST /v1/agent/gate — wire contract', () => {
       sessionId: sid,
       cwd: '/work',
       mode: 'enforce',
+      profile: 'full_supervision',
+      authorityOrigin: { kind: 'unknown' },
+      policyVersion: 0,
     });
   });
 
@@ -168,13 +194,15 @@ describe('POST /v1/agent/gate — wire contract', () => {
     expect(res.status).toBe(400);
   });
 
-  it('passes classify_only mode through', async () => {
-    let seen: CodingGateInput | undefined;
-    await routerWith((i) => {
-      seen = i;
-      return { action: 'code_read', risk: 'SAFE', outcome: 'allow', enforced: false, reason: 'r' };
+  it('rejects a caller-supplied classify_only downgrade', async () => {
+    let called = false;
+    const res = await routerWith(() => {
+      called = true;
+      return allowGate({} as CodingGateInput);
     }).handle(agentReq({ tool_name: 'Read', tool_input: {}, mode: 'classify_only' }));
-    expect(seen?.mode).toBe('classify_only');
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'client_mode_not_authoritative' });
+    expect(called).toBe(false);
   });
 
   it('NEVER trusts a body-supplied agent_did — uses the authenticated DID', async () => {
@@ -199,16 +227,160 @@ describe('POST /v1/agent/gate — wire contract', () => {
     );
     expect(seen?.agentDid).toBe('did:key:z6MkHdr');
   });
+
+  it('resolves an owner-selected foreground profile server-side', async () => {
+    setAgentGatingPolicyRepository(
+      policyRepo({
+        agentDid: 'did:key:z6MkAgent',
+        profile: 'network_protection',
+        policyVersion: 7,
+        selectedByOwnerDid: 'did:plc:owner',
+        createdAtMs: 1,
+        updatedAtMs: 2,
+        revokedAtMs: null,
+      }),
+    );
+    let seen: CodingGateInput | undefined;
+    const res = await routerWith((input) => {
+      seen = input;
+      return {
+        action: 'host_managed',
+        risk: 'SAFE',
+        outcome: 'allow',
+        enforced: false,
+        reason: 'host',
+      };
+    }).handle(agentReq({ tool_name: 'Read', tool_input: {} }));
+    expect(res.status).toBe(200);
+    expect(seen).toMatchObject({
+      profile: 'network_protection',
+      policyVersion: 7,
+      authorityOrigin: {
+        kind: 'owner_interactive',
+        ownerDid: 'did:plc:owner',
+      },
+    });
+  });
+
+  it('forces a Core-bound non-owner task to Full Supervision', async () => {
+    setAgentGatingPolicyRepository(
+      policyRepo({
+        agentDid: 'did:key:z6MkAgent',
+        profile: 'network_protection',
+        policyVersion: 7,
+        selectedByOwnerDid: 'did:plc:owner',
+        createdAtMs: 1,
+        updatedAtMs: 2,
+        revokedAtMs: null,
+      }),
+    );
+    const registry = new SessionRegistry();
+    setSessionRegistry(registry);
+    const session = registry.start({
+      agentDid: 'did:key:z6MkAgent',
+      hostSessionId: 'non-owner-work',
+    });
+    registry.bindNonOwnerAuthorityOrigin(session.sessionId, 'did:key:z6MkAgent', {
+      kind: 'service_request',
+      ownerDid: 'did:plc:owner',
+      requesterDid: 'did:plc:requester',
+      ingress: 'service',
+      correlationId: 'service-query-1',
+      authenticatedAtMs: 3,
+    });
+    let seen: CodingGateInput | undefined;
+    const res = await routerWith((input) => {
+      seen = input;
+      return allowGate(input);
+    }).handle(
+      agentReq({
+        tool_name: 'Read',
+        tool_input: {},
+        session_id: session.sessionId,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(seen).toMatchObject({
+      profile: 'full_supervision',
+      authorityOrigin: { kind: 'service_request' },
+    });
+  });
+
+  it('applies the non-owner floor to alternate sessions for the same principal', async () => {
+    setAgentGatingPolicyRepository(
+      policyRepo({
+        agentDid: 'did:key:z6MkAgent',
+        profile: 'network_protection',
+        policyVersion: 7,
+        selectedByOwnerDid: 'did:plc:owner',
+        createdAtMs: 1,
+        updatedAtMs: 2,
+        revokedAtMs: null,
+      }),
+    );
+    const registry = new SessionRegistry();
+    setSessionRegistry(registry);
+    const reserved = registry.start({
+      agentDid: 'did:key:z6MkAgent',
+      hostSessionId: 'service-worker',
+    });
+    const alternate = registry.start({
+      agentDid: 'did:key:z6MkAgent',
+      hostSessionId: 'owner-looking-session',
+    });
+    expect(
+      registry.activateAuthorityOrigin(reserved.sessionId, 'did:key:z6MkAgent', {
+        kind: 'service_request',
+        ownerDid: 'did:plc:owner',
+        requesterDid: 'did:plc:requester',
+        ingress: 'd2d',
+        correlationId: 'service-query-2',
+        authenticatedAtMs: 3,
+      }),
+    ).toBe(true);
+    let seen: CodingGateInput | undefined;
+
+    const response = await routerWith((input) => {
+      seen = input;
+      return allowGate(input);
+    }).handle(
+      agentReq({
+        tool_name: 'Read',
+        tool_input: {},
+        session_id: alternate.sessionId,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(seen).toMatchObject({
+      profile: 'full_supervision',
+      authorityOrigin: { kind: 'unknown' },
+    });
+  });
+
+  it('rejects caller-supplied profile or authority origin', async () => {
+    const res = await routerWith(allowGate).handle(
+      agentReq({
+        tool_name: 'Read',
+        tool_input: {},
+        profile: 'network_protection',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'server_owned_gate_context' });
+  });
 });
 
 describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
   beforeEach(() => {
     resetAuditState();
     setSessionRegistry(new SessionRegistry());
+    setAgentGatingPolicyRepository(null);
   });
   afterEach(() => {
     resetAuditState();
     setSessionRegistry(null);
+    setAgentGatingPolicyRepository(null);
   });
 
   const denyGate: CodingGateFn = () => ({
@@ -229,11 +401,11 @@ describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
     expect(entries[0].action).toBe('coding_gate:secret_read');
   });
 
-  it('does NOT record a SAFE decision (silent-pass)', async () => {
+  it('records SAFE metadata in Full Supervision', async () => {
     await routerWith(allowGate).handle(
       agentReq({ tool_name: 'Read', tool_input: { file_path: 'a.ts' } }),
     );
-    expect(auditCount()).toBe(0);
+    expect(auditCount()).toBe(1);
   });
 
   it('secret canary: the audit detail never contains the tool_input', async () => {
@@ -252,8 +424,14 @@ describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
 });
 
 describe('POST /v1/agent/gate — validation & fail-closed', () => {
-  beforeEach(() => setSessionRegistry(new SessionRegistry()));
-  afterEach(() => setSessionRegistry(null));
+  beforeEach(() => {
+    setSessionRegistry(new SessionRegistry());
+    setAgentGatingPolicyRepository(null);
+  });
+  afterEach(() => {
+    setSessionRegistry(null);
+    setAgentGatingPolicyRepository(null);
+  });
 
   it('501 when no gate is wired (never a silent allow)', async () => {
     const res = await routerWith(undefined).handle(agentReq({ tool_name: 'Read', tool_input: {} }));

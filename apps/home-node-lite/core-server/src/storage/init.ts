@@ -35,7 +35,9 @@ import {
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
   SQLiteAgentGrantRepository,
+  SQLiteAgentGatingPolicyRepository,
   getAgentGrantRepository,
+  getReasoningContextRepository,
   SessionRegistry,
   SQLiteSessionRepository,
   setSessionRegistry,
@@ -45,6 +47,7 @@ import {
   recoverOutboxOnBoot,
   registerPersonaDEK,
   setAgentGrantRepository,
+  setAgentGatingPolicyRepository,
   setAgentPersonaUnlockHook,
   setArchiveDataSource,
   SQLitePushSubscriptionRepository,
@@ -88,6 +91,8 @@ import {
   SQLitePeopleRepository,
   SQLitePersonaRepository,
   SQLiteReminderRepository,
+  SQLiteReasoningBackendRepository,
+  SQLiteReasoningContextRepository,
   SQLiteStagingRepository,
   SQLiteTopicRepository,
   SQLiteVaultRepository,
@@ -106,6 +111,8 @@ import {
   setPeopleRepository,
   setPersonaRepository,
   setReminderRepository,
+  setReasoningBackendRepository,
+  setReasoningContextRepository,
   setStagingRepository,
   setTopicRepository,
   setVaultRepository,
@@ -202,7 +209,13 @@ export async function initializeStorage(
     hkdf(sha256, seed32, new Uint8Array(32), encoder.encode('dina:vault:identity:v1'), 32),
   );
   const resolvePersonaDekHex = async (persona: string): Promise<string> => {
-    const dek = hkdf(sha256, seed32, new Uint8Array(32), encoder.encode(`dina:vault:${persona}:v1`), 32);
+    const dek = hkdf(
+      sha256,
+      seed32,
+      new Uint8Array(32),
+      encoder.encode(`dina:vault:${persona}:v1`),
+      32,
+    );
     // ISVC-10/R5-01 — register the DEK with the orchestrator so the run
     // plane's persona-open predicate (`hasDEK`) and payload cipher
     // (`wrapWithPersonaDEK`) see this vault as open. The registry takes
@@ -249,6 +262,9 @@ export async function initializeStorage(
   // revoke a crash-orphaned revoked device's AGENT persona grants (not only its
   // plugin authority). Wiring it after hydrate left that half unreconciled.
   setAgentGrantRepository(new SQLiteAgentGrantRepository(identityDB));
+  setAgentGatingPolicyRepository(new SQLiteAgentGatingPolicyRepository(identityDB));
+  setReasoningBackendRepository(new SQLiteReasoningBackendRepository(identityDB));
+  setReasoningContextRepository(new SQLiteReasoningContextRepository(identityDB));
   // Item D — durable coding-agent sessions. Back the SessionRegistry with the
   // identity SQLite store and reconcile on boot so a session (Claude Code /
   // Codex) survives a Core restart, and any session whose lease lapsed while
@@ -266,6 +282,11 @@ export async function initializeStorage(
         // PII-safe diagnostic rather than logging the DID or host-session name.
         logger.error({ sessionId: session.sessionId }, 'session grant cleanup failed');
       } finally {
+        try {
+          getReasoningContextRepository()?.revokeTicketsForSession(session.sessionId, now);
+        } catch {
+          logger.error({ sessionId: session.sessionId }, 'reasoning ticket cleanup failed');
+        }
         revokeSessionApprovals(session.agentDid, session.sessionId);
       }
     },

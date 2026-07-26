@@ -14,6 +14,11 @@ phone-to-HNL continuity, and multi-phone approval routing remain release work
 coding agent, plus publish/consume and cross-Dina D2D. The four-density order in §5 is a
 **recommended build sequence**, not a feature boundary — v1 is the union of all of it.
 
+**Follow-on runtime policy:** `docs/CONNECTED_AGENT_GATING_AND_BRAIN.md`
+defines the three gating profiles and the connected-host Brain architecture.
+Until that specification is implemented, the as-built plugin retains the
+full-enforcement behavior described here.
+
 > **Two ground rules that shape the whole document.**
 >
 > 1. **Vocabulary.** "Claude Code plugin" is the _distribution package_. Inside Dina, Claude Code

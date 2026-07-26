@@ -20,6 +20,7 @@ import {
   requiresPassphrase,
 } from '../vault/lifecycle';
 
+import { PERSONA_ALIASES, resolvePersonaName } from './names';
 import { getPersonaRepository } from './repository';
 
 export interface PersonaState {
@@ -247,6 +248,28 @@ export function setPersonaDescription(name: string, description: string): void {
 /** Check if a persona exists. */
 export function personaExists(name: string): boolean {
   return personas.has(name.trim().toLowerCase());
+}
+
+/**
+ * Resolve a user/model persona label to the vault name installed on this node.
+ *
+ * Older/default installations use names such as `work`, while Brain's
+ * canonical vocabulary uses `professional`. Prefer an exact installed name,
+ * then the canonical name, then an installed legacy alias. This keeps grants
+ * and vault access bound to the real persona instead of constructing a
+ * canonical name for a vault that does not exist.
+ */
+export function resolveInstalledPersonaName(name: string): string {
+  const normalized = name.trim().toLowerCase();
+  if (personas.has(normalized)) return normalized;
+
+  const canonical = resolvePersonaName(normalized);
+  if (personas.has(canonical)) return canonical;
+
+  for (const [alias, target] of Object.entries(PERSONA_ALIASES)) {
+    if (target === canonical && personas.has(alias)) return alias;
+  }
+  return canonical;
 }
 
 /** Reset all persona state (for testing). */

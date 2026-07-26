@@ -3731,7 +3731,6 @@ def gate_hook(host: str) -> None:
         decision = client.gate(
             tool_name,
             tool_input,
-            mode="enforce",
             host_session=host_session_id,
             cwd=cwd,
             approval_surface="owner" if host == "codex" else "host",
@@ -3841,7 +3840,7 @@ def session_end_hook() -> None:
 @cli.command("mcp-server")
 @click.option(
     "--profile",
-    type=click.Choice(["all", "coding"], case_sensitive=False),
+    type=click.Choice(["all", "coding", "brain", "connected"], case_sensitive=False),
     default="all",
     show_default=True,
     help="Limit the exposed MCP tools to a host contract.",

@@ -21,6 +21,15 @@ import {
   resetChatDefaults,
 } from '../../../brain/src/chat/orchestrator';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import { deriveLocalServiceIdentity } from '../../../core/src/identity/local_service_identity';
+import {
+  InMemoryReasoningBackendRepository,
+  setReasoningBackendRepository,
+} from '../../../core/src/reasoning/backend_repository';
+import {
+  InMemoryReasoningContextRepository,
+  setReasoningContextRepository,
+} from '../../../core/src/reasoning/context_repository';
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
 
@@ -43,6 +52,7 @@ function fakeScheduler() {
     clearInterval: (h: unknown) => {
       timers.delete(h as number);
     },
+    timerCount: () => timers.size,
     advance(ms: number) {
       nowMs += ms;
       let fired = true;
@@ -175,6 +185,11 @@ beforeEach(() => {
   resetServiceDenyCommandHandler();
 });
 
+afterEach(() => {
+  setReasoningBackendRepository(null);
+  setReasoningContextRepository(null);
+});
+
 describe('createNode — input validation', () => {
   it('rejects missing did', async () => {
     await expect(createNode(baseOptions({ did: '' }))).rejects.toThrow(/did/);
@@ -245,6 +260,94 @@ describe('createNode — lifecycle', () => {
     await node.drainOnce();
     // Both runners ran: event consumer listed events, reconciler listed tasks.
     expect(state.eventsList).toBeDefined();
+    await node.dispose();
+  });
+});
+
+describe('createNode — built-in reasoning backend', () => {
+  const provider = {
+    name: 'mobile-test-brain',
+    supportsStreaming: false,
+    supportsToolCalling: false,
+    supportsEmbedding: false,
+    async chat() {
+      return {
+        content: 'bounded answer',
+        toolCalls: [],
+        model: 'test',
+        usage: { inputTokens: 1, outputTokens: 1 },
+        finishReason: 'end' as const,
+      };
+    },
+    async *stream() {
+      yield* [];
+      throw new Error('not used');
+    },
+    async embed() {
+      throw new Error('not used');
+    },
+  };
+
+  it('creates one distinct service binding and owns the worker lifecycle', async () => {
+    const backends = new InMemoryReasoningBackendRepository();
+    setReasoningBackendRepository(backends);
+    setReasoningContextRepository(new InMemoryReasoningContextRepository());
+    const sched = fakeScheduler();
+
+    const node = await createNode(
+      baseOptions({
+        nowMsFn: sched.now,
+        setInterval: sched.setInterval,
+        clearInterval: sched.clearInterval,
+        internalReasoning: { provider },
+      }),
+    );
+    const binding = backends.get('dina.internal-brain');
+    expect(binding).not.toBeNull();
+    expect(binding).toMatchObject({
+      kind: 'internal_brain',
+      allowedTaskKinds: ['answer.compose'],
+      availability: 'always_on',
+      selectedByOwnerDid: DID,
+      policyVersion: 1,
+    });
+    expect(binding?.principalDid).toBe(
+      deriveLocalServiceIdentity(TEST_KEYPAIR.privateKey, 'internal-brain').did,
+    );
+    expect(binding?.principalDid).not.toBe(DID);
+    expect(node.runners.reasoningBackend).not.toBeNull();
+
+    await node.start();
+    expect(sched.timerCount()).toBeGreaterThan(0);
+    await node.stop();
+    expect(sched.timerCount()).toBe(0);
+    await node.dispose();
+  });
+
+  it('does not revive an owner-revoked built-in backend on a later boot', async () => {
+    const backends = new InMemoryReasoningBackendRepository();
+    const principalDid = deriveLocalServiceIdentity(TEST_KEYPAIR.privateKey, 'internal-brain').did;
+    const created = backends.register({
+      backendId: 'dina.internal-brain',
+      kind: 'internal_brain',
+      principalDid,
+      allowedTaskKinds: ['answer.compose'],
+      maxSensitivity: 'sensitive',
+      availability: 'always_on',
+      modelClass: 'dina-internal-brain',
+      selectedByOwnerDid: DID,
+      expectedVersion: null,
+      nowMs: 1_700_000_000_000,
+    });
+    expect(backends.revoke(created.backendId, created.policyVersion, DID)).toBe(true);
+    const revoked = backends.get(created.backendId);
+    if (revoked === null) throw new Error('revoked backend was not persisted');
+    setReasoningBackendRepository(backends);
+    setReasoningContextRepository(new InMemoryReasoningContextRepository());
+
+    const node = await createNode(baseOptions({ internalReasoning: { provider } }));
+    expect(node.runners.reasoningBackend).toBeNull();
+    expect(backends.get(created.backendId)).toEqual(revoked);
     await node.dispose();
   });
 });

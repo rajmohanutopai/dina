@@ -19,7 +19,7 @@
  *     `ttl_seconds`, `service_name`, `schema_hash`, `mcp_tool` are
  *     ALWAYS present (string fields default to '').
  *   - `mcp_server`, `schema_snapshot`, `service_uri`,
- *     `operator_approved` appear only when meaningful.
+ *     `grant_id`, `operator_approved` appear only when meaningful.
  *
  * Parse normalization: the wire writes '' when a string value is absent;
  * `parseServiceQueryExecutionPayload` normalizes '' → undefined so TS
@@ -65,6 +65,8 @@ export interface ServiceQueryExecutionPayload {
   schema_snapshot?: ServiceExecutionSchemaSnapshot;
   /** Multi-listing pin — AT-URI of the listing the requester chose. */
   service_uri?: string;
+  /** Exact provider grant exercised by a known-only request. */
+  grant_id?: string;
   /**
    * True when this execution was spawned by an operator's approval
    * (`executeAndRespond`). The Tier 1 runtime tells the model the
@@ -102,6 +104,9 @@ export function buildServiceQueryExecutionPayload(
   }
   if (input.service_uri !== undefined && input.service_uri !== '') {
     out.service_uri = input.service_uri;
+  }
+  if (input.grant_id !== undefined && input.grant_id !== '') {
+    out.grant_id = input.grant_id;
   }
   if (input.operator_approved === true) {
     out.operator_approved = true;
@@ -176,15 +181,14 @@ export function parseServiceQueryExecutionPayload(
     return null;
   }
   const ttl =
-    typeof p.ttl_seconds === 'number' && Number.isFinite(p.ttl_seconds)
-      ? p.ttl_seconds
-      : undefined;
+    typeof p.ttl_seconds === 'number' && Number.isFinite(p.ttl_seconds) ? p.ttl_seconds : undefined;
   const serviceName = optionalString(p.service_name);
   const schemaHash = optionalString(p.schema_hash);
   const mcpTool = optionalString(p.mcp_tool);
   const mcpServer = optionalString(p.mcp_server);
   const snapshot = parseServiceExecutionSchemaSnapshot(p.schema_snapshot);
   const serviceUri = optionalString(p.service_uri);
+  const grantId = optionalString(p.grant_id);
   return {
     type: SERVICE_QUERY_EXECUTION_TYPE,
     from_did,
@@ -198,6 +202,7 @@ export function parseServiceQueryExecutionPayload(
     ...(mcpServer !== undefined ? { mcp_server: mcpServer } : {}),
     ...(snapshot !== undefined ? { schema_snapshot: snapshot } : {}),
     ...(serviceUri !== undefined ? { service_uri: serviceUri } : {}),
+    ...(grantId !== undefined ? { grant_id: grantId } : {}),
     ...(p.operator_approved === true ? { operator_approved: true } : {}),
   };
 }

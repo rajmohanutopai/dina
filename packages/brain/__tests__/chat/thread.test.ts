@@ -19,10 +19,13 @@ import {
   resetThreads,
   addLifecycleMessage,
   findMessageByTaskId,
+  findMessageByReasoningTaskId,
   updateMessageLifecycle,
+  updateReasoningJobLifecycle,
   readLifecycle,
   subscribeToThread,
   type MissingCapabilityLifecycle,
+  type ReasoningJobLifecycle,
   type ServiceQueryLifecycle,
 } from '../../src/chat/thread';
 
@@ -198,8 +201,23 @@ describe('Chat Message Model + Thread', () => {
       };
     }
 
+    function makeReasoningLifecycle(taskId: string): ReasoningJobLifecycle {
+      return {
+        kind: 'reasoning_job',
+        status: 'queued',
+        taskId,
+        taskKind: 'answer.compose',
+        userMessageId: `user-${taskId}`,
+        backendId: 'backend-connected',
+      };
+    }
+
     it('addLifecycleMessage posts a regular dina message with lifecycle metadata + taskId source', () => {
-      const msg = addLifecycleMessage('main', 'Looking up Bus 42…', makeLifecycle('sq-1', 'Bus 42'));
+      const msg = addLifecycleMessage(
+        'main',
+        'Looking up Bus 42…',
+        makeLifecycle('sq-1', 'Bus 42'),
+      );
       // Pattern parity with approval cards: lifecycle-tracked messages
       // are still 'dina' MessageType — UI dispatches on metadata.lifecycle.kind.
       expect(msg.type).toBe('dina');
@@ -279,6 +297,100 @@ describe('Chat Message Model + Thread', () => {
     it('updateMessageLifecycle returns null for unknown taskId', () => {
       const patched = updateMessageLifecycle('main', 'sq-missing', { status: 'failed' });
       expect(patched).toBeNull();
+    });
+
+    it('indexes and patches a reasoning job without appending a second message', () => {
+      const original = addLifecycleMessage(
+        'main',
+        'Waiting for your connected agent...',
+        makeReasoningLifecycle('reasoning-1'),
+      );
+      const found = findMessageByReasoningTaskId('main', 'reasoning-1');
+      expect(found?.id).toBe(original.id);
+
+      let fired = 0;
+      const unsubscribe = subscribeToThread('main', () => {
+        fired += 1;
+      });
+      const patched = updateReasoningJobLifecycle(
+        'main',
+        'reasoning-1',
+        { status: 'complete' },
+        'The validated answer',
+        ['evidence-1'],
+      );
+      unsubscribe();
+
+      expect(patched?.id).toBe(original.id);
+      expect(patched?.content).toBe('The validated answer');
+      expect(patched?.sources).toEqual(['reasoning-1', 'evidence-1']);
+      expect(threadLength('main')).toBe(1);
+      expect(fired).toBe(1);
+      if (patched === undefined || patched === null) {
+        throw new Error('reasoning message was not patched');
+      }
+      const lifecycle = readLifecycle(patched);
+      expect(lifecycle).toMatchObject({
+        kind: 'reasoning_job',
+        status: 'complete',
+        taskId: 'reasoning-1',
+        taskKind: 'answer.compose',
+        userMessageId: 'user-reasoning-1',
+        backendId: 'backend-connected',
+      });
+    });
+
+    it('rejects malformed reasoning lifecycle rows before they enter projections', () => {
+      const malformed = [
+        {
+          kind: 'reasoning_job',
+          status: 'unknown',
+          taskId: 'r1',
+          taskKind: 'answer.compose',
+          userMessageId: 'u1',
+          backendId: 'b1',
+        },
+        {
+          kind: 'reasoning_job',
+          status: 'queued',
+          taskId: '',
+          taskKind: 'answer.compose',
+          userMessageId: 'u1',
+          backendId: 'b1',
+        },
+        {
+          kind: 'reasoning_job',
+          status: 'queued',
+          taskId: 'r1',
+          taskKind: 'memory.structure',
+          userMessageId: 'u1',
+          backendId: 'b1',
+        },
+        {
+          kind: 'reasoning_job',
+          status: 'queued',
+          taskId: 'r1',
+          taskKind: 'answer.compose',
+          userMessageId: '',
+          backendId: 'b1',
+        },
+        {
+          kind: 'reasoning_job',
+          status: 'queued',
+          taskId: 'r1',
+          taskKind: 'answer.compose',
+          userMessageId: 'u1',
+          backendId: '',
+        },
+      ];
+
+      for (const lifecycle of malformed) {
+        const message = addMessage('main', 'dina', 'malformed', {
+          metadata: { lifecycle },
+        });
+        expect(readLifecycle(message)).toBeNull();
+      }
+      expect(findMessageByReasoningTaskId('main', 'r1')).toBeNull();
     });
   });
 });

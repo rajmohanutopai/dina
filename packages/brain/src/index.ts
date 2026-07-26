@@ -150,6 +150,11 @@ export {
 } from './enrichment/pipeline';
 export type { LLMCallFn, EnrichmentResult } from './enrichment/pipeline';
 export * from './pipeline/chat_reasoning';
+export * from './reasoning/internal_brain_executor';
+export * from './reasoning/reasoning_output_guard';
+export * from './reasoning/internal_brain_executor';
+export * from './reasoning/appview_evidence_source';
+export * from './reasoning/appview_evidence_source';
 export * from './pipeline/reasoning_trace';
 // identity_extraction exports `parseLLMResponse` which collides with
 // guardian/anti_her_classify's. Re-export under a disambiguated name.
@@ -225,10 +230,7 @@ export type {
 export { runAgenticTurn } from './reasoning/agentic_loop';
 export type { AgenticLoopOptions, AgenticLoopResult } from './reasoning/agentic_loop';
 export { createDelegateToAgentTool } from './reasoning/delegate_agent_tool';
-export type {
-  DelegateOutcome,
-  DelegateToAgentToolOptions,
-} from './reasoning/delegate_agent_tool';
+export type { DelegateOutcome, DelegateToAgentToolOptions } from './reasoning/delegate_agent_tool';
 export { createScheduleReminderTool } from './reasoning/schedule_reminder_tool';
 export type {
   ScheduleReminderOutcome,
@@ -240,20 +242,14 @@ export type {
   PreFlightRetrievalProvider,
   PreFlightContext,
 } from './reasoning/ask_handler';
-export {
-  buildRememberRuntime,
-} from './composition/remember_runtime';
+export { buildRememberRuntime } from './composition/remember_runtime';
 export type {
   RememberRuntimeInput,
   RememberTurnInput,
   RememberTurnResult,
 } from './composition/remember_runtime';
-export {
-  emptyRememberSideEffects,
-} from './reasoning/remember_tools';
-export type {
-  RememberSideEffects,
-} from './reasoning/remember_tools';
+export { emptyRememberSideEffects } from './reasoning/remember_tools';
+export type { RememberSideEffects } from './reasoning/remember_tools';
 export { buildAgenticAskPipeline } from './composition/agentic_ask';
 export type {
   AgenticAskPipeline,
@@ -288,10 +284,7 @@ export {
   buildPreFlightPersonaAllowed,
 } from './composition/persona_guard';
 export type { PersonaReadContext } from './composition/persona_guard';
-export {
-  buildAgenticExecuteFn,
-  createAskCoordinator,
-} from './composition/ask_coordinator';
+export { buildAgenticExecuteFn, createAskCoordinator } from './composition/ask_coordinator';
 export type {
   AskCoordinator,
   AskCoordinatorCoreClient,

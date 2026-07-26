@@ -60,7 +60,7 @@ import {
 } from './service_runtime';
 
 import type { SendD2D } from './send_d2d';
-import type { ResponseBridgeSender, ServiceQueryBridgeContext } from '@dina/core';
+import type { ResponseBridgeSender, ServiceQueryBridgeContext, WorkflowTask } from '@dina/core';
 
 export interface WireWorkflowPlaneOptions {
   /**
@@ -103,6 +103,10 @@ export interface WireWorkflowPlaneOptions {
   }) => void;
   /** Optional structured logger. Receives sweep + bridge telemetry. */
   logger?: (entry: Record<string, unknown>) => void;
+  /** Release any reasoning session reservation after deadline expiry. */
+  onTaskExpired?: (task: WorkflowTask) => void;
+  /** Release any reasoning session reservation after claim lease loss. */
+  onLeaseReverted?: (task: WorkflowTask) => void;
   /** Override of `Date.now`. Defaults to `Date.now`. */
   nowMsFn?: () => number;
   /** setInterval override for sweepers (tests inject fake timers). */
@@ -114,6 +118,12 @@ export interface WireWorkflowPlaneOptions {
 export interface WiredWorkflowPlane {
   /** Constructed `WorkflowService`. Already registered globally. */
   workflowService: WorkflowService;
+  /**
+   * The exact service-response egress used by delegation completion. Other
+   * Core-owned executors, such as connected-Brain service reasoning, must reuse
+   * this sender rather than inventing a second D2D response path.
+   */
+  responseBridgeSender: ResponseBridgeSender;
   /** Service runtime — caller may .start() / .stop() / .dispose() it directly. */
   runtime: HomeNodeServiceRuntime;
   /** Stop sweepers + runtime, deregister Core globals. */
@@ -235,6 +245,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   // (F) Sweepers — task expiry, lease expiry, bridge retry.
   const taskExpiry = new TaskExpirySweeper({
     repository: opts.workflowRepository,
+    ...(opts.onTaskExpired === undefined ? {} : { onExpired: opts.onTaskExpired }),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
     ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),
@@ -243,6 +254,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
 
   const leaseExpiry = new LeaseExpirySweeper({
     repository: opts.workflowRepository,
+    ...(opts.onLeaseReverted === undefined ? {} : { onReverted: opts.onLeaseReverted }),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
     ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),
@@ -296,6 +308,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
 
   return {
     workflowService,
+    responseBridgeSender,
     runtime,
     async dispose(): Promise<void> {
       taskExpiry.stop();

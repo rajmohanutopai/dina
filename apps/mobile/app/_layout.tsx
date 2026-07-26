@@ -21,7 +21,7 @@
  */
 
 import '../src/polyfills';
-import { Ionicons , MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   CormorantGaramond_600SemiBold,
   CormorantGaramond_600SemiBold_Italic,
@@ -66,12 +66,7 @@ import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
 import { useRelayWake } from '../src/hooks/useRelayWake';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
-import {
-  closeMenu,
-  getMenuOpen,
-  openMenu,
-  subscribeMenuOpen,
-} from '../src/navigation/menu_state';
+import { closeMenu, getMenuOpen, openMenu, subscribeMenuOpen } from '../src/navigation/menu_state';
 import { parentRouteFor } from '../src/navigation/parent_route';
 import { handleNotificationTap } from '../src/notifications/deep_link';
 import {
@@ -82,6 +77,7 @@ import {
 import { installReminderPushBridge } from '../src/notifications/reminder_push_bridge';
 import { isTrustTabHidden } from '../src/peerlens/flags';
 import { startReviewPublishWorker } from '../src/peerlens/review_publish_autodrain';
+import { startReasoningCommitRecovery } from '../src/reasoning/reasoning_commit_recovery';
 import { recordBoot } from '../src/services/diagnostics_history';
 import { bootstrapInferredPreferences } from '../src/services/preferences_bootstrap';
 import {
@@ -115,12 +111,12 @@ type NavMenuItem =
   | { feature: FeatureKey; href?: undefined; action: 'lock' };
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
-  { feature: 'vault',    href: '/vault'    },
+  { feature: 'vault', href: '/vault' },
   { feature: 'reminders', href: '/reminders' },
   // Notifications was here; now it's a bottom-bar tab so the menu
   // entry would just be a duplicate. Reachable via the bell-icon tab.
   { feature: 'settings', href: '/settings' },
-  { feature: 'help',     href: '/help'     },
+  { feature: 'help', href: '/help' },
   // Action item — drops in-memory DEKs, closes SQLCipher handles, and
   // arms the one-shot force-prompt flag so the next vault access
   // prompts for a passphrase even when `startupMode === 'auto'` has
@@ -128,7 +124,7 @@ const NAV_MENU_ITEMS: NavMenuItem[] = [
   // the "Welcome back" passphrase prompt on the next tick.
   // Named "Sign out" because the underlying SQLCipher files are always
   // encrypted at rest — this button locks the SESSION, not the vault.
-  { feature: 'signOut',  action: 'lock'   },
+  { feature: 'signOut', action: 'lock' },
 ];
 
 function HeaderMenuButton({ onPress }: { onPress: () => void }) {
@@ -177,11 +173,7 @@ function HeaderMenuButton({ onPress }: { onPress: () => void }) {
  * user opened it from rather than the Chat default. The parent-route
  * map remains the fallback when no `from` is present.
  */
-function HeaderBackButton({
-  onMenuFallback: _onMenuFallback,
-}: {
-  onMenuFallback: () => void;
-}) {
+function HeaderBackButton({ onMenuFallback: _onMenuFallback }: { onMenuFallback: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ from?: string | string[] }>();
@@ -276,12 +268,7 @@ function NavMenuSheet({
       !(currentPath === item.href || currentPath.startsWith(`${item.href}/`)),
   );
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
         style={navMenuStyles.backdrop}
         onPress={onClose}
@@ -373,11 +360,7 @@ const navMenuStyles = StyleSheet.create({
   rowText: textStyles.bodyLargeStrong,
 });
 
-type TabName =
-  | 'Chat'
-  | 'People'
-  | 'Network'
-  | 'Activity';
+type TabName = 'Chat' | 'People' | 'Network' | 'Activity';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -386,9 +369,9 @@ type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 // the `peerlens` surface (reframed) and Activity is the `notifications`
 // inbox; the feature keys stay canonical (see FEATURE_NAMES).
 const TAB_FEATURE: Record<TabName, FeatureKey> = {
-  Chat:     'chat',
-  People:   'people',
-  Network:  'peerlens',
+  Chat: 'chat',
+  People: 'people',
+  Network: 'peerlens',
   Activity: 'notifications',
 };
 
@@ -522,11 +505,7 @@ export default function RootLayout() {
   // Menu open state lives in a module singleton so per-tab Stack
   // headers (`app/peerlens/_layout.tsx`, `app/vault/_layout.tsx`) can
   // open it from inside their nav trees too.
-  const menuOpen = useSyncExternalStore(
-    subscribeMenuOpen,
-    getMenuOpen,
-    getMenuOpen,
-  );
+  const menuOpen = useSyncExternalStore(subscribeMenuOpen, getMenuOpen, getMenuOpen);
   const handleMenuSelect = (item: NavMenuItem) => {
     closeMenu();
     if (item.href !== undefined) {
@@ -575,7 +554,6 @@ export default function RootLayout() {
         if (cancelled) return;
         await rescheduleAllReminders();
       } catch (err) {
-         
         console.warn('[notifications] boot failed:', err);
       }
     })();
@@ -596,6 +574,14 @@ export default function RootLayout() {
     return startReviewPublishWorker();
   }, [bootState.status]);
 
+  // Core-owned reasoning writes use the same boot + foreground cadence. The
+  // shared broker performs single-flight, backoff-bound replay; this effect is
+  // lifecycle glue only and remains off while the vault/node is unavailable.
+  useEffect(() => {
+    if (bootState.status !== 'ready') return;
+    return startReasoningCommitRecovery();
+  }, [bootState.status]);
+
   // Viewer-preferences inference (region / languages / devices /
   // dietary). Runs ONCE on first launch — `bootstrapInferredPreferences`
   // delegates to `hydrateUserPreferences()` which short-circuits when
@@ -607,7 +593,6 @@ export default function RootLayout() {
   useEffect(() => {
     if (!unlocked) return;
     void bootstrapInferredPreferences().catch((err: unknown) => {
-       
       console.warn('[preferences] inference failed:', err);
     });
   }, [unlocked]);
@@ -667,489 +652,495 @@ export default function RootLayout() {
 
   return (
     <KeyboardProvider>
-    <View style={{ flex: 1 }}>
-      <UnlockGate>
-        <GuidedDemoGate
-          // Disable the first-run guided-demo gate under E2E autopilot
-          // (same dev/e2e hook as the onboarding autopilot). Its
-          // "seen" flag lives in a KV store that is ephemeral in the
-          // limited-mode web thin-client, so the gate re-shows on every
-          // boot-state flip and blocks a clean Chat. Off in production
-          // (passphrase unset), so real first-run behavior is unchanged.
-          enabled={
-            bootState.status !== 'error' &&
-            bootState.status !== 'booting' &&
-            (process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '') === ''
-          }
-        >
-        {bootState.status === 'error' ? (
-          <BootBanner
-            kind="error"
-            primary="Dina failed to start."
-            details={[
-              bootState.error?.message ?? 'Unknown error',
-              // Review #5: include the degradations the hook preserved
-              // via BootStartupError so the operator can see WHICH
-              // missing piece triggered the failure. Previously only
-              // error.message rendered and the partial list was lost.
-              ...formatDegradations(bootState.degradations),
-            ]}
-          />
-        ) : bootState.status === 'booting' ? (
-          <BootBanner
-            kind="info"
-            primary="Starting Dina…"
-            details={['Loading identity + runtime']}
-          />
-        ) : (() => {
-          // Only surface degradations the user can act on — demo-build
-          // expected codes (e.g. `discovery.stub` for the in-memory
-          // AppView fixture) are shipped in bootState.degradations for
-          // diagnostics but suppressed from the banner so a clean demo
-          // launch doesn't read as "something is broken".
-          const surfaceDegradations = bannerWorthyDegradations(bootState.degradations);
-          if (surfaceDegradations.length === 0 && runtimeWarnings.length === 0) {
-            return null;
-          }
-          return (
-            <BootBanner
-              kind="warning"
-              primary={
-                surfaceDegradations.length > 0
-                  ? 'Dina is running in limited mode.'
-                  : 'Runtime warnings active.'
-              }
-              details={[
-                ...formatDegradations(surfaceDegradations),
-                ...formatRuntimeWarnings(runtimeWarnings),
-              ]}
-            />
-          );
-        })()}
-        {showTabs ? (
-          <Tabs
-            screenOptions={{
-              headerShown: true,
-              headerStyle: {
-                backgroundColor: colors.bgPrimary,
-                ...(Platform.OS === 'ios' ? { shadowOpacity: 0 } : { elevation: 0 }),
-              },
-              headerTitleStyle: {
-                ...navTitle,
-                letterSpacing: 0.3,
-              },
-              headerShadowVisible: false,
-              headerLeft: () => <HeaderMenuButton onPress={openMenu} />,
-              headerRight: () => (
-                <HeaderHelpButton
-                  onPress={() =>
-                    router.push({ pathname: '/help', params: { from: pathname } } as never)
-                  }
-                />
-              ),
-              tabBarStyle: {
-                backgroundColor: colors.bgPrimary,
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-                paddingTop: 8,
-                height: Platform.OS === 'ios' ? 88 : 64,
-              },
-              tabBarActiveTintColor: colors.tabActive,
-              tabBarInactiveTintColor: colors.tabInactive,
-              tabBarLabelStyle: {
-                fontFamily: textStyles.tiny.fontFamily,
-                fontSize: textStyles.tiny.fontSize,
-                color: textStyles.tiny.color as string | undefined,
-                letterSpacing: 0.2,
-                marginTop: 2,
-              },
-              tabBarIcon: () => null,
-            }}
+      <View style={{ flex: 1 }}>
+        <UnlockGate>
+          <GuidedDemoGate
+            // Disable the first-run guided-demo gate under E2E autopilot
+            // (same dev/e2e hook as the onboarding autopilot). Its
+            // "seen" flag lives in a KV store that is ephemeral in the
+            // limited-mode web thin-client, so the gate re-shows on every
+            // boot-state flip and blocks a clean Chat. Off in production
+            // (passphrase unset), so real first-run behavior is unchanged.
+            enabled={
+              bootState.status !== 'error' &&
+              bootState.status !== 'booting' &&
+              (process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '') === ''
+            }
           >
-            <Tabs.Screen
-              name="index"
-              options={{
-                title: 'Chat',
-                headerTitle: () => <DinaHeaderTitle />,
-                tabBarIcon: ({ focused }) => <TabIcon name="Chat" focused={focused} />,
-                tabBarButtonTestID: 'tab-chat',
-                tabBarAccessibilityLabel: 'Chat tab',
-              }}
-            />
-            <Tabs.Screen
-              name="vault"
-              options={{
-                title: 'Vaults',
-                // Reached via the hamburger menu (HeaderMenuButton).
-                // The folder has its own Stack layout (`app/vault/_layout.tsx`)
-                // that scopes back-navigation to vault drill-downs, so a
-                // single Tabs.Screen entry is enough — every nested
-                // `vault/<name>` is rendered inside that Stack.
-                href: null,
-
-                // Same rationale as `trust` above — the Stack owns
-                // header rendering for the whole tab, including the
-                // index. Letting Tabs render its header would
-                // duplicate the band on every screen.
-                headerShown: false,
-              }}
-            />
-            <Tabs.Screen
-              name="people"
-              options={{
-                title: 'People',
-                tabBarIcon: ({ focused }) => <TabIcon name="People" focused={focused} />,
-                tabBarButtonTestID: 'tab-people',
-                tabBarAccessibilityLabel: 'People tab',
-              }}
-            />
-            <Tabs.Screen
-              name="peerlens"
-              options={({ route }) => {
-                // Hide the bottom tab bar on focused-flow PeerLens screens
-                // (compose / edit / outbox). Two reasons:
-                //   1. The fixed-bottom Publish CTA on `/peerlens/write`
-                //      sits in the same vertical band as the tab bar
-                //      (CTA y=801-852, tab bar y=795-840). Tapping the
-                //      Publish edit centre lands on a tab and pops the
-                //      half-completed compose — the worst possible UX
-                //      regression.
-                //   2. Compose / edit / outbox are focused secondary
-                //      flows. A user in the middle of writing a review
-                //      doesn't need a one-tap escape into Chat or
-                //      Notifications — that's a distraction at best
-                //      and an accidental data-loss at worst. Standard
-                //      mobile pattern (Twitter compose, Instagram
-                //      compose, etc.) hides the tab bar in these
-                //      flows.
-                const focused = getFocusedRouteNameFromRoute(route);
-                const hideTabBar = focused === 'write' || focused === 'outbox';
-                return {
-                  // Bottom-tab label is "Network" — the top-level surface that
-                  // CONTAINS PeerLens (trust) + Services. The route folder stays
-                  // `/peerlens` (no pre-release route migration); the canonical
-                  // `FEATURE_NAMES.peerlens` is unchanged. The header title is
-                  // set to "Network" inside the PeerLens Stack layout.
-                  title: 'Network',
-                  tabBarIcon: ({ focused: f }: { focused: boolean }) => (
-                    <TabIcon name="Network" focused={f} />
+            {bootState.status === 'error' ? (
+              <BootBanner
+                kind="error"
+                primary="Dina failed to start."
+                details={[
+                  bootState.error?.message ?? 'Unknown error',
+                  // Review #5: include the degradations the hook preserved
+                  // via BootStartupError so the operator can see WHICH
+                  // missing piece triggered the failure. Previously only
+                  // error.message rendered and the partial list was lost.
+                  ...formatDegradations(bootState.degradations),
+                ]}
+              />
+            ) : bootState.status === 'booting' ? (
+              <BootBanner
+                kind="info"
+                primary="Starting Dina…"
+                details={['Loading identity + runtime']}
+              />
+            ) : (
+              (() => {
+                // Only surface degradations the user can act on — demo-build
+                // expected codes (e.g. `discovery.stub` for the in-memory
+                // AppView fixture) are shipped in bootState.degradations for
+                // diagnostics but suppressed from the banner so a clean demo
+                // launch doesn't read as "something is broken".
+                const surfaceDegradations = bannerWorthyDegradations(bootState.degradations);
+                if (surfaceDegradations.length === 0 && runtimeWarnings.length === 0) {
+                  return null;
+                }
+                return (
+                  <BootBanner
+                    kind="warning"
+                    primary={
+                      surfaceDegradations.length > 0
+                        ? 'Dina is running in limited mode.'
+                        : 'Runtime warnings active.'
+                    }
+                    details={[
+                      ...formatDegradations(surfaceDegradations),
+                      ...formatRuntimeWarnings(runtimeWarnings),
+                    ]}
+                  />
+                );
+              })()
+            )}
+            {showTabs ? (
+              <Tabs
+                screenOptions={{
+                  headerShown: true,
+                  headerStyle: {
+                    backgroundColor: colors.bgPrimary,
+                    ...(Platform.OS === 'ios' ? { shadowOpacity: 0 } : { elevation: 0 }),
+                  },
+                  headerTitleStyle: {
+                    ...navTitle,
+                    letterSpacing: 0.3,
+                  },
+                  headerShadowVisible: false,
+                  headerLeft: () => <HeaderMenuButton onPress={openMenu} />,
+                  headerRight: () => (
+                    <HeaderHelpButton
+                      onPress={() =>
+                        router.push({ pathname: '/help', params: { from: pathname } } as never)
+                      }
+                    />
                   ),
-                  tabBarButtonTestID: 'tab-network',
-                  tabBarAccessibilityLabel: 'Network tab',
-                  // The trust folder has its own Stack layout
-                  // (`app/peerlens/_layout.tsx`) that scopes back-navigation
-                  // properly: search → subject → reviewer → back goes
-                  // to subject. With the Stack in place, every nested
-                  // `trust/...` route is a Stack child rather than its
-                  // own Tabs entry, so this single declaration covers
-                  // the whole tab.
-                  //
-                  // `headerShown: false` here delegates ALL header rendering
-                  // to the Stack — the Stack provides the hamburger header
-                  // for the index, and the auto back-chevron header for
-                  // drill-downs. Letting both render produces a duplicate
-                  // header band on every screen.
-                  headerShown: false,
-                  //
-                  // Hide the tab when AppView's `trust_v1_enabled` flag is
-                  // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
-                  // visible — `null` from `getCachedTrustV1Enabled` (i.e.
-                  // unloaded / expired) does NOT hide so dev workflows
-                  // before the AppView config endpoint lands stay usable.
-                  href: isTrustTabHidden() ? null : undefined,
-                  tabBarStyle: hideTabBar
-                    ? { display: 'none' }
-                    : undefined,
-                };
-              }}
-            />
-            {/* PeerLens preferences sub-screens — reached from Settings,
-              * never their own tab. Without `href: null` Expo Router
-              * file-based routing auto-registers each as a bottom-bar
-              * entry, blowing out the tab bar with `Bud…`, `Diet…`,
-              * `Acc…` and three raw paths (`peerlens-preferences/region`,
-              * `…/devices`, `…/languages`) that don't even have a
-              * friendly title. Six leaks on a four-tab bar — the worst
-              * UX regression in the app. Each entry below mirrors the
-              * pattern used for `settings`, `help`, etc. above. */}
-            <Tabs.Screen
-              name="peerlens-preferences/index"
-              options={{ title: 'Review preferences', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/region"
-              options={{ title: 'Region', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/budget"
-              options={{ title: 'Budget', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/devices"
-              options={{ title: 'Devices', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/languages"
-              options={{ title: 'Languages', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/dietary"
-              options={{ title: 'Dietary', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="peerlens-preferences/accessibility"
-              options={{ title: 'Accessibility', href: null, headerLeft: renderHeaderBackButton }}
-            />
-            <Tabs.Screen
-              name="oauth/callback"
-              // Internal ATProto OAuth redirect handler — NEVER a tab.
-              // `href: null` keeps it routable for the `<scheme>:/oauth/callback`
-              // redirect (so it's not "Unmatched Route") without a bottom-bar
-              // entry; it self-dismisses (router.back) after handing the code
-              // to the flow bridge, so no header is needed.
-              options={{ href: null, headerShown: false }}
-            />
-            <Tabs.Screen
-              name="reminders"
-              options={{
-                title: 'Reminders',
-                // Reached via the hamburger menu. The route stays mounted
-                // so deep links (notifications → reminder detail) still
-                // work; href: null only hides the tab-bar entry.
-                href: null,
+                  tabBarStyle: {
+                    backgroundColor: colors.bgPrimary,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border,
+                    paddingTop: 8,
+                    height: Platform.OS === 'ios' ? 88 : 64,
+                  },
+                  tabBarActiveTintColor: colors.tabActive,
+                  tabBarInactiveTintColor: colors.tabInactive,
+                  tabBarLabelStyle: {
+                    fontFamily: textStyles.tiny.fontFamily,
+                    fontSize: textStyles.tiny.fontSize,
+                    color: textStyles.tiny.color as string | undefined,
+                    letterSpacing: 0.2,
+                    marginTop: 2,
+                  },
+                  tabBarIcon: () => null,
+                }}
+              >
+                <Tabs.Screen
+                  name="index"
+                  options={{
+                    title: 'Chat',
+                    headerTitle: () => <DinaHeaderTitle />,
+                    tabBarIcon: ({ focused }) => <TabIcon name="Chat" focused={focused} />,
+                    tabBarButtonTestID: 'tab-chat',
+                    tabBarAccessibilityLabel: 'Chat tab',
+                  }}
+                />
+                <Tabs.Screen
+                  name="vault"
+                  options={{
+                    title: 'Vaults',
+                    // Reached via the hamburger menu (HeaderMenuButton).
+                    // The folder has its own Stack layout (`app/vault/_layout.tsx`)
+                    // that scopes back-navigation to vault drill-downs, so a
+                    // single Tabs.Screen entry is enough — every nested
+                    // `vault/<name>` is rendered inside that Stack.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="notifications"
-              options={{
-                title: 'Activity',
-                tabBarIcon: ({ focused }) => (
-                  <TabIcon name="Activity" focused={focused} />
-                ),
-                tabBarButtonTestID: 'tab-activity',
-                tabBarAccessibilityLabel: 'Activity tab',
-                // Action-first badge: pending approvals first, else unread.
-                tabBarBadge: activityBadge,
-              }}
-            />
-            <Tabs.Screen
-              name="approvals"
-              options={{
-                title: 'Approvals',
-                // Approvals is no longer a bottom tab (spec 5.3) — it's an
-                // action bucket inside Activity. `href: null` removes it from
-                // the bar UNCONDITIONALLY (even with provider/agent enabled —
-                // spec 7.1) without unmounting the route, so notification taps
-                // and `dina://approvals/<id>` deep links still resolve. As a
-                // focused deep-link target it gets a back chevron whose logical
-                // parent is Activity (see parent_route.ts).
-                href: null,
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="settings"
-              options={{
-                title: 'Settings',
-                // Reached via the hamburger menu (HeaderMenuButton).
-                href: null,
+                    // Same rationale as `trust` above — the Stack owns
+                    // header rendering for the whole tab, including the
+                    // index. Letting Tabs render its header would
+                    // duplicate the band on every screen.
+                    headerShown: false,
+                  }}
+                />
+                <Tabs.Screen
+                  name="people"
+                  options={{
+                    title: 'People',
+                    tabBarIcon: ({ focused }) => <TabIcon name="People" focused={focused} />,
+                    tabBarButtonTestID: 'tab-people',
+                    tabBarAccessibilityLabel: 'People tab',
+                  }}
+                />
+                <Tabs.Screen
+                  name="peerlens"
+                  options={({ route }) => {
+                    // Hide the bottom tab bar on focused-flow PeerLens screens
+                    // (compose / edit / outbox). Two reasons:
+                    //   1. The fixed-bottom Publish CTA on `/peerlens/write`
+                    //      sits in the same vertical band as the tab bar
+                    //      (CTA y=801-852, tab bar y=795-840). Tapping the
+                    //      Publish edit centre lands on a tab and pops the
+                    //      half-completed compose — the worst possible UX
+                    //      regression.
+                    //   2. Compose / edit / outbox are focused secondary
+                    //      flows. A user in the middle of writing a review
+                    //      doesn't need a one-tap escape into Chat or
+                    //      Notifications — that's a distraction at best
+                    //      and an accidental data-loss at worst. Standard
+                    //      mobile pattern (Twitter compose, Instagram
+                    //      compose, etc.) hides the tab bar in these
+                    //      flows.
+                    const focused = getFocusedRouteNameFromRoute(route);
+                    const hideTabBar = focused === 'write' || focused === 'outbox';
+                    return {
+                      // Bottom-tab label is "Network" — the top-level surface that
+                      // CONTAINS PeerLens (trust) + Services. The route folder stays
+                      // `/peerlens` (no pre-release route migration); the canonical
+                      // `FEATURE_NAMES.peerlens` is unchanged. The header title is
+                      // set to "Network" inside the PeerLens Stack layout.
+                      title: 'Network',
+                      tabBarIcon: ({ focused: f }: { focused: boolean }) => (
+                        <TabIcon name="Network" focused={f} />
+                      ),
+                      tabBarButtonTestID: 'tab-network',
+                      tabBarAccessibilityLabel: 'Network tab',
+                      // The trust folder has its own Stack layout
+                      // (`app/peerlens/_layout.tsx`) that scopes back-navigation
+                      // properly: search → subject → reviewer → back goes
+                      // to subject. With the Stack in place, every nested
+                      // `trust/...` route is a Stack child rather than its
+                      // own Tabs entry, so this single declaration covers
+                      // the whole tab.
+                      //
+                      // `headerShown: false` here delegates ALL header rendering
+                      // to the Stack — the Stack provides the hamburger header
+                      // for the index, and the auto back-chevron header for
+                      // drill-downs. Letting both render produces a duplicate
+                      // header band on every screen.
+                      headerShown: false,
+                      //
+                      // Hide the tab when AppView's `trust_v1_enabled` flag is
+                      // explicitly false (TN-FLAG-005 + TN-MOB-051). Default
+                      // visible — `null` from `getCachedTrustV1Enabled` (i.e.
+                      // unloaded / expired) does NOT hide so dev workflows
+                      // before the AppView config endpoint lands stay usable.
+                      href: isTrustTabHidden() ? null : undefined,
+                      tabBarStyle: hideTabBar ? { display: 'none' } : undefined,
+                    };
+                  }}
+                />
+                {/* PeerLens preferences sub-screens — reached from Settings,
+                 * never their own tab. Without `href: null` Expo Router
+                 * file-based routing auto-registers each as a bottom-bar
+                 * entry, blowing out the tab bar with `Bud…`, `Diet…`,
+                 * `Acc…` and three raw paths (`peerlens-preferences/region`,
+                 * `…/devices`, `…/languages`) that don't even have a
+                 * friendly title. Six leaks on a four-tab bar — the worst
+                 * UX regression in the app. Each entry below mirrors the
+                 * pattern used for `settings`, `help`, etc. above. */}
+                <Tabs.Screen
+                  name="peerlens-preferences/index"
+                  options={{
+                    title: 'Review preferences',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/region"
+                  options={{ title: 'Region', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/budget"
+                  options={{ title: 'Budget', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/devices"
+                  options={{ title: 'Devices', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/languages"
+                  options={{ title: 'Languages', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/dietary"
+                  options={{ title: 'Dietary', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="peerlens-preferences/accessibility"
+                  options={{
+                    title: 'Accessibility',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="oauth/callback"
+                  // Internal ATProto OAuth redirect handler — NEVER a tab.
+                  // `href: null` keeps it routable for the `<scheme>:/oauth/callback`
+                  // redirect (so it's not "Unmatched Route") without a bottom-bar
+                  // entry; it self-dismisses (router.back) after handing the code
+                  // to the flow bridge, so no header is needed.
+                  options={{ href: null, headerShown: false }}
+                />
+                <Tabs.Screen
+                  name="reminders"
+                  options={{
+                    title: 'Reminders',
+                    // Reached via the hamburger menu. The route stays mounted
+                    // so deep links (notifications → reminder detail) still
+                    // work; href: null only hides the tab-bar entry.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="backup-reminder"
-              options={{
-                // Popped by useBackupPrompt at a quiet moment; its own buttons
-                // (Back up now / Remind me later) are the only exits, so no
-                // header. href: null keeps it off the tab bar but routable.
-                href: null,
-                headerShown: false,
-              }}
-            />
-            <Tabs.Screen
-              name="policy"
-              options={{
-                title: 'Agent policies',
-                // Reached via Settings → MORE → Agent policies; not a tab target.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="notifications"
+                  options={{
+                    title: 'Activity',
+                    tabBarIcon: ({ focused }) => <TabIcon name="Activity" focused={focused} />,
+                    tabBarButtonTestID: 'tab-activity',
+                    tabBarAccessibilityLabel: 'Activity tab',
+                    // Action-first badge: pending approvals first, else unread.
+                    tabBarBadge: activityBadge,
+                  }}
+                />
+                <Tabs.Screen
+                  name="approvals"
+                  options={{
+                    title: 'Approvals',
+                    // Approvals is no longer a bottom tab (spec 5.3) — it's an
+                    // action bucket inside Activity. `href: null` removes it from
+                    // the bar UNCONDITIONALLY (even with provider/agent enabled —
+                    // spec 7.1) without unmounting the route, so notification taps
+                    // and `dina://approvals/<id>` deep links still resolve. As a
+                    // focused deep-link target it gets a back chevron whose logical
+                    // parent is Activity (see parent_route.ts).
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="settings"
+                  options={{
+                    title: 'Settings',
+                    // Reached via the hamburger menu (HeaderMenuButton).
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="subscriptions"
-              options={{
-                // Reached via Settings → Subscriptions. Standing poll-mode
-                // watches (PSVC-4); hidden from the tab bar.
-                title: 'Subscriptions',
-                href: null,
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="runs"
-              options={{
-                // Reached via Settings → Interactive runs. Live provider
-                // sessions (ISVC-9); hidden from the tab bar.
-                title: 'Interactive runs',
-                href: null,
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="my-listings"
-              options={{
-                title: 'My Services',
-                // Hidden from the tab bar — the provider home (node role + every
-                // listing). Reached from Network → Services and Settings →
-                // Service Sharing.
-                href: null,
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="service-settings"
-              options={{
-                title: 'Service Sharing',
-                // Hidden from the tab bar — the per-listing editor, reached from
-                // /my-listings (edit a row, or "+ New listing").
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="backup-reminder"
+                  options={{
+                    // Popped by useBackupPrompt at a quiet moment; its own buttons
+                    // (Back up now / Remind me later) are the only exits, so no
+                    // header. href: null keeps it off the tab bar but routable.
+                    href: null,
+                    headerShown: false,
+                  }}
+                />
+                <Tabs.Screen
+                  name="policy"
+                  options={{
+                    title: 'Agent policies',
+                    // Reached via Settings → MORE → Agent policies; not a tab target.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="infrastructure"
-              options={{
-                title: 'Infrastructure',
-                // Advanced endpoint configuration. Hidden from the
-                // tab bar and reached from Settings → More.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="subscriptions"
+                  options={{
+                    // Reached via Settings → Subscriptions. Standing poll-mode
+                    // watches (PSVC-4); hidden from the tab bar.
+                    title: 'Subscriptions',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="runs"
+                  options={{
+                    // Reached via Settings → Interactive runs. Live provider
+                    // sessions (ISVC-9); hidden from the tab bar.
+                    title: 'Interactive runs',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="my-listings"
+                  options={{
+                    title: 'My Services',
+                    // Hidden from the tab bar — the provider home (node role + every
+                    // listing). Reached from Network → Services and Settings →
+                    // Service Sharing.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="service-settings"
+                  options={{
+                    title: 'Service Sharing',
+                    // Hidden from the tab bar — the per-listing editor, reached from
+                    // /my-listings (edit a row, or "+ New listing").
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="paired-devices"
-              options={{
-                // Title is "Agents", not "Paired Devices" — first-time
-                // users read the old label as "another phone running
-                // Dina", which this screen has nothing to do with
-                // (cross-Dina trust lives in Contacts). Route stays
-                // `/paired-devices` to keep deep links working.
-                title: 'Agents',
-                // Hidden from the tab bar — reached via drill-down from Settings.
-                // Admin surface for `dina-admin device pair`; no dedicated tab.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="infrastructure"
+                  options={{
+                    title: 'Infrastructure',
+                    // Advanced endpoint configuration. Hidden from the
+                    // tab bar and reached from Settings → More.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="ai-providers"
-              options={{
-                title: 'AI providers',
-                // Hidden from the tab bar — reached via Settings → AI
-                // PROVIDER → Manage providers. Owns the full BYOK key
-                // surface so the Settings screen can stay quiet.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="paired-devices"
+                  options={{
+                    // Title is "Agents", not "Paired Devices" — first-time
+                    // users read the old label as "another phone running
+                    // Dina", which this screen has nothing to do with
+                    // (cross-Dina trust lives in Contacts). Route stays
+                    // `/paired-devices` to keep deep links working.
+                    title: 'Agents',
+                    // Hidden from the tab bar — reached via drill-down from Settings.
+                    // Admin surface for `dina-admin device pair`; no dedicated tab.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="help"
-              options={{
-                title: 'Help',
-                // Reached via the hamburger menu — shouldn't have its own
-                // tab. Without this entry expo-router file-based routing
-                // would auto-register `app/help.tsx` as a bottom tab.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="ai-providers"
+                  options={{
+                    title: 'AI providers',
+                    // Hidden from the tab bar — reached via Settings → AI
+                    // PROVIDER → Manage providers. Owns the full BYOK key
+                    // surface so the Settings screen can stay quiet.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="add-contact"
-              options={{
-                title: 'Add Contact',
-                // Reached via the People tab's "+ Add" button; no tab of its own.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="help"
+                  options={{
+                    title: 'Help',
+                    // Reached via the hamburger menu — shouldn't have its own
+                    // tab. Without this entry expo-router file-based routing
+                    // would auto-register `app/help.tsx` as a bottom tab.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="chat/[did]"
-              options={{
-                title: 'Talk',
-                // Per-peer drill-down; never a tab target.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="add-contact"
+                  options={{
+                    title: 'Add Contact',
+                    // Reached via the People tab's "+ Add" button; no tab of its own.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="admin"
-              options={{
-                title: 'Admin',
-                // Drill-down from Settings; not a tab target.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="chat/[did]"
+                  options={{
+                    title: 'Talk',
+                    // Per-peer drill-down; never a tab target.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="recovery-phrase"
-              options={{
-                title: 'Recovery phrase',
-                // Drill-down from Settings → Security. Highest-stakes
-                // reveal in the app — never a tab target.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="admin"
+                  options={{
+                    title: 'Admin',
+                    // Drill-down from Settings; not a tab target.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="change-passphrase"
-              options={{
-                title: 'Change passphrase',
-                // Drill-down from Settings → Security. Never a tab target.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="recovery-phrase"
+                  options={{
+                    title: 'Recovery phrase',
+                    // Drill-down from Settings → Security. Highest-stakes
+                    // reveal in the app — never a tab target.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-            <Tabs.Screen
-              name="confirm-recovery-phrase"
-              options={{
-                title: 'Confirm phrase',
-                // Drill-down from the chat-home banner OR the
-                // Settings → "Confirm recovery phrase" row that
-                // appears only while verification is pending.
-                href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="change-passphrase"
+                  options={{
+                    title: 'Change passphrase',
+                    // Drill-down from Settings → Security. Never a tab target.
+                    href: null,
 
-                headerLeft: renderHeaderBackButton,
-              }}
-            />
-          </Tabs>
-        ) : null}
-        </GuidedDemoGate>
-      </UnlockGate>
-      <NavMenuSheet
-        visible={menuOpen}
-        onClose={closeMenu}
-        onSelect={handleMenuSelect}
-        currentPath={pathname}
-        onClearChat={() => {
-          closeMenu();
-          clearThread('main');
-        }}
-      />
-    </View>
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="confirm-recovery-phrase"
+                  options={{
+                    title: 'Confirm phrase',
+                    // Drill-down from the chat-home banner OR the
+                    // Settings → "Confirm recovery phrase" row that
+                    // appears only while verification is pending.
+                    href: null,
+
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+              </Tabs>
+            ) : null}
+          </GuidedDemoGate>
+        </UnlockGate>
+        <NavMenuSheet
+          visible={menuOpen}
+          onClose={closeMenu}
+          onSelect={handleMenuSelect}
+          currentPath={pathname}
+          onClearChat={() => {
+            closeMenu();
+            clearThread('main');
+          }}
+        />
+      </View>
     </KeyboardProvider>
   );
 }

@@ -30,6 +30,13 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
 
 import { recordDecisionSafe } from '../plugins/decisions';
+import {
+  parseReasoningEnvelope,
+  reasoningRunner,
+  sensitivityAllows,
+  type ReasoningSensitivity,
+  type ReasoningTaskKind,
+} from '../reasoning/domain';
 
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
 import {
@@ -242,6 +249,33 @@ export interface WorkflowRepository {
     leaseMs: number,
     runnerFilter?: string,
   ): WorkflowTask | null;
+
+  /**
+   * Atomic connected-Brain claim. This is intentionally separate from
+   * `claimDelegationTask`: generic runners never inspect `reasoning` rows, and
+   * reasoning backends never inspect effect/delegation rows.
+   */
+  claimReasoningTask(
+    principalDID: string,
+    backendId: string,
+    ownerDID: string,
+    allowedTaskKinds: readonly ReasoningTaskKind[],
+    maxSensitivity: ReasoningSensitivity,
+    nowMs: number,
+    leaseMs: number,
+    /** Optional exact task fence used by the inline begin-and-claim path. */
+    taskId?: string,
+  ): WorkflowTask | null;
+
+  /** Claim-fenced retry transition used by the reasoning broker. */
+  requeueClaimedTask(
+    id: string,
+    principalDID: string,
+    claimId: string,
+    nextRunAtSec: number,
+    reason: string,
+    nowMs: number,
+  ): boolean;
 
   /**
    * Park a RUNNING task as `outcome_unknown` (§9.5): execution started,
@@ -488,6 +522,25 @@ type LeaseLossVerdict =
  *                                          a mystery; §9.5 anti-dilution).
  */
 function classifyLeaseLoss(task: WorkflowTask, nowMs: number): LeaseLossVerdict {
+  const reasoningEnvelope = parseReasoningEnvelope(task.payload);
+  if (task.kind === 'reasoning') {
+    if (reasoningEnvelope === null) {
+      return { kind: 'failed', error: 'reasoning lease lost — invalid task envelope' };
+    }
+    const attempt =
+      typeof task.attempt === 'number' && Number.isInteger(task.attempt) && task.attempt >= 0
+        ? task.attempt
+        : reasoningEnvelope.maxAttempts;
+    if (reasoningEnvelope.deadlineAtMs <= nowMs + 1_000) {
+      return { kind: 'failed', error: 'reasoning deadline expired' };
+    }
+    if (attempt >= reasoningEnvelope.maxAttempts) {
+      return { kind: 'failed', error: 'reasoning attempt budget exhausted' };
+    }
+    const backoffMs = Math.min(60_000, 1_000 * 2 ** Math.max(0, attempt - 1));
+    return { kind: 'requeue', nextRunAtSec: Math.ceil((nowMs + backoffMs) / 1_000) };
+  }
+
   const envelope = parsePluginEnvelope(task.payload);
   if (envelope === null) return { kind: 'requeue' };
   // Round-15 #15: fail CLOSED on a corrupt attempt counter. A non-finite value
@@ -953,6 +1006,171 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return claimed;
   }
 
+  claimReasoningTask(
+    principalDID: string,
+    backendId: string,
+    ownerDID: string,
+    allowedTaskKinds: readonly ReasoningTaskKind[],
+    maxSensitivity: ReasoningSensitivity,
+    nowMs: number,
+    leaseMs: number,
+    taskId?: string,
+  ): WorkflowTask | null {
+    if (leaseMs <= 0) throw new Error('claimReasoningTask: leaseMs must be positive');
+    const nowSec = Math.floor(nowMs / 1000);
+    const leaseExpiresAt = nowMs + leaseMs;
+    const runner = reasoningRunner(backendId);
+    let claimed: WorkflowTask | null = null;
+    this.db.transaction(() => {
+      const rows = this.db.query(
+        `SELECT ${TASK_COLUMNS} FROM workflow_tasks
+         WHERE kind = 'reasoning'
+           AND state = 'queued'
+           AND (? IS NULL OR id = ?)
+           AND (expires_at IS NULL OR expires_at > ?)
+           AND (next_run_at IS NULL OR next_run_at = 0 OR next_run_at <= ?)
+           AND (requested_runner IS NULL OR requested_runner = '' OR requested_runner = ?)
+         ORDER BY
+           CASE priority WHEN 'user_blocking' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
+           created_at ASC`,
+        [taskId ?? null, taskId ?? null, nowSec, nowSec, runner],
+      );
+      for (const row of rows) {
+        const candidate = rowToTask(row);
+        const envelope = parseReasoningEnvelope(candidate.payload);
+        if (envelope === null || envelope.taskId !== candidate.id) {
+          const failed = this.db.run(
+            `UPDATE workflow_tasks SET state = 'failed', error = ?, updated_at = ?
+             WHERE id = ? AND state = 'queued'`,
+            ['malformed reasoning envelope', nowMs, candidate.id],
+          );
+          if (failed > 0) {
+            this.appendEvent({
+              task_id: candidate.id,
+              at: nowMs,
+              event_kind: 'failed',
+              needs_delivery: true,
+              delivery_attempts: 0,
+              delivery_failed: false,
+              details: JSON.stringify({ error: 'malformed reasoning envelope' }),
+            });
+          }
+          continue;
+        }
+        if (envelope.deadlineAtMs <= nowMs || (candidate.attempt ?? 0) >= envelope.maxAttempts) {
+          const error =
+            envelope.deadlineAtMs <= nowMs ? 'reasoning deadline expired' : 'attempts exhausted';
+          const failed = this.db.run(
+            `UPDATE workflow_tasks SET state = 'failed', error = ?, updated_at = ?
+             WHERE id = ? AND state = 'queued'`,
+            [error, nowMs, candidate.id],
+          );
+          if (failed > 0) {
+            this.appendEvent({
+              task_id: candidate.id,
+              at: nowMs,
+              event_kind: 'failed',
+              needs_delivery: true,
+              delivery_attempts: 0,
+              delivery_failed: false,
+              details: JSON.stringify({ error }),
+            });
+          }
+          continue;
+        }
+        if (
+          envelope.ownerDid !== ownerDID ||
+          (envelope.backendBindingId !== null && envelope.backendBindingId !== backendId)
+        ) {
+          continue;
+        }
+        if (
+          !allowedTaskKinds.includes(envelope.taskKind) ||
+          !sensitivityAllows(maxSensitivity, envelope.sensitivity)
+        ) {
+          continue;
+        }
+        const claimId = newClaimId();
+        const affected = this.db.run(
+          `UPDATE workflow_tasks
+           SET state = 'running',
+               agent_did = ?,
+               assigned_runner = ?,
+               lease_expires_at = ?,
+               claim_id = ?,
+               attempt = attempt + 1,
+               first_claimed_at = COALESCE(first_claimed_at, ?),
+               updated_at = ?
+           WHERE id = ? AND state = 'queued'`,
+          [principalDID, runner, leaseExpiresAt, claimId, nowMs, nowMs, candidate.id],
+        );
+        if (affected === 0) continue;
+        this.appendEvent({
+          task_id: candidate.id,
+          at: nowMs,
+          event_kind: 'reasoning_claimed',
+          needs_delivery: false,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: JSON.stringify({
+            backend_id: backendId,
+            principal_did: principalDID,
+            claim_id: claimId,
+            lease_expires_at: leaseExpiresAt,
+            attempt: (candidate.attempt ?? 0) + 1,
+          }),
+        });
+        claimed = {
+          ...candidate,
+          status: 'running',
+          agent_did: principalDID,
+          assigned_runner: runner,
+          lease_expires_at: leaseExpiresAt,
+          claim_id: claimId,
+          attempt: (candidate.attempt ?? 0) + 1,
+          first_claimed_at: candidate.first_claimed_at ?? nowMs,
+          updated_at: nowMs,
+        };
+        break;
+      }
+    });
+    return claimed;
+  }
+
+  requeueClaimedTask(
+    id: string,
+    principalDID: string,
+    claimId: string,
+    nextRunAtSec: number,
+    reason: string,
+    nowMs: number,
+  ): boolean {
+    let changed = false;
+    this.db.transaction(() => {
+      changed =
+        this.db.run(
+          `UPDATE workflow_tasks
+           SET state = 'queued', agent_did = NULL, assigned_runner = NULL,
+               lease_expires_at = NULL, claim_id = NULL, next_run_at = ?,
+               progress_note = NULL, updated_at = ?
+           WHERE id = ? AND kind = 'reasoning' AND state = 'running'
+             AND agent_did = ? AND claim_id = ?`,
+          [nextRunAtSec, nowMs, id, principalDID, claimId],
+        ) === 1;
+      if (!changed) return;
+      this.appendEvent({
+        task_id: id,
+        at: nowMs,
+        event_kind: 'reasoning_requeued',
+        needs_delivery: false,
+        delivery_attempts: 0,
+        delivery_failed: false,
+        details: JSON.stringify({ reason, next_run_at: nextRunAtSec }),
+      });
+    });
+    return changed;
+  }
+
   heartbeatTask(
     id: string,
     agentDID: string,
@@ -1064,6 +1282,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
           `UPDATE workflow_tasks
            SET state = 'queued',
                agent_did = NULL,
+               assigned_runner = NULL,
                lease_expires_at = NULL,
                claim_id = NULL,
                next_run_at = COALESCE(?, next_run_at),
@@ -1118,10 +1337,11 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // lane still routes it as a plugin invocation, so the state-only guard
       // must not become reachable on that technicality.
       const completeTaskRow = this.getById(id);
-      const isPluginTask =
+      const claimRequired =
+        completeTaskRow?.kind === 'reasoning' ||
         parsePluginEnvelope(completeTaskRow?.payload ?? '') !== null ||
         isPluginLane(completeTaskRow?.requested_runner ?? '');
-      if (isPluginTask && claimId === undefined) {
+      if (claimRequired && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
         return;
       }
@@ -1166,10 +1386,11 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // See completeWithDetails: a plugin task requires the claim token — by
       // envelope OR by plugin lane (Round-14 #2, corrupt-envelope defense).
       const failTaskRow = this.getById(id);
-      const isPluginTask =
+      const claimRequired =
+        failTaskRow?.kind === 'reasoning' ||
         parsePluginEnvelope(failTaskRow?.payload ?? '') !== null ||
         isPluginLane(failTaskRow?.requested_runner ?? '');
-      if (isPluginTask && claimId === undefined) {
+      if (claimRequired && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
         return;
       }
@@ -1847,6 +2068,147 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return { ...winner };
   }
 
+  claimReasoningTask(
+    principalDID: string,
+    backendId: string,
+    ownerDID: string,
+    allowedTaskKinds: readonly ReasoningTaskKind[],
+    maxSensitivity: ReasoningSensitivity,
+    nowMs: number,
+    leaseMs: number,
+    taskId?: string,
+  ): WorkflowTask | null {
+    if (leaseMs <= 0) throw new Error('claimReasoningTask: leaseMs must be positive');
+    const nowSec = Math.floor(nowMs / 1000);
+    const runner = reasoningRunner(backendId);
+    const candidates = [...this.tasks.values()]
+      .filter(
+        (task) =>
+          task.kind === 'reasoning' &&
+          task.status === 'queued' &&
+          (taskId === undefined || task.id === taskId) &&
+          (task.expires_at === undefined || task.expires_at > nowSec) &&
+          (task.next_run_at === undefined ||
+            task.next_run_at === 0 ||
+            task.next_run_at <= nowSec) &&
+          (task.requested_runner === undefined ||
+            task.requested_runner === '' ||
+            task.requested_runner === runner),
+      )
+      .sort((a, b) => {
+        const rank = (value: string): number =>
+          value === 'user_blocking' ? 0 : value === 'normal' ? 1 : 2;
+        return rank(a.priority) - rank(b.priority) || a.created_at - b.created_at;
+      });
+
+    for (const candidate of candidates) {
+      const envelope = parseReasoningEnvelope(candidate.payload);
+      if (envelope === null || envelope.taskId !== candidate.id) {
+        candidate.status = 'failed';
+        candidate.error = 'malformed reasoning envelope';
+        candidate.updated_at = nowMs;
+        this.appendEvent({
+          task_id: candidate.id,
+          at: nowMs,
+          event_kind: 'failed',
+          needs_delivery: true,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: JSON.stringify({ error: candidate.error }),
+        });
+        continue;
+      }
+      if (envelope.deadlineAtMs <= nowMs || (candidate.attempt ?? 0) >= envelope.maxAttempts) {
+        candidate.status = 'failed';
+        candidate.error =
+          envelope.deadlineAtMs <= nowMs ? 'reasoning deadline expired' : 'attempts exhausted';
+        candidate.updated_at = nowMs;
+        this.appendEvent({
+          task_id: candidate.id,
+          at: nowMs,
+          event_kind: 'failed',
+          needs_delivery: true,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: JSON.stringify({ error: candidate.error }),
+        });
+        continue;
+      }
+      if (
+        envelope.ownerDid !== ownerDID ||
+        (envelope.backendBindingId !== null && envelope.backendBindingId !== backendId) ||
+        !allowedTaskKinds.includes(envelope.taskKind) ||
+        !sensitivityAllows(maxSensitivity, envelope.sensitivity)
+      ) {
+        continue;
+      }
+      const claimId = newClaimId();
+      candidate.status = 'running';
+      candidate.agent_did = principalDID;
+      candidate.assigned_runner = runner;
+      candidate.lease_expires_at = nowMs + leaseMs;
+      candidate.claim_id = claimId;
+      candidate.attempt = (candidate.attempt ?? 0) + 1;
+      candidate.first_claimed_at = candidate.first_claimed_at ?? nowMs;
+      candidate.updated_at = nowMs;
+      this.appendEvent({
+        task_id: candidate.id,
+        at: nowMs,
+        event_kind: 'reasoning_claimed',
+        needs_delivery: false,
+        delivery_attempts: 0,
+        delivery_failed: false,
+        details: JSON.stringify({
+          backend_id: backendId,
+          principal_did: principalDID,
+          claim_id: claimId,
+          lease_expires_at: candidate.lease_expires_at,
+          attempt: candidate.attempt,
+        }),
+      });
+      return { ...candidate };
+    }
+    return null;
+  }
+
+  requeueClaimedTask(
+    id: string,
+    principalDID: string,
+    claimId: string,
+    nextRunAtSec: number,
+    reason: string,
+    nowMs: number,
+  ): boolean {
+    const task = this.tasks.get(id);
+    if (
+      task === undefined ||
+      task.kind !== 'reasoning' ||
+      task.status !== 'running' ||
+      task.agent_did !== principalDID ||
+      task.claim_id !== claimId
+    ) {
+      return false;
+    }
+    task.status = 'queued';
+    task.agent_did = undefined;
+    task.assigned_runner = undefined;
+    task.lease_expires_at = undefined;
+    task.claim_id = undefined;
+    task.next_run_at = nextRunAtSec;
+    task.progress_note = undefined;
+    task.updated_at = nowMs;
+    this.appendEvent({
+      task_id: id,
+      at: nowMs,
+      event_kind: 'reasoning_requeued',
+      needs_delivery: false,
+      delivery_attempts: 0,
+      delivery_failed: false,
+      details: JSON.stringify({ reason, next_run_at: nextRunAtSec }),
+    });
+    return true;
+  }
+
   heartbeatTask(
     id: string,
     agentDID: string,
@@ -1924,6 +2286,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       }
       t.status = 'queued';
       t.agent_did = undefined;
+      t.assigned_runner = undefined;
       t.lease_expires_at = undefined;
       t.claim_id = undefined;
       if (verdict.nextRunAtSec !== undefined) t.next_run_at = verdict.nextRunAtSec;
@@ -1956,7 +2319,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     // Defense-in-depth parity (audit D3): a plugin task requires the token —
     // by envelope OR by plugin lane (Round-14 #2, corrupt-envelope defense).
     if (
-      (parsePluginEnvelope(t.payload) !== null || isPluginLane(t.requested_runner ?? '')) &&
+      (t.kind === 'reasoning' ||
+        parsePluginEnvelope(t.payload) !== null ||
+        isPluginLane(t.requested_runner ?? '')) &&
       claimId === undefined
     ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
@@ -1993,7 +2358,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     if (t === undefined) return 0;
     // Plugin task requires the token — by envelope OR by plugin lane (#2).
     if (
-      (parsePluginEnvelope(t.payload) !== null || isPluginLane(t.requested_runner ?? '')) &&
+      (t.kind === 'reasoning' ||
+        parsePluginEnvelope(t.payload) !== null ||
+        isPluginLane(t.requested_runner ?? '')) &&
       claimId === undefined
     ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);

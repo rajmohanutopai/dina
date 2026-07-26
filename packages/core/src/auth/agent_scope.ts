@@ -50,6 +50,7 @@ const SCOPE_RULES: readonly ScopeRule[] = [
   { prefix: '/v1/agent/gate', scope: 'coding' },
   { prefix: '/v1/agent/audit', scope: 'coding' },
   { prefix: '/v1/agent/memory', scope: 'coding' },
+  { prefix: '/v1/agent/context', scope: 'coding' },
   { prefix: '/v1/agent/scrub', scope: 'coding' },
   { prefix: '/v1/agent/service', scope: 'coding' },
   { prefix: '/v1/agent/talk', scope: 'coding' },
@@ -59,6 +60,9 @@ const SCOPE_RULES: readonly ScopeRule[] = [
   { prefix: '/v1/agent/ask', scope: 'coding' },
   { prefix: '/v1/agent/vaults', scope: 'coding' },
   { prefix: '/v1/agent/reminders', scope: 'coding' },
+  // A connected Claude/Codex host is enrolled as a coding agent. Enabling it
+  // as a Brain adds a Core-owned backend binding; it does not widen a runner.
+  { prefix: '/v1/reasoning', scope: 'coding' },
   // Delegation-runner surface: claiming a workflow task is a RUNNER action, not
   // a coding one (Item C — narrow the broad agent authz). A coding agent that
   // somehow reaches the claim endpoint is denied by scope even though the

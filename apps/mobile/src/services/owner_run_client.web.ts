@@ -17,7 +17,7 @@
  * Brain" guarantee. See apps/home-node-lite/web/SECURITY.md.)
  */
 
-import type { OwnerRunClient } from '@dina/core';
+import type { OwnerReasoningClient, OwnerRunClient } from '@dina/core';
 
 const LEGACY_STORAGE_KEY = 'dina.owner_capability';
 
@@ -30,15 +30,17 @@ try {
   /* no storage (SSR / test harness) — nothing to purge */
 }
 
-let ownerRunClient: OwnerRunClient | null = null;
+export type OwnerControlClient = OwnerRunClient & Partial<OwnerReasoningClient>;
+
+let ownerRunClient: OwnerControlClient | null = null;
 
 /** A trusted UI edge MAY install a client; the web default is none. */
 export function setOwnerRunClient(c: OwnerRunClient | null): void {
-  ownerRunClient = c;
+  ownerRunClient = c as OwnerControlClient | null;
 }
 
 /** The owner UI hooks resolve it lazily. Null on the Brain-served web SPA —
  *  owner control lives on Core's `/owner` console, never on a Brain page. */
-export function getOwnerRunClient(): OwnerRunClient | null {
+export function getOwnerRunClient(): OwnerControlClient | null {
   return ownerRunClient;
 }
