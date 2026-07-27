@@ -1,0 +1,89 @@
+name: dina-agent release
+
+on:
+  push:
+    tags: ["dina-agent-v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: cli/pyproject.toml
+
+      - name: Build release artifacts
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build cli --outdir dist/cli
+          python -m twine check dist/cli/*
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/dina-agent-v')
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#dina-agent-v}"
+          actual="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          print(tomllib.loads(Path("cli/pyproject.toml").read_text())["project"]["version"])
+          PY
+          )"
+          test "$actual" = "$expected" || {
+            echo "Tag version $expected does not match cli/pyproject.toml $actual" >&2
+            exit 1
+          }
+
+      - name: Smoke-test the built wheel
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/dina-wheel"
+          "$RUNNER_TEMP/dina-wheel/bin/pip" install --disable-pip-version-check \
+            dist/cli/dina_agent-*.whl
+          "$RUNNER_TEMP/dina-wheel/bin/dina" --version
+          "$RUNNER_TEMP/dina-wheel/bin/dina" --json home-node status \
+            > "$RUNNER_TEMP/home-node-status.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          value = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "home-node-status.json").read_text()
+          )
+          assert value["installed"] is False
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dina-agent-dist
+          path: dist/cli/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/dina-agent-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/dina-agent/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dina-agent-dist
+          path: dist/cli
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/cli/

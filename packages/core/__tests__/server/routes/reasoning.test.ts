@@ -166,6 +166,67 @@ describe('connected reasoning routes', () => {
     expect(isReasoningBackendPresent('claude', agent.did)).toBe(false);
   });
 
+  test('coding agent discovers only its own active connected-Brain bindings', async () => {
+    const { router } = setup();
+    const agent = registerDevice('Claude', 'z6MkSelfAgent', 'agent', 'coding');
+    const other = registerDevice('Other', 'z6MkOtherAgent', 'agent', 'coding');
+    expect((await registerConnectedBackend(router, agent.did)).status).toBe(201);
+    const otherRegistered = await router.handle(
+      ownerRequest('POST', '/v1/reasoning/backends/register', {
+        backend_id: 'other',
+        kind: 'connected_host',
+        principal_did: other.did,
+        allowed_task_kinds: ['answer.compose'],
+        max_sensitivity: 'personal',
+        availability: 'foreground',
+        expected_version: null,
+        expires_at: null,
+      }),
+    );
+    expect(otherRegistered.status).toBe(201);
+
+    const listed = await router.handle(
+      agentRequest(agent.did, 'GET', '/v1/reasoning/backends/self', undefined),
+    );
+
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject({
+      backends: [
+        {
+          backend_id: 'claude',
+          principal_did: agent.did,
+          kind: 'connected_host',
+        },
+      ],
+    });
+    expect(isReasoningBackendPresent('claude', agent.did)).toBe(true);
+    expect(isReasoningBackendPresent('other', other.did)).toBe(false);
+  });
+
+  test('self backend discovery requires a coding-scoped agent caller', async () => {
+    const { router } = setup();
+
+    const unauthenticated = await router.handle(
+      request('GET', '/v1/reasoning/backends/self', undefined),
+    );
+    expect(unauthenticated).toEqual({
+      status: 401,
+      body: { error: 'unauthenticated_backend' },
+    });
+
+    const wrongScope = await router.handle(
+      request('GET', '/v1/reasoning/backends/self', undefined, {
+        callerType: 'agent',
+        callerDID: 'did:key:z6MkWrongScope',
+        agentScope: 'runner',
+      }),
+    );
+    expect(wrongScope).toEqual({
+      status: 401,
+      body: { error: 'unauthenticated_backend' },
+    });
+  });
+
   test('owner can retry an incomplete revocation cascade at the post-revoke version', async () => {
     const { router, backends, contexts } = setup();
     const agent = registerDevice('Claude', 'z6MkRetryRevokeAgent', 'agent', 'coding');

@@ -1,0 +1,20 @@
+{
+  "name": "dina",
+  "interface": {
+    "displayName": "Dina"
+  },
+  "plugins": [
+    {
+      "name": "dina",
+      "source": {
+        "source": "local",
+        "path": "./cli/codex-plugin/plugins/dina"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

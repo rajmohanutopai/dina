@@ -1,0 +1,9 @@
+#!/bin/sh
+# Host-specific entrypoint; all setup policy lives in dina-agent.
+
+set -eu
+
+SCRIPT_DIR="${0%/*}"
+[ "$SCRIPT_DIR" != "$0" ] || SCRIPT_DIR="."
+PLUGIN_ROOT="${PLUGIN_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
+exec "$PLUGIN_ROOT/bin/dina-setup-bootstrap" --host codex "$@"

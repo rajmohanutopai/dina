@@ -622,6 +622,7 @@ def test_coding_profile_removes_runner_and_reasoning_tools(monkeypatch):
         "dina_task_complete",
         "dina_task_fail",
         "dina_task_progress",
+        "dina_reasoning_backends",
         "dina_context_prepare",
         "dina_memory_propose",
         "dina_reasoning_status",
@@ -647,11 +648,15 @@ def test_connected_profile_keeps_reasoning_but_removes_runner_tools(monkeypatch)
 
 
 def test_reasoning_mcp_tools_forward_only_claim_contract_fields(fake_client):
+    fake_client.reasoning_backends.return_value = {
+        "backends": [{"backend_id": "backend-1"}]
+    }
     fake_client.context_prepare.return_value = {"status": "complete", "items": []}
     fake_client.memory_propose.return_value = {"status": "stored"}
     fake_client.reasoning_begin.return_value = {"submission": {}, "claim": None}
     fake_client.reasoning_complete.return_value = {"accepted": True}
 
+    backends = mcp_server.dina_reasoning_backends.fn()
     context = mcp_server.dina_context_prepare.fn(
         session="sess-1",
         query="What should I buy?",
@@ -691,10 +696,12 @@ def test_reasoning_mcp_tools_forward_only_claim_contract_fields(fake_client):
         evidence_ids=["review-1"],
     )
 
+    assert backends == {"backends": [{"backend_id": "backend-1"}]}
     assert context == {"status": "complete", "items": []}
     assert memory == {"status": "stored"}
     assert begun["claim"] is None
     assert completed == {"accepted": True}
+    fake_client.reasoning_backends.assert_called_once_with()
     fake_client.context_prepare.assert_called_once_with(
         session="sess-1",
         query="What should I buy?",

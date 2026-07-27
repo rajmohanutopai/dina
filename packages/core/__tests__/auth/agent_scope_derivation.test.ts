@@ -57,7 +57,7 @@ describe('agent_scope derivation + enforcement (signed pipeline)', () => {
     expect(r.agentScope).toBe('coding');
   });
 
-  it("admits only a coding agent to the agent PII scrub façade", () => {
+  it('admits only a coding agent to the agent PII scrub façade', () => {
     wire('coding');
     expect(authenticateRequest(signed('POST', '/v1/agent/scrub')).authenticated).toBe(true);
 
@@ -67,12 +67,24 @@ describe('agent_scope derivation + enforcement (signed pipeline)', () => {
     expect(denied.reason).toMatch(/agent_scope 'coding' required/);
   });
 
-  it("admits only a coding agent to its own audit projection", () => {
+  it('admits only a coding agent to its own audit projection', () => {
     wire('coding');
     expect(authenticateRequest(signed('GET', '/v1/agent/audit')).authenticated).toBe(true);
 
     wire('runner');
     const denied = authenticateRequest(signed('GET', '/v1/agent/audit'));
+    expect(denied.authenticated).toBe(false);
+    expect(denied.reason).toMatch(/agent_scope 'coding' required/);
+  });
+
+  it('admits only a coding agent to exact self Brain-binding discovery', () => {
+    wire('coding');
+    expect(authenticateRequest(signed('GET', '/v1/reasoning/backends/self')).authenticated).toBe(
+      true,
+    );
+
+    wire('runner');
+    const denied = authenticateRequest(signed('GET', '/v1/reasoning/backends/self'));
     expect(denied.authenticated).toBe(false);
     expect(denied.reason).toMatch(/agent_scope 'coding' required/);
   });

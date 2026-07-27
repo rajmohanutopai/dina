@@ -786,6 +786,7 @@ def test_reasoning_backend_wire_contracts(config):
     responses = [
         _tr(200, '{"status":"complete","items":[]}'),
         _tr(200, '{"status":"stored","proposal_id":"stg-1"}'),
+        _tr(200, '{"backends":[{"backend_id":"backend-1"}]}'),
         _tr(200, '{"queued":1}'),
         _tr(200, '{"submission":{"taskId":"r-1"},"claim":null}'),
         _tr(200, '{"claim":{"taskId":"r-1"}}'),
@@ -816,6 +817,9 @@ def test_reasoning_backend_wire_contracts(config):
                 "reminderCandidates": [],
             },
         )
+        assert client.reasoning_backends() == {
+            "backends": [{"backend_id": "backend-1"}]
+        }
         client.reasoning_status("backend-1", "sess-1")
         client.reasoning_begin(
             backend_id="backend-1",
@@ -879,9 +883,13 @@ def test_reasoning_backend_wire_contracts(config):
         assert json.loads(calls[1].kwargs["body"])["request_id"] == "memory-request-1"
         assert calls[2].args[0:2] == (
             "GET",
+            "/v1/reasoning/backends/self",
+        )
+        assert calls[3].args[0:2] == (
+            "GET",
             "/v1/reasoning/status?backend_id=backend-1&session_id=sess-1",
         )
-        assert json.loads(calls[3].kwargs["body"]) == {
+        assert json.loads(calls[4].kwargs["body"]) == {
             "backend_id": "backend-1",
             "session_id": "sess-1",
             "task_kind": "answer.compose",
@@ -889,12 +897,12 @@ def test_reasoning_backend_wire_contracts(config):
             "purpose": "Answer the owner",
             "idempotency_key": "inline-1",
         }
-        assert calls[4].args[1] == "/v1/reasoning/claim"
-        assert json.loads(calls[5].kwargs["body"])["claim_id"] == "claim-1"
-        completion = json.loads(calls[6].kwargs["body"])
+        assert calls[5].args[1] == "/v1/reasoning/claim"
+        assert json.loads(calls[6].kwargs["body"])["claim_id"] == "claim-1"
+        completion = json.loads(calls[7].kwargs["body"])
         assert completion["context_projection_hash"] is None
         assert completion["evidence_ids"] == []
-        failure = json.loads(calls[7].kwargs["body"])
+        failure = json.loads(calls[8].kwargs["body"])
         assert failure["retryable"] is True
         client.close()
 

@@ -1,4 +1,4 @@
-name: CLI and Claude plugin
+name: CLI and coding-agent plugins
 
 on:
   pull_request:
@@ -55,7 +55,9 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -e "./cli[dev]"
 
       - name: Run CLI tests
-        run: python -m pytest cli/tests -q
+        run: |
+          python scripts/dev/sync-agent-plugin-runtime.py --check
+          python -m pytest cli/tests -q
 
       - name: Typecheck plugin dependencies
         run: |
@@ -98,10 +100,13 @@ jobs:
       - name: Install Claude Code
         run: npm install --global @anthropic-ai/claude-code
 
+      - name: Install Codex
+        run: npm install --global @openai/codex
+
       - name: Validate manifests
         run: |
           claude plugin validate --strict cli/claude-plugin/dina
-          claude plugin validate --strict cli/claude-plugin
+          claude plugin validate --strict .
 
       - name: Smoke-test an isolated marketplace install
         shell: bash
@@ -109,7 +114,7 @@ jobs:
           set -euo pipefail
           export CLAUDE_CONFIG_DIR
           CLAUDE_CONFIG_DIR="$(mktemp -d)"
-          claude plugin marketplace add "$GITHUB_WORKSPACE/cli/claude-plugin" --scope user
+          claude plugin marketplace add "$GITHUB_WORKSPACE" --scope user
           claude plugin install dina@dina --scope user
           claude plugin list --json > "$RUNNER_TEMP/dina-plugins.json"
           node <<'NODE'
@@ -126,4 +131,32 @@ jobs:
             throw new Error("Installed plugin is missing README.md");
           }
           fs.accessSync(dina.installPath + "/bin/dina-gate", fs.constants.X_OK);
+          NODE
+
+      - name: Smoke-test an isolated Codex marketplace install
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CODEX_HOME
+          CODEX_HOME="$(mktemp -d)"
+          codex plugin marketplace add "$GITHUB_WORKSPACE" --json
+          codex plugin add dina@dina --json
+          codex plugin list --json > "$RUNNER_TEMP/dina-codex-plugins.json"
+          node <<'NODE'
+          const fs = require("fs");
+          const plugins = JSON.parse(
+            fs.readFileSync(
+              process.env.RUNNER_TEMP + "/dina-codex-plugins.json",
+              "utf8",
+            ),
+          );
+          const dina = plugins.installed.find(
+            (plugin) => plugin.pluginId === "dina@dina",
+          );
+          if (!dina || !dina.enabled) {
+            throw new Error("Dina Codex plugin was not installed and enabled");
+          }
+          if (dina.version !== "0.3.0") {
+            throw new Error(`Unexpected Dina Codex plugin version: ${dina.version}`);
+          }
           NODE

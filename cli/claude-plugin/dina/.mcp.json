@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "dina": {
-      "command": "dina",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli",
       "args": ["mcp-server", "--profile", "connected"]
     }
   }

@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""Bootstrap a compatible Dina CLI, then delegate to shared host setup."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import venv
+from pathlib import Path
+from typing import Any, Sequence
+
+MINIMUM_CLI = (0, 20, 0)
+MAXIMUM_CLI = (0, 21, 0)
+VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)(?:[.+-][^\s]+)?\b")
+
+
+class BootstrapError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _runtime_dir() -> Path:
+    return Path(
+        os.environ.get(
+            "DINA_SETUP_RUNTIME_DIR",
+            str(Path.home() / ".dina" / "runtime" / "agent-plugin"),
+        )
+    ).expanduser()
+
+
+def _managed_dina() -> Path:
+    suffix = Path("Scripts/dina.exe") if os.name == "nt" else Path("bin/dina")
+    return _runtime_dir() / "venv" / suffix
+
+
+def _legacy_managed_dina() -> Path:
+    suffix = Path("Scripts/dina.exe") if os.name == "nt" else Path("bin/dina")
+    return Path.home() / ".dina" / "runtime" / "claude-plugin" / "venv" / suffix
+
+
+def _run(
+    argv: Sequence[str | os.PathLike[str]],
+    *,
+    check: bool = True,
+    timeout: float = 600,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        [os.fspath(part) for part in argv],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=env,
+    )
+    if check and result.returncode != 0:
+        detail = (result.stderr or result.stdout or "command failed").strip()
+        raise BootstrapError("command_failed", detail[-3000:])
+    return result
+
+
+def _parse_version(output: str) -> tuple[int, int, int] | None:
+    match = VERSION_RE.search(output)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def _cli_version(path: Path) -> tuple[int, int, int] | None:
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return None
+    try:
+        result = _run([path, "--version"], check=False, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return _parse_version(result.stdout) if result.returncode == 0 else None
+
+
+def _candidate_clis() -> list[Path]:
+    explicit = os.environ.get("DINA_CLI_BIN", "").strip()
+    if explicit:
+        return [Path(explicit).expanduser()]
+    managed = _managed_dina()
+    if managed.exists():
+        return [managed]
+    candidates: list[Path] = []
+    legacy = _legacy_managed_dina()
+    if legacy.exists():
+        candidates.append(legacy)
+    system = shutil.which("dina")
+    if system:
+        candidates.append(Path(system))
+    return candidates
+
+
+def _find_compatible_cli() -> tuple[Path, tuple[int, int, int]] | None:
+    for candidate in _candidate_clis():
+        version = _cli_version(candidate)
+        if (
+            version is not None
+            and version >= MINIMUM_CLI
+            and version < MAXIMUM_CLI
+        ):
+            return candidate, version
+    return None
+
+
+def _install_managed_cli() -> tuple[Path, tuple[int, int, int]]:
+    if sys.version_info < (3, 10):
+        raise BootstrapError(
+            "python_too_old",
+            "Dina setup requires Python 3.10 or newer.",
+        )
+    if os.environ.get("DINA_CLI_BIN", "").strip():
+        raise BootstrapError(
+            "cli_override_incompatible",
+            "DINA_CLI_BIN does not point to a compatible Dina CLI.",
+        )
+
+    runtime = _runtime_dir()
+    runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(runtime, 0o700)
+    except OSError:
+        pass
+    environment = runtime / "venv"
+    python_name = "Scripts/python.exe" if os.name == "nt" else "bin/python"
+    if not (environment / python_name).exists():
+        venv.EnvBuilder(with_pip=True, clear=False).create(environment)
+
+    python = environment / python_name
+    package = os.environ.get(
+        "DINA_SETUP_CLI_SPEC",
+        "dina-agent>=0.20.0,<0.21.0",
+    )
+    _run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--upgrade",
+            package,
+        ],
+        timeout=600,
+    )
+    cli = _managed_dina()
+    version = _cli_version(cli)
+    if version is None or not (MINIMUM_CLI <= version < MAXIMUM_CLI):
+        raise BootstrapError(
+            "cli_install_invalid",
+            "The managed Dina CLI installation did not provide a compatible "
+            "0.20.x version.",
+        )
+    return cli, version
+
+
+def _emit(value: dict[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        print(json.dumps(value, indent=2))
+        return
+    if value.get("ready"):
+        print("Dina is ready.")
+    else:
+        print(value.get("message") or "Dina setup is not complete.")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Install or repair Dina for a coding-agent host."
+    )
+    parser.add_argument("--host", choices=["claude-code", "codex"], required=True)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--status", action="store_true")
+    mode.add_argument("--ensure", action="store_true")
+    mode.add_argument("--local-only", action="store_true")
+    mode.add_argument("--pds-handle")
+    parser.add_argument("--pds-email")
+    parser.add_argument("--json", action="store_true")
+    return parser
+
+
+def _delegate(
+    cli: Path,
+    *,
+    args: argparse.Namespace,
+    managed: bool,
+) -> int:
+    argv = [cli]
+    if args.json:
+        argv.append("--json")
+    argv.extend(["agent-host", "setup", "--host", args.host])
+    if args.status:
+        argv.append("--status")
+    elif args.ensure:
+        argv.append("--ensure")
+    elif args.local_only:
+        argv.append("--local-only")
+    elif args.pds_handle:
+        argv.extend(["--pds-handle", args.pds_handle])
+    if args.pds_email:
+        argv.extend(["--pds-email", args.pds_email])
+
+    env = dict(os.environ)
+    env["DINA_SETUP_ACTIVE_CLI"] = str(cli)
+    env["DINA_SETUP_CLI_MANAGED"] = "1" if managed else "0"
+    result = _run(argv, check=False, timeout=900, env=env)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    if not result.stdout and result.returncode != 0:
+        _emit(
+            {
+                "kind": "setup_error",
+                "host": args.host,
+                "ready": False,
+                "code": "setup_command_failed",
+                "message": "The Dina setup command failed without a response.",
+            },
+            args.json,
+        )
+    return result.returncode
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    try:
+        if args.pds_email and not args.pds_handle:
+            raise BootstrapError(
+                "pds_email_without_handle",
+                "--pds-email requires --pds-handle.",
+            )
+        found = _find_compatible_cli()
+        if args.status and found is None:
+            _emit(
+                {
+                    "kind": "setup_status",
+                    "host": args.host,
+                    "ready": False,
+                    "cli": {
+                        "available": False,
+                        "minimum": "0.20.0",
+                        "maximum_exclusive": "0.21.0",
+                    },
+                    "home_node": {"installed": None},
+                    "needs_identity_choice": None,
+                    "message": (
+                        "Install the managed Dina CLI with --ensure before "
+                        "choosing identity settings."
+                    ),
+                },
+                args.json,
+            )
+            return 0
+        if (
+            not args.status
+            and os.environ.get("DINA_SETUP_CLI_SPEC", "").strip()
+            and not os.environ.get("DINA_CLI_BIN", "").strip()
+        ):
+            # Local preview and release-candidate tests must exercise the
+            # requested build even when an older compatible managed CLI exists.
+            found = _install_managed_cli()
+        if found is None:
+            found = _install_managed_cli()
+        cli, _version = found
+        return _delegate(
+            cli,
+            args=args,
+            managed=cli in {_managed_dina(), _legacy_managed_dina()},
+        )
+    except (BootstrapError, OSError, subprocess.TimeoutExpired) as exc:
+        code = exc.code if isinstance(exc, BootstrapError) else "setup_failed"
+        _emit(
+            {
+                "kind": "setup_error",
+                "host": args.host,
+                "ready": False,
+                "code": code,
+                "message": str(exc),
+            },
+            args.json,
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

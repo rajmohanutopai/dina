@@ -569,6 +569,32 @@ export function registerReasoningRoutes(
     return response(204, null);
   });
 
+  router.get('/v1/reasoning/backends/self', async (req) => {
+    const principalDid = req.callerDID;
+    if (
+      principalDid === undefined ||
+      principalDid === '' ||
+      req.callerType !== 'agent' ||
+      req.agentScope !== 'coding'
+    ) {
+      return response(401, { error: 'unauthenticated_backend' });
+    }
+    const owner = getNodeDID();
+    if (owner === null) return response(503, { error: 'owner_identity_unavailable' });
+    const repo = getReasoningBackendRepository();
+    if (repo === null) return response(503, { error: 'reasoning_repository_unavailable' });
+    const now = Date.now();
+    const backends = repo
+      .getActiveForPrincipal(principalDid, now)
+      .filter(
+        (binding) => binding.kind === 'connected_host' && binding.selectedByOwnerDid === owner,
+      );
+    for (const binding of backends) {
+      markReasoningBackendPresent(binding.backendId, binding.principalDid);
+    }
+    return response(200, { backends: backends.map(projectBinding) });
+  });
+
   router.get('/v1/reasoning/status', async (req) => {
     const request = backendRequest(req);
     if (!('binding' in request)) return request;

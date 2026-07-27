@@ -207,6 +207,43 @@ def test_install_wires_optional_pds_identity_without_seed_in_state(
     assert "recovery" not in manager.state_file.read_text().lower()
 
 
+def test_install_rejects_overlong_managed_dina_pds_handle(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    bundle = _bundle(tmp_path)
+
+    with pytest.raises(
+        HomeNodeError,
+        match=r"prefix of at most 6 characters for test-pds\.dinakernel\.com",
+    ):
+        manager.install(
+            release_version="0.20.0",
+            bundle_path=bundle,
+            endpoint_mode="test",
+            pds_handle="toolong.test-pds.dinakernel.com",
+            start=False,
+        )
+
+
+def test_install_allows_standard_length_handle_on_external_pds(
+    tmp_path: Path,
+) -> None:
+    manager = _manager(tmp_path)
+    bundle = _bundle(tmp_path)
+    handle = f"{'a' * 40}.example.com"
+
+    manager.install(
+        release_version="0.20.0",
+        bundle_path=bundle,
+        endpoint_mode="test",
+        pds_handle=handle,
+        start=False,
+    )
+
+    config = manager._load_config()
+    assert config is not None
+    assert config.pds_handle == handle
+
+
 def test_install_is_idempotent_for_identical_settings(tmp_path: Path) -> None:
     commands = FakeCommands()
     manager = _manager(tmp_path, commands)

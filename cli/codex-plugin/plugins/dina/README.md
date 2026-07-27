@@ -4,35 +4,43 @@ Dina connects Codex to a user-owned Home Node for deterministic tool gating,
 encrypted personal memory, service discovery and invocation, owner-approved
 contact messaging and delegation, human approvals, and local PII scrubbing.
 
-## Prerequisites
+## Installation
 
-Install and enroll the CLI before enabling the plugin. The gate is fail-closed,
-so an unconfigured or unreachable Home Node blocks supported local tool calls.
+Install the marketplace and plugin:
 
 ```bash
-pip install --upgrade "dina-agent>=0.20.0"
-dina home-node install --pds-handle your-handle.example.com
-dina home-node show-recovery-phrase
-dina home-node status
-dina status
+codex plugin marketplace add rajmohanutopai/dina
+codex plugin add dina@dina
 ```
 
-The installer uses a published native platform release and enrolls this machine
-with a separate coding-scoped `did:key`. It requires no source checkout or
-external runtime; the archive carries its matching Node runtime and SQLCipher
-binding, and installation verifies each file against the release manifest.
-Existing CLI configuration is preserved rather than overwritten. The PDS
-handle provisions the owner's `did:plc` and enables public Services and
-PeerLens publication. Omit it only for a deliberately local-only Home Node. To
-reuse an existing Dina identity, install with that identity's handle plus
-`--restore-identity`, then restore its portable `.dina` archive; automatic
-phone-to-Home-Node continuity is not yet implemented.
+Start Codex, invoke `$dina-setup` or say **Set up Dina**, and follow the
+identity choice. Setup installs a compatible CLI in a plugin-managed
+environment when needed, downloads and verifies the native Home Node, starts
+Core and Brain, enrolls this machine with a separate coding-scoped `did:key`,
+and selects that exact identity as Dina's foreground Brain unless doing so
+would replace or revive an existing owner decision.
+
+No source checkout, Docker, global Python package, owner key, or vault key is
+required. The plugin manages a compatible `dina-agent>=0.20.0,<0.21.0`
+installation. A public PDS handle provisions the Home Node's `did:plc` and
+enables public Services and Ranked Reviews. Local-only setup creates a private
+`did:key`; safety, memory, and local agent features work, but public publishing
+does not.
+
+Codex can reason for Dina without another metered AI API key while a Codex
+session is open. It is not a background daemon: ask Codex to process queued
+Dina work when another client needs its reasoning.
 
 ## After Installation
 
 Open `/hooks`, review the Dina hook definition, and trust it. Codex skips
-untrusted plugin hooks. Start a new conversation after installing or updating
-the plugin so the bundled hooks, skills, and MCP server are loaded.
+untrusted plugin hooks. Start a new conversation after setup or a plugin update
+so the bundled hooks, skills, and MCP server reload.
+
+Before Core exists, the trusted gate permits only the exact plugin-owned setup
+executable with validated arguments. Every other supported local tool remains
+blocked. Codex's normal command approval remains the human consent boundary
+for running setup.
 
 ## Enforcement
 
@@ -62,3 +70,7 @@ PeerLens, Talk, delegation, reminders, and bounded vault-metadata inspection.
 Talk, delegation, and public review publication use stable request IDs and
 must be polled after phone approval; Codex must not perform an equivalent
 action independently while approval or a durable retry is pending.
+
+If another Dina installation or Brain selection already exists, setup repairs
+compatible enrollment but preserves identity and owner policy. It never
+purges data or silently replaces a revoked or competing Brain binding.

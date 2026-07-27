@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Recognize the tiny tool surface required before Dina Core is available."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import sys
+from pathlib import Path
+
+QUESTION = 10
+DENY = 1
+ALLOW = 0
+
+HANDLE_RE = re.compile(
+    r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+)
+EMAIL_RE = re.compile(r"(?=.{3,254}\Z)[^@\s]+@[^@\s]+")
+
+
+def _plugin_root() -> Path:
+    for name in ("DINA_PLUGIN_ROOT", "PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"):
+        configured = os.environ.get(name, "").strip()
+        if configured:
+            return Path(configured).expanduser().resolve()
+    return Path(__file__).resolve().parents[1]
+
+
+def _valid_setup_command(command: object) -> bool:
+    if not isinstance(command, str) or not command or len(command) > 4096:
+        return False
+    if "\n" in command or "\r" in command or "\x00" in command:
+        return False
+    try:
+        parts = shlex.split(command, posix=True)
+    except ValueError:
+        return False
+    if not parts:
+        return False
+
+    expected = str(_plugin_root() / "bin" / "dina-setup")
+    if parts[0] not in {
+        expected,
+        "${PLUGIN_ROOT}/bin/dina-setup",
+        "${CLAUDE_PLUGIN_ROOT}/bin/dina-setup",
+    }:
+        return False
+
+    seen: set[str] = set()
+    index = 1
+    while index < len(parts):
+        flag = parts[index]
+        if flag in seen:
+            return False
+        seen.add(flag)
+        if flag in {"--status", "--json", "--local-only", "--ensure"}:
+            index += 1
+            continue
+        if flag in {"--pds-handle", "--pds-email"}:
+            if index + 1 >= len(parts):
+                return False
+            value = parts[index + 1]
+            validator = HANDLE_RE if flag == "--pds-handle" else EMAIL_RE
+            if validator.fullmatch(value) is None:
+                return False
+            index += 2
+            continue
+        return False
+
+    if "--status" in seen and len(seen) > (2 if "--json" in seen else 1):
+        return False
+    if "--ensure" in seen and len(seen) > (2 if "--json" in seen else 1):
+        return False
+    if "--local-only" in seen and "--pds-handle" in seen:
+        return False
+    if "--pds-email" in seen and "--pds-handle" not in seen:
+        return False
+    return True
+
+
+def main() -> int:
+    if sys.argv[1:] == ["--home-node-ready"]:
+        try:
+            value = json.load(sys.stdin)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return DENY
+        if not isinstance(value, dict):
+            return DENY
+        return (
+            ALLOW
+            if value.get("installed")
+            and value.get("running")
+            and value.get("core_healthy")
+            and value.get("brain_healthy")
+            else DENY
+        )
+    if len(sys.argv) != 1:
+        return DENY
+
+    try:
+        raw = sys.stdin.buffer.read(1_048_577)
+        if len(raw) > 1_048_576:
+            return DENY
+        event = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return DENY
+    if not isinstance(event, dict):
+        return DENY
+
+    tool_name = event.get("tool_name")
+    tool_input = event.get("tool_input")
+    if tool_name == "AskUserQuestion" and isinstance(tool_input, dict):
+        return QUESTION
+    if tool_name != "Bash" or not isinstance(tool_input, dict):
+        return DENY
+    command = tool_input.get("command")
+    alternate = tool_input.get("cmd")
+    if command is not None and alternate is not None and command != alternate:
+        return DENY
+    return ALLOW if _valid_setup_command(command or alternate) else DENY
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

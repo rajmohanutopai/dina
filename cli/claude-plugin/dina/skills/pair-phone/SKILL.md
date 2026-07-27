@@ -9,15 +9,12 @@ Lite Core, not mobile Core. Pairing the agent CLI directly to the Dina mobile
 app therefore does not activate the coding gate; the hook correctly blocks
 when mobile Core returns `501`.
 
-1. Confirm `dina --version` is at least 0.20.0. If missing or older:
-   `pip install --upgrade "dina-agent>=0.20.0"`.
-2. Confirm Home Node Lite Core is running with `dina home-node status`.
-   `dina home-node install` normally enrolls the local coding agent
-   automatically.
-3. If enrollment metadata needs repair, run `dina home-node enroll-agent` in a
-   normal terminal. It preserves any configuration belonging to another Home
-   Node.
-4. Verify with `dina status`.
+1. Run `/dina:setup` if Home Node has not been installed or enrollment needs
+   repair. It preserves an existing identity and configuration.
+2. Confirm Home Node Lite Core is running with
+   `"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" home-node status`.
+3. Verify the coding identity with
+   `"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status`.
 
 Explain the trust model briefly: the agent gets **its own** Ed25519 key and never sees the vault keys; every action it takes still passes the Core-owned gate on the Home Node. Remind them that until pairing is complete, the gate blocks tool calls fail-closed.
 

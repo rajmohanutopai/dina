@@ -89,6 +89,100 @@ def cli(ctx: click.Context, json_mode: bool, verbose: bool) -> None:
     ctx.obj["sessions"] = SessionStore()
 
 
+# ── coding-agent host setup ───────────────────────────────────────────────
+
+
+@cli.group("agent-host")
+def agent_host() -> None:
+    """Set up Dina for a supported coding-agent host."""
+
+
+@agent_host.command("setup")
+@click.option(
+    "--host",
+    type=click.Choice(["claude-code", "codex"], case_sensitive=False),
+    required=True,
+)
+@click.option("--status", "status_only", is_flag=True)
+@click.option("--ensure", is_flag=True)
+@click.option("--local-only", is_flag=True)
+@click.option("--pds-handle", default=None)
+@click.option("--pds-email", default=None)
+@click.pass_context
+def agent_host_setup(
+    ctx: click.Context,
+    host: str,
+    status_only: bool,
+    ensure: bool,
+    local_only: bool,
+    pds_handle: str | None,
+    pds_email: str | None,
+) -> None:
+    """Install or repair Home Node and connect the selected coding host."""
+    from .agent_host_setup import AgentHostSetup, AgentHostSetupError
+
+    selected_modes = sum(
+        (
+            bool(status_only),
+            bool(ensure),
+            bool(local_only),
+            bool(pds_handle),
+        )
+    )
+    if selected_modes > 1:
+        raise click.UsageError(
+            "Choose exactly one of --status, --ensure, --local-only, or "
+            "--pds-handle."
+        )
+    if pds_email and not pds_handle:
+        raise click.UsageError("--pds-email requires --pds-handle.")
+
+    try:
+        setup = AgentHostSetup(host)
+        if status_only:
+            result = setup.status()
+        elif ensure:
+            result = setup.ensure()
+        else:
+            result = setup.install(
+                local_only=local_only,
+                pds_handle=pds_handle,
+                pds_email=pds_email,
+            )
+        if ctx.obj["json"]:
+            click.echo(json.dumps(result))
+            return
+        if result.get("ready"):
+            click.echo(f"Dina is ready for {host}.")
+            home = result.get("home_node")
+            if isinstance(home, dict) and home.get("owner_url"):
+                click.echo(f"Owner: {home['owner_url']}")
+            for step in result.get("next_steps", []):
+                click.echo(f"- {step}")
+            return
+        click.echo("Dina setup is not complete.")
+        if result.get("needs_identity_choice"):
+            click.echo("Choose local-only setup or provide a public PDS handle.")
+    except (AgentHostSetupError, OSError) as exc:
+        code = (
+            exc.code
+            if isinstance(exc, AgentHostSetupError)
+            else "setup_failed"
+        )
+        result = {
+            "kind": "setup_error",
+            "host": host,
+            "ready": False,
+            "code": code,
+            "message": str(exc),
+        }
+        if ctx.obj["json"]:
+            click.echo(json.dumps(result))
+        else:
+            click.echo(f"Error: {exc}", err=True)
+        ctx.exit(2)
+
+
 # ── home-node ──────────────────────────────────────────────────────────────
 
 
@@ -121,7 +215,23 @@ def _enrollment_result(enrollment) -> dict[str, Any]:
     }
 
 
-def _print_home_node_status(ctx: click.Context, status, enrollment=None) -> None:
+def _reasoning_selection_result(selection) -> dict[str, Any]:
+    return {
+        "status": selection.status,
+        "backend_id": selection.backend_id,
+        "principal_did": selection.principal_did,
+        "policy_version": selection.policy_version,
+        "selected": selection.selected,
+        "reason": selection.reason,
+    }
+
+
+def _print_home_node_status(
+    ctx: click.Context,
+    status,
+    enrollment=None,
+    reasoning_selection=None,
+) -> None:
     result = {
         "installed": status.installed,
         "running": status.running,
@@ -135,6 +245,8 @@ def _print_home_node_status(ctx: click.Context, status, enrollment=None) -> None
     }
     if enrollment is not None:
         result["agent_enrollment"] = _enrollment_result(enrollment)
+    if reasoning_selection is not None:
+        result["reasoning_backend"] = _reasoning_selection_result(reasoning_selection)
     if ctx.obj["json"]:
         click.echo(json.dumps(result))
         return
@@ -153,6 +265,13 @@ def _print_home_node_status(ctx: click.Context, status, enrollment=None) -> None
     if enrollment is not None:
         click.echo(f"  Agent:     {enrollment.status} ({enrollment.agent_did})")
         click.echo(f"  CLI state: {enrollment.config_dir}")
+    if reasoning_selection is not None:
+        label = (
+            reasoning_selection.backend_id
+            if reasoning_selection.selected
+            else reasoning_selection.reason
+        )
+        click.echo(f"  Brain:     {reasoning_selection.status} ({label})")
 
 
 def _read_home_node_recovery_entropy(recovery_file: Path | None) -> bytes:
@@ -255,6 +374,11 @@ def _prompt_archive_passphrase(*, confirm: bool, err: bool = False) -> str:
     help="Do not enroll this machine as the Home Node's coding agent",
 )
 @click.option(
+    "--use-enrolled-agent-as-brain",
+    is_flag=True,
+    help="Owner-select the enrolled coding agent as the foreground reasoning Brain",
+)
+@click.option(
     "--agent-config-dir",
     type=click.Path(path_type=Path),
     default=None,
@@ -275,6 +399,7 @@ def home_node_install(
     recovery_file: Path | None,
     no_start: bool,
     no_enroll: bool,
+    use_enrolled_agent_as_brain: bool,
     agent_config_dir: Path | None,
     wait_timeout: float,
 ) -> None:
@@ -289,6 +414,10 @@ def home_node_install(
         )
     if pds_email and not pds_handle:
         raise click.UsageError("--pds-email requires --pds-handle.")
+    if use_enrolled_agent_as_brain and (no_start or no_enroll):
+        raise click.UsageError(
+            "--use-enrolled-agent-as-brain requires a started, enrolled coding agent."
+        )
     recovered_seed = (
         _read_home_node_recovery_entropy(recovery_file) if restore_requested else None
     )
@@ -312,6 +441,7 @@ def home_node_install(
             if not no_start:
                 status = manager.start(wait_timeout=wait_timeout)
         enrollment = None
+        reasoning_selection = None
         if not no_start and not no_enroll:
             from .home_node_enrollment import HomeNodeAgentEnroller
 
@@ -319,7 +449,13 @@ def home_node_install(
                 manager,
                 config_dir=agent_config_dir,
             ).enroll()
-        _print_home_node_status(ctx, status, enrollment)
+            if use_enrolled_agent_as_brain:
+                from .home_node_reasoning import HomeNodeReasoningSelector
+
+                reasoning_selection = HomeNodeReasoningSelector(manager).select(
+                    enrollment
+                )
+        _print_home_node_status(ctx, status, enrollment, reasoning_selection)
         if not no_start and not ctx.obj["json"]:
             click.echo(f"  Owner:     {status.core_url}/owner")
             if no_enroll:
@@ -342,27 +478,61 @@ def home_node_install(
     default=None,
     help="Exact dina-agent config directory (default: DINA_CONFIG_DIR or ~/.dina/cli)",
 )
+@click.option(
+    "--use-as-brain",
+    is_flag=True,
+    help="Owner-select this exact enrolled coding agent as the foreground reasoning Brain",
+)
 @click.pass_context
 def home_node_enroll_agent(
     ctx: click.Context,
     config_dir: Path | None,
+    use_as_brain: bool,
 ) -> None:
     """Enroll this machine as a coding-scoped agent of the local Home Node."""
     from .home_node import HomeNodeError
     from .home_node_enrollment import HomeNodeAgentEnroller
 
     try:
+        manager = _home_node_manager()
         enrollment = HomeNodeAgentEnroller(
-            _home_node_manager(),
+            manager,
             config_dir=config_dir,
         ).enroll()
+        reasoning_selection = None
+        if use_as_brain:
+            from .home_node_reasoning import HomeNodeReasoningSelector
+
+            reasoning_selection = HomeNodeReasoningSelector(manager).select(enrollment)
         if ctx.obj["json"]:
-            click.echo(json.dumps(_enrollment_result(enrollment)))
+            if reasoning_selection is None:
+                click.echo(json.dumps(_enrollment_result(enrollment)))
+            else:
+                click.echo(
+                    json.dumps(
+                        {
+                            "agent_enrollment": _enrollment_result(enrollment),
+                            "reasoning_backend": _reasoning_selection_result(
+                                reasoning_selection
+                            ),
+                        }
+                    )
+                )
         else:
             click.echo(f"  Agent:     {enrollment.status}")
             click.echo(f"  DID:       {enrollment.agent_did}")
             click.echo(f"  Home Node: {enrollment.home_did}")
             click.echo(f"  CLI state: {enrollment.config_dir}")
+            if reasoning_selection is not None:
+                click.echo(
+                    "  Brain:     "
+                    f"{reasoning_selection.status}"
+                    + (
+                        f" ({reasoning_selection.backend_id})"
+                        if reasoning_selection.backend_id
+                        else ""
+                    )
+                )
     except HomeNodeError as exc:
         _home_node_fail(ctx, exc)
 

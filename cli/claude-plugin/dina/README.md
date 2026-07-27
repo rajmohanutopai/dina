@@ -6,35 +6,61 @@ messaging and delegation, approval validation, and local PII scrub/rehydrate
 tools over MCP. The bundle includes usage instructions; no separate
 `dina skill install` step is needed.
 
-## Install order
+## Installation
 
-Configure Dina **before** enabling this plugin. The hook fails closed, so an
-unconfigured or unreachable Home Node blocks every Claude Code tool call.
+Install the plugin first:
 
-```bash
-pip install --upgrade "dina-agent>=0.20.0"
-dina home-node install --pds-handle your-handle.example.com
-dina home-node show-recovery-phrase
-dina status
+```text
+/plugin marketplace add rajmohanutopai/dina
+/plugin install dina@dina
 ```
 
-`dina home-node install` installs a published native platform release without a
-source checkout or external runtime and automatically enrolls this machine with
-a separate, revocable, `coding`-scoped `did:key`. The archive includes its
-matching Node runtime and SQLCipher binding; installation verifies every file
-against the release manifest. Pairing directly to mobile Core does not activate
-the filesystem-aware coding gate. The automatic path never prints or persists
-the owner or one-time pairing capability. If a different Dina CLI configuration
-already exists, it is preserved and installation stops with an explicit
-conflict; use a separate `DINA_CONFIG_DIR` or run
-`dina home-node install --no-enroll`.
+Then run:
 
-`--pds-handle` provisions the owner's public `did:plc` and is required for
-public Services and PeerLens writes. Omit it only for a deliberately
-local-only Home Node. To reuse an existing Dina identity, install with the
-existing handle and `--restore-identity`, then restore the portable `.dina`
-archive. This is a manual continuity path; automatic phone-to-Home-Node
-identity/data transfer is not implemented.
+```text
+/dina:setup
+```
+
+Setup offers two explicit identity modes:
+
+- **Public identity** provisions the chosen PDS handle as the Home Node's
+  `did:plc`. This enables public Services and Ranked Reviews.
+- **Local only** creates an offline `did:key`. Safety, memory, and local agent
+  features work, but public publishing does not.
+
+The bundled setup command installs `dina-agent>=0.20.0,<0.21.0` in a private
+managed Python environment when no compatible CLI is already available. It then
+downloads and verifies the published native Home Node release, starts Core and
+Brain, and enrolls this machine with a separate, revocable, `coding`-scoped
+`did:key`. Setup also selects that exact coding identity as Dina's foreground
+Brain unless an existing owner decision would be replaced or revived. Claude
+can therefore provide Dina's reasoning while a Claude session is open, without
+a separate metered AI API key. No source checkout, Docker, global Python
+installation, owner key, or vault key is required.
+
+The first setup call is intentionally narrow. Before Core exists, the
+fail-closed hook permits only `AskUserQuestion` and the exact bundled
+`bin/dina-setup` executable with validated arguments. Arbitrary Bash, file
+access, MCP calls, and every other tool remain blocked. Claude's normal Bash
+permission prompt remains the human consent boundary for running setup.
+
+Restart Claude Code once after setup so the Dina MCP process starts against the
+new installation. Run `/dina:status` to verify it. Foreground Brain means
+Claude is not a background daemon: ask Claude to process Dina work when another
+client has queued a reasoning request.
+
+If a different Dina CLI configuration or Home Node already exists, setup
+preserves it and either repairs enrollment or stops with an explicit conflict.
+It will reuse an already-compatible Brain binding, but will not revive a
+revoked binding or replace another owner-selected connected Brain. Use the
+Owner page for those changes. Setup never purges, changes identity settings, or
+chooses another config directory automatically.
+
+To reuse an existing Dina identity, do not paste its recovery phrase into
+Claude. Use a private terminal to install with the existing handle and
+`--restore-identity`, then restore the portable `.dina` archive. This remains a
+manual continuity path; automatic phone-to-Home-Node identity/data transfer is
+not implemented.
 
 Releases are upgraded explicitly with
 `dina home-node upgrade --release <version>`. The controller stops Core for a
@@ -42,20 +68,13 @@ consistent private-data snapshot, verifies and health-checks the candidate, and
 restores both the prior release and data if validation fails or an interrupted
 upgrade is detected.
 
-After `dina status` reports that Core is reachable:
-
-```text
-/plugin marketplace add <path-or-repository-containing-cli/claude-plugin>
-/plugin install dina@dina
-```
-
-Restart Claude Code if it does not immediately refresh the MCP server and hook.
-Run `/dina:status` to verify the installed integration.
-
 ## What is enforced
 
 - Every tool call goes through `bin/dina-gate`, which asks Home Node Lite Core
   for an `allow`, `approval_required`, or `deny` decision.
+- Before first setup, only the bounded setup executable and
+  `AskUserQuestion` bypass Core so the user can establish Core. No general
+  bootstrap shell is allowed.
 - MODERATE actions use Claude Code's native confirmation.
 - HIGH actions remain blocked until the durable Dina approval is approved; one
   exact retry consumes the approval.
@@ -93,10 +112,10 @@ never exposes raw vault or PDS credentials.
 
 ## Recovery and removal
 
-If local enrollment metadata is missing, repair it in a normal terminal with
-`dina home-node enroll-agent` and verify with `dina status`. The command never
-overwrites a configuration belonging to another Home Node. The installed gate
-keeps Claude Code tools blocked until Core is reachable again.
+If local enrollment metadata is missing, run `/dina:setup`; it repairs the
+existing Home Node and enrollment without replacing identity settings. The
+installed gate keeps normal Claude Code tools blocked until Core is reachable
+again.
 
 To remove access cleanly:
 
@@ -114,13 +133,13 @@ installer-managed credentials for that exact Home Node.
 
 ## Preview limitation
 
-Home Node installation and supervision are owned by `dina-agent`; Claude's
-`SessionStart` hook recovers an existing installation. Automatic local
-coding-agent enrollment is implemented, along with rollback-safe release
-upgrades, service tools, Talk, and delegation. Mobile identity/vault reuse
-is available only through the manual recovery-phrase plus portable-archive
-path; automatic continuity remains unfinished. Native release archives must be
-published for every supported platform. V1 supports one approval phone;
-multi-phone routing is deferred. See
+Home Node installation and supervision are owned by `dina-agent`; the bundled
+setup command bootstraps it and Claude's `SessionStart` hook recovers an
+existing installation. Automatic local coding-agent enrollment is implemented,
+along with rollback-safe release upgrades, service tools, Talk, and delegation.
+Mobile identity/vault reuse is available only through the private-terminal
+recovery-phrase plus portable-archive path; automatic continuity remains
+unfinished. Native release archives must be published for every supported
+platform. V1 supports one approval phone; multi-phone routing is deferred. See
 `docs/DINA_PLUGIN_DEVELOPER_SURFACE.md` for the complete boundary and threat
 model.

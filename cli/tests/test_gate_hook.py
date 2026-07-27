@@ -392,4 +392,4 @@ def test_supervisor_blocks_when_dina_missing(tmp_path):
     # `dina` not installed / not on PATH → block (never run the tool ungated).
     r = _run_supervisor(fake_dina_body=None, tmp_path=tmp_path)
     assert r.returncode == 2
-    assert b"not on path" in r.stderr.lower()
+    assert b"not set up" in r.stderr.lower()

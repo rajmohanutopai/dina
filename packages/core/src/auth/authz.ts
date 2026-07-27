@@ -71,6 +71,15 @@ const AUTHZ_RULES: {
   { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },
   { prefix: '/v1/owner/reasoning', allowed: new Set(['owner', 'admin', 'device']) },
 
+  // A connected coding host may discover only its own active bindings. The
+  // handler filters by the signature-authenticated principal DID and current
+  // owner; exact GET keeps backend administration owner-only.
+  {
+    prefix: '/v1/reasoning/backends/self',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['agent']),
+  },
   // Reasoning backend administration is owner-only in-handler. A connected
   // backend can use the worker routes below but cannot create or widen its own
   // binding.

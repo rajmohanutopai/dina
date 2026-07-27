@@ -14,10 +14,10 @@ phone-to-HNL continuity, and multi-phone approval routing remain release work
 coding agent, plus publish/consume and cross-Dina D2D. The four-density order in §5 is a
 **recommended build sequence**, not a feature boundary — v1 is the union of all of it.
 
-**Follow-on runtime policy:** `docs/CONNECTED_AGENT_GATING_AND_BRAIN.md`
-defines the three gating profiles and the connected-host Brain architecture.
-Until that specification is implemented, the as-built plugin retains the
-full-enforcement behavior described here.
+**Runtime policy:** `docs/CONNECTED_AGENT_GATING_AND_BRAIN.md` defines the
+implemented three-profile gate and connected-host Brain architecture. This
+document remains the complete developer surface; that document owns runtime
+policy and reasoning-job details.
 
 > **Two ground rules that shape the whole document.**
 >
@@ -45,6 +45,7 @@ full-enforcement behavior described here.
 | Enrollment | First install automatically creates a separate revocable `coding`-scoped `did:key`; no owner or one-time pairing capability is printed or persisted by the installer. |
 | Identity | HNL can start immediately with a local `did:key`. Passing `--pds-handle` provisions or rehydrates the owner's `did:plc` for public Services and PeerLens. Existing mobile identity/data can be moved manually with the same recovery phrase plus a `.dina` archive; automatic phone-to-HNL continuity is not implemented. |
 | Host adapters | Claude Code and Codex plugin packages contain MCP, skills, lifecycle hooks, and catch-all local tool gates. Host-mediated enforcement limits remain disclosed in each README. |
+| Connected Brain | Plugin setup can owner-bind the exact enrolled coding `did:key` as a foreground `connected_host`. Core still owns routing, context projection, leases, schemas, commit, and revocation; host reasoning is available only while the host runs and explicitly processes work. |
 | Nine surfaces | Remember, Ask, reminders, Task/delegation, Talk, PeerLens, security, approvals, and Services are exposed through narrow Core-owned routes and the coding MCP profile. |
 | Network publishing | Services and PeerLens use the owner's PDS and deployed AppView. Their writes are durable and retried; a `did:plc`/PDS configuration is required. |
 | Distribution | Local package validation passes. Platform-specific native release archives and marketplace entries still need to be published from a release commit before a source-free external install can work. |
@@ -53,12 +54,16 @@ full-enforcement behavior described here.
 
 ## The one thing to hold onto
 
-**Reachable, not becomes.** Install the plugin and _your Dina is reachable from_ Claude Code. Not:
-_Claude Code becomes Dina_. This decides the architecture and it is the differentiator.
+**The host may become Dina's Brain; it does not become Dina's control plane.**
+Install the plugin and your Dina is reachable from Claude Code or Codex. The
+owner may also select that exact coding identity as a foreground reasoning
+backend. Core, identity, keys, policy, commit, and audit remain outside the
+host. This boundary is the differentiator.
 
 1. **The gate cannot live inside the thing it gates.** The agent is untrusted; Core — keys, policy,
-   audit — sits _outside_ it and judges it. If Dina _became_ Claude Code, keys and policy would run
-   inside the untrusted process and the gate would be theatre. (Necessary but not sufficient — §12
+   audit — sits _outside_ it and judges it. Making Claude Code or Codex the foreground reasoner does
+   not move those authorities into the host. If the whole of Dina became the host, the gate would be
+   theatre. (Necessary but not sufficient — §12
    and §16 show what "the agent cannot subvert its own verdict" actually requires: a Core-owned
    classifier and a payload-bound permit, not just process separation.)
 2. **One you, not many yous.** "Becomes" makes every agent its own Dina — its own identity, memory,
@@ -94,10 +99,10 @@ context is yours and portable across the agents you run; (3) a deterministic gat
 for sensitive actions; (4) publish and consume services; (5) talk to other people's agents, with
 PeerLens trust behind it.
 
-> **Honesty-gate note (DPD-016).** "Portable across Claude Code _and Codex_" is a **v0.2 build-order
-> item**, not day-one — the first cross-agent acceptance test (§4) is written against a second
-> _same-person_ enrolment (a second Claude Code or the CLI). Do not list "works with Codex" until
-> §18's Codex host ships.
+> **Honesty-gate note (DPD-016).** Claude Code and Codex host packages now ship
+> from one coding MCP contract and one setup engine. Portability claims still
+> exclude host tools that are not observable through each host's hook surface;
+> those limits are listed in the package READMEs and conformance tests.
 
 **Trigger vs retention.** "My agents work together" makes someone _install_; persistent context that
 quietly survives makes them _still be using it on day 14_. Measure them apart (§20).
@@ -339,14 +344,23 @@ see §17 for the durable-publish and search-façade corrections (COLD-5/COLD-7).
 The existing home-node-lite Core (loopback `127.0.0.1:8100`) + Brain (`:8200`), run as a background
 daemon.
 
-**Target identity model — Core owns it; the plugin only asks "who am I?" (DPD-006, resolves COLD-9).** Core
-(on the laptop / home node) owns identity; the plugin **never holds the seed**. On startup the plugin
-asks Core "who am I?" and gets back the sovereign DID. Three first-run cases:
+**As-built identity model — Core owns the owner identity; the host holds only a
+revocable device identity (DPD-006, resolves COLD-9).** The Home Node owns the
+sovereign seed and the plugin **never receives it**. Claude Code or Codex signs
+Core calls with a separate coding-scoped `did:key`; Core attributes authorized
+network writes to the owner identity. Three first-run cases:
 
-1. **Phone exists → pair, reuse the same DID.** No new identity — the true "Claude Code _is_ your Dina":
-   one sovereign `did:plc`, the plugin is just one more agent under it.
-2. **No phone, Core already has an identity → use it.**
-3. **Brand-new, no phone → Core mints a fresh identity right there.** Phone optional, added later.
+1. **An existing Home Node is present:** setup repairs the coding-device
+   enrollment without changing the owner identity.
+2. **A public PDS handle is supplied:** the Home Node provisions or rehydrates
+   the owner's `did:plc`; the coding host still receives only its own `did:key`.
+3. **Local only:** the Home Node creates a local owner `did:key`; the coding
+   host receives a distinct coding `did:key`. A phone is optional and can be
+   paired later for approvals.
+
+Automatic phone-to-Home-Node identity/data continuity is not implemented.
+Reusing a mobile owner identity remains a private-terminal recovery-phrase plus
+portable-archive flow; neither secret is entered into the coding host.
 
 **Implemented preview boundary.** `dina-agent` now owns a source-free native lifecycle for Home Node
 Lite. It downloads one platform/architecture release archive containing bundled Core, Brain, the
@@ -1375,12 +1389,13 @@ surface:
    Core-owned tool classification, payload-bound approvals, and projected audit.
 3. Memory ingress, Core-mediated Ask, vault metadata, and reminder projections.
 4. Claude Code and Codex catch-all host adapters plus the shared coding MCP
-   profile.
+   profile, shared plugin-owned setup engine, and owner-safe foreground-Brain
+   selection.
 5. Service publish/find/invoke/status, including durable PDS publication.
 6. Owner-approved Talk and delegation façades.
 7. PeerLens search plus owner-approved durable PDS publication.
 
-Release sequencing is now: publish both Home Node images, publish
+Release sequencing is now: publish native Home Node archives, publish
 `dina-agent>=0.20.0`, install-test from a machine without the repository,
 publish the Claude/Codex marketplace entries, and then add automatic
 phone-to-HNL identity/data continuity. Wrapped-seed mode, multi-phone approval,

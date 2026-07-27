@@ -65,6 +65,16 @@ def dina_session_end(session_id: str) -> dict:
 
 
 @mcp.tool()
+def dina_reasoning_backends() -> dict:
+    """List the connected-Brain backend IDs selected for this exact agent.
+
+    Use this before status, begin, or claim instead of guessing a backend ID.
+    An empty list means the owner has not selected this agent as a Brain.
+    """
+    return _get_client().reasoning_backends()
+
+
+@mcp.tool()
 def dina_context_prepare(
     session: str,
     query: str,
@@ -811,6 +821,7 @@ def dina_status() -> dict:
 def configure_profile(profile: str) -> None:
     """Remove tools that do not belong to the selected host contract."""
     reasoning_tools = (
+        "dina_reasoning_backends",
         "dina_context_prepare",
         "dina_memory_propose",
         "dina_reasoning_status",

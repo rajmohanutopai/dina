@@ -25,8 +25,9 @@ For an owner request in the current Claude conversation:
 For durable Dina work:
 
 1. Start a Dina session with `dina_session_start`.
-2. Use the backend ID selected by the owner in Dina. Do not guess or substitute
-   another backend ID.
+2. Call `dina_reasoning_backends`. Use an active backend ID returned for this
+   exact agent; never guess or substitute another backend ID. If the list is
+   empty, tell the user to select this agent as Brain on Dina's Owner page.
 3. Call `dina_reasoning_status`, then `dina_reasoning_claim`.
 4. If `claim` is null, report that no eligible work is waiting.
 5. If work takes long enough to approach the lease, call

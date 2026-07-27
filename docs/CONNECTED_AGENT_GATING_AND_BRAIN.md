@@ -1065,6 +1065,15 @@ The adapter must not assume that an idle Claude session polls MCP. Programmatic
 or unattended Claude execution is a separate deployment mode and must use an
 officially supported authentication contract.
 
+The plugin-owned `/dina:setup` flow is the explicit owner-consent surface for a
+new local installation. It enrolls a separate coding-scoped `did:key` and may
+create that exact identity's first `connected_host` binding. The setup helper
+uses the local owner capability internally but never prints or persists it.
+Repair is idempotent: a matching live binding is reused, while a revoked,
+modified, expired, or competing owner-selected binding is preserved rather
+than revived or replaced. Claude Code still applies its native Bash permission
+boundary before running the setup command.
+
 ### 17.2 Codex
 
 Use:
@@ -1074,6 +1083,15 @@ Use:
 - lifecycle hooks for session and tool gating where the installed Codex
   surface supports them;
 - a Dina work skill for explicit pending-job processing.
+
+The plugin-owned `$dina-setup` skill uses the same bootstrap executable and
+shared `dina agent-host setup` engine as Claude Code. It installs a managed CLI
+when necessary, installs or repairs the native Home Node, enrolls a separate
+coding-scoped `did:key`, and may create that exact identity's first
+`connected_host` binding. It never replaces an owner-selected competitor or
+revives a revoked binding. The user must separately inspect and trust the
+plugin hook under `/hooks`; setup cannot grant trust to its own enforcement
+code.
 
 Codex can be used interactively with subscription authentication. Unattended
 use must rely on a documented automation credential or API configuration, not
@@ -1100,6 +1118,7 @@ surface:
 
 | Tool                       | Purpose                                                   | Authority                                |
 | -------------------------- | --------------------------------------------------------- | ---------------------------------------- |
+| `dina_reasoning_backends`  | discover this exact caller's active backend IDs           | signed coding-agent DID only             |
 | `dina_reasoning_status`    | pending counts and backend status                         | bound backend only                       |
 | `dina_reasoning_begin`     | begin and claim an inline job for the current host turn   | coding session + enabled backend binding |
 | `dina_reasoning_claim`     | claim one eligible queued reasoning job                   | `reasoning_backend` binding              |
@@ -1124,6 +1143,7 @@ Proposed narrow routes:
 POST /v1/reasoning/backends/register       owner only
 POST /v1/reasoning/backends/:id/revoke     owner only
 GET  /v1/reasoning/backends                owner/admin
+GET  /v1/reasoning/backends/self           exact signed coding agent
 
 GET  /v1/reasoning/status                  bound backend
 POST /v1/reasoning/begin                   coding session + bound backend

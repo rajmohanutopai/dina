@@ -1,0 +1,45 @@
+#!/bin/sh
+# Normalize every downstream failure to exit 2, the blocking PreToolUse result.
+# The only pre-Core exception is the exact plugin-owned setup executable.
+
+set -u
+
+block() {
+  printf "Dina gate: %s - blocked (fail-closed).\n" "$1" >&2
+  exit 2
+}
+
+SCRIPT_DIR="${0%/*}"
+[ "$SCRIPT_DIR" != "$0" ] || SCRIPT_DIR="."
+PLUGIN_ROOT="${PLUGIN_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
+CLI="$PLUGIN_ROOT/bin/dina-cli"
+BOOTSTRAP_AUTHORIZER="$PLUGIN_ROOT/bin/dina-bootstrap-authorize"
+
+[ -x "$CLI" ] || block "the bundled Dina CLI resolver is missing"
+[ -x "$BOOTSTRAP_AUTHORIZER" ] || block "the bootstrap authorizer is missing"
+
+EVENT="$(cat)"
+printf '%s' "$EVENT" |
+  DINA_PLUGIN_ROOT="$PLUGIN_ROOT" "$BOOTSTRAP_AUTHORIZER"
+bootstrap_rc=$?
+case "$bootstrap_rc" in
+  0) exit 0 ;;
+esac
+
+if command -v timeout >/dev/null 2>&1; then
+  printf '%s' "$EVENT" | timeout 15 "$CLI" gate-hook --host codex
+  rc=$?
+elif command -v gtimeout >/dev/null 2>&1; then
+  printf '%s' "$EVENT" | gtimeout 15 "$CLI" gate-hook --host codex
+  rc=$?
+else
+  printf '%s' "$EVENT" | "$CLI" gate-hook --host codex
+  rc=$?
+fi
+
+case "$rc" in
+  0) exit 0 ;;
+  2) exit 2 ;;
+  124) block "timed out reaching Core" ;;
+  *) block "the gate exited abnormally (code $rc)" ;;
+esac

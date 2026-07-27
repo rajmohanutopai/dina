@@ -483,6 +483,87 @@ def test_install_command_enrolls_by_default(tmp_path: Path) -> None:
     )
 
 
+def test_install_can_select_exact_enrolled_agent_as_foreground_brain(
+    tmp_path: Path,
+) -> None:
+    status = SimpleNamespace(
+        installed=True,
+        running=True,
+        core_healthy=True,
+        brain_healthy=True,
+        core_url="http://127.0.0.1:8100",
+        brain_url="http://127.0.0.1:8200",
+        install_dir=str(tmp_path / "home-node"),
+        release_version="0.20.0",
+        autostart_enabled=True,
+    )
+    manager = SimpleNamespace(install=lambda **_kwargs: status)
+    enrollment = SimpleNamespace(
+        status="enrolled",
+        device_id="device-1",
+        agent_did="did:key:zAgent",
+        home_did=HOME_DID,
+        config_dir=str(tmp_path / "cli"),
+    )
+    selection = SimpleNamespace(
+        status="selected",
+        backend_id="connected.device-1",
+        principal_did="did:key:zAgent",
+        policy_version=1,
+        selected=True,
+        reason=None,
+    )
+
+    with (
+        patch("dina_cli.main._home_node_manager", return_value=manager),
+        patch("dina_cli.home_node_enrollment.HomeNodeAgentEnroller") as enroller_type,
+        patch("dina_cli.home_node_reasoning.HomeNodeReasoningSelector") as selector_type,
+    ):
+        enroller_type.return_value.enroll.return_value = enrollment
+        selector_type.return_value.select.return_value = selection
+        result = CliRunner().invoke(
+            cli,
+            [
+                "--json",
+                "home-node",
+                "install",
+                "--release",
+                "0.20.0",
+                "--agent-config-dir",
+                str(tmp_path / "cli"),
+                "--use-enrolled-agent-as-brain",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.output)
+    assert body["reasoning_backend"] == {
+        "status": "selected",
+        "backend_id": "connected.device-1",
+        "principal_did": "did:key:zAgent",
+        "policy_version": 1,
+        "selected": True,
+        "reason": None,
+    }
+    selector_type.assert_called_once_with(manager)
+    selector_type.return_value.select.assert_called_once_with(enrollment)
+
+
+def test_install_rejects_brain_selection_without_started_enrollment() -> None:
+    for incompatible in (["--no-enroll"], ["--no-start"]):
+        result = CliRunner().invoke(
+            cli,
+            [
+                "home-node",
+                "install",
+                "--use-enrolled-agent-as-brain",
+                *incompatible,
+            ],
+        )
+        assert result.exit_code == 2
+        assert "requires a started, enrolled coding agent" in result.output
+
+
 def test_install_command_allows_explicit_enrollment_opt_out(tmp_path: Path) -> None:
     status = SimpleNamespace(
         installed=True,

@@ -51,6 +51,11 @@ _RELEASE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\Z")
 _RELEASE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}-[0-9a-f]{12}\Z")
 _HANDLE_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_DINA_PDS_MAX_HANDLE_CHARS = 30
+_DINA_MANAGED_PDS_HOSTS = (
+    "pds.dinakernel.com",
+    "test-pds.dinakernel.com",
+)
 
 
 class HomeNodeError(RuntimeError):
@@ -1890,3 +1895,18 @@ def _validate_handle(handle: str) -> None:
     labels = handle.split(".")
     if len(labels) < 2 or any(_HANDLE_LABEL_RE.fullmatch(label) is None for label in labels):
         raise HomeNodeError("PDS handle must be a valid lowercase domain name.")
+    managed_host = next(
+        (
+            host
+            for host in _DINA_MANAGED_PDS_HOSTS
+            if handle.endswith(f".{host}")
+        ),
+        None,
+    )
+    if managed_host is not None and len(handle) > _DINA_PDS_MAX_HANDLE_CHARS:
+        max_prefix = _DINA_PDS_MAX_HANDLE_CHARS - len(managed_host) - 1
+        raise HomeNodeError(
+            "Dina PDS handles must be at most "
+            f"{_DINA_PDS_MAX_HANDLE_CHARS} characters. "
+            f"Use a prefix of at most {max_prefix} characters for {managed_host}."
+        )

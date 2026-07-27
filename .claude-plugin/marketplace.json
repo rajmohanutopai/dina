@@ -1,0 +1,17 @@
+{
+  "name": "dina",
+  "owner": {
+    "name": "Dina",
+    "url": "https://github.com/rajmohanutopai/dina"
+  },
+  "metadata": {
+    "description": "Dina integrations for coding agents"
+  },
+  "plugins": [
+    {
+      "name": "dina",
+      "source": "./cli/claude-plugin/dina",
+      "description": "Your Dina inside Claude Code: install or repair the local Home Node with /dina:setup, then route normal tool calls through a Core-owned deterministic gate. Includes portable encrypted memory, services, approvals, intent validation, and PII scrubbing over MCP."
+    }
+  ]
+}

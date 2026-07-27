@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dina home-node ensure --if-installed --quiet",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" home-node ensure --if-installed --quiet",
             "timeout": 120
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dina session-end-hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" session-end-hook",
             "timeout": 10
           }
         ]

@@ -24,6 +24,7 @@
     "clean": "tsc --build --clean",
     "generate": "openapi-typescript api/core-api.yaml -o packages/protocol/src/gen/core-api.d.ts && openapi-typescript api/brain-api.yaml -o packages/protocol/src/gen/brain-api.d.ts",
     "generate:check": "npm run generate && git diff --exit-code -- packages/protocol/src/gen/",
+    "dina:codex": "bash scripts/dev/dina-codex-preview.sh",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "postinstall": "patch-package"
   },

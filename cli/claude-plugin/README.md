@@ -75,51 +75,31 @@ It targets `test-mailbox.dinakernel.com` and `test-pds.dinakernel.com` by
 default and creates throwaway test identities. See the script header for
 endpoint and handle overrides.
 
-## Prerequisites
-
-This plugin is a thin wrapper over the `dina` CLI, which owns the local Home
-Node lifecycle, holds the agent's device key, and performs signed transport.
-For the current preview:
-
-1. Install Home Node Lite with
-   `dina home-node install --pds-handle your-handle.example.com`. No source
-   checkout or external runtime is used; the selected platform archive carries
-   its matching Node runtime and native SQLCipher binding, and every installed
-   file is checked against its manifest. The local coding agent is enrolled
-   automatically. Omit `--pds-handle` only for local-only use.
-2. Record the recovery phrase with `dina home-node show-recovery-phrase`.
-3. Confirm the signed agent connection with `dina status`.
-
-```bash
-pip install --upgrade "dina-agent>=0.20.0"
-dina home-node install --pds-handle your-handle.example.com
-dina home-node show-recovery-phrase
-dina status             # confirm Core is reachable
-```
-
-If another Dina CLI configuration already occupies the selected config
-directory, the installer preserves it and fails rather than replacing its key.
-Choose a separate `DINA_CONFIG_DIR`, or install with `--no-enroll` and enroll
-explicitly later.
-
-**Read this before you install:** the gate is **fail-closed**. Until `dina` is
-configured and can reach your Home Node, the hook **blocks every tool call**, so
-Claude Code cannot run tools until pairing is done. That is the point — a gate
-that opened when Dina was unreachable would be no gate at all.
-
 ## Install
 
 ```
-/plugin marketplace add <path-or-repo-containing cli/claude-plugin>
+/plugin marketplace add rajmohanutopai/dina
 /plugin install dina@dina
+/dina:setup
 ```
 
-For local development, point the marketplace at the folder directly:
+For local development, point the marketplace at the repository root:
 
 ```
-/plugin marketplace add /absolute/path/to/dina/cli/claude-plugin
+/plugin marketplace add /absolute/path/to/dina
 /plugin install dina@dina
+/dina:setup
 ```
+
+`/dina:setup` installs a compatible CLI into a plugin-managed environment when
+needed, installs and verifies the native Home Node, starts Core and Brain, and
+enrolls Claude with a separate coding identity. It asks the user to choose a
+public `did:plc` identity or a deliberately local-only `did:key`. Restart Claude
+Code once after setup so MCP reconnects.
+
+The gate remains fail-closed during onboarding. Its only pre-Core exceptions
+are `AskUserQuestion` and the exact bundled setup executable with validated
+arguments; every other tool remains blocked.
 
 ## What you get
 
@@ -134,7 +114,8 @@ For local development, point the marketplace at the folder directly:
   context, remember facts, validate sensitive actions, and scrub external
   egress. It uses the MCP-native tool names and requires explicit session
   teardown.
-- **Slash commands** — `/dina:status`, `/dina:audit`, `/dina:pair-phone`.
+- **Slash commands** — `/dina:setup`, `/dina:status`, `/dina:audit`,
+  `/dina:pair-phone`.
 
 ## Honest limits (v0.1)
 

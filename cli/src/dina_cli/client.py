@@ -75,8 +75,14 @@ class DinaClient:
     the configured transport (direct HTTP or MsgBox WS relay).
     """
 
-    def __init__(self, config: Config, verbose: bool = False) -> None:
-        self._identity = CLIIdentity()
+    def __init__(
+        self,
+        config: Config,
+        verbose: bool = False,
+        *,
+        identity: CLIIdentity | None = None,
+    ) -> None:
+        self._identity = identity or CLIIdentity()
         self._identity.ensure_loaded()
         self._verbose = verbose
         self._req_id = uuid.uuid4().hex[:12]
@@ -679,6 +685,14 @@ class DinaClient:
             "GET",
             "/v1/reasoning/status",
             params={"backend_id": backend_id, "session_id": session},
+        ).json()
+
+    def reasoning_backends(self) -> dict:
+        """List active connected-Brain bindings owned by this exact agent DID."""
+        return self._request(
+            self._core,
+            "GET",
+            "/v1/reasoning/backends/self",
         ).json()
 
     def reasoning_begin(

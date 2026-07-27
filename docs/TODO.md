@@ -18,6 +18,19 @@ Guided demo bottom should show current page changes, not next page
 # Bugs to fix
 Bugs.md
 
+#pending items in claude support
+  Important Follow-Ups
+
+  - Automatic reuse of an existing mobile Dina identity and vault data. Manual recovery/archive transfer works today.
+  - Multi-phone approval routing.
+  - First-publish handle setup instead of requiring --pds-handle.
+  - Local-model and direct-provider reasoning adapters.
+  - Automatic connected-host job polling.
+  - Broader internal Brain task support.
+  - Stronger same-user process isolation, wrapped seed storage, and phone-authorized child keys.
+  - Deterministic downstream gating for delegated runners.
+
+
 # First request takes time
 
 # test-pds is not flippable

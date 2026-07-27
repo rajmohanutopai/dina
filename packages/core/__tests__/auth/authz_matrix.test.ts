@@ -70,6 +70,12 @@ describe('Authorization Matrix', () => {
       path: '/v1/agent/service/invoke',
       label: 'Agent → owner-approved service invoke facade',
     },
+    {
+      caller: 'agent',
+      method: 'GET',
+      path: '/v1/reasoning/backends/self',
+      label: 'Agent → exact self reasoning-backend discovery',
+    },
     // Owner-private decision log: the OWNER's surfaces may read it.
     {
       caller: 'admin',
@@ -133,6 +139,18 @@ describe('Authorization Matrix', () => {
       method: 'POST',
       path: '/v1/devices/self',
       label: 'Agent x non-DELETE self-device route',
+    },
+    {
+      caller: 'agent',
+      method: 'POST',
+      path: '/v1/reasoning/backends/self',
+      label: 'Agent x mutate self reasoning-backend discovery',
+    },
+    {
+      caller: 'agent',
+      method: 'GET',
+      path: '/v1/reasoning/backends/self/other',
+      label: 'Agent x extend exact self reasoning-backend discovery path',
     },
     {
       caller: 'agent',
