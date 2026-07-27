@@ -32,6 +32,7 @@ fi
 export DINA_HOME_NODE_DIR="${DINA_HOME_NODE_DIR:-$HOME/.dina/home-node-codex-preview}"
 export DINA_CONFIG_DIR="${DINA_CONFIG_DIR:-$HOME/.dina/cli-codex-preview}"
 export DINA_SETUP_RUNTIME_DIR="${DINA_SETUP_RUNTIME_DIR:-$HOME/.dina/runtime/agent-plugin-codex-preview}"
+export DINA_PLUGIN_DEV_MODE=1
 if [[ -n "${CODEX_HOME:-}" ]]; then
   mkdir -p "$CODEX_HOME"
 fi
@@ -92,7 +93,7 @@ if (( SETUP_RC != 0 )); then
     SETUP_RESULT="$("$PLUGIN_ROOT/bin/dina-setup" --local-only --json)"
   else
     TEST_PREFIX="$(
-      python3 -c 'import secrets; print(secrets.token_hex(3))'
+      python3 -c 'import secrets; print(secrets.token_hex(8))'
     )"
     TEST_HANDLE="${DINA_PREVIEW_PDS_HANDLE:-$TEST_PREFIX.test-pds.dinakernel.com}"
     SETUP_RESULT="$(

@@ -3,7 +3,31 @@
 
 set -eu
 
+trusted_python() {
+  if [ "${DINA_PLUGIN_DEV_MODE:-0}" = "1" ] &&
+    [ -x "${DINA_BOOTSTRAP_PYTHON:-}" ]; then
+    printf '%s\n' "$DINA_BOOTSTRAP_PYTHON"
+    return 0
+  fi
+  for candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /usr/bin/python3 \
+    /home/linuxbrew/.linuxbrew/bin/python3; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 SCRIPT_DIR="${0%/*}"
 [ "$SCRIPT_DIR" != "$0" ] || SCRIPT_DIR="."
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
-exec "$PLUGIN_ROOT/bin/dina-setup-bootstrap" --host claude-code "$@"
+BOOTSTRAP_PYTHON="$(trusted_python)" || {
+  printf '%s\n' "Dina setup blocked: a trusted Python 3 interpreter is unavailable." >&2
+  exit 2
+}
+exec "$BOOTSTRAP_PYTHON" -I "$PLUGIN_ROOT/bin/dina-setup-bootstrap" \
+  --host claude-code "$@"

@@ -15,8 +15,8 @@
  * Source: ARCHITECTURE.md Task 2.48
  */
 
-import { buildAuditEntry, verifyChain, type AuditEntry } from './hash_chain';
-import { getAuditRepository } from './repository';
+import { buildAuditEntry, computeEntryHash, type AuditEntry } from './hash_chain';
+import { getAuditRepository, type AuditRepository } from './repository';
 
 /** Default retention period in days. Configurable via setRetentionDays(). */
 let retentionDays = 90;
@@ -84,12 +84,51 @@ const MAX_QUERY_LIMIT = 200;
 /** In-memory audit log. Append-only array. */
 const log: AuditEntry[] = [];
 
+/** Repetitive low-risk decisions may be sampled without skipping evaluation. */
+const sampledAtMs = new Map<string, number>();
+const MAX_SAMPLE_KEYS = 2_048;
+
 /**
  * Monotonic sequence counter — never decremented, even after purge.
  * Prevents seq collision that would occur with `log.length + 1`.
  * Matches Go's AUTOINCREMENT behavior.
  */
 let nextSeq = 1;
+let retainedAnchorHash = 'genesis';
+
+/**
+ * Load and validate the durable chain before routes begin serving traffic.
+ * A tampered or structurally invalid audit database is not silently replaced
+ * with a fresh chain.
+ */
+export function hydrateAuditState(repository: AuditRepository | null = getAuditRepository()): void {
+  if (repository === null) return;
+  const entries = repository.allEntries();
+  const highestSequence = repository.highestSequence();
+  const checkpoint = repository.retentionCheckpoint();
+  const anchorHash = checkpoint?.anchorHash ?? 'genesis';
+  const expectedFirstSequence = checkpoint?.firstRetainedSeq ?? 1;
+  const actualFirstSequence = entries[0]?.seq ?? highestSequence + 1;
+  const latestSequence = entries[entries.length - 1]?.seq ?? 0;
+  const tailMatches =
+    entries.length > 0
+      ? latestSequence === highestSequence
+      : checkpoint === null
+        ? highestSequence === 0
+        : highestSequence === expectedFirstSequence - 1;
+  if (
+    actualFirstSequence !== expectedFirstSequence ||
+    !tailMatches ||
+    !verifyRetainedChain(entries, anchorHash).valid
+  ) {
+    throw new Error('audit: durable hash chain verification failed');
+  }
+  log.length = 0;
+  log.push(...entries);
+  sampledAtMs.clear();
+  retainedAnchorHash = anchorHash;
+  nextSeq = highestSequence + 1;
+}
 
 /**
  * Append an audit entry.
@@ -104,7 +143,7 @@ export function appendAudit(
   detail?: string,
   /** Optional Unix-seconds timestamp override for import/migration. */
   tsOverride?: number,
-): AuditEntry {
+): AuditEntry | null {
   // Input validation — actor and action are required (matching Go's error path)
   if (!actor || actor.trim().length === 0) {
     throw new Error('audit: actor is required');
@@ -113,21 +152,73 @@ export function appendAudit(
     throw new Error('audit: action is required');
   }
 
-  const seq = nextSeq++;
-  const prevHash = log.length > 0 ? log[log.length - 1].entry_hash : '';
+  const seq = nextSeq;
+  const prevHash =
+    log.length > 0
+      ? log[log.length - 1].entry_hash
+      : retainedAnchorHash === 'genesis'
+        ? ''
+        : retainedAnchorHash;
   const entry = buildAuditEntry(seq, actor, action, resource, detail ?? '', prevHash, tsOverride);
-  log.push(entry);
-  // SQL write-through — fire-and-forget since Phase 2.3 (task 2.3).
-  // The in-memory `log` is the authoritative read source within the
-  // process; SQL persists across restart but a transient write failure
-  // doesn't affect correctness (the prior `try/catch` with fail-safe
-  // comment already encoded this). Keeping `appendAudit` sync preserves
-  // every caller's existing signature (7 files across core + brain).
   const sqlRepo = getAuditRepository();
   if (sqlRepo) {
-    void sqlRepo.append(entry).catch(() => {
-      /* fail-safe — transient SQL write loss is acceptable */
-    });
+    try {
+      sqlRepo.append(entry);
+    } catch {
+      // Audit is a best-effort side effect at existing call sites. Do not
+      // publish an in-memory entry that did not commit, but also do not turn a
+      // completed external action into a retry and risk executing it twice.
+      return null;
+    }
+  }
+  log.push(entry);
+  nextSeq += 1;
+  return entry;
+}
+
+/**
+ * Append at most one matching audit event per sampling window.
+ *
+ * This is for repetitive SAFE/allow decisions only. Policy evaluation still
+ * runs for every call, while high-risk, denied, and approval decisions continue
+ * to use appendAudit and are never sampled.
+ */
+export function appendSampledAudit(
+  actor: string,
+  action: string,
+  resource: string,
+  detail: string,
+  options: {
+    key: string;
+    intervalMs: number;
+    nowMs?: number;
+  },
+): AuditEntry | null {
+  if (options.intervalMs < 1) {
+    throw new Error('audit: sample interval must be positive');
+  }
+  const nowMs = options.nowMs ?? Date.now();
+  const lastAt = sampledAtMs.get(options.key);
+  if (lastAt !== undefined && nowMs - lastAt < options.intervalMs) {
+    return null;
+  }
+
+  if (sampledAtMs.size >= MAX_SAMPLE_KEYS) {
+    const staleBefore = nowMs - options.intervalMs;
+    for (const [key, sampledAt] of sampledAtMs) {
+      if (sampledAt < staleBefore) sampledAtMs.delete(key);
+    }
+    while (sampledAtMs.size >= MAX_SAMPLE_KEYS) {
+      const oldestKey = sampledAtMs.keys().next().value as string | undefined;
+      if (oldestKey === undefined) break;
+      sampledAtMs.delete(oldestKey);
+    }
+  }
+
+  const entry = appendAudit(actor, action, resource, detail);
+  if (entry !== null) {
+    sampledAtMs.delete(options.key);
+    sampledAtMs.set(options.key, nowMs);
   }
   return entry;
 }
@@ -143,7 +234,7 @@ export function appendAuditWithDetail(
   action: string,
   resource: string,
   detail: AuditDetail,
-): AuditEntry {
+): AuditEntry | null {
   return appendAudit(actor, action, resource, buildAuditDetail(detail));
 }
 
@@ -201,7 +292,7 @@ export function queryAudit(filters?: {
  * { valid: false, brokenAt: N } if entry N's hash doesn't match.
  */
 export function verifyAuditChain(): { valid: boolean; brokenAt?: number } {
-  return verifyChain(log);
+  return verifyRetainedChain(log, retainedAnchorHash);
 }
 
 /**
@@ -223,7 +314,16 @@ export function sweepRetention(now?: number): number {
   if (keepFromIndex === -1) {
     // All entries are old — purge everything
     const purged = log.length;
+    if (purged === 0) return 0;
+    const lastRemoved = log[log.length - 1];
+    const checkpoint = {
+      firstRetainedSeq: lastRemoved.seq + 1,
+      anchorHash: lastRemoved.entry_hash,
+    };
+    const sqlRepo = getAuditRepository();
+    if (sqlRepo) sqlRepo.compact(checkpoint);
     log.length = 0;
+    retainedAnchorHash = checkpoint.anchorHash;
     return purged;
   }
 
@@ -233,7 +333,14 @@ export function sweepRetention(now?: number): number {
 
   // Splice out old entries in one operation (O(n))
   const purged = keepFromIndex;
+  const checkpoint = {
+    firstRetainedSeq: log[keepFromIndex].seq,
+    anchorHash: log[keepFromIndex].prev_hash,
+  };
+  const sqlRepo = getAuditRepository();
+  if (sqlRepo) sqlRepo.compact(checkpoint);
   log.splice(0, keepFromIndex);
+  retainedAnchorHash = checkpoint.anchorHash;
   return purged;
 }
 
@@ -250,6 +357,31 @@ export function latestEntry(): AuditEntry | null {
 /** Reset all audit state (for testing). */
 export function resetAuditState(): void {
   log.length = 0;
+  sampledAtMs.clear();
   nextSeq = 1;
+  retainedAnchorHash = 'genesis';
   retentionDays = 90;
+}
+
+function verifyRetainedChain(
+  entries: readonly AuditEntry[],
+  anchorHash: string = entries[0]?.prev_hash ?? 'genesis',
+): { valid: boolean; brokenAt?: number } {
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    const expectedPrevious = index === 0 ? anchorHash : entries[index - 1].entry_hash;
+    if (
+      !Number.isSafeInteger(entry.seq) ||
+      entry.seq < 1 ||
+      (index > 0 && entry.seq !== entries[index - 1].seq + 1) ||
+      entry.prev_hash !== expectedPrevious
+    ) {
+      return { valid: false, brokenAt: index };
+    }
+    const { entry_hash: _entryHash, ...unsigned } = entry;
+    if (computeEntryHash(unsigned) !== entry.entry_hash) {
+      return { valid: false, brokenAt: index };
+    }
+  }
+  return { valid: true };
 }

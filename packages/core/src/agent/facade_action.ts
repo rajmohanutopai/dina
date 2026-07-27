@@ -13,26 +13,14 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { canonicalJson } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
-import {
-  WorkflowTaskKind,
-  WorkflowTaskState,
-  type WorkflowTask,
-} from '../workflow/domain';
-import {
-  WorkflowConflictError,
-  getWorkflowService,
-} from '../workflow/service';
+import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
+import { WorkflowConflictError, getWorkflowService } from '../workflow/service';
 
 export const FACADE_ACTION_APPROVAL_TYPE = 'agent_facade_action_v1';
 export const FACADE_ACTION_APPROVAL_TTL_SEC = 15 * 60;
 export const MAX_PENDING_FACADE_ACTIONS_PER_AGENT = 20;
 
-export type FacadeAction =
-  | 'talk'
-  | 'delegate'
-  | 'review'
-  | 'service_publish'
-  | 'service_invoke';
+export type FacadeAction = 'talk' | 'delegate' | 'review' | 'service_publish' | 'service_invoke';
 
 export interface FacadeActionApprovalPayload {
   type: typeof FACADE_ACTION_APPROVAL_TYPE;
@@ -83,12 +71,7 @@ export function createFacadeActionApproval(input: {
   if (service === null) return { kind: 'unavailable' };
 
   const nowMs = input.nowMs ?? Date.now();
-  const taskId = facadeActionTaskId(
-    input.agentDid,
-    input.sessionId,
-    input.action,
-    input.requestId,
-  );
+  const taskId = facadeActionTaskId(input.agentDid, input.sessionId, input.action, input.requestId);
   const payload: FacadeActionApprovalPayload = {
     type: FACADE_ACTION_APPROVAL_TYPE,
     action: input.action,
@@ -118,20 +101,15 @@ export function createFacadeActionApproval(input: {
     return { kind: 'existing', task: existing, payload: stored };
   }
 
-  const pendingCount = service
-    .store()
-    .listByKindAndState(
-      WorkflowTaskKind.Approval,
-      WorkflowTaskState.PendingApproval,
-      Math.max(1, service.store().size()),
-    )
-    .filter((task) => {
-      const candidate = parseFacadeActionApprovalPayload(task.payload);
-      return (
-        candidate?.agent_did === input.agentDid &&
-        candidate.session === input.sessionId
-      );
-    }).length;
+  const pendingCount = service.store().countByKindStateAndPayloadFields(
+    WorkflowTaskKind.Approval,
+    WorkflowTaskState.PendingApproval,
+    {
+      agent_did: input.agentDid,
+      session: input.sessionId,
+    },
+    MAX_PENDING_FACADE_ACTIONS_PER_AGENT,
+  );
   if (pendingCount >= MAX_PENDING_FACADE_ACTIONS_PER_AGENT) {
     return { kind: 'too_many_pending' };
   }
@@ -149,12 +127,7 @@ export function createFacadeActionApproval(input: {
       initialState: WorkflowTaskState.PendingApproval,
       idempotencyKey: `${FACADE_ACTION_APPROVAL_TYPE}:${taskId}`,
     });
-    appendAudit(
-      input.agentDid,
-      'agent_facade_approval_created',
-      input.action,
-      `task=${task.id}`,
-    );
+    appendAudit(input.agentDid, 'agent_facade_approval_created', input.action, `task=${task.id}`);
     return { kind: 'created', task, payload };
   } catch (error) {
     if (error instanceof WorkflowConflictError) {
@@ -220,10 +193,7 @@ export function isFacadeActionApproval(task: WorkflowTask | null): boolean {
 
 function safeBounded(value: unknown, max: number): value is string {
   return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= max &&
-    !hasControlOrBidi(value)
+    typeof value === 'string' && value.length > 0 && value.length <= max && !hasControlOrBidi(value)
   );
 }
 

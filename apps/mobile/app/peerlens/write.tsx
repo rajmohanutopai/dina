@@ -54,6 +54,11 @@ import { type SubjectRefBody } from '../../src/peerlens/appview_runtime';
 import { describePublishErrorCode } from '../../src/peerlens/classify_publish_error';
 import { SubjectAnchorView } from '../../src/peerlens/components/subject_anchor_view';
 import { deriveEditWarning, type EditWarning } from '../../src/peerlens/edit_flow';
+import {
+  buildAttestationRecord,
+  categoryFor,
+  subjectStateToRef,
+} from '../../src/peerlens/publish_helpers';
 import { setReviewDraftStatus } from '../../src/peerlens/review_draft';
 import { type AttestationDraftBody } from '../../src/peerlens/review_draft_body';
 import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
@@ -63,7 +68,6 @@ import {
   emptyWriteFormStateWithSubject,
   validateWriteForm,
   describeWriteFormError,
-  serializeFormToV2Extras,
   SENTIMENT_OPTIONS,
   SUBJECT_KIND_OPTIONS,
   SUBJECT_KIND_HINT,
@@ -97,28 +101,11 @@ import {
   type ReviewerExperience,
   type WriteFormState,
   type WriteFormError,
-  type WriteSubjectState,
   type SubjectKind,
 } from '../../src/peerlens/write_form_data';
 import { colors, fonts, spacing, radius, textStyles } from '../../src/theme';
 
 import type { Sentiment, Confidence } from '@dina/protocol';
-
-/**
- * Map the form's per-kind subject inputs into the `SubjectRef` shape
- * AppView expects. Empty fields are dropped — AppView's subject
- * resolver hashes the canonical (`type`, `did`/`uri`/`identifier`,
- * `name`) tuple, so emitting empty strings would mint a different
- * `subject_id` than callers who supply the same fields.
- */
-function subjectStateToRef(s: WriteSubjectState): SubjectRefBody {
-  const out: SubjectRefBody = { type: s.kind };
-  if (s.name.trim().length > 0) out.name = s.name.trim();
-  if (s.did.trim().length > 0) out.did = s.did.trim();
-  if (s.uri.trim().length > 0) out.uri = s.uri.trim();
-  if (s.identifier.trim().length > 0) out.identifier = s.identifier.trim();
-  return out;
-}
 
 /**
  * Reconstruct a SubjectRef from URL params carried over from the
@@ -136,52 +123,9 @@ function buildSubjectRefFromParams(
 ): SubjectRefBody {
   const out: SubjectRefBody = { type: kind };
   if (name.trim().length > 0) out.name = name.trim();
-  if (identifier !== undefined && identifier.trim().length > 0)
-    out.identifier = identifier.trim();
+  if (identifier !== undefined && identifier.trim().length > 0) out.identifier = identifier.trim();
   if (did !== undefined && did.trim().length > 0) out.did = did.trim();
   return out;
-}
-
-/**
- * Reasonable default category per subject kind. AppView indexes free-
- * text categories (no closed taxonomy enforced server-side); we pick
- * a sensible top-level slug so the subject card's subtitle renders
- * something meaningful by default. Users can change category in a
- * future advanced-fields surface.
- */
-function categoryFor(kind: SubjectKind): string {
-  switch (kind) {
-    case 'product':
-      return 'commerce/product';
-    case 'place':
-      return 'place/general';
-    case 'organization':
-      return 'organization/general';
-    case 'content':
-      return 'content/web';
-    case 'did':
-      return 'identity/person';
-    case 'dataset':
-      return 'content/dataset';
-    case 'claim':
-      return 'claim/general';
-  }
-}
-
-/**
- * Compose the attestation `text` field from the headline + body. The
- * headline is the front-of-card lede; body is optional context. We
- * concatenate with a paragraph break so AppView's FTS index covers
- * both — single-field stays simple, future schema can split if the
- * scoring pipeline benefits from headline-vs-body weighting.
- */
-function composeText(headline: string, body: string): string {
-  const h = headline.trim();
-  const b = body.trim();
-  if (h.length === 0 && b.length === 0) return '';
-  if (h.length === 0) return b;
-  if (b.length === 0) return h;
-  return `${h}\n\n${b}`;
 }
 
 const SUBJECT_KIND_LABEL: Record<SubjectKind, string> = {
@@ -357,12 +301,9 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   // existing Write-CTA flow that arrives with a `subjectId`. The
   // unknown-kind fallback drops the user back into review mode rather
   // than crashing on a typo.
-  const rawCreateKind = Array.isArray(params.createKind)
-    ? params.createKind[0]
-    : params.createKind;
+  const rawCreateKind = Array.isArray(params.createKind) ? params.createKind[0] : params.createKind;
   const createKind: SubjectKind | null =
-    rawCreateKind !== undefined &&
-    SUBJECT_KIND_OPTIONS.includes(rawCreateKind as SubjectKind)
+    rawCreateKind !== undefined && SUBJECT_KIND_OPTIONS.includes(rawCreateKind as SubjectKind)
       ? (rawCreateKind as SubjectKind)
       : null;
   // Local error state is populated by the default `onPublish` when the
@@ -387,96 +328,88 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   //   2. createKind set → describe-mode with that kind (and optional
   //      `?initialName=` pre-fill from the search empty-state CTA).
   //   3. neither → review-only with no subject. Empty form.
-  const defaultInitial = React.useMemo(
-    () => {
-      // Chat-draft handoff wins over everything: the user typed
-      // "/ask write a review of <X>", got an inline draft card with
-      // LLM-drafted fields, then tapped "Edit in form". Pull the
-      // lifecycle's `values` blob and use it verbatim — sentiment,
-      // headline, body, AND any V2 extras (use_cases, last_used,
-      // etc.) the inferer drafted. Falls through to the next branch
-      // when the draft isn't found (stale link, app restart, thread
-      // reset) so the form still opens, just blank.
-      if (
-        paramDraftId !== undefined &&
-        paramDraftId.length > 0 &&
-        paramThreadId !== undefined &&
-        paramThreadId.length > 0
-      ) {
-        const msg = findMessageByDraftId(paramThreadId, paramDraftId);
-        if (msg !== null) {
-          const lc = readLifecycle(msg);
-          if (lc !== null && lc.kind === 'review_draft' && lc.values !== null) {
-            const draftValues = lc.values as Partial<WriteFormState>;
-            return {
-              ...emptyWriteFormState(),
-              ...draftValues,
-            };
-          }
+  const defaultInitial = React.useMemo(() => {
+    // Chat-draft handoff wins over everything: the user typed
+    // "/ask write a review of <X>", got an inline draft card with
+    // LLM-drafted fields, then tapped "Edit in form". Pull the
+    // lifecycle's `values` blob and use it verbatim — sentiment,
+    // headline, body, AND any V2 extras (use_cases, last_used,
+    // etc.) the inferer drafted. Falls through to the next branch
+    // when the draft isn't found (stale link, app restart, thread
+    // reset) so the form still opens, just blank.
+    if (
+      paramDraftId !== undefined &&
+      paramDraftId.length > 0 &&
+      paramThreadId !== undefined &&
+      paramThreadId.length > 0
+    ) {
+      const msg = findMessageByDraftId(paramThreadId, paramDraftId);
+      if (msg !== null) {
+        const lc = readLifecycle(msg);
+        if (lc !== null && lc.kind === 'review_draft' && lc.values !== null) {
+          const draftValues = lc.values as Partial<WriteFormState>;
+          return {
+            ...emptyWriteFormState(),
+            ...draftValues,
+          };
         }
       }
-      // Edit mode wins over both review-mode and create-mode: when
-      // we have a record to edit, every other URL-driven branch is
-      // background context, and the form should land pre-filled
-      // from the existing record. The user is editing a review
-      // OF a known subject, so describe-mode never applies.
-      if (paramEditingUri !== undefined && paramEditingUri.length > 0) {
-        return {
-          ...emptyWriteFormState(),
-          sentiment: paramEditingSentiment,
-          confidence: paramEditingConfidence,
-          headline: paramEditingHeadline ?? '',
-          body: paramEditingBody ?? '',
-        };
-      }
-      if (paramSubjectId !== undefined && paramSubjectId.length > 0) {
-        return emptyWriteFormState();
-      }
-      if (createKind !== null) {
-        const base = emptyWriteFormStateWithSubject(createKind);
-        if (paramInitialName !== undefined && paramInitialName.length > 0 && base.subject) {
-          return { ...base, subject: { ...base.subject, name: paramInitialName } };
-        }
-        return base;
-      }
+    }
+    // Edit mode wins over both review-mode and create-mode: when
+    // we have a record to edit, every other URL-driven branch is
+    // background context, and the form should land pre-filled
+    // from the existing record. The user is editing a review
+    // OF a known subject, so describe-mode never applies.
+    if (paramEditingUri !== undefined && paramEditingUri.length > 0) {
+      return {
+        ...emptyWriteFormState(),
+        sentiment: paramEditingSentiment,
+        confidence: paramEditingConfidence,
+        headline: paramEditingHeadline ?? '',
+        body: paramEditingBody ?? '',
+      };
+    }
+    if (paramSubjectId !== undefined && paramSubjectId.length > 0) {
       return emptyWriteFormState();
-    },
-    [
-      paramSubjectId,
-      createKind,
-      paramInitialName,
-      paramEditingUri,
-      paramEditingSentiment,
-      paramEditingConfidence,
-      paramEditingHeadline,
-      paramEditingBody,
-      paramDraftId,
-      paramThreadId,
-    ],
-  );
+    }
+    if (createKind !== null) {
+      const base = emptyWriteFormStateWithSubject(createKind);
+      if (paramInitialName !== undefined && paramInitialName.length > 0 && base.subject) {
+        return { ...base, subject: { ...base.subject, name: paramInitialName } };
+      }
+      return base;
+    }
+    return emptyWriteFormState();
+  }, [
+    paramSubjectId,
+    createKind,
+    paramInitialName,
+    paramEditingUri,
+    paramEditingSentiment,
+    paramEditingConfidence,
+    paramEditingHeadline,
+    paramEditingBody,
+    paramDraftId,
+    paramThreadId,
+  ]);
   // Edit context is derived from the same params. Memoised so the
   // useFocusEffect dep array stays stable across renders that don't
   // change the editing record.
-  const defaultEditing = React.useMemo<WriteScreenEditContext | undefined>(
-    () => {
-      if (paramEditingUri === undefined || paramEditingUri.length === 0) {
-        return undefined;
-      }
-      return {
-        originalUri: paramEditingUri,
-        cosigCount: paramEditingCosigCount,
-      };
-    },
-    [paramEditingUri, paramEditingCosigCount],
-  );
+  const defaultEditing = React.useMemo<WriteScreenEditContext | undefined>(() => {
+    if (paramEditingUri === undefined || paramEditingUri.length === 0) {
+      return undefined;
+    }
+    return {
+      originalUri: paramEditingUri,
+      cosigCount: paramEditingCosigCount,
+    };
+  }, [paramEditingUri, paramEditingCosigCount]);
   // Title shown in the header — defaults to the subject name when the
   // form was launched from subject detail (?subjectName=...). Without a
   // subject context the screen is "compose a new review" and "New
   // review" is the most honest label.
   const defaultSubjectTitle =
-    paramSubjectName !== undefined && paramSubjectName.length > 0
-      ? paramSubjectName
-      : 'New review';
+    paramSubjectName !== undefined && paramSubjectName.length > 0 ? paramSubjectName : 'New review';
   // The AT-rkey for this compose. Edit mode reuses the ORIGINAL record's rkey
   // (last AT-URI segment) so putRecord replaces in place; a fresh review gets one
   // generated key. Held in a REF (not a memo) and regenerated by the same
@@ -558,16 +491,10 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         return;
       }
 
-      const record: Record<string, unknown> = {
+      const record = buildAttestationRecord(formState, {
         subject: subjectRef,
-        category: categoryFor(subjectKindForCategory),
-        sentiment: formState.sentiment,
-        confidence: formState.confidence,
-        text: composeText(formState.headline, formState.body),
-        tags: formState.body.length > 0 ? [] : undefined,
-        createdAt: new Date().toISOString(),
-        ...serializeFormToV2Extras(formState),
-      };
+        kind: subjectKindForCategory,
+      });
       const draft: AttestationDraftBody = {
         sentiment: formState.sentiment,
         headline: formState.headline,
@@ -609,7 +536,9 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         } else if (outcome.kind === 'cap_exceeded') {
           setLocalError('Your outbox is full. Dismiss some queued reviews and try again.');
         } else if (outcome.kind === 'demo_scope') {
-          setLocalError("Publishing isn’t available in the demo. Switch to your own space to publish.");
+          setLocalError(
+            'Publishing isn’t available in the demo. Switch to your own space to publish.',
+          );
         } else if (outcome.kind === 'error') {
           setLocalError(outcome.message);
         }
@@ -706,7 +635,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   // a layout-defined option (the layout re-applies on focus, racing
   // with the route's effect). The inline JSX form is the canonical
   // expo-router pattern for runtime header overrides.
-  const headerTitle = editing ? 'Edit review' : 'Write a review'
+  const headerTitle = editing ? 'Edit review' : 'Write a review';
   const validation = React.useMemo(() => validateWriteForm(state), [state]);
   const editWarning = React.useMemo<EditWarning | null>(
     () => (editing ? deriveEditWarning(editing.cosigCount) : null),
@@ -738,10 +667,10 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   const composeSubjectName =
     paramSubjectName !== undefined && paramSubjectName.length > 0
       ? paramSubjectName
-      : state.subject?.name ??
+      : (state.subject?.name ??
         (props.subjectTitle !== undefined && props.subjectTitle !== 'New review'
           ? props.subjectTitle
-          : null);
+          : null));
   const composeCategory =
     paramSubjectKind !== null
       ? categoryFor(paramSubjectKind)
@@ -762,13 +691,15 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     () =>
       composePersonasFromProp !== undefined
         ? [...composePersonasFromProp]
-        : listPersonas().filter((p) => isPersonaOpen(p.name)).map((p) => p.name),
+        : listPersonas()
+            .filter((p) => isPersonaOpen(p.name))
+            .map((p) => p.name),
     // listPersonas / isPersonaOpen are sync reads from in-memory
     // module state; we'd need a subscription to react to unlocks
     // mid-form. The form re-mounts on navigation though, so the
     // typical flow (open form → see prefill from-then-open personas)
     // is already covered.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately recompute only when the explicit persona override changes.
     [composePersonasFromProp],
   );
   const composeCtx = useComposeContext({
@@ -792,7 +723,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   // correctly with the value merge — otherwise the prefill markers
   // would be empty even when values landed.
   const mergedRef = React.useRef(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- state intentionally NOT in deps; mergedRef gates re-fire
+  // State is intentionally not a dependency; mergedRef makes this a one-shot merge.
   React.useEffect(() => {
     if (composeCtx.result === null) return;
     if (mergedRef.current) return; // one-shot per form open
@@ -805,10 +736,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     ) {
       newPrefilled.add('use_cases');
     }
-    if (
-      result.values.last_used_bucket !== undefined &&
-      state.lastUsedBucket === null
-    ) {
+    if (result.values.last_used_bucket !== undefined && state.lastUsedBucket === null) {
       newPrefilled.add('last_used_bucket');
     }
     if (newPrefilled.size === 0) {
@@ -820,10 +748,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       if (newPrefilled.has('use_cases') && result.values.use_cases !== undefined) {
         next.useCases = [...result.values.use_cases];
       }
-      if (
-        newPrefilled.has('last_used_bucket') &&
-        result.values.last_used_bucket !== undefined
-      ) {
+      if (newPrefilled.has('last_used_bucket') && result.values.last_used_bucket !== undefined) {
         next.lastUsedBucket = result.values.last_used_bucket;
       }
       return next;
@@ -847,8 +772,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
 
   const updateSentiment = (s: Sentiment): void =>
     setState((prev) => ({ ...prev, sentiment: prev.sentiment === s ? null : s }));
-  const updateHeadline = (text: string): void =>
-    setState((prev) => ({ ...prev, headline: text }));
+  const updateHeadline = (text: string): void => setState((prev) => ({ ...prev, headline: text }));
   const updateBody = (text: string): void => setState((prev) => ({ ...prev, body: text }));
   // TN-V2-REV-007 — last-used bucket: tap-to-toggle. Tapping the
   // currently-selected bucket clears the field, returning the form
@@ -893,8 +817,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       // Tap-to-toggle: tapping the active level clears it.
       reviewerExperience: prev.reviewerExperience === level ? null : level,
     }));
-  const updatePriceLow = (text: string): void =>
-    setState((prev) => ({ ...prev, priceLow: text }));
+  const updatePriceLow = (text: string): void => setState((prev) => ({ ...prev, priceLow: text }));
   const updatePriceHigh = (text: string): void =>
     setState((prev) => ({ ...prev, priceHigh: text }));
   const updatePriceCurrency = (text: string): void =>
@@ -907,7 +830,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   const toggleComplianceTag = (tag: string): void =>
     setState((prev) => ({
       ...prev,
-      compliance: toggleTagInVocabulary(prev.compliance, tag, COMPLIANCE_VOCABULARY, MAX_COMPLIANCE),
+      compliance: toggleTagInVocabulary(
+        prev.compliance,
+        tag,
+        COMPLIANCE_VOCABULARY,
+        MAX_COMPLIANCE,
+      ),
     }));
   const toggleAccessibilityTag = (tag: string): void =>
     setState((prev) => ({
@@ -927,12 +855,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   const toggleRecommendForTag = (tag: string, vocabulary: readonly string[]): void =>
     setState((prev) => ({
       ...prev,
-      recommendFor: toggleTagInVocabulary(
-        prev.recommendFor,
-        tag,
-        vocabulary,
-        MAX_RECOMMEND_FOR,
-      ),
+      recommendFor: toggleTagInVocabulary(prev.recommendFor, tag, vocabulary, MAX_RECOMMEND_FOR),
     }));
   const toggleNotRecommendForTag = (tag: string, vocabulary: readonly string[]): void =>
     setState((prev) => ({
@@ -976,9 +899,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       setAltResults(results.slice(0, 10));
     } catch (err) {
       if (altQueryRef.current !== query) return; // stale error, discard
-      setAltSearchError(
-        err instanceof Error ? err.message : 'Search failed. Try again.',
-      );
+      setAltSearchError(err instanceof Error ? err.message : 'Search failed. Try again.');
       setAltResults([]);
     } finally {
       if (altQueryRef.current === query) setAltSearching(false);
@@ -994,13 +915,6 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   // grids / search-and-pick) and a config-driven approach would add
   // more complexity than it removes for three steps.
   const [step, setStep] = React.useState<1 | 2 | 3>(1);
-  // Step 1 is the publish gate. Pull the canPublish check out so the
-  // step-nav logic and the Publish CTA share one source of truth.
-  const step1Ready =
-    state.sentiment !== null &&
-    state.headline.trim().length > 0 &&
-    state.headline.length <= HEADLINE_MAX_LENGTH &&
-    state.body.length <= BODY_MAX_LENGTH;
   const goNext = (): void => {
     if (step === 1) setStep(2);
     else if (step === 2) setStep(3);
@@ -1013,18 +927,11 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   // (the form is in "describe a new subject" mode).
   const updateSubjectKind = (kind: SubjectKind): void =>
     setState((prev) =>
-      prev.subject == null
-        ? prev
-        : { ...prev, subject: { ...prev.subject, kind } },
+      prev.subject == null ? prev : { ...prev, subject: { ...prev.subject, kind } },
     );
-  const updateSubjectField = (
-    field: 'name' | 'did' | 'uri' | 'identifier',
-    value: string,
-  ): void =>
+  const updateSubjectField = (field: 'name' | 'did' | 'uri' | 'identifier', value: string): void =>
     setState((prev) =>
-      prev.subject == null
-        ? prev
-        : { ...prev, subject: { ...prev.subject, [field]: value } },
+      prev.subject == null ? prev : { ...prev, subject: { ...prev.subject, [field]: value } },
     );
 
   const handlePublish = (): void => {
@@ -1073,320 +980,312 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         keyboardShouldPersistTaps="handled"
         bottomOffset={24}
       >
-      {/* In-page H1 removed — the native Stack header already shows
+        {/* In-page H1 removed — the native Stack header already shows
           `headerTitle`. Stacking the H1 underneath created a duplicate
           title row (matches the convention in add-contact.tsx). */}
 
-      {/* (Top stepper removed: Step 1 is now the canonical surface and
+        {/* (Top stepper removed: Step 1 is now the canonical surface and
           the "Add additional data" pill below the Body field opens the
           modal-style wizard for Steps 2+3. Publish stays on Step 1.) */}
 
-      {/* Subject anchor card: visible when the form has subject
+        {/* Subject anchor card: visible when the form has subject
           context — either edit mode, deep-linked compose with
           ?subjectName=..., or an explicit `subjectTitle` prop. The
           fallback default is the literal "New review" string used by
           the compose-without-subject flow; suppressing on that
           string keeps the anchor hidden until the user picks a kind. */}
-      {subjectTitle !== 'New review' && (
-        <SubjectAnchorView
-          title={subjectTitle}
-          kind={paramSubjectKind}
-          category={paramSubjectKind !== null ? categoryFor(paramSubjectKind) : null}
-        />
-      )}
+        {subjectTitle !== 'New review' && (
+          <SubjectAnchorView
+            title={subjectTitle}
+            kind={paramSubjectKind}
+            category={paramSubjectKind !== null ? categoryFor(paramSubjectKind) : null}
+          />
+        )}
 
-      {editWarning && (
-        <View style={styles.warningPanel} testID="write-edit-warning">
-          <Ionicons name="warning" size={18} color={colors.warning} />
-          <View style={styles.warningBody}>
-            <Text style={styles.warningTitle}>{editWarning.title}</Text>
-            <Text style={styles.warningText}>{editWarning.body}</Text>
+        {editWarning && (
+          <View style={styles.warningPanel} testID="write-edit-warning">
+            <Ionicons name="warning" size={18} color={colors.warning} />
+            <View style={styles.warningBody}>
+              <Text style={styles.warningTitle}>{editWarning.title}</Text>
+              <Text style={styles.warningText}>{editWarning.body}</Text>
+            </View>
           </View>
-        </View>
-      )}
+        )}
 
-      {/* ─── STEP 1: Verdict ─────────────────────────────────────────
+        {/* ─── STEP 1: Verdict ─────────────────────────────────────────
           Subject + Sentiment + Headline + Body. Sentiment + Headline
           are the publish gate; Body is optional. Step 2/3 are only
           reachable AFTER Step 1 validates. */}
-      {step === 1 && (
-        <>
-      {/* ─── Subject (only when we're creating a new one) ─────────── */}
-      {state.subject != null && (
-        <View style={styles.field} testID="write-subject-section">
-          <Text style={styles.fieldLabel}>What are you reviewing?</Text>
-          <View style={styles.kindRow}>
-            {SUBJECT_KIND_OPTIONS.map((k) => (
-              <Pressable
-                key={k}
-                onPress={() => !isSubmitting && updateSubjectKind(k)}
-                disabled={isSubmitting}
-                style={({ pressed }) => [
-                  styles.kindBtn,
-                  state.subject?.kind === k && styles.kindBtnActive,
-                  pressed && !isSubmitting && styles.kindBtnPressed,
-                ]}
-                testID={`write-subject-kind-${k}`}
-                accessibilityRole="button"
-                accessibilityLabel={SUBJECT_KIND_LABEL[k]}
-                accessibilityState={{ selected: state.subject?.kind === k }}
-              >
-                <Text
-                  style={[
-                    styles.kindLabel,
-                    state.subject?.kind === k && styles.kindLabelActive,
-                  ]}
-                >
-                  {SUBJECT_KIND_LABEL[k]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={styles.kindHint}>
-            {SUBJECT_KIND_HINT[state.subject.kind]}
-          </Text>
+        {step === 1 && (
+          <>
+            {/* ─── Subject (only when we're creating a new one) ─────────── */}
+            {state.subject != null && (
+              <View style={styles.field} testID="write-subject-section">
+                <Text style={styles.fieldLabel}>What are you reviewing?</Text>
+                <View style={styles.kindRow}>
+                  {SUBJECT_KIND_OPTIONS.map((k) => (
+                    <Pressable
+                      key={k}
+                      onPress={() => !isSubmitting && updateSubjectKind(k)}
+                      disabled={isSubmitting}
+                      style={({ pressed }) => [
+                        styles.kindBtn,
+                        state.subject?.kind === k && styles.kindBtnActive,
+                        pressed && !isSubmitting && styles.kindBtnPressed,
+                      ]}
+                      testID={`write-subject-kind-${k}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={SUBJECT_KIND_LABEL[k]}
+                      accessibilityState={{ selected: state.subject?.kind === k }}
+                    >
+                      <Text
+                        style={[
+                          styles.kindLabel,
+                          state.subject?.kind === k && styles.kindLabelActive,
+                        ]}
+                      >
+                        {SUBJECT_KIND_LABEL[k]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={styles.kindHint}>{SUBJECT_KIND_HINT[state.subject.kind]}</Text>
 
-          {/* Name — required for every kind. The native iOS clearButton
+                {/* Name — required for every kind. The native iOS clearButton
               + the explicit "From your search" hint when the field was
               pre-seeded from `?initialName=` together close MT-22-I1:
               the user can see at a glance that the value came from
               their search query (which may have had a typo) and clear
               it in one tap rather than backspace-by-backspace. */}
-          <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Name</Text>
-          <TextInput
-            value={state.subject.name}
-            onChangeText={(t) => updateSubjectField('name', t)}
-            editable={!isSubmitting}
-            placeholder="What is it called?"
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-            testID="write-subject-name-input"
-            clearButtonMode="while-editing"
-          />
-          {paramInitialName !== undefined &&
-          paramInitialName.length > 0 &&
-          state.subject.name === paramInitialName ? (
-            <Text style={styles.kindHint} testID="write-subject-name-prefill-hint">
-              Pre-filled from your search. Tap to edit if the spelling is off.
-            </Text>
-          ) : null}
-          {fieldError(
-            validation.errors,
-            ['subject_name_required', 'subject_name_too_long'],
-            showErrors,
-          )}
+                <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Name</Text>
+                <TextInput
+                  value={state.subject.name}
+                  onChangeText={(t) => updateSubjectField('name', t)}
+                  editable={!isSubmitting}
+                  placeholder="What is it called?"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  testID="write-subject-name-input"
+                  clearButtonMode="while-editing"
+                />
+                {paramInitialName !== undefined &&
+                paramInitialName.length > 0 &&
+                state.subject.name === paramInitialName ? (
+                  <Text style={styles.kindHint} testID="write-subject-name-prefill-hint">
+                    Pre-filled from your search. Tap to edit if the spelling is off.
+                  </Text>
+                ) : null}
+                {fieldError(
+                  validation.errors,
+                  ['subject_name_required', 'subject_name_too_long'],
+                  showErrors,
+                )}
 
-          {/* DID — for did + organization kinds */}
-          {(state.subject.kind === 'did' ||
-            state.subject.kind === 'organization') && (
-            <>
-              <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
-                {state.subject.kind === 'did' ? 'DID' : 'DID (optional)'}
-              </Text>
+                {/* DID — for did + organization kinds */}
+                {(state.subject.kind === 'did' || state.subject.kind === 'organization') && (
+                  <>
+                    <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
+                      {state.subject.kind === 'did' ? 'DID' : 'DID (optional)'}
+                    </Text>
+                    <TextInput
+                      value={state.subject.did}
+                      onChangeText={(t) => updateSubjectField('did', t)}
+                      editable={!isSubmitting}
+                      placeholder="did:plc:… or did:web:…"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                      testID="write-subject-did-input"
+                    />
+                    {fieldError(
+                      validation.errors,
+                      ['subject_did_required', 'subject_did_invalid'],
+                      showErrors,
+                    )}
+                  </>
+                )}
+
+                {/* URI — for content + dataset kinds */}
+                {(state.subject.kind === 'content' || state.subject.kind === 'dataset') && (
+                  <>
+                    <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
+                      {state.subject.kind === 'content' ? 'URL' : 'Dataset URI'}
+                    </Text>
+                    <TextInput
+                      value={state.subject.uri}
+                      onChangeText={(t) => updateSubjectField('uri', t)}
+                      editable={!isSubmitting}
+                      placeholder={
+                        state.subject.kind === 'content'
+                          ? 'https://… (article, video, podcast)'
+                          : 'https://… or at://…'
+                      }
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                      testID="write-subject-uri-input"
+                    />
+                    {fieldError(
+                      validation.errors,
+                      ['subject_uri_required', 'subject_uri_invalid'],
+                      showErrors,
+                    )}
+                  </>
+                )}
+
+                {/* Identifier — for product / place / claim kinds */}
+                {(state.subject.kind === 'product' ||
+                  state.subject.kind === 'place' ||
+                  state.subject.kind === 'claim') && (
+                  <>
+                    <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
+                      Identifier (optional)
+                    </Text>
+                    <TextInput
+                      value={state.subject.identifier}
+                      onChangeText={(t) => updateSubjectField('identifier', t)}
+                      editable={!isSubmitting}
+                      placeholder={
+                        state.subject.kind === 'product'
+                          ? 'ASIN, ISBN, SKU, model #'
+                          : state.subject.kind === 'place'
+                            ? 'Address or place ID'
+                            : 'Source URL, citation, or claim ID'
+                      }
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.input}
+                      testID="write-subject-identifier-input"
+                    />
+                    {fieldError(validation.errors, ['subject_identifier_too_long'], showErrors)}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* ─── Sentiment ───────────────────────────────────────────── */}
+            <View style={styles.field}>
+              <View style={styles.fieldHeader}>
+                <Text style={styles.fieldLabel}>Sentiment</Text>
+                <Text style={styles.fieldRequired}>Required</Text>
+              </View>
+              <View style={styles.sentimentRow}>
+                {SENTIMENT_OPTIONS.map((s) => (
+                  <Pressable
+                    key={s}
+                    onPress={() => !isSubmitting && updateSentiment(s)}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.sentimentBtn,
+                      state.sentiment === s && styles.sentimentBtnActive,
+                      pressed && !isSubmitting && styles.sentimentBtnPressed,
+                    ]}
+                    testID={`write-sentiment-${s}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={SENTIMENT_LABEL[s]}
+                    accessibilityState={{ selected: state.sentiment === s, disabled: isSubmitting }}
+                  >
+                    <Ionicons
+                      name={SENTIMENT_ICON[s]}
+                      size={16}
+                      color={state.sentiment === s ? colors.bgSecondary : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.sentimentLabel,
+                        state.sentiment === s && styles.sentimentLabelActive,
+                      ]}
+                    >
+                      {SENTIMENT_LABEL[s]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {fieldError(validation.errors, ['sentiment_required'], showErrors)}
+            </View>
+
+            {/* ─── Headline ────────────────────────────────────────────── */}
+            <View style={styles.field}>
+              <View style={styles.fieldHeader}>
+                <Text style={styles.fieldLabel}>Headline</Text>
+                <Text
+                  style={[
+                    styles.charCount,
+                    validation.headlineLength > HEADLINE_MAX_LENGTH && styles.charCountOverflow,
+                  ]}
+                >
+                  {validation.headlineLength} / {HEADLINE_MAX_LENGTH}
+                </Text>
+              </View>
               <TextInput
-                value={state.subject.did}
-                onChangeText={(t) => updateSubjectField('did', t)}
+                value={state.headline}
+                onChangeText={updateHeadline}
                 editable={!isSubmitting}
-                placeholder="did:plc:… or did:web:…"
+                placeholder="A short summary of your review"
                 placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                testID="write-subject-did-input"
+                style={[styles.input, styles.headlineInput]}
+                maxLength={HEADLINE_MAX_LENGTH * 2 /* allow over-typing so user sees the warning */}
+                testID="write-headline-input"
+                accessibilityLabel="Headline"
               />
               {fieldError(
                 validation.errors,
-                ['subject_did_required', 'subject_did_invalid'],
-                showErrors,
+                ['headline_empty', 'headline_too_long'],
+                // Length-cap errors should always show — they happen because
+                // the user typed too much, so we already know they've
+                // touched the field. The "headline_empty" error is gated by
+                // showErrors via the `relevant` lookup.
+                showErrors || validation.headlineLength > HEADLINE_MAX_LENGTH,
               )}
-            </>
-          )}
+            </View>
 
-          {/* URI — for content + dataset kinds */}
-          {(state.subject.kind === 'content' ||
-            state.subject.kind === 'dataset') && (
-            <>
-              <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
-                {state.subject.kind === 'content' ? 'URL' : 'Dataset URI'}
-              </Text>
+            {/* ─── Body ────────────────────────────────────────────────── */}
+            <View style={styles.field}>
+              <View style={styles.fieldHeader}>
+                <Text style={styles.fieldLabel}>Body (optional)</Text>
+                <Text
+                  style={[
+                    styles.charCount,
+                    validation.bodyLength > BODY_MAX_LENGTH && styles.charCountOverflow,
+                  ]}
+                >
+                  {validation.bodyLength} / {BODY_MAX_LENGTH}
+                </Text>
+              </View>
               <TextInput
-                value={state.subject.uri}
-                onChangeText={(t) => updateSubjectField('uri', t)}
+                value={state.body}
+                onChangeText={updateBody}
                 editable={!isSubmitting}
-                placeholder={
-                  state.subject.kind === 'content'
-                    ? 'https://… (article, video, podcast)'
-                    : 'https://… or at://…'
-                }
+                placeholder="Add detail, evidence, or caveats"
                 placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                testID="write-subject-uri-input"
+                style={[styles.input, styles.bodyInput]}
+                multiline
+                textAlignVertical="top"
+                testID="write-body-input"
+                accessibilityLabel="Body"
               />
               {fieldError(
                 validation.errors,
-                ['subject_uri_required', 'subject_uri_invalid'],
-                showErrors,
+                // `text_too_long` is the COMBINED headline+body cap (AppView's lexicon
+                // limit). It can trip while headline and body are each under their own
+                // visible limit, so it would otherwise leave Publish disabled with no
+                // explanation. Render it under the body — the field most likely over.
+                ['body_too_long', 'text_too_long'],
+                // Length errors always show — the user OBVIOUSLY typed past a cap. Show
+                // `text_too_long` (the combined cap) eagerly too: it disables Publish,
+                // and a real user can't press a disabled button to reveal `showErrors`,
+                // so gating it on a publish attempt would leave Publish dead with no
+                // explanation.
+                showErrors ||
+                  validation.bodyLength > BODY_MAX_LENGTH ||
+                  validation.errors.includes('text_too_long'),
               )}
-            </>
-          )}
+            </View>
 
-          {/* Identifier — for product / place / claim kinds */}
-          {(state.subject.kind === 'product' ||
-            state.subject.kind === 'place' ||
-            state.subject.kind === 'claim') && (
-            <>
-              <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>
-                Identifier (optional)
-              </Text>
-              <TextInput
-                value={state.subject.identifier}
-                onChangeText={(t) => updateSubjectField('identifier', t)}
-                editable={!isSubmitting}
-                placeholder={
-                  state.subject.kind === 'product'
-                    ? 'ASIN, ISBN, SKU, model #'
-                    : state.subject.kind === 'place'
-                      ? 'Address or place ID'
-                      : 'Source URL, citation, or claim ID'
-                }
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.input}
-                testID="write-subject-identifier-input"
-              />
-              {fieldError(
-                validation.errors,
-                ['subject_identifier_too_long'],
-                showErrors,
-              )}
-            </>
-          )}
-        </View>
-      )}
-
-      {/* ─── Sentiment ───────────────────────────────────────────── */}
-      <View style={styles.field}>
-        <View style={styles.fieldHeader}>
-          <Text style={styles.fieldLabel}>Sentiment</Text>
-          <Text style={styles.fieldRequired}>Required</Text>
-        </View>
-        <View style={styles.sentimentRow}>
-          {SENTIMENT_OPTIONS.map((s) => (
-            <Pressable
-              key={s}
-              onPress={() => !isSubmitting && updateSentiment(s)}
-              disabled={isSubmitting}
-              style={({ pressed }) => [
-                styles.sentimentBtn,
-                state.sentiment === s && styles.sentimentBtnActive,
-                pressed && !isSubmitting && styles.sentimentBtnPressed,
-              ]}
-              testID={`write-sentiment-${s}`}
-              accessibilityRole="button"
-              accessibilityLabel={SENTIMENT_LABEL[s]}
-              accessibilityState={{ selected: state.sentiment === s, disabled: isSubmitting }}
-            >
-              <Ionicons
-                name={SENTIMENT_ICON[s]}
-                size={16}
-                color={state.sentiment === s ? colors.bgSecondary : colors.textSecondary}
-              />
-              <Text
-                style={[
-                  styles.sentimentLabel,
-                  state.sentiment === s && styles.sentimentLabelActive,
-                ]}
-              >
-                {SENTIMENT_LABEL[s]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        {fieldError(validation.errors, ['sentiment_required'], showErrors)}
-      </View>
-
-      {/* ─── Headline ────────────────────────────────────────────── */}
-      <View style={styles.field}>
-        <View style={styles.fieldHeader}>
-          <Text style={styles.fieldLabel}>Headline</Text>
-          <Text
-            style={[
-              styles.charCount,
-              validation.headlineLength > HEADLINE_MAX_LENGTH && styles.charCountOverflow,
-            ]}
-          >
-            {validation.headlineLength} / {HEADLINE_MAX_LENGTH}
-          </Text>
-        </View>
-        <TextInput
-          value={state.headline}
-          onChangeText={updateHeadline}
-          editable={!isSubmitting}
-          placeholder="A short summary of your review"
-          placeholderTextColor={colors.textMuted}
-          style={[styles.input, styles.headlineInput]}
-          maxLength={HEADLINE_MAX_LENGTH * 2 /* allow over-typing so user sees the warning */}
-          testID="write-headline-input"
-          accessibilityLabel="Headline"
-        />
-        {fieldError(
-          validation.errors,
-          ['headline_empty', 'headline_too_long'],
-          // Length-cap errors should always show — they happen because
-          // the user typed too much, so we already know they've
-          // touched the field. The "headline_empty" error is gated by
-          // showErrors via the `relevant` lookup.
-          showErrors || validation.headlineLength > HEADLINE_MAX_LENGTH,
-        )}
-      </View>
-
-      {/* ─── Body ────────────────────────────────────────────────── */}
-      <View style={styles.field}>
-        <View style={styles.fieldHeader}>
-          <Text style={styles.fieldLabel}>Body (optional)</Text>
-          <Text
-            style={[
-              styles.charCount,
-              validation.bodyLength > BODY_MAX_LENGTH && styles.charCountOverflow,
-            ]}
-          >
-            {validation.bodyLength} / {BODY_MAX_LENGTH}
-          </Text>
-        </View>
-        <TextInput
-          value={state.body}
-          onChangeText={updateBody}
-          editable={!isSubmitting}
-          placeholder="Add detail, evidence, or caveats"
-          placeholderTextColor={colors.textMuted}
-          style={[styles.input, styles.bodyInput]}
-          multiline
-          textAlignVertical="top"
-          testID="write-body-input"
-          accessibilityLabel="Body"
-        />
-        {fieldError(
-          validation.errors,
-          // `text_too_long` is the COMBINED headline+body cap (AppView's lexicon
-          // limit). It can trip while headline and body are each under their own
-          // visible limit, so it would otherwise leave Publish disabled with no
-          // explanation. Render it under the body — the field most likely over.
-          ['body_too_long', 'text_too_long'],
-          // Length errors always show — the user OBVIOUSLY typed past a cap. Show
-          // `text_too_long` (the combined cap) eagerly too: it disables Publish,
-          // and a real user can't press a disabled button to reveal `showErrors`,
-          // so gating it on a publish attempt would leave Publish dead with no
-          // explanation.
-          showErrors ||
-            validation.bodyLength > BODY_MAX_LENGTH ||
-            validation.errors.includes('text_too_long'),
-        )}
-      </View>
-
-      {/* Confidence used to be a required pill row here. We dropped
+            {/* Confidence used to be a required pill row here. We dropped
           the surface — casual reviewers don't think in
           speculative/moderate/high/certain ladders and the field was
           only consumed by the AppView search filter `minConfidence`
@@ -1396,45 +1295,45 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           `editingConfidence` URL param, so amending an old review
           doesn't silently downgrade it. */}
 
-      {/* ─── Prefill banner (Step 1 only) ────────────────────────────
+            {/* ─── Prefill banner (Step 1 only) ────────────────────────────
           When Dina prefilled fields from the user's vault, show a
           subtle banner so the user knows the deeper steps are worth
           the tap. Silent when nothing prefilled — Silence First. */}
-      {prefilledFields.size > 0 && (
-        <View style={styles.prefillBanner} testID="write-prefill-banner">
-          <Text style={styles.prefillBannerText}>
-            {`✨ Dina prefilled ${prefilledFields.size} field${
-              prefilledFields.size === 1 ? '' : 's'
-            } in additional details from your vault.`}
-          </Text>
-        </View>
-      )}
+            {prefilledFields.size > 0 && (
+              <View style={styles.prefillBanner} testID="write-prefill-banner">
+                <Text style={styles.prefillBannerText}>
+                  {`✨ Dina prefilled ${prefilledFields.size} field${
+                    prefilledFields.size === 1 ? '' : 's'
+                  } in additional details from your vault.`}
+                </Text>
+              </View>
+            )}
 
-      {/* "Add additional data" pill — opens the wizard modal for
+            {/* "Add additional data" pill — opens the wizard modal for
           Steps 2 + 3 (Your experience + Recommendations). The pill
           is the ONLY entry point to the optional fields; without
           tapping it the user just publishes the verdict. Phrased
           neutrally so users feel no pressure to engage. */}
-      <Pressable
-        onPress={() => !isSubmitting && setStep(2)}
-        disabled={isSubmitting}
-        style={({ pressed }) => [
-          styles.additionalDataPill,
-          pressed && !isSubmitting && styles.additionalDataPillPressed,
-        ]}
-        testID="write-additional-data-pill"
-        accessibilityRole="button"
-        accessibilityLabel="Add additional details"
-        accessibilityState={{ disabled: isSubmitting }}
-      >
-        <Ionicons name="add-circle-outline" size={16} color={colors.textSecondary} />
-        <Text style={styles.additionalDataPillLabel}>Add additional details (optional)</Text>
-        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-      </Pressable>
-        </>
-      )}
+            <Pressable
+              onPress={() => !isSubmitting && setStep(2)}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.additionalDataPill,
+                pressed && !isSubmitting && styles.additionalDataPillPressed,
+              ]}
+              testID="write-additional-data-pill"
+              accessibilityRole="button"
+              accessibilityLabel="Add additional details"
+              accessibilityState={{ disabled: isSubmitting }}
+            >
+              <Ionicons name="add-circle-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.additionalDataPillLabel}>Add additional details (optional)</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+            </Pressable>
+          </>
+        )}
 
-      {/* ─── Modal wizard for Steps 2 + 3 (Your experience +
+        {/* ─── Modal wizard for Steps 2 + 3 (Your experience +
           Recommendations) ──────────────────────────────────────────
           Renders as a full-page modal pop-over the form. Form state
           lives in the parent component, so the modal just shows a
@@ -1442,203 +1341,184 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           everything. The modal's own action row carries Back / Next
           / Done navigation; Publish stays on the main form behind
           the modal so users always know how to commit. */}
-      <Modal
-        visible={step !== 1}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setStep(1)}
-      >
-        <KeyboardAwareScrollView
-          style={styles.container}
-          contentContainerStyle={styles.modalContent}
-          testID="write-additional-data-modal"
-          keyboardShouldPersistTaps="handled"
-          bottomOffset={24}
+        <Modal
+          visible={step !== 1}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setStep(1)}
         >
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Additional details</Text>
-            <Pressable
-              onPress={() => setStep(1)}
-              disabled={isSubmitting}
-              style={({ pressed }) => [
-                styles.modalCloseBtn,
-                pressed && !isSubmitting && styles.modalCloseBtnPressed,
-              ]}
-              testID="write-additional-data-close"
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <Ionicons name="close" size={20} color={colors.textPrimary} />
-            </Pressable>
-          </View>
+          <KeyboardAwareScrollView
+            style={styles.container}
+            contentContainerStyle={styles.modalContent}
+            testID="write-additional-data-modal"
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={24}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Additional details</Text>
+              <Pressable
+                onPress={() => setStep(1)}
+                disabled={isSubmitting}
+                style={({ pressed }) => [
+                  styles.modalCloseBtn,
+                  pressed && !isSubmitting && styles.modalCloseBtnPressed,
+                ]}
+                testID="write-additional-data-close"
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </Pressable>
+            </View>
 
-          {/* In-modal stepper — 2 dots for the two sub-steps. */}
-          <View style={styles.stepperRow} testID="write-stepper">
-            {([2, 3] as const).map((n) => {
-              const labels = { 2: 'Your experience', 3: 'Recommendations' };
-              const isActive = step === n;
-              return (
-                <Pressable
-                  key={n}
-                  onPress={() => setStep(n)}
-                  disabled={isSubmitting}
-                  style={({ pressed }) => [
-                    styles.stepperDotWrap,
-                    pressed && !isSubmitting && styles.stepperDotWrapPressed,
-                  ]}
-                  testID={`write-stepper-${n}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Step: ${labels[n]}`}
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <View
-                    style={[
-                      styles.stepperDot,
-                      isActive && styles.stepperDotActive,
+            {/* In-modal stepper — 2 dots for the two sub-steps. */}
+            <View style={styles.stepperRow} testID="write-stepper">
+              {([2, 3] as const).map((n) => {
+                const labels = { 2: 'Your experience', 3: 'Recommendations' };
+                const isActive = step === n;
+                return (
+                  <Pressable
+                    key={n}
+                    onPress={() => setStep(n)}
+                    disabled={isSubmitting}
+                    style={({ pressed }) => [
+                      styles.stepperDotWrap,
+                      pressed && !isSubmitting && styles.stepperDotWrapPressed,
                     ]}
+                    testID={`write-stepper-${n}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Step: ${labels[n]}`}
+                    accessibilityState={{ selected: isActive }}
                   >
-                    <Text
-                      style={[
-                        styles.stepperDotText,
-                        isActive && styles.stepperDotTextActive,
-                      ]}
-                    >
-                      {n - 1}
+                    <View style={[styles.stepperDot, isActive && styles.stepperDotActive]}>
+                      <Text
+                        style={[styles.stepperDotText, isActive && styles.stepperDotTextActive]}
+                      >
+                        {n - 1}
+                      </Text>
+                    </View>
+                    <Text style={[styles.stepperLabel, isActive && styles.stepperLabelActive]}>
+                      {labels[n]}
                     </Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.stepperLabel,
-                      isActive && styles.stepperLabelActive,
-                    ]}
-                  >
-                    {labels[n]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-      {/* ─── STEP 2: Your experience ─────────────────────────────────
+            {/* ─── STEP 2: Your experience ─────────────────────────────────
           What YOU did — use-cases you put it through, when you last
           touched it, your expertise tier, what you paid. All optional
           (a user can publish from Step 1 alone). */}
-      {step === 2 && (
-        <View testID="write-step-2">
-          {/* TN-V2-REV-006 — use-case picker. Per-category
+            {step === 2 && (
+              <View testID="write-step-2">
+                {/* TN-V2-REV-006 — use-case picker. Per-category
               vocabulary (resolves from `state.subject?.kind`, falling
               back to a generic list for the subjectId-based form
               path). Multi-select capped at MAX_USE_CASES = 3. When at
               the cap, unselected tags grey out so the user
               understands why further taps are no-ops. */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>
-              {prefilledFields.has('use_cases') ? '✨ ' : ''}What do you use this for?
-            </Text>
-            <Text style={styles.kindHint}>
-              {prefilledFields.has('use_cases')
-                ? `Dina noted these from your vault. Tap to change.`
-                : `Optional. Pick up to ${MAX_USE_CASES}. Helps other readers find reviews from people with the same use-case.`}
-            </Text>
-            {(() => {
-              // IIFE keeps the vocabulary derivation co-located with
-              // the picker JSX without adding a top-level local that
-              // re-renders unrelated branches.
-              const vocabularyCategory =
-                state.subject != null ? categoryFor(state.subject.kind) : null;
-              const vocabulary = useCasesForCategory(vocabularyCategory);
-              const atCap = state.useCases.length >= MAX_USE_CASES;
-              return (
-                <View style={styles.useCaseRow} testID="write-use-case-row">
-                  {vocabulary.map((tag) => {
-                    const selected = state.useCases.includes(tag);
-                    const disabled = isSubmitting || (atCap && !selected);
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>
+                    {prefilledFields.has('use_cases') ? '✨ ' : ''}What do you use this for?
+                  </Text>
+                  <Text style={styles.kindHint}>
+                    {prefilledFields.has('use_cases')
+                      ? `Dina noted these from your vault. Tap to change.`
+                      : `Optional. Pick up to ${MAX_USE_CASES}. Helps other readers find reviews from people with the same use-case.`}
+                  </Text>
+                  {(() => {
+                    // IIFE keeps the vocabulary derivation co-located with
+                    // the picker JSX without adding a top-level local that
+                    // re-renders unrelated branches.
+                    const vocabularyCategory =
+                      state.subject != null ? categoryFor(state.subject.kind) : null;
+                    const vocabulary = useCasesForCategory(vocabularyCategory);
+                    const atCap = state.useCases.length >= MAX_USE_CASES;
                     return (
-                      <Pressable
-                        key={tag}
-                        onPress={() => !disabled && toggleUseCaseTag(tag, vocabulary)}
-                        disabled={disabled}
-                        style={({ pressed }) => [
-                          styles.useCaseBtn,
-                          selected && styles.useCaseBtnActive,
-                          disabled && !selected && styles.useCaseBtnDisabled,
-                          pressed && !disabled && styles.useCaseBtnPressed,
-                        ]}
-                        testID={`write-use-case-${tag}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={USE_CASE_LABEL[tag] ?? tag}
-                        accessibilityState={{ selected, disabled }}
-                      >
-                        <Text
-                          style={[
-                            styles.useCaseLabel,
-                            selected && styles.useCaseLabelActive,
-                            disabled && !selected && styles.useCaseLabelDisabled,
-                          ]}
-                        >
-                          {USE_CASE_LABEL[tag] ?? tag}
-                        </Text>
-                      </Pressable>
+                      <View style={styles.useCaseRow} testID="write-use-case-row">
+                        {vocabulary.map((tag) => {
+                          const selected = state.useCases.includes(tag);
+                          const disabled = isSubmitting || (atCap && !selected);
+                          return (
+                            <Pressable
+                              key={tag}
+                              onPress={() => !disabled && toggleUseCaseTag(tag, vocabulary)}
+                              disabled={disabled}
+                              style={({ pressed }) => [
+                                styles.useCaseBtn,
+                                selected && styles.useCaseBtnActive,
+                                disabled && !selected && styles.useCaseBtnDisabled,
+                                pressed && !disabled && styles.useCaseBtnPressed,
+                              ]}
+                              testID={`write-use-case-${tag}`}
+                              accessibilityRole="button"
+                              accessibilityLabel={USE_CASE_LABEL[tag] ?? tag}
+                              accessibilityState={{ selected, disabled }}
+                            >
+                              <Text
+                                style={[
+                                  styles.useCaseLabel,
+                                  selected && styles.useCaseLabelActive,
+                                  disabled && !selected && styles.useCaseLabelDisabled,
+                                ]}
+                              >
+                                {USE_CASE_LABEL[tag] ?? tag}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
                     );
-                  })}
+                  })()}
                 </View>
-              );
-            })()}
-          </View>
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>
-              {prefilledFields.has('last_used_bucket') ? '✨ ' : ''}Last used
-            </Text>
-            <Text style={styles.kindHint}>
-              {prefilledFields.has('last_used_bucket')
-                ? `Dina inferred this from when you last mentioned it. Tap a different bucket to change.`
-                : `When did you last interact with this? Optional. It helps readers judge how fresh your review still is.`}
-            </Text>
-            {/* Vertical row list — single-select with checkmark.
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>
+                    {prefilledFields.has('last_used_bucket') ? '✨ ' : ''}Last used
+                  </Text>
+                  <Text style={styles.kindHint}>
+                    {prefilledFields.has('last_used_bucket')
+                      ? `Dina inferred this from when you last mentioned it. Tap a different bucket to change.`
+                      : `When did you last interact with this? Optional. It helps readers judge how fresh your review still is.`}
+                  </Text>
+                  {/* Vertical row list — single-select with checkmark.
                 Replaces the chip pill row. Single-select fields read
                 more clearly as a stacked list of options than as a
                 wrapping pill grid (the user explicitly noted the chip
                 wrap looked cramped); this also visually distinguishes
                 single-select fields from the multi-select chip rows
                 elsewhere on the form. */}
-            <View style={styles.rowList} testID="write-last-used-rowlist">
-              {LAST_USED_BUCKETS.map((bucket, idx) => {
-                const isSelected = state.lastUsedBucket === bucket;
-                const isLast = idx === LAST_USED_BUCKETS.length - 1;
-                return (
-                  <Pressable
-                    key={bucket}
-                    onPress={() => !isSubmitting && updateLastUsedBucket(bucket)}
-                    disabled={isSubmitting}
-                    style={({ pressed }) => [
-                      styles.rowListRow,
-                      !isLast && styles.rowListRowDivider,
-                      pressed && !isSubmitting && styles.rowListRowPressed,
-                    ]}
-                    testID={`write-last-used-${bucket}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={LAST_USED_BUCKET_LABEL[bucket]}
-                    accessibilityState={{
-                      selected: isSelected,
-                      disabled: isSubmitting,
-                    }}
-                  >
-                    <Text style={styles.rowListLabel}>
-                      {LAST_USED_BUCKET_LABEL[bucket]}
-                    </Text>
-                    {isSelected && (
-                      <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color={colors.accent}
-                      />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-          {/* TN-V2-REV-008 — alternatives picker. The reviewer can
+                  <View style={styles.rowList} testID="write-last-used-rowlist">
+                    {LAST_USED_BUCKETS.map((bucket, idx) => {
+                      const isSelected = state.lastUsedBucket === bucket;
+                      const isLast = idx === LAST_USED_BUCKETS.length - 1;
+                      return (
+                        <Pressable
+                          key={bucket}
+                          onPress={() => !isSubmitting && updateLastUsedBucket(bucket)}
+                          disabled={isSubmitting}
+                          style={({ pressed }) => [
+                            styles.rowListRow,
+                            !isLast && styles.rowListRowDivider,
+                            pressed && !isSubmitting && styles.rowListRowPressed,
+                          ]}
+                          testID={`write-last-used-${bucket}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={LAST_USED_BUCKET_LABEL[bucket]}
+                          accessibilityState={{
+                            selected: isSelected,
+                            disabled: isSubmitting,
+                          }}
+                        >
+                          <Text style={styles.rowListLabel}>{LAST_USED_BUCKET_LABEL[bucket]}</Text>
+                          {isSelected && (
+                            <Ionicons name="checkmark" size={18} color={colors.accent} />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+                {/* TN-V2-REV-008 — alternatives picker. The reviewer can
               add up to MAX_REVIEW_ALTERNATIVES = 5 "I also tried"
               entries via search. Renders three layers:
                 1. Currently-added chips (each with a remove X).
@@ -1647,430 +1527,423 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
                 3. Search results (compact rows; tap to add).
               When the search prop is omitted (e.g. tests not wiring
               a search runner) the input + results stay silent. */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Other things you tried</Text>
-            <Text style={styles.kindHint}>
-              Optional. Add up to {MAX_REVIEW_ALTERNATIVES} subjects you
-              also considered. Helps readers compare.
-            </Text>
-            {state.alternatives.length > 0 && (
-              <View style={styles.altChipRow} testID="write-alt-chips">
-                {state.alternatives.map((alt, idx) => (
-                  <View
-                    key={`${alt.kind}:${alt.subjectId ?? alt.name}`}
-                    style={styles.altChip}
-                    testID={`write-alt-chip-${idx}`}
-                  >
-                    <Text style={styles.altChipLabel} numberOfLines={1}>
-                      {alt.name}
-                    </Text>
-                    <Pressable
-                      onPress={() => !isSubmitting && removeAlternativeAt(idx)}
-                      disabled={isSubmitting}
-                      style={styles.altChipRemove}
-                      testID={`write-alt-remove-${idx}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Remove ${alt.name}`}
-                    >
-                      <Ionicons name="close" size={14} color={colors.textMuted} />
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-            )}
-            {state.alternatives.length < MAX_REVIEW_ALTERNATIVES && (
-              <View style={styles.altSearchBlock}>
-                <TextInput
-                  style={styles.altSearchInput}
-                  placeholder="Search…"
-                  placeholderTextColor={colors.textMuted}
-                  value={altQuery}
-                  onChangeText={(text) => {
-                    setAltQuery(text);
-                    void performAltSearch(text);
-                  }}
-                  editable={!isSubmitting}
-                  testID="write-alt-search-input"
-                  accessibilityLabel="Search for alternatives"
-                />
-                {altSearching && (
-                  <View style={styles.altSearchHint} testID="write-alt-search-loading">
-                    <ActivityIndicator size="small" color={colors.textMuted} />
-                    <Text style={styles.altSearchHintText}>Searching…</Text>
-                  </View>
-                )}
-                {altSearchError !== null && (
-                  <Text style={styles.altSearchError} testID="write-alt-search-error">
-                    {altSearchError}
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Other things you tried</Text>
+                  <Text style={styles.kindHint}>
+                    Optional. Add up to {MAX_REVIEW_ALTERNATIVES} subjects you also considered.
+                    Helps readers compare.
                   </Text>
-                )}
-                {altResults.length > 0 && (
-                  <View style={styles.altResultsList} testID="write-alt-results">
-                    {altResults.map((alt) => {
-                      // Disable rows already in the alternatives list
-                      // (avoids duplicate-add taps that would no-op).
-                      const alreadyAdded = state.alternatives.some((a) =>
-                        a.subjectId !== undefined && alt.subjectId !== undefined
-                          ? a.subjectId === alt.subjectId
-                          : a.kind === alt.kind &&
-                            a.name.trim().toLowerCase() === alt.name.trim().toLowerCase(),
-                      );
-                      const rowKey = `${alt.kind}:${alt.subjectId ?? alt.name}`;
-                      return (
-                        <Pressable
-                          key={rowKey}
-                          onPress={() => {
-                            if (isSubmitting || alreadyAdded) return;
-                            addAlternative(alt);
-                            setAltQuery('');
-                            setAltResults([]);
-                          }}
-                          disabled={isSubmitting || alreadyAdded}
-                          style={({ pressed }) => [
-                            styles.altResultRow,
-                            alreadyAdded && styles.altResultRowDisabled,
-                            pressed && !alreadyAdded && styles.altResultRowPressed,
-                          ]}
-                          testID={`write-alt-result-${alt.subjectId ?? alt.name}`}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Add ${alt.name}`}
-                          accessibilityState={{ disabled: alreadyAdded }}
+                  {state.alternatives.length > 0 && (
+                    <View style={styles.altChipRow} testID="write-alt-chips">
+                      {state.alternatives.map((alt, idx) => (
+                        <View
+                          key={`${alt.kind}:${alt.subjectId ?? alt.name}`}
+                          style={styles.altChip}
+                          testID={`write-alt-chip-${idx}`}
                         >
-                          <Text style={styles.altResultName} numberOfLines={1}>
+                          <Text style={styles.altChipLabel} numberOfLines={1}>
                             {alt.name}
                           </Text>
-                          {alreadyAdded && (
-                            <Text style={styles.altResultMeta}>Added</Text>
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-            )}
-            {state.alternatives.length >= MAX_REVIEW_ALTERNATIVES && (
-              <Text style={styles.altCapHint} testID="write-alt-cap-hint">
-                Up to {MAX_REVIEW_ALTERNATIVES}. Remove one to add another.
-              </Text>
-            )}
-          </View>
+                          <Pressable
+                            onPress={() => !isSubmitting && removeAlternativeAt(idx)}
+                            disabled={isSubmitting}
+                            style={styles.altChipRemove}
+                            testID={`write-alt-remove-${idx}`}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Remove ${alt.name}`}
+                          >
+                            <Ionicons name="close" size={14} color={colors.textMuted} />
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  {state.alternatives.length < MAX_REVIEW_ALTERNATIVES && (
+                    <View style={styles.altSearchBlock}>
+                      <TextInput
+                        style={styles.altSearchInput}
+                        placeholder="Search…"
+                        placeholderTextColor={colors.textMuted}
+                        value={altQuery}
+                        onChangeText={(text) => {
+                          setAltQuery(text);
+                          void performAltSearch(text);
+                        }}
+                        editable={!isSubmitting}
+                        testID="write-alt-search-input"
+                        accessibilityLabel="Search for alternatives"
+                      />
+                      {altSearching && (
+                        <View style={styles.altSearchHint} testID="write-alt-search-loading">
+                          <ActivityIndicator size="small" color={colors.textMuted} />
+                          <Text style={styles.altSearchHintText}>Searching…</Text>
+                        </View>
+                      )}
+                      {altSearchError !== null && (
+                        <Text style={styles.altSearchError} testID="write-alt-search-error">
+                          {altSearchError}
+                        </Text>
+                      )}
+                      {altResults.length > 0 && (
+                        <View style={styles.altResultsList} testID="write-alt-results">
+                          {altResults.map((alt) => {
+                            // Disable rows already in the alternatives list
+                            // (avoids duplicate-add taps that would no-op).
+                            const alreadyAdded = state.alternatives.some((a) =>
+                              a.subjectId !== undefined && alt.subjectId !== undefined
+                                ? a.subjectId === alt.subjectId
+                                : a.kind === alt.kind &&
+                                  a.name.trim().toLowerCase() === alt.name.trim().toLowerCase(),
+                            );
+                            const rowKey = `${alt.kind}:${alt.subjectId ?? alt.name}`;
+                            return (
+                              <Pressable
+                                key={rowKey}
+                                onPress={() => {
+                                  if (isSubmitting || alreadyAdded) return;
+                                  addAlternative(alt);
+                                  setAltQuery('');
+                                  setAltResults([]);
+                                }}
+                                disabled={isSubmitting || alreadyAdded}
+                                style={({ pressed }) => [
+                                  styles.altResultRow,
+                                  alreadyAdded && styles.altResultRowDisabled,
+                                  pressed && !alreadyAdded && styles.altResultRowPressed,
+                                ]}
+                                testID={`write-alt-result-${alt.subjectId ?? alt.name}`}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Add ${alt.name}`}
+                                accessibilityState={{ disabled: alreadyAdded }}
+                              >
+                                <Text style={styles.altResultName} numberOfLines={1}>
+                                  {alt.name}
+                                </Text>
+                                {alreadyAdded && <Text style={styles.altResultMeta}>Added</Text>}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  {state.alternatives.length >= MAX_REVIEW_ALTERNATIVES && (
+                    <Text style={styles.altCapHint} testID="write-alt-cap-hint">
+                      Up to {MAX_REVIEW_ALTERNATIVES}. Remove one to add another.
+                    </Text>
+                  )}
+                </View>
 
-          {/* TN-V2-REV-002 — reviewer experience tier. Three-option
+                {/* TN-V2-REV-002 — reviewer experience tier. Three-option
               segmented control (single-select, tap-active-to-clear).
               Replaces the previous chip row: with a small fixed
               option count, a segmented control reads as a single
               decision rather than a pill grid. */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>How experienced are you with this?</Text>
-            <Text style={styles.kindHint}>
-              Optional. Readers can prefer reviews from your tier when
-              filtering.
-            </Text>
-            <View style={styles.segmentedControl} testID="write-experience-row">
-              {REVIEWER_EXPERIENCE_OPTIONS.map((level, idx) => {
-                const selected = state.reviewerExperience === level;
-                const isFirst = idx === 0;
-                const isLast = idx === REVIEWER_EXPERIENCE_OPTIONS.length - 1;
-                return (
-                  <Pressable
-                    key={level}
-                    onPress={() => !isSubmitting && updateReviewerExperience(level)}
-                    disabled={isSubmitting}
-                    style={({ pressed }) => [
-                      styles.segmentedSegment,
-                      isFirst && styles.segmentedSegmentFirst,
-                      isLast && styles.segmentedSegmentLast,
-                      selected && styles.segmentedSegmentActive,
-                      pressed && !isSubmitting && !selected && styles.segmentedSegmentPressed,
-                    ]}
-                    testID={`write-experience-${level}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={REVIEWER_EXPERIENCE_LABEL[level]}
-                    accessibilityHint={REVIEWER_EXPERIENCE_HINT[level]}
-                    accessibilityState={{ selected, disabled: isSubmitting }}
-                  >
-                    <Text
-                      style={[
-                        styles.segmentedLabel,
-                        selected && styles.segmentedLabelActive,
-                      ]}
-                    >
-                      {REVIEWER_EXPERIENCE_LABEL[level]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>How experienced are you with this?</Text>
+                  <Text style={styles.kindHint}>
+                    Optional. Readers can prefer reviews from your tier when filtering.
+                  </Text>
+                  <View style={styles.segmentedControl} testID="write-experience-row">
+                    {REVIEWER_EXPERIENCE_OPTIONS.map((level, idx) => {
+                      const selected = state.reviewerExperience === level;
+                      const isFirst = idx === 0;
+                      const isLast = idx === REVIEWER_EXPERIENCE_OPTIONS.length - 1;
+                      return (
+                        <Pressable
+                          key={level}
+                          onPress={() => !isSubmitting && updateReviewerExperience(level)}
+                          disabled={isSubmitting}
+                          style={({ pressed }) => [
+                            styles.segmentedSegment,
+                            isFirst && styles.segmentedSegmentFirst,
+                            isLast && styles.segmentedSegmentLast,
+                            selected && styles.segmentedSegmentActive,
+                            pressed && !isSubmitting && !selected && styles.segmentedSegmentPressed,
+                          ]}
+                          testID={`write-experience-${level}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={REVIEWER_EXPERIENCE_LABEL[level]}
+                          accessibilityHint={REVIEWER_EXPERIENCE_HINT[level]}
+                          accessibilityState={{ selected, disabled: isSubmitting }}
+                        >
+                          <Text
+                            style={[styles.segmentedLabel, selected && styles.segmentedLabelActive]}
+                          >
+                            {REVIEWER_EXPERIENCE_LABEL[level]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
 
-          {/* TN-V2-META-002 — price. Three text inputs: low, optional
+                {/* TN-V2-META-002 — price. Three text inputs: low, optional
               high (range), and currency. When low is empty the entire
               price block is unset → wire record omits `price`. When
               low is set + high is empty, point price (low_e7 ==
               high_e7). When both set, range. */}
-          <View style={styles.field}>
-            <Text style={styles.fieldLabel}>Price</Text>
-            <Text style={styles.kindHint}>
-              Optional. What you paid (or saw advertised). Helps power
-              price-range filtering.
-            </Text>
-            <View style={styles.priceRow}>
-              <TextInput
-                style={styles.priceInput}
-                placeholder="29.99"
-                placeholderTextColor={colors.textMuted}
-                value={state.priceLow}
-                onChangeText={updatePriceLow}
-                editable={!isSubmitting}
-                keyboardType="decimal-pad"
-                testID="write-price-low"
-                accessibilityLabel="Lower price"
-              />
-              <Text style={styles.priceSeparator}>to</Text>
-              <TextInput
-                style={styles.priceInput}
-                placeholder="(optional)"
-                placeholderTextColor={colors.textMuted}
-                value={state.priceHigh}
-                onChangeText={updatePriceHigh}
-                editable={!isSubmitting}
-                keyboardType="decimal-pad"
-                testID="write-price-high"
-                accessibilityLabel="Upper price (optional)"
-              />
-              <TextInput
-                style={styles.priceCurrencyInput}
-                placeholder="USD"
-                placeholderTextColor={colors.textMuted}
-                value={state.priceCurrency}
-                onChangeText={updatePriceCurrency}
-                editable={!isSubmitting}
-                autoCapitalize="characters"
-                maxLength={3}
-                testID="write-price-currency"
-                accessibilityLabel="Currency code"
-              />
-            </View>
-            {showErrors &&
-              fieldError(validation.errors, [
-                'price_low_invalid',
-                'price_high_invalid',
-                'price_high_below_low',
-                'price_currency_invalid',
-              ])}
-          </View>
-        </View>
-      )}
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Price</Text>
+                  <Text style={styles.kindHint}>
+                    Optional. What you paid (or saw advertised). Helps power price-range filtering.
+                  </Text>
+                  <View style={styles.priceRow}>
+                    <TextInput
+                      style={styles.priceInput}
+                      placeholder="29.99"
+                      placeholderTextColor={colors.textMuted}
+                      value={state.priceLow}
+                      onChangeText={updatePriceLow}
+                      editable={!isSubmitting}
+                      keyboardType="decimal-pad"
+                      testID="write-price-low"
+                      accessibilityLabel="Lower price"
+                    />
+                    <Text style={styles.priceSeparator}>to</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      placeholder="(optional)"
+                      placeholderTextColor={colors.textMuted}
+                      value={state.priceHigh}
+                      onChangeText={updatePriceHigh}
+                      editable={!isSubmitting}
+                      keyboardType="decimal-pad"
+                      testID="write-price-high"
+                      accessibilityLabel="Upper price (optional)"
+                    />
+                    <TextInput
+                      style={styles.priceCurrencyInput}
+                      placeholder="USD"
+                      placeholderTextColor={colors.textMuted}
+                      value={state.priceCurrency}
+                      onChangeText={updatePriceCurrency}
+                      editable={!isSubmitting}
+                      autoCapitalize="characters"
+                      maxLength={3}
+                      testID="write-price-currency"
+                      accessibilityLabel="Currency code"
+                    />
+                  </View>
+                  {showErrors &&
+                    fieldError(validation.errors, [
+                      'price_low_invalid',
+                      'price_high_invalid',
+                      'price_high_below_low',
+                      'price_currency_invalid',
+                    ])}
+                </View>
+              </View>
+            )}
 
-      {/* ─── STEP 3: Recommendations ─────────────────────────────────
+            {/* ─── STEP 3: Recommendations ─────────────────────────────────
           What you'd recommend / warn about, plus observable subject
           facts (compliance, accessibility, compat). Optional. */}
-      {step === 3 && (
-        <View testID="write-step-3">
-          {/* TN-V2-REV-004 — recommendFor / notRecommendFor. Same
+            {step === 3 && (
+              <View testID="write-step-3">
+                {/* TN-V2-REV-004 — recommendFor / notRecommendFor. Same
               vocabulary as useCases (per-category). Two parallel
               chip grids; cap 5 each. Front-loaded in Step 3 because
               "would you recommend it?" is the strongest summary
               signal a reader can pull from the review. */}
-          {(() => {
-            const vocabularyCategory =
-              state.subject != null ? categoryFor(state.subject.kind) : null;
-            const vocabulary = useCasesForCategory(vocabularyCategory);
-            return (
-              <>
-                {renderTagGrid({
-                  label: 'Recommend for',
-                  hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
-                  vocabulary,
-                  labelMap: USE_CASE_LABEL,
-                  selected: state.recommendFor,
-                  cap: MAX_RECOMMEND_FOR,
-                  disabled: isSubmitting,
-                  onToggle: (tag) => toggleRecommendForTag(tag, vocabulary),
-                  testIDPrefix: 'write-recommend-for',
-                })}
-                {renderTagGrid({
-                  label: 'Not recommended for',
-                  hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
-                  vocabulary,
-                  labelMap: USE_CASE_LABEL,
-                  selected: state.notRecommendFor,
-                  cap: MAX_RECOMMEND_FOR,
-                  disabled: isSubmitting,
-                  onToggle: (tag) => toggleNotRecommendForTag(tag, vocabulary),
-                  testIDPrefix: 'write-not-recommend-for',
-                })}
-              </>
-            );
-          })()}
+                {(() => {
+                  const vocabularyCategory =
+                    state.subject != null ? categoryFor(state.subject.kind) : null;
+                  const vocabulary = useCasesForCategory(vocabularyCategory);
+                  return (
+                    <>
+                      {renderTagGrid({
+                        label: 'Recommend for',
+                        hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you endorse.`,
+                        vocabulary,
+                        labelMap: USE_CASE_LABEL,
+                        selected: state.recommendFor,
+                        cap: MAX_RECOMMEND_FOR,
+                        disabled: isSubmitting,
+                        onToggle: (tag) => toggleRecommendForTag(tag, vocabulary),
+                        testIDPrefix: 'write-recommend-for',
+                      })}
+                      {renderTagGrid({
+                        label: 'Not recommended for',
+                        hint: `Optional. Up to ${MAX_RECOMMEND_FOR} use-cases you'd warn against.`,
+                        vocabulary,
+                        labelMap: USE_CASE_LABEL,
+                        selected: state.notRecommendFor,
+                        cap: MAX_RECOMMEND_FOR,
+                        disabled: isSubmitting,
+                        onToggle: (tag) => toggleNotRecommendForTag(tag, vocabulary),
+                        testIDPrefix: 'write-not-recommend-for',
+                      })}
+                    </>
+                  );
+                })()}
 
-          {/* TN-V2-META-005 — compliance. Closed-vocab chip grid.
+                {/* TN-V2-META-005 — compliance. Closed-vocab chip grid.
               Same UX shape as REV-006 useCases (per-cap grey-out for
               over-cap unselected entries). */}
-          {renderTagGrid({
-            label: 'Compliance',
-            hint: `Optional. Pick up to ${MAX_COMPLIANCE} that apply (halal, vegan, gluten-free, …).`,
-            vocabulary: COMPLIANCE_VOCABULARY,
-            labelMap: COMPLIANCE_LABEL,
-            selected: state.compliance,
-            cap: MAX_COMPLIANCE,
-            disabled: isSubmitting,
-            onToggle: toggleComplianceTag,
-            testIDPrefix: 'write-compliance',
-          })}
+                {renderTagGrid({
+                  label: 'Compliance',
+                  hint: `Optional. Pick up to ${MAX_COMPLIANCE} that apply (halal, vegan, gluten-free, …).`,
+                  vocabulary: COMPLIANCE_VOCABULARY,
+                  labelMap: COMPLIANCE_LABEL,
+                  selected: state.compliance,
+                  cap: MAX_COMPLIANCE,
+                  disabled: isSubmitting,
+                  onToggle: toggleComplianceTag,
+                  testIDPrefix: 'write-compliance',
+                })}
 
-          {/* TN-V2-META-006 — accessibility. */}
-          {renderTagGrid({
-            label: 'Accessibility',
-            hint: `Optional. Pick up to ${MAX_ACCESSIBILITY} (wheelchair, captions, screen-reader, …).`,
-            vocabulary: ACCESSIBILITY_VOCABULARY,
-            labelMap: ACCESSIBILITY_LABEL,
-            selected: state.accessibility,
-            cap: MAX_ACCESSIBILITY,
-            disabled: isSubmitting,
-            onToggle: toggleAccessibilityTag,
-            testIDPrefix: 'write-accessibility',
-          })}
+                {/* TN-V2-META-006 — accessibility. */}
+                {renderTagGrid({
+                  label: 'Accessibility',
+                  hint: `Optional. Pick up to ${MAX_ACCESSIBILITY} (wheelchair, captions, screen-reader, …).`,
+                  vocabulary: ACCESSIBILITY_VOCABULARY,
+                  labelMap: ACCESSIBILITY_LABEL,
+                  selected: state.accessibility,
+                  cap: MAX_ACCESSIBILITY,
+                  disabled: isSubmitting,
+                  onToggle: toggleAccessibilityTag,
+                  testIDPrefix: 'write-accessibility',
+                })}
 
-          {/* TN-V2-META-003 — compatibility. Cap 15 (devices stack
+                {/* TN-V2-META-003 — compatibility. Cap 15 (devices stack
               compat surfaces). */}
-          {renderTagGrid({
-            label: 'Compatibility',
-            hint: `Optional. Pick up to ${MAX_COMPAT} (iOS, USB-C, Bluetooth 5, …).`,
-            vocabulary: COMPAT_VOCABULARY,
-            labelMap: COMPAT_LABEL,
-            selected: state.compat,
-            cap: MAX_COMPAT,
-            disabled: isSubmitting,
-            onToggle: toggleCompatTag,
-            testIDPrefix: 'write-compat',
-          })}
+                {renderTagGrid({
+                  label: 'Compatibility',
+                  hint: `Optional. Pick up to ${MAX_COMPAT} (iOS, USB-C, Bluetooth 5, …).`,
+                  vocabulary: COMPAT_VOCABULARY,
+                  labelMap: COMPAT_LABEL,
+                  selected: state.compat,
+                  cap: MAX_COMPAT,
+                  disabled: isSubmitting,
+                  onToggle: toggleCompatTag,
+                  testIDPrefix: 'write-compat',
+                })}
 
-          {/* Availability (regions / shipsTo / soldAt) and schedule
+                {/* Availability (regions / shipsTo / soldAt) and schedule
               (leadDays / seasonal) used to live here. They're
               subject-owner facts, not opinion — they belong on a
               future "Add subject" surface. */}
-        </View>
-      )}
+              </View>
+            )}
 
-          {/* Modal action row — Back / Next / Done. Mirrors the
+            {/* Modal action row — Back / Next / Done. Mirrors the
               wizard's internal-step cadence: Step 2 has Next (to
               Step 3), Step 3 has only Done. Back appears on Step 3.
               Publish stays on the main form (behind the modal); the
               user closes the wizard with Done and publishes from
               the verdict screen. */}
-          <View style={styles.actionRow}>
-            {step === 3 && (
+            <View style={styles.actionRow}>
+              {step === 3 && (
+                <Pressable
+                  onPress={goBack}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.cancelBtn,
+                    pressed && !isSubmitting && styles.cancelBtnPressed,
+                  ]}
+                  testID="write-back"
+                  accessibilityRole="button"
+                  accessibilityLabel="Back"
+                  accessibilityState={{ disabled: isSubmitting }}
+                >
+                  <Ionicons name="chevron-back" size={14} color={colors.textPrimary} />
+                  <Text style={styles.cancelLabel}>Back</Text>
+                </Pressable>
+              )}
+              {step === 2 ? (
+                <Pressable
+                  onPress={goNext}
+                  disabled={isSubmitting}
+                  style={({ pressed }) => [
+                    styles.nextBtn,
+                    isSubmitting && styles.publishBtnDisabled,
+                    pressed && !isSubmitting && styles.nextBtnPressed,
+                  ]}
+                  testID="write-next"
+                  accessibilityRole="button"
+                  accessibilityLabel="Next"
+                  accessibilityState={{ disabled: isSubmitting }}
+                >
+                  <Text style={styles.nextLabel}>Next</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textPrimary} />
+                </Pressable>
+              ) : null}
               <Pressable
-                onPress={goBack}
+                onPress={() => setStep(1)}
                 disabled={isSubmitting}
                 style={({ pressed }) => [
-                  styles.cancelBtn,
-                  pressed && !isSubmitting && styles.cancelBtnPressed,
+                  styles.modalDoneBtn,
+                  pressed && !isSubmitting && styles.modalDoneBtnPressed,
                 ]}
-                testID="write-back"
+                testID="write-additional-data-done"
                 accessibilityRole="button"
-                accessibilityLabel="Back"
+                accessibilityLabel="Done"
                 accessibilityState={{ disabled: isSubmitting }}
               >
-                <Ionicons name="chevron-back" size={14} color={colors.textPrimary} />
-                <Text style={styles.cancelLabel}>Back</Text>
+                <Text style={styles.modalDoneLabel}>Done</Text>
               </Pressable>
-            )}
-            {step === 2 ? (
-              <Pressable
-                onPress={goNext}
-                disabled={isSubmitting}
-                style={({ pressed }) => [
-                  styles.nextBtn,
-                  isSubmitting && styles.publishBtnDisabled,
-                  pressed && !isSubmitting && styles.nextBtnPressed,
-                ]}
-                testID="write-next"
-                accessibilityRole="button"
-                accessibilityLabel="Next"
-                accessibilityState={{ disabled: isSubmitting }}
-              >
-                <Text style={styles.nextLabel}>Next</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.textPrimary} />
-              </Pressable>
-            ) : null}
-            <Pressable
-              onPress={() => setStep(1)}
-              disabled={isSubmitting}
-              style={({ pressed }) => [
-                styles.modalDoneBtn,
-                pressed && !isSubmitting && styles.modalDoneBtnPressed,
-              ]}
-              testID="write-additional-data-done"
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-              accessibilityState={{ disabled: isSubmitting }}
-            >
-              <Text style={styles.modalDoneLabel}>Done</Text>
-            </Pressable>
+            </View>
+          </KeyboardAwareScrollView>
+        </Modal>
+
+        {/* ─── Submit error ────────────────────────────────────────── */}
+        {submitError !== null && (
+          <View style={styles.submitErrorPanel} testID="write-submit-error">
+            <Ionicons name="alert-circle" size={16} color={colors.error} />
+            <Text style={styles.submitErrorText}>{submitError}</Text>
           </View>
-        </KeyboardAwareScrollView>
-      </Modal>
+        )}
 
-      {/* ─── Submit error ────────────────────────────────────────── */}
-      {submitError !== null && (
-        <View style={styles.submitErrorPanel} testID="write-submit-error">
-          <Ionicons name="alert-circle" size={16} color={colors.error} />
-          <Text style={styles.submitErrorText}>{submitError}</Text>
-        </View>
-      )}
-
-      {/* ─── Main action row: Cancel | Publish ─────────────────────
+        {/* ─── Main action row: Cancel | Publish ─────────────────────
           The wizard for additional details lives behind the
           "Add additional data" pill above; it does NOT bubble
           Back/Next buttons up to the main row. Publish is always
           visible here so a user who only filled the verdict can
           ship without opening the wizard. */}
-      <View style={styles.actionRow}>
-        {onCancel && (
-          <Pressable
-            onPress={onCancel}
-            disabled={isSubmitting}
-            style={({ pressed }) => [
-              styles.cancelBtn,
-              pressed && !isSubmitting && styles.cancelBtnPressed,
-            ]}
-            testID="write-cancel"
-            accessibilityRole="button"
-            accessibilityLabel="Cancel"
-            accessibilityState={{ disabled: isSubmitting }}
-          >
-            <Text style={styles.cancelLabel}>Cancel</Text>
-          </Pressable>
-        )}
-        <Pressable
-          onPress={handlePublish}
-          disabled={!validation.canPublish || isSubmitting}
-          style={({ pressed }) => [
-            styles.publishBtn,
-            (!validation.canPublish || isSubmitting) && styles.publishBtnDisabled,
-            pressed && validation.canPublish && !isSubmitting && styles.publishBtnPressed,
-          ]}
-          testID="write-publish"
-          accessibilityRole="button"
-          accessibilityLabel={editing ? 'Publish edit' : 'Publish'}
-          accessibilityState={{
-            disabled: !validation.canPublish || isSubmitting,
-            busy: isSubmitting,
-          }}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color={colors.bgSecondary} />
-          ) : (
-            <>
-              <Ionicons name="paper-plane" size={16} color={colors.bgSecondary} />
-              <Text style={styles.publishLabel}>{editing ? 'Publish edit' : 'Publish'}</Text>
-            </>
+        <View style={styles.actionRow}>
+          {onCancel && (
+            <Pressable
+              onPress={onCancel}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.cancelBtn,
+                pressed && !isSubmitting && styles.cancelBtnPressed,
+              ]}
+              testID="write-cancel"
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              accessibilityState={{ disabled: isSubmitting }}
+            >
+              <Text style={styles.cancelLabel}>Cancel</Text>
+            </Pressable>
           )}
-        </Pressable>
-      </View>
+          <Pressable
+            onPress={handlePublish}
+            disabled={!validation.canPublish || isSubmitting}
+            style={({ pressed }) => [
+              styles.publishBtn,
+              (!validation.canPublish || isSubmitting) && styles.publishBtnDisabled,
+              pressed && validation.canPublish && !isSubmitting && styles.publishBtnPressed,
+            ]}
+            testID="write-publish"
+            accessibilityRole="button"
+            accessibilityLabel={editing ? 'Publish edit' : 'Publish'}
+            accessibilityState={{
+              disabled: !validation.canPublish || isSubmitting,
+              busy: isSubmitting,
+            }}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={colors.bgSecondary} />
+            ) : (
+              <>
+                <Ionicons name="paper-plane" size={16} color={colors.bgSecondary} />
+                <Text style={styles.publishLabel}>{editing ? 'Publish edit' : 'Publish'}</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </KeyboardAwareScrollView>
     </>
   );

@@ -8,7 +8,12 @@
 import { PDSPublisherError } from '@dina/brain';
 import { InMemoryReviewPublishRepository, MAX_PUBLISH_QUEUE } from '@dina/core';
 
-import { submitReviewPublish, type SubmitReviewInput } from '../../src/peerlens/submit_review_publish';
+import { buildAttestationRecord } from '../../src/peerlens/publish_helpers';
+import {
+  submitReviewPublish,
+  type SubmitReviewInput,
+} from '../../src/peerlens/submit_review_publish';
+import { emptyWriteFormStateWithSubject } from '../../src/peerlens/write_form_data';
 
 import type { AttestationDraftBody } from '../../src/peerlens/review_draft_body';
 import type { PDSPublisher } from '@dina/brain';
@@ -22,13 +27,27 @@ const DRAFT: AttestationDraftBody = {
   confidence: 'high',
   subjectTitle: 'Chair',
 };
+const FORM = {
+  ...emptyWriteFormStateWithSubject('product'),
+  sentiment: 'positive' as const,
+  headline: 'Solid',
+  body: 'Good support.',
+  confidence: 'high' as const,
+  subject: {
+    kind: 'product' as const,
+    name: 'Chair',
+    did: '',
+    uri: '',
+    identifier: '',
+  },
+};
 
 function baseInput(over: Partial<SubmitReviewInput> = {}): SubmitReviewInput {
   return {
     did: DID,
     publisher: PUBLISHER,
     rkey: 'mob-1',
-    record: { subject: { name: 'Chair' }, text: 'short review' },
+    record: buildAttestationRecord(FORM),
     draft: DRAFT,
     repo: new InMemoryReviewPublishRepository(),
     nowMs: 1_000,
@@ -50,9 +69,7 @@ describe('submitReviewPublish — gates (nothing persisted)', () => {
 
   it('over-long text → lexicon error, no job', async () => {
     const repo = new InMemoryReviewPublishRepository();
-    const out = await submitReviewPublish(
-      baseInput({ repo, record: { text: 'x'.repeat(2_001) } }),
-    );
+    const out = await submitReviewPublish(baseInput({ repo, record: { text: 'x'.repeat(2_001) } }));
     expect(out.kind).toBe('error');
     if (out.kind === 'error') expect(out.code).toBe('lexicon_invalid');
     expect(repo.countActive(DID)).toBe(0);
@@ -80,7 +97,13 @@ describe('submitReviewPublish — gates (nothing persisted)', () => {
     // j1 is queued; this boot has no publisher → surface the hard setup state,
     // not a `queued` for a job the worker can never drain.
     const out = await submitReviewPublish(
-      baseInput({ repo, publisher: undefined, threadId: 't1', draftId: 'd1', newJobId: () => 'j2' }),
+      baseInput({
+        repo,
+        publisher: undefined,
+        threadId: 't1',
+        draftId: 'd1',
+        newJobId: () => 'j2',
+      }),
     );
     expect(out.kind).toBe('no_credentials');
     expect(repo.getById('j2')).toBeNull();
@@ -160,7 +183,9 @@ describe('submitReviewPublish — inline fast-path', () => {
 
   it('success with only ONE back-reference half → retained as a published receipt', async () => {
     const repo = new InMemoryReviewPublishRepository();
-    const out = await submitReviewPublish(baseInput({ repo, threadId: 't1', newJobId: () => 'jhalf' })); // no draftId
+    const out = await submitReviewPublish(
+      baseInput({ repo, threadId: 't1', newJobId: () => 'jhalf' }),
+    ); // no draftId
     expect(out.kind).toBe('published');
     // No longer pruned: the chat card can't project a half-reference row, but the
     // reviewer dashboard projects all published receipts by owner+URI, so it's
@@ -304,7 +329,9 @@ describe('submitReviewPublish — inline fast-path', () => {
   it('an EDIT of a FULL-FORM review (same rkey) prunes the stale receipt + republishes', async () => {
     const repo = new InMemoryReviewPublishRepository();
     // Original full-form publish (no thread/draft), rkey 'mob-2' → retained receipt.
-    const first = await submitReviewPublish(baseInput({ repo, rkey: 'mob-2', newJobId: () => 'orig' }));
+    const first = await submitReviewPublish(
+      baseInput({ repo, rkey: 'mob-2', newJobId: () => 'orig' }),
+    );
     expect(first.kind).toBe('published');
     expect(repo.getById('orig')?.status).toBe('published');
     // Edit: same rkey, no thread/draft → supersedes the stale FULL-FORM receipt
@@ -353,7 +380,9 @@ describe('submitReviewPublish — inline fast-path', () => {
 
   it('a re-submit after publish returns the existing receipt (idempotent, no republish)', async () => {
     const repo = new InMemoryReviewPublishRepository();
-    await submitReviewPublish(baseInput({ repo, threadId: 't1', draftId: 'd1', newJobId: () => 'job-1' }));
+    await submitReviewPublish(
+      baseInput({ repo, threadId: 't1', draftId: 'd1', newJobId: () => 'job-1' }),
+    );
     const second = await submitReviewPublish(
       baseInput({ repo, threadId: 't1', draftId: 'd1', newJobId: () => 'job-2' }),
     );

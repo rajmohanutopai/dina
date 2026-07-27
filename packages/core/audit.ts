@@ -4,6 +4,7 @@ export {
   auditCount,
   buildAuditDetail,
   getRetentionDays,
+  hydrateAuditState,
   latestEntry,
   parseAuditDetail,
   queryAudit,

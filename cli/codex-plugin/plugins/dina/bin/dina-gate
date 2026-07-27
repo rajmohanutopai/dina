@@ -9,37 +9,51 @@ block() {
   exit 2
 }
 
+trusted_python() {
+  if [ "${DINA_PLUGIN_DEV_MODE:-0}" = "1" ] &&
+    [ -x "${DINA_BOOTSTRAP_PYTHON:-}" ]; then
+    printf '%s\n' "$DINA_BOOTSTRAP_PYTHON"
+    return 0
+  fi
+  for candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /usr/bin/python3 \
+    /home/linuxbrew/.linuxbrew/bin/python3; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 SCRIPT_DIR="${0%/*}"
 [ "$SCRIPT_DIR" != "$0" ] || SCRIPT_DIR="."
 PLUGIN_ROOT="${PLUGIN_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
 CLI="$PLUGIN_ROOT/bin/dina-cli"
 BOOTSTRAP_AUTHORIZER="$PLUGIN_ROOT/bin/dina-bootstrap-authorize"
+export DINA_AGENT_HOST="codex"
 
 [ -x "$CLI" ] || block "the bundled Dina CLI resolver is missing"
 [ -x "$BOOTSTRAP_AUTHORIZER" ] || block "the bootstrap authorizer is missing"
+BOOTSTRAP_PYTHON="$(trusted_python)" ||
+  block "a trusted Python 3 interpreter is unavailable"
 
 EVENT="$(cat)"
 printf '%s' "$EVENT" |
-  DINA_PLUGIN_ROOT="$PLUGIN_ROOT" "$BOOTSTRAP_AUTHORIZER"
+  DINA_PLUGIN_ROOT="$PLUGIN_ROOT" \
+    "$BOOTSTRAP_PYTHON" -I "$BOOTSTRAP_AUTHORIZER"
 bootstrap_rc=$?
 case "$bootstrap_rc" in
   0) exit 0 ;;
 esac
 
-if command -v timeout >/dev/null 2>&1; then
-  printf '%s' "$EVENT" | timeout 15 "$CLI" gate-hook --host codex
-  rc=$?
-elif command -v gtimeout >/dev/null 2>&1; then
-  printf '%s' "$EVENT" | gtimeout 15 "$CLI" gate-hook --host codex
-  rc=$?
-else
-  printf '%s' "$EVENT" | "$CLI" gate-hook --host codex
-  rc=$?
-fi
+printf '%s' "$EVENT" | "$CLI" gate-hook --host codex
+rc=$?
 
 case "$rc" in
   0) exit 0 ;;
   2) exit 2 ;;
-  124) block "timed out reaching Core" ;;
   *) block "the gate exited abnormally (code $rc)" ;;
 esac

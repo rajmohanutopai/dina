@@ -23,7 +23,6 @@ import {
 
 import type { SubjectRef as SubjectRefBody } from '@dina/protocol';
 
-
 /**
  * Map the form's per-kind subject inputs into the `SubjectRef` shape
  * AppView expects. Empty fields are dropped — AppView's subject
@@ -83,9 +82,9 @@ export function composeText(headline: string, body: string): string {
 
 /**
  * Build the full attestation record body from a publishable form
- * state. Caller supplies `formState.subject` (non-null — the form's
- * publish guard already enforces that) and the helper handles
- * subject-ref + category + text composition + V2 extras spread.
+ * state. The caller either supplies `formState.subject` or an already-resolved
+ * AppView subject. The helper handles subject-ref + category + text
+ * composition + V2 extras spread.
  *
  * Returns the `record` object the caller passes to `injectAttestation`
  * — it does NOT call `injectAttestation` itself so the caller can pick
@@ -93,16 +92,30 @@ export function composeText(headline: string, body: string): string {
  */
 export function buildAttestationRecord(
   formState: WriteFormState,
+  resolvedSubject?: {
+    readonly subject: SubjectRefBody;
+    readonly kind: SubjectKind;
+  },
 ): Record<string, unknown> {
-  const subject = formState.subject;
-  if (subject === null) {
-    throw new Error('buildAttestationRecord: formState.subject is null');
+  const formSubject = formState.subject;
+  let subjectRef: SubjectRefBody;
+  let subjectKind: SubjectKind;
+  if (resolvedSubject !== undefined) {
+    subjectRef = resolvedSubject.subject;
+    subjectKind = resolvedSubject.kind;
+  } else {
+    if (formSubject === null) {
+      throw new Error(
+        'buildAttestationRecord: formState.subject is null and no resolved subject was supplied',
+      );
+    }
+    subjectRef = subjectStateToRef(formSubject);
+    subjectKind = formSubject.kind;
   }
-  const subjectRef = subjectStateToRef(subject);
   const v2Extras = serializeFormToV2Extras(formState);
   return {
     subject: subjectRef,
-    category: categoryFor(subject.kind),
+    category: categoryFor(subjectKind),
     sentiment: formState.sentiment,
     confidence: formState.confidence,
     text: composeText(formState.headline, formState.body),

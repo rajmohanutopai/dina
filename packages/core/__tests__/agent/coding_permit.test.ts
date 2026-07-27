@@ -19,6 +19,7 @@ import {
   setCodingPermitAuthority,
   type CodingPermitClaim,
 } from '../../src/agent/coding_permit';
+import { setAuditRepository, type AuditRepository } from '../../src/audit/repository';
 import { resetAuditState } from '../../src/audit/service';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerCodingGateRoutes, type CodingGateFn } from '../../src/server/routes/coding_gate';
@@ -35,6 +36,17 @@ function recorder() {
     authority: { mintApproved: (c: CodingPermitClaim) => void claims.push(c) },
   };
 }
+
+const availableAuditRepository: AuditRepository = {
+  append: () => undefined,
+  latest: () => null,
+  query: () => [],
+  compact: () => 0,
+  count: () => 0,
+  allEntries: () => [],
+  highestSequence: () => 0,
+  retentionCheckpoint: () => null,
+};
 
 describe('parseCodingGateApprovalPayload', () => {
   const good = JSON.stringify({
@@ -138,7 +150,8 @@ describe('createCodingGateApproval + mintApprovedCodingPermit (unit)', () => {
     const rec = recorder();
     setCodingPermitAuthority(rec.authority);
     const a = createCodingGateApproval(params) as { taskId: string };
-    const task = repo.getById(a.taskId)!;
+    const task = repo.getById(a.taskId);
+    if (!task) throw new Error('approval task was not created');
     expect(mintApprovedCodingPermit(task)).toBe(true);
     expect(rec.claims).toHaveLength(1);
     expect(rec.claims[0]).toEqual({
@@ -155,7 +168,9 @@ describe('createCodingGateApproval + mintApprovedCodingPermit (unit)', () => {
 
   it('mintApprovedCodingPermit is false when no authority is wired', () => {
     const a = createCodingGateApproval(params) as { taskId: string };
-    expect(mintApprovedCodingPermit(repo.getById(a.taskId)!)).toBe(false);
+    const task = repo.getById(a.taskId);
+    if (!task) throw new Error('approval task was not created');
+    expect(mintApprovedCodingPermit(task)).toBe(false);
   });
 
   it('redeems an approved task once using its durable payload binding', () => {
@@ -190,6 +205,16 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
         reason: 'risky',
       };
     }
+    if (input.toolName === 'RiskyClaimsAdvisory') {
+      return {
+        action: 'vcs_push',
+        risk: 'HIGH',
+        outcome: 'approval_required',
+        enforced: false,
+        payloadHash: 'e'.repeat(64),
+        reason: 'faulty advisory result',
+      };
+    }
     if (input.toolName === 'Moderate') {
       return {
         action: 'vcs_push',
@@ -214,6 +239,7 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
     repo = new InMemoryWorkflowRepository();
     setWorkflowService(new WorkflowService({ repository: repo }));
     resetAuditState();
+    setAuditRepository(availableAuditRepository);
     rec = recorder();
     setCodingPermitAuthority(rec.authority);
     setSessionRegistry(new SessionRegistry());
@@ -223,6 +249,7 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
   });
   afterEach(() => {
     setWorkflowService(null);
+    setAuditRepository(null);
     setCodingPermitAuthority(null);
     setSessionRegistry(null);
   });
@@ -310,6 +337,17 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
       risk: 'HIGH',
     });
     expect((spent.body as { task_id: string }).task_id).not.toBe(b1.task_id);
+  });
+
+  it('does not let an inconsistent HIGH result suppress durable owner approval', async () => {
+    const result = await router.handle(gateReq('RiskyClaimsAdvisory'));
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      outcome: 'approval_required',
+      risk: 'HIGH',
+      enforced: true,
+    });
+    expect((result.body as { task_id: string | null }).task_id).toBeTruthy();
   });
 
   it('MODERATE → host confirmation only; no durable Dina task', async () => {

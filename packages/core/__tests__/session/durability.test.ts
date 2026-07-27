@@ -15,8 +15,12 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { SessionRegistry, DEFAULT_LEASE_MS } from '../../src/session/registry';
-import { SQLiteSessionRepository } from '../../src/session/repository';
+import {
+  SessionRegistry,
+  DEFAULT_LEASE_MS,
+  SESSION_TOMBSTONE_RETENTION_MS,
+} from '../../src/session/registry';
+import { SQLiteSessionRepository, type SessionRepository } from '../../src/session/repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -154,6 +158,37 @@ describe('session durability (Item D)', () => {
     }
   });
 
+  it('prunes an expired durable tombstone during boot reconciliation', () => {
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteSessionRepository(adapter);
+      let clock = 1_000_000;
+      const before = new SessionRegistry(() => clock, undefined, repo);
+      const session = before.start({ agentDid: AGENT, hostSessionId: 'host-old' });
+      expect(before.end(session.sessionId, AGENT).ok).toBe(true);
+      expect(
+        Number(
+          adapter.query<{ count: number }>(
+            'SELECT COUNT(*) AS count FROM agent_sessions WHERE ended_at IS NOT NULL',
+          )[0]?.count ?? 0,
+        ),
+      ).toBe(1);
+
+      clock += SESSION_TOMBSTONE_RETENTION_MS + 1;
+      const after = new SessionRegistry(() => clock, undefined, repo);
+      after.reconcile();
+      expect(
+        Number(
+          adapter.query<{ count: number }>(
+            'SELECT COUNT(*) AS count FROM agent_sessions WHERE ended_at IS NOT NULL',
+          )[0]?.count ?? 0,
+        ),
+      ).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('mints cryptographically-random ids (128-bit hex, no counter/host leakage)', () => {
     const reg = new SessionRegistry();
     const a = reg.start({ agentDid: AGENT, hostSessionId: 'sensitive-host-id' });
@@ -162,5 +197,23 @@ describe('session durability (Item D)', () => {
     expect(b.sessionId).not.toBe(a.sessionId);
     // The host session id must not leak into the session id.
     expect(a.sessionId).not.toContain('sensitive');
+  });
+
+  it('still reconciles live sessions when tombstone maintenance fails', () => {
+    const persisted = new SessionRegistry().start({
+      agentDid: AGENT,
+      hostSessionId: 'host-live',
+    });
+    const repo: SessionRepository = {
+      upsert: () => undefined,
+      loadActive: () => [persisted],
+      pruneEnded: () => {
+        throw new Error('maintenance failed');
+      },
+    };
+    const registry = new SessionRegistry(undefined, undefined, repo);
+
+    expect(registry.reconcile()).toBe(0);
+    expect(registry.validate(persisted.sessionId, AGENT).ok).toBe(true);
   });
 });

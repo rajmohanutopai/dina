@@ -106,8 +106,8 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
     const queryStr =
       Object.keys(query).length > 0
         ? Object.entries(query)
-          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-          .join('&')
+            .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+            .join('&')
         : '';
     const bodyBytes =
       body !== undefined ? new TextEncoder().encode(JSON.stringify(body)) : new Uint8Array();
@@ -129,15 +129,15 @@ export async function pairAgent(deviceName = 'e2e-agent'): Promise<DinaAgent> {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     const text = await r.text();
-    let body: unknown = null;
+    let responseBody: unknown = null;
     if (text !== '') {
       try {
-        body = JSON.parse(text);
+        responseBody = JSON.parse(text);
       } catch {
-        body = text;
+        responseBody = text;
       }
     }
-    return { status: r.status, body };
+    return { status: r.status, body: responseBody };
   }
 
   return { did, signedFetch };

@@ -3,7 +3,7 @@ import { createAppViewReasoningEvidenceSource } from '../../src/reasoning/appvie
 import type { SearchPeerlensParams } from '../../src/appview_client/http';
 
 describe('createAppViewReasoningEvidenceSource', () => {
-  test('maps real attestation rows and carries viewer DID for friend ranking', async () => {
+  test('maps real attestation rows without disclosing the owner DID', async () => {
     const searchTrust = jest.fn(async (_params: SearchPeerlensParams) => ({
       results: [
         {
@@ -27,7 +27,6 @@ describe('createAppViewReasoningEvidenceSource', () => {
     });
 
     const reviews = await source.searchReviews({
-      ownerDid: 'did:plc:owner',
       query: 'chair'.repeat(100),
       limit: 5,
     });
@@ -36,9 +35,8 @@ describe('createAppViewReasoningEvidenceSource', () => {
       q: expect.stringMatching(/^chair/),
       sort: 'relevant',
       limit: 5,
-      viewerDid: 'did:plc:owner',
     });
-    expect(searchTrust.mock.calls[0]![0].q).toHaveLength(200);
+    expect(searchTrust.mock.calls[0]?.[0].q).toHaveLength(200);
     expect(reviews).toEqual([
       expect.objectContaining({
         externalId: 'at://did:plc:reviewer/com.dinakernel.peerlens.attestation/chair',
@@ -79,7 +77,6 @@ describe('createAppViewReasoningEvidenceSource', () => {
     });
 
     const services = await source.searchServices({
-      ownerDid: 'did:plc:owner',
       query: 'book a haircut',
       limit: 5,
     });
@@ -133,7 +130,6 @@ describe('createAppViewReasoningEvidenceSource', () => {
 
     await expect(
       source.searchServices({
-        ownerDid: 'did:plc:owner',
         query: 'book or check a bus',
         limit: 5,
       }),
@@ -162,7 +158,6 @@ describe('createAppViewReasoningEvidenceSource', () => {
 
     await expect(
       source.searchServices({
-        ownerDid: 'did:plc:owner',
         query: 'book',
         limit: 5,
       }),

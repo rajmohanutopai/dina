@@ -64,6 +64,7 @@ def test_manifest_and_mcp_server_match_the_supported_cli_contract() -> None:
             "dina": {
                 "command": "${PLUGIN_ROOT}/bin/dina-cli",
                 "args": ["mcp-server", "--profile", "connected"],
+                "env": {"DINA_AGENT_HOST": "codex"},
             }
         }
     }
@@ -79,7 +80,7 @@ def test_codex_hooks_use_the_codex_supervisor_and_supported_timeouts() -> None:
                 {
                     "type": "command",
                     "command": (
-                        '"${PLUGIN_ROOT}/bin/dina-cli" '
+                        'DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" '
                         "home-node ensure --if-installed --quiet"
                     ),
                     "timeout": 120,
@@ -103,7 +104,7 @@ def test_codex_hooks_use_the_codex_supervisor_and_supported_timeouts() -> None:
     ]
     assert hooks["SessionEnd"][0]["hooks"][0]["timeout"] == 3
     assert hooks["SessionEnd"][0]["hooks"][0]["command"] == (
-        '"${PLUGIN_ROOT}/bin/dina-cli" session-end-hook'
+        'DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" session-end-hook'
     )
 
 
@@ -195,6 +196,7 @@ def test_codex_setup_bootstraps_shared_host_setup(tmp_path: Path) -> None:
         [str(SETUP), "--local-only", "--json"],
         env={
             **os.environ,
+            "DINA_PLUGIN_DEV_MODE": "1",
             "DINA_CLI_BIN": str(fake),
             "DINA_TEST_ARGS": str(log),
             "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "runtime"),
@@ -224,6 +226,7 @@ def test_setup_status_without_cli_does_not_guess_identity_state(
         [str(SETUP), "--status", "--json"],
         env={
             **os.environ,
+            "DINA_PLUGIN_DEV_MODE": "1",
             "DINA_CLI_BIN": str(tmp_path / "missing-dina"),
             "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "runtime"),
         },
@@ -238,6 +241,44 @@ def test_setup_status_without_cli_does_not_guess_identity_state(
     assert value["cli"]["available"] is False
     assert value["home_node"]["installed"] is None
     assert value["needs_identity_choice"] is None
+
+
+def test_packaged_setup_ignores_ambient_cli_override(tmp_path: Path) -> None:
+    marker = tmp_path / "executed"
+    fake = tmp_path / "fake-dina"
+    fake.write_text(
+        f"#!/bin/sh\ntouch {marker}\nexit 0\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    shadow_bin = tmp_path / "shadow-bin"
+    shadow_bin.mkdir()
+    shadow_python = shadow_bin / "python3"
+    shadow_python.write_text(
+        f"#!/bin/sh\necho shadowed > {marker}\nexit 91\n",
+        encoding="utf-8",
+    )
+    shadow_python.chmod(0o755)
+
+    result = subprocess.run(
+        [str(SETUP), "--status", "--json"],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "DINA_PLUGIN_DEV_MODE": "0",
+            "DINA_CLI_BIN": str(fake),
+            "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "attacker-runtime"),
+            "PATH": str(shadow_bin),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["cli"]["available"] is False
+    assert not marker.exists()
 
 
 def test_setup_rejects_a_newer_incompatible_cli(tmp_path: Path) -> None:
@@ -258,6 +299,7 @@ raise SystemExit(99)
         [str(SETUP), "--local-only", "--json"],
         env={
             **os.environ,
+            "DINA_PLUGIN_DEV_MODE": "1",
             "DINA_CLI_BIN": str(fake),
             "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "runtime"),
         },
@@ -329,8 +371,12 @@ def test_codex_supervisor_normalizes_child_results(
     fake = bindir / "dina"
     fake.write_text(f"#!/bin/sh\n{fake_body}\n", encoding="utf-8")
     fake.chmod(0o755)
-    env = dict(os.environ)
-    env["PATH"] = str(bindir)
+    env = {
+        **os.environ,
+        "DINA_PLUGIN_DEV_MODE": "1",
+        "DINA_BOOTSTRAP_PYTHON": sys.executable,
+        "DINA_CLI_BIN": str(fake),
+    }
 
     result = subprocess.run(
         [str(SUPERVISOR)],
@@ -357,9 +403,13 @@ def test_codex_supervisor_passes_the_host_mode(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     fake.chmod(0o755)
-    env = dict(os.environ)
-    env["PATH"] = str(bindir)
-    env["DINA_TEST_ARGS"] = str(args_file)
+    env = {
+        **os.environ,
+        "DINA_PLUGIN_DEV_MODE": "1",
+        "DINA_BOOTSTRAP_PYTHON": sys.executable,
+        "DINA_CLI_BIN": str(fake),
+        "DINA_TEST_ARGS": str(args_file),
+    }
 
     result = subprocess.run(
         [str(SUPERVISOR)],
@@ -375,11 +425,51 @@ def test_codex_supervisor_passes_the_host_mode(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="supervisor is a POSIX sh script")
+def test_codex_supervisor_does_not_trust_shadowed_python_or_timeout(
+    tmp_path: Path,
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    marker = tmp_path / "shadow-executed"
+    for name in ("python3", "timeout", "gtimeout"):
+        executable = bindir / name
+        executable.write_text(
+            f"#!/bin/sh\ntouch {marker}\nexit 0\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+    fake_cli = tmp_path / "dina"
+    fake_cli.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+    fake_cli.chmod(0o755)
+
+    result = subprocess.run(
+        [str(SUPERVISOR)],
+        input=b'{"session_id":"codex-1","tool_name":"Read","tool_input":{}}',
+        env={
+            **os.environ,
+            "PATH": str(bindir),
+            "DINA_PLUGIN_DEV_MODE": "1",
+            "DINA_CLI_BIN": str(fake_cli),
+        },
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="supervisor is a POSIX sh script")
 def test_codex_supervisor_blocks_when_dina_is_missing(tmp_path: Path) -> None:
     empty_path = tmp_path / "empty-bin"
     empty_path.mkdir()
-    env = dict(os.environ)
-    env["PATH"] = str(empty_path)
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "PATH": str(empty_path),
+        "DINA_BOOTSTRAP_PYTHON": sys.executable,
+    }
 
     result = subprocess.run(
         [str(SUPERVISOR)],
@@ -424,6 +514,8 @@ def test_codex_supervisor_allows_only_exact_plugin_setup(tmp_path: Path) -> None
         env={
             **os.environ,
             "PLUGIN_ROOT": str(PLUGIN_ROOT),
+            "DINA_PLUGIN_DEV_MODE": "1",
+            "DINA_BOOTSTRAP_PYTHON": sys.executable,
             "DINA_CLI_BIN": str(tmp_path / "missing-dina"),
         },
         capture_output=True,

@@ -24,9 +24,11 @@ import base58
 
 from . import config as _config_mod
 
+
 def _default_identity_dir() -> Path:
-    """Return the current identity directory from config (supports local config)."""
+    """Return the current owner-controlled identity directory."""
     return _config_mod.IDENTITY_DIR
+
 
 _DEFAULT_IDENTITY_DIR = None  # Unused — kept for backward compat
 _ED25519_MULTICODEC = b"\xed\x01"
@@ -48,8 +50,8 @@ class CLIIdentity:
 
     @property
     def exists(self) -> bool:
-        """True if a keypair has already been generated."""
-        return self._priv_path.exists()
+        """True if a private-key path exists, including an unsafe symlink."""
+        return os.path.lexists(self._priv_path)
 
     def generate(self) -> None:
         """Generate and persist a new Ed25519 keypair.
@@ -58,7 +60,11 @@ class CLIIdentity:
         private key is encrypted at rest using ``BestAvailableEncryption``.
         Otherwise ``NoEncryption`` is used (backward compatible).
         """
+        if self.exists:
+            raise FileExistsError(f"Identity already exists at {self._priv_path}")
         self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if self._dir.is_symlink():
+            raise PermissionError("Dina identity directory must not be a symlink")
         # Enforce permissions even if directory already existed with wrong perms
         os.chmod(self._dir, 0o700)
         self._private_key = Ed25519PrivateKey.generate()
@@ -86,16 +92,26 @@ class CLIIdentity:
 
         # Write private key (owner read/write only).
         pem_priv = self._private_key.private_bytes(
-            Encoding.PEM, PrivateFormat.PKCS8, encryption,
+            Encoding.PEM,
+            PrivateFormat.PKCS8,
+            encryption,
         )
-        self._priv_path.write_bytes(pem_priv)
-        os.chmod(self._priv_path, stat.S_IRUSR | stat.S_IWUSR)
+        self._write_new_file(
+            self._priv_path,
+            pem_priv,
+            stat.S_IRUSR | stat.S_IWUSR,
+        )
 
         # Write public key.
         pem_pub = self._private_key.public_key().public_bytes(
-            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo,
+            Encoding.PEM,
+            PublicFormat.SubjectPublicKeyInfo,
         )
-        self._pub_path.write_bytes(pem_pub)
+        self._write_new_file(
+            self._pub_path,
+            pem_pub,
+            stat.S_IRUSR | stat.S_IWUSR,
+        )
 
     def load(self) -> None:
         """Load an existing keypair from disk.
@@ -104,6 +120,7 @@ class CLIIdentity:
         decryption-related error, retries using the passphrase from the
         ``DINA_CLI_KEY_PASSPHRASE`` environment variable (if set).
         """
+        self._validate_private_key_storage()
         pem = self._priv_path.read_bytes()
         try:
             key = load_pem_private_key(pem, password=None)
@@ -116,6 +133,50 @@ class CLIIdentity:
         if not isinstance(key, Ed25519PrivateKey):
             raise TypeError("Expected Ed25519 private key")
         self._private_key = key
+
+    @staticmethod
+    def _write_new_file(path: Path, payload: bytes, mode: int) -> None:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(path, flags, mode)
+        try:
+            view = memoryview(payload)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError(f"short write while creating {path}")
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.chmod(path, mode)
+
+    def _validate_private_key_storage(self) -> None:
+        """Reject keys outside the current OS user's private storage."""
+        try:
+            directory = self._dir.lstat()
+            private_key = self._priv_path.lstat()
+        except FileNotFoundError:
+            raise
+        if stat.S_ISLNK(directory.st_mode) or not stat.S_ISDIR(directory.st_mode):
+            raise PermissionError("Dina identity directory must be a real directory")
+        if stat.S_ISLNK(private_key.st_mode) or not stat.S_ISREG(private_key.st_mode):
+            raise PermissionError("Dina private key must be a regular file")
+        if os.name != "nt":
+            expected_uid = os.geteuid()
+            if directory.st_uid != expected_uid or private_key.st_uid != expected_uid:
+                raise PermissionError(
+                    "Dina identity storage must be owned by the current user"
+                )
+            if stat.S_IMODE(directory.st_mode) & 0o077:
+                raise PermissionError(
+                    "Dina identity directory permissions must be 0700 or stricter"
+                )
+            if stat.S_IMODE(private_key.st_mode) & 0o077:
+                raise PermissionError(
+                    "Dina private key permissions must be 0600 or stricter"
+                )
 
     def ensure_loaded(self) -> None:
         """Load keypair if not already in memory. Raises if no keypair exists."""
@@ -135,7 +196,8 @@ class CLIIdentity:
         self.ensure_loaded()
         assert self._private_key is not None
         return self._private_key.public_key().public_bytes(
-            Encoding.Raw, PublicFormat.Raw,
+            Encoding.Raw,
+            PublicFormat.Raw,
         )
 
     def did(self) -> str:
@@ -160,7 +222,9 @@ class CLIIdentity:
         OpenClaw's device-auth handshake expects raw Ed25519 public-key bytes,
         not a DID or multibase wrapper.
         """
-        return base64.urlsafe_b64encode(self._raw_public_key()).decode("ascii").rstrip("=")
+        return (
+            base64.urlsafe_b64encode(self._raw_public_key()).decode("ascii").rstrip("=")
+        )
 
     def device_fingerprint(self) -> str:
         """Return the OpenClaw device fingerprint for this keypair.

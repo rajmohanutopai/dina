@@ -17,7 +17,6 @@ from dina_cli import __version__
 from dina_cli.agent_host_setup import AgentHostSetupError, normalize_pds_handle
 from dina_cli.main import cli
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI_ROOT = REPO_ROOT / "cli"
 MARKETPLACE_ROOT = REPO_ROOT
@@ -85,7 +84,7 @@ def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
         {
             "type": "command",
             "command": (
-                '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" '
+                'DINA_AGENT_HOST=claude-code "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" '
                 "home-node ensure --if-installed --quiet"
             ),
             "timeout": 120,
@@ -103,10 +102,16 @@ def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
     session_end = hooks["hooks"]["SessionEnd"]
     assert len(session_end) == 1
     assert "matcher" not in session_end[0]
+    assert session_end[0]["hooks"][0]["command"].startswith(
+        "DINA_AGENT_HOST=claude-code "
+    )
     assert session_end[0]["hooks"] == [
         {
             "type": "command",
-            "command": '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" session-end-hook',
+            "command": (
+                "DINA_AGENT_HOST=claude-code "
+                '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" session-end-hook'
+            ),
             "timeout": 10,
         }
     ]
@@ -129,6 +134,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
         "--profile",
         "connected",
     ]
+    assert mcp_config["mcpServers"]["dina"]["env"] == {"DINA_AGENT_HOST": "claude-code"}
     assert "install the plugin first" in normalized_readme
     assert "/dina:setup" in normalized_readme
     assert "private managed python environment" in normalized_readme
@@ -142,9 +148,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
 
 
 def test_plugin_bundles_mcp_native_usage_instructions() -> None:
-    skill = (PLUGIN_ROOT / "skills" / "dina" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    skill = (PLUGIN_ROOT / "skills" / "dina" / "SKILL.md").read_text(encoding="utf-8")
     assert "dina_session_start" in skill
     assert "dina_session_end" in skill
     assert "dina_validate" in skill
@@ -159,9 +163,7 @@ def test_plugin_bundles_mcp_native_usage_instructions() -> None:
 
 
 def test_marketplace_points_at_the_self_contained_plugin() -> None:
-    marketplace = _load_json(
-        MARKETPLACE_ROOT / ".claude-plugin" / "marketplace.json"
-    )
+    marketplace = _load_json(MARKETPLACE_ROOT / ".claude-plugin" / "marketplace.json")
     plugins = marketplace["plugins"]
 
     assert len(plugins) == 1
@@ -222,8 +224,7 @@ def _home_node_ready(value: object) -> int:
                 "tool_name": "Bash",
                 "tool_input": {
                     "command": (
-                        f'"{SETUP}" --pds-handle '
-                        "Owner.PDS.DinaKernel.com --json"
+                        f'"{SETUP}" --pds-handle ' "Owner.PDS.DinaKernel.com --json"
                     )
                 },
             },
@@ -270,9 +271,7 @@ def _home_node_ready(value: object) -> int:
         ),
     ],
 )
-def test_bootstrap_authorizer_has_a_narrow_surface(
-    event: dict, expected: int
-) -> None:
+def test_bootstrap_authorizer_has_a_narrow_surface(event: dict, expected: int) -> None:
     assert _authorize(event) == expected
 
 
@@ -317,6 +316,7 @@ def test_managed_cli_wrapper_does_not_require_path_installation(tmp_path: Path) 
         [str(CLI_WRAPPER), "status"],
         env={
             **os.environ,
+            "DINA_PLUGIN_DEV_MODE": "1",
             "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "runtime"),
             "DINA_CLI_BIN": "",
         },
@@ -447,6 +447,7 @@ def _run_setup(
         [str(SETUP), *args, "--json"],
         env={
             **os.environ,
+            "DINA_PLUGIN_DEV_MODE": "1",
             "DINA_CLI_BIN": str(fake),
             "DINA_CONFIG_DIR": str(tmp_path / "config"),
             "DINA_HOME_NODE_DIR": str(tmp_path / "home-node"),
@@ -468,6 +469,41 @@ def _run_setup(
         else []
     )
     return result, commands
+
+
+def test_packaged_setup_ignores_ambient_python_and_cli_overrides(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "executed"
+    shadow_bin = tmp_path / "shadow-bin"
+    shadow_bin.mkdir()
+    for name in ("python3", "dina"):
+        executable = shadow_bin / name
+        executable.write_text(
+            f"#!/bin/sh\necho shadowed > {marker}\nexit 91\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+
+    result = subprocess.run(
+        [str(SETUP), "--status", "--json"],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": str(shadow_bin),
+            "DINA_PLUGIN_DEV_MODE": "0",
+            "DINA_CLI_BIN": str(shadow_bin / "dina"),
+            "DINA_SETUP_RUNTIME_DIR": str(tmp_path / "attacker-runtime"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["cli"]["available"] is False
+    assert not marker.exists()
 
 
 def _command_without_global_flags(command: list[str]) -> list[str]:

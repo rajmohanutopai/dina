@@ -83,6 +83,7 @@ function wireFake(state: FakeState): void {
         submission: { taskId: created.taskId, duplicate: false },
         job: created,
         restricted_personas: [],
+        unavailable_sources: [],
       };
     },
     async reasoningList() {
@@ -178,6 +179,7 @@ describe('connected Brain mobile chat projection', () => {
     expect(state.submitted[0]).toMatchObject({
       task_kind: 'answer.compose',
       input: { query: 'Find a chair' },
+      public_evidence_sources: ['review', 'service'],
     });
     expect(state.submitted[0].backend_id).toBeUndefined();
     expect(state.submitted[0].idempotency_key).toMatch(/^mobile-cm-/);

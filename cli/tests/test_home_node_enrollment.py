@@ -16,6 +16,8 @@ from dina_cli.config import load_saved_from, save_config_to
 from dina_cli.home_node_enrollment import (
     HomeNodeAgentEnroller,
     HomeNodeEnrollmentError,
+    ManagedEnrollmentCleanupFailure,
+    ManagedEnrollmentCleanupReport,
     prepare_managed_enrollment_cleanup,
 )
 from dina_cli.seed_wrap import seed_to_mnemonic
@@ -343,6 +345,60 @@ def test_purge_cleanup_removes_only_exact_managed_credentials(
     assert not (tmp_path / "cli" / "identity").exists()
 
 
+def test_host_receipts_preserve_cleanup_for_multiple_agents(tmp_path: Path) -> None:
+    manager = FakeManager(install_dir=tmp_path / "home-node")
+    first_server = EnrollmentServer()
+    second_server = EnrollmentServer()
+    HomeNodeAgentEnroller(
+        manager,  # type: ignore[arg-type]
+        config_dir=tmp_path / "claude",
+        receipt_name="claude-code",
+        transport=first_server.transport(),
+    ).enroll()
+    HomeNodeAgentEnroller(
+        manager,  # type: ignore[arg-type]
+        config_dir=tmp_path / "codex",
+        receipt_name="codex",
+        transport=second_server.transport(),
+    ).enroll()
+
+    cleanup = prepare_managed_enrollment_cleanup(manager)  # type: ignore[arg-type]
+
+    assert cleanup is not None
+    assert cleanup.apply() is True
+    assert not (tmp_path / "claude" / "config.json").exists()
+    assert not (tmp_path / "codex" / "config.json").exists()
+
+
+def test_cleanup_batch_continues_after_one_host_cleanup_fails(tmp_path: Path) -> None:
+    manager = FakeManager(install_dir=tmp_path / "home-node")
+    for name in ("claude", "codex"):
+        HomeNodeAgentEnroller(
+            manager,  # type: ignore[arg-type]
+            config_dir=tmp_path / name,
+            receipt_name=name,
+            transport=EnrollmentServer().transport(),
+        ).enroll()
+    cleanup = prepare_managed_enrollment_cleanup(manager)  # type: ignore[arg-type]
+    assert cleanup is not None
+
+    # Force the first cleanup to fail after the plans have been captured.
+    (tmp_path / "claude" / "config.json").chmod(0o000)
+    try:
+        with patch(
+            "dina_cli.home_node_enrollment.load_saved_from",
+            side_effect=[OSError("disk failure"), load_saved_from(tmp_path / "codex")],
+        ):
+            report = cleanup.apply_report()
+    finally:
+        (tmp_path / "claude" / "config.json").chmod(0o600)
+
+    assert report.removed_count == 1
+    assert len(report.failures) == 1
+    assert not (tmp_path / "codex" / "config.json").exists()
+    assert (tmp_path / "claude" / "config.json").exists()
+
+
 def test_purge_cleanup_preserves_credentials_changed_after_plan(
     tmp_path: Path,
 ) -> None:
@@ -386,7 +442,9 @@ def test_purge_command_applies_captured_managed_cleanup(tmp_path: Path) -> None:
         install_dir=tmp_path / "home-node",
         uninstall=lambda **_kwargs: status,
     )
-    cleanup = SimpleNamespace(apply=lambda: True)
+    cleanup = SimpleNamespace(
+        apply_report=lambda: ManagedEnrollmentCleanupReport(removed_count=1)
+    )
 
     with (
         patch("dina_cli.main._home_node_manager", return_value=manager),
@@ -405,6 +463,7 @@ def test_purge_command_applies_captured_managed_cleanup(tmp_path: Path) -> None:
         "uninstalled": True,
         "data_purged": True,
         "managed_agent_credentials_removed": True,
+        "managed_agent_cleanup_failures": [],
     }
     prepare.assert_called_once_with(manager)
 
@@ -433,6 +492,42 @@ def test_non_destructive_uninstall_never_removes_agent_credentials(
     assert calls == [{"purge_data": False}]
     assert json.loads(result.output)["managed_agent_credentials_removed"] is False
     prepare.assert_not_called()
+
+
+def test_purge_reports_partial_managed_cleanup_failure(tmp_path: Path) -> None:
+    manager = SimpleNamespace(
+        install_dir=tmp_path / "home-node",
+        uninstall=lambda **_kwargs: None,
+    )
+    cleanup = SimpleNamespace(
+        apply_report=lambda: ManagedEnrollmentCleanupReport(
+            failures=(
+                ManagedEnrollmentCleanupFailure(
+                    config_dir=str(tmp_path / "claude"),
+                    code="cleanup_failed",
+                ),
+            )
+        )
+    )
+    with (
+        patch("dina_cli.main._home_node_manager", return_value=manager),
+        patch(
+            "dina_cli.home_node_enrollment.prepare_managed_enrollment_cleanup",
+            return_value=cleanup,
+        ),
+    ):
+        result = CliRunner().invoke(
+            cli,
+            ["--json", "home-node", "uninstall", "--purge-data", "--yes"],
+        )
+
+    assert result.exit_code == 2
+    assert json.loads(result.output)["managed_agent_cleanup_failures"] == [
+        {
+            "config_dir": str(tmp_path / "claude"),
+            "code": "cleanup_failed",
+        }
+    ]
 
 
 def test_install_command_enrolls_by_default(tmp_path: Path) -> None:
@@ -517,7 +612,9 @@ def test_install_can_select_exact_enrolled_agent_as_foreground_brain(
     with (
         patch("dina_cli.main._home_node_manager", return_value=manager),
         patch("dina_cli.home_node_enrollment.HomeNodeAgentEnroller") as enroller_type,
-        patch("dina_cli.home_node_reasoning.HomeNodeReasoningSelector") as selector_type,
+        patch(
+            "dina_cli.home_node_reasoning.HomeNodeReasoningSelector"
+        ) as selector_type,
     ):
         enroller_type.return_value.enroll.return_value = enrollment
         selector_type.return_value.select.return_value = selection

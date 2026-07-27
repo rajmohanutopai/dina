@@ -704,6 +704,7 @@ class DinaClient:
         input_data: Any,
         purpose: str = "",
         idempotency_key: str = "",
+        public_evidence_sources: list[str] | None = None,
     ) -> dict:
         """Create and claim one inline reasoning job for this active host turn."""
         if not backend_id or not session or not task_kind:
@@ -720,6 +721,8 @@ class DinaClient:
             body["purpose"] = purpose
         if idempotency_key:
             body["idempotency_key"] = idempotency_key
+        if public_evidence_sources:
+            body["public_evidence_sources"] = public_evidence_sources
         return self._request(
             self._core,
             "POST",
@@ -836,9 +839,7 @@ class DinaClient:
         retryable: bool,
     ) -> dict:
         """Report an exact reasoning attempt failure to Core."""
-        if not all(
-            (task_id, backend_id, session, claim_id, context_ticket_id, error)
-        ):
+        if not all((task_id, backend_id, session, claim_id, context_ticket_id, error)):
             raise ValueError("reasoning failure requires all claim identifiers")
         return self._request(
             self._core,

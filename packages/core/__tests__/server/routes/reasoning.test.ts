@@ -776,6 +776,7 @@ describe('connected reasoning routes', () => {
         input: { query: 'Find a supportive chair' },
         backend_id: 'claude',
         idempotency_key: 'owner-chair-evidence',
+        public_evidence_sources: ['review', 'service'],
       }),
     );
     expect(submitted.status).toBe(202);
@@ -836,6 +837,7 @@ describe('connected reasoning routes', () => {
         input: { query: 'What should I buy?' },
         backend_id: 'claude',
         idempotency_key: 'owner-partial-evidence',
+        public_evidence_sources: ['review', 'service'],
       }),
     );
 

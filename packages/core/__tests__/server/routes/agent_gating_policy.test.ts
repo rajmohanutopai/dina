@@ -115,4 +115,50 @@ describe('owner connected-agent policy routes', () => {
     );
     expect(wrongDevice.status).toBe(404);
   });
+
+  it('lists old-owner policies separately for explicit reconfirmation', async () => {
+    const agent = registerDevice('Claude Code', 'z6MkPolicyAgent', 'agent', 'coding');
+    const repo = new MemoryPolicyRepository();
+    repo.policy = {
+      agentDid: agent.did,
+      profile: 'network_protection',
+      policyVersion: 3,
+      selectedByOwnerDid: 'did:key:z6MkPreviousOwner',
+      createdAtMs: 1,
+      updatedAtMs: 2,
+      revokedAtMs: null,
+    };
+    setAgentGatingPolicyRepository(repo);
+    const router = new CoreRouter();
+    registerAgentGatingPolicyRoutes(router, 'owner-cap');
+
+    const result = await router.handle(req('GET', '/v1/owner/agent-policies', null));
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      policies: [],
+      stale_policies: [
+        expect.objectContaining({
+          agent_did: agent.did,
+          profile: 'network_protection',
+          policy_version: 3,
+          owner_binding_status: 'stale_owner_binding',
+        }),
+      ],
+    });
+
+    const reconfirmed = await router.handle(
+      req('PUT', `/v1/owner/agent-policies/${agent.did}`, {
+        profile: 'sensitive_boundaries',
+        expected_version: 3,
+      }),
+    );
+    expect(reconfirmed.status).toBe(200);
+    expect(reconfirmed.body).toMatchObject({
+      profile: 'sensitive_boundaries',
+      policy_version: 4,
+      selected_by_owner_did: 'did:plc:owner',
+      owner_binding_status: 'active',
+    });
+  });
 });

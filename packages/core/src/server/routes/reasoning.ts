@@ -12,6 +12,7 @@ import {
   prepareConnectedBrainContextWithPublicEvidence,
   prepareOwnerReasoningContext,
   prepareOwnerReasoningContextWithPublicEvidence,
+  type PublicReasoningEvidenceKind,
   type PublicReasoningEvidenceSource,
 } from '../../agent/connected_brain_facades';
 import { appendAudit } from '../../audit/service';
@@ -91,6 +92,7 @@ const OWNER_SUBMIT_FIELDS = new Set([
   'idempotency_key',
   'personas',
   'limit',
+  'public_evidence_sources',
 ]);
 
 function response(status: number, body: unknown): CoreResponse {
@@ -120,6 +122,18 @@ function optionalSafeInteger(value: unknown, min: number, max: number): number |
   return Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max
     ? (value as number)
     : null;
+}
+
+function publicEvidenceSources(value: unknown): PublicReasoningEvidenceKind[] | null {
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.length > 2 ||
+    value.some((entry) => entry !== 'review' && entry !== 'service')
+  ) {
+    return null;
+  }
+  return [...new Set(value)] as PublicReasoningEvidenceKind[];
 }
 
 function projectBinding(binding: ReasoningBackendBinding): Record<string, unknown> {
@@ -297,6 +311,7 @@ export function registerReasoningRoutes(
         ? null
         : boundedString(body.backend_id, 256);
     const limit = optionalSafeInteger(body.limit, 1, 50);
+    const evidenceSources = publicEvidenceSources(body.public_evidence_sources);
     if (
       !isReasoningTaskKind(taskKind) ||
       !OWNER_SUBMITTABLE_TASKS.has(taskKind) ||
@@ -304,6 +319,7 @@ export function registerReasoningRoutes(
       purpose === null ||
       (backendId === null && body.backend_id !== undefined && body.backend_id !== null) ||
       limit === null ||
+      evidenceSources === null ||
       body.input === undefined ||
       (body.personas !== undefined &&
         (!Array.isArray(body.personas) ||
@@ -313,7 +329,9 @@ export function registerReasoningRoutes(
     }
     if (
       taskKind !== 'answer.compose' &&
-      (body.personas !== undefined || body.limit !== undefined)
+      (body.personas !== undefined ||
+        body.limit !== undefined ||
+        body.public_evidence_sources !== undefined)
     ) {
       return response(400, { error: 'context_options_not_supported' });
     }
@@ -328,6 +346,7 @@ export function registerReasoningRoutes(
               purpose,
               ...(body.personas === undefined ? {} : { personas: body.personas as string[] }),
               ...(limit === undefined ? {} : { limit }),
+              ...(evidenceSources.length === 0 ? {} : { publicEvidenceSources: evidenceSources }),
             }
           : null;
       const context =
@@ -641,8 +660,17 @@ export function registerReasoningRoutes(
       request.body.idempotency_key === undefined
         ? undefined
         : boundedString(request.body.idempotency_key, 256);
-    if (purpose === null || idempotencyKey === null || request.body.input === undefined) {
+    const evidenceSources = publicEvidenceSources(request.body.public_evidence_sources);
+    if (
+      purpose === null ||
+      idempotencyKey === null ||
+      evidenceSources === null ||
+      request.body.input === undefined
+    ) {
       return response(400, { error: 'invalid_reasoning_request' });
+    }
+    if (taskKind !== 'answer.compose' && request.body.public_evidence_sources !== undefined) {
+      return response(400, { error: 'context_options_not_supported' });
     }
     const owner = currentOwnerBinding(request.binding);
     if (typeof owner !== 'string') return owner;
@@ -667,6 +695,7 @@ export function registerReasoningRoutes(
               sessionId: request.session.sessionId,
               query: answerInput.query,
               purpose,
+              ...(evidenceSources.length === 0 ? {} : { publicEvidenceSources: evidenceSources }),
             }
           : null;
       const context =

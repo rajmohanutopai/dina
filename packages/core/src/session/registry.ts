@@ -39,6 +39,9 @@ import { isOwnerAuthority, type AuthorityOrigin } from '../agent/gating_policy';
 import type { SessionRepository } from './repository';
 
 export const DEFAULT_LEASE_MS = 15 * 60 * 1000; // 15 min — matches §15 Codex reap default
+export const SESSION_TOMBSTONE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const MAX_IN_MEMORY_SESSION_TOMBSTONES = 2_048;
+const MAX_DURABLE_SESSION_TOMBSTONES = 4_096;
 
 export type EndReason = 'explicit' | 'lease_lapsed' | 'authority_revoked';
 
@@ -106,6 +109,16 @@ export class SessionRegistry {
    */
   reconcile(): number {
     if (this.repo === null) return 0;
+    try {
+      this.repo.pruneEnded?.(
+        this.now() - SESSION_TOMBSTONE_RETENTION_MS,
+        MAX_DURABLE_SESSION_TOMBSTONES,
+      );
+    } catch {
+      // Retention is maintenance, not an authorization input. Boot must still
+      // load and reap the durable live sessions; another pass can retry.
+    }
+    this.byId.clear();
     for (const s of this.repo.loadActive()) {
       // Trust the durable row; the in-memory Map is rebuilt from it.
       this.byId.set(s.sessionId, { ...s });
@@ -416,8 +429,34 @@ export class SessionRegistry {
     // the end exists even if a hook throws.
     this.persist(ended);
     this.byId.set(ended.sessionId, ended);
-    this.onEnd(ended, reason);
+    try {
+      this.onEnd(ended, reason);
+    } finally {
+      this.pruneEndedTombstones();
+    }
     return ended;
+  }
+
+  private pruneEndedTombstones(): void {
+    const cutoff = this.now() - SESSION_TOMBSTONE_RETENTION_MS;
+    const ended = [...this.byId.values()]
+      .filter((session) => session.endedAtMs !== null)
+      .sort(
+        (left, right) =>
+          (right.endedAtMs ?? 0) - (left.endedAtMs ?? 0) ||
+          right.sessionId.localeCompare(left.sessionId),
+      );
+    for (const [index, session] of ended.entries()) {
+      if ((session.endedAtMs ?? 0) < cutoff || index >= MAX_IN_MEMORY_SESSION_TOMBSTONES) {
+        this.byId.delete(session.sessionId);
+      }
+    }
+    try {
+      this.repo?.pruneEnded?.(cutoff, MAX_DURABLE_SESSION_TOMBSTONES);
+    } catch {
+      // The end tombstone is already durable. Retention maintenance can retry
+      // on the next end or boot without changing the authorization result.
+    }
   }
 }
 

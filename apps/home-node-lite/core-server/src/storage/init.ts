@@ -75,6 +75,8 @@ import { getDeviceByDID } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
+  hydrateAuditState,
+  sweepRetention,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
   SQLiteServiceOfferRepository,
@@ -255,7 +257,10 @@ export async function initializeStorage(
   // Core owns it; Brain reaches it over the `/v1/notifications` routes so its
   // inbox dual-write survives restart here too.
   setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
-  setAuditRepository(new SQLiteAuditRepository(identityDB));
+  const auditRepository = new SQLiteAuditRepository(identityDB);
+  setAuditRepository(auditRepository);
+  hydrateAuditState(auditRepository);
+  sweepRetention();
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   // Round-8 #2: wire the agent-grant repo BEFORE hydrating devices —
   // `hydrateDeviceRegistry` runs the boot reconciler, which must be able to

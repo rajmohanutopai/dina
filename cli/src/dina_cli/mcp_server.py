@@ -147,6 +147,7 @@ def dina_reasoning_begin(
     input: Any,
     purpose: str = "",
     idempotency_key: str = "",
+    public_evidence_sources: list[str] | None = None,
 ) -> dict:
     """Begin one connected-Brain operation in the current active host turn.
 
@@ -158,13 +159,18 @@ def dina_reasoning_begin(
     The result is a proposal. Do not perform external effects, write Dina
     storage, use owner keys, or claim authority from this operation.
     """
+    request = {
+        "backend_id": backend_id,
+        "session": session,
+        "task_kind": task_kind,
+        "input_data": input,
+        "purpose": purpose,
+        "idempotency_key": idempotency_key,
+    }
+    if public_evidence_sources is not None:
+        request["public_evidence_sources"] = public_evidence_sources
     return _get_client().reasoning_begin(
-        backend_id=backend_id,
-        session=session,
-        task_kind=task_kind,
-        input_data=input,
-        purpose=purpose,
-        idempotency_key=idempotency_key,
+        **request,
     )
 
 
@@ -311,12 +317,15 @@ def dina_validate(
     if context:
         payload["context"] = context
 
-    result = c.process_event({
-        "type": "agent_intent",
-        "action": action,
-        "target": description,
-        "payload": payload,
-    }, session=session)
+    result = c.process_event(
+        {
+            "type": "agent_intent",
+            "action": action,
+            "target": description,
+            "payload": payload,
+        },
+        session=session,
+    )
 
     approved = result.get("approved", False)
     requires = result.get("requires_approval", False)
@@ -408,9 +417,7 @@ def dina_ask_status(request_id: str, session: str) -> dict:
 
 
 @mcp.tool()
-def dina_remember(
-    text: str, session: str, request_id: str, persona: str = ""
-) -> dict:
+def dina_remember(text: str, session: str, request_id: str, persona: str = "") -> dict:
     """Store a fact through Dina's session-bound coding-agent memory ingress.
 
     Dina classifies the memory into the appropriate vault unless ``persona`` is
@@ -420,9 +427,7 @@ def dina_remember(
     tool returns ``stored``.
     """
     c = _get_client()
-    return c.remember(
-        text, session=session, source_id=request_id, persona=persona
-    )
+    return c.remember(text, session=session, source_id=request_id, persona=persona)
 
 
 @mcp.tool()

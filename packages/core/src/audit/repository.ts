@@ -4,13 +4,9 @@
  * Critical: uses AUTOINCREMENT for seq. The service layer computes
  * entry_hash and prev_hash before INSERT — the repository just persists.
  *
- * **Phase 2.3 (task 2.3).** Port methods return `Promise<T>`. SQLite is
- * sync under go-sqlcipher so each implementation returns
- * `Promise.resolve(result)` without microtask overhead beyond one promise
- * per call. Service-layer `appendAudit()` in `audit/service.ts` stays
- * sync by firing `append()` fire-and-forget — it's already wrapped in
- * try/catch with a fail-safe comment, so losing the await is the
- * intended semantic.
+ * Sync on purpose: DatabaseAdapter uses native SQLite bindings on both Node and
+ * mobile. Audit append is an authorization-side effect, so the durable row must
+ * commit before the service publishes the new chain head in memory.
  *
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
@@ -18,9 +14,14 @@
 import type { AuditEntry } from './hash_chain';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
+export interface AuditRetentionCheckpoint {
+  firstRetainedSeq: number;
+  anchorHash: string;
+}
+
 export interface AuditRepository {
-  append(entry: AuditEntry): Promise<void>;
-  latest(): Promise<AuditEntry | null>;
+  append(entry: AuditEntry): void;
+  latest(): AuditEntry | null;
   query(filters: {
     actor?: string;
     action?: string;
@@ -28,10 +29,12 @@ export interface AuditRepository {
     since?: number;
     until?: number;
     limit?: number;
-  }): Promise<AuditEntry[]>;
-  sweep(cutoffTs: number): Promise<number>;
-  count(): Promise<number>;
-  allEntries(): Promise<AuditEntry[]>;
+  }): AuditEntry[];
+  compact(checkpoint: AuditRetentionCheckpoint): number;
+  count(): number;
+  allEntries(): AuditEntry[];
+  highestSequence(): number;
+  retentionCheckpoint(): AuditRetentionCheckpoint | null;
 }
 
 let repo: AuditRepository | null = null;
@@ -45,7 +48,7 @@ export function getAuditRepository(): AuditRepository | null {
 export class SQLiteAuditRepository implements AuditRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
-  async append(entry: AuditEntry): Promise<void> {
+  append(entry: AuditEntry): void {
     this.db.execute(
       `INSERT INTO audit_log (seq, ts, actor, action, resource, detail, prev_hash, entry_hash)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -62,19 +65,19 @@ export class SQLiteAuditRepository implements AuditRepository {
     );
   }
 
-  async latest(): Promise<AuditEntry | null> {
+  latest(): AuditEntry | null {
     const rows = this.db.query('SELECT * FROM audit_log ORDER BY seq DESC LIMIT 1');
     return rows.length > 0 ? rowToAuditEntry(rows[0]) : null;
   }
 
-  async query(filters: {
+  query(filters: {
     actor?: string;
     action?: string;
     resource?: string;
     since?: number;
     until?: number;
     limit?: number;
-  }): Promise<AuditEntry[]> {
+  }): AuditEntry[] {
     const conditions: string[] = [];
     const params: unknown[] = [];
     if (filters.actor) {
@@ -108,20 +111,59 @@ export class SQLiteAuditRepository implements AuditRepository {
     return rows.map(rowToAuditEntry);
   }
 
-  async sweep(cutoffTs: number): Promise<number> {
-    const before = await this.count();
-    this.db.execute('DELETE FROM audit_log WHERE ts < ?', [cutoffTs]);
-    return before - (await this.count());
+  compact(checkpoint: AuditRetentionCheckpoint): number {
+    const before = this.count();
+    this.db.transaction(() => {
+      this.db.execute(
+        `INSERT INTO audit_retention_checkpoint
+           (singleton, first_retained_seq, anchor_hash, updated_at)
+         VALUES (1, ?, ?, ?)
+         ON CONFLICT(singleton) DO UPDATE SET
+           first_retained_seq = excluded.first_retained_seq,
+           anchor_hash = excluded.anchor_hash,
+           updated_at = excluded.updated_at`,
+        [checkpoint.firstRetainedSeq, checkpoint.anchorHash, Math.floor(Date.now() / 1000)],
+      );
+      // Retention always removes a chain prefix. Deleting by timestamp can
+      // punch an interior hole when the wall clock moves backwards or an
+      // imported entry carries an older timestamp.
+      this.db.execute('DELETE FROM audit_log WHERE seq < ?', [checkpoint.firstRetainedSeq]);
+    });
+    return before - this.count();
   }
 
-  async count(): Promise<number> {
+  count(): number {
     const rows = this.db.query<{ c: number }>('SELECT COUNT(*) as c FROM audit_log');
     return Number(rows[0]?.c ?? 0);
   }
 
-  async allEntries(): Promise<AuditEntry[]> {
+  allEntries(): AuditEntry[] {
     const rows = this.db.query('SELECT * FROM audit_log ORDER BY seq ASC');
     return rows.map(rowToAuditEntry);
+  }
+
+  highestSequence(): number {
+    const rows = this.db.query<{ seq: number }>(
+      `SELECT seq FROM sqlite_sequence WHERE name = 'audit_log' LIMIT 1`,
+    );
+    return Number(rows[0]?.seq ?? 0);
+  }
+
+  retentionCheckpoint(): AuditRetentionCheckpoint | null {
+    const rows = this.db.query<{
+      first_retained_seq: number;
+      anchor_hash: string;
+    }>(
+      `SELECT first_retained_seq, anchor_hash
+       FROM audit_retention_checkpoint
+       WHERE singleton = 1
+       LIMIT 1`,
+    );
+    if (rows.length === 0) return null;
+    return {
+      firstRetainedSeq: Number(rows[0].first_retained_seq),
+      anchorHash: String(rows[0].anchor_hash),
+    };
   }
 }
 

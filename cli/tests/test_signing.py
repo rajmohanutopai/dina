@@ -14,7 +14,6 @@ import pytest
 
 from dina_cli.signing import CLIIdentity, _ED25519_MULTICODEC
 
-
 # -- Keypair generation & persistence -----------------------------------------
 
 
@@ -74,7 +73,9 @@ def test_did_format(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
     did = identity.did()
-    assert did.startswith("did:key:z6Mk"), f"Ed25519 did:key should start with z6Mk, got {did}"
+    assert did.startswith(
+        "did:key:z6Mk"
+    ), f"Ed25519 did:key should start with z6Mk, got {did}"
 
 
 # TST-CLI-007
@@ -93,6 +94,28 @@ def test_did_different_keys(tmp_path):
     id2 = CLIIdentity(identity_dir=tmp_path / "b")
     id2.generate()
     assert id1.did() != id2.did()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership and mode checks")
+def test_load_rejects_group_readable_private_key(tmp_path):
+    identity = CLIIdentity(identity_dir=tmp_path)
+    identity.generate()
+    (tmp_path / "ed25519_private.pem").chmod(0o640)
+
+    with pytest.raises(PermissionError, match="permissions"):
+        CLIIdentity(identity_dir=tmp_path).load()
+
+
+def test_load_rejects_private_key_symlink(tmp_path):
+    source_dir = tmp_path / "source"
+    source = CLIIdentity(identity_dir=source_dir)
+    source.generate()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(mode=0o700)
+    (target_dir / "ed25519_private.pem").symlink_to(source_dir / "ed25519_private.pem")
+
+    with pytest.raises(PermissionError, match="regular file"):
+        CLIIdentity(identity_dir=target_dir).load()
 
 
 # -- public_key_multibase -----------------------------------------------------
@@ -135,7 +158,9 @@ def test_public_key_multibase_roundtrip(tmp_path):
 def test_sign_request_returns_four_parts(tmp_path):
     identity = CLIIdentity(identity_dir=tmp_path)
     identity.generate()
-    did, ts, nonce, sig = identity.sign_request("POST", "/v1/vault/query", b'{"test":1}')
+    did, ts, nonce, sig = identity.sign_request(
+        "POST", "/v1/vault/query", b'{"test":1}'
+    )
     assert did.startswith("did:key:z")
     assert "T" in ts and ts.endswith("Z")  # ISO 8601 UTC
     assert len(nonce) == 32  # 16 bytes hex-encoded

@@ -69,6 +69,21 @@ def _selection(*, selected: bool = True) -> HomeNodeReasoningSelection:
     )
 
 
+def test_default_host_profiles_are_isolated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DINA_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("DINA_PLUGIN_DEV_MODE", "1")
+    monkeypatch.setenv("DINA_AGENT_HOST_CONFIG_ROOT", str(tmp_path))
+
+    claude = AgentHostSetup("claude-code", manager=FakeManager())
+    codex = AgentHostSetup("codex", manager=FakeManager())
+
+    assert claude.config_dir == (tmp_path / "claude-code" / "cli").resolve()
+    assert codex.config_dir == (tmp_path / "codex" / "cli").resolve()
+
+
 def _wire_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -79,7 +94,9 @@ def _wire_dependencies(
     monkeypatch.setattr(
         agent_host_setup_module,
         "HomeNodeAgentEnroller",
-        lambda manager, config_dir: SimpleNamespace(enroll=lambda: enrollment),
+        lambda manager, config_dir, **_kwargs: SimpleNamespace(
+            enroll=lambda: enrollment
+        ),
     )
     monkeypatch.setattr(
         agent_host_setup_module,
@@ -127,6 +144,7 @@ def test_public_install_normalizes_identity_and_passes_test_overrides(
 ) -> None:
     manager = FakeManager()
     _wire_dependencies(monkeypatch)
+    monkeypatch.setenv("DINA_PLUGIN_DEV_MODE", "1")
     monkeypatch.setenv("DINA_SETUP_ENDPOINT_MODE", "test")
     monkeypatch.setenv("DINA_SETUP_CORE_PORT", "18100")
     monkeypatch.setenv("DINA_SETUP_BRAIN_PORT", "18200")
@@ -144,6 +162,30 @@ def test_public_install_normalizes_identity_and_passes_test_overrides(
     assert install["endpoint_mode"] == "test"
     assert install["core_port"] == 18100
     assert install["brain_port"] == 18200
+
+
+def test_packaged_setup_ignores_development_install_overrides(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = FakeManager()
+    _wire_dependencies(monkeypatch)
+    monkeypatch.delenv("DINA_PLUGIN_DEV_MODE", raising=False)
+    monkeypatch.setenv("DINA_SETUP_HOME_NODE_RELEASE", "attacker-release")
+    monkeypatch.setenv("DINA_SETUP_HOME_NODE_BUNDLE", str(tmp_path / "attacker.tgz"))
+    monkeypatch.setenv("DINA_SETUP_ENDPOINT_MODE", "test")
+    monkeypatch.setenv("DINA_SETUP_CORE_PORT", "18100")
+    monkeypatch.setenv("DINA_SETUP_BRAIN_PORT", "18200")
+    setup = AgentHostSetup("codex", manager=manager, config_dir=tmp_path / "cli")
+
+    setup.install(local_only=True, pds_handle=None, pds_email=None)
+
+    install = manager.install_calls[0]
+    assert install["bundle_path"] is None
+    assert install["endpoint_mode"] == "release"
+    assert install["core_port"] == 8100
+    assert install["brain_port"] == 8200
+    assert install["release_version"] != "attacker-release"
 
 
 def test_ensure_repairs_without_replacing_owner_brain_policy(

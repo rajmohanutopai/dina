@@ -15,6 +15,7 @@ dependencies = [
     "mnemonic==0.21",
     "fastmcp==2.14.5",
     "pyyaml>=6.0",
+    "sigstore==4.4.0",
 ]
 
 [project.optional-dependencies]

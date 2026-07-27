@@ -39,6 +39,8 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('Network protection');
       expect(body).toContain('Use this agent as Brain');
       expect(body).toContain('Pair coding agent');
+      expect(body).toContain('stale_policies');
+      expect(body).toContain("This Home Node's identity changed");
       // The owner can create a poll-mode subscription from this page (Piece 2).
       expect(body).toContain('/v1/watch/create');
       expect(body).toContain('New subscription');

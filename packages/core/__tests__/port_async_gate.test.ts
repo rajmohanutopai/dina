@@ -28,7 +28,6 @@ const CORE_SRC = resolve(__dirname, '..', 'src');
  *  as additional ports are converted — the gate then spot-checks them. */
 const CONVERTED_PORTS: readonly { file: string; interfaceName: string }[] = [
   { file: 'kv/repository.ts', interfaceName: 'KVRepository' },
-  { file: 'audit/repository.ts', interfaceName: 'AuditRepository' },
   { file: 'devices/repository.ts', interfaceName: 'DeviceRepository' },
   { file: 'memory/repository.ts', interfaceName: 'TopicRepository' },
   { file: 'chat/repository.ts', interfaceName: 'ChatMessageRepository' },
@@ -61,6 +60,12 @@ const PENDING_PORTS: readonly { file: string; interfaceName: string; reason: str
  * exempt case — pinned here rather than silently deviating.
  */
 const EXEMPTED_PORTS: readonly { file: string; interfaceName: string; reason: string }[] = [
+  {
+    file: 'audit/repository.ts',
+    interfaceName: 'AuditRepository',
+    reason:
+      'Small adapter over the EXEMPT sync DatabaseAdapter. Audit append must commit through the native SQLite binding before the in-memory hash-chain head advances; a Promise wrapper previously made that ordering unenforceable and hid synchronous write failures in a detached microtask.',
+  },
   {
     file: 'storage/db_adapter.ts',
     interfaceName: 'DatabaseAdapter',

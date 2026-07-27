@@ -26,13 +26,26 @@ NODE_MAJOR = 24
 
 
 class FakeCommands:
-    def __init__(self, *, fail_archive_import: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_archive_import: bool = False,
+        fail_signature: bool = False,
+    ) -> None:
         self.calls: list[list[str]] = []
         self.binary_inputs: list[bytes] = []
         self.fail_archive_import = fail_archive_import
+        self.fail_signature = fail_signature
 
     def __call__(self, command, **kwargs):
         self.calls.append([str(value) for value in command])
+        if "sigstore" in command and self.fail_signature:
+            raise subprocess.CalledProcessError(
+                1,
+                command,
+                output="",
+                stderr="invalid Sigstore identity",
+            )
         if len(command) >= 2 and command[1] == "-p":
             return subprocess.CompletedProcess(
                 command,
@@ -61,6 +74,21 @@ class FakeCommands:
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
 
+class FakeResponse:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.headers = {"Content-Length": str(len(content))}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> None:
+        return None
+
+    def read(self, maximum: int) -> bytes:
+        return self.content[:maximum]
+
+
 def _bundle(
     tmp_path: Path,
     *,
@@ -70,6 +98,8 @@ def _bundle(
     target_arch: str | None = None,
     extra_files: dict[str, bytes] | None = None,
     corrupt_digest_for: str | None = None,
+    minimum_cli_version: str = "0.20.0",
+    maximum_cli_version_exclusive: str = "0.21.0",
 ) -> Path:
     payloads = {
         "runtime/node": b"fake bundled node",
@@ -81,14 +111,15 @@ def _bundle(
     }
     payloads.update(extra_files or {})
     files = {
-        name: hashlib.sha256(content).hexdigest()
-        for name, content in payloads.items()
+        name: hashlib.sha256(content).hexdigest() for name, content in payloads.items()
     }
     if corrupt_digest_for is not None:
         files[corrupt_digest_for] = "0" * 64
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "release": version,
+        "minimum_cli_version": minimum_cli_version,
+        "maximum_cli_version_exclusive": maximum_cli_version_exclusive,
         "platform": target_platform or _runtime_platform(),
         "arch": target_arch or _runtime_arch(),
         "node_major": NODE_MAJOR,
@@ -179,6 +210,26 @@ def test_install_writes_verified_private_native_runtime(tmp_path: Path) -> None:
     assert "docker" not in serialized.lower()
     assert "image" not in serialized.lower()
     assert commands.calls == []
+
+
+@pytest.mark.parametrize(
+    "requested_release",
+    ["v0.20.0", "home-node-lite-v0.20.0"],
+)
+def test_install_normalizes_release_tag_forms(
+    tmp_path: Path,
+    requested_release: str,
+) -> None:
+    manager = _manager(tmp_path)
+    bundle = _bundle(tmp_path, version="0.20.0")
+
+    _install(manager, bundle, version=requested_release)
+
+    status = manager.status()
+    assert status.release_version == "0.20.0"
+    config = manager._load_config()
+    assert config is not None
+    assert config.release_version == "0.20.0"
 
 
 def test_install_wires_optional_pds_identity_without_seed_in_state(
@@ -273,24 +324,24 @@ def test_install_refuses_silent_runtime_change(tmp_path: Path) -> None:
         )
 
 
-def test_latest_is_idempotent_with_resolved_manifest_version(tmp_path: Path) -> None:
+def test_default_release_is_exact_and_idempotent(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
-    bundle = _bundle(tmp_path, version="0.20.7")
+    bundle = _bundle(tmp_path, version="0.20.0")
     manager.install(
-        release_version="latest",
+        release_version="0.20.0",
         bundle_path=bundle,
         endpoint_mode="test",
         start=False,
     )
 
     manager.install(
-        release_version="latest",
+        release_version="0.20.0",
         bundle_path=bundle,
         endpoint_mode="test",
         start=False,
     )
 
-    assert manager._load_config().release_version == "0.20.7"  # type: ignore[union-attr]
+    assert manager._load_config().release_version == "0.20.0"  # type: ignore[union-attr]
 
 
 def test_release_integrity_is_rechecked_before_start(tmp_path: Path) -> None:
@@ -315,15 +366,31 @@ def test_bundle_rejects_digest_mismatch(tmp_path: Path) -> None:
         _install(manager, bundle)
 
 
+def test_bundle_rejects_symlink_path(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    bundle = _bundle(tmp_path)
+    symlink = tmp_path / "linked-release.tar.gz"
+    try:
+        symlink.symlink_to(bundle)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable on this host: {exc}")
+
+    with pytest.raises(HomeNodeError, match="regular, non-symlink"):
+        _install(manager, symlink)
+
+
 def test_bundle_rejects_path_traversal(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     bundle = _bundle(tmp_path)
     malicious = tmp_path / "malicious.tar.gz"
-    with tarfile.open(bundle, "r:gz") as source, tarfile.open(
-        malicious, "w:gz"
-    ) as target:
+    with (
+        tarfile.open(bundle, "r:gz") as source,
+        tarfile.open(malicious, "w:gz") as target,
+    ):
         for member in source.getmembers():
-            target.addfile(member, source.extractfile(member) if member.isfile() else None)
+            target.addfile(
+                member, source.extractfile(member) if member.isfile() else None
+            )
         content = b"escape"
         info = tarfile.TarInfo("../escape")
         info.size = len(content)
@@ -349,6 +416,76 @@ def test_bundle_rejects_requested_version_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(HomeNodeError, match="does not match"):
         _install(manager, bundle, version="0.20.0")
+
+
+def test_bundle_rejects_incompatible_cli_range(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    bundle = _bundle(
+        tmp_path,
+        minimum_cli_version="0.21.0",
+        maximum_cli_version_exclusive="0.22.0",
+    )
+
+    with pytest.raises(HomeNodeError, match="requires dina-agent"):
+        _install(manager, bundle)
+
+
+def test_downloaded_bundle_requires_expected_sigstore_identity(
+    tmp_path: Path,
+) -> None:
+    bundle = _bundle(tmp_path).read_bytes()
+    signature = b'{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}'
+    commands = FakeCommands()
+
+    def open_url(request, **_kwargs):
+        return FakeResponse(
+            signature if request.full_url.endswith(".sigstore.json") else bundle
+        )
+
+    manager = HomeNodeManager(
+        tmp_path / "home-node",
+        run_command=commands,
+        open_url=open_url,
+        sleep=lambda _seconds: None,
+    )
+    manager._probe = lambda _url: False  # type: ignore[method-assign]
+
+    manager.install(
+        release_version="home-node-lite-v0.20.0",
+        endpoint_mode="test",
+        start=False,
+    )
+
+    verification = next(call for call in commands.calls if "sigstore" in call)
+    assert "--offline" in verification
+    assert (
+        "https://github.com/rajmohanutopai/dina/.github/workflows/"
+        "home-node-lite-release.yml@refs/tags/home-node-lite-v0.20.0" in verification
+    )
+
+
+def test_downloaded_bundle_fails_closed_on_bad_signature(tmp_path: Path) -> None:
+    bundle = _bundle(tmp_path).read_bytes()
+
+    def open_url(request, **_kwargs):
+        return FakeResponse(
+            b"bad signature" if request.full_url.endswith(".sigstore.json") else bundle
+        )
+
+    manager = HomeNodeManager(
+        tmp_path / "home-node",
+        run_command=FakeCommands(fail_signature=True),
+        open_url=open_url,
+        sleep=lambda _seconds: None,
+    )
+    manager._probe = lambda _url: False  # type: ignore[method-assign]
+
+    with pytest.raises(HomeNodeError, match="signature verification failed"):
+        manager.install(
+            release_version="0.20.0",
+            endpoint_mode="test",
+            start=False,
+        )
 
 
 def test_restore_identity_requires_pristine_data_and_pds_handle(
@@ -425,17 +562,17 @@ def test_archive_import_failure_restores_raw_data_snapshot(tmp_path: Path) -> No
 def test_upgrade_switches_release_and_cleans_snapshot(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     first = _bundle(tmp_path, version="0.20.0")
-    second = _bundle(tmp_path, version="0.21.0")
+    second = _bundle(tmp_path, version="0.20.1")
     _install(manager, first)
     marker = manager.data_dir / "marker"
     marker.write_text("preserved", encoding="utf-8")
 
     status = manager.upgrade(
-        release_version="0.21.0",
+        release_version="home-node-lite-v0.20.1",
         bundle_path=second,
     )
 
-    assert status.release_version == "0.21.0"
+    assert status.release_version == "0.20.1"
     assert marker.read_text() == "preserved"
     assert not manager.upgrade_journal_file.exists()
     assert not manager.upgrade_backup_dir.exists()
@@ -445,7 +582,7 @@ def test_upgrade_switches_release_and_cleans_snapshot(tmp_path: Path) -> None:
 def test_upgrade_failure_rolls_back_release_and_data(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     first = _bundle(tmp_path, version="0.20.0")
-    second = _bundle(tmp_path, version="0.21.0")
+    second = _bundle(tmp_path, version="0.20.1")
     _install(manager, first)
     original = manager._load_config()
     assert original is not None
@@ -469,7 +606,7 @@ def test_upgrade_failure_rolls_back_release_and_data(tmp_path: Path) -> None:
         )
         with pytest.raises(HomeNodeError, match="prior release and data"):
             manager.upgrade(
-                release_version="0.21.0",
+                release_version="0.20.1",
                 bundle_path=second,
             )
 
@@ -564,7 +701,8 @@ def test_logs_never_invoke_external_runtime(tmp_path: Path, capsys) -> None:
 
 def test_release_urls_are_platform_specific_and_overridable(monkeypatch) -> None:
     monkeypatch.delenv("DINA_HOME_NODE_RELEASE_URL", raising=False)
-    url = HomeNodeManager._release_url("1.2.3")
+    manager = HomeNodeManager()
+    url = manager._release_url("1.2.3")
     assert "home-node-lite-v1.2.3" in url
     assert _runtime_platform() in url
     assert _runtime_arch() in url
@@ -574,10 +712,25 @@ def test_release_urls_are_platform_specific_and_overridable(monkeypatch) -> None
         "DINA_HOME_NODE_RELEASE_URL",
         "https://example.test/{release}/{platform}/{arch}/bundle.tgz",
     )
-    assert HomeNodeManager._release_url("1.2.3") == (
+    assert manager._release_url("1.2.3") == (
         f"https://example.test/1.2.3/{_runtime_platform()}/"
         f"{_runtime_arch()}/bundle.tgz"
     )
+
+
+def test_release_overrides_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "DINA_HOME_NODE_RELEASE_URL",
+        "https://attacker.invalid/{release}/{platform}/{arch}/bundle.tgz",
+    )
+    monkeypatch.setenv(
+        "DINA_HOME_NODE_RELEASE_REPOSITORY",
+        "attacker/repository",
+    )
+    manager = HomeNodeManager(allow_release_overrides=False)
+
+    assert "attacker.invalid" not in manager._release_url("1.2.3")
+    assert manager._release_repository() == "rajmohanutopai/dina"
 
 
 def test_no_plugin_owned_source_mentions_docker() -> None:

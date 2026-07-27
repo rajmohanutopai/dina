@@ -28,7 +28,8 @@ import {
   type AgentGatingProfile,
   type AuthorityOrigin,
 } from '../../agent/gating_policy';
-import { appendAudit } from '../../audit/service';
+import { getAuditRepository } from '../../audit/repository';
+import { appendAudit, appendSampledAudit } from '../../audit/service';
 import { getNodeDID } from '../../pairing/ceremony';
 import { getSessionRegistry } from '../../session/registry';
 
@@ -56,6 +57,23 @@ export interface CodingGateResult {
   authorityOriginKind?: AuthorityOrigin['kind'];
   policyVersion?: number;
   auditLevel?: 'none' | 'kernel' | 'boundary' | 'full';
+}
+
+const SAFE_ALLOW_AUDIT_SAMPLE_MS = 60_000;
+
+function isLegitimateHostDelegation(
+  result: CodingGateResult,
+  profile: AgentGatingProfile,
+  authorityOrigin: AuthorityOrigin,
+): boolean {
+  return (
+    result.enforced === false &&
+    authorityOrigin.kind === 'owner_interactive' &&
+    profile !== 'full_supervision' &&
+    result.action === 'host_managed' &&
+    result.risk === 'SAFE' &&
+    result.outcome === 'allow'
+  );
 }
 
 export interface CodingGateInput {
@@ -175,6 +193,8 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       configured.policy !== null &&
       currentOwnerDid !== null &&
       configured.policy.selectedByOwnerDid === currentOwnerDid;
+    const policyStatus =
+      configured.policy === null ? 'default' : ownerBindingValid ? 'active' : 'stale_owner_binding';
     const principalHasNonOwnerAuthority = getSessionRegistry().hasActiveNonOwnerAuthority(agentDid);
     const authorityOrigin: AuthorityOrigin =
       sessionValidation.session.authorityOrigin ??
@@ -216,11 +236,17 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       policyVersion: ownerBindingValid ? configured.policyVersion : 0,
       mode: 'enforce',
     });
+    const hostDelegated = isLegitimateHostDelegation(rawResult, effectiveProfile, authorityOrigin);
     let result: Required<
       Pick<CodingGateResult, 'profile' | 'authorityOriginKind' | 'policyVersion' | 'auditLevel'>
     > &
       CodingGateResult = {
       ...rawResult,
+      // `enforced=false` is valid only for a narrowly defined owner-interactive
+      // host delegation. A faulty injected classifier cannot use that flag to
+      // suppress Core's durable approval path for a sensitive action.
+      enforced: !hostDelegated,
+      ...(hostDelegated ? { permitId: undefined } : {}),
       profile: effectiveProfile,
       authorityOriginKind: authorityOrigin.kind,
       policyVersion: ownerBindingValid ? configured.policyVersion : 0,
@@ -297,32 +323,60 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
       }
     }
 
-    // Item 8 — durably record every non-SAFE decision, METADATA ONLY. Never the
-    // tool_input (a Bash command / file path can carry a secret literal, §20);
-    // only action / risk / outcome / reason / mode. Best-effort — an audit
-    // failure must never change the gate decision.
-    if (result.auditLevel !== 'none') {
+    // Record decision METADATA ONLY. Never the tool_input (a Bash command /
+    // file path can carry a secret literal, §20). Repetitive SAFE allows in
+    // Full Supervision are sampled; classification still runs on every call.
+    // Non-SAFE, denied, and approval decisions are never sampled.
+    const requiresDurableAudit = result.risk !== 'SAFE' || result.outcome !== 'allow';
+    let auditAvailable = !requiresDurableAudit || getAuditRepository() !== null;
+    if (result.auditLevel !== 'none' || result.risk !== 'SAFE' || result.outcome !== 'allow') {
       try {
-        appendAudit(
-          agentDid,
-          `coding_gate:${result.action}`,
-          toolName,
-          JSON.stringify({
-            risk: result.risk,
-            outcome: result.outcome,
-            reason: result.reason,
-            profile: result.profile,
-            policy_version: result.policyVersion,
-            authority_origin: result.authorityOriginKind,
-            enforced: result.enforced,
-            ...(result.permitId ? { permit_id: result.permitId } : {}),
-            ...(approvalTaskId ? { task_id: approvalTaskId } : {}),
-            ...(sessionId ? { session_id: sessionId } : {}),
-          }),
-        );
+        if (!auditAvailable) throw new Error('durable audit repository is unavailable');
+        const auditAction = `coding_gate:${result.action}`;
+        const auditDetail = JSON.stringify({
+          risk: result.risk,
+          outcome: result.outcome,
+          reason: result.reason,
+          profile: result.profile,
+          policy_version: result.policyVersion,
+          policy_status: policyStatus,
+          authority_origin: result.authorityOriginKind,
+          enforced: result.enforced,
+          ...(result.permitId ? { permit_id: result.permitId } : {}),
+          ...(approvalTaskId ? { task_id: approvalTaskId } : {}),
+          ...(sessionId ? { session_id: sessionId } : {}),
+        });
+        if (result.risk === 'SAFE' && result.outcome === 'allow') {
+          appendSampledAudit(agentDid, auditAction, toolName, auditDetail, {
+            key: [
+              agentDid,
+              auditAction,
+              toolName,
+              result.profile,
+              policyStatus,
+              result.authorityOriginKind,
+            ].join('\u0000'),
+            intervalMs: SAFE_ALLOW_AUDIT_SAMPLE_MS,
+          });
+        } else {
+          auditAvailable = appendAudit(agentDid, auditAction, toolName, auditDetail) !== null;
+        }
       } catch {
-        /* audit is best-effort; the decision still stands */
+        auditAvailable = false;
       }
+    }
+    if (!auditAvailable) {
+      // A sensitive decision without its durable audit record is not allowed
+      // to cross the gate. This is before the host executes the action, so
+      // returning a retryable infrastructure error cannot duplicate an
+      // already-completed external side effect.
+      return {
+        status: 503,
+        body: {
+          error: 'audit_unavailable',
+          reason: 'Dina could not durably record this sensitive decision',
+        },
+      };
     }
 
     return {
@@ -337,6 +391,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
         reason: result.reason,
         profile: result.profile,
         policy_version: result.policyVersion,
+        policy_status: policyStatus,
         authority_origin: result.authorityOriginKind,
       },
     };

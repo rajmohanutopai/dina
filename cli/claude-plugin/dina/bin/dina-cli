@@ -3,10 +3,41 @@
 
 set -u
 
-RUNTIME_DIR="${DINA_SETUP_RUNTIME_DIR:-$HOME/.dina/runtime/agent-plugin}"
+DEV_MODE="${DINA_PLUGIN_DEV_MODE:-0}"
+if [ "$DEV_MODE" = "1" ]; then
+  RUNTIME_DIR="${DINA_SETUP_RUNTIME_DIR:-$HOME/.dina/runtime/agent-plugin}"
+else
+  RUNTIME_DIR="$HOME/.dina/runtime/agent-plugin"
+  unset DINA_CLI_BIN DINA_SETUP_RUNTIME_DIR DINA_AGENT_HOST_CONFIG_DIR
+  unset DINA_AGENT_HOST_CONFIG_ROOT DINA_HOME_NODE_DIR DINA_CONFIG_DIR
+  unset DINA_HOME_NODE_RELEASE_URL DINA_HOME_NODE_RELEASE_REPOSITORY
+  unset DINA_SETUP_CLI_SPEC DINA_SETUP_HOME_NODE_BUNDLE
+  unset DINA_SETUP_HOME_NODE_RELEASE DINA_SETUP_ENDPOINT_MODE
+  unset DINA_SETUP_CORE_PORT DINA_SETUP_BRAIN_PORT
+  unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+fi
 LEGACY_RUNTIME_DIR="$HOME/.dina/runtime/claude-plugin"
 
-if [ -n "${DINA_CLI_BIN:-}" ]; then
+case "${DINA_AGENT_HOST:-}" in
+  claude-code|codex)
+    # Host profiles are installer-owned and never resolved from the repository
+    # working directory or an ambient DINA_CONFIG_DIR.
+    if [ "$DEV_MODE" = "1" ]; then
+      DINA_CONFIG_DIR="${DINA_AGENT_HOST_CONFIG_DIR:-$HOME/.dina/agent-hosts/$DINA_AGENT_HOST/cli}"
+    else
+      DINA_CONFIG_DIR="$HOME/.dina/agent-hosts/$DINA_AGENT_HOST/cli"
+    fi
+    export DINA_CONFIG_DIR
+    ;;
+  "")
+    ;;
+  *)
+    printf 'Unsupported DINA_AGENT_HOST: %s\n' "$DINA_AGENT_HOST" >&2
+    exit 64
+    ;;
+esac
+
+if [ "$DEV_MODE" = "1" ] && [ -n "${DINA_CLI_BIN:-}" ]; then
   if [ ! -x "$DINA_CLI_BIN" ]; then
     printf 'Dina CLI override is not executable: %s\n' "$DINA_CLI_BIN" >&2
     exit 127
@@ -23,7 +54,8 @@ if [ -x "$LEGACY_RUNTIME_DIR/venv/bin/dina" ]; then
 fi
 
 SYSTEM_DINA="$(command -v dina 2>/dev/null || true)"
-if [ -n "$SYSTEM_DINA" ]; then
+if [ -n "$SYSTEM_DINA" ] &&
+  { [ -z "${DINA_AGENT_HOST:-}" ] || [ "$DEV_MODE" = "1" ]; }; then
   exec "$SYSTEM_DINA" "$@"
 fi
 

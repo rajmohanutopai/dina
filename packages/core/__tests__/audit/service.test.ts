@@ -30,38 +30,38 @@ describe('Audit Service', () => {
     it('appends entry with auto-incremented seq', () => {
       const e1 = appendAudit('brain', 'vault_store', 'general');
       const e2 = appendAudit('brain', 'vault_query', 'health');
-      expect(e1.seq).toBe(1);
-      expect(e2.seq).toBe(2);
+      expect(e1?.seq).toBe(1);
+      expect(e2?.seq).toBe(2);
     });
 
     it('entry has SHA-256 hash', () => {
       const e = appendAudit('brain', 'vault_store', 'general', 'stored 5 items');
-      expect(e.entry_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(e?.entry_hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('first entry has genesis marker as prev_hash', () => {
       const e = appendAudit('brain', 'vault_store', 'general');
-      expect(e.prev_hash).toBe(GENESIS_MARKER);
+      expect(e?.prev_hash).toBe(GENESIS_MARKER);
     });
 
     it('subsequent entries chain to previous hash', () => {
       const e1 = appendAudit('brain', 'action1', 'res1');
       const e2 = appendAudit('brain', 'action2', 'res2');
-      expect(e2.prev_hash).toBe(e1.entry_hash);
+      expect(e2?.prev_hash).toBe(e1?.entry_hash);
     });
 
     it('stores actor, action, resource, detail', () => {
       const e = appendAudit('did:key:z6MkBrain', 'vault_store', 'general', 'batch of 10');
-      expect(e.actor).toBe('did:key:z6MkBrain');
-      expect(e.action).toBe('vault_store');
-      expect(e.resource).toBe('general');
-      expect(e.detail).toBe('batch of 10');
+      expect(e?.actor).toBe('did:key:z6MkBrain');
+      expect(e?.action).toBe('vault_store');
+      expect(e?.resource).toBe('general');
+      expect(e?.detail).toBe('batch of 10');
     });
 
     it('has timestamp', () => {
       const before = Math.floor(Date.now() / 1000);
       const e = appendAudit('x', 'y', 'z');
-      expect(e.ts).toBeGreaterThanOrEqual(before);
+      expect(e?.ts).toBeGreaterThanOrEqual(before);
     });
 
     it('seq is monotonic across purge (never reused)', () => {
@@ -75,7 +75,7 @@ describe('Audit Service', () => {
 
       // Next entry should be seq=3, not seq=1
       const e3 = appendAudit('brain', 'a3', 'r3');
-      expect(e3.seq).toBe(3);
+      expect(e3?.seq).toBe(3);
     });
   });
 
@@ -195,7 +195,7 @@ describe('Audit Service', () => {
     it('latestEntry returns the most recent', () => {
       appendAudit('brain', 'first', 'a');
       appendAudit('brain', 'second', 'b');
-      expect(latestEntry()!.action).toBe('second');
+      expect(latestEntry()?.action).toBe('second');
     });
   });
 
@@ -234,7 +234,7 @@ describe('Audit Service', () => {
         reason: 'user asked about labs',
         metadata: { terms: 2 },
       });
-      const parsed = parseAuditDetail(entry.detail);
+      const parsed = parseAuditDetail(entry?.detail ?? '');
       expect(parsed.query_type).toBe('semantic');
       expect(parsed.reason).toBe('user asked about labs');
     });
@@ -273,19 +273,19 @@ describe('Audit Service', () => {
     it('uses current time by default', () => {
       const before = Math.floor(Date.now() / 1000);
       const entry = appendAudit('brain', 'test', 'res');
-      expect(entry.ts).toBeGreaterThanOrEqual(before);
+      expect(entry?.ts).toBeGreaterThanOrEqual(before);
     });
 
     it('accepts timestamp override for import/migration', () => {
       const historicalTs = 1600000000; // Sep 2020
       const entry = appendAudit('brain', 'imported', 'res', 'migrated entry', historicalTs);
-      expect(entry.ts).toBe(1600000000);
+      expect(entry?.ts).toBe(1600000000);
     });
 
     it('overridden timestamp is included in hash chain', () => {
       const e1 = appendAudit('brain', 'a', 'r', '', 1600000000);
       const e2 = appendAudit('brain', 'b', 'r', '', 1600000001);
-      expect(e2.prev_hash).toBe(e1.entry_hash);
+      expect(e2?.prev_hash).toBe(e1?.entry_hash);
       expect(verifyAuditChain().valid).toBe(true);
     });
   });

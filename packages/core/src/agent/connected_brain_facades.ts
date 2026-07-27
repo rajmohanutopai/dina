@@ -8,6 +8,7 @@
  */
 
 import { appendAudit } from '../audit/service';
+import { resolvePersonaName } from '../persona/names';
 import {
   isPersonaOpen,
   getPersonaTier,
@@ -15,7 +16,6 @@ import {
   personaExists,
   resolveInstalledPersonaName,
 } from '../persona/service';
-import { resolvePersonaName } from '../persona/names';
 import { scrubPII } from '../pii/patterns';
 import { reasoningHash } from '../reasoning/domain';
 import { getReasoningSchemaContract, validateReasoningResult } from '../reasoning/schema_registry';
@@ -74,13 +74,14 @@ export interface PersistConnectedBrainMemoryResult {
 
 export interface ConnectedBrainContextRequest {
   agentDid: string;
-  /** Core-derived owner DID for public-network personalization. */
+  /** Core-derived owner DID used only for local authorization and audit. */
   ownerDid?: string;
   sessionId: string;
   query: string;
   purpose: string;
   personas?: string[];
   limit?: number;
+  publicEvidenceSources?: readonly PublicReasoningEvidenceKind[];
 }
 
 export interface OwnerReasoningContextRequest {
@@ -89,6 +90,7 @@ export interface OwnerReasoningContextRequest {
   purpose: string;
   personas?: string[];
   limit?: number;
+  publicEvidenceSources?: readonly PublicReasoningEvidenceKind[];
 }
 
 export interface ServiceReasoningContextRequest {
@@ -130,10 +132,11 @@ export interface PublicReasoningEvidenceCandidate {
 }
 
 export interface PublicReasoningEvidenceSearch {
-  ownerDid: string;
   query: string;
   limit: number;
 }
+
+export type PublicReasoningEvidenceKind = 'review' | 'service';
 
 /**
  * Runtime-neutral public discovery seam.
@@ -501,35 +504,46 @@ async function addPublicReasoningEvidence(
   source: PublicReasoningEvidenceSource,
 ): Promise<ConnectedBrainContextResult> {
   const limit = request.limit ?? DEFAULT_CONTEXT_ITEMS;
-  const ownerDid =
+  const actorDid =
     'agentDid' in request ? (request.ownerDid ?? request.agentDid) : request.ownerDid;
+  const requestedSources = new Set(request.publicEvidenceSources ?? []);
+  if (requestedSources.size === 0) return projection;
+  const query = scrubPII(request.query.trim()).scrubbed.trim();
+  if (query === '') return projection;
   const search = {
-    ownerDid,
-    query: request.query.trim(),
+    query,
     limit,
   };
   const [reviewsResult, servicesResult] = await Promise.allSettled([
-    source.searchReviews(search),
-    source.searchServices(search),
+    requestedSources.has('review')
+      ? Promise.resolve().then(() => source.searchReviews(search))
+      : Promise.resolve(null),
+    requestedSources.has('service')
+      ? Promise.resolve().then(() => source.searchServices(search))
+      : Promise.resolve(null),
   ]);
   const reviews =
-    reviewsResult.status === 'fulfilled'
+    reviewsResult.status === 'fulfilled' && reviewsResult.value !== null
       ? normalizePublicEvidence('review', reviewsResult.value, limit)
       : [];
   const services =
-    servicesResult.status === 'fulfilled'
+    servicesResult.status === 'fulfilled' && servicesResult.value !== null
       ? normalizePublicEvidence('service', servicesResult.value, limit)
       : [];
   const unavailableSources: ('review' | 'service')[] = [];
-  if (reviewsResult.status === 'rejected') unavailableSources.push('review');
-  if (servicesResult.status === 'rejected') unavailableSources.push('service');
+  if (requestedSources.has('review') && reviewsResult.status === 'rejected') {
+    unavailableSources.push('review');
+  }
+  if (requestedSources.has('service') && servicesResult.status === 'rejected') {
+    unavailableSources.push('service');
+  }
   const items = mergeContextItems(projection.items, reviews, services, limit);
   const contextId = `ctx-${reasoningHash({
     baseContextId: projection.contextId,
     items,
     unavailableSources,
   }).slice(0, 32)}`;
-  safeAudit(ownerDid, 'public_reasoning_evidence_projected', contextId, {
+  safeAudit(actorDid, 'public_reasoning_evidence_projected', contextId, {
     review_count: reviews.length,
     service_count: services.length,
     unavailable_source_count: unavailableSources.length,

@@ -36,6 +36,7 @@ const OWNER_JOB_LIMIT = 100;
 export interface ConnectedBrainAskResult {
   handled: boolean;
   taskId?: string;
+  unavailableSources?: ('review' | 'service')[];
 }
 
 function isManagedAnswerBackend(backend: OwnerReasoningBackendView): boolean {
@@ -233,6 +234,7 @@ export async function trySubmitConnectedBrainAsk(
       input: { query },
       idempotency_key: `mobile-${userMessage.id}`,
       purpose,
+      public_evidence_sources: ['review', 'service'],
     });
   } catch {
     addMessage(
@@ -256,7 +258,13 @@ export async function trySubmitConnectedBrainAsk(
       backendId: 'policy-selected',
     });
   }
-  return { handled: true, taskId: submitted.submission.taskId };
+  return {
+    handled: true,
+    taskId: submitted.submission.taskId,
+    ...(submitted.unavailable_sources.length === 0
+      ? {}
+      : { unavailableSources: submitted.unavailable_sources }),
+  };
 }
 
 /** Reconcile persisted chat rows and heal the job-created/chat-row crash seam. */

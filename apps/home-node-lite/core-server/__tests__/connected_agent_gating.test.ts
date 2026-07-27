@@ -87,6 +87,51 @@ describe('connected-agent three-profile gate', () => {
     });
   });
 
+  it('gates WebFetch in Sensitive Boundaries even for an allowlisted host', () => {
+    const result = gate.gate(
+      input({
+        profile: 'sensitive_boundaries',
+        toolName: 'WebFetch',
+        toolInput: { url: 'https://docs.example/public' },
+      }),
+    );
+    expect(result).toMatchObject({
+      action: 'network_egress_untrusted',
+      outcome: 'approval_required',
+      enforced: true,
+      auditLevel: 'boundary',
+    });
+  });
+
+  it('keeps only clean public WebSearch host-managed in Sensitive Boundaries', () => {
+    expect(
+      gate.gate(
+        input({
+          profile: 'sensitive_boundaries',
+          toolName: 'WebSearch',
+          toolInput: { query: 'TypeScript AbortSignal documentation' },
+        }),
+      ),
+    ).toMatchObject({
+      action: 'host_managed',
+      outcome: 'allow',
+      enforced: false,
+    });
+    expect(
+      gate.gate(
+        input({
+          profile: 'sensitive_boundaries',
+          toolName: 'WebSearch',
+          toolInput: { query: 'Look up alice@example.com API key' },
+        }),
+      ),
+    ).toMatchObject({
+      outcome: 'approval_required',
+      enforced: true,
+      auditLevel: 'boundary',
+    });
+  });
+
   it('escalates unknown tools in Sensitive Boundaries', () => {
     const result = gate.gate(
       input({

@@ -1,5 +1,6 @@
 export { SQLiteAuditRepository, setAuditRepository } from './src/audit/repository';
 export type { AuditRepository } from './src/audit/repository';
+export { hydrateAuditState, resetAuditState, sweepRetention } from './src/audit/service';
 export { SQLiteChatMessageRepository, setChatMessageRepository } from './src/chat/repository';
 export type { ChatMessageRepository, StoredChatMessage } from './src/chat/repository';
 export { SQLiteContactRepository, setContactRepository } from './src/contacts/repository';

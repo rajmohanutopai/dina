@@ -14,6 +14,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -349,8 +350,15 @@ def _run_supervisor(*, fake_dina_body: str | None, tmp_path: Path):
         fake = bindir / "dina"
         fake.write_text("#!/bin/sh\n" + fake_dina_body + "\n")
         fake.chmod(fake.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    env = dict(os.environ)
-    env["PATH"] = str(bindir)  # isolate: only our fake dina (or nothing) is found
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "PATH": str(bindir),
+        "DINA_PLUGIN_DEV_MODE": "1",
+        "DINA_BOOTSTRAP_PYTHON": sys.executable,
+    }
+    if fake_dina_body is not None:
+        env["DINA_CLI_BIN"] = str(fake)
     return subprocess.run(
         [str(SUPERVISOR)],
         input=b'{"tool_name":"Read","tool_input":{}}',

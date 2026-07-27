@@ -434,7 +434,8 @@ policy throughout the session."
 - safe calls may still run without a prompt;
 - moderate and high-risk calls follow host or phone approval policy;
 - blocked actions are denied;
-- decision metadata is auditable;
+- decision metadata is auditable; repetitive SAFE/allow decisions may be
+  sampled per agent, action, and tool while every call is still evaluated;
 - raw tool arguments are not retained by default.
 
 Full Supervision means complete policy coverage, not continuous
@@ -1651,7 +1652,8 @@ Required assertions:
 - protected paths deny in all profiles;
 - Network Protection emits no ordinary-action audit;
 - Sensitive Boundaries emits no ordinary-action audit;
-- Full Supervision emits decision metadata;
+- Full Supervision emits decision metadata; repetitive SAFE/allow decisions
+  may be sampled while policy evaluation remains per-call;
 - raw tool input is absent from operational logs.
 
 ### 27.2 Reasoning broker

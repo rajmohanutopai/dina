@@ -44,9 +44,7 @@ interface RemoteApprovalProposal {
 }
 
 interface RemoteApprovalPayload extends RemoteApprovalProposal {
-  type:
-    | typeof REMOTE_APPROVAL_PAYLOAD_TYPE
-    | typeof REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE;
+  type: typeof REMOTE_APPROVAL_PAYLOAD_TYPE | typeof REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE;
   source_device_did: string;
 }
 
@@ -89,12 +87,12 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
 
   const pendingForDevice = service
     .store()
-    .listByKindAndState(
+    .countByKindStateAndPayloadFields(
       'approval',
       WorkflowTaskState.PendingApproval,
-      Math.max(1, service.store().size()),
-    )
-    .filter((task) => parseStoredPayload(task.payload)?.source_device_did === callerDID).length;
+      { source_device_did: callerDID },
+      MAX_PENDING_PER_DEVICE,
+    );
   if (pendingForDevice >= MAX_PENDING_PER_DEVICE) {
     return json(429, {
       error: 'too_many_pending_proposals',

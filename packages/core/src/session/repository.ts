@@ -30,6 +30,8 @@ export interface SessionRepository {
    * Ended sessions are tombstones the registry never needs to reload.
    */
   loadActive(): SessionRecord[];
+  /** Remove expired tombstones and cap retained recent tombstones. */
+  pruneEnded?(endedBeforeMs: number, retainNewest: number): void;
 }
 
 const COLS =
@@ -98,5 +100,27 @@ export class SQLiteSessionRepository implements SessionRepository {
     return this.db
       .query(`SELECT ${COLS} FROM agent_sessions WHERE ended_at IS NULL`, [])
       .map(rowToSession);
+  }
+
+  pruneEnded(endedBeforeMs: number, retainNewest: number): void {
+    const boundedRetain = Math.max(1, Math.floor(retainNewest));
+    this.db.transaction(() => {
+      this.db.execute(
+        `DELETE FROM agent_sessions
+          WHERE ended_at IS NOT NULL AND ended_at < ?`,
+        [endedBeforeMs],
+      );
+      this.db.execute(
+        `DELETE FROM agent_sessions
+          WHERE ended_at IS NOT NULL
+            AND session_id NOT IN (
+              SELECT session_id FROM agent_sessions
+               WHERE ended_at IS NOT NULL
+               ORDER BY ended_at DESC, session_id DESC
+               LIMIT ?
+            )`,
+        [boundedRetain],
+      );
+    });
   }
 }

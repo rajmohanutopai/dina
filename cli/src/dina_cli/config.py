@@ -11,22 +11,39 @@ from pathlib import Path
 import click
 
 _GLOBAL_CONFIG_DIR = Path.home() / ".dina" / "cli"
-_LOCAL_CONFIG_DIR = Path.cwd() / ".dina" / "cli"
+_AGENT_HOST_CONFIG_ROOT = Path.home() / ".dina" / "agent-hosts"
+_SUPPORTED_AGENT_HOSTS = frozenset(("claude-code", "codex"))
 
 
 def _resolve_config_dir() -> Path:
-    """Find config directory: env override, then local, then global.
+    """Find the owner-controlled config directory.
 
     Priority:
       1. DINA_CONFIG_DIR env var (for automation / multi-instance testing)
-      2. Local .dina/cli/ in cwd (multi-instance: run from project folder)
+      2. Host-owned profile selected by DINA_AGENT_HOST
       3. Global ~/.dina/cli/ (single-instance default)
+
+    Repository-local configuration is deliberately never discovered. A working
+    tree is untrusted input to coding agents and must not be able to redirect
+    signed Dina requests or substitute the identity used by a safety hook.
     """
     env_dir = os.environ.get("DINA_CONFIG_DIR")
     if env_dir:
-        return Path(env_dir)
-    if (_LOCAL_CONFIG_DIR / "config.json").exists():
-        return _LOCAL_CONFIG_DIR
+        return Path(env_dir).expanduser()
+    host = os.environ.get("DINA_AGENT_HOST", "").strip().lower()
+    if host:
+        if host not in _SUPPORTED_AGENT_HOSTS:
+            raise click.UsageError(
+                f"Invalid DINA_AGENT_HOST {host!r}. "
+                f"Must be one of {', '.join(sorted(_SUPPORTED_AGENT_HOSTS))}."
+            )
+        root = Path(
+            os.environ.get(
+                "DINA_AGENT_HOST_CONFIG_ROOT",
+                str(_AGENT_HOST_CONFIG_ROOT),
+            )
+        ).expanduser()
+        return root / host / "cli"
     return _GLOBAL_CONFIG_DIR
 
 
@@ -50,20 +67,22 @@ class Config:
     core_url: str
     timeout: float
     device_name: str = ""
-    role: str = "user"         # "user" or "agent" — set during configure
+    role: str = "user"  # "user" or "agent" — set during configure
     # MsgBox transport — the default (CLI.3). Dina is MsgBox-only: every
     # CLI / dina-agent / cross-Dina request goes through the mailbox so a
     # NAT'd/mobile Home Node is reachable and direct HTTP against core_url
     # is not relied on. `direct` and `auto` remain available for explicit
     # same-machine/dev use, but are no longer the default.
-    msgbox_url: str = ""       # wss://mailbox.example.com/ws
-    homenode_did: str = ""     # did:plc:... of the paired Home Node
+    msgbox_url: str = ""  # wss://mailbox.example.com/ws
+    homenode_did: str = ""  # did:plc:... of the paired Home Node
     transport_mode: str = "msgbox"  # "direct" | "msgbox" (default) | "auto"
-    openclaw_url: str = ""     # ws://localhost:3000 — OpenClaw Gateway
-    openclaw_token: str = ""   # Gateway auth token
+    openclaw_url: str = ""  # ws://localhost:3000 — OpenClaw Gateway
+    openclaw_token: str = ""  # Gateway auth token
     openclaw_device_token: str = ""  # Cached per-device Gateway token
-    openclaw_hook_token: str = ""    # Token for /hooks/dina-task submission
-    agent_runner: str = ""           # Default runner: "openclaw", "hermes", or "" (defaults to openclaw)
+    openclaw_hook_token: str = ""  # Token for /hooks/dina-task submission
+    agent_runner: str = (
+        ""  # Default runner: "openclaw", "hermes", or "" (defaults to openclaw)
+    )
 
 
 def _load_saved() -> dict:
@@ -160,11 +179,17 @@ def load_config() -> Config:
     """
     saved = _load_saved()
 
-    core_url = os.environ.get("DINA_CORE_URL") or saved.get("core_url") or "http://localhost:8100"
+    core_url = (
+        os.environ.get("DINA_CORE_URL")
+        or saved.get("core_url")
+        or "http://localhost:8100"
+    )
     timeout = float(os.environ.get("DINA_TIMEOUT") or saved.get("timeout") or 30.0)
     device_name = saved.get("device_name") or ""
     msgbox_url = os.environ.get("DINA_MSGBOX_URL") or saved.get("msgbox_url") or ""
-    homenode_did = os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+    homenode_did = (
+        os.environ.get("DINA_HOMENODE_DID") or saved.get("homenode_did") or ""
+    )
     transport_mode = (
         os.environ.get("DINA_TRANSPORT")
         or saved.get("transport_mode")
@@ -182,8 +207,12 @@ def load_config() -> Config:
         )
 
     role = saved.get("role") or "user"
-    openclaw_url = os.environ.get("DINA_OPENCLAW_URL") or saved.get("openclaw_url") or ""
-    openclaw_token = os.environ.get("DINA_OPENCLAW_TOKEN") or saved.get("openclaw_token") or ""
+    openclaw_url = (
+        os.environ.get("DINA_OPENCLAW_URL") or saved.get("openclaw_url") or ""
+    )
+    openclaw_token = (
+        os.environ.get("DINA_OPENCLAW_TOKEN") or saved.get("openclaw_token") or ""
+    )
     openclaw_device_token = (
         os.environ.get("DINA_OPENCLAW_DEVICE_TOKEN")
         or saved.get("openclaw_device_token")
@@ -194,7 +223,9 @@ def load_config() -> Config:
         or saved.get("openclaw_hook_token")
         or ""
     )
-    agent_runner = os.environ.get("DINA_AGENT_RUNNER") or saved.get("agent_runner") or ""
+    agent_runner = (
+        os.environ.get("DINA_AGENT_RUNNER") or saved.get("agent_runner") or ""
+    )
 
     return Config(
         core_url=core_url,

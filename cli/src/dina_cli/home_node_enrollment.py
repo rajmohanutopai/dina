@@ -14,6 +14,7 @@ import contextlib
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 from dataclasses import dataclass
@@ -42,6 +43,23 @@ class HomeNodeEnrollment:
 
 
 @dataclass(frozen=True)
+class ManagedEnrollmentCleanupFailure:
+    config_dir: str
+    code: str
+
+
+@dataclass(frozen=True)
+class ManagedEnrollmentCleanupReport:
+    removed_count: int = 0
+    skipped_count: int = 0
+    failures: tuple[ManagedEnrollmentCleanupFailure, ...] = ()
+
+    @property
+    def removed(self) -> bool:
+        return self.removed_count > 0
+
+
+@dataclass(frozen=True)
 class ManagedEnrollmentCleanup:
     """A purge-time cleanup plan captured before the install directory is removed."""
 
@@ -51,8 +69,7 @@ class ManagedEnrollmentCleanup:
     agent_did: str
     home_did: str
 
-    def apply(self) -> bool:
-        """Remove only credentials still proven to belong to this installation."""
+    def _apply_verified(self) -> bool:
         with _enrollment_lock_for(self.config_dir):
             config_file = self.config_dir / "config.json"
             identity_dir = self.config_dir / "identity"
@@ -87,6 +104,64 @@ class ManagedEnrollmentCleanup:
                 self.config_dir.rmdir()
             return True
 
+    def apply_report(self) -> ManagedEnrollmentCleanupReport:
+        """Remove exact managed credentials and report recoverable failures."""
+        try:
+            removed = self._apply_verified()
+        except Exception:
+            return ManagedEnrollmentCleanupReport(
+                failures=(
+                    ManagedEnrollmentCleanupFailure(
+                        config_dir=str(self.config_dir),
+                        code="cleanup_failed",
+                    ),
+                )
+            )
+        return ManagedEnrollmentCleanupReport(
+            removed_count=1 if removed else 0,
+            skipped_count=0 if removed else 1,
+        )
+
+    def apply(self) -> bool:
+        """Backward-compatible boolean projection of apply_report()."""
+        return self.apply_report().removed
+
+
+@dataclass(frozen=True)
+class ManagedEnrollmentCleanupBatch:
+    """Cleanup plans for all installer-managed coding hosts."""
+
+    cleanups: tuple[ManagedEnrollmentCleanup, ...]
+
+    def apply_report(self) -> ManagedEnrollmentCleanupReport:
+        removed = 0
+        skipped = 0
+        failures: list[ManagedEnrollmentCleanupFailure] = []
+        for cleanup in self.cleanups:
+            try:
+                report = cleanup.apply_report()
+            except Exception:
+                report = ManagedEnrollmentCleanupReport(
+                    failures=(
+                        ManagedEnrollmentCleanupFailure(
+                            config_dir=str(cleanup.config_dir),
+                            code="cleanup_failed",
+                        ),
+                    )
+                )
+            removed += report.removed_count
+            skipped += report.skipped_count
+            failures.extend(report.failures)
+        return ManagedEnrollmentCleanupReport(
+            removed_count=removed,
+            skipped_count=skipped,
+            failures=tuple(failures),
+        )
+
+    def apply(self) -> bool:
+        """Backward-compatible boolean projection of apply_report()."""
+        return self.apply_report().removed
+
 
 def default_agent_config_dir() -> Path:
     override = os.environ.get("DINA_CONFIG_DIR", "").strip()
@@ -101,6 +176,8 @@ class HomeNodeAgentEnroller:
         manager: HomeNodeManager,
         *,
         config_dir: Path | None = None,
+        device_name: str | None = None,
+        receipt_name: str | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 15.0,
     ) -> None:
@@ -110,7 +187,15 @@ class HomeNodeAgentEnroller:
         )
         self.identity_dir = self.config_dir / "identity"
         self.config_file = self.config_dir / "config.json"
-        self.receipt_file = self.manager.install_dir / "agent-enrollment.json"
+        self.device_name = device_name or _device_name()
+        if receipt_name is None:
+            self.receipt_file = self.manager.install_dir / "agent-enrollment.json"
+        else:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", receipt_name):
+                raise HomeNodeEnrollmentError("Invalid enrollment receipt name.")
+            self.receipt_file = (
+                self.manager.install_dir / "agent-enrollments" / f"{receipt_name}.json"
+            )
         self.transport = transport
         self.timeout = timeout
 
@@ -286,7 +371,7 @@ class HomeNodeAgentEnroller:
             "/v1/pair/complete",
             json={
                 "code": setup.code,
-                "device_name": _device_name(),
+                "device_name": self.device_name,
                 "public_key_multibase": identity.public_key_multibase(),
                 # Core ignores this privilege hint. The owner-minted pairing
                 # intent is authoritative for role=agent, scope=coding.
@@ -419,7 +504,7 @@ class HomeNodeAgentEnroller:
     ) -> dict[str, Any]:
         return {
             "core_url": core_url.rstrip("/"),
-            "device_name": _device_name(),
+            "device_name": self.device_name,
             "role": "agent",
             "agent_scope": "coding",
             "msgbox_url": msgbox_url,
@@ -491,9 +576,28 @@ class HomeNodeAgentEnroller:
 
 def prepare_managed_enrollment_cleanup(
     manager: HomeNodeManager,
-) -> ManagedEnrollmentCleanup | None:
+) -> ManagedEnrollmentCleanup | ManagedEnrollmentCleanupBatch | None:
     """Capture a verified cleanup plan before destructive Home Node removal."""
-    receipt_file = manager.install_dir / "agent-enrollment.json"
+    receipt_files = [manager.install_dir / "agent-enrollment.json"]
+    receipt_dir = manager.install_dir / "agent-enrollments"
+    if receipt_dir.is_dir() and not receipt_dir.is_symlink():
+        receipt_files.extend(sorted(receipt_dir.glob("*.json")))
+    cleanups = tuple(
+        cleanup
+        for receipt_file in receipt_files
+        if (cleanup := _cleanup_from_receipt(manager, receipt_file)) is not None
+    )
+    if len(cleanups) == 1:
+        return cleanups[0]
+    if cleanups:
+        return ManagedEnrollmentCleanupBatch(cleanups=cleanups)
+    return None
+
+
+def _cleanup_from_receipt(
+    manager: HomeNodeManager,
+    receipt_file: Path,
+) -> ManagedEnrollmentCleanup | None:
     if not receipt_file.is_file() or receipt_file.is_symlink():
         return None
     try:

@@ -116,7 +116,6 @@ export function createAppViewReasoningEvidenceSource(
         q: request.query.slice(0, MAX_REVIEW_QUERY_CHARS),
         sort: 'relevant',
         limit: request.limit,
-        viewerDid: request.ownerDid,
       });
       return response.results
         .map((attestation): PublicReasoningEvidenceCandidate | null => {

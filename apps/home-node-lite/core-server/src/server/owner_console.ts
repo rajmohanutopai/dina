@@ -182,6 +182,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   var KEY = "dina.owner_capability";
   var currentCodingAgents = [];
   var agentPolicies = {};
+  var staleAgentPolicies = {};
   var reasoningBackends = {};
   function getCap() {
     var v = sessionStorage.getItem(KEY);
@@ -257,6 +258,10 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       ((rows[0] && rows[0].policies) || []).forEach(function (p) {
         if (p && p.agent_did) agentPolicies[String(p.agent_did)] = p;
       });
+      staleAgentPolicies = {};
+      ((rows[0] && rows[0].stale_policies) || []).forEach(function (p) {
+        if (p && p.agent_did) staleAgentPolicies[String(p.agent_did)] = p;
+      });
       reasoningBackends = {};
       ((rows[1] && rows[1].backends) || []).forEach(function (b) {
         if (!b || !b.principal_did) return;
@@ -280,6 +285,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     agents.forEach(function (agent) {
       var did = String(agent.did || "");
       var policy = agentPolicies[did] || null;
+      var stalePolicy = staleAgentPolicies[did] || null;
       var profile = policy && !policy.revoked_at ? String(policy.profile) : "full_supervision";
       var backends = reasoningBackends[did] || [];
       var activeBrain = backends.find(function (b) {
@@ -303,10 +309,20 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       var save = btn("Save supervision", "", function () {
         api("PUT", "/v1/owner/agent-policies/" + encodeURIComponent(did), {
           profile: select.value,
-          expected_version: policy ? policy.policy_version : null,
+          expected_version: policy
+            ? policy.policy_version
+            : stalePolicy
+              ? stalePolicy.policy_version
+              : null,
         }).then(loadAgentControls).catch(function (e) { alert(e.message); });
       });
       card.appendChild(el("div", { class: "row" }, [select, save]));
+      if (stalePolicy) {
+        card.appendChild(el("p", {
+          class: "muted",
+          text: "This Home Node's identity changed. Full supervision is active until you confirm a supervision level again.",
+        }));
+      }
       card.appendChild(el("p", {
         class: "muted",
         text: profileDescription(profile),

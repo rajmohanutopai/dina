@@ -427,6 +427,18 @@ export interface WorkflowRepository {
   // -- diagnostics / sweeper --
   listByKindAndState(kind: string, state: WorkflowTaskState, limit: number): WorkflowTask[];
   /**
+   * Count matching tasks without hydrating the whole workflow table.
+   *
+   * `maxCount` bounds the SQL/in-memory scan because callers use this for
+   * admission caps and only need to know whether a small threshold was hit.
+   */
+  countByKindStateAndPayloadFields(
+    kind: string,
+    state: WorkflowTaskState,
+    fields: Readonly<Record<string, string>>,
+    maxCount: number,
+  ): number;
+  /**
    * All NON-terminal tasks on a runner lane (e.g. `plugin:<install>`). Used to
    * terminate in-flight work when an install/device is revoked or uninstalled
    * (P1-4) — the caller `cancel()`s each so running effectful tasks park as
@@ -502,6 +514,18 @@ const TERMINAL_STATES_SQL = `('completed','failed','cancelled','outcome_unknown'
 /** Random per-claim lease token (§9.1). 32 hex chars. */
 function newClaimId(): string {
   return bytesToHex(randomBytes(16));
+}
+
+function validatedPayloadFields(
+  fields: Readonly<Record<string, string>>,
+): readonly (readonly [string, string])[] {
+  const entries = Object.entries(fields);
+  for (const [field] of entries) {
+    if (!/^[A-Za-z0-9_]+$/.test(field)) {
+      throw new Error(`workflow: invalid payload field "${field}"`);
+    }
+  }
+  return entries;
 }
 
 type LeaseLossVerdict =
@@ -830,6 +854,34 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       [kind, state, limit],
     );
     return rows.map(rowToTask);
+  }
+
+  countByKindStateAndPayloadFields(
+    kind: string,
+    state: WorkflowTaskState,
+    fields: Readonly<Record<string, string>>,
+    maxCount: number,
+  ): number {
+    const entries = validatedPayloadFields(fields);
+    const boundedMax = Math.max(0, Math.floor(maxCount));
+    if (entries.length === 0 || boundedMax === 0) return 0;
+
+    const predicates = entries.map(() => 'json_extract(payload, ?) = ?').join(' AND ');
+    const params: unknown[] = [kind, state];
+    for (const [field, value] of entries) {
+      params.push(`$.${field}`, value);
+    }
+    params.push(boundedMax);
+    const rows = this.db.query<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM (
+         SELECT 1 FROM workflow_tasks
+          WHERE kind = ? AND state = ? AND json_valid(payload)
+            AND ${predicates}
+          LIMIT ?
+       )`,
+      params,
+    );
+    return Number(rows[0]?.count ?? 0);
   }
 
   listNonTerminalByRunner(runner: string): WorkflowTask[] {
@@ -1932,6 +1984,34 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     }
     out.sort((a, b) => a.created_at - b.created_at);
     return out.slice(0, limit);
+  }
+
+  countByKindStateAndPayloadFields(
+    kind: string,
+    state: WorkflowTaskState,
+    fields: Readonly<Record<string, string>>,
+    maxCount: number,
+  ): number {
+    const entries = validatedPayloadFields(fields);
+    const boundedMax = Math.max(0, Math.floor(maxCount));
+    if (entries.length === 0 || boundedMax === 0) return 0;
+
+    let count = 0;
+    for (const task of this.tasks.values()) {
+      if (task.kind !== kind || task.status !== state) continue;
+      let payload: Record<string, unknown>;
+      try {
+        const parsed = JSON.parse(task.payload) as unknown;
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+        payload = parsed as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (!entries.every(([field, value]) => payload[field] === value)) continue;
+      count += 1;
+      if (count >= boundedMax) return boundedMax;
+    }
+    return count;
   }
 
   listNonTerminalByRunner(runner: string): WorkflowTask[] {

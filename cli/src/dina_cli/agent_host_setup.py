@@ -34,6 +34,10 @@ DINA_MANAGED_PDS_HOSTS = (
 )
 
 
+def _plugin_development_mode() -> bool:
+    return os.environ.get("DINA_PLUGIN_DEV_MODE", "").strip() == "1"
+
+
 class AgentHostSetupError(HomeNodeError):
     """A setup failure with a stable machine-readable code."""
 
@@ -72,15 +76,24 @@ def normalize_pds_handle(handle: str) -> str:
     return normalized
 
 
-def default_host_config_dir() -> Path:
-    """Resolve the coding-agent profile used by both host plugins."""
-    configured = os.environ.get("DINA_CONFIG_DIR", "").strip()
+def default_host_config_dir(host: str) -> Path:
+    """Resolve the installer-owned profile for one coding-agent host."""
+    configured = (
+        os.environ.get("DINA_CONFIG_DIR", "").strip()
+        if _plugin_development_mode()
+        else ""
+    )
     if configured:
         return Path(configured).expanduser()
-    local = Path.cwd() / ".dina" / "cli"
-    if (local / "config.json").is_file():
-        return local
-    return Path.home() / ".dina" / "cli"
+    configured_root = (
+        os.environ.get("DINA_AGENT_HOST_CONFIG_ROOT", "").strip()
+        if _plugin_development_mode()
+        else ""
+    )
+    root = Path(
+        configured_root or str(Path.home() / ".dina" / "agent-hosts")
+    ).expanduser()
+    return root / host / "cli"
 
 
 def _host_label(host: str) -> str:
@@ -136,9 +149,17 @@ class AgentHostSetup:
                 f"Unsupported agent host {host!r}.",
             )
         self.host = host
-        self.manager = manager or HomeNodeManager()
+        if manager is None:
+            development_mode = _plugin_development_mode()
+            manager = HomeNodeManager(
+                install_dir=(
+                    None if development_mode else Path.home() / ".dina" / "home-node"
+                ),
+                allow_release_overrides=development_mode,
+            )
+        self.manager = manager
         self.config_dir = (
-            (config_dir or default_host_config_dir()).expanduser().resolve()
+            (config_dir or default_host_config_dir(host)).expanduser().resolve()
         )
 
     def status(self) -> dict[str, Any]:
@@ -211,17 +232,31 @@ class AgentHostSetup:
                 "Choose local-only setup or provide a public PDS handle.",
             )
 
-        release = os.environ.get("DINA_SETUP_HOME_NODE_RELEASE", "").strip()
-        bundle = os.environ.get("DINA_SETUP_HOME_NODE_BUNDLE", "").strip()
+        development_mode = _plugin_development_mode()
+        release = (
+            os.environ.get("DINA_SETUP_HOME_NODE_RELEASE", "").strip()
+            if development_mode
+            else ""
+        )
+        bundle = (
+            os.environ.get("DINA_SETUP_HOME_NODE_BUNDLE", "").strip()
+            if development_mode
+            else ""
+        )
         status = self.manager.install(
             release_version=release or DEFAULT_RELEASE,
             bundle_path=Path(bundle).expanduser() if bundle else None,
-            endpoint_mode=os.environ.get(
-                "DINA_SETUP_ENDPOINT_MODE",
-                "release",
+            endpoint_mode=(
+                os.environ.get("DINA_SETUP_ENDPOINT_MODE", "release")
+                if development_mode
+                else "release"
             ),
-            core_port=_int_env("DINA_SETUP_CORE_PORT", 8100),
-            brain_port=_int_env("DINA_SETUP_BRAIN_PORT", 8200),
+            core_port=(
+                _int_env("DINA_SETUP_CORE_PORT", 8100) if development_mode else 8100
+            ),
+            brain_port=(
+                _int_env("DINA_SETUP_BRAIN_PORT", 8200) if development_mode else 8200
+            ),
             pds_handle=pds_handle,
             pds_email=pds_email,
             start=True,
@@ -245,6 +280,8 @@ class AgentHostSetup:
         enrollment = HomeNodeAgentEnroller(
             self.manager,
             config_dir=self.config_dir,
+            device_name=f"{_host_label(self.host)} coding agent",
+            receipt_name=self.host,
         ).enroll()
         selection = HomeNodeReasoningSelector(self.manager).select(enrollment)
         return enrollment, selection

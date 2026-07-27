@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" home-node ensure --if-installed --quiet",
+            "command": "DINA_AGENT_HOST=claude-code \"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" home-node ensure --if-installed --quiet",
             "timeout": 120
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" session-end-hook",
+            "command": "DINA_AGENT_HOST=claude-code \"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli\" session-end-hook",
             "timeout": 10
           }
         ]

@@ -13,20 +13,31 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINTS = {
     "core.cjs": ROOT / "apps/home-node-lite/core-server/src/bin.ts",
     "brain.cjs": ROOT / "apps/home-node-lite/brain-server/src/bin.ts",
-    "archive.cjs": ROOT
-    / "apps/home-node-lite/core-server/src/storage/archive_tool.ts",
+    "archive.cjs": ROOT / "apps/home-node-lite/core-server/src/storage/archive_tool.ts",
 }
 NATIVE_PACKAGES = (
     "better-sqlite3-multiple-ciphers",
     "bindings",
     "file-uri-to-path",
 )
+
+
+def cli_compatibility_range() -> tuple[str, str]:
+    project = tomllib.loads((ROOT / "cli/pyproject.toml").read_text(encoding="utf-8"))
+    version = str(project["project"]["version"])
+    core = version.split("-", 1)[0].split("+", 1)[0]
+    parts = core.split(".")
+    if len(parts) != 3 or any(not part.isdigit() for part in parts):
+        raise SystemExit(f"cli/pyproject.toml has unsupported version {version!r}")
+    major, minor, _patch = (int(part) for part in parts)
+    return version, f"{major}.{minor + 1}.0"
 
 
 def main() -> int:
@@ -39,6 +50,7 @@ def main() -> int:
         help="Node runtime to bundle (default: current node executable)",
     )
     args = parser.parse_args()
+    minimum_cli_version, maximum_cli_version_exclusive = cli_compatibility_range()
 
     node = (args.node or current_node()).expanduser().resolve()
     node_info = json.loads(
@@ -83,8 +95,10 @@ def main() -> int:
             if path.is_file()
         }
         manifest = {
-            "schema": 1,
+            "schema": 2,
             "release": args.version,
+            "minimum_cli_version": minimum_cli_version,
+            "maximum_cli_version_exclusive": maximum_cli_version_exclusive,
             "platform": node_info["platform"],
             "arch": node_info["arch"],
             "node_major": node_info["major"],
@@ -251,7 +265,9 @@ def write_deterministic_tar(staging: Path, destination: Path) -> None:
             fileobj=raw,
             mtime=epoch,
         ) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as tar:
+            with tarfile.open(
+                fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+            ) as tar:
                 for path in sorted(staging.rglob("*")):
                     if not path.is_file():
                         continue

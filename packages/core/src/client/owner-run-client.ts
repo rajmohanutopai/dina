@@ -118,6 +118,7 @@ export interface OwnerReasoningSubmitRequest {
   backend_id?: string | null;
   personas?: string[];
   limit?: number;
+  public_evidence_sources?: ('review' | 'service')[];
 }
 
 export interface OwnerReasoningSubmitResult {
@@ -128,6 +129,7 @@ export interface OwnerReasoningSubmitResult {
     status: 'pending_approval' | 'denied' | 'locked' | 'unavailable';
     taskId?: string;
   }[];
+  unavailable_sources: ('review' | 'service')[];
 }
 
 /**

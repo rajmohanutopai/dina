@@ -73,6 +73,9 @@ import { resetDeviceRegistry } from '@dina/core/devices';
 // re-login leaked old chats because this cache was never reset).
 import {
   SQLiteAuditRepository,
+  hydrateAuditState,
+  resetAuditState,
+  sweepRetention,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
   SQLiteServiceOfferRepository,
@@ -208,6 +211,7 @@ export async function initializePersistence(
   const dbDir = docUri.startsWith('file://') ? docUri.slice('file://'.length) : docUri;
 
   // Lazy import op-sqlite (native module, not available in tests)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { open } = require('@op-engineering/op-sqlite');
 
   provider = new ProductionDBProvider({
@@ -239,7 +243,10 @@ export async function initializePersistence(
   // guided-demo notification is purged on teardown, never persisting past the
   // demo.
   setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
-  setAuditRepository(new SQLiteAuditRepository(identityDB));
+  const auditRepository = new SQLiteAuditRepository(identityDB);
+  setAuditRepository(auditRepository);
+  hydrateAuditState(auditRepository);
+  sweepRetention();
   setDeviceRepository(new SQLiteDeviceRepository(identityDB));
   setStagingRepository(new SQLiteStagingRepository(identityDB));
   hydrateStagingFromRepository();
@@ -634,6 +641,8 @@ export async function shutdownAllPersistence(): Promise<void> {
     setPluginInstallRepository(null);
     setPluginGrantRepository(null);
     setPluginDecisionRepository(null);
+    setAuditRepository(null);
+    resetAuditState();
     // Agent authority is identity-scoped. Drop both durable repository handles
     // and all process-local session approval projections before another
     // identity can boot in the same JS process.

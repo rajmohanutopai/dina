@@ -64,6 +64,17 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
       CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor);
 
+      -- A durable boundary makes an intentional retention sweep
+      -- distinguishable from an attacker/corrupt writer deleting the head of
+      -- the hash chain. There is exactly one row for the current retained
+      -- suffix. No row means the chain must still begin at sequence 1/genesis.
+      CREATE TABLE IF NOT EXISTS audit_retention_checkpoint (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        first_retained_seq INTEGER NOT NULL CHECK (first_retained_seq >= 1),
+        anchor_hash TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS paired_devices (
         device_id TEXT PRIMARY KEY,
         did TEXT NOT NULL DEFAULT '',
@@ -106,6 +117,8 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_agent_sessions_principal
         ON agent_sessions(agent_did, host_session_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_ended
+        ON agent_sessions(ended_at);
 
       CREATE TABLE IF NOT EXISTS reminders (
         id TEXT PRIMARY KEY,

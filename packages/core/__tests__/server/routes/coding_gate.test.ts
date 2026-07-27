@@ -12,6 +12,7 @@ import {
   type AgentGatingPolicy,
   type AgentGatingPolicyRepository,
 } from '../../../src/agent/gating_policy';
+import { setAuditRepository, type AuditRepository } from '../../../src/audit/repository';
 import { queryAudit, resetAuditState, auditCount } from '../../../src/audit/service';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
@@ -75,6 +76,17 @@ const allowGate: CodingGateFn = () => ({
   reason: 'ok',
 });
 
+const availableAuditRepository: AuditRepository = {
+  append: () => undefined,
+  latest: () => null,
+  query: () => [],
+  compact: () => 0,
+  count: () => 0,
+  allEntries: () => [],
+  highestSequence: () => 0,
+  retentionCheckpoint: () => null,
+};
+
 describe('POST /v1/agent/gate — wire contract', () => {
   beforeEach(() => {
     setSessionRegistry(new SessionRegistry());
@@ -123,6 +135,7 @@ describe('POST /v1/agent/gate — wire contract', () => {
       reason: 'r',
       profile: 'full_supervision',
       policy_version: 0,
+      policy_status: 'default',
       authority_origin: 'unknown',
     });
     // Core owns classification: it got the RAW call + the authenticated DID.
@@ -260,6 +273,37 @@ describe('POST /v1/agent/gate — wire contract', () => {
         ownerDid: 'did:plc:owner',
       },
     });
+    expect(res.body).toMatchObject({ policy_status: 'active' });
+  });
+
+  it('fails safe and surfaces a policy selected by a previous owner DID', async () => {
+    setAgentGatingPolicyRepository(
+      policyRepo({
+        agentDid: 'did:key:z6MkAgent',
+        profile: 'network_protection',
+        policyVersion: 7,
+        selectedByOwnerDid: 'did:key:z6MkPreviousOwner',
+        createdAtMs: 1,
+        updatedAtMs: 2,
+        revokedAtMs: null,
+      }),
+    );
+    let seen: CodingGateInput | undefined;
+    const res = await routerWith((input) => {
+      seen = input;
+      return allowGate(input);
+    }).handle(agentReq({ tool_name: 'Read', tool_input: {} }));
+
+    expect(seen).toMatchObject({
+      profile: 'full_supervision',
+      policyVersion: 0,
+      authorityOrigin: { kind: 'unknown' },
+    });
+    expect(res.body).toMatchObject({
+      profile: 'full_supervision',
+      policy_version: 0,
+      policy_status: 'stale_owner_binding',
+    });
   });
 
   it('forces a Core-bound non-owner task to Full Supervision', async () => {
@@ -374,11 +418,13 @@ describe('POST /v1/agent/gate — wire contract', () => {
 describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
   beforeEach(() => {
     resetAuditState();
+    setAuditRepository(availableAuditRepository);
     setSessionRegistry(new SessionRegistry());
     setAgentGatingPolicyRepository(null);
   });
   afterEach(() => {
     resetAuditState();
+    setAuditRepository(null);
     setSessionRegistry(null);
     setAgentGatingPolicyRepository(null);
   });
@@ -408,6 +454,28 @@ describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
     expect(auditCount()).toBe(1);
   });
 
+  it('samples repetitive SAFE allows without skipping gate evaluation', async () => {
+    let evaluations = 0;
+    const countingGate: CodingGateFn = (input) => {
+      evaluations += 1;
+      return allowGate(input);
+    };
+    const router = routerWith(countingGate);
+
+    await router.handle(agentReq({ tool_name: 'Read', tool_input: { file_path: 'a.ts' } }));
+    await router.handle(agentReq({ tool_name: 'Read', tool_input: { file_path: 'b.ts' } }));
+
+    expect(evaluations).toBe(2);
+    expect(auditCount()).toBe(1);
+  });
+
+  it('never samples non-SAFE decisions', async () => {
+    const router = routerWith(denyGate);
+    await router.handle(agentReq({ tool_name: 'Read', tool_input: { file_path: 'a.ts' } }));
+    await router.handle(agentReq({ tool_name: 'Read', tool_input: { file_path: 'b.ts' } }));
+    expect(auditCount()).toBe(2);
+  });
+
   it('secret canary: the audit detail never contains the tool_input', async () => {
     // A Bash command carrying a secret literal must not be persisted.
     const secret = 'SUPERSECRETVALUE_9f3a';
@@ -420,6 +488,41 @@ describe('POST /v1/agent/gate — audit (item 8, §20)', () => {
     const dump = JSON.stringify(queryAudit());
     expect(dump).not.toContain(secret);
     expect(dump).not.toContain('password=');
+  });
+
+  it('fails closed when a sensitive decision cannot be durably audited', async () => {
+    const repository: AuditRepository = {
+      append: () => {
+        throw new Error('disk full');
+      },
+      latest: () => null,
+      query: () => [],
+      compact: () => 0,
+      count: () => 0,
+      allEntries: () => [],
+      highestSequence: () => 0,
+      retentionCheckpoint: () => null,
+    };
+    setAuditRepository(repository);
+
+    const response = await routerWith(denyGate).handle(
+      agentReq({ tool_name: 'Read', tool_input: { file_path: '/vault/keyfile' } }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ error: 'audit_unavailable' });
+  });
+
+  it('fails closed when no durable audit repository is wired', async () => {
+    setAuditRepository(null);
+
+    const response = await routerWith(denyGate).handle(
+      agentReq({ tool_name: 'Read', tool_input: { file_path: '/vault/keyfile' } }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ error: 'audit_unavailable' });
+    expect(auditCount()).toBe(0);
   });
 });
 

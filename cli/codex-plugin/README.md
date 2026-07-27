@@ -24,6 +24,6 @@ codex plugin add dina@dina
 ```
 
 Then invoke `$dina-setup` or tell Codex **Set up Dina**. The plugin installs a
-compatible `dina-agent>=0.20.0,<0.21.0` and Home Node Lite itself. Read
+the pinned `dina-agent==0.20.0` release and Home Node Lite itself. Read
 `plugins/dina/README.md` before enabling it because the local tool gate
 intentionally fails closed.

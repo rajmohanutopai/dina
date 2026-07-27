@@ -24,15 +24,18 @@ function response(status: number, body: unknown): CoreResponse {
   return { status, body };
 }
 
-function projectPolicy(policy: {
-  agentDid: string;
-  profile: string;
-  policyVersion: number;
-  selectedByOwnerDid: string;
-  createdAtMs: number;
-  updatedAtMs: number;
-  revokedAtMs: number | null;
-}): Record<string, unknown> {
+function projectPolicy(
+  policy: {
+    agentDid: string;
+    profile: string;
+    policyVersion: number;
+    selectedByOwnerDid: string;
+    createdAtMs: number;
+    updatedAtMs: number;
+    revokedAtMs: number | null;
+  },
+  ownerBindingStatus: 'active' | 'stale_owner_binding' = 'active',
+): Record<string, unknown> {
   return {
     agent_did: policy.agentDid,
     profile: policy.profile,
@@ -41,6 +44,7 @@ function projectPolicy(policy: {
     created_at: policy.createdAtMs,
     updated_at: policy.updatedAtMs,
     revoked_at: policy.revokedAtMs,
+    owner_binding_status: ownerBindingStatus,
   };
 }
 
@@ -56,11 +60,17 @@ export function registerAgentGatingPolicyRoutes(
     if (typeof owner !== 'string') return owner;
     const repo = getAgentGatingPolicyRepository();
     if (repo === null) return response(503, { error: 'policy_repository_unavailable' });
+    const policies = repo.list();
     return response(200, {
-      policies: repo
-        .list()
+      policies: policies
         .filter((policy) => policy.selectedByOwnerDid === owner)
-        .map(projectPolicy),
+        .map((policy) => projectPolicy(policy)),
+      // Never carry authority across an owner-DID change automatically. Expose
+      // active old-owner rows separately so the owner UI can explain the
+      // Full-Supervision fallback and request an explicit reconfirmation.
+      stale_policies: policies
+        .filter((policy) => policy.selectedByOwnerDid !== owner && policy.revokedAtMs === null)
+        .map((policy) => projectPolicy(policy, 'stale_owner_binding')),
     });
   });
 

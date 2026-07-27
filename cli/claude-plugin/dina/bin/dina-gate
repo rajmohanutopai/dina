@@ -25,50 +25,62 @@ block() {
   exit 2
 }
 
+trusted_python() {
+  if [ "${DINA_PLUGIN_DEV_MODE:-0}" = "1" ] &&
+    [ -x "${DINA_BOOTSTRAP_PYTHON:-}" ]; then
+    printf '%s\n' "$DINA_BOOTSTRAP_PYTHON"
+    return 0
+  fi
+  for candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /usr/bin/python3 \
+    /home/linuxbrew/.linuxbrew/bin/python3; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 SCRIPT_DIR="${0%/*}"
 [ "$SCRIPT_DIR" != "$0" ] || SCRIPT_DIR="."
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
 CLI="$PLUGIN_ROOT/bin/dina-cli"
 BOOTSTRAP_AUTHORIZER="$PLUGIN_ROOT/bin/dina-bootstrap-authorize"
+export DINA_AGENT_HOST="claude-code"
 
 [ -x "$CLI" ] || block "the bundled Dina CLI resolver is missing"
 [ -x "$BOOTSTRAP_AUTHORIZER" ] || block "the bootstrap authorizer is missing"
+BOOTSTRAP_PYTHON="$(trusted_python)" ||
+  block "a trusted Python 3 interpreter is unavailable"
 
 # Preserve the original event while asking the local, non-networked authorizer
 # whether this is the bounded setup command. AskUserQuestion is also allowed
 # without Core so /dina:setup can collect the identity mode. No other tool gets
 # a bootstrap exception.
 EVENT="$(cat)"
-printf '%s' "$EVENT" | "$BOOTSTRAP_AUTHORIZER"
+printf '%s' "$EVENT" | "$BOOTSTRAP_PYTHON" -I "$BOOTSTRAP_AUTHORIZER"
 bootstrap_rc=$?
 case "$bootstrap_rc" in
   0)  exit 0 ;;
   10)
     HOME_STATUS="$("$CLI" --json home-node status 2>/dev/null || true)"
     if ! printf '%s' "$HOME_STATUS" |
-      "$BOOTSTRAP_AUTHORIZER" --home-node-ready; then
+      "$BOOTSTRAP_PYTHON" -I "$BOOTSTRAP_AUTHORIZER" --home-node-ready; then
       exit 0
     fi
     ;;
 esac
 
-# Outer deadline backstop when a timeout helper exists (macOS ships neither
-# `timeout` nor `gtimeout` by default — the gate ALSO self-deadlines ~10s, so
-# this is belt-and-suspenders, not the primary guard). exit 124 = it fired.
-if command -v timeout >/dev/null 2>&1; then
-  printf '%s' "$EVENT" | timeout 15 "$CLI" gate-hook
-  rc=$?
-elif command -v gtimeout >/dev/null 2>&1; then
-  printf '%s' "$EVENT" | gtimeout 15 "$CLI" gate-hook
-  rc=$?
-else
-  printf '%s' "$EVENT" | "$CLI" gate-hook
-  rc=$?
-fi
+# The CLI enforces its own network deadline. Do not delegate the authorization
+# decision to an ambient `timeout` executable that a project can shadow.
+printf '%s' "$EVENT" | "$CLI" gate-hook
+rc=$?
 
 case "$rc" in
   0)   exit 0 ;;                                   # allow (or an `ask` the gate printed)
   2)   exit 2 ;;                                   # explicit deny (reason already on stderr)
-  124) block "timed out reaching Core" ;;          # timeout(1)/gtimeout killed it
   *)   block "the gate exited abnormally (code $rc)" ;;  # crash / signal / any non-2 exit
 esac

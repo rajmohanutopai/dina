@@ -164,11 +164,7 @@ def agent_host_setup(
         if result.get("needs_identity_choice"):
             click.echo("Choose local-only setup or provide a public PDS handle.")
     except (AgentHostSetupError, OSError) as exc:
-        code = (
-            exc.code
-            if isinstance(exc, AgentHostSetupError)
-            else "setup_failed"
-        )
+        code = exc.code if isinstance(exc, AgentHostSetupError) else "setup_failed"
         result = {
             "kind": "setup_error",
             "host": host,
@@ -327,7 +323,7 @@ def _prompt_archive_passphrase(*, confirm: bool, err: bool = False) -> str:
     "--release",
     "release_version",
     default=None,
-    help="Native Home Node release version (default: latest)",
+    help="Exact native Home Node release version (default: this CLI version)",
 )
 @click.option(
     "--bundle",
@@ -831,8 +827,19 @@ def home_node_uninstall(ctx: click.Context, purge_data: bool, yes: bool) -> None
 
             managed_cleanup = prepare_managed_enrollment_cleanup(manager)
         manager.uninstall(purge_data=purge_data)
+        cleanup_report = (
+            managed_cleanup.apply_report() if managed_cleanup is not None else None
+        )
         credentials_removed = (
-            managed_cleanup.apply() if managed_cleanup is not None else False
+            cleanup_report.removed if cleanup_report is not None else False
+        )
+        cleanup_failures = (
+            [
+                {"config_dir": failure.config_dir, "code": failure.code}
+                for failure in cleanup_report.failures
+            ]
+            if cleanup_report is not None
+            else []
         )
         if ctx.obj["json"]:
             click.echo(
@@ -841,6 +848,7 @@ def home_node_uninstall(ctx: click.Context, purge_data: bool, yes: bool) -> None
                         "uninstalled": True,
                         "data_purged": purge_data,
                         "managed_agent_credentials_removed": credentials_removed,
+                        "managed_agent_cleanup_failures": cleanup_failures,
                     }
                 )
             )
@@ -848,12 +856,20 @@ def home_node_uninstall(ctx: click.Context, purge_data: bool, yes: bool) -> None
             click.echo("Home Node runtime and vault data were permanently removed.")
             if credentials_removed:
                 click.echo("Installer-managed coding-agent credentials were removed.")
+            for failure in cleanup_failures:
+                click.echo(
+                    "Warning: managed coding-agent credentials could not be removed "
+                    f"from {failure['config_dir']}. Remove that directory manually.",
+                    err=True,
+                )
         else:
             click.echo(
                 "Home Node runtime code was removed. Vault data, keys, and "
                 "configuration were preserved; run `dina home-node install` "
                 "to restore the native runtime."
             )
+        if cleanup_failures:
+            ctx.exit(2)
     except HomeNodeError as exc:
         _home_node_fail(ctx, exc)
 
@@ -1866,15 +1882,16 @@ def configure(
         click.echo()
 
     # Config location: local (this directory), global (~), or custom path.
-    from .config import _GLOBAL_CONFIG_DIR, _LOCAL_CONFIG_DIR, set_config_dir
+    from .config import _GLOBAL_CONFIG_DIR, set_config_dir
 
     cwd = Path.cwd()
     home = Path.home()
+    local_config_dir = cwd / ".dina" / "cli"
 
     if cfg_input:
         loc = cfg_input.get("config_location", "global")
         if loc == "local":
-            set_config_dir(_LOCAL_CONFIG_DIR)
+            set_config_dir(local_config_dir)
         elif loc == "global":
             set_config_dir(_GLOBAL_CONFIG_DIR)
         else:
@@ -1887,7 +1904,7 @@ def configure(
             default="global",
         )
         if choice == "local":
-            set_config_dir(_LOCAL_CONFIG_DIR)
+            set_config_dir(local_config_dir)
             click.echo(f"  Config stored in: {cwd}")
         elif choice == "global":
             set_config_dir(_GLOBAL_CONFIG_DIR)
@@ -3285,8 +3302,12 @@ def service() -> None:
     required=True,
     help="Stable idempotency key; reuse it while polling/retrying this approval.",
 )
-@click.option("--service-uri", default="", help="Selected listing URI returned by discovery.")
-@click.option("--grant-id", default="", help="Grant ID for an approved/private service.")
+@click.option(
+    "--service-uri", default="", help="Selected listing URI returned by discovery."
+)
+@click.option(
+    "--grant-id", default="", help="Grant ID for an approved/private service."
+)
 @click.pass_context
 def service_query(
     ctx: click.Context,

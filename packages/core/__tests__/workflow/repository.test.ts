@@ -9,6 +9,13 @@
  *   - listByKindAndState (sweeper surface)
  */
 
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import { InMemoryDatabaseAdapter } from '../../src/storage/db_adapter';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -45,12 +52,10 @@ function baseTask(overrides: Partial<WorkflowTask> = {}): WorkflowTask {
   };
 }
 
-// NB: `SQLiteWorkflowRepository` isn't exercised end-to-end by these tests.
-// The existing `InMemoryDatabaseAdapter` is a thin shell (tracks CREATE
-// TABLE + INSERT but doesn't run SELECT), so real SQL behaviour is validated
-// via the `InMemoryWorkflowRepository` which re-implements the same contract
-// against a Map-based store. The SQLite wiring is construction-smoke-tested
-// (see "SQLiteWorkflowRepository construction" at the bottom).
+// Most repository behavior is exercised through the in-memory contract
+// implementation. SQL-specific additions also get focused parity coverage
+// against NodeSQLiteAdapter; the lightweight InMemoryDatabaseAdapter does not
+// execute SELECT statements.
 
 const buildRepo = (): InMemoryWorkflowRepository => new InMemoryWorkflowRepository();
 
@@ -135,9 +140,97 @@ describe('WorkflowRepository (in-memory) — create', () => {
   it('getById returns a defensive copy (mutation does not corrupt storage)', () => {
     const r = buildRepo();
     r.create(baseTask());
-    const copy = r.getById('task-1')!;
+    const copy = r.getById('task-1');
+    if (!copy) throw new Error('task was not created');
     copy.description = 'mutated';
     expect(r.getById('task-1')?.description).toBe('test');
+  });
+});
+
+describe('WorkflowRepository (in-memory) — bounded payload counts', () => {
+  it('counts only matching kind, state, and JSON fields up to the requested cap', () => {
+    const repo = buildRepo();
+    for (let i = 0; i < 4; i++) {
+      repo.create(
+        baseTask({
+          id: `matching-${i}`,
+          kind: WorkflowTaskKind.Approval,
+          status: WorkflowTaskState.PendingApproval,
+          payload: JSON.stringify({ source_device_did: 'did:key:source', group: 'one' }),
+        }),
+      );
+    }
+    repo.create(
+      baseTask({
+        id: 'other-source',
+        kind: WorkflowTaskKind.Approval,
+        status: WorkflowTaskState.PendingApproval,
+        payload: JSON.stringify({ source_device_did: 'did:key:other', group: 'one' }),
+      }),
+    );
+    repo.create(
+      baseTask({
+        id: 'malformed',
+        kind: WorkflowTaskKind.Approval,
+        status: WorkflowTaskState.PendingApproval,
+        payload: '{bad json',
+      }),
+    );
+
+    expect(
+      repo.countByKindStateAndPayloadFields(
+        WorkflowTaskKind.Approval,
+        WorkflowTaskState.PendingApproval,
+        { source_device_did: 'did:key:source', group: 'one' },
+        3,
+      ),
+    ).toBe(3);
+  });
+});
+
+describe('WorkflowRepository (SQLite) — bounded payload counts', () => {
+  it('executes the bounded JSON-field count against the real SQLite adapter', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'workflow-count-'));
+    const adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'DELETE',
+      synchronous: 'FULL',
+    });
+    try {
+      applyMigrations(adapter, IDENTITY_MIGRATIONS);
+      const repo = new SQLiteWorkflowRepository(adapter);
+      for (let i = 0; i < 3; i++) {
+        repo.create(
+          baseTask({
+            id: `sqlite-matching-${i}`,
+            kind: WorkflowTaskKind.Approval,
+            status: WorkflowTaskState.PendingApproval,
+            payload: JSON.stringify({ agent_did: 'did:key:agent', session: 'session-1' }),
+          }),
+        );
+      }
+      repo.create(
+        baseTask({
+          id: 'sqlite-other-session',
+          kind: WorkflowTaskKind.Approval,
+          status: WorkflowTaskState.PendingApproval,
+          payload: JSON.stringify({ agent_did: 'did:key:agent', session: 'session-2' }),
+        }),
+      );
+
+      expect(
+        repo.countByKindStateAndPayloadFields(
+          WorkflowTaskKind.Approval,
+          WorkflowTaskState.PendingApproval,
+          { agent_did: 'did:key:agent', session: 'session-1' },
+          2,
+        ),
+      ).toBe(2);
+    } finally {
+      adapter.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -565,7 +658,8 @@ describe('WorkflowRepository — claimDelegationTask (agent pull)', () => {
     const claimed = events.find((e) => e.event_kind === 'claimed');
     expect(claimed).toBeDefined();
     expect(claimed?.needs_delivery).toBe(false);
-    const details = JSON.parse(claimed!.details);
+    if (!claimed) throw new Error('claimed event was not appended');
+    const details = JSON.parse(claimed.details);
     expect(details.agent_did).toBe(AGENT_DID);
     expect(details.lease_expires_at).toBe(NOW_MS + LEASE_MS);
   });
@@ -820,7 +914,8 @@ describe('WorkflowRepository — expireLeasedTasks', () => {
     const events = r.listEventsForTask('d-1');
     const expired = events.find((e) => e.event_kind === 'lease_expired');
     expect(expired).toBeDefined();
-    const details = JSON.parse(expired!.details);
+    if (!expired) throw new Error('lease-expired event was not appended');
+    const details = JSON.parse(expired.details);
     expect(details.previous_agent_did).toBe('did:plc:dead');
   });
 

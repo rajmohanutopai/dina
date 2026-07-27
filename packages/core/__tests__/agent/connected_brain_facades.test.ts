@@ -32,6 +32,11 @@ function ctx(body: Record<string, unknown>): AgentFacadeContext {
   return { agentDid: AGENT, sessionId: SESSION, body };
 }
 
+function requireHandler<T>(handler: T | undefined): T {
+  if (!handler) throw new Error('connected-Brain handler is not wired');
+  return handler;
+}
+
 function memoryProposal(persona = 'general') {
   return {
     persona,
@@ -73,7 +78,7 @@ describe('shared connected-Brain facades', () => {
       body: 'Contact raj@example.com about the launch.',
       retrieval_policy: 'normal',
     });
-    const handler = createConnectedBrainAgentFacades().contextPrepare!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().contextPrepare);
     const result = await handler(
       ctx({
         session_id: SESSION,
@@ -102,7 +107,7 @@ describe('shared connected-Brain facades', () => {
       retrieval_policy: 'normal',
     });
 
-    const handler = createConnectedBrainAgentFacades().contextPrepare!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().contextPrepare);
     const result = await handler(
       ctx({
         session_id: SESSION,
@@ -125,7 +130,7 @@ describe('shared connected-Brain facades', () => {
       body: 'Needs lower-back support',
       retrieval_policy: 'normal',
     });
-    const searches: { ownerDid: string; query: string; limit: number }[] = [];
+    const searches: { query: string; limit: number }[] = [];
     const source: PublicReasoningEvidenceSource = {
       searchReviews: async (request) => {
         searches.push(request);
@@ -152,17 +157,18 @@ describe('shared connected-Brain facades', () => {
     const result = await prepareOwnerReasoningContextWithPublicEvidence(
       {
         ownerDid: 'did:plc:owner',
-        query: 'chair support',
+        query: 'chair support for alice@example.com',
         purpose: 'answer the owner',
         personas: ['general'],
         limit: 4,
+        publicEvidenceSources: ['review', 'service'],
       },
       source,
     );
 
     expect(searches).toEqual([
-      { ownerDid: 'did:plc:owner', query: 'chair support', limit: 4 },
-      { ownerDid: 'did:plc:owner', query: 'chair support', limit: 4 },
+      { query: 'chair support for [EMAIL_1]', limit: 4 },
+      { query: 'chair support for [EMAIL_1]', limit: 4 },
     ]);
     expect(result.items.map((item) => item.sourceType)).toEqual(['memory', 'review', 'service']);
     expect(result.items[1]).toMatchObject({
@@ -187,6 +193,7 @@ describe('shared connected-Brain facades', () => {
         purpose: 'answer the owner',
         personas: ['general'],
         limit: 4,
+        publicEvidenceSources: ['review'],
       },
       {
         searchReviews: async () => {
@@ -200,6 +207,68 @@ describe('shared connected-Brain facades', () => {
     expect(result.items).toEqual([]);
   });
 
+  test('queries selected public sources concurrently', async () => {
+    let releaseReviews!: () => void;
+    let releaseServices!: () => void;
+    const reviewsWaiting = new Promise<void>((resolve) => {
+      releaseReviews = resolve;
+    });
+    const servicesWaiting = new Promise<void>((resolve) => {
+      releaseServices = resolve;
+    });
+    const started: string[] = [];
+
+    const pending = prepareOwnerReasoningContextWithPublicEvidence(
+      {
+        ownerDid: 'did:plc:owner',
+        query: 'chair',
+        purpose: 'answer the owner',
+        personas: ['general'],
+        limit: 4,
+        publicEvidenceSources: ['review', 'service'],
+      },
+      {
+        searchReviews: async () => {
+          started.push('review');
+          await reviewsWaiting;
+          return [];
+        },
+        searchServices: async () => {
+          started.push('service');
+          await servicesWaiting;
+          return [];
+        },
+      },
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started.sort()).toEqual(['review', 'service']);
+    releaseReviews();
+    releaseServices();
+    await pending;
+  });
+
+  test('does not query public discovery unless a source is selected', async () => {
+    const source: PublicReasoningEvidenceSource = {
+      searchReviews: jest.fn(async () => []),
+      searchServices: jest.fn(async () => []),
+    };
+
+    await prepareOwnerReasoningContextWithPublicEvidence(
+      {
+        ownerDid: 'did:plc:owner',
+        query: 'private question',
+        purpose: 'answer the owner',
+        personas: ['general'],
+      },
+      source,
+    );
+
+    expect(source.searchReviews).not.toHaveBeenCalled();
+    expect(source.searchServices).not.toHaveBeenCalled();
+  });
+
   test('returns partial approval state and never reads a sensitive persona', async () => {
     createPersona('health', 'sensitive');
     setVaultRepository('health', new InMemoryVaultRepository());
@@ -209,7 +278,7 @@ describe('shared connected-Brain facades', () => {
       body: 'Private diagnosis detail',
       retrieval_policy: 'normal',
     });
-    const handler = createConnectedBrainAgentFacades().contextPrepare!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().contextPrepare);
     const result = await handler(
       ctx({
         session_id: SESSION,
@@ -287,7 +356,7 @@ describe('shared connected-Brain facades', () => {
   });
 
   test('commits a schema-valid memory proposal without another model pass', async () => {
-    const handler = createConnectedBrainAgentFacades().memoryPropose!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().memoryPropose);
     const result = await handler(
       ctx({
         session_id: SESSION,
@@ -315,7 +384,7 @@ describe('shared connected-Brain facades', () => {
   });
 
   test('deduplicates exact retries and rejects changed request semantics', async () => {
-    const handler = createConnectedBrainAgentFacades().memoryPropose!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().memoryPropose);
     const body = {
       session_id: SESSION,
       request_id: 'memory-request-02',
@@ -340,7 +409,7 @@ describe('shared connected-Brain facades', () => {
   test('requires write approval before creating a sensitive proposal row', async () => {
     createPersona('financial', 'sensitive');
     setVaultRepository('financial', new InMemoryVaultRepository());
-    const handler = createConnectedBrainAgentFacades().memoryPropose!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().memoryPropose);
     const result = await handler(
       ctx({
         session_id: SESSION,
@@ -362,7 +431,7 @@ describe('shared connected-Brain facades', () => {
   });
 
   test('rejects unknown output fields through the server-owned memory schema', async () => {
-    const handler = createConnectedBrainAgentFacades().memoryPropose!;
+    const handler = requireHandler(createConnectedBrainAgentFacades().memoryPropose);
     const result = await handler(
       ctx({
         session_id: SESSION,

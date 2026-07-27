@@ -18,7 +18,12 @@
  * and whether a permit is issued differ.
  */
 
-import { type AgentGatingProfile, type AuthorityOrigin, type RiskLevel } from '@dina/core';
+import {
+  scrubPII,
+  type AgentGatingProfile,
+  type AuthorityOrigin,
+  type RiskLevel,
+} from '@dina/core';
 
 import { classifyBashCommand } from './bash_classifier';
 import {
@@ -36,6 +41,9 @@ export type GateOutcome = 'allow' | 'approval_required' | 'deny';
 const FILE_READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'Cat']);
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
 const NETWORK_TOOLS = new Set(['WebFetch', 'WebSearch']);
+const MAX_HOST_MANAGED_SEARCH_CHARS = 1_000;
+const SECRET_SEARCH_RE =
+  /\b(?:api[-_ ]?key|access[-_ ]?token|auth(?:orization)?[-_ ]?token|bearer|client[-_ ]?secret|password|passphrase|private[-_ ]?key|recovery[-_ ]?phrase|seed[-_ ]?phrase)\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
 
 export interface GateInput {
   toolName: string;
@@ -275,7 +283,7 @@ const STRUCTURED_TOOL_NAMES = new Set([
  * destruction and package installation remain gated.
  */
 export function isSensitiveBoundary(
-  input: Pick<ProfiledGateInput, 'toolName'>,
+  input: Pick<ProfiledGateInput, 'toolName' | 'toolInput'>,
   classified: { action: string; risk: RiskLevel; reason: string },
 ): boolean {
   if (classified.risk === 'BLOCKED') return true;
@@ -294,14 +302,23 @@ export function isSensitiveBoundary(
       classified.reason.includes('(runs code)')
     );
   }
-  // A generic WebSearch/WebFetch is a read performed under the host's own
-  // permissions. Bash network commands remain gated because they can carry
-  // arbitrary inline request bodies.
-  if (
-    (input.toolName === 'WebSearch' || input.toolName === 'WebFetch') &&
-    (classified.action === 'network_egress' || classified.action === 'network_egress_untrusted')
-  ) {
-    return false;
+  // WebFetch discloses an arbitrary URL/path and may transmit query-string
+  // secrets, cookies, or context selected by the model, so it is always a
+  // boundary. A bounded public WebSearch may remain host-managed only when its
+  // actual query is inspectable and contains neither recognized PII nor common
+  // secret material.
+  if (input.toolName === 'WebFetch') return true;
+  if (input.toolName === 'WebSearch') {
+    const query = [input.toolInput.query, input.toolInput.search_query, input.toolInput.q].find(
+      (value): value is string => typeof value === 'string',
+    );
+    return (
+      query === undefined ||
+      query.trim() === '' ||
+      query.length > MAX_HOST_MANAGED_SEARCH_CHARS ||
+      SECRET_SEARCH_RE.test(query) ||
+      scrubPII(query).entities.length > 0
+    );
   }
   return true;
 }

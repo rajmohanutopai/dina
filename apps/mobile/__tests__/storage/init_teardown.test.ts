@@ -17,10 +17,7 @@ import {
   getChatMessageRepository,
   InMemoryChatMessageRepository,
 } from '../../../core/src/chat/repository';
-import {
-  hydrateContactDirectory,
-  listContacts,
-} from '../../../core/src/contacts/directory';
+import { hydrateContactDirectory, listContacts } from '../../../core/src/contacts/directory';
 import {
   type ContactRepository,
   setContactRepository,

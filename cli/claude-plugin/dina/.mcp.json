@@ -2,7 +2,10 @@
   "mcpServers": {
     "dina": {
       "command": "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli",
-      "args": ["mcp-server", "--profile", "connected"]
+      "args": ["mcp-server", "--profile", "connected"],
+      "env": {
+        "DINA_AGENT_HOST": "claude-code"
+      }
     }
   }
 }

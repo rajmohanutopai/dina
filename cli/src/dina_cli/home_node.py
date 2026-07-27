@@ -37,20 +37,27 @@ from urllib.request import Request, urlopen
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-DEFAULT_RELEASE = "latest"
+from . import __version__
+
+DEFAULT_RELEASE = __version__
 DEFAULT_RELEASE_REPOSITORY = "rajmohanutopai/dina"
 INSTALL_SCHEMA = 2
-RELEASE_SCHEMA = 1
+RELEASE_SCHEMA = 2
 MIN_NODE_MAJOR = 22
 MAX_RELEASE_BYTES = 512 * 1024 * 1024
 MAX_RELEASE_FILE_BYTES = 256 * 1024 * 1024
+MAX_SIGSTORE_BUNDLE_BYTES = 4 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 SUPERVISOR_HEARTBEAT_MAX_AGE = 15.0
 _ED25519_MULTICODEC = b"\xed\x01"
 _RELEASE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\Z")
 _RELEASE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}-[0-9a-f]{12}\Z")
+_REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 _HANDLE_LABEL_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+_SEMVER_RE = re.compile(
+    r"v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)" r"(?:[-+][0-9A-Za-z.-]+)?\Z"
+)
 _DINA_PDS_MAX_HANDLE_CHARS = 30
 _DINA_MANAGED_PDS_HOSTS = (
     "pds.dinakernel.com",
@@ -91,6 +98,8 @@ class HomeNodeStatus:
 @dataclass(frozen=True)
 class ReleaseManifest:
     release: str
+    minimum_cli_version: str
+    maximum_cli_version_exclusive: str
     platform: str
     arch: str
     node_major: int
@@ -112,6 +121,13 @@ def default_install_dir() -> Path:
     )
 
 
+def _clean_python_subprocess_env() -> dict[str, str]:
+    env = dict(os.environ)
+    for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP"):
+        env.pop(name, None)
+    return env
+
+
 class HomeNodeManager:
     """Own one local, native Home Node Lite installation."""
 
@@ -122,6 +138,7 @@ class HomeNodeManager:
         run_command: RunCommand = subprocess.run,
         open_url: OpenURL = urlopen,
         sleep: Callable[[float], None] = time.sleep,
+        allow_release_overrides: bool = True,
     ) -> None:
         self.install_dir = (install_dir or default_install_dir()).expanduser().resolve()
         self.state_file = self.install_dir / "state.json"
@@ -136,10 +153,13 @@ class HomeNodeManager:
         self.upgrade_journal_file = self.install_dir / "upgrade.json"
         self.upgrade_backup_dir = self.install_dir / "upgrade-data-backup"
         self.archive_restore_journal_file = self.install_dir / "archive-restore.json"
-        self.archive_restore_backup_dir = self.install_dir / "archive-restore-data-backup"
+        self.archive_restore_backup_dir = (
+            self.install_dir / "archive-restore-data-backup"
+        )
         self._run_command = run_command
         self._open_url = open_url
         self._sleep = sleep
+        self._allow_release_overrides = allow_release_overrides
 
     @property
     def installed(self) -> bool:
@@ -169,6 +189,7 @@ class HomeNodeManager:
         wait_timeout: float = 120.0,
     ) -> HomeNodeStatus:
         """Install a verified native release and optionally start it."""
+        release_version = _normalize_release_version(release_version)
         pds_handle = _normalize_optional(pds_handle, lowercase=True)
         pds_email = _normalize_optional(pds_email)
         self._validate_inputs(
@@ -180,7 +201,7 @@ class HomeNodeManager:
             pds_email,
         )
         if bundle_path is not None:
-            bundle_path = bundle_path.expanduser().resolve()
+            bundle_path = bundle_path.expanduser()
 
         with self._lifecycle_lock():
             self._ensure_private_dirs()
@@ -203,10 +224,7 @@ class HomeNodeManager:
                     existing.pds_handle,
                     existing.pds_email,
                 )
-                release_matches = (
-                    release_version == DEFAULT_RELEASE
-                    or release_version == existing.release_version
-                )
+                release_matches = release_version == existing.release_version
                 settings_match = requested[1:] == current[1:]
                 if not release_matches or not settings_match:
                     raise HomeNodeError(
@@ -307,10 +325,9 @@ class HomeNodeManager:
         wait_timeout: float = 120.0,
     ) -> HomeNodeStatus:
         """Activate one release atomically, rolling code and data back on failure."""
-        if _RELEASE_RE.fullmatch(release_version) is None:
-            raise HomeNodeError(f"Invalid Home Node release: {release_version!r}")
+        release_version = _normalize_release_version(release_version)
         if bundle_path is not None:
-            bundle_path = bundle_path.expanduser().resolve()
+            bundle_path = bundle_path.expanduser()
         self._require_installed()
 
         with self._lifecycle_lock():
@@ -563,7 +580,9 @@ class HomeNodeManager:
                         offset = 0
                     if size > offset:
                         print(f"==> {label} <==")
-                        with path.open("r", encoding="utf-8", errors="replace") as stream:
+                        with path.open(
+                            "r", encoding="utf-8", errors="replace"
+                        ) as stream:
                             stream.seek(offset)
                             content = stream.read()
                             positions[path] = stream.tell()
@@ -639,7 +658,9 @@ class HomeNodeManager:
                 staging,
                 requested_release=release_version,
             )
-            release_id = f"{_safe_release_component(manifest.release)}-{bundle_sha[:12]}"
+            release_id = (
+                f"{_safe_release_component(manifest.release)}-{bundle_sha[:12]}"
+            )
             if _RELEASE_ID_RE.fullmatch(release_id) is None:
                 raise HomeNodeError("Native release produced an unsafe release id.")
             destination = self._release_path(release_id)
@@ -669,16 +690,63 @@ class HomeNodeManager:
         bundle_path: Path | None,
     ) -> tuple[bytes, str]:
         if bundle_path is not None:
-            if bundle_path.is_symlink() or not bundle_path.is_file():
+            if bundle_path.is_symlink():
                 raise HomeNodeError(
                     "Native release bundle must be a regular, non-symlink file."
                 )
-            size = bundle_path.stat().st_size
-            if size <= 0 or size > MAX_RELEASE_BYTES:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(bundle_path, flags)
+            except OSError as exc:
+                raise HomeNodeError(
+                    "Native release bundle must be a regular, non-symlink file."
+                ) from exc
+            try:
+                details = os.fstat(descriptor)
+                if not stat.S_ISREG(details.st_mode):
+                    raise HomeNodeError(
+                        "Native release bundle must be a regular, non-symlink file."
+                    )
+                if details.st_size <= 0 or details.st_size > MAX_RELEASE_BYTES:
+                    raise HomeNodeError("Native release bundle has an invalid size.")
+                with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                    content = stream.read(MAX_RELEASE_BYTES + 1)
+            except OSError as exc:
+                raise HomeNodeError(
+                    "Could not read the native release bundle."
+                ) from exc
+            finally:
+                os.close(descriptor)
+            if not content or len(content) > MAX_RELEASE_BYTES:
                 raise HomeNodeError("Native release bundle has an invalid size.")
-            return bundle_path.read_bytes(), str(bundle_path)
+            return content, str(bundle_path.absolute())
 
         url = self._release_url(release_version)
+        content = self._download_release_file(
+            url,
+            maximum_bytes=MAX_RELEASE_BYTES,
+            label="native Home Node release",
+        )
+        signature_url = f"{url}.sigstore.json"
+        signature = self._download_release_file(
+            signature_url,
+            maximum_bytes=MAX_SIGSTORE_BUNDLE_BYTES,
+            label="native Home Node Sigstore bundle",
+        )
+        self._verify_downloaded_release_signature(
+            content,
+            signature,
+            release_version=release_version,
+        )
+        return content, url
+
+    def _download_release_file(
+        self,
+        url: str,
+        *,
+        maximum_bytes: int,
+        label: str,
+    ) -> bytes:
         request = Request(
             url,
             headers={
@@ -689,43 +757,102 @@ class HomeNodeManager:
         try:
             with self._open_url(request, timeout=60) as response:
                 length = response.headers.get("Content-Length")
-                if length is not None and int(length) > MAX_RELEASE_BYTES:
-                    raise HomeNodeError("Native release is larger than the safety limit.")
-                content = response.read(MAX_RELEASE_BYTES + 1)
+                if length is not None and int(length) > maximum_bytes:
+                    raise HomeNodeError(f"Downloaded {label} exceeds the safety limit.")
+                content = response.read(maximum_bytes + 1)
         except (HTTPError, URLError, OSError, ValueError) as exc:
             raise HomeNodeError(
-                f"Could not download native Home Node release from {url}: {exc}"
+                f"Could not download {label} from {url}: {exc}"
             ) from exc
-        if not content or len(content) > MAX_RELEASE_BYTES:
-            raise HomeNodeError("Downloaded native release is empty or too large.")
-        return bytes(content), url
+        if not content or len(content) > maximum_bytes:
+            raise HomeNodeError(f"Downloaded {label} is empty or too large.")
+        return bytes(content)
 
-    @staticmethod
-    def _release_url(release_version: str) -> str:
-        exact = os.environ.get("DINA_HOME_NODE_RELEASE_URL", "").strip()
+    def _verify_downloaded_release_signature(
+        self,
+        archive: bytes,
+        signature_bundle: bytes,
+        *,
+        release_version: str,
+    ) -> None:
+        repository = self._release_repository()
+        tag = f"home-node-lite-v{release_version.removeprefix('v')}"
+        identity = (
+            f"https://github.com/{repository}/.github/workflows/"
+            f"home-node-lite-release.yml@refs/tags/{tag}"
+        )
+        with tempfile.TemporaryDirectory(prefix="dina-release-signature-") as name:
+            root = Path(name)
+            archive_path = root / "release.tar.gz"
+            bundle_path = root / "release.tar.gz.sigstore.json"
+            _write_new_file(archive_path, archive, mode=0o600)
+            _write_new_file(bundle_path, signature_bundle, mode=0o600)
+            try:
+                self._run_command(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-m",
+                        "sigstore",
+                        "verify",
+                        "identity",
+                        "--offline",
+                        "--bundle",
+                        str(bundle_path),
+                        "--cert-identity",
+                        identity,
+                        "--cert-oidc-issuer",
+                        "https://token.actions.githubusercontent.com",
+                        str(archive_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=root,
+                    env=_clean_python_subprocess_env(),
+                )
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                detail = _subprocess_error_detail(exc)
+                raise HomeNodeError(
+                    "Native Home Node release signature verification failed"
+                    + (f": {detail}" if detail else ".")
+                ) from exc
+
+    def _release_url(self, release_version: str) -> str:
+        exact = (
+            os.environ.get("DINA_HOME_NODE_RELEASE_URL", "").strip()
+            if self._allow_release_overrides
+            else ""
+        )
         if exact:
             return exact.format(
                 release=release_version,
                 platform=_runtime_platform(),
                 arch=_runtime_arch(),
             )
-        repository = (
-            os.environ.get("DINA_HOME_NODE_RELEASE_REPOSITORY", "").strip()
-            or DEFAULT_RELEASE_REPOSITORY
-        )
-        asset = (
-            f"dina-home-node-lite-{_runtime_platform()}-{_runtime_arch()}.tar.gz"
-        )
-        if release_version == DEFAULT_RELEASE:
-            return (
-                f"https://github.com/{repository}/releases/latest/download/{asset}"
-            )
+        repository = self._release_repository()
+        asset = f"dina-home-node-lite-{_runtime_platform()}-{_runtime_arch()}.tar.gz"
         tag = (
             release_version
             if release_version.startswith("home-node-lite-v")
             else f"home-node-lite-v{release_version.removeprefix('v')}"
         )
         return f"https://github.com/{repository}/releases/download/{tag}/{asset}"
+
+    def _release_repository(self) -> str:
+        repository = (
+            os.environ.get("DINA_HOME_NODE_RELEASE_REPOSITORY", "").strip()
+            if self._allow_release_overrides
+            else ""
+        ) or DEFAULT_RELEASE_REPOSITORY
+        if _REPOSITORY_RE.fullmatch(repository) is None:
+            raise HomeNodeError("DINA_HOME_NODE_RELEASE_REPOSITORY is malformed.")
+        return repository
 
     def _extract_and_verify_release(
         self,
@@ -752,7 +879,12 @@ class HomeNodeManager:
                         f"Native release contains duplicate path {name!r}."
                     )
                 names.add(name)
-                if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+                if (
+                    member.issym()
+                    or member.islnk()
+                    or member.isdev()
+                    or member.isfifo()
+                ):
                     raise HomeNodeError(
                         f"Native release contains unsupported entry {name!r}."
                     )
@@ -766,7 +898,9 @@ class HomeNodeManager:
                     )
                 total += member.size
                 if total > MAX_RELEASE_BYTES:
-                    raise HomeNodeError("Expanded native release exceeds the safety limit.")
+                    raise HomeNodeError(
+                        "Expanded native release exceeds the safety limit."
+                    )
                 if name == "manifest.json":
                     if not member.isfile():
                         raise HomeNodeError("manifest.json must be a regular file.")
@@ -774,7 +908,7 @@ class HomeNodeManager:
             if manifest_bytes is None:
                 raise HomeNodeError("Native release has no manifest.json.")
             manifest = _parse_release_manifest(manifest_bytes)
-            if requested_release != DEFAULT_RELEASE and manifest.release not in {
+            if manifest.release not in {
                 requested_release,
                 requested_release.removeprefix("v"),
                 f"v{requested_release.removeprefix('v')}",
@@ -788,7 +922,8 @@ class HomeNodeManager:
             unexpected = {
                 name
                 for name in names
-                if name not in expected and not any(p.startswith(f"{name}/") for p in expected)
+                if name not in expected
+                and not any(p.startswith(f"{name}/") for p in expected)
             }
             if unexpected:
                 raise HomeNodeError(
@@ -858,7 +993,9 @@ class HomeNodeManager:
             )
             major = int(str(result.stdout).strip())
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            raise HomeNodeError("Could not determine the installed Node.js version.") from exc
+            raise HomeNodeError(
+                "Could not determine the installed Node.js version."
+            ) from exc
         if major != manifest.node_major:
             raise HomeNodeError(
                 "Native release runtime does not match its manifest "
@@ -959,7 +1096,9 @@ class HomeNodeManager:
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         os.kill(pid, signal.SIGKILL)
             deadline = time.monotonic() + 5.0
-            while self._supervisor_alive(allow_stale=True) and time.monotonic() < deadline:
+            while (
+                self._supervisor_alive(allow_stale=True) and time.monotonic() < deadline
+            ):
                 self._sleep(0.1)
         self._cleanup_stale_runtime()
 
@@ -970,6 +1109,7 @@ class HomeNodeManager:
         _rotate_log(log_path)
         command = [
             sys.executable,
+            "-I",
             "-m",
             "dina_cli.home_node_supervisor",
             "--install-dir",
@@ -992,9 +1132,12 @@ class HomeNodeManager:
                         if os.name == "nt"
                         else 0
                     ),
+                    env=_clean_python_subprocess_env(),
                 )
         except OSError as exc:
-            raise HomeNodeError(f"Could not launch the native supervisor: {exc}") from exc
+            raise HomeNodeError(
+                f"Could not launch the native supervisor: {exc}"
+            ) from exc
         self._write_private_json(
             self.runtime_dir / "launch.json",
             {
@@ -1038,7 +1181,10 @@ class HomeNodeManager:
             or not isinstance(updated_at, (int, float))
         ):
             return False
-        if not allow_stale and time.time() - float(updated_at) > SUPERVISOR_HEARTBEAT_MAX_AGE:
+        if (
+            not allow_stale
+            and time.time() - float(updated_at) > SUPERVISOR_HEARTBEAT_MAX_AGE
+        ):
             return False
         return self._pid_matches(pid, token, "home_node_supervisor")
 
@@ -1143,9 +1289,7 @@ class HomeNodeManager:
         )
         manifest = self._verify_release(config.release_id)
         release_root = self._release_path(config.release_id)
-        entry = release_root.joinpath(
-            *PurePosixPath(manifest.archive_entrypoint).parts
-        )
+        entry = release_root.joinpath(*PurePosixPath(manifest.archive_entrypoint).parts)
         node = release_root.joinpath(*PurePosixPath(manifest.node_entrypoint).parts)
         command = [str(node), str(entry), operation]
         if force:
@@ -1369,7 +1513,9 @@ class HomeNodeManager:
         try:
             return path.read_text(encoding="utf-8").strip()
         except OSError as exc:
-            raise HomeNodeError(f"Could not read protected Home Node file {name!r}.") from exc
+            raise HomeNodeError(
+                f"Could not read protected Home Node file {name!r}."
+            ) from exc
 
     def _check_prerequisites(self) -> None:
         if _runtime_platform() not in {"darwin", "linux", "win32"}:
@@ -1402,7 +1548,9 @@ class HomeNodeManager:
             self._write_private_bytes(self.brain_key_file, seed)
         private = Ed25519PrivateKey.from_private_bytes(seed)
         public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-        return "did:key:z" + base58.b58encode(_ED25519_MULTICODEC + public).decode("ascii")
+        return "did:key:z" + base58.b58encode(_ED25519_MULTICODEC + public).decode(
+            "ascii"
+        )
 
     def _write_current(self, config: HomeNodeConfig) -> None:
         self._write_private_json(
@@ -1522,7 +1670,11 @@ class HomeNodeManager:
         if endpoint_mode not in {"test", "release"}:
             raise HomeNodeError("Endpoint mode must be 'test' or 'release'.")
         for label, port in (("Core", core_port), ("Brain", brain_port)):
-            if not isinstance(port, int) or isinstance(port, bool) or not (1 <= port <= 65535):
+            if (
+                not isinstance(port, int)
+                or isinstance(port, bool)
+                or not (1 <= port <= 65535)
+            ):
                 raise HomeNodeError(f"{label} port must be between 1 and 65535.")
         if core_port == brain_port:
             raise HomeNodeError("Core and Brain must use different host ports.")
@@ -1539,9 +1691,9 @@ class HomeNodeManager:
 
     @staticmethod
     def _write_private_json(path: Path, value: dict[str, Any]) -> None:
-        payload = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode(
-            "utf-8"
-        )
+        payload = (
+            json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
         _atomic_private_write(path, payload)
 
     @staticmethod
@@ -1562,6 +1714,8 @@ def _parse_release_manifest(content: bytes) -> ReleaseManifest:
         raise HomeNodeError("Native release manifest uses an unsupported schema.")
     required_strings = (
         "release",
+        "minimum_cli_version",
+        "maximum_cli_version_exclusive",
         "platform",
         "arch",
         "node_entrypoint",
@@ -1577,6 +1731,18 @@ def _parse_release_manifest(content: bytes) -> ReleaseManifest:
         strings[key] = item
     if _RELEASE_RE.fullmatch(strings["release"]) is None:
         raise HomeNodeError("Native release manifest has an invalid release value.")
+    minimum_cli = _parse_semver_core(strings["minimum_cli_version"])
+    maximum_cli = _parse_semver_core(strings["maximum_cli_version_exclusive"])
+    current_cli = _parse_semver_core(__version__)
+    if minimum_cli >= maximum_cli:
+        raise HomeNodeError("Native release manifest has an invalid CLI version range.")
+    if not (minimum_cli <= current_cli < maximum_cli):
+        raise HomeNodeError(
+            "Native Home Node release requires dina-agent "
+            f">={strings['minimum_cli_version']} and "
+            f"<{strings['maximum_cli_version_exclusive']}; this CLI is "
+            f"{__version__}."
+        )
     node_major = value.get("node_major")
     if (
         not isinstance(node_major, int)
@@ -1610,6 +1776,8 @@ def _parse_release_manifest(content: bytes) -> ReleaseManifest:
         strings[key] = entry
     return ReleaseManifest(
         release=strings["release"],
+        minimum_cli_version=strings["minimum_cli_version"],
+        maximum_cli_version_exclusive=strings["maximum_cli_version_exclusive"],
         platform=strings["platform"],
         arch=strings["arch"],
         node_major=node_major,
@@ -1619,6 +1787,25 @@ def _parse_release_manifest(content: bytes) -> ReleaseManifest:
         archive_entrypoint=strings["archive_entrypoint"],
         files=files,
     )
+
+
+def _parse_semver_core(value: str) -> tuple[int, int, int]:
+    match = _SEMVER_RE.fullmatch(value)
+    if match is None:
+        raise HomeNodeError(f"Invalid semantic version {value!r}.")
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def _subprocess_error_detail(
+    exc: subprocess.CalledProcessError | subprocess.TimeoutExpired | OSError,
+) -> str:
+    if isinstance(exc, subprocess.CalledProcessError):
+        value = exc.stderr or exc.stdout
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").strip()[-1000:]
+        if isinstance(value, str):
+            return value.strip()[-1000:]
+    return str(exc).strip()[-1000:]
 
 
 def _config_from_value(value: Any) -> HomeNodeConfig:
@@ -1734,6 +1921,17 @@ def _runtime_arch() -> str:
     raise HomeNodeError(f"Native Home Node does not support architecture {value!r}.")
 
 
+def _normalize_release_version(value: str) -> str:
+    result = value
+    if result.startswith("home-node-lite-v"):
+        result = result.removeprefix("home-node-lite-v")
+    elif result.startswith("v") and _SEMVER_RE.fullmatch(result) is not None:
+        result = result.removeprefix("v")
+    if _RELEASE_RE.fullmatch(result) is None:
+        raise HomeNodeError(f"Invalid Home Node release: {value!r}")
+    return result
+
+
 def _safe_release_component(value: str) -> str:
     result = value.removeprefix("v")
     if _RELEASE_RE.fullmatch(result) is None:
@@ -1778,12 +1976,16 @@ def _atomic_private_write(path: Path, content: bytes) -> None:
 def _make_release_read_only(root: Path) -> None:
     for path in sorted(root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
         if path.is_symlink():
-            raise HomeNodeError("Native release staging unexpectedly contains a symlink.")
+            raise HomeNodeError(
+                "Native release staging unexpectedly contains a symlink."
+            )
         if path.is_dir():
             if os.name != "nt":
                 os.chmod(path, 0o500)
         elif os.name != "nt":
-            mode = 0o500 if path.relative_to(root).as_posix() == "runtime/node" else 0o400
+            mode = (
+                0o500 if path.relative_to(root).as_posix() == "runtime/node" else 0o400
+            )
             os.chmod(path, mode)
     if os.name != "nt":
         os.chmod(root, 0o500)
@@ -1842,8 +2044,11 @@ def _tail_lines(path: Path, count: int) -> list[str]:
 def _process_command(pid: int) -> str | None:
     if sys.platform.startswith("linux"):
         try:
-            return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode(
-                "utf-8", errors="replace"
+            return (
+                Path(f"/proc/{pid}/cmdline")
+                .read_bytes()
+                .replace(b"\x00", b" ")
+                .decode("utf-8", errors="replace")
             )
         except OSError:
             return None
@@ -1893,14 +2098,12 @@ def _validate_handle(handle: str) -> None:
     if len(handle) > 253 or handle.startswith(".") or handle.endswith("."):
         raise HomeNodeError("PDS handle is malformed.")
     labels = handle.split(".")
-    if len(labels) < 2 or any(_HANDLE_LABEL_RE.fullmatch(label) is None for label in labels):
+    if len(labels) < 2 or any(
+        _HANDLE_LABEL_RE.fullmatch(label) is None for label in labels
+    ):
         raise HomeNodeError("PDS handle must be a valid lowercase domain name.")
     managed_host = next(
-        (
-            host
-            for host in _DINA_MANAGED_PDS_HOSTS
-            if handle.endswith(f".{host}")
-        ),
+        (host for host in _DINA_MANAGED_PDS_HOSTS if handle.endswith(f".{host}")),
         None,
     )
     if managed_host is not None and len(handle) > _DINA_PDS_MAX_HANDLE_CHARS:
