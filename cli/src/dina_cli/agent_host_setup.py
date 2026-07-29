@@ -85,6 +85,13 @@ def default_host_config_dir(host: str) -> Path:
     )
     if configured:
         return Path(configured).expanduser()
+    configured_host_dir = (
+        os.environ.get("DINA_AGENT_HOST_CONFIG_DIR", "").strip()
+        if _plugin_development_mode()
+        else ""
+    )
+    if configured_host_dir:
+        return Path(configured_host_dir).expanduser()
     configured_root = (
         os.environ.get("DINA_AGENT_HOST_CONFIG_ROOT", "").strip()
         if _plugin_development_mode()

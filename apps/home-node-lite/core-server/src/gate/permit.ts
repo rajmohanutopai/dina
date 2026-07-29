@@ -3,7 +3,7 @@
  *
  * When Core decides a coding action may proceed — SAFE fast-path, or after the
  * owner approves a MODERATE/HIGH one — it mints a PERMIT bound to a hash of the
- * exact tool payload (tool name + input). The permit is:
+ * security-relevant tool payload (tool name + executable input). The permit is:
  *
  *   • payload-bound — it authorises THIS call, not a class of calls. If the
  *     agent alters the payload after approval (a bait-and-switch), the hash no

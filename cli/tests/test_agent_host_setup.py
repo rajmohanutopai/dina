@@ -84,6 +84,38 @@ def test_default_host_profiles_are_isolated(
     assert codex.config_dir == (tmp_path / "codex" / "cli").resolve()
 
 
+def test_development_exact_host_config_dir_is_honored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exact = tmp_path / "isolated-claude-profile"
+    monkeypatch.delenv("DINA_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("DINA_AGENT_HOST_CONFIG_ROOT", raising=False)
+    monkeypatch.setenv("DINA_PLUGIN_DEV_MODE", "1")
+    monkeypatch.setenv("DINA_AGENT_HOST_CONFIG_DIR", str(exact))
+
+    setup = AgentHostSetup("claude-code", manager=FakeManager())
+
+    assert setup.config_dir == exact.resolve()
+
+
+def test_packaged_setup_ignores_exact_host_config_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DINA_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("DINA_AGENT_HOST_CONFIG_ROOT", raising=False)
+    monkeypatch.delenv("DINA_PLUGIN_DEV_MODE", raising=False)
+    monkeypatch.setenv("DINA_AGENT_HOST_CONFIG_DIR", str(tmp_path / "attacker"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path / "owner"))
+
+    setup = AgentHostSetup("claude-code", manager=FakeManager())
+
+    assert setup.config_dir == (
+        tmp_path / "owner" / ".dina" / "agent-hosts" / "claude-code" / "cli"
+    ).resolve()
+
+
 def _wire_dependencies(
     monkeypatch: pytest.MonkeyPatch,
     *,

@@ -86,6 +86,58 @@ def test_allow_exits_0():
     assert r.exit_code == 0
 
 
+def test_owner_approved_allow_explicitly_overrides_claude_permission_layer():
+    r = _run_gate(
+        json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": "git reset --hard"}}
+        ),
+        gate_return={
+            "action": "vcs_destructive",
+            "risk": "HIGH",
+            "outcome": "allow",
+            "permit_id": "permit_1_deadbeef",
+            "owner_approval_redeemed": True,
+            "reason": "redeemed durable owner approval",
+        },
+    )
+    assert r.exit_code == 0
+    assert '"permissionDecision": "allow"' in r.output
+    assert "redeemed durable owner approval" in r.output
+
+
+def test_owner_approved_allow_stays_silent_for_codex():
+    r = _run_gate(
+        json.dumps(
+            {"tool_name": "Bash", "tool_input": {"command": "git reset --hard"}}
+        ),
+        gate_return={
+            "action": "vcs_destructive",
+            "risk": "HIGH",
+            "outcome": "allow",
+            "permit_id": "permit_1_deadbeef",
+            "owner_approval_redeemed": True,
+        },
+        host="codex",
+    )
+    assert r.exit_code == 0
+    assert "permissionDecision" not in r.output
+
+
+def test_auto_permit_allow_does_not_override_claude_permission_layer():
+    r = _run_gate(
+        json.dumps({"tool_name": "Read", "tool_input": {"file_path": "a.ts"}}),
+        gate_return={
+            "action": "code_read",
+            "risk": "SAFE",
+            "outcome": "allow",
+            "permit_id": "permit_1_deadbeef",
+            "owner_approval_redeemed": False,
+        },
+    )
+    assert r.exit_code == 0
+    assert "permissionDecision" not in r.output
+
+
 def test_deny_exits_2():
     r = _run_gate(
         json.dumps({"tool_name": "Bash", "tool_input": {"command": "cat keyfile"}}),

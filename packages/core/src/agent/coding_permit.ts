@@ -52,8 +52,9 @@ export const DEFAULT_CODING_APPROVAL_TTL_SEC = 15 * 60;
  * The approval-card payload. Carries only what the owner needs to DECIDE plus
  * the hash that binds the eventual permit — never the raw tool input, which can
  * hold a secret literal (§20). `payload_hash` is the SHA-256 the Node gate
- * computed over the exact `(tool, input)`; the permit minted on approval binds
- * to it, so the agent's retry authorises THAT call and no other.
+ * computed over the canonical security-relevant `(tool, input)`; the permit
+ * minted on approval binds to it, so the agent's retry authorises THAT
+ * executable call and no other. Host-only presentation metadata is excluded.
  */
 export interface CodingGateApprovalPayload {
   type: typeof CODING_GATE_APPROVAL_TYPE;

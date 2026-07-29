@@ -346,8 +346,8 @@ generate_secrets() {
 start_services() {
     info "Building and starting services (project: ${COMPOSE_PROJECT})..."
     ssh "$REMOTE" "
-        cd $REMOTE_DIR/deploy
-        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
+        cd $REMOTE_DIR/deploy &&
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build &&
         COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
     "
     info "Services started"
@@ -425,8 +425,8 @@ case "$ACTION" in
         sync_grants_env
         prepare_compose
         ssh "$REMOTE" "
-            cd $REMOTE_DIR/deploy
-            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build
+            cd $REMOTE_DIR/deploy &&
+            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build &&
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
         "
         # Caddy is long-running; `up -d` won't reload its mounted Caddyfile,

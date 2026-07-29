@@ -41,6 +41,13 @@ export type GateOutcome = 'allow' | 'approval_required' | 'deny';
 const FILE_READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'Cat']);
 const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'apply_patch']);
 const NETWORK_TOOLS = new Set(['WebFetch', 'WebSearch']);
+const CLAUDE_HOST_CONTROL_TOOLS = new Set(['AskUserQuestion', 'Skill', 'ToolSearch']);
+const DINA_PLUGIN_MCP_PREFIXES = [
+  // Claude Code namespaces tools by plugin + server.
+  'mcp__plugin_dina_dina__dina_',
+  // Codex namespaces tools by the installed server name.
+  'mcp__dina__dina_',
+] as const;
 const MAX_HOST_MANAGED_SEARCH_CHARS = 1_000;
 const SECRET_SEARCH_RE =
   /\b(?:api[-_ ]?key|access[-_ ]?token|auth(?:orization)?[-_ ]?token|bearer|client[-_ ]?secret|password|passphrase|private[-_ ]?key|recovery[-_ ]?phrase|seed[-_ ]?phrase)\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/i;
@@ -66,7 +73,7 @@ export interface GateDecision {
   enforced: boolean;
   /** Minted only for an allowed call in enforce mode. */
   permit?: PermitRecord;
-  /** SHA-256 of the exact `(tool, input)` payload — present in enforce mode. */
+  /** SHA-256 of the canonical security-relevant `(tool, input)` payload. */
   payloadHash?: string;
   reason: string;
 }
@@ -177,6 +184,31 @@ export function classifyToolCall(input: {
 }): { action: string; risk: RiskLevel; reason: string } {
   const { toolName } = input;
 
+  // These tools only control Claude's own UI/schema discovery. They do not
+  // execute code or touch external state, and blocking ToolSearch/Skill makes
+  // the installed Dina plugin unable to discover its own MCP surface.
+  if (CLAUDE_HOST_CONTROL_TOOLS.has(toolName)) {
+    return {
+      action: 'host_control',
+      risk: 'SAFE',
+      reason: `${toolName} is a Claude host-control operation`,
+    };
+  }
+
+  // Calls through the MCP server bundled by THIS Claude plugin enter Dina Core
+  // over its authenticated CLI. Core then applies the command-specific vault,
+  // grant, approval, idempotency and ownership checks. Gating this transport a
+  // second time as an unknown external tool creates an approval recursion and
+  // prevents Claude from using Dina at all. The exact plugin namespace avoids
+  // granting this treatment to a project-defined MCP server named "dina".
+  if (DINA_PLUGIN_MCP_PREFIXES.some((prefix) => toolName.startsWith(prefix))) {
+    return {
+      action: 'dina_core_operation',
+      risk: 'SAFE',
+      reason: 'authenticated Dina plugin MCP operation',
+    };
+  }
+
   if (toolName === 'Bash') {
     const command = typeof input.toolInput.command === 'string' ? input.toolInput.command : '';
     const r = classifyBashCommand({
@@ -271,6 +303,7 @@ const STRUCTURED_TOOL_NAMES = new Set([
   ...FILE_READ_TOOLS,
   ...FILE_WRITE_TOOLS,
   ...NETWORK_TOOLS,
+  ...CLAUDE_HOST_CONTROL_TOOLS,
   'Bash',
 ]);
 
@@ -287,6 +320,9 @@ export function isSensitiveBoundary(
   classified: { action: string; risk: RiskLevel; reason: string },
 ): boolean {
   if (classified.risk === 'BLOCKED') return true;
+  if (classified.action === 'host_control' || classified.action === 'dina_core_operation') {
+    return false;
+  }
   if (!STRUCTURED_TOOL_NAMES.has(input.toolName)) return true;
   if (
     classified.action === 'code_read' ||
@@ -354,7 +390,7 @@ export function gateToolCall(input: GateInput, permits: PermitStore): GateDecisi
 
   if (outcome === 'approval_required') {
     // Item B — the agent's retry AFTER the owner approved: redeem the single-use
-    // approved permit for THIS exact payload. A payload that classifies
+    // approved permit for THIS security-equivalent payload. A payload that classifies
     // MODERATE/HIGH is deterministic, so it never has an `auto` permit (those are
     // minted only for SAFE calls) — the only thing `consume` can match here is an
     // owner-approved permit; the `decision === 'approved'` guard makes that
@@ -535,5 +571,27 @@ export function mintApprovedPermit(input: GateInput, permits: PermitStore): Perm
 }
 
 function toPayload(input: Pick<GateInput, 'toolName' | 'toolInput'>): ToolPayload {
-  return { tool: input.toolName, input: input.toolInput };
+  return {
+    tool: input.toolName,
+    input: securityRelevantToolInput(input.toolName, input.toolInput),
+  };
+}
+
+/**
+ * Bind permits to executable semantics, not host-generated presentation text.
+ *
+ * Claude may rewrite Bash's optional `description` between identical retries.
+ * It is never passed to the shell, so including it creates duplicate approval
+ * cards without strengthening the permit. No other field is stripped: command,
+ * timeout, background mode and future fields remain hash-bound.
+ */
+function securityRelevantToolInput(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): Record<string, unknown> {
+  if (toolName !== 'Bash' || !Object.prototype.hasOwnProperty.call(toolInput, 'description')) {
+    return toolInput;
+  }
+  const { description: _description, ...securityRelevant } = toolInput;
+  return securityRelevant;
 }

@@ -34,6 +34,14 @@ def fake_client(monkeypatch):
     return fake
 
 
+@pytest.fixture(autouse=True)
+def owned_sessions(monkeypatch):
+    """Do not let MCP process-lifetime session tracking leak between tests."""
+    sessions: set[str] = set()
+    monkeypatch.setattr(mcp_server, "_owned_session_ids", sessions)
+    return sessions
+
+
 @pytest.fixture
 def pii_sessions(tmp_path, monkeypatch):
     """Keep MCP PII mappings isolated from the developer's real config."""
@@ -47,6 +55,38 @@ def pii_sessions(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # dina_ask — three response shapes the agent must handle
 # ---------------------------------------------------------------------------
+
+
+def test_mcp_tracks_and_explicitly_ends_its_sessions(fake_client, owned_sessions):
+    fake_client.session_start.return_value = {
+        "session_id": "sess-owned-1",
+        "status": "open",
+    }
+
+    opened = mcp_server.dina_session_start.fn(name="Claude task")
+    assert opened["session_id"] == "sess-owned-1"
+    assert owned_sessions == {"sess-owned-1"}
+
+    ended = mcp_server.dina_session_end.fn(session_id="sess-owned-1")
+    assert ended == {"status": "ended", "session": "sess-owned-1"}
+    assert owned_sessions == set()
+    fake_client.session_end.assert_called_once_with("sess-owned-1")
+
+
+def test_mcp_shutdown_ends_every_session_even_if_one_cleanup_fails(
+    fake_client,
+    owned_sessions,
+):
+    owned_sessions.update({"sess-owned-1", "sess-owned-2"})
+    fake_client.session_end.side_effect = [RuntimeError("offline"), {"status": "ended"}]
+
+    mcp_server._end_owned_sessions()
+
+    assert owned_sessions == set()
+    assert {call.args[0] for call in fake_client.session_end.call_args_list} == {
+        "sess-owned-1",
+        "sess-owned-2",
+    }
 
 
 def test_dina_ask_returns_synchronous_complete(fake_client):
@@ -192,6 +232,15 @@ def test_dina_remember_status_forwards_owned_poll(fake_client):
 
     assert out["status"] == "stored"
     fake_client.remember_check.assert_called_once_with("stg-1", session="sess-1")
+
+
+def test_remember_docs_prefer_connected_memory_proposal():
+    remember = " ".join((mcp_server.dina_remember.description or "").split())
+
+    assert "configured always-on Brain" in remember
+    assert "Do NOT use this tool" in remember
+    assert "dina_memory_propose" in remember
+    assert "can remain ``processing``" in remember
 
 
 # ---------------------------------------------------------------------------
@@ -749,10 +798,20 @@ def test_reasoning_tool_docs_preserve_worker_security_contract():
     complete = mcp_server.dina_reasoning_complete.description or ""
     heartbeat = mcp_server.dina_reasoning_heartbeat.description or ""
     normalized_context = " ".join(context.split())
+    normalized_memory = " ".join(memory.split())
 
     assert "not a Core-validated Dina result" in normalized_context
     assert "Core validates" in memory
     assert "changed replays" in memory
+    assert '"persona":"general"' in normalized_memory
+    assert '"subject":{"kind":"preference","label":"Chair preference"}' in normalized_memory
+    assert (
+        '"facts":[{"text":"The owner prefers firm lower-back support.","confidence":1.0}]'
+        in normalized_memory
+    )
+    assert '"reminderCandidates":[]' in normalized_memory
+    assert "dueAtMs" in memory
+    assert "supported by ``source_text``" in memory
     assert "Do not perform external effects" in begin
     assert "resultSchema" in begin
     assert "allowedEvidenceIds" in complete

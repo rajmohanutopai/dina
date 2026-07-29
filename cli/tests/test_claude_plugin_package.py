@@ -149,8 +149,13 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
 
 def test_plugin_bundles_mcp_native_usage_instructions() -> None:
     skill = (PLUGIN_ROOT / "skills" / "dina" / "SKILL.md").read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill.split())
     assert "dina_session_start" in skill
     assert "dina_session_end" in skill
+    assert "dina_memory_propose" in skill
+    assert "configured always-on Dina Brain" in normalized_skill
+    assert "dina_remember_status" in skill
+    assert "Never call `dina_session_end` while a Remember operation" in normalized_skill
     assert "dina_validate" in skill
     assert "pending_approval" in skill
     assert "dina_scrub" in skill
@@ -160,6 +165,71 @@ def test_plugin_bundles_mcp_native_usage_instructions() -> None:
     assert "only `completed` proves" in skill
     assert "PreToolUse" in skill
     assert (PLUGIN_ROOT / "skills" / "dina-work" / "SKILL.md").is_file()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--version"],
+        ["status"],
+        ["--json", "status"],
+        ["home-node", "status"],
+        ["--json", "home-node", "status"],
+        ["audit"],
+        ["--json", "audit"],
+        ["audit", "--limit", "15"],
+        ["--json", "audit", "--limit", "1000"],
+        ["status", "2>&1"],
+        ["home-node", "status", "2>&1"],
+    ],
+)
+def test_bootstrap_authorizer_allows_only_bounded_plugin_diagnostics(
+    arguments: list[str],
+) -> None:
+    command = " ".join(
+        ["DINA_AGENT_HOST=claude-code", f'"{CLI_WRAPPER}"', *arguments]
+    )
+    assert _authorize({"tool_name": "Bash", "tool_input": {"command": command}}) == 0
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "dina-cli status",
+        f'"{CLI_WRAPPER}" status',
+        f'DINA_AGENT_HOST=codex "{CLI_WRAPPER}" status',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status; touch /tmp/x',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" home-node start',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" audit --limit 0',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" audit --limit 1001',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" audit --limit -1',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" audit --action secret_read',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status --verbose',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status 2>/tmp/status',
+        '"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status 2>&1; touch /tmp/x',
+    ],
+)
+def test_bootstrap_authorizer_rejects_maintenance_command_expansion(command: str) -> None:
+    assert _authorize({"tool_name": "Bash", "tool_input": {"command": command}}) == 1
+
+
+def test_bootstrap_authorizer_accepts_a_canonical_alias_to_the_plugin(
+    tmp_path: Path,
+) -> None:
+    alias = tmp_path / "plugin-alias"
+    alias.symlink_to(PLUGIN_ROOT, target_is_directory=True)
+
+    cli_alias = alias / "bin" / "dina-cli"
+    cli_command = f'DINA_AGENT_HOST=claude-code "{cli_alias}" status'
+    assert _authorize(
+        {"tool_name": "Bash", "tool_input": {"command": cli_command}}
+    ) == 0
+
+    setup_alias = alias / "bin" / "dina-setup"
+    setup_command = f'"{setup_alias}" --status --json'
+    assert _authorize(
+        {"tool_name": "Bash", "tool_input": {"command": setup_command}}
+    ) == 0
 
 
 def test_marketplace_points_at_the_self_contained_plugin() -> None:
@@ -178,7 +248,11 @@ def _authorize(event: dict) -> int:
         [str(AUTHORIZER)],
         input=json.dumps(event),
         text=True,
-        env={**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT)},
+        env={
+            **os.environ,
+            "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT),
+            "DINA_AGENT_HOST": "claude-code",
+        },
         capture_output=True,
         timeout=10,
         check=False,

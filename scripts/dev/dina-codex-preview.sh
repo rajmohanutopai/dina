@@ -31,6 +31,7 @@ fi
 
 export DINA_HOME_NODE_DIR="${DINA_HOME_NODE_DIR:-$HOME/.dina/home-node-codex-preview}"
 export DINA_CONFIG_DIR="${DINA_CONFIG_DIR:-$HOME/.dina/cli-codex-preview}"
+export DINA_AGENT_HOST_CONFIG_DIR="$DINA_CONFIG_DIR"
 export DINA_SETUP_RUNTIME_DIR="${DINA_SETUP_RUNTIME_DIR:-$HOME/.dina/runtime/agent-plugin-codex-preview}"
 export DINA_PLUGIN_DEV_MODE=1
 if [[ -n "${CODEX_HOME:-}" ]]; then
@@ -136,8 +137,8 @@ echo
 
 if (( PREPARE_ONLY )); then
   printf 'Preparation complete. Launch Codex with:\n'
-  printf 'DINA_HOME_NODE_DIR=%q DINA_CONFIG_DIR=%q DINA_SETUP_RUNTIME_DIR=%q codex\n' \
-    "$DINA_HOME_NODE_DIR" "$DINA_CONFIG_DIR" "$DINA_SETUP_RUNTIME_DIR"
+  printf 'DINA_HOME_NODE_DIR=%q DINA_CONFIG_DIR=%q DINA_AGENT_HOST_CONFIG_DIR=%q DINA_SETUP_RUNTIME_DIR=%q codex\n' \
+    "$DINA_HOME_NODE_DIR" "$DINA_CONFIG_DIR" "$DINA_AGENT_HOST_CONFIG_DIR" "$DINA_SETUP_RUNTIME_DIR"
   exit 0
 fi
 

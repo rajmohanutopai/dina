@@ -3843,6 +3843,24 @@ def _gate_ask(reason: str) -> None:
     sys.exit(0)
 
 
+def _gate_allow(reason: str) -> None:
+    """Explicitly authorize a Claude Code call after Dina redeemed a durable
+    owner-approved permit. A silent exit 0 still lets Claude's own permission
+    layer deny the call after Core has consumed the single-use permit."""
+    click.echo(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": reason,
+                }
+            }
+        )
+    )
+    sys.exit(0)
+
+
 @cli.command("gate-hook")
 @click.option(
     "--host",
@@ -3859,6 +3877,7 @@ def gate_hook(host: str) -> None:
 
     \b
       allow                       -> exit 0 (silent)
+      owner-approved allow        -> explicit Claude `allow` decision
       deny / hard-blocked         -> exit 2 (stderr = reason)
       MODERATE approval_required  -> `ask` (JSON permissionDecision)
       HIGH approval_required      -> block pending Dina approval; retry after approval
@@ -3942,8 +3961,24 @@ def gate_hook(host: str) -> None:
     risk = (decision.get("risk") if isinstance(decision, dict) else "") or ""
     reason = (decision.get("reason") if isinstance(decision, dict) else "") or ""
     action = (decision.get("action") if isinstance(decision, dict) else "") or ""
+    owner_approval_redeemed = (
+        decision.get("owner_approval_redeemed")
+        if isinstance(decision, dict)
+        else False
+    )
 
     if outcome == "allow":
+        # Core sets this bit only after a durable owner-approval task wins its
+        # single-use redemption CAS. Without an explicit Claude allow, Claude's
+        # native classifier can deny the call after Dina has consumed that
+        # permit, forcing a second owner approval for an action that never ran.
+        # Do not emit this for ordinary SAFE/auto allows, and do not emit
+        # Claude-specific output for Codex.
+        if host == "claude-code" and owner_approval_redeemed is True:
+            _gate_allow(
+                reason
+                or f"Dina owner approval was redeemed for {action or 'this action'}"
+            )
         sys.exit(0)  # silent allow
     if outcome == "deny":
         _gate_block(reason or f"Dina blocked this action ({action})")

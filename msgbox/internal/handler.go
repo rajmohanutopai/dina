@@ -23,12 +23,12 @@ const MaxPayloadSize = 1 << 20
 
 // Handler holds HTTP handlers for the msgbox.
 type Handler struct {
-	Hub            *Hub
-	PLCResolver    PLCResolver    // optional: for did:plc verification on /ws auth
-	d2dLimiter     *senderLimiter // D2D: WebSocket binary frames + POST /forward (60/min per DID)
-	rpcLimiter     *senderLimiter // RPC: WebSocket JSON frames (300/min per DID)
-	pairIPLimiter  *senderLimiter // Pairing: subtype "pair" RPCs (10/5min per source IP)
-	nonceCache     *NonceCache    // /forward nonce replay protection
+	Hub           *Hub
+	PLCResolver   PLCResolver    // optional: for did:plc verification on /ws auth
+	d2dLimiter    *senderLimiter // D2D: WebSocket binary frames + POST /forward (60/min per DID)
+	rpcLimiter    *senderLimiter // RPC: WebSocket JSON frames (300/min per DID)
+	pairIPLimiter *senderLimiter // Pairing: subtype "pair" RPCs (10/5min per source IP)
+	nonceCache    *NonceCache    // /forward nonce replay protection
 }
 
 // NewHandler creates a Handler with separate rate limit buckets.
@@ -62,7 +62,7 @@ func NewHandler(hub *Hub, resolver ...PLCResolver) *Handler {
 // authenticate via Ed25519 challenge-response.
 func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,  // msgbox accepts from any origin
+		InsecureSkipVerify: true, // msgbox accepts from any origin
 	})
 	if err != nil {
 		slog.Error("msgbox.ws_accept", "error", err)
@@ -113,7 +113,6 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	h.Hub.Unregister(did, conn)
 	slog.Info("msgbox.disconnected", "did", did)
 }
-
 
 // handleWSBinaryForward handles binary frames using the unified JSON envelope
 // format. All message types (D2D, RPC, cancel) use the same JSON envelope.
@@ -250,14 +249,6 @@ func (h *Handler) routeRPC(conn *MsgBoxConn, raw []byte, env *envelope) {
 		return
 	}
 
-	// Role enforcement: did:key senders (CLI devices) can only send requests.
-	// Responses come from Home Nodes (did:plc). A did:key sending a response
-	// is either a bug or a cache-poisoning attempt.
-	if env.Direction == "response" && strings.HasPrefix(env.FromDID, "did:key:") {
-		slog.Warn("msgbox.rpc_didkey_response_rejected", "from", env.FromDID, "id", env.ID)
-		return
-	}
-
 	// Pairing IP throttle: rate-limit by source IP for envelopes with
 	// subtype "pair". This is client-controlled metadata (not signed), so
 	// a custom client can bypass it by omitting the field. The primary
@@ -276,10 +267,15 @@ func (h *Handler) routeRPC(conn *MsgBoxConn, raw []byte, env *envelope) {
 		}
 	}
 
-	// Rate limiting (RPC bucket — separate from D2D).
-	// Only rate-limit requests, not responses. A busy Home Node sending
-	// many responses should not be throttled by its own rate limit bucket.
-	if env.Direction == "request" && !h.rpcLimiter.allow(conn.DID) {
+	// Rate limiting (RPC bucket — separate from D2D). Public did:plc Home Nodes
+	// keep the existing unthrottled response path. A local/self-hosted Home Node
+	// may legitimately use did:key, so its responses must be routable too; rate
+	// limit that ambiguous identity shape to prevent a CLI device from using
+	// response envelopes as an unbounded buffer-spam path. Recipients still
+	// accept only the configured Home Node DID + exact random request ID +
+	// matching recipient DID before decrypting a response.
+	if (env.Direction == "request" || strings.HasPrefix(env.FromDID, "did:key:")) &&
+		!h.rpcLimiter.allow(conn.DID) {
 		slog.Warn("msgbox.rpc_rate_limited", "from", conn.DID)
 		return
 	}
@@ -529,7 +525,7 @@ func abs(d time.Duration) time.Duration {
 // ---------------------------------------------------------------------------
 
 const (
-	rateLimitWindow  = time.Minute
+	rateLimitWindow     = time.Minute
 	rateLimitMaxD2D     = 60  // D2D per DID
 	rateLimitMaxRPC     = 300 // RPC per DID
 	rateLimitMaxPairing = 10  // Pairing per source IP (subtype "pair")

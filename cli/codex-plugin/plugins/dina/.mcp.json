@@ -1,11 +1,21 @@
 {
   "mcpServers": {
     "dina": {
-      "command": "${PLUGIN_ROOT}/bin/dina-cli",
+      "command": "./bin/dina-cli",
       "args": ["mcp-server", "--profile", "connected"],
+      "cwd": ".",
       "env": {
         "DINA_AGENT_HOST": "codex"
-      }
+      },
+      "env_vars": [
+        "DINA_AGENT_HOST_CONFIG_DIR",
+        "DINA_AGENT_HOST_CONFIG_ROOT",
+        "DINA_CLI_KEY_PASSPHRASE",
+        "DINA_CONFIG_DIR",
+        "DINA_HOME_NODE_DIR",
+        "DINA_PLUGIN_DEV_MODE",
+        "DINA_SETUP_RUNTIME_DIR"
+      ]
     }
   }
 }

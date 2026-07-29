@@ -25,6 +25,7 @@ mcp = FastMCP("dina")
 
 _client: DinaClient | None = None
 _sessions = SessionStore()
+_owned_session_ids: set[str] = set()
 # New IDs carry 128 random bits. Accept the earlier 8-hex shape so an
 # in-flight mapping can still be consumed across a CLI upgrade.
 _PII_ID_RE = re.compile(r"^pii_(?:[0-9a-f]{8}|[0-9a-f]{32})$")
@@ -48,15 +49,36 @@ def dina_session_start(name: str = "") -> dict:
     """Start a Dina session. All subsequent actions are scoped to this session.
     Returns session ID. Always start a session before doing work."""
     c = _get_client()
-    return c.session_start(name or "mcp-session")
+    result = c.session_start(name or "mcp-session")
+    session_id = result.get("session_id")
+    if isinstance(session_id, str) and session_id:
+        _owned_session_ids.add(session_id)
+    return result
 
 
 @mcp.tool()
 def dina_session_end(session_id: str) -> dict:
     """End a Dina session and revoke its scoped grants and approvals."""
     c = _get_client()
-    c.session_end(session_id)
+    try:
+        c.session_end(session_id)
+    finally:
+        _owned_session_ids.discard(session_id)
     return {"status": "ended", "session": session_id}
+
+
+def _end_owned_sessions() -> None:
+    """Best-effort cleanup for sessions opened by this MCP process."""
+    client = _get_client()
+    session_ids = tuple(_owned_session_ids)
+    _owned_session_ids.clear()
+    for session_id in session_ids:
+        try:
+            client.session_end(session_id)
+        except Exception:
+            # Core leases remain the crash backstop. Never corrupt MCP stdout
+            # while the stdio server is shutting down.
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +134,23 @@ def dina_memory_propose(
 ) -> dict:
     """Propose structured memory for Dina Core to validate and commit.
 
-    Generate ``request_id`` once and reuse it for an exact retry. ``proposal``
-    must match Core's ``memory.structure`` schema: persona, subject, facts, and
-    reminderCandidates. The proposal grants no storage access. Core validates
-    the persona, checks approval/lock state, writes through staging, and
-    creates reminders only after the memory is stored.
+    Generate ``request_id`` once and reuse it for an exact retry. Use an
+    existing persona returned by ``dina_vaults``. ``proposal`` must have
+    exactly this JSON shape (no additional fields):
+
+    ``{"persona":"general","subject":{"kind":"preference","label":"Chair
+    preference"},"facts":[{"text":"The owner prefers firm lower-back
+    support.","confidence":1.0}],"reminderCandidates":[]}``
+
+    ``persona``, ``subject.kind``, and ``subject.label`` are non-empty strings.
+    Each fact has only ``text`` (non-empty string) and ``confidence`` (number
+    from 0 through 1). Each optional reminder candidate has only ``text`` and
+    ``dueAtMs`` (a non-negative Unix timestamp in milliseconds). Never add a
+    fact or reminder that is not supported by ``source_text``.
+
+    The proposal grants no storage access. Core validates the persona, checks
+    approval/lock state, writes through staging, and creates reminders only
+    after the memory is stored.
 
     If the response is ``pending_approval``, stop and wait for the owner. A
     changed payload must use a new request ID; Core rejects changed replays.
@@ -418,11 +452,16 @@ def dina_ask_status(request_id: str, session: str) -> dict:
 
 @mcp.tool()
 def dina_remember(text: str, session: str, request_id: str, persona: str = "") -> dict:
-    """Store a fact through Dina's session-bound coding-agent memory ingress.
+    """Queue unstructured text for Dina's configured always-on Brain.
 
-    Dina classifies the memory into the appropriate vault unless ``persona`` is
-    explicitly supplied. ``request_id`` must be stable across retries. The
-    result can be ``processing`` or ``pending_approval``; poll
+    Do NOT use this tool when the current connected Claude/Codex conversation
+    can structure the owner's explicit statement. Use ``dina_memory_propose``
+    in that case. Without an always-on Brain, this queued operation can remain
+    ``processing`` until one becomes available.
+
+    The always-on Brain classifies the memory into the appropriate vault unless
+    ``persona`` is explicitly supplied. ``request_id`` must be stable across
+    retries. The result can be ``processing`` or ``pending_approval``; poll
     ``dina_remember_status`` and do not claim the memory was stored until that
     tool returns ``stored``.
     """
@@ -883,4 +922,7 @@ def configure_profile(profile: str) -> None:
 def run_server(profile: str = "all"):
     """Entry point for `dina mcp-server`. Pure tool server, no background threads."""
     configure_profile(profile)
-    mcp.run(transport="stdio")
+    try:
+        mcp.run(transport="stdio")
+    finally:
+        _end_owned_sessions()

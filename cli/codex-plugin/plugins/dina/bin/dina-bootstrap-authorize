@@ -29,24 +29,35 @@ def _plugin_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _valid_setup_command(command: object) -> bool:
+def _parse_command(command: object) -> list[str] | None:
     if not isinstance(command, str) or not command or len(command) > 4096:
-        return False
+        return None
     if "\n" in command or "\r" in command or "\x00" in command:
-        return False
+        return None
     try:
-        parts = shlex.split(command, posix=True)
+        return shlex.split(command, posix=True) or None
     except ValueError:
-        return False
-    if not parts:
+        return None
+
+
+def _is_plugin_binary(candidate: str, name: str) -> bool:
+    if candidate in {
+        f"${{PLUGIN_ROOT}}/bin/{name}",
+        f"${{CLAUDE_PLUGIN_ROOT}}/bin/{name}",
+    }:
+        return True
+    try:
+        return Path(candidate).expanduser().resolve() == (_plugin_root() / "bin" / name)
+    except OSError:
         return False
 
-    expected = str(_plugin_root() / "bin" / "dina-setup")
-    if parts[0] not in {
-        expected,
-        "${PLUGIN_ROOT}/bin/dina-setup",
-        "${CLAUDE_PLUGIN_ROOT}/bin/dina-setup",
-    }:
+
+def _valid_setup_command(command: object) -> bool:
+    parts = _parse_command(command)
+    if parts is None:
+        return False
+
+    if not _is_plugin_binary(parts[0], "dina-setup"):
         return False
 
     seen: set[str] = set()
@@ -79,6 +90,45 @@ def _valid_setup_command(command: object) -> bool:
     if "--pds-email" in seen and "--pds-handle" not in seen:
         return False
     return True
+
+
+def _valid_maintenance_command(command: object) -> bool:
+    """Allow only read-only diagnostics through the trusted plugin wrapper."""
+    parts = _parse_command(command)
+    if parts is None:
+        return False
+
+    expected_host = os.environ.get("DINA_AGENT_HOST", "")
+    host_scoped = False
+    if parts[0].startswith("DINA_AGENT_HOST="):
+        if expected_host not in {"claude-code", "codex"}:
+            return False
+        if parts[0] != f"DINA_AGENT_HOST={expected_host}":
+            return False
+        host_scoped = True
+        parts = parts[1:]
+    if not parts or not _is_plugin_binary(parts[0], "dina-cli"):
+        return False
+
+    args = parts[1:]
+    # Claude commonly merges stderr into stdout when collecting diagnostics.
+    # This exact fd-to-fd redirect cannot write a file or add another command.
+    if args and args[-1] == "2>&1":
+        args = args[:-1]
+    if args == ["--version"]:
+        return True
+    if args and args[0] == "--json":
+        args = args[1:]
+    if args == ["home-node", "status"]:
+        return True
+    if not host_scoped:
+        return False
+    if args in (["status"], ["audit"]):
+        return True
+    if len(args) == 3 and args[:2] == ["audit", "--limit"]:
+        limit = args[2]
+        return limit.isascii() and limit.isdigit() and 1 <= int(limit) <= 1000
+    return False
 
 
 def main() -> int:
@@ -120,7 +170,12 @@ def main() -> int:
     alternate = tool_input.get("cmd")
     if command is not None and alternate is not None and command != alternate:
         return DENY
-    return ALLOW if _valid_setup_command(command or alternate) else DENY
+    candidate = command or alternate
+    return (
+        ALLOW
+        if _valid_setup_command(candidate) or _valid_maintenance_command(candidate)
+        else DENY
+    )
 
 
 if __name__ == "__main__":

@@ -132,6 +132,7 @@ describe('POST /v1/agent/gate — wire contract', () => {
       permit_id: 'p1',
       // Item B — an allow decision creates no approval card.
       task_id: null,
+      owner_approval_redeemed: false,
       reason: 'r',
       profile: 'full_supervision',
       policy_version: 0,

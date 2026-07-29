@@ -71,6 +71,30 @@ describe('connected-agent three-profile gate', () => {
     });
   });
 
+  it('keeps Claude plugin discovery and Dina MCP transport host-managed', () => {
+    for (const [toolName, toolInput] of [
+      ['ToolSearch', { query: 'dina' }],
+      ['Skill', { skill: 'dina:dina' }],
+      ['mcp__plugin_dina_dina__dina_status', {}],
+      ['mcp__dina__dina_status', {}],
+    ] as const) {
+      expect(
+        gate.gate(
+          input({
+            profile: 'sensitive_boundaries',
+            toolName,
+            toolInput,
+          }),
+        ),
+      ).toMatchObject({
+        action: 'host_managed',
+        outcome: 'allow',
+        enforced: false,
+        auditLevel: 'none',
+      });
+    }
+  });
+
   it('gates external effects in Sensitive Boundaries', () => {
     const result = gate.gate(
       input({

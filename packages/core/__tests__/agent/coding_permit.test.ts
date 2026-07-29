@@ -326,6 +326,7 @@ describe('coding-gate approval loop (route + workflow approve)', () => {
       risk: 'HIGH',
       permit_id: `workflow:${b1.task_id}`,
       task_id: null,
+      owner_approval_redeemed: true,
     });
     expect(repo.getById(b1.task_id as string)?.status).toBe('completed');
 

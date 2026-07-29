@@ -5,7 +5,9 @@ description: Show whether Dina is connected to the Home Node and protecting supp
 
 # Check Dina Status
 
-Run `dina --version`, `dina home-node status`, and `dina status`. Report:
+Run `DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" --version`,
+`DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" home-node status`, and
+`DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" status`. Report:
 
 - whether the CLI is at least version 0.20.0;
 - whether Home Node Lite is installed and healthy;

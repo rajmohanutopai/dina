@@ -268,6 +268,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
     // Fail CLOSED: if approval is unavailable we return approval_required with
     // no task rather than silently allow.
     let approvalTaskId: string | undefined;
+    let ownerApprovalRedeemed = false;
     if (
       result.enforced &&
       (result.risk === 'HIGH' || (result.risk === 'MODERATE' && approvalSurface === 'owner')) &&
@@ -287,6 +288,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
         risk: result.risk as RiskLevel,
       });
       if (redemption.kind === 'redeemed') {
+        ownerApprovalRedeemed = true;
         result = {
           ...result,
           outcome: 'allow',
@@ -388,6 +390,7 @@ export function registerCodingGateRoutes(router: CoreRouter, gate?: CodingGateFn
         enforced: result.enforced,
         permit_id: result.permitId ?? null,
         task_id: approvalTaskId ?? null,
+        owner_approval_redeemed: ownerApprovalRedeemed,
         reason: result.reason,
         profile: result.profile,
         policy_version: result.policyVersion,

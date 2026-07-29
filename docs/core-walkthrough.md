@@ -845,8 +845,10 @@ The MsgBox relay eliminates the need for public ports on the Home Node. Both Cor
 - Empty ciphertext rejected in production mode
 - WebSocket read limit: 1 MiB (matches MsgBox MaxPayloadSize)
 - Inner body size guard: 1 MiB after NaCl decryption
-- Response direction excluded from RPC rate limiting
-- Role enforcement: did:key senders cannot send RPC responses
+- did:plc responses retain the existing unthrottled path; did:key responses
+  share the RPC rate limiter with requests
+- RPC response routing is DID-method agnostic. Clients bind responses to their
+  configured Home Node DID, exact request ID, and recipient DID.
 - /forward nonce replay protection (6-min window)
 - /forward canonical includes recipient DID in signature
 - Buffer.Add atomic per-DID limits (INSERT...SELECT WHERE)

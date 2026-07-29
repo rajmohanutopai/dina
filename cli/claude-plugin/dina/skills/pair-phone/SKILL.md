@@ -12,9 +12,11 @@ when mobile Core returns `501`.
 1. Run `/dina:setup` if Home Node has not been installed or enrollment needs
    repair. It preserves an existing identity and configuration.
 2. Confirm Home Node Lite Core is running with
-   `"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" home-node status`.
+   `DINA_AGENT_HOST=claude-code
+   "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" home-node status`.
 3. Verify the coding identity with
-   `"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status`.
+   `DINA_AGENT_HOST=claude-code
+   "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status`.
 
 Explain the trust model briefly: the agent gets **its own** Ed25519 key and never sees the vault keys; every action it takes still passes the Core-owned gate on the Home Node. Remind them that until pairing is complete, the gate blocks tool calls fail-closed.
 

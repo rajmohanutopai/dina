@@ -13,8 +13,12 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY packages/protocol packages/protocol
 COPY apps/grants-service apps/grants-service
-# Workspace-scoped install (creates the @dina/protocol symlink).
-RUN npm install --workspace=packages/protocol --workspace=apps/grants-service
+# Workspace-scoped install creates the @dina/protocol symlink. The deployment
+# context intentionally contains only these two workspaces, so the repo-level
+# patch-package postinstall is neither available nor relevant here. Rebuild the
+# one native dependency explicitly after the script-free install.
+RUN npm install --ignore-scripts --workspace=packages/protocol --workspace=apps/grants-service \
+    && npm rebuild better-sqlite3
 # Type gate — fail the image build on type errors.
 RUN npm run typecheck --workspace=apps/grants-service
 

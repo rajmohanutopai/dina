@@ -350,6 +350,39 @@ func TestHandler_ValidRPCRouted(t *testing.T) {
 	}
 }
 
+// A local/self-hosted Home Node legitimately has a did:key identity. The relay
+// must route its authenticated response; the CLI independently binds acceptance
+// to this sender DID, the random request ID and its own recipient DID.
+func TestHandler_DIDKeyRPCResponseRouted(t *testing.T) {
+	homeDID := "did:key:zLocalHomeNode"
+	recipientDID := "did:key:zCodingAgent"
+
+	ws, _, buf, cleanup := startTestMsgBox(t, homeDID)
+	defer cleanup()
+
+	env := envelope{
+		Type:       "rpc",
+		ID:         "random-request-id",
+		FromDID:    homeDID,
+		ToDID:      recipientDID,
+		Direction:  "response",
+		Ciphertext: "sealed-response",
+	}
+	data, _ := json.Marshal(env)
+	sendBinary(t, ws, data)
+
+	if !waitFor(t, 2*time.Second, func() bool { return buf.TotalCount() == 1 }) {
+		t.Fatalf("timeout: buffer count = %d, want 1", buf.TotalCount())
+	}
+	msgs := buf.Peek(recipientDID)
+	if len(msgs) != 1 {
+		t.Fatalf("Peek(%q) = %d msgs, want 1", recipientDID, len(msgs))
+	}
+	if msgs[0].ID != homeDID+":"+env.ID {
+		t.Errorf("msg.ID = %q, want sender-scoped response key", msgs[0].ID)
+	}
+}
+
 // --- TST-MBX-0069: Mixed D2D + RPC interleaving ---
 // TRACE: {"suite": "MBX", "case": "0069", "section": "06", "sectionName": "Operational & Load", "subsection": "04", "scenario": "01", "title": "mixed_d2d_rpc_interleaving"}
 //
@@ -2043,7 +2076,6 @@ func TestHandler_D2DEnvelopeUsesD2DBucket(t *testing.T) {
 		t.Error("RPC should still work after D2D rate limit exhausted (separate bucket)")
 	}
 }
-
 
 // --- TST-MBX-0090: ping frame → pong reply on same connection ---
 // TRACE: {"suite": "MBX", "case": "0090", "section": "07", "sectionName": "Envelope Parsing & Hardening", "subsection": "02", "scenario": "01", "title": "ping_replied_with_pong"}

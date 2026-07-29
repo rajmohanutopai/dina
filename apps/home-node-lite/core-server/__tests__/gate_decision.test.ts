@@ -50,10 +50,15 @@ describe('classifyToolCall — dispatch', () => {
   it('Bash → bash classifier', () => {
     expect(classify('Bash', { command: 'rm -rf build' }).risk).toBe('HIGH');
     expect(classify('Bash', { command: 'git status' }).risk).toBe('SAFE');
-    expect(classify('Bash', { command: `cat ${path.join(vaultDir, 'keyfile')}` }).risk).toBe('BLOCKED');
+    expect(classify('Bash', { command: `cat ${path.join(vaultDir, 'keyfile')}` }).risk).toBe(
+      'BLOCKED',
+    );
   });
   it('Read of a project file → code_read SAFE', () => {
-    expect(classify('Read', { file_path: 'index.ts' })).toMatchObject({ action: 'code_read', risk: 'SAFE' });
+    expect(classify('Read', { file_path: 'index.ts' })).toMatchObject({
+      action: 'code_read',
+      risk: 'SAFE',
+    });
   });
   it('Read of the keyfile → secret_read BLOCKED', () => {
     expect(classify('Read', { file_path: path.join(vaultDir, 'keyfile') }).risk).toBe('BLOCKED');
@@ -68,10 +73,44 @@ describe('classifyToolCall — dispatch', () => {
     expect(classify('WebFetch', { url: 'https://evil.example/x' }).risk).toBe('HIGH');
   });
   it('WebFetch to an allowlisted host → MODERATE', () => {
-    expect(classify('WebFetch', { url: 'https://api.trusted.test/v1' }, ['api.trusted.test']).risk).toBe('MODERATE');
+    expect(
+      classify('WebFetch', { url: 'https://api.trusted.test/v1' }, ['api.trusted.test']).risk,
+    ).toBe('MODERATE');
   });
   it('unknown/MCP tool → MODERATE (no silent allow)', () => {
     expect(classify('mcp__something__do_thing', { foo: 'bar' }).risk).toBe('MODERATE');
+  });
+  it('Claude host-control tools are SAFE so plugin discovery can run', () => {
+    for (const tool of ['AskUserQuestion', 'Skill', 'ToolSearch']) {
+      expect(classify(tool, { query: 'dina' })).toMatchObject({
+        action: 'host_control',
+        risk: 'SAFE',
+      });
+    }
+  });
+  it('the bundled Dina MCP namespace enters Core without recursive approval', () => {
+    for (const toolName of [
+      'mcp__plugin_dina_dina__dina_status',
+      'mcp__dina__dina_status',
+    ]) {
+      expect(classify(toolName, {})).toMatchObject({
+        action: 'dina_core_operation',
+        risk: 'SAFE',
+      });
+    }
+    expect(
+      classify('mcp__plugin_dina_dina__dina_publish_service', {
+        rkey: 'salon',
+        config: {},
+      }),
+    ).toMatchObject({
+      action: 'dina_core_operation',
+      risk: 'SAFE',
+    });
+  });
+  it('a project-defined lookalike Dina MCP server remains MODERATE', () => {
+    expect(classify('mcp__dina_evil__dina_status', {}).risk).toBe('MODERATE');
+    expect(classify('mcp__plugin_dina_evil__dina_status', {}).risk).toBe('MODERATE');
   });
   it('unknown tool naming a protected path → BLOCKED', () => {
     expect(classify('mcp__x__read', { path: path.join(vaultDir, 'keyfile') }).risk).toBe('BLOCKED');
@@ -83,10 +122,14 @@ describe('classifyToolCall — dispatch', () => {
     expect(classify('apply_patch', { input: patch }).risk).toBe('BLOCKED');
   });
   it('AUDIT: unknown MCP tool naming a protected path in a `paths` array → BLOCKED', () => {
-    expect(classify('mcp__fs__read_multiple_files', { paths: [path.join(vaultDir, 'keyfile')] }).risk).toBe('BLOCKED');
+    expect(
+      classify('mcp__fs__read_multiple_files', { paths: [path.join(vaultDir, 'keyfile')] }).risk,
+    ).toBe('BLOCKED');
   });
   it('AUDIT: unknown tool naming a protected path in a NESTED field → BLOCKED', () => {
-    expect(classify('mcp__x__do', { opts: { target: path.join(vaultDir, 'keyfile') } }).risk).toBe('BLOCKED');
+    expect(classify('mcp__x__do', { opts: { target: path.join(vaultDir, 'keyfile') } }).risk).toBe(
+      'BLOCKED',
+    );
   });
 
   // ── AUDIT round 2 ───────────────────────────────────────────────────────────
@@ -118,14 +161,29 @@ describe('classifyToolCall — dispatch', () => {
 describe('gateToolCall — classify_only mode', () => {
   it('enforces nothing and mints no permit, but reports the classification', () => {
     const permits = new PermitStore();
-    const d = gateToolCall(base({ toolName: 'Bash', toolInput: { command: 'rm -rf build' }, mode: 'classify_only' }), permits);
-    expect(d).toMatchObject({ mode: 'classify_only', risk: 'HIGH', outcome: 'approval_required', enforced: false });
+    const d = gateToolCall(
+      base({ toolName: 'Bash', toolInput: { command: 'rm -rf build' }, mode: 'classify_only' }),
+      permits,
+    );
+    expect(d).toMatchObject({
+      mode: 'classify_only',
+      risk: 'HIGH',
+      outcome: 'approval_required',
+      enforced: false,
+    });
     expect(d.permit).toBeUndefined();
     expect(permits.size()).toBe(0);
   });
   it('a BLOCKED call in classify_only is advisory only', () => {
     const permits = new PermitStore();
-    const d = gateToolCall(base({ toolName: 'Read', toolInput: { file_path: path.join(vaultDir, 'keyfile') }, mode: 'classify_only' }), permits);
+    const d = gateToolCall(
+      base({
+        toolName: 'Read',
+        toolInput: { file_path: path.join(vaultDir, 'keyfile') },
+        mode: 'classify_only',
+      }),
+      permits,
+    );
     expect(d).toMatchObject({ outcome: 'deny', enforced: false });
     expect(permits.size()).toBe(0);
   });
@@ -134,21 +192,30 @@ describe('gateToolCall — classify_only mode', () => {
 describe('gateToolCall — enforce mode', () => {
   it('SAFE → allow + mints a payload-bound permit', () => {
     const permits = new PermitStore();
-    const d = gateToolCall(base({ toolName: 'Read', toolInput: { file_path: 'index.ts' } }), permits);
+    const d = gateToolCall(
+      base({ toolName: 'Read', toolInput: { file_path: 'index.ts' } }),
+      permits,
+    );
     expect(d).toMatchObject({ outcome: 'allow', enforced: true });
     expect(d.permit).toBeDefined();
     expect(permits.size()).toBe(1);
   });
   it('BLOCKED → deny, no permit', () => {
     const permits = new PermitStore();
-    const d = gateToolCall(base({ toolName: 'Bash', toolInput: { command: `cat ${path.join(vaultDir, 'keyfile')}` } }), permits);
+    const d = gateToolCall(
+      base({ toolName: 'Bash', toolInput: { command: `cat ${path.join(vaultDir, 'keyfile')}` } }),
+      permits,
+    );
     expect(d).toMatchObject({ outcome: 'deny', enforced: true });
     expect(d.permit).toBeUndefined();
     expect(permits.size()).toBe(0);
   });
   it('MODERATE → approval_required, no permit yet', () => {
     const permits = new PermitStore();
-    const d = gateToolCall(base({ toolName: 'Bash', toolInput: { command: 'npm install' } }), permits);
+    const d = gateToolCall(
+      base({ toolName: 'Bash', toolInput: { command: 'npm install' } }),
+      permits,
+    );
     expect(d).toMatchObject({ outcome: 'approval_required', enforced: true });
     expect(d.permit).toBeUndefined();
     expect(permits.size()).toBe(0);
@@ -208,5 +275,35 @@ describe('mintApprovedPermit', () => {
       payload: { tool: input.toolName, input: input.toolInput },
     });
     expect(res.ok).toBe(true);
+  });
+
+  it('ignores only Bash presentation text when redeeming an approved retry', () => {
+    const permits = new PermitStore();
+    const first = base({
+      toolName: 'Bash',
+      toolInput: { command: 'git reset --hard', description: 'Reset the repository' },
+    });
+    const decision = gateToolCall(first, permits);
+    expect(decision.outcome).toBe('approval_required');
+    mintApprovedPermit(first, permits);
+
+    const retry = gateToolCall(
+      base({
+        toolName: 'Bash',
+        toolInput: { command: 'git reset --hard', description: 'Discard local changes' },
+      }),
+      permits,
+    );
+    expect(retry.outcome).toBe('allow');
+
+    mintApprovedPermit(first, permits);
+    const changedCommand = gateToolCall(
+      base({
+        toolName: 'Bash',
+        toolInput: { command: 'git clean -fd', description: 'Reset the repository' },
+      }),
+      permits,
+    );
+    expect(changedCommand.outcome).toBe('approval_required');
   });
 });

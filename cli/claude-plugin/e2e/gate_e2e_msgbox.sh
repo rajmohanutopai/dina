@@ -21,8 +21,9 @@
 #     DINA_PDS_HANDLE=<short-unique>.test-pds.dinakernel.com \
 #       cli/claude-plugin/e2e/gate_e2e_msgbox.sh
 #
-#   Needs:  msgbox/dina-msgbox (prebuilt) or Go; core-server deps installed; the
-#           `dina` CLI importable (.venv or pip install -e cli).
+#   Needs:  Go or msgbox/dina-msgbox; core-server deps installed; the `dina`
+#           CLI importable (.venv or pip install -e cli). Current Go source is
+#           preferred so a stale prebuilt relay cannot mask or invent failures.
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -32,13 +33,20 @@ SUPERVISOR="$REPO/cli/claude-plugin/dina/bin/dina-gate"
 # --- tooling ---------------------------------------------------------------
 PY="${DINA_E2E_PYTHON:-}"; [ -z "$PY" ] && { [ -x "$REPO/.venv/bin/python" ] && PY="$REPO/.venv/bin/python" || PY="$(command -v python3 || true)"; }
 DINA_BIN="${DINA_E2E_DINA:-}"; [ -z "$DINA_BIN" ] && { [ -x "$REPO/.venv/bin/dina" ] && DINA_BIN="$REPO/.venv/bin/dina" || DINA_BIN="$(command -v dina || true)"; }
-RELAY_BIN="$REPO/msgbox/dina-msgbox"
+RELAY_BIN="${DINA_E2E_MSGBOX_BIN:-}"
+if [ -z "$RELAY_BIN" ] && ! command -v go >/dev/null 2>&1; then
+  RELAY_BIN="$REPO/msgbox/dina-msgbox"
+fi
 EXTERNAL_RELAY_WS="${DINA_E2E_MSGBOX_URL:-}"
 [ -n "$PY" ]         || { echo "SETUP FAIL: no python3"; exit 3; }
 [ -n "$DINA_BIN" ]   || { echo "SETUP FAIL: 'dina' not found"; exit 3; }
 [ -x "$SUPERVISOR" ] || { echo "SETUP FAIL: supervisor not executable"; exit 3; }
-if [ -z "$EXTERNAL_RELAY_WS" ] && [ ! -x "$RELAY_BIN" ]; then
-  command -v go >/dev/null 2>&1 || { echo "SETUP FAIL: no relay binary at $RELAY_BIN and no 'go' to build it"; exit 3; }
+if [ -z "$EXTERNAL_RELAY_WS" ] && [ -n "$RELAY_BIN" ] && [ ! -x "$RELAY_BIN" ]; then
+  echo "SETUP FAIL: relay binary is not executable: $RELAY_BIN"
+  exit 3
+fi
+if [ -z "$EXTERNAL_RELAY_WS" ] && [ -z "$RELAY_BIN" ]; then
+  command -v go >/dev/null 2>&1 || { echo "SETUP FAIL: no relay binary and no 'go' to run the relay source"; exit 3; }
 fi
 export PYTHONPATH="$REPO/cli/src${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -77,7 +85,7 @@ if [ -n "$EXTERNAL_RELAY_WS" ]; then
   echo "using external MsgBox relay: $RELAY_WS"
 else
   echo "starting MsgBox relay on :$RELAY_PORT …"
-  if [ -x "$RELAY_BIN" ]; then
+  if [ -n "$RELAY_BIN" ]; then
     ( MSGBOX_LISTEN_ADDR=":$RELAY_PORT" MSGBOX_DATA_DIR="$WORK/relay-data" MSGBOX_LOG_LEVEL=warn "$RELAY_BIN" ) > "$WORK/relay.log" 2>&1 &
   else
     ( cd "$REPO/msgbox" && MSGBOX_LISTEN_ADDR=":$RELAY_PORT" MSGBOX_DATA_DIR="$WORK/relay-data" MSGBOX_LOG_LEVEL=warn go run ./cmd/dina-msgbox ) > "$WORK/relay.log" 2>&1 &
@@ -140,6 +148,9 @@ echo ""
 
 # --- assertions (all over the MsgBox transport) ----------------------------
 export DINA_CONFIG_DIR="$AGENT_CFG"   # msgbox transport comes from config.json
+export DINA_PLUGIN_DEV_MODE=1
+export DINA_AGENT_HOST_CONFIG_DIR="$AGENT_CFG"
+export DINA_CLI_BIN="$DINA_BIN"
 PASS=0; FAIL=0
 check() { if [ "$2" = "$3" ]; then PASS=$((PASS+1)); printf '  ok    %-30s exit=%s\n' "$1" "$3"; else FAIL=$((FAIL+1)); printf '  FAIL  %-30s expected=%s got=%s %s\n' "$1" "$2" "$3" "${4:-}"; fi; }
 with_session() {
@@ -165,7 +176,8 @@ rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat $WORK/vault
 rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\"},\"cwd\":\"$WORK/proj\"}");  check "MODERATE git push (ask)"      0 "$rc"
 if grep -q '"permissionDecision": "ask"' "$WORK/out"; then PASS=$((PASS+1)); printf '  ok    %-30s\n' "  ↳ emitted ask JSON"; else FAIL=$((FAIL+1)); printf '  FAIL  %-30s (no ask JSON)\n' "  ↳ emitted ask JSON"; fi
 
-HIGH_EVENT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\"},\"cwd\":\"$WORK/proj\"}"
+HIGH_EVENT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\",\"description\":\"Reset the repository\"},\"cwd\":\"$WORK/proj\"}"
+HIGH_RETRY="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\",\"description\":\"Discard local changes\"},\"cwd\":\"$WORK/proj\"}"
 rc=$(gate "$HIGH_EVENT"); check "HIGH waits for Dina" 2 "$rc"
 TASK_ID=$(grep -o 'coding-gate-[0-9a-f]*' "$WORK/err" | head -1)
 if [ -n "$TASK_ID" ]; then PASS=$((PASS+1)); printf '  ok    %-30s\n' "  ↳ created approval task"; else FAIL=$((FAIL+1)); printf '  FAIL  %-30s (no task id)\n' "  ↳ created approval task"; fi
@@ -177,8 +189,8 @@ if [ -n "$TASK_ID" ]; then
   APPROVE_STATUS=$(curl -sS -o "$WORK/approve.json" -w '%{http_code}' \
     "$CORE_URL/v1/debug/dispatch" -H 'content-type: application/json' -d "$APPROVE_BODY")
   check "  ↳ owner approved task" 200 "$APPROVE_STATUS"
-  rc=$(gate "$HIGH_EVENT"); check "  ↳ approved retry runs" 0 "$rc"
-  rc=$(gate "$HIGH_EVENT"); check "  ↳ permit is single-use" 2 "$rc"
+  rc=$(gate "$HIGH_RETRY"); check "  ↳ metadata-safe retry runs" 0 "$rc"
+  rc=$(gate "$HIGH_RETRY"); check "  ↳ permit is single-use" 2 "$rc"
 fi
 rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"$WORK/proj\"}");            check "SAFE git status"              0 "$rc"
 

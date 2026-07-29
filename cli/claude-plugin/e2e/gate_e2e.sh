@@ -55,6 +55,9 @@ trap cleanup EXIT INT TERM
 mkdir -p "$WORK/cfg" "$WORK/vault" "$WORK/proj"
 echo "hello, project notes" > "$WORK/proj/notes.txt"
 export DINA_CONFIG_DIR="$WORK/cfg"
+export DINA_PLUGIN_DEV_MODE=1
+export DINA_AGENT_HOST_CONFIG_DIR="$WORK/cfg"
+export DINA_CLI_BIN="$DINA_BIN"
 
 # --- generate separate agent + admin identities ---------------------------
 DID=$("$PY" - <<'PYEOF'
@@ -181,8 +184,10 @@ if grep -q '"permissionDecision": "ask"' "$WORK/out"; then PASS=$((PASS+1)); pri
 
 # HIGH is not a local Claude confirmation: the first attempt blocks and creates
 # a Dina task. Owner approval mints a payload-bound, single-use permit; the exact
-# retry consumes it, and a third attempt blocks again.
-HIGH_EVENT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\"},\"cwd\":\"$WORK/proj\"}"
+# retry consumes it even if Claude rewrites presentation-only text, and a third
+# attempt blocks again.
+HIGH_EVENT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\",\"description\":\"Reset the repository\"},\"cwd\":\"$WORK/proj\"}"
+HIGH_RETRY="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\",\"description\":\"Discard local changes\"},\"cwd\":\"$WORK/proj\"}"
 rc=$(gate "$HIGH_EVENT"); check "HIGH waits for Dina" 2 "$rc"
 TASK_ID=$(grep -o 'coding-gate-[0-9a-f]*' "$WORK/err" | head -1)
 if [ -n "$TASK_ID" ]; then PASS=$((PASS+1)); printf '  ok    %-28s\n' "  ↳ created approval task"; else FAIL=$((FAIL+1)); printf '  FAIL  %-28s (no task id)\n' "  ↳ created approval task"; fi
@@ -207,8 +212,8 @@ client._request(
 PYEOF
   approve_rc=$?
   check "  ↳ owner approved task" 0 "$approve_rc"
-  rc=$(gate "$HIGH_EVENT"); check "  ↳ approved retry runs" 0 "$rc"
-  rc=$(gate "$HIGH_EVENT"); check "  ↳ permit is single-use" 2 "$rc"
+  rc=$(gate "$HIGH_RETRY"); check "  ↳ metadata-safe retry runs" 0 "$rc"
+  rc=$(gate "$HIGH_RETRY"); check "  ↳ permit is single-use" 2 "$rc"
 fi
 rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"},\"cwd\":\"$WORK/proj\"}");            check "SAFE git status"         0 "$rc"
 rc=$(gate "{ this is not json");                                                                                    check "malformed stdin"         2 "$rc"

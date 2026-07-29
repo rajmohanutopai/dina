@@ -62,12 +62,31 @@ def test_manifest_and_mcp_server_match_the_supported_cli_contract() -> None:
     assert mcp == {
         "mcpServers": {
             "dina": {
-                "command": "${PLUGIN_ROOT}/bin/dina-cli",
+                "command": "./bin/dina-cli",
                 "args": ["mcp-server", "--profile", "connected"],
+                "cwd": ".",
                 "env": {"DINA_AGENT_HOST": "codex"},
+                "env_vars": [
+                    "DINA_AGENT_HOST_CONFIG_DIR",
+                    "DINA_AGENT_HOST_CONFIG_ROOT",
+                    "DINA_CLI_KEY_PASSPHRASE",
+                    "DINA_CONFIG_DIR",
+                    "DINA_HOME_NODE_DIR",
+                    "DINA_PLUGIN_DEV_MODE",
+                    "DINA_SETUP_RUNTIME_DIR",
+                ],
             }
         }
     }
+
+
+def test_codex_preview_uses_the_installer_owned_host_profile() -> None:
+    preview = (
+        REPO_ROOT / "scripts" / "dev" / "dina-codex-preview.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'export DINA_AGENT_HOST_CONFIG_DIR="$DINA_CONFIG_DIR"' in preview
+    assert "DINA_AGENT_HOST_CONFIG_DIR=%q" in preview
 
 
 def test_codex_hooks_use_the_codex_supervisor_and_supported_timeouts() -> None:
@@ -119,6 +138,10 @@ def test_plugin_documents_codex_specific_security_boundaries() -> None:
     assert "Codex currently cannot ask for local approval" in readme
     assert "Hosted tools such as web search are not hook-visible" in readme
     assert "pending_approval" in skill
+    assert "dina_memory_propose" in skill
+    assert "configured always-on Dina Brain" in normalized_skill
+    assert "dina_remember_status" in skill
+    assert "Never call `dina_session_end` while a" in skill
     assert "approve in Dina, then retry the exact tool call" in normalized_skill
     assert "dina_talk" in skill
     assert "dina_delegate" in skill
@@ -130,6 +153,18 @@ def test_plugin_documents_codex_specific_security_boundaries() -> None:
     assert "foreground Brain" in setup_skill
     assert "Never request, receive, paste, or" in setup_skill
     assert "No source checkout, Docker, global Python package" in readme
+
+    for skill_name in ("status", "audit", "pair-phone"):
+        maintenance_skill = (
+            PLUGIN_ROOT / "skills" / skill_name / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert '"${PLUGIN_ROOT}/bin/dina-cli"' in maintenance_skill
+        assert "DINA_AGENT_HOST=codex" in maintenance_skill
+    pair_phone = (
+        PLUGIN_ROOT / "skills" / "pair-phone" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "Never run a recovery-authority reveal command" in pair_phone
+    assert "dina home-node show-recovery-phrase" not in pair_phone
 
     for name in (
         "dina-bootstrap-authorize",
