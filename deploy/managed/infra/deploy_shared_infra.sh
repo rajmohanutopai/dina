@@ -498,6 +498,7 @@ case "$ACTION" in
         # `drizzle-kit migrate` is idempotent (no-op when caught up).
         push_schema
         health_check
+        verify_versions
         ;;
     reload-caddy)
         # Regenerate + sync the Caddyfile and restart Caddy only — no
