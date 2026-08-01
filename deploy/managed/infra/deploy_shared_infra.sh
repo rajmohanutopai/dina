@@ -342,12 +342,69 @@ generate_secrets() {
     fi'
 }
 
+# ── Version binding gate (scripts/release/component_version.sh) ──
+# Refuses to ship a component whose .release manifest no longer matches its
+# content (someone changed code without bumping — the same check the
+# pre-commit hook enforces), and computes the {version, tree, dirty} stamps
+# the images bake into their /version endpoints. Prod refuses dirty trees;
+# test warns and marks the build dirty so it can never be mistaken for a
+# release.
+CVS="$PROJECT_ROOT/scripts/release/component_version.sh"
+version_gate() {
+    local dir stamp
+    for dir in msgbox appview; do
+        "$CVS" check "$dir" --head || {
+            echo "Refusing to deploy: $dir version↔content binding is broken (see above)." >&2
+            exit 1
+        }
+        stamp=$("$CVS" stamp "$dir")   # "version tree dirty"
+        local v t d
+        read -r v t d <<< "$stamp"
+        if [ "$d" = "1" ]; then
+            if [ "$ENV_NAME" = "prod" ]; then
+                echo "Refusing prod deploy: $dir working tree is dirty (commit first)." >&2
+                exit 1
+            fi
+            warn "$dir working tree is dirty — test build will be stamped ${t}-dirty"
+            t="${t}-dirty"
+        fi
+        case "$dir" in
+            msgbox)  MSGBOX_VERSION="$v";  MSGBOX_TREE="$t";  MSGBOX_DIRTY="$d" ;;
+            appview) APPVIEW_VERSION="$v"; APPVIEW_TREE="$t"; APPVIEW_DIRTY="$d" ;;
+        esac
+    done
+    info "Version stamps: msgbox=$MSGBOX_VERSION($MSGBOX_TREE) appview=$APPVIEW_VERSION($APPVIEW_TREE)"
+}
+
+# Compose interpolates these from the remote shell env at build time.
+BUILD_STAMPS() {
+    echo "MSGBOX_VERSION=$MSGBOX_VERSION MSGBOX_TREE=$MSGBOX_TREE MSGBOX_DIRTY=$MSGBOX_DIRTY APPVIEW_VERSION=$APPVIEW_VERSION APPVIEW_TREE=$APPVIEW_TREE APPVIEW_DIRTY=$APPVIEW_DIRTY"
+}
+
+# ── Post-deploy: the running services must report the stamps we shipped ──
+verify_versions() {
+    local ok=1
+    local mb av
+    mb=$(curl -fsS --max-time 10 "https://${MSGBOX_HOST}/version" 2>/dev/null || echo '{}')
+    av=$(curl -fsS --max-time 10 "https://${APPVIEW_HOST}/version" 2>/dev/null || echo '{}')
+    echo "  msgbox  /version → $mb"
+    echo "  appview /version → $av"
+    echo "$mb" | grep -q "\"tree\":\"$MSGBOX_TREE\""  || { warn "msgbox running tree != shipped ($MSGBOX_TREE)"; ok=0; }
+    echo "$av" | grep -q "\"tree\":\"$APPVIEW_TREE\"" || { warn "appview running tree != shipped ($APPVIEW_TREE)"; ok=0; }
+    if [ "$ok" = "1" ]; then
+        info "Version verification passed — running == shipped"
+    elif [ "$ENV_NAME" = "prod" ]; then
+        echo "Version verification FAILED on prod." >&2
+        exit 1
+    fi
+}
+
 # ── Step 6: Build and start ──
 start_services() {
     info "Building and starting services (project: ${COMPOSE_PROJECT})..."
     ssh "$REMOTE" "
         cd $REMOTE_DIR/deploy &&
-        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build &&
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT $(BUILD_STAMPS) docker compose -f docker-compose.infra.yml build &&
         COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
     "
     info "Services started"
@@ -407,6 +464,7 @@ health_check() {
 case "$ACTION" in
     deploy)
         confirm_deploy
+        version_gate
         setup_remote
         generate_caddyfile
         sync_files
@@ -417,16 +475,18 @@ case "$ACTION" in
         reload_caddy
         push_schema
         health_check
+        verify_versions
         ;;
     update)
         confirm_deploy
+        version_gate
         generate_caddyfile
         sync_files
         sync_grants_env
         prepare_compose
         ssh "$REMOTE" "
             cd $REMOTE_DIR/deploy &&
-            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml build &&
+            COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT $(BUILD_STAMPS) docker compose -f docker-compose.infra.yml build &&
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d
         "
         # Caddy is long-running; `up -d` won't reload its mounted Caddyfile,

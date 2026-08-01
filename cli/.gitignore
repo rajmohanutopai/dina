@@ -1,0 +1,4 @@
+# Generated at publish time by scripts/release/publish_cli.sh — carries the
+# git tree digest baked into the wheel. Never committed: it would change the
+# tree it describes.
+src/dina_cli/_build.py

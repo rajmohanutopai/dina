@@ -70,8 +70,18 @@ def _make_client(ctx: click.Context) -> DinaClient:
 
 
 def _cli_version() -> str:
-    """Return the release version bundled with this CLI."""
-    return __version__
+    """Return the release version bundled with this CLI.
+
+    Published wheels also carry the git tree digest of cli/ at publish time
+    (scripts/release/publish_cli.sh writes _build.py), so the version is
+    verifiable against the repo, not just a hand-maintained string.
+    """
+    try:
+        from ._build import TREE  # generated at publish; absent in dev checkouts
+
+        return f"{__version__} (tree {TREE})"
+    except ImportError:
+        return __version__
 
 
 @click.group()

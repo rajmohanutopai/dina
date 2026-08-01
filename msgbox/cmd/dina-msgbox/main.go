@@ -11,10 +11,12 @@
 //	  WS   /ws       — Home Node persistent connection (auth + receive)
 //	  POST /forward  — Authenticated message submission (Ed25519 signed)
 //	  GET  /healthz  — Liveness probe
+//	  GET  /version  — Build identity {version, tree, dirty} (scripts/release/component_version.sh)
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,6 +26,15 @@ import (
 	"time"
 
 	msgbox "github.com/rajmohanutopai/dina/msgbox/internal"
+)
+
+// Build identity, injected via -ldflags at build time (see msgbox/Dockerfile).
+// The tree digest is the content hash the .release manifest binds the version
+// to, so /version answers "what exactly is running" without trusting humans.
+var (
+	buildVersion = "dev"
+	buildTree    = "unknown"
+	buildDirty   = "0"
 )
 
 func main() {
@@ -76,6 +87,11 @@ func main() {
 	mux.HandleFunc("/ws", handler.HandleWebSocket)
 	mux.HandleFunc("/forward", handler.HandleForward)
 	mux.HandleFunc("/healthz", handler.HandleHealth)
+	mux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"service":"msgbox","version":%q,"tree":%q,"dirty":%v}`,
+			buildVersion, buildTree, buildDirty == "1")
+	})
 
 	srv := &http.Server{
 		Addr:              addr,

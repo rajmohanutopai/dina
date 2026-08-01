@@ -112,6 +112,23 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Build identity: {version, tree, dirty} baked in at image build from the
+  // appview/.release binding manifest (scripts/release/component_version.sh).
+  // Lets the deploy script — and anyone — verify what exactly is running
+  // without trusting a hand-maintained version string.
+  if (url.pathname === '/version') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(
+      JSON.stringify({
+        service: 'appview',
+        version: process.env.BUILD_VERSION ?? 'dev',
+        tree: process.env.BUILD_TREE ?? 'unknown',
+        dirty: process.env.BUILD_DIRTY === '1',
+      }),
+    )
+    return
+  }
+
   // MED-06: Health check with DB connectivity verification.
   // Health checks must NOT rate-limit — load balancers / monitoring
   // would trip the limiter at scale and falsely declare the AppView

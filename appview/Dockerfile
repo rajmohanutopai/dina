@@ -38,5 +38,15 @@ RUN npm ci --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist dist/
 
+# Build identity for the /version endpoint (scripts/release/component_version.sh).
+# Declared LAST so a version/tree change only invalidates this final layer,
+# never the npm ci or dist layers above.
+ARG VERSION=dev
+ARG TREE=unknown
+ARG DIRTY=0
+ENV BUILD_VERSION=${VERSION} \
+    BUILD_TREE=${TREE} \
+    BUILD_DIRTY=${DIRTY}
+
 USER node
 CMD ["node", "dist/src/ingester/main.js"]

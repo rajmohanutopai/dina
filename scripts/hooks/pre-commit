@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# pre-commit — enforce component version↔content binding (scripts/release/component_version.sh).
+#
+# For each deployable component: if its tracked content changed relative to
+# HEAD but its version did not, the commit FAILS. If the version was bumped,
+# the tree pin in <component>/.release is auto-healed and staged.
+#
+# Activate once per clone:  git config core.hooksPath scripts/hooks
+# Bypassing with --no-verify only defers the failure: the deploy script and
+# the publish wrapper run the same check.
+
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+fail=0
+for component in msgbox appview cli; do
+    # only gate when this commit actually touches the component
+    if git diff --cached --quiet -- "$component/" 2>/dev/null; then
+        continue
+    fi
+    "$REPO_ROOT/scripts/release/component_version.sh" precommit "$component" || fail=1
+done
+
+exit $fail

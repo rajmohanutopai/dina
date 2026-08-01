@@ -68,6 +68,10 @@ services:
     build:
       context: ../../msgbox
       dockerfile: Dockerfile
+      args:
+        VERSION: ${MSGBOX_VERSION:-dev}
+        TREE: ${MSGBOX_TREE:-unknown}
+        DIRTY: ${MSGBOX_DIRTY:-0}
     restart: always
     environment:
       MSGBOX_LISTEN_ADDR: ":7700"
@@ -113,6 +117,10 @@ services:
   appview-ingester:
     build:
       context: ../../appview
+      args: &appview-build-args
+        VERSION: ${APPVIEW_VERSION:-dev}
+        TREE: ${APPVIEW_TREE:-unknown}
+        DIRTY: ${APPVIEW_DIRTY:-0}
     command: ["node", "dist/src/ingester/main.js"]
     restart: always
     environment:
@@ -131,6 +139,7 @@ services:
   appview-scorer:
     build:
       context: ../../appview
+      args: *appview-build-args
     command: ["node", "dist/src/scorer/main.js"]
     restart: always
     environment:
@@ -144,6 +153,7 @@ services:
   appview-web:
     build:
       context: ../../appview
+      args: *appview-build-args
     command: ["node", "dist/src/web/server.js"]
     restart: always
     environment:
