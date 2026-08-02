@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - "cli/**"
+      - ".claude-plugin/**"
+      - ".agents/**"
+      - "scripts/release/plugin_publish_guard.py"
+      - "scripts/release/publish_plugins.sh"
+      - "scripts/release/test_plugin_publish_guard.py"
       - "packages/core/**"
       - "packages/brain/**"
       - "apps/home-node-lite/core-server/**"
@@ -16,6 +21,11 @@ on:
     branches: [main]
     paths:
       - "cli/**"
+      - ".claude-plugin/**"
+      - ".agents/**"
+      - "scripts/release/plugin_publish_guard.py"
+      - "scripts/release/publish_plugins.sh"
+      - "scripts/release/test_plugin_publish_guard.py"
       - "packages/core/**"
       - "packages/brain/**"
       - "apps/home-node-lite/core-server/**"
@@ -58,6 +68,7 @@ jobs:
         run: |
           python scripts/dev/sync-agent-plugin-runtime.py --check
           python -m pytest cli/tests -q
+          python -m pytest scripts/release/test_plugin_publish_guard.py -q
 
       - name: Typecheck plugin dependencies
         run: |
