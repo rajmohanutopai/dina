@@ -20,7 +20,7 @@ from typing import Any, Callable, Iterator, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-REQUIRED_CLI = (0, 20, 1)
+REQUIRED_CLI = (0, 20, 2)
 MINIMUM_CLI = REQUIRED_CLI
 MAXIMUM_CLI = (0, 21, 0)
 VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)(?:[.+-][^\s]+)?\b")
@@ -35,11 +35,11 @@ PIP_WHEEL_URL = (
 )
 PIP_WHEEL_SHA256 = "382ff9f685ee3bc25864f820aa50505825f10f5458ffff07e30a6d96e5715cab"
 DINA_WHEEL_URL = (
-    "https://files.pythonhosted.org/packages/fd/1f/"
-    "c6ce71ce95abfcfd8c4256a5ea912f87f43f7ac9ce3b12caad93b0fc7e97/"
-    "dina_agent-0.20.1-py3-none-any.whl"
+    "https://files.pythonhosted.org/packages/4a/19/"
+    "d6bad92402c2183b734735c66772a2006accfe46a0d311a9c190c30f0a7a/"
+    "dina_agent-0.20.2-py3-none-any.whl"
 )
-DINA_WHEEL_SHA256 = "6913cf6969895ae337b70380b71a030209549394273ad3ea0dfb73733ca714b6"
+DINA_WHEEL_SHA256 = "bd10b1c840c166ee8638261b0e82da28d4c881f49321ae54967e1c885cc4da21"
 PIP_RUNNER = (
     "import runpy,sys;"
     "wheel=sys.argv.pop(1);"
@@ -415,7 +415,7 @@ def _install_managed_cli() -> tuple[Path, tuple[int, int, int]]:
             else ""
         )
         if not package:
-            package_path = downloads / "dina_agent-0.20.1-py3-none-any.whl"
+            package_path = downloads / "dina_agent-0.20.2-py3-none-any.whl"
             _download_verified(DINA_WHEEL_URL, DINA_WHEEL_SHA256, package_path)
             package = str(package_path)
         _run(
@@ -439,7 +439,7 @@ def _install_managed_cli() -> tuple[Path, tuple[int, int, int]]:
         if not _cli_version_is_compatible(version):
             raise BootstrapError(
                 "cli_install_invalid",
-                "The managed Dina CLI installation did not provide version 0.20.1.",
+                "The managed Dina CLI installation did not provide version 0.20.2.",
             )
         def finalize_installed_environment(installed: Path) -> None:
             # Console launchers embed the environment path. Reinstall only the
@@ -603,7 +603,7 @@ def main() -> int:
                         "ready": False,
                         "cli": {
                             "available": False,
-                            "minimum": "0.20.1",
+                            "minimum": "0.20.2",
                             "maximum_exclusive": "0.21.0",
                         },
                         "home_node": {"installed": None},

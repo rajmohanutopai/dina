@@ -1240,7 +1240,11 @@ class HomeNodeManager:
         command = _process_command(pid)
         if command is None:
             return False
-        return _supervisor_process_marker(token) in command and marker in command
+        if marker not in command:
+            return False
+        # Processes started by CLI <= 0.20.1 carry the raw token in argv;
+        # recognize them so upgrades can stop and supersede them cleanly.
+        return _supervisor_process_marker(token) in command or token in command
 
     def _wait_for_health(self, config: HomeNodeConfig, *, timeout: float) -> None:
         deadline = time.monotonic() + timeout

@@ -233,7 +233,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("dina-agent, version 0.20.1")
+    print("dina-agent, version 0.20.2")
     raise SystemExit(0)
 Path(os.environ["DINA_TEST_ARGS"]).write_text(json.dumps(args), encoding="utf-8")
 print(json.dumps({{

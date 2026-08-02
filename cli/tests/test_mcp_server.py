@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from dina_cli import mcp_server
+from dina_cli import __version__ as cli_version
 from dina_cli.client import DinaClientError
 
 
@@ -566,7 +567,7 @@ def test_dina_status_requires_authenticated_probe(fake_client):
         "status": "connected",
         "paired": True,
         "did": "did:key:z6MkPaired",
-        "cli_version": "0.20.2",
+        "cli_version": cli_version,
     }
     fake_client._request.assert_called_once_with(
         fake_client._core,
@@ -604,7 +605,7 @@ def test_dina_status_does_not_treat_public_health_as_pairing(fake_client):
 
     assert out["status"] == "unavailable"
     assert out["paired"] is False
-    assert out["cli_version"] == "0.20.2"
+    assert out["cli_version"] == cli_version
     assert "403" in out["error"]
 
 
@@ -623,7 +624,7 @@ def test_dina_status_returns_structured_error_when_client_is_unconfigured(
     assert out == {
         "status": "unavailable",
         "paired": False,
-        "cli_version": "0.20.2",
+        "cli_version": cli_version,
         "error": "not configured",
     }
 

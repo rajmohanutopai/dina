@@ -734,6 +734,29 @@ def test_release_overrides_can_be_disabled(monkeypatch) -> None:
     assert manager._release_repository() == "rajmohanutopai/dina"
 
 
+def test_pid_matches_recognizes_current_and_legacy_supervisors(monkeypatch) -> None:
+    from dina_cli import home_node as home_node_module
+    from dina_cli.home_node import _supervisor_process_marker
+
+    token = "ab" * 24
+    marker = "home_node_supervisor"
+    commands = {
+        101: f"python -m dina_cli.home_node_supervisor {marker} "
+        f"--instance {_supervisor_process_marker(token)}",
+        # A supervisor started by CLI <= 0.20.1 still carries the raw token.
+        102: f"python -m dina_cli.home_node_supervisor {marker} --token {token}",
+        103: f"python -m dina_cli.home_node_supervisor {marker} --token other",
+        104: f"unrelated-process --instance {_supervisor_process_marker(token)}",
+    }
+    monkeypatch.setattr(home_node_module, "_process_command", commands.get)
+    monkeypatch.setattr(home_node_module.os, "kill", lambda _pid, _sig: None)
+
+    assert HomeNodeManager._pid_matches(101, token, marker) is True
+    assert HomeNodeManager._pid_matches(102, token, marker) is True
+    assert HomeNodeManager._pid_matches(103, token, marker) is False
+    assert HomeNodeManager._pid_matches(104, token, marker) is False
+
+
 def test_no_plugin_owned_source_mentions_docker() -> None:
     source_root = Path(__file__).parents[1] / "src/dina_cli"
     files = [
