@@ -167,7 +167,18 @@ jobs:
           if (!dina || !dina.enabled) {
             throw new Error("Dina Codex plugin was not installed and enabled");
           }
-          if (dina.version !== "0.3.0") {
-            throw new Error(`Unexpected Dina Codex plugin version: ${dina.version}`);
+          // The manifest is the source of truth; a hardcoded version here
+          // breaks CI on every plugin release without catching anything.
+          const expected = JSON.parse(
+            fs.readFileSync(
+              process.env.GITHUB_WORKSPACE +
+                "/cli/codex-plugin/plugins/dina/.codex-plugin/plugin.json",
+              "utf8",
+            ),
+          ).version;
+          if (dina.version !== expected) {
+            throw new Error(
+              `Dina Codex plugin version ${dina.version} != manifest ${expected}`,
+            );
           }
           NODE
