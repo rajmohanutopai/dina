@@ -176,9 +176,46 @@ except Exception:
 }
 gate() { with_session "$1" | "$DINA_BIN" gate-hook >"$WORK/out" 2>"$WORK/err"; echo $?; }
 
+# --- default profile (network_protection) ---------------------------------
+# Pairing selects the default owner profile. Dina always enforces the kernel
+# boundary (vault/seed/key paths); ordinary dev work — including VCS writes —
+# is delegated to the interactive owner's host permission UI: silent exit 0
+# with NO hook JSON, so Claude/Codex applies its own confirmation rules.
 rc=$(gate "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"notes.txt\"},\"cwd\":\"$WORK/proj\"}");            check "SAFE project read"       0 "$rc"
 rc=$(gate "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$WORK/vault/keyfile\"}}");                        check "BLOCKED seed read"       2 "$rc"
 rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat $WORK/vault/keyfile\"}}");                      check "BLOCKED bash cat seed"   2 "$rc"
+rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\"},\"cwd\":\"$WORK/proj\"}");  check "default: git push host-managed" 0 "$rc"
+if grep -q '"hookSpecificOutput"' "$WORK/out"; then FAIL=$((FAIL+1)); printf '  FAIL  %-28s (unexpected hook JSON under default profile)\n' "  ↳ silent host delegation"; else PASS=$((PASS+1)); printf '  ok    %-28s\n' "  ↳ silent host delegation"; fi
+rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git reset --hard\",\"description\":\"Reset the repository\"},\"cwd\":\"$WORK/proj\"}"); check "default: git reset host-managed" 0 "$rc"
+
+# --- owner escalates to full_supervision (versioned owner-console route) ---
+# The owner surface is the loopback console capability, exactly as the product
+# uses it: `x-dina-owner-capability` from `<vaultDir>/owner_capability`.
+OWNER_CAP=$(cat "$WORK/vault/owner_capability" 2>/dev/null || true)
+if [ -z "$OWNER_CAP" ]; then
+  FAIL=$((FAIL+1)); printf '  FAIL  %-28s (no owner_capability in vault dir)\n' "owner escalates to full_supervision"
+else
+  POLICY_VERSION=$(curl -fsS -H "x-dina-owner-capability: $OWNER_CAP" \
+      "$CORE_URL/v1/owner/agent-policies" | \
+    DINA_E2E_AGENT_DID="$DID" "$PY" -c '
+import json, os, sys
+policies = json.load(sys.stdin)["policies"]
+me = [p for p in policies if p["agent_did"] == os.environ["DINA_E2E_AGENT_DID"]]
+print(me[0]["policy_version"] if me else "")
+')
+  esc_rc=1
+  if [ -n "$POLICY_VERSION" ]; then
+    curl -fsS -X PUT \
+        -H "x-dina-owner-capability: $OWNER_CAP" \
+        -H "content-type: application/json" \
+        -d "{\"profile\":\"full_supervision\",\"expected_version\":$POLICY_VERSION}" \
+        "$CORE_URL/v1/owner/agent-policies/$DID" >"$WORK/escalate.out" 2>&1 && \
+      grep -q '"profile":"full_supervision"' "$WORK/escalate.out" && esc_rc=0
+  fi
+  check "owner escalates to full_supervision" 0 "$esc_rc" "$(tail -c 200 "$WORK/escalate.out" 2>/dev/null)"
+fi
+
+# --- full_supervision: MODERATE asks locally; HIGH waits for Dina ----------
 rc=$(gate "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin main\"},\"cwd\":\"$WORK/proj\"}");  check "MODERATE git push (ask)" 0 "$rc"
 if grep -q '"permissionDecision": "ask"' "$WORK/out"; then PASS=$((PASS+1)); printf '  ok    %-28s\n' "  ↳ emitted ask JSON"; else FAIL=$((FAIL+1)); printf '  FAIL  %-28s (no ask JSON on stdout)\n' "  ↳ emitted ask JSON"; fi
 
