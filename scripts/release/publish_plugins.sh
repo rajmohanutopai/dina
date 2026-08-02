@@ -63,7 +63,15 @@ PIN_SHA="$(sed -n 's/^DINA_WHEEL_SHA256 = "\([0-9a-f]\{64\}\)"$/\1/p' "$BOOTSTRA
     echo "✗ could not read the wheel pin from $BOOTSTRAP" >&2
     exit 1
 }
-if ! curl -fsS "https://pypi.org/pypi/dina-agent/$PIN_VERSION/json" | grep -q "\"sha256\": \"$PIN_SHA\""; then
+if ! curl -fsS "https://pypi.org/pypi/dina-agent/$PIN_VERSION/json" | python3 -c '
+import json, sys
+expected = sys.argv[1]
+release = json.load(sys.stdin)
+sys.exit(0 if any(
+    f["packagetype"] == "bdist_wheel" and f["digests"]["sha256"] == expected
+    for f in release["urls"]
+) else 1)
+' "$PIN_SHA"; then
     echo "✗ bootstrap pins dina-agent $PIN_VERSION sha256 $PIN_SHA, but PyPI does not serve that artifact." >&2
     echo "  publish the wheel first (scripts/release/publish_cli.sh), then update the pin." >&2
     exit 1
