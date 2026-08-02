@@ -30,7 +30,7 @@ def test_managed_install_is_pipless_and_atomic(tmp_path: Path, monkeypatch) -> N
     (old_environment / "old-marker").write_text("old", encoding="utf-8")
     monkeypatch.setenv("DINA_PLUGIN_DEV_MODE", "1")
     monkeypatch.setenv("DINA_SETUP_RUNTIME_DIR", str(runtime))
-    monkeypatch.setenv("DINA_SETUP_CLI_SPEC", "dina-agent==0.20.2")
+    monkeypatch.setenv("DINA_SETUP_CLI_SPEC", "dina-agent==0.20.6")
 
     builder_options: list[dict] = []
 
@@ -65,7 +65,7 @@ def test_managed_install_is_pipless_and_atomic(tmp_path: Path, monkeypatch) -> N
 
     cli, version = bootstrap._install_managed_cli()
 
-    assert version == (0, 20, 2)
+    assert version == (0, 20, 6)
     assert cli.is_file()
     assert not (old_environment / "old-marker").exists()
     assert builder_options == [
@@ -107,8 +107,8 @@ def test_atomic_replace_preserves_old_environment_on_failure(
 def test_production_wheels_are_exactly_pinned() -> None:
     bootstrap = _load_bootstrap()
 
-    assert bootstrap.REQUIRED_CLI == (0, 20, 2)
-    assert bootstrap.DINA_WHEEL_URL.endswith("dina_agent-0.20.2-py3-none-any.whl")
+    assert bootstrap.REQUIRED_CLI == (0, 20, 6)
+    assert bootstrap.DINA_WHEEL_URL.endswith("dina_agent-0.20.6-py3-none-any.whl")
     assert len(bootstrap.DINA_WHEEL_SHA256) == 64
     assert bootstrap.PIP_WHEEL_URL.endswith("pip-26.1.2-py3-none-any.whl")
     assert len(bootstrap.PIP_WHEEL_SHA256) == 64
@@ -126,9 +126,9 @@ def test_development_mode_rediscovers_a_newer_compatible_cli(
     managed.chmod(0o755)
     monkeypatch.setenv("DINA_PLUGIN_DEV_MODE", "1")
     monkeypatch.setenv("DINA_SETUP_RUNTIME_DIR", str(runtime))
-    monkeypatch.setattr(bootstrap, "_cli_version", lambda _path: (0, 20, 3))
+    monkeypatch.setattr(bootstrap, "_cli_version", lambda _path: (0, 20, 7))
 
-    assert bootstrap._find_compatible_cli() == (managed, (0, 20, 3))
+    assert bootstrap._find_compatible_cli() == (managed, (0, 20, 7))
 
 
 def test_production_mode_requires_the_hash_pinned_cli_version(
@@ -142,7 +142,7 @@ def test_production_mode_requires_the_hash_pinned_cli_version(
     candidate.write_text("dina", encoding="utf-8")
     candidate.chmod(0o755)
     monkeypatch.setattr(bootstrap, "_candidate_clis", lambda: [candidate])
-    monkeypatch.setattr(bootstrap, "_cli_version", lambda _path: (0, 20, 3))
+    monkeypatch.setattr(bootstrap, "_cli_version", lambda _path: (0, 20, 7))
 
     assert bootstrap._find_compatible_cli() is None
 

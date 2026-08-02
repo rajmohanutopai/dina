@@ -24,7 +24,7 @@ and selects that exact identity as Dina's foreground Brain unless doing so
 would replace or revive an existing owner decision.
 
 No source checkout, Docker, global Python package, owner key, or vault key is
-required. The plugin manages the pinned `dina-agent==0.20.2`
+required. The plugin manages the pinned `dina-agent==0.20.6`
 installation. A public PDS handle provisions the Home Node's `did:plc` and
 enables public Services and Ranked Reviews. Local-only setup creates a private
 `did:key`; safety, memory, and local agent features work, but public publishing

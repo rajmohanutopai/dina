@@ -424,7 +424,7 @@ with log.open("a", encoding="utf-8") as out:
     out.write(json.dumps(args) + "\\n")
 
 if args == ["--version"]:
-    print("dina-agent, version 0.20.2")
+    print("dina-agent, version 0.20.6")
     raise SystemExit(0)
 
 if command_args[:2] == ["agent-host", "setup"]:
@@ -435,7 +435,7 @@ if command_args[:2] == ["agent-host", "setup"]:
             "kind": "setup_status",
             "host": host,
             "ready": installed,
-            "cli": {{"available": True, "version": "0.20.2"}},
+            "cli": {{"available": True, "version": "0.20.6"}},
             "home_node": {{
                 "installed": installed,
                 "running": installed,
