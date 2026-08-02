@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dina_cli.home_node import _supervisor_process_marker
 from dina_cli.home_node_supervisor import HEALTH_FAILURE_LIMIT, NativeSupervisor
 
 
 class FakeProcess:
     def __init__(self, status: int | None = None) -> None:
+        self.pid = 45123
         self.status = status
         self.returncode = status
         self.terminated = False
@@ -134,3 +136,21 @@ def test_successful_probe_resets_consecutive_failure_count(
     assert supervisor.health_failures["core"] == 2
     assert supervisor.core is not None
     assert supervisor.core.terminated is False  # type: ignore[union-attr]
+
+
+def test_spawn_uses_non_secret_process_marker(tmp_path: Path, monkeypatch) -> None:
+    supervisor = _supervisor(tmp_path)
+    captured: list[str] = []
+
+    def popen(command, **_kwargs):
+        captured.extend(command)
+        return FakeProcess()
+
+    monkeypatch.setattr("dina_cli.home_node_supervisor.subprocess.Popen", popen)
+
+    supervisor._spawn("core")
+
+    rendered = " ".join(captured)
+    assert supervisor.token not in rendered
+    assert _supervisor_process_marker(supervisor.token) in rendered
+    assert "--dina-supervisor-instance=" in rendered

@@ -1,8 +1,14 @@
 import {
+  DEFAULT_OWNER_AGENT_GATING_PROFILE,
   makeUnknownAuthorityOrigin,
   parseAuthorityOrigin,
+  reconcileDefaultAgentGatingPolicies,
   resolveEffectiveGatingProfile,
+  setAgentGatingPolicyRepository,
   stricterGatingProfile,
+  type AgentGatingPolicy,
+  type AgentGatingPolicyRepository,
+  type SetAgentGatingPolicyInput,
   type AuthorityOrigin,
 } from '../../src/agent/gating_policy';
 
@@ -16,6 +22,63 @@ const owner: AuthorityOrigin = {
 };
 
 describe('connected-agent gating policy', () => {
+  afterEach(() => setAgentGatingPolicyRepository(null));
+
+  it('uses Standard as the explicit owner-interactive default', () => {
+    expect(DEFAULT_OWNER_AGENT_GATING_PROFILE).toBe('network_protection');
+  });
+
+  it('reconciles only missing active coding-agent profiles to Standard', () => {
+    const policies = new Map<string, AgentGatingPolicy>();
+    const repo: AgentGatingPolicyRepository = {
+      get: (did) => policies.get(did) ?? null,
+      list: () => [...policies.values()],
+      set: (input: SetAgentGatingPolicyInput) => {
+        if (policies.has(input.agentDid) || input.expectedVersion !== null) {
+          throw new Error('policy conflict');
+        }
+        const policy: AgentGatingPolicy = {
+          agentDid: input.agentDid,
+          profile: input.profile,
+          policyVersion: 1,
+          selectedByOwnerDid: input.selectedByOwnerDid,
+          createdAtMs: 10,
+          updatedAtMs: 10,
+          revokedAtMs: null,
+        };
+        policies.set(input.agentDid, policy);
+        return policy;
+      },
+      revoke: () => false,
+    };
+    policies.set('did:key:existing', {
+      agentDid: 'did:key:existing',
+      profile: 'full_supervision',
+      policyVersion: 4,
+      selectedByOwnerDid: 'did:plc:owner',
+      createdAtMs: 1,
+      updatedAtMs: 2,
+      revokedAtMs: null,
+    });
+    setAgentGatingPolicyRepository(repo);
+
+    expect(
+      reconcileDefaultAgentGatingPolicies('did:plc:owner', [
+        { did: 'did:key:new', role: 'agent', scope: 'coding' },
+        { did: 'did:key:existing', role: 'agent', scope: 'coding' },
+        { did: 'did:key:runner', role: 'agent', scope: 'runner' },
+        { did: 'did:key:revoked', role: 'agent', scope: 'coding', revoked: true },
+      ]),
+    ).toEqual({ created: 1, existing: 1, failed: 0 });
+    expect(policies.get('did:key:new')).toMatchObject({
+      profile: 'network_protection',
+      selectedByOwnerDid: 'did:plc:owner',
+    });
+    expect(policies.get('did:key:existing')?.profile).toBe('full_supervision');
+    expect(policies.has('did:key:runner')).toBe(false);
+    expect(policies.has('did:key:revoked')).toBe(false);
+  });
+
   it.each([
     'contact_request',
     'service_request',

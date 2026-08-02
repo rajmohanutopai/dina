@@ -255,6 +255,7 @@ def test_install_wires_optional_pds_identity_without_seed_in_state(
     assert env["DINA_PDS_PROVISION"] == "1"
     assert env["DINA_PDS_HANDLE"] == "alice.test-pds.dinakernel.com"
     assert env["DINA_PDS_EMAIL"] == "Alice@example.com"
+    assert env["DINA_CORE_VERSION"] == "0.20.0"
     assert "recovery" not in manager.state_file.read_text().lower()
 
 

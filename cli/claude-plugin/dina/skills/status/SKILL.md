@@ -4,17 +4,15 @@ description: Show whether Dina is connected to your Home Node and the coding gat
 user-invocable: true
 ---
 
-Run `DINA_AGENT_HOST=claude-code
-"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" --version`,
-`DINA_AGENT_HOST=claude-code
-"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" home-node status`, and
-`DINA_AGENT_HOST=claude-code
-"${CLAUDE_PLUGIN_ROOT}/bin/dina-cli" status`, then report in one short paragraph:
+Call the `dina_status` MCP tool and use its authenticated result as the source
+of truth for connectivity and pairing. Do not diagnose connectivity by probing
+Home Node loopback URLs through a shell tool because host sandboxing can create
+a false offline result. Report in one short paragraph:
 
-- whether `dina --version` is at least 0.20.0 (older CLIs do not satisfy this
-  plugin's hook/MCP contract),
-- whether the `dina` CLI is configured and paired to a Home Node (and over which transport),
-- whether Core is reachable,
+- whether Dina is connected and this machine is paired,
+- the installed Dina CLI version,
+- the coding identity DID,
+- local Home Node health and release when `dina_status` includes it,
 - and confirm the gate is installed — this plugin's PreToolUse hook forwards
   ordinary tool calls to Core's `/v1/agent/gate` for a Core-owned decision.
   Only exact plugin-owned setup and read-only diagnostic commands are handled

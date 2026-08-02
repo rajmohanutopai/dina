@@ -15,6 +15,14 @@ export const GATING_PROFILES = [
 
 export type AgentGatingProfile = (typeof GATING_PROFILES)[number];
 
+/**
+ * Stable wire value for the user-facing Standard profile.
+ *
+ * Keep the persisted/API identifier independent from product copy. Renaming a
+ * label must not invalidate a durable policy row or break an older adapter.
+ */
+export const DEFAULT_OWNER_AGENT_GATING_PROFILE: AgentGatingProfile = 'network_protection';
+
 const PROFILE_RANK: Readonly<Record<AgentGatingProfile, number>> = {
   network_protection: 0,
   sensitive_boundaries: 1,
@@ -206,6 +214,61 @@ export function setAgentGatingPolicyRepository(next: AgentGatingPolicyRepository
 
 export function getAgentGatingPolicyRepository(): AgentGatingPolicyRepository | null {
   return repository;
+}
+
+/** Create the explicit Standard policy attached to a newly paired coding agent. */
+export function ensureDefaultAgentGatingPolicy(
+  agentDid: string,
+  ownerDid: string,
+): AgentGatingPolicy {
+  const repo = repository;
+  if (repo === null) throw new Error('agent gating policy repository unavailable');
+  const existing = repo.get(agentDid);
+  if (existing !== null) return existing;
+  return repo.set({
+    agentDid,
+    profile: DEFAULT_OWNER_AGENT_GATING_PROFILE,
+    selectedByOwnerDid: ownerDid,
+    expectedVersion: null,
+  });
+}
+
+export interface CodingAgentPolicySubject {
+  did: string;
+  role: string;
+  scope?: string | null;
+  revoked?: boolean;
+}
+
+export interface AgentGatingPolicyReconciliation {
+  created: number;
+  existing: number;
+  failed: number;
+}
+
+/**
+ * Repair the narrow crash/upgrade seam where a coding device exists without a
+ * policy row. Existing rows are never rewritten: a revoked policy, stale owner
+ * binding, or explicit stricter choice must continue to fail safe.
+ */
+export function reconcileDefaultAgentGatingPolicies(
+  ownerDid: string,
+  devices: readonly CodingAgentPolicySubject[],
+): AgentGatingPolicyReconciliation {
+  const result: AgentGatingPolicyReconciliation = { created: 0, existing: 0, failed: 0 };
+  for (const device of devices) {
+    if (device.revoked === true || device.role !== 'agent' || device.scope !== 'coding') continue;
+    try {
+      const hadPolicy = (repository?.get(device.did) ?? null) !== null;
+      ensureDefaultAgentGatingPolicy(device.did, ownerDid);
+      if (hadPolicy) result.existing += 1;
+      else result.created += 1;
+    } catch {
+      // A corrupt/conflicting row must remain on the Full-Supervision fallback.
+      result.failed += 1;
+    }
+  }
+  return result;
 }
 
 /**

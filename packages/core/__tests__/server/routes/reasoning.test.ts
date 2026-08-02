@@ -12,7 +12,11 @@ import {
 } from '../../../src';
 import { registerDevice, resetDeviceRegistry } from '../../../src/devices/registry';
 import { setNodeDID } from '../../../src/pairing/ceremony';
-import { resetPersonaState } from '../../../src/persona/service';
+import {
+  createPersona,
+  openPersona,
+  resetPersonaState,
+} from '../../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerReasoningRoutes } from '../../../src/server/routes/reasoning';
 import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';
@@ -290,6 +294,8 @@ describe('connected reasoning routes', () => {
 
   test('inline begin derives owner origin and sensitivity, then completes a typed result', async () => {
     const { router, sessions } = setup();
+    createPersona('general', 'default');
+    openPersona('general');
     const agent = registerDevice('Claude', 'z6MkInlineAgent', 'agent', 'coding');
     expect((await registerConnectedBackend(router, agent.did)).status).toBe(201);
     markReasoningBackendPresent('claude', agent.did);
@@ -302,6 +308,8 @@ describe('connected reasoning routes', () => {
         task_kind: 'answer.compose',
         input: { query: 'What should I work on next?' },
         idempotency_key: 'turn-1-answer',
+        personas: ['general'],
+        limit: 5,
       }),
     );
     expect(begun.status).toBe(200);
@@ -338,6 +346,59 @@ describe('connected reasoning routes', () => {
       accepted: true,
       code: 'completed',
       committed: true,
+    });
+  });
+
+  test('inline begin validates and enforces context scoping options', async () => {
+    const { router, sessions } = setup();
+    createPersona('general', 'default');
+    openPersona('general');
+    const agent = registerDevice('Claude', 'z6MkScopedInlineAgent', 'agent', 'coding');
+    expect((await registerConnectedBackend(router, agent.did)).status).toBe(201);
+    const session = sessions.start({ agentDid: agent.did, hostSessionId: 'scoped-turn' });
+    const base = {
+      backend_id: 'claude',
+      session_id: session.sessionId,
+    };
+
+    const unknownPersona = await router.handle(
+      agentRequest(agent.did, 'POST', '/v1/reasoning/begin', {
+        ...base,
+        task_kind: 'answer.compose',
+        input: { query: 'Use only a vault that does not exist.' },
+        personas: ['does-not-exist'],
+      }),
+    );
+    expect(unknownPersona).toEqual({
+      status: 400,
+      body: { error: 'unknown_context_persona' },
+    });
+
+    const wrongTask = await router.handle(
+      agentRequest(agent.did, 'POST', '/v1/reasoning/begin', {
+        ...base,
+        task_kind: 'memory.structure',
+        input: { text: 'Remember this.' },
+        personas: ['general'],
+      }),
+    );
+    expect(wrongTask).toEqual({
+      status: 400,
+      body: { error: 'context_options_not_supported' },
+    });
+
+    const unsupported = await router.handle(
+      agentRequest(agent.did, 'POST', '/v1/reasoning/begin', {
+        ...base,
+        task_kind: 'answer.compose',
+        input: { query: 'Reject unknown authority-like options.' },
+        personas: ['general'],
+        arbitrary_context: true,
+      }),
+    );
+    expect(unsupported).toEqual({
+      status: 400,
+      body: { error: 'unsupported_reasoning_field' },
     });
   });
 

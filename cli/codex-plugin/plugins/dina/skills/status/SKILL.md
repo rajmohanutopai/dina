@@ -5,15 +5,21 @@ description: Show whether Dina is connected to the Home Node and protecting supp
 
 # Check Dina Status
 
-Run `DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" --version`,
-`DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" home-node status`, and
-`DINA_AGENT_HOST=codex "${PLUGIN_ROOT}/bin/dina-cli" status`. Report:
+Call the `dina_status` MCP tool. Treat its authenticated result as the source
+of truth for connectivity and pairing. Do not diagnose connectivity by running
+`dina status` or probing Home Node loopback URLs through a shell tool: Codex's
+sandbox may block that process or loopback access and produce a false offline
+result.
 
-- whether the CLI is at least version 0.20.0;
-- whether Home Node Lite is installed and healthy;
+Report:
+
+- whether Dina is connected and this machine is paired;
+- the installed Dina CLI version;
+- the coding identity DID;
+- local Home Node health and release when `dina_status` includes it;
 - whether this machine is enrolled with its own coding-scoped identity;
-- whether Core is reachable;
-- whether the plugin hook has been reviewed and trusted in Codex.
+- that Codex hook trust must be checked by the user in `/hooks`; Dina cannot
+  infer that UI decision from MCP.
 
 Explain that the hook fails closed after Codex launches it. If Dina is
 unconfigured or unreachable, supported local tool calls are blocked until the

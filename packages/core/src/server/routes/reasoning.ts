@@ -95,6 +95,18 @@ const OWNER_SUBMIT_FIELDS = new Set([
   'public_evidence_sources',
 ]);
 
+const INLINE_BEGIN_FIELDS = new Set([
+  'backend_id',
+  'session_id',
+  'task_kind',
+  'input',
+  'purpose',
+  'idempotency_key',
+  'personas',
+  'limit',
+  'public_evidence_sources',
+]);
+
 function response(status: number, body: unknown): CoreResponse {
   return { status, body };
 }
@@ -184,6 +196,15 @@ function mapBrokerError(error: unknown): CoreResponse | null {
     case 'conflict':
       return response(409, { error: error.code });
   }
+}
+
+function mapContextProjectionError(error: unknown): CoreResponse | null {
+  const code = error instanceof Error ? error.message : '';
+  return code === 'invalid_context_request' ||
+    code === 'invalid_context_personas' ||
+    code === 'unknown_context_persona'
+    ? response(400, { error: code })
+    : null;
 }
 
 function activeBindingForCaller(
@@ -629,6 +650,9 @@ export function registerReasoningRoutes(
   router.post('/v1/reasoning/begin', async (req) => {
     const request = backendRequest(req);
     if (!('binding' in request)) return request;
+    if (hasUnsupportedField(request.body, INLINE_BEGIN_FIELDS)) {
+      return response(400, { error: 'unsupported_reasoning_field' });
+    }
     if (request.binding.kind !== 'connected_host' || request.session === null) {
       return response(403, { error: 'inline_begin_requires_connected_host' });
     }
@@ -660,16 +684,26 @@ export function registerReasoningRoutes(
       request.body.idempotency_key === undefined
         ? undefined
         : boundedString(request.body.idempotency_key, 256);
+    const limit = optionalSafeInteger(request.body.limit, 1, 50);
     const evidenceSources = publicEvidenceSources(request.body.public_evidence_sources);
     if (
       purpose === null ||
       idempotencyKey === null ||
+      limit === null ||
       evidenceSources === null ||
-      request.body.input === undefined
+      request.body.input === undefined ||
+      (request.body.personas !== undefined &&
+        (!Array.isArray(request.body.personas) ||
+          request.body.personas.some((persona) => typeof persona !== 'string')))
     ) {
       return response(400, { error: 'invalid_reasoning_request' });
     }
-    if (taskKind !== 'answer.compose' && request.body.public_evidence_sources !== undefined) {
+    if (
+      taskKind !== 'answer.compose' &&
+      (request.body.personas !== undefined ||
+        request.body.limit !== undefined ||
+        request.body.public_evidence_sources !== undefined)
+    ) {
       return response(400, { error: 'context_options_not_supported' });
     }
     const owner = currentOwnerBinding(request.binding);
@@ -695,6 +729,10 @@ export function registerReasoningRoutes(
               sessionId: request.session.sessionId,
               query: answerInput.query,
               purpose,
+              ...(request.body.personas === undefined
+                ? {}
+                : { personas: request.body.personas as string[] }),
+              ...(limit === undefined ? {} : { limit }),
               ...(evidenceSources.length === 0 ? {} : { publicEvidenceSources: evidenceSources }),
             }
           : null;
@@ -767,7 +805,11 @@ export function registerReasoningRoutes(
         unavailable_sources: context?.unavailableSources ?? [],
       });
     } catch (error) {
-      return mapBrokerError(error) ?? response(500, { error: 'reasoning_begin_failed' });
+      return (
+        mapBrokerError(error) ??
+        mapContextProjectionError(error) ??
+        response(500, { error: 'reasoning_begin_failed' })
+      );
     }
   });
 

@@ -4,6 +4,7 @@
       "command": "./bin/dina-cli",
       "args": ["mcp-server", "--profile", "connected"],
       "cwd": ".",
+      "default_tools_approval_mode": "approve",
       "env": {
         "DINA_AGENT_HOST": "codex"
       },

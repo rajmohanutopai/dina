@@ -5,20 +5,48 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import venv
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-MINIMUM_CLI = (0, 20, 0)
+REQUIRED_CLI = (0, 20, 1)
+MINIMUM_CLI = REQUIRED_CLI
 MAXIMUM_CLI = (0, 21, 0)
 VERSION_RE = re.compile(r"\b(\d+)\.(\d+)\.(\d+)(?:[.+-][^\s]+)?\b")
 DEVELOPMENT_MODE_ENV = "DINA_PLUGIN_DEV_MODE"
+MAX_BOOTSTRAP_WHEEL_BYTES = 8 * 1024 * 1024
+CLAUDE_DINA_MCP_SERVER_ID = "plugin:dina:dina"
+MAX_CLAUDE_MCP_CACHE_BYTES = 64 * 1024
+PIP_WHEEL_URL = (
+    "https://files.pythonhosted.org/packages/5d/95/"
+    "6b5cb3461ea5673ba0995989746db58eb18b91b54dbf331e72f569540946/"
+    "pip-26.1.2-py3-none-any.whl"
+)
+PIP_WHEEL_SHA256 = "382ff9f685ee3bc25864f820aa50505825f10f5458ffff07e30a6d96e5715cab"
+DINA_WHEEL_URL = (
+    "https://files.pythonhosted.org/packages/fd/1f/"
+    "c6ce71ce95abfcfd8c4256a5ea912f87f43f7ac9ce3b12caad93b0fc7e97/"
+    "dina_agent-0.20.1-py3-none-any.whl"
+)
+DINA_WHEEL_SHA256 = "6913cf6969895ae337b70380b71a030209549394273ad3ea0dfb73733ca714b6"
+PIP_RUNNER = (
+    "import runpy,sys;"
+    "wheel=sys.argv.pop(1);"
+    "sys.path.insert(0,wheel);"
+    "sys.argv[0]='pip';"
+    "runpy.run_module('pip',run_name='__main__')"
+)
 
 
 class BootstrapError(RuntimeError):
@@ -29,6 +57,48 @@ class BootstrapError(RuntimeError):
 
 def _development_mode() -> bool:
     return os.environ.get(DEVELOPMENT_MODE_ENV, "").strip() == "1"
+
+
+def _clear_claude_mcp_failure_cache(host: str) -> None:
+    """Let Claude retry Dina MCP after setup installs the managed CLI.
+
+    Claude Code 2.1 caches a plugin MCP launch failure as an authentication
+    failure. Dina's first MCP launch necessarily precedes the setup command,
+    so a missing managed CLI can otherwise keep the server disabled after a
+    successful setup and restart. Remove only Dina's entry, preserving every
+    other server and treating Claude's private cache as best-effort state.
+    """
+    if host != "claude-code":
+        return
+    path = Path.home() / ".claude" / "mcp-needs-auth-cache.json"
+    temp: Path | None = None
+    try:
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_CLAUDE_MCP_CACHE_BYTES:
+            return
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or CLAUDE_DINA_MCP_SERVER_ID not in value:
+            return
+        del value[CLAUDE_DINA_MCP_SERVER_ID]
+        encoded = (json.dumps(value, separators=(",", ":")) + "\n").encode("utf-8")
+        temp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(temp, flags, 0o600)
+        try:
+            os.write(fd, encoded)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(temp, path)
+        temp = None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return
+    finally:
+        if temp is not None:
+            with contextlib.suppress(OSError):
+                temp.unlink()
 
 
 def _runtime_dir() -> Path:
@@ -134,6 +204,16 @@ def _cli_version(path: Path) -> tuple[int, int, int] | None:
     return _parse_version(result.stdout) if result.returncode == 0 else None
 
 
+def _cli_version_is_compatible(version: tuple[int, int, int] | None) -> bool:
+    if version == REQUIRED_CLI:
+        return True
+    return bool(
+        _development_mode()
+        and version is not None
+        and MINIMUM_CLI <= version < MAXIMUM_CLI
+    )
+
+
 def _candidate_clis() -> list[Path]:
     explicit = os.environ.get("DINA_CLI_BIN", "").strip() if _development_mode() else ""
     if explicit:
@@ -155,9 +235,145 @@ def _candidate_clis() -> list[Path]:
 def _find_compatible_cli() -> tuple[Path, tuple[int, int, int]] | None:
     for candidate in _candidate_clis():
         version = _cli_version(candidate)
-        if version is not None and version >= MINIMUM_CLI and version < MAXIMUM_CLI:
+        if _cli_version_is_compatible(version):
+            assert version is not None
             return candidate, version
     return None
+
+
+def _download_verified(
+    url: str,
+    expected_sha256: str,
+    destination: Path,
+) -> None:
+    digest = hashlib.sha256()
+    size = 0
+    temp = destination.with_name(f".{destination.name}.{secrets.token_hex(6)}.tmp")
+    try:
+        request = Request(url, headers={"User-Agent": "dina-agent-plugin-bootstrap"})
+        try:
+            with urlopen(request, timeout=60) as response, temp.open("xb") as stream:
+                while chunk := response.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_BOOTSTRAP_WHEEL_BYTES:
+                        raise BootstrapError(
+                            "bootstrap_wheel_too_large",
+                            "A managed CLI bootstrap wheel exceeded the safety limit.",
+                        )
+                    digest.update(chunk)
+                    stream.write(chunk)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except (HTTPError, URLError):
+            curl = _trusted_curl()
+            if curl is None:
+                raise
+            with contextlib.suppress(FileNotFoundError):
+                temp.unlink()
+            digest = hashlib.sha256()
+            size = 0
+            _run(
+                [
+                    curl,
+                    "--proto",
+                    "=https",
+                    "--tlsv1.2",
+                    "--fail",
+                    "--location",
+                    "--silent",
+                    "--show-error",
+                    "--max-filesize",
+                    str(MAX_BOOTSTRAP_WHEEL_BYTES),
+                    "--output",
+                    temp,
+                    url,
+                ],
+                timeout=120,
+            )
+            size = temp.stat().st_size
+            with temp.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+        if size == 0 or digest.hexdigest() != expected_sha256:
+            raise BootstrapError(
+                "bootstrap_wheel_integrity_failed",
+                "A managed CLI bootstrap wheel failed its integrity check.",
+            )
+        os.replace(temp, destination)
+    except BootstrapError:
+        raise
+    except (HTTPError, URLError, OSError) as exc:
+        raise BootstrapError(
+            "bootstrap_download_failed",
+            f"Could not download the managed Dina CLI: {exc}",
+        ) from exc
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temp.unlink()
+
+
+def _trusted_curl() -> Path | None:
+    candidates = (
+        (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32"
+            / "curl.exe"
+        )
+        if os.name == "nt"
+        else Path("/usr/bin/curl"),
+        Path("/usr/local/bin/curl"),
+    )
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.is_file() and os.access(candidate, os.X_OK)
+        ),
+        None,
+    )
+
+
+def _environment_python(environment: Path) -> Path:
+    suffix = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/python")
+    return environment / suffix
+
+
+def _environment_dina(environment: Path) -> Path:
+    suffix = Path("Scripts/dina.exe") if os.name == "nt" else Path("bin/dina")
+    return environment / suffix
+
+
+def _replace_environment_atomically(
+    staging: Path,
+    destination: Path,
+    *,
+    finalize: Callable[[Path], None] | None = None,
+) -> None:
+    backup = destination.with_name(
+        f".{destination.name}.backup-{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    moved_existing = False
+    try:
+        if destination.exists() or destination.is_symlink():
+            if destination.is_symlink() or not destination.is_dir():
+                raise BootstrapError(
+                    "managed_cli_path_unsafe",
+                    "The managed Dina CLI path is not a safe directory.",
+                )
+            os.replace(destination, backup)
+            moved_existing = True
+        os.replace(staging, destination)
+        if finalize is not None:
+            finalize(destination)
+    except Exception:
+        if destination.exists() and not staging.exists():
+            shutil.rmtree(destination, ignore_errors=True)
+        if moved_existing and backup.exists() and not destination.exists():
+            os.replace(backup, destination)
+        raise
+    finally:
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
 
 
 def _install_managed_cli() -> tuple[Path, tuple[int, int, int]]:
@@ -179,32 +395,96 @@ def _install_managed_cli() -> tuple[Path, tuple[int, int, int]]:
     except OSError:
         pass
     environment = runtime / "venv"
-    python_name = "Scripts/python.exe" if os.name == "nt" else "bin/python"
-    if not (environment / python_name).exists():
-        venv.EnvBuilder(with_pip=True, clear=False).create(environment)
+    staging = runtime / f".venv.install-{os.getpid()}-{secrets.token_hex(6)}"
+    downloads = runtime / f".bootstrap-downloads-{os.getpid()}-{secrets.token_hex(6)}"
+    try:
+        venv.EnvBuilder(with_pip=False, clear=False, symlinks=False).create(staging)
+        python = _environment_python(staging)
+        if not python.is_file():
+            raise BootstrapError(
+                "venv_creation_failed",
+                "Python could not create the managed Dina CLI environment.",
+            )
+        downloads.mkdir(mode=0o700)
+        pip_wheel = downloads / "pip-26.1.2-py3-none-any.whl"
+        _download_verified(PIP_WHEEL_URL, PIP_WHEEL_SHA256, pip_wheel)
 
-    python = environment / python_name
-    package = (
-        os.environ.get("DINA_SETUP_CLI_SPEC", "").strip() if _development_mode() else ""
-    ) or "dina-agent==0.20.0"
-    _run(
-        [
-            python,
-            "-I",
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--upgrade",
-            "--only-binary=:all:",
-            package,
-        ],
-        timeout=600,
-        cwd=runtime,
-    )
+        package = (
+            os.environ.get("DINA_SETUP_CLI_SPEC", "").strip()
+            if _development_mode()
+            else ""
+        )
+        if not package:
+            package_path = downloads / "dina_agent-0.20.1-py3-none-any.whl"
+            _download_verified(DINA_WHEEL_URL, DINA_WHEEL_SHA256, package_path)
+            package = str(package_path)
+        _run(
+            [
+                python,
+                "-I",
+                "-c",
+                PIP_RUNNER,
+                pip_wheel,
+                "install",
+                "--disable-pip-version-check",
+                "--no-input",
+                "--only-binary=:all:",
+                package,
+            ],
+            timeout=600,
+            cwd=runtime,
+        )
+        staged_cli = _environment_dina(staging)
+        version = _cli_version(staged_cli)
+        if not _cli_version_is_compatible(version):
+            raise BootstrapError(
+                "cli_install_invalid",
+                "The managed Dina CLI installation did not provide version 0.20.1.",
+            )
+        def finalize_installed_environment(installed: Path) -> None:
+            # Console launchers embed the environment path. Reinstall only the
+            # already-resolved Dina wheel after the directory reaches its final
+            # location so POSIX shebangs and Windows launchers remain valid.
+            installed_python = _environment_python(installed)
+            _run(
+                [
+                    installed_python,
+                    "-I",
+                    "-c",
+                    PIP_RUNNER,
+                    pip_wheel,
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-input",
+                    "--only-binary=:all:",
+                    "--force-reinstall",
+                    "--no-deps",
+                    package,
+                ],
+                timeout=300,
+                cwd=runtime,
+            )
+            installed_version = _cli_version(_environment_dina(installed))
+            if installed_version != version:
+                raise BootstrapError(
+                    "cli_install_invalid",
+                    "The managed Dina CLI launcher failed final validation.",
+                )
+
+        _replace_environment_atomically(
+            staging,
+            environment,
+            finalize=finalize_installed_environment,
+        )
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        if downloads.exists():
+            shutil.rmtree(downloads, ignore_errors=True)
+
     cli = _managed_dina()
     version = _cli_version(cli)
-    if version is None or not (MINIMUM_CLI <= version < MAXIMUM_CLI):
+    if not _cli_version_is_compatible(version):
         raise BootstrapError(
             "cli_install_invalid",
             "The managed Dina CLI installation did not provide a compatible "
@@ -287,15 +567,18 @@ def _delegate(
     env["DINA_SETUP_CLI_MANAGED"] = "1" if managed else "0"
     result = _run(argv, check=False, timeout=900, env=env)
     sys.stdout.write(result.stdout)
-    sys.stderr.write(result.stderr)
+    if not args.json:
+        sys.stderr.write(result.stderr)
     if not result.stdout and result.returncode != 0:
+        detail = (result.stderr or "The Dina setup command failed.").strip()
+        message = detail.splitlines()[-1][:500] if detail else "The Dina setup command failed."
         _emit(
             {
                 "kind": "setup_error",
                 "host": args.host,
                 "ready": False,
                 "code": "setup_command_failed",
-                "message": "The Dina setup command failed without a response.",
+                "message": message,
             },
             args.json,
         )
@@ -320,7 +603,7 @@ def main() -> int:
                         "ready": False,
                         "cli": {
                             "available": False,
-                            "minimum": "0.20.0",
+                            "minimum": "0.20.1",
                             "maximum_exclusive": "0.21.0",
                         },
                         "home_node": {"installed": None},
@@ -345,6 +628,7 @@ def main() -> int:
             if found is None:
                 found = _install_managed_cli()
             cli, _version = found
+            _clear_claude_mcp_failure_cache(args.host)
             return _delegate(
                 cli,
                 args=args,

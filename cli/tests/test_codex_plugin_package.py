@@ -19,10 +19,28 @@ PLUGIN_ROOT = MARKETPLACE_ROOT / "plugins" / "dina"
 SUPERVISOR = PLUGIN_ROOT / "bin" / "dina-gate"
 SETUP = PLUGIN_ROOT / "bin" / "dina-setup"
 BOOTSTRAP_AUTHORIZER = PLUGIN_ROOT / "bin" / "dina-bootstrap-authorize"
+SETUP_SKILL = PLUGIN_ROOT / "skills" / "dina-setup" / "SKILL.md"
 
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _bootstrap_authorize(event: dict, **env_overrides: str) -> int:
+    result = subprocess.run(
+        [str(BOOTSTRAP_AUTHORIZER)],
+        input=json.dumps(event),
+        env={
+            **os.environ,
+            "DINA_PLUGIN_ROOT": str(PLUGIN_ROOT),
+            **env_overrides,
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    return result.returncode
 
 
 def test_marketplace_points_at_the_self_contained_plugin() -> None:
@@ -65,6 +83,9 @@ def test_manifest_and_mcp_server_match_the_supported_cli_contract() -> None:
                 "command": "./bin/dina-cli",
                 "args": ["mcp-server", "--profile", "connected"],
                 "cwd": ".",
+                # Dina Core owns authorization and approval; a second Codex MCP
+                # prompt would reject even read-only tools in noninteractive runs.
+                "default_tools_approval_mode": "approve",
                 "env": {"DINA_AGENT_HOST": "codex"},
                 "env_vars": [
                     "DINA_AGENT_HOST_CONFIG_DIR",
@@ -153,13 +174,21 @@ def test_plugin_documents_codex_specific_security_boundaries() -> None:
     assert "foreground Brain" in setup_skill
     assert "Never request, receive, paste, or" in setup_skill
     assert "No source checkout, Docker, global Python package" in readme
+    assert "--sparse .agents/plugins" in readme
+    assert "--sparse cli/codex-plugin/plugins/dina" in readme
 
-    for skill_name in ("status", "audit", "pair-phone"):
+    for skill_name in ("audit", "pair-phone"):
         maintenance_skill = (
             PLUGIN_ROOT / "skills" / skill_name / "SKILL.md"
         ).read_text(encoding="utf-8")
         assert '"${PLUGIN_ROOT}/bin/dina-cli"' in maintenance_skill
         assert "DINA_AGENT_HOST=codex" in maintenance_skill
+    status_skill = (PLUGIN_ROOT / "skills" / "status" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "`dina_status` MCP tool" in status_skill
+    assert "false offline" in status_skill
+    assert "home-node status" not in status_skill
     pair_phone = (
         PLUGIN_ROOT / "skills" / "pair-phone" / "SKILL.md"
     ).read_text(encoding="utf-8")
@@ -204,7 +233,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 if args == ["--version"]:
-    print("dina-agent, version 0.20.0")
+    print("dina-agent, version 0.20.1")
     raise SystemExit(0)
 Path(os.environ["DINA_TEST_ARGS"]).write_text(json.dumps(args), encoding="utf-8")
 print(json.dumps({{
@@ -252,6 +281,16 @@ def test_codex_setup_bootstraps_shared_host_setup(tmp_path: Path) -> None:
         "codex",
         "--local-only",
     ]
+
+
+def test_codex_preview_generates_a_valid_managed_test_pds_handle() -> None:
+    preview = (
+        REPO_ROOT / "scripts" / "dev" / "dina-codex-preview.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "range(6)" in preview
+    assert "string.ascii_lowercase+string.digits" in preview
+    assert "token_hex(8)" not in preview
 
 
 def test_setup_status_without_cli_does_not_guess_identity_state(
@@ -350,42 +389,96 @@ raise SystemExit(99)
 
 
 def test_bootstrap_authorizer_accepts_codex_cmd_and_rejects_injection() -> None:
-    exact = json.dumps(
+    exact = {
+        "tool_name": "Bash",
+        "tool_input": {
+            "cmd": f"{SETUP} --local-only --json",
+        },
+    }
+    injected = {
+        "tool_name": "Bash",
+        "tool_input": {
+            "cmd": f"{SETUP} --local-only --json; echo bypass",
+        },
+    }
+
+    assert _bootstrap_authorize(exact) == 0
+    assert _bootstrap_authorize(injected) == 1
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
         {
             "tool_name": "Bash",
             "tool_input": {
-                "cmd": f"{SETUP} --local-only --json",
+                "cmd": f"sed -n '1,240p' {SETUP_SKILL}",
             },
-        }
-    )
-    accepted = subprocess.run(
-        [str(BOOTSTRAP_AUTHORIZER)],
-        input=exact,
-        env={**os.environ, "DINA_PLUGIN_ROOT": str(PLUGIN_ROOT)},
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
-    injected = subprocess.run(
-        [str(BOOTSTRAP_AUTHORIZER)],
-        input=json.dumps(
-            {
-                "tool_name": "Bash",
-                "tool_input": {
-                    "cmd": f"{SETUP} --local-only --json; echo bypass",
-                },
-            }
-        ),
-        env={**os.environ, "DINA_PLUGIN_ROOT": str(PLUGIN_ROOT)},
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+        },
+        {
+            "tool_name": "Bash",
+            "tool_input": {"cmd": f"cat {SETUP_SKILL}"},
+        },
+        {
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(SETUP_SKILL)},
+        },
+    ],
+)
+def test_bootstrap_authorizer_allows_only_the_plugin_setup_skill(event: dict) -> None:
+    assert _bootstrap_authorize(event) == 0
 
-    assert accepted.returncode == 0
-    assert injected.returncode == 1
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {
+            "tool_name": "Bash",
+            "tool_input": {"cmd": f"sed -n '1,200p' {SETUP_SKILL}"},
+        },
+        {
+            "tool_name": "Bash",
+            "tool_input": {"cmd": f"sed -n '1,240p' {PLUGIN_ROOT / 'README.md'}"},
+        },
+        {
+            "tool_name": "Bash",
+            "tool_input": {"cmd": f"cat {SETUP_SKILL}; echo bypass"},
+        },
+        {
+            "tool_name": "Bash",
+            "tool_input": {"cmd": f"cat {SETUP_SKILL} > /tmp/setup-skill"},
+        },
+        {
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(PLUGIN_ROOT / "README.md")},
+        },
+        {
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(SETUP_SKILL), "limit": 240},
+        },
+        {
+            "tool_name": "Read",
+            "tool_input": {
+                "file_path": str(SETUP_SKILL),
+                "path": str(PLUGIN_ROOT / "README.md"),
+            },
+        },
+    ],
+)
+def test_bootstrap_authorizer_rejects_setup_skill_read_expansion(event: dict) -> None:
+    assert _bootstrap_authorize(event) == 1
+
+
+def test_bootstrap_authorizer_rejects_a_path_shadowed_reader(tmp_path: Path) -> None:
+    fake_sed = tmp_path / "sed"
+    fake_sed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_sed.chmod(0o755)
+    event = {
+        "tool_name": "Bash",
+        "tool_input": {"cmd": f"sed -n '1,240p' {SETUP_SKILL}"},
+    }
+
+    assert _bootstrap_authorize(event, PATH=f"{tmp_path}:{os.environ['PATH']}") == 1
 
 
 @pytest.mark.skipif(os.name != "posix", reason="supervisor is a POSIX sh script")

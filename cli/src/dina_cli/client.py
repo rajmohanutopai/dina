@@ -704,6 +704,8 @@ class DinaClient:
         input_data: Any,
         purpose: str = "",
         idempotency_key: str = "",
+        personas: list[str] | None = None,
+        limit: int | None = None,
         public_evidence_sources: list[str] | None = None,
     ) -> dict:
         """Create and claim one inline reasoning job for this active host turn."""
@@ -721,6 +723,10 @@ class DinaClient:
             body["purpose"] = purpose
         if idempotency_key:
             body["idempotency_key"] = idempotency_key
+        if personas is not None:
+            body["personas"] = personas
+        if limit is not None:
+            body["limit"] = limit
         if public_evidence_sources:
             body["public_evidence_sources"] = public_evidence_sources
         return self._request(

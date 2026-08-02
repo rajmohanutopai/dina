@@ -1,0 +1,33 @@
+# Live coding-agent approval - a HIGH-risk Bash action raised by the laptop
+# Home Node is mirrored to the phone and approved through the real mobile UI.
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'filter-needs_action'
+- extendedWaitUntil:
+    visible:
+      text: 'Agent action approval'
+    timeout: 30000
+- assertVisible:
+    text: 'fs_destructive'
+- assertVisible:
+    text: 'HIGH'
+- tapOn:
+    id: 'approvals-approve-.*'
+- extendedWaitUntil:
+    visible:
+      text: 'Approve "fs_destructive"?'
+    timeout: 10000
+- tapOn:
+    text: 'Approve'
+    index: 1
+- extendedWaitUntil:
+    notVisible:
+      text: 'Agent action approval'
+    timeout: 15000
+- assertVisible:
+    text: 'All caught up'

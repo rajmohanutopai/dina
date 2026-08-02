@@ -21,6 +21,10 @@ For an owner request in the current Claude conversation:
   it.
 - Use `dina_reasoning_begin` and `dina_reasoning_complete` instead when the
   answer must be validated and recorded as a connected-Brain result.
+  For `answer.compose`, pass `input: {"query":"..."}` (optionally
+  `responseStyle`) and the smallest relevant `personas` list returned by
+  `dina_vaults`. Omitting `personas` requests every vault and may create owner
+  approvals. Copy the returned result schema and opaque claim fields exactly.
 
 For durable Dina work:
 

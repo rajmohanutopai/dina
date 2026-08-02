@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -50,6 +51,72 @@ def _is_plugin_binary(candidate: str, name: str) -> bool:
         return Path(candidate).expanduser().resolve() == (_plugin_root() / "bin" / name)
     except OSError:
         return False
+
+
+def _is_setup_skill(candidate: object) -> bool:
+    """Match only the setup instructions bundled with this plugin."""
+    if not isinstance(candidate, str) or not candidate:
+        return False
+    if candidate in {
+        "${PLUGIN_ROOT}/skills/dina-setup/SKILL.md",
+        "${CLAUDE_PLUGIN_ROOT}/skills/dina-setup/SKILL.md",
+    }:
+        return True
+    try:
+        return Path(candidate).expanduser().resolve() == (
+            _plugin_root() / "skills" / "dina-setup" / "SKILL.md"
+        ).resolve()
+    except OSError:
+        return False
+
+
+def _is_trusted_reader(candidate: str, name: str) -> bool:
+    """Do not let a project-controlled PATH entry impersonate sed or cat."""
+    if Path(candidate).name != name:
+        return False
+    resolved = shutil.which(candidate) if "/" not in candidate else candidate
+    if resolved is None:
+        return False
+    try:
+        executable = Path(resolved).resolve()
+        trusted = {
+            Path(f"/bin/{name}").resolve(),
+            Path(f"/usr/bin/{name}").resolve(),
+        }
+        return executable in trusted
+    except OSError:
+        return False
+
+
+def _valid_setup_skill_read(command: object) -> bool:
+    """Allow Codex to load its own setup skill before Dina Core exists."""
+    parts = _parse_command(command)
+    if parts is None:
+        return False
+    if (
+        len(parts) == 4
+        and _is_trusted_reader(parts[0], "sed")
+        and parts[1:3] == ["-n", "1,240p"]
+        and _is_setup_skill(parts[3])
+    ):
+        return True
+    return (
+        len(parts) == 2
+        and _is_trusted_reader(parts[0], "cat")
+        and _is_setup_skill(parts[1])
+    )
+
+
+def _valid_setup_skill_tool_input(tool_input: object) -> bool:
+    if not isinstance(tool_input, dict):
+        return False
+    file_path = tool_input.get("file_path")
+    alternate = tool_input.get("path")
+    if file_path is not None and alternate is not None and file_path != alternate:
+        return False
+    if set(tool_input) - {"file_path", "path"}:
+        return False
+    return _is_setup_skill(file_path or alternate)
 
 
 def _valid_setup_command(command: object) -> bool:
@@ -164,6 +231,8 @@ def main() -> int:
     tool_input = event.get("tool_input")
     if tool_name == "AskUserQuestion" and isinstance(tool_input, dict):
         return QUESTION
+    if tool_name == "Read":
+        return ALLOW if _valid_setup_skill_tool_input(tool_input) else DENY
     if tool_name != "Bash" or not isinstance(tool_input, dict):
         return DENY
     command = tool_input.get("command")
@@ -173,7 +242,9 @@ def main() -> int:
     candidate = command or alternate
     return (
         ALLOW
-        if _valid_setup_command(candidate) or _valid_maintenance_command(candidate)
+        if _valid_setup_command(candidate)
+        or _valid_maintenance_command(candidate)
+        or _valid_setup_skill_read(candidate)
         else DENY
     )
 

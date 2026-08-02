@@ -21,6 +21,22 @@ from dina_cli.transport import (
 
 # --- Test helpers ---
 
+
+@pytest.fixture()
+def isolated_cli_identity(tmp_path):
+    """Give MsgBox constructor tests a real key without ambient ~/.dina state."""
+    from dina_cli import config as config_module
+    from dina_cli.signing import CLIIdentity
+
+    previous_dir = config_module.CONFIG_DIR
+    config_module.set_config_dir(tmp_path / "cli")
+    CLIIdentity().generate()
+    try:
+        yield
+    finally:
+        config_module.set_config_dir(previous_dir)
+
+
 class HealthHandler(BaseHTTPRequestHandler):
     """Minimal HTTP server that returns 200 on /healthz."""
 
@@ -113,7 +129,7 @@ def test_transport_auto_core_reachable():
 
 # --- TST-MBX-0062: transport=auto, Core unreachable, MsgBox up → MsgBoxTransport ---
 # TRACE: {"suite": "MBX", "case": "0062", "section": "06", "sectionName": "Operational & Load", "subsection": "05", "scenario": "02", "title": "transport_auto_fallback_msgbox"}
-def test_transport_auto_fallback_msgbox():
+def test_transport_auto_fallback_msgbox(isolated_cli_identity):
     """auto mode: Core unreachable, MsgBox configured → falls back to MsgBoxTransport."""
     transport = select_transport(
         mode="auto",
@@ -139,7 +155,7 @@ def test_transport_auto_both_unreachable():
 
 # --- TST-MBX-0064: transport=msgbox, MsgBox down → fail-closed ---
 # TRACE: {"suite": "MBX", "case": "0064", "section": "06", "sectionName": "Operational & Load", "subsection": "05", "scenario": "04", "title": "transport_msgbox_fail_closed"}
-def test_transport_msgbox_fail_closed():
+def test_transport_msgbox_fail_closed(isolated_cli_identity):
     """msgbox mode: fail-closed — no fallback to direct even if Core is reachable."""
     # select_transport returns MsgBoxTransport (not DirectTransport).
     transport = select_transport(
@@ -172,7 +188,7 @@ def test_transport_direct_no_msgbox():
 
 # --- TST-MBX-0045: Pairing transport selection + interface contract ---
 # TRACE: {"suite": "MBX", "case": "0045", "section": "05", "sectionName": "Pairing", "subsection": "01", "scenario": "01", "title": "pairing_transport_contract"}
-def test_pairing_transport_contract():
+def test_pairing_transport_contract(isolated_cli_identity):
     """Pairing transport contract: select_transport("msgbox") returns
     MsgBoxTransport with correct interface. MsgBoxTransport.request()
     raises NotImplementedError until MBX-040 (WebSocket relay) is built.

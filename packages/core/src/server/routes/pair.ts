@@ -25,8 +25,9 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { ensureDefaultAgentGatingPolicy } from '../../agent/gating_policy';
 import { resolveAgentScope, type AgentScope } from '../../auth/agent_scope';
-import { persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
+import { getDevice, persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
 import {
   generatePairingCode,
   completePairing,
@@ -79,7 +80,7 @@ export function registerPairRoutes(router: CoreRouter): void {
     if (body.scope !== undefined) {
       scope = resolveAgentScope(typeof body.scope === 'string' ? body.scope : null);
       if (scope === undefined) {
-        return { status: 400, body: { error: "scope must be one of: coding, runner" } };
+        return { status: 400, body: { error: 'scope must be one of: coding, runner' } };
       }
     }
 
@@ -238,6 +239,36 @@ export function registerPairRoutes(router: CoreRouter): void {
           body: { error: 'pairing: server error', diag_id: diagId },
         };
       }
+
+      // Every owner-controlled coding agent has an explicit policy from its
+      // first successful pairing. A missing policy means Full Supervision, so
+      // silently omitting this write would make new installs behave unlike the
+      // documented Standard default. If the policy cannot be made durable,
+      // revoke the just-paired device before reporting failure.
+      let gatingProfile: string | undefined;
+      if (roleRaw === 'agent' && scope === 'coding') {
+        try {
+          const pairedDevice = getDevice(result.deviceId);
+          if (pairedDevice === null)
+            throw new Error('paired device disappeared before policy setup');
+          gatingProfile = ensureDefaultAgentGatingPolicy(pairedDevice.did, result.nodeDID).profile;
+        } catch (err) {
+          const diagId = bytesToHex(randomBytes(4));
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[pair] default agent policy failed (diag=${diagId}): ${msg}`);
+          let rolledBackDurably = false;
+          try {
+            rolledBackDurably = (await revokeDeviceDurable(result.deviceId)).durable;
+          } catch {
+            rolledBackDurably = false;
+          }
+          if (rolledBackDurably) restorePairingCode(code);
+          return {
+            status: 503,
+            body: { error: 'pairing: policy setup failed', diag_id: diagId },
+          };
+        }
+      }
       return {
         status: 201,
         body: {
@@ -245,6 +276,7 @@ export function registerPairRoutes(router: CoreRouter): void {
           node_did: result.nodeDID,
           device_name: deviceName,
           role: roleRaw,
+          ...(gatingProfile !== undefined ? { gating_profile: gatingProfile } : {}),
         },
       };
     },

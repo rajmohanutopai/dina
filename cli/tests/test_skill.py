@@ -46,6 +46,8 @@ def test_thin_body_is_thin_and_self_sufficient():
     assert "pending_approval" in thin
     assert "dina --help" in thin  # progressive disclosure
     assert "dina validate" in thin
+    # Installing Dina must not force a session for unrelated agent work.
+    assert "Start a session before work" not in thin
 
 
 def test_platform_renders_wrap_the_same_canonical_body():

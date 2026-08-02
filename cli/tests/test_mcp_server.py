@@ -31,6 +31,7 @@ def fake_client(monkeypatch):
     monkeypatch.setattr(mcp_server, "_get_client", lambda: fake)
     # Reset any cached singleton from a prior test.
     monkeypatch.setattr(mcp_server, "_client", None)
+    monkeypatch.setattr(mcp_server, "_local_home_node_status", lambda: None)
     return fake
 
 
@@ -565,6 +566,7 @@ def test_dina_status_requires_authenticated_probe(fake_client):
         "status": "connected",
         "paired": True,
         "did": "did:key:z6MkPaired",
+        "cli_version": "0.20.2",
     }
     fake_client._request.assert_called_once_with(
         fake_client._core,
@@ -574,6 +576,27 @@ def test_dina_status_requires_authenticated_probe(fake_client):
     fake_client.session_list.assert_called_once_with()
 
 
+def test_dina_status_includes_local_home_node_health(fake_client, monkeypatch):
+    fake_client._identity.did.return_value = "did:key:z6MkPaired"
+    monkeypatch.setattr(
+        mcp_server,
+        "_local_home_node_status",
+        lambda: {
+            "installed": True,
+            "running": True,
+            "core_healthy": True,
+            "brain_healthy": True,
+            "release_version": "0.20.1",
+            "autostart_enabled": True,
+        },
+    )
+
+    out = mcp_server.dina_status.fn()
+
+    assert out["home_node"]["release_version"] == "0.20.1"
+    assert out["home_node"]["core_healthy"] is True
+
+
 def test_dina_status_does_not_treat_public_health_as_pairing(fake_client):
     fake_client.session_list.side_effect = DinaClientError("HTTP 403")
 
@@ -581,7 +604,28 @@ def test_dina_status_does_not_treat_public_health_as_pairing(fake_client):
 
     assert out["status"] == "unavailable"
     assert out["paired"] is False
+    assert out["cli_version"] == "0.20.2"
     assert "403" in out["error"]
+
+
+def test_dina_status_returns_structured_error_when_client_is_unconfigured(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        mcp_server,
+        "_get_client",
+        lambda: (_ for _ in ()).throw(DinaClientError("not configured")),
+    )
+    monkeypatch.setattr(mcp_server, "_local_home_node_status", lambda: None)
+
+    out = mcp_server.dina_status.fn()
+
+    assert out == {
+        "status": "unavailable",
+        "paired": False,
+        "cli_version": "0.20.2",
+        "error": "not configured",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -728,9 +772,11 @@ def test_reasoning_mcp_tools_forward_only_claim_contract_fields(fake_client):
         backend_id="backend-1",
         session="sess-1",
         task_kind="answer.compose",
-        input={"prompt": "Question"},
+        input={"query": "Question"},
         purpose="Answer",
         idempotency_key="turn-1",
+        personas=["general"],
+        limit=5,
     )
     completed = mcp_server.dina_reasoning_complete.fn(
         task_id="task-1",
@@ -773,9 +819,11 @@ def test_reasoning_mcp_tools_forward_only_claim_contract_fields(fake_client):
         backend_id="backend-1",
         session="sess-1",
         task_kind="answer.compose",
-        input_data={"prompt": "Question"},
+        input_data={"query": "Question"},
         purpose="Answer",
         idempotency_key="turn-1",
+        personas=["general"],
+        limit=5,
     )
     fake_client.reasoning_complete.assert_called_once_with(
         task_id="task-1",
@@ -814,6 +862,19 @@ def test_reasoning_tool_docs_preserve_worker_security_contract():
     assert "supported by ``source_text``" in memory
     assert "Do not perform external effects" in begin
     assert "resultSchema" in begin
+    assert '``{"query":"..."}``' in begin
+    assert "smallest relevant ``personas``" in begin
+    assert "requests every vault" in begin
     assert "allowedEvidenceIds" in complete
     assert "does not prove any later external effect" in complete
     assert "stale-claim" in heartbeat
+
+
+def test_reasoning_schemas_require_object_payloads():
+    begin_schema = mcp_server.dina_reasoning_begin.parameters["properties"]["input"]
+    complete_schema = mcp_server.dina_reasoning_complete.parameters["properties"][
+        "result"
+    ]
+
+    assert begin_schema["type"] == "object"
+    assert complete_schema["type"] == "object"

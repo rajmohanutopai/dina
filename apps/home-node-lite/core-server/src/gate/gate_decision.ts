@@ -280,7 +280,7 @@ export function classifyToolCall(input: {
  * The existing Bash parser is intentionally reused because it contains the
  * audited path canonicalisation, redirect, glob, symlink and obfuscation nets.
  * Only a BLOCKED result escapes this function; ordinary classifications are
- * discarded and are neither returned nor audited in Network Protection.
+ * discarded and are neither returned nor audited in Standard.
  */
 export function kernelPrecheck(input: {
   toolName: string;

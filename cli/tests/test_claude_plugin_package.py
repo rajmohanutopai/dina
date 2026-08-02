@@ -37,7 +37,7 @@ def test_cli_runtime_version_matches_package_metadata() -> None:
 
     result = CliRunner().invoke(cli, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == f"dina-agent, version {__version__}"
+    assert result.output.strip().startswith(f"dina-agent, version {__version__}")
 
 
 def test_home_node_status_is_available_before_pairing(tmp_path: Path) -> None:
@@ -424,7 +424,7 @@ with log.open("a", encoding="utf-8") as out:
     out.write(json.dumps(args) + "\\n")
 
 if args == ["--version"]:
-    print("dina-agent, version 0.20.0")
+    print("dina-agent, version 0.20.1")
     raise SystemExit(0)
 
 if command_args[:2] == ["agent-host", "setup"]:
@@ -435,7 +435,7 @@ if command_args[:2] == ["agent-host", "setup"]:
             "kind": "setup_status",
             "host": host,
             "ready": installed,
-            "cli": {{"available": True, "version": "0.20.0"}},
+            "cli": {{"available": True, "version": "0.20.1"}},
             "home_node": {{
                 "installed": installed,
                 "running": installed,

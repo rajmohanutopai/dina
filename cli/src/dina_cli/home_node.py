@@ -49,6 +49,7 @@ MAX_RELEASE_FILE_BYTES = 256 * 1024 * 1024
 MAX_SIGSTORE_BUNDLE_BYTES = 4 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 SUPERVISOR_HEARTBEAT_MAX_AGE = 15.0
+SUPERVISOR_TOKEN_ENV = "DINA_HOME_NODE_SUPERVISOR_TOKEN"
 _ED25519_MULTICODEC = b"\xed\x01"
 _RELEASE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\Z")
 _RELEASE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}-[0-9a-f]{12}\Z")
@@ -126,6 +127,11 @@ def _clean_python_subprocess_env() -> dict[str, str]:
     for name in ("PYTHONHOME", "PYTHONPATH", "PYTHONSTARTUP"):
         env.pop(name, None)
     return env
+
+
+def _supervisor_process_marker(token: str) -> str:
+    """Return a non-secret process marker derived from the private token."""
+    return hashlib.sha256(token.encode("ascii")).hexdigest()[:32]
 
 
 class HomeNodeManager:
@@ -1104,6 +1110,7 @@ class HomeNodeManager:
 
     def _launch_supervisor(self) -> None:
         token = secrets.token_hex(24)
+        process_marker = _supervisor_process_marker(token)
         self.log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         log_path = self.log_dir / "supervisor.log"
         _rotate_log(log_path)
@@ -1114,9 +1121,11 @@ class HomeNodeManager:
             "dina_cli.home_node_supervisor",
             "--install-dir",
             str(self.install_dir),
-            "--token",
-            token,
+            "--instance",
+            process_marker,
         ]
+        env = _clean_python_subprocess_env()
+        env[SUPERVISOR_TOKEN_ENV] = token
         try:
             with log_path.open("ab", buffering=0) as log:
                 process = subprocess.Popen(
@@ -1132,7 +1141,7 @@ class HomeNodeManager:
                         if os.name == "nt"
                         else 0
                     ),
-                    env=_clean_python_subprocess_env(),
+                    env=env,
                 )
         except OSError as exc:
             raise HomeNodeError(
@@ -1231,7 +1240,7 @@ class HomeNodeManager:
         command = _process_command(pid)
         if command is None:
             return False
-        return token in command and marker in command
+        return _supervisor_process_marker(token) in command and marker in command
 
     def _wait_for_health(self, config: HomeNodeConfig, *, timeout: float) -> None:
         deadline = time.monotonic() + timeout
@@ -1338,6 +1347,7 @@ class HomeNodeManager:
             "DINA_BRAIN_SERVICE_KEY_FILE": self.brain_key_file.name,
             "DINA_BRAIN_DID": config.brain_did,
             "DINA_CORE_OWNER_CONSOLE": "1",
+            "DINA_CORE_VERSION": config.release_version,
             "DINA_LOG_LEVEL": os.environ.get("DINA_LOG_LEVEL", "info"),
             "DINA_BRAIN_LOG_LEVEL": os.environ.get("DINA_BRAIN_LOG_LEVEL", "info"),
             "DINA_BRAIN_LLM_PROVIDER": os.environ.get(

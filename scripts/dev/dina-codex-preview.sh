@@ -94,7 +94,7 @@ if (( SETUP_RC != 0 )); then
     SETUP_RESULT="$("$PLUGIN_ROOT/bin/dina-setup" --local-only --json)"
   else
     TEST_PREFIX="$(
-      python3 -c 'import secrets; print(secrets.token_hex(8))'
+      python3 -c 'import secrets,string; alphabet=string.ascii_lowercase+string.digits; print("".join(secrets.choice(alphabet) for _ in range(6)))'
     )"
     TEST_HANDLE="${DINA_PREVIEW_PDS_HANDLE:-$TEST_PREFIX.test-pds.dinakernel.com}"
     SETUP_RESULT="$(

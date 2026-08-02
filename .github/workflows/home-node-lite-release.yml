@@ -59,6 +59,28 @@ jobs:
           cache: pip
           cache-dependency-path: cli/pyproject.toml
 
+      - name: Require release tag to match the CLI version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#home-node-lite-v}"
+          cli_version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path('cli/pyproject.toml').read_text(encoding='utf-8'))
+          print(project['project']['version'])
+          PY
+          )"
+          if [[ "$tag_version" != "$cli_version" ]]; then
+            echo "Release tag version $tag_version does not match CLI version $cli_version." >&2
+            exit 1
+          fi
+
+      - name: Verify CLI release binding
+        shell: bash
+        run: scripts/release/component_version.sh check cli --head
+
       - name: Install dependencies
         run: |
           npm ci
@@ -91,10 +113,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             platform: darwin
             arch: x64
-          - runner: macos-14
+          - runner: macos-15
             platform: darwin
             arch: arm64
           - runner: ubuntu-24.04
@@ -103,6 +125,9 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+          - runner: windows-2022
+            platform: win32
+            arch: x64
 
     steps:
       - name: Checkout
@@ -142,7 +167,7 @@ jobs:
       - name: Build native archive
         shell: bash
         run: |
-          python3 scripts/release/build_home_node_native.py \
+          python scripts/release/build_home_node_native.py \
             --version "${{ steps.version.outputs.value }}" \
             --out-dir dist/home-node-native
 
@@ -153,6 +178,7 @@ jobs:
           test -f "dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz.sha256"
 
       - name: Smoke-test source-free installation
+        if: matrix.platform != 'win32'
         shell: bash
         run: |
           python3 -m venv .release-venv
@@ -185,6 +211,40 @@ jobs:
           PY
           .release-venv/bin/dina home-node uninstall --purge-data --yes
 
+      - name: Smoke-test source-free installation on Windows
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          python -m venv .release-venv
+          .\.release-venv\Scripts\python.exe -m pip install --disable-pip-version-check .\cli
+          $env:DINA_HOME_NODE_DIR = Join-Path $env:RUNNER_TEMP "dina-home-node"
+          $env:DINA_CONFIG_DIR = Join-Path $env:RUNNER_TEMP "dina-cli"
+          $asset = "dist/home-node-native/dina-home-node-lite-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"
+          .\.release-venv\Scripts\dina.exe --json home-node install `
+            --release "${{ steps.version.outputs.value }}" `
+            --bundle $asset `
+            --endpoint-mode test | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "install.json")
+          .\.release-venv\Scripts\dina.exe --json home-node status |
+            Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "home-node-status.json")
+          .\.release-venv\Scripts\dina.exe --json status |
+            Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "agent-status.json")
+          @'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          home = json.loads((root / "home-node-status.json").read_text(encoding="utf-8-sig"))
+          agent = json.loads((root / "agent-status.json").read_text(encoding="utf-8-sig"))
+          assert home["installed"] is True
+          assert home["running"] is True
+          assert home["core_healthy"] is True
+          assert home["brain_healthy"] is True
+          assert agent["paired"] is True
+          assert str(agent["did"]).startswith("did:key:")
+          '@ | .\.release-venv\Scripts\python.exe -
+          .\.release-venv\Scripts\dina.exe home-node uninstall --purge-data --yes
+
       - name: Sign native archive
         if: startsWith(github.ref, 'refs/tags/')
         uses: sigstore/gh-action-sigstore-python@v3.4.0
@@ -211,7 +271,7 @@ jobs:
   publish:
     name: Publish native release
     if: startsWith(github.ref, 'refs/tags/home-node-lite-v')
-    needs: build
+    needs: [validate, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

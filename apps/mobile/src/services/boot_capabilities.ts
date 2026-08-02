@@ -72,12 +72,14 @@ import {
   getPeopleRepository,
   hydrateContactDirectory,
   listPersonas,
+  reconcileDefaultAgentGatingPolicies,
   setOutboxRedeliverFn,
   setPluginDeviceVerifier,
   startOutboxDrainer,
   storeItem,
   type DrainerHandle,
 } from '@dina/core';
+import { listActiveDevices } from '@dina/core/devices';
 import { DIDResolver, hydrateDeviceRegistry, getDeviceByDID } from '@dina/core/runtime';
 import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
 import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
@@ -380,6 +382,11 @@ export async function buildBootInputs(
   // `initializePersistence`'s first-boot gate) because Metro reloads
   // skip that gate but always re-run `buildBootInputs`.
   await hydrateDeviceRegistry();
+  const policies = reconcileDefaultAgentGatingPolicies(did, listActiveDevices());
+  if (policies.failed > 0) {
+    // Fail-safe behavior remains Full Supervision; never include agent DIDs in logs.
+    console.warn(`[boot] ${policies.failed} coding-agent profile(s) could not be reconciled`);
+  }
 
   // PLG-29 #7: a runner plugin can only activate on a device that is a REAL,
   // unrevoked, role='plugin' registry entry. `install_service` can't import the

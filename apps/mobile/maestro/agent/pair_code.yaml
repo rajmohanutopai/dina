@@ -1,32 +1,67 @@
-# MRS-06/07/08 setup — mint a pairing code on the app for the dina-agent CLI.
-# Settings -> Agents -> name the agent -> Generate -> Copy (to the sim
-# pasteboard, which the orchestrator reads with `xcrun simctl pbpaste`).
+# MRS-06/07/08 setup - mint a pairing code on the app for a coding agent or
+# approval-phone bridge. The setup code is copied to the simulator pasteboard;
+# the orchestrator must consume it without printing it.
 appId: com.dinakernel.mobile
 ---
-- launchApp
+- launchApp:
+    stopApp: false
 - tapOn:
-    id: 'root-layout-menu'
+    text: 'Open menu'
+- extendedWaitUntil:
+    visible:
+      text: 'Settings'
+    timeout: 10000
 - tapOn:
-    id: 'root-layout-menu-row-settings'
+    text: 'Settings'
 - extendedWaitUntil:
     visible:
       id: 'settings-row-agents'
-    timeout: 15000
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'settings-row-agents'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+    visibilityPercentage: 50
 - tapOn:
     id: 'settings-row-agents'
 - extendedWaitUntil:
     visible:
       id: 'paired-devices-agent-name'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'paired-devices-agent-name'
+    direction: DOWN
+    centerElement: true
     timeout: 15000
+    visibilityPercentage: 50
 - tapOn:
     id: 'paired-devices-agent-name'
-- inputText: 'mrs-agent'
-- hideKeyboard
+- eraseText
+- inputText: 'maestro-approval-phone'
+- pressKey: Enter
 - tapOn:
     id: 'paired-devices-generate'
 - extendedWaitUntil:
     visible:
-      id: 'paired-devices-copy-code'
-    timeout: 15000
+      id: 'paired-devices-setup-code'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'paired-devices-setup-code'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+    visibilityPercentage: 50
+# React Native's selectable Text has no dedicated copy button. Long-pressing
+# opens iOS's native selection menu; Copy writes directly to the sim pasteboard.
+- longPressOn:
+    id: 'paired-devices-setup-code'
+- extendedWaitUntil:
+    visible:
+      text: 'Copy'
+    timeout: 5000
 - tapOn:
-    id: 'paired-devices-copy-code'
+    text: 'Copy'

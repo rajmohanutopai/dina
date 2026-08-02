@@ -19,6 +19,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
   createPersona,
+  getNodeDID,
   getPersonaTier,
   hydratePersonas,
   listPersonas,
@@ -45,6 +46,7 @@ import {
   hydrateContactDirectory,
   hydrateServiceConfig,
   recoverOutboxOnBoot,
+  reconcileDefaultAgentGatingPolicies,
   registerPersonaDEK,
   setAgentGrantRepository,
   setAgentGatingPolicyRepository,
@@ -71,7 +73,7 @@ import {
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
-import { getDeviceByDID } from '@dina/core/devices';
+import { getDeviceByDID, listActiveDevices } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
@@ -304,6 +306,19 @@ export async function initializeStorage(
   // (workflow claim, service.query) lands as caller-type 'unknown'
   // and 403s. Matches mobile's boot_capabilities.ts.
   await hydrateDeviceRegistry();
+  const ownerDid = getNodeDID();
+  if (ownerDid === null) {
+    logger.warn('coding-agent Standard profile reconciliation skipped: owner identity unavailable');
+  } else {
+    const policies = reconcileDefaultAgentGatingPolicies(ownerDid, listActiveDevices());
+    if (policies.created > 0) {
+      logger.info({ count: policies.created }, 'created missing coding-agent Standard profiles');
+    }
+    if (policies.failed > 0) {
+      // Missing/corrupt rows continue to resolve as Full Supervision.
+      logger.warn({ count: policies.failed }, 'coding-agent profile reconciliation failed');
+    }
+  }
 
   // PLG-29 #7: a runner plugin can only activate on a device that is a REAL,
   // unrevoked, role='plugin' registry entry. install_service can't import the

@@ -825,9 +825,11 @@ def test_reasoning_backend_wire_contracts(config):
             backend_id="backend-1",
             session="sess-1",
             task_kind="answer.compose",
-            input_data={"prompt": "Question"},
+            input_data={"query": "Question"},
             purpose="Answer the owner",
             idempotency_key="inline-1",
+            personas=["general"],
+            limit=5,
         )
         client.reasoning_claim(
             backend_id="backend-1",
@@ -893,9 +895,11 @@ def test_reasoning_backend_wire_contracts(config):
             "backend_id": "backend-1",
             "session_id": "sess-1",
             "task_kind": "answer.compose",
-            "input": {"prompt": "Question"},
+            "input": {"query": "Question"},
             "purpose": "Answer the owner",
             "idempotency_key": "inline-1",
+            "personas": ["general"],
+            "limit": 5,
         }
         assert calls[5].args[1] == "/v1/reasoning/claim"
         assert json.loads(calls[6].kwargs["body"])["claim_id"] == "claim-1"

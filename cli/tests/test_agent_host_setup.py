@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from click.testing import CliRunner
 
 from dina_cli import agent_host_setup as agent_host_setup_module
 from dina_cli.agent_host_setup import AgentHostSetup, AgentHostSetupError
-from dina_cli.home_node import HomeNodeStatus
+from dina_cli.home_node import HomeNodeError, HomeNodeStatus
 from dina_cli.home_node_enrollment import HomeNodeEnrollment
 from dina_cli.home_node_reasoning import HomeNodeReasoningSelection
+from dina_cli.main import cli
 
 
 def _status(*, installed: bool, healthy: bool) -> HomeNodeStatus:
@@ -260,3 +263,23 @@ def test_setup_refuses_implicit_identity_and_existing_identity_replacement(
             pds_email=None,
         )
     assert replacement.value.code == "identity_already_configured"
+
+
+def test_cli_converts_home_node_failures_to_structured_setup_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_install(self, **_kwargs):
+        raise HomeNodeError("native release asset was not found")
+
+    monkeypatch.setattr(AgentHostSetup, "install", fail_install)
+
+    result = CliRunner().invoke(
+        cli,
+        ["--json", "agent-host", "setup", "--host", "codex", "--local-only"],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["code"] == "home_node_setup_failed"
+    assert payload["message"] == "native release asset was not found"
+    assert "Traceback" not in result.output

@@ -7,11 +7,11 @@ don't flake the way coordinate-poking + screenshot-reading do.
 
 These are the device-tier of the test pyramid:
 
-| Tier | Tool | What it proves |
-|---|---|---|
-| Unit / component | jest + React Native Testing Library | card internals, button presses |
-| Integration | in-process / debug-channel harness (`.d2d-live-scratch/live_d2d_enrichment.ts`) | real logic + backend + LLM + two Dinas, no UI |
-| **E2E (here)** | **Maestro** | the whole MRS scenario through the **real UI + real logic** |
+| Tier             | Tool                                                                            | What it proves                                              |
+| ---------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Unit / component | jest + React Native Testing Library                                             | card internals, button presses                              |
+| Integration      | in-process / debug-channel harness (`.d2d-live-scratch/live_d2d_enrichment.ts`) | real logic + backend + LLM + two Dinas, no UI               |
+| **E2E (here)**   | **Maestro**                                                                     | the whole MRS scenario through the **real UI + real logic** |
 
 ## One-time install (outside the repo — run it yourself)
 
@@ -98,11 +98,47 @@ device: `maestro --device <udid> test …`.
 ## Scenarios that need a second Dina or an agent
 
 Talk (MRS-04/05), Services (MRS-10/11), and the agent-safety approvals
-(MRS-06/07/08) are **hybrid**: Maestro drives the *receiver* app's UI while
-the *sender*/*agent* side is driven by the headless harness
+(MRS-06/07/08) are **hybrid**: Maestro drives the _receiver_ app's UI while
+the _sender_/_agent_ side is driven by the headless harness
 (`.d2d-live-scratch/live_d2d_enrichment.ts` for a second Dina; the
 `dina-agent` CLI for agent flows). The harness sends the D2D message / agent
 request; the Maestro flow asserts the card shows up and its buttons work.
+
+### Real Claude Code approval loop
+
+`harness/claude_phone_approval_driver.sh` exercises the complete coding-agent
+path against a Home Node on another machine:
+
+1. Claude attempts a HIGH-risk Bash action.
+2. The remote Home Node blocks it and mirrors the approval to the iOS simulator.
+3. Maestro approves the card through the real mobile UI.
+4. The same long-lived Claude process retries and the action runs once.
+5. A third invocation is blocked, proving that the permit is single-use.
+6. Maestro denies the final card and verifies that the inbox is empty.
+
+Because newly paired coding agents default to Standard, the driver temporarily
+selects Full Supervision for this strict approval test. It restores the previous
+profile afterward; an older agent with no policy row is restored to Standard.
+
+The driver can also pair the simulator as the Home Node's approval phone. Setup
+codes and the Claude API key are piped directly to their consumers and are not
+written to test logs or the remote machine.
+
+```bash
+ANTHROPIC_API_KEY=... \
+DINA_E2E_SSH_TARGET=user@host \
+DINA_E2E_SSH_KEY="$HOME/.ssh/test_key" \
+apps/mobile/maestro/harness/claude_phone_approval_driver.sh
+```
+
+The simulator must be booted, onboarded, and running the app against Metro. The
+remote machine must have a healthy Home Node and an authenticated Claude Code
+installation. `DINA_E2E_PAIR_PHONE=auto` reuses an active phone pairing or pairs
+the simulator when none exists; use `repair` only after intentionally clearing
+or invalidating the previous pairing.
+
+Keep Claude in one process for this test. Separate `claude -p` calls end their
+Core session, and session end correctly revokes the first call's approval.
 
 ## Selectors
 

@@ -28,7 +28,7 @@ Setup offers two explicit identity modes:
 - **Local only** creates an offline `did:key`. Safety, memory, and local agent
   features work, but public publishing does not.
 
-The bundled setup command installs the immutable `dina-agent==0.20.0` release in a private
+The bundled setup command installs the immutable `dina-agent==0.20.1` release in a private
 managed Python environment when no compatible CLI is already available. It then
 downloads and verifies the published native Home Node release, starts Core and
 Brain, and enrolls this machine with a separate, revocable, `coding`-scoped

@@ -130,6 +130,7 @@ def agent_host_setup(
 ) -> None:
     """Install or repair Home Node and connect the selected coding host."""
     from .agent_host_setup import AgentHostSetup, AgentHostSetupError
+    from .home_node import HomeNodeError
 
     selected_modes = sum(
         (
@@ -173,8 +174,13 @@ def agent_host_setup(
         click.echo("Dina setup is not complete.")
         if result.get("needs_identity_choice"):
             click.echo("Choose local-only setup or provide a public PDS handle.")
-    except (AgentHostSetupError, OSError) as exc:
-        code = exc.code if isinstance(exc, AgentHostSetupError) else "setup_failed"
+    except (AgentHostSetupError, HomeNodeError, OSError) as exc:
+        if isinstance(exc, AgentHostSetupError):
+            code = exc.code
+        elif isinstance(exc, HomeNodeError):
+            code = "home_node_setup_failed"
+        else:
+            code = "setup_failed"
         result = {
             "kind": "setup_error",
             "host": host,

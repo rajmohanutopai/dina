@@ -29,7 +29,7 @@ function input(over: Partial<CodingGateInput> = {}): CodingGateInput {
 describe('connected-agent three-profile gate', () => {
   const gate = createCodingGate({ vaultDir: '/private/dina-vault' });
 
-  it('delegates ordinary owner work to the host in Network Protection', () => {
+  it('delegates ordinary owner work to the host in Standard', () => {
     const result = gate.gate(input({ profile: 'network_protection' }));
     expect(result).toMatchObject({
       action: 'host_managed',
@@ -41,7 +41,7 @@ describe('connected-agent three-profile gate', () => {
     expect(result.permitId).toBeUndefined();
   });
 
-  it('hard-denies protected paths in Network Protection', () => {
+  it('hard-denies protected paths in Standard', () => {
     const result = gate.gate(
       input({
         profile: 'network_protection',

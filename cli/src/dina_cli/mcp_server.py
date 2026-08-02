@@ -17,6 +17,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from . import __version__
 from .client import DinaClient, DinaClientError
 from .config import load_config
 from .session import SessionStore
@@ -37,6 +38,26 @@ def _get_client() -> DinaClient:
         cfg = load_config()
         _client = DinaClient(cfg)
     return _client
+
+
+def _local_home_node_status() -> dict[str, Any] | None:
+    """Return local supervisor state from the unsandboxed MCP process."""
+    try:
+        from .home_node import HomeNodeManager
+
+        status = HomeNodeManager().status()
+    except Exception:
+        return None
+    if not status.installed:
+        return None
+    return {
+        "installed": True,
+        "running": status.running,
+        "core_healthy": status.core_healthy,
+        "brain_healthy": status.brain_healthy,
+        "release_version": status.release_version,
+        "autostart_enabled": status.autostart_enabled,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -178,12 +199,20 @@ def dina_reasoning_begin(
     backend_id: str,
     session: str,
     task_kind: str,
-    input: Any,
+    input: dict[str, Any],
     purpose: str = "",
     idempotency_key: str = "",
+    personas: list[str] | None = None,
+    limit: int | None = None,
     public_evidence_sources: list[str] | None = None,
 ) -> dict:
     """Begin one connected-Brain operation in the current active host turn.
+
+    For ``answer.compose``, ``input`` is exactly ``{"query":"..."}`` with an
+    optional ``responseStyle`` string. Pass the smallest relevant ``personas``
+    list from ``dina_vaults``; omitting it deliberately requests every vault
+    and may require owner approval. ``personas``, ``limit``, and public
+    evidence options are valid only for ``answer.compose``.
 
     Core returns ``submission`` plus either a ``claim`` or null. If a claim is
     present, reason only from its ``input`` and optional ``context``. Produce
@@ -203,6 +232,10 @@ def dina_reasoning_begin(
     }
     if public_evidence_sources is not None:
         request["public_evidence_sources"] = public_evidence_sources
+    if personas is not None:
+        request["personas"] = personas
+    if limit is not None:
+        request["limit"] = limit
     return _get_client().reasoning_begin(
         **request,
     )
@@ -261,7 +294,7 @@ def dina_reasoning_complete(
     execution_id: str,
     policy_snapshot_hash: str,
     context_projection_hash: str | None,
-    result: Any,
+    result: dict[str, Any],
     evidence_ids: list[str] | None = None,
 ) -> dict:
     """Submit a schema-conforming reasoning proposal to Dina Core.
@@ -850,16 +883,33 @@ def dina_rehydrate(text: str, pii_id: str) -> dict:
 @mcp.tool()
 def dina_status() -> dict:
     """Check Dina connectivity, pairing, and identity."""
-    c = _get_client()
+    local_home_node = _local_home_node_status()
     try:
+        c = _get_client()
         c._request(c._core, "GET", "/healthz")
         # /healthz is public and proves reachability only. This caller-scoped
         # route proves the current did:key is actually paired and authorized.
         c.session_list()
         did = c._identity.did()
-        return {"status": "connected", "paired": True, "did": did}
+        result: dict[str, Any] = {
+            "status": "connected",
+            "paired": True,
+            "did": did,
+            "cli_version": __version__,
+        }
+        if local_home_node is not None:
+            result["home_node"] = local_home_node
+        return result
     except Exception as e:
-        return {"status": "unavailable", "paired": False, "error": str(e)}
+        result = {
+            "status": "unavailable",
+            "paired": False,
+            "cli_version": __version__,
+            "error": str(e),
+        }
+        if local_home_node is not None:
+            result["home_node"] = local_home_node
+        return result
 
 
 def configure_profile(profile: str) -> None:

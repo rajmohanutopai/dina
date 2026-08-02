@@ -12,6 +12,12 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 
 import {
+  setAgentGatingPolicyRepository,
+  type AgentGatingPolicy,
+  type AgentGatingPolicyRepository,
+  type SetAgentGatingPolicyInput,
+} from '../../../src/agent/gating_policy';
+import {
   InMemoryAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../../src/agent/grant_repository';
@@ -91,6 +97,37 @@ function unsignedReq(method: CoreRequest['method'], path: string, body: unknown)
 
 let admin: Actor;
 let router: ReturnType<typeof createCoreRouter>;
+let policyRepo: MemoryPolicyRepository;
+
+class MemoryPolicyRepository implements AgentGatingPolicyRepository {
+  private readonly policies = new Map<string, AgentGatingPolicy>();
+
+  get(agentDid: string): AgentGatingPolicy | null {
+    return this.policies.get(agentDid) ?? null;
+  }
+  list(): AgentGatingPolicy[] {
+    return [...this.policies.values()];
+  }
+  set(input: SetAgentGatingPolicyInput): AgentGatingPolicy {
+    const existing = this.get(input.agentDid);
+    if (existing !== null || input.expectedVersion !== null) throw new Error('policy conflict');
+    const now = input.nowMs ?? Date.now();
+    const policy: AgentGatingPolicy = {
+      agentDid: input.agentDid,
+      profile: input.profile,
+      policyVersion: 1,
+      selectedByOwnerDid: input.selectedByOwnerDid,
+      createdAtMs: now,
+      updatedAtMs: now,
+      revokedAtMs: null,
+    };
+    this.policies.set(input.agentDid, policy);
+    return policy;
+  }
+  revoke(): boolean {
+    return false;
+  }
+}
 
 beforeEach(() => {
   clearPairingState();
@@ -125,17 +162,29 @@ beforeEach(() => {
     touch: async () => undefined,
   };
   setDeviceRepository(okRepo);
+  policyRepo = new MemoryPolicyRepository();
+  setAgentGatingPolicyRepository(policyRepo);
 
   setNodeDID(NODE_DID);
   router = createCoreRouter();
 });
 
+afterEach(() => {
+  setAgentGatingPolicyRepository(null);
+});
+
 async function initiate(
   device_name = 'openclaw-user',
   role = 'agent',
+  scope?: 'coding' | 'runner',
 ): Promise<{ status: number; code?: string; body: unknown }> {
   const resp = await router.handle(
-    signedReq('POST', '/v1/pair/initiate', { device_name, role }, admin),
+    signedReq(
+      'POST',
+      '/v1/pair/initiate',
+      { device_name, role, ...(scope !== undefined ? { scope } : {}) },
+      admin,
+    ),
   );
   const body = resp.body as { code?: string };
   return { status: resp.status, code: body?.code, body };
@@ -226,6 +275,52 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     const caller = resolveCallerType(agent.did);
     expect(caller.callerType).toBe('agent');
     expect(caller.name).toBe('openclaw-user');
+  });
+
+  it('creates an explicit Standard profile for a newly paired coding agent', async () => {
+    const { code } = await initiate('Claude Code', 'agent', 'coding');
+    const agent = makeActor();
+
+    const resp = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code,
+        public_key: publicKeyToMultibase(agent.pub),
+      }),
+    );
+
+    expect(resp.status).toBe(201);
+    expect(resp.body).toMatchObject({ gating_profile: 'network_protection' });
+    expect(policyRepo.get(agent.did)).toMatchObject({
+      agentDid: agent.did,
+      profile: 'network_protection',
+      selectedByOwnerDid: NODE_DID,
+      policyVersion: 1,
+    });
+  });
+
+  it('revokes a coding agent when its Standard profile cannot be persisted', async () => {
+    setAgentGatingPolicyRepository(null);
+    const originalError = console.error;
+    console.error = (): void => {
+      /* silence the expected PII-safe diagnostic */
+    };
+    try {
+      const { code } = await initiate('Claude Code', 'agent', 'coding');
+      const agent = makeActor();
+
+      const resp = await router.handle(
+        unsignedReq('POST', '/v1/pair/complete', {
+          code,
+          public_key: publicKeyToMultibase(agent.pub),
+        }),
+      );
+
+      expect(resp.status).toBe(503);
+      expect(resp.body).toMatchObject({ error: 'pairing: policy setup failed' });
+      expect(isDevice(agent.did)).toBe(false);
+    } finally {
+      console.error = originalError;
+    }
   });
 
   it('honours a device_name override on complete but IGNORES a role override (role is fixed at initiate)', async () => {

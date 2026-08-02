@@ -16,7 +16,7 @@ Codex, or compatible agent as Dina's reasoning layer
 Dina will support three owner-selectable safety profiles for interactive
 agents:
 
-1. **Network Protection:** trust the owner-operated host for ordinary local
+1. **Standard:** trust the owner-operated host for ordinary local
    work. Dina enforces non-owner requests, Dina-owned authority, and immutable
    kernel protections.
 2. **Sensitive Boundaries:** allow ordinary local work without Dina prompts.
@@ -46,7 +46,7 @@ reuses a host's login credentials.
 
 The user can choose how much Dina supervises Claude or Codex:
 
-- In **Network Protection**, Claude handles normal coding with its own
+- In **Standard**, Claude handles normal coding with its own
   permissions. Dina steps in when another person, service, or agent is asking
   Claude to act through the user's Dina.
 - In **Sensitive Boundaries**, Dina also steps in before protected information
@@ -292,7 +292,7 @@ interface AuthorityOrigin {
 `owner_interactive` means Core resolved the request to a live agent session
 the owner configured for interactive use. It does not prove that every token
 in the model's context expresses the owner's intent. Prompt injection inside
-files or web content remains possible. Network Protection intentionally
+files or web content remains possible. Standard intentionally
 delegates that problem to the host's sandbox and permission system.
 
 Current desktop hosts also do not give Core cryptographic proof that a human
@@ -346,7 +346,7 @@ incomplete.
 type GatingProfile = 'network_protection' | 'sensitive_boundaries' | 'full_supervision';
 ```
 
-### 8.1 Profile 1: Network Protection
+### 8.1 Profile 1: Standard (`network_protection` on the wire)
 
 **User promise:** "Let my agent handle my normal work. Protect my Dina and
 anything another person or agent asks it to do."
@@ -470,21 +470,21 @@ origin floor.
 
 ### 8.5 Recommended defaults
 
-| Agent use                                           | Default              | Can owner lower it?             |
-| --------------------------------------------------- | -------------------- | ------------------------------- |
-| Foreground Claude Code or Codex controlled by owner | Network Protection   | No lower profile exists         |
-| Foreground agent with extra protection requested    | Sensitive Boundaries | Yes, back to Network Protection |
-| Security-sensitive owner workflow                   | Full Supervision     | Yes after the workflow ends     |
-| Background or scheduled agent                       | Full Supervision     | No                              |
-| Public or approved-only service execution           | Full Supervision     | No                              |
-| Contact or D2D request                              | Full Supervision     | No                              |
-| Delegated task                                      | Full Supervision     | No                              |
-| Unknown provenance                                  | Full Supervision     | No                              |
+| Agent use                                           | Default              | Can owner lower it?         |
+| --------------------------------------------------- | -------------------- | --------------------------- |
+| Foreground Claude Code or Codex controlled by owner | Standard             | No lower profile exists     |
+| Foreground agent with extra protection requested    | Sensitive Boundaries | Yes, back to Standard       |
+| Security-sensitive owner workflow                   | Full Supervision     | Yes after the workflow ends |
+| Background or scheduled agent                       | Full Supervision     | No                          |
+| Public or approved-only service execution           | Full Supervision     | No                          |
+| Contact or D2D request                              | Full Supervision     | No                          |
+| Delegated task                                      | Full Supervision     | No                          |
+| Unknown provenance                                  | Full Supervision     | No                          |
 
-Existing installations should remain on their present full-enforcement
-behavior until the owner explicitly chooses a lighter profile. New
-foreground coding-agent installations may recommend Network Protection with
-the limitation stated plainly.
+Every newly paired foreground coding agent receives an explicit Standard
+policy. Boot reconciliation creates Standard only when an active coding agent
+has no policy row; it never rewrites an existing, revoked, stale-owner, or
+malformed row. Those exceptional states retain the Full-Supervision fallback.
 
 ## 9. Gate processing pipeline
 
@@ -583,7 +583,7 @@ greenfield schema may be edited in place.
 
 ### 10.1 Audit levels
 
-| Event                           | Network Protection                | Sensitive Boundaries | Full Supervision  |
+| Event                           | Standard                          | Sensitive Boundaries | Full Supervision  |
 | ------------------------------- | --------------------------------- | -------------------- | ----------------- |
 | Session start/end               | yes                               | yes                  | yes               |
 | Profile change                  | yes                               | yes                  | yes               |
@@ -1298,7 +1298,7 @@ inherits owner trust.
 **Control:** immutable task origin plus server-bound active authority context;
 non-owner floor remains Full Supervision.
 
-### 22.3 Prompt injection in Network Protection
+### 22.3 Prompt injection in Standard
 
 **Threat:** hostile file instructs Claude to perform a local action.
 **Control:** host sandbox/permissions and kernel protection only. This is a
@@ -1389,10 +1389,11 @@ After agent enrollment:
 ```text
 How should Dina protect this agent?
 
-Network Protection
+Standard
 Best for an agent you use directly.
-Dina protects your identity, private data, and requests from other people
-or agents. Normal local work uses the agent's own permissions.
+Dina provides identity, private context, services, and connections to other
+Dinas. Your agent handles normal local work; requests from others remain fully
+supervised.
 
 Sensitive Boundaries
 Dina also checks before private data leaves or important external actions
@@ -1403,7 +1404,7 @@ Dina evaluates every supported tool call. Required for background and
 service-facing agents.
 ```
 
-The recommended option for foreground coding is Network Protection. Full
+The recommended option for foreground coding is Standard. Full
 Supervision is preselected for background/service use and cannot be lowered.
 
 ### 23.2 Brain enablement
@@ -1650,7 +1651,7 @@ Required assertions:
 
 - non-owner outcomes are identical across configured profiles;
 - protected paths deny in all profiles;
-- Network Protection emits no ordinary-action audit;
+- Standard emits no ordinary-action audit;
 - Sensitive Boundaries emits no ordinary-action audit;
 - Full Supervision emits decision metadata; repetitive SAFE/allow decisions
   may be sampled while policy evaluation remains per-call;
@@ -1687,7 +1688,7 @@ Test:
 3. Locked Health context requests phone approval.
 4. Mobile Ask queues and is completed through `/dina-work`.
 5. Service query runs under Full Supervision despite agent profile being
-   Network Protection.
+   Standard.
 6. Service response with invalid schema is not sent.
 7. Agent attempts to publish a review without Core commit and fails.
 8. Revoking Brain binding prevents the next claim.
@@ -1716,7 +1717,7 @@ The architecture is ready to call implemented only when:
 
 1. A client cannot lower its own gating profile.
 2. All non-owner requests use Full Supervision.
-3. Network Protection does not classify or log ordinary owner work.
+3. Standard does not classify or log ordinary owner work.
 4. Sensitive Boundaries remains quiet for ordinary code work.
 5. Hard kernel protections pass in all profiles.
 6. A connected host can provide foreground reasoning without a second model
@@ -1736,18 +1737,16 @@ The architecture is ready to call implemented only when:
 
 These decisions can be deferred without changing the architecture:
 
-1. Whether new foreground installs default directly to Network Protection or
-   show a one-time required choice.
-2. The exact Sensitive Boundaries action table.
-3. Whether a connected host may claim mobile jobs automatically when the host
+1. The exact Sensitive Boundaries action table.
+2. Whether a connected host may claim mobile jobs automatically when the host
    supports a documented background-agent feature.
-4. Whether reasoning jobs share `workflow_tasks` physically or use a separate
+3. Whether reasoning jobs share `workflow_tasks` physically or use a separate
    table backed by the same lease library. The normative requirement is one
    lifecycle implementation and separate authorization surfaces.
-5. Default projection retention for personal and sensitive context.
-6. Whether model responses shown directly in the host receive a Core-issued
+4. Default projection retention for personal and sensitive context.
+5. Whether model responses shown directly in the host receive a Core-issued
    provenance receipt by default.
-7. Which local model runtime ships first.
+6. Which local model runtime ships first.
 
 ## 30. Explicit decisions
 

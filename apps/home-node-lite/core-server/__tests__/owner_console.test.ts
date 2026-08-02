@@ -36,7 +36,7 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('/v1/owner/reasoning/');
       expect(body).toContain('Connected Brain work');
       expect(body).toContain('pending');
-      expect(body).toContain('Network protection');
+      expect(body).toContain('Standard');
       expect(body).toContain('Use this agent as Brain');
       expect(body).toContain('Pair coding agent');
       expect(body).toContain('stale_policies');

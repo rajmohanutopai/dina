@@ -197,9 +197,13 @@ def copy_native_packages(destination: Path) -> None:
 
 def copy_node_license(node: Path, destination: Path) -> None:
     candidates = (
+        node.parent / "LICENSE",
         node.parent.parent / "LICENSE",
         node.parent.parent / "share/doc/node/LICENSE",
         node.parent.parent.parent / "LICENSE",
+        # Debian and Ubuntu package Node separately from its documentation.
+        Path("/usr/share/doc/nodejs/copyright"),
+        Path("/usr/share/doc/nodejs/LICENSE"),
     )
     for candidate in candidates:
         if candidate.is_file():

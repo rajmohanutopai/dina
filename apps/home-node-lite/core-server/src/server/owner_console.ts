@@ -298,7 +298,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       ]));
       var select = el("select", { "aria-label": "Supervision level" });
       [
-        ["network_protection", "Network protection"],
+        ["network_protection", "Standard"],
         ["sensitive_boundaries", "Sensitive boundaries"],
         ["full_supervision", "Full supervision"],
       ].forEach(function (entry) {
@@ -356,7 +356,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   }
   function profileDescription(profile) {
     if (profile === "network_protection") {
-      return "Dina protects its own keys, vaults, sessions, and authority. Your agent and its host handle ordinary coding.";
+      return "Dina provides identity, private context, services, and connections. Your agent handles ordinary local work; requests from others remain fully supervised.";
     }
     if (profile === "sensitive_boundaries") {
       return "Dina also checks protected data, external sends, destructive operations, package changes, and system changes.";

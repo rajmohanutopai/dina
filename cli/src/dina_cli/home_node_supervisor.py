@@ -15,7 +15,14 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .home_node import HomeNodeError, HomeNodeManager, _atomic_private_write, _rotate_log
+from .home_node import (
+    SUPERVISOR_TOKEN_ENV,
+    HomeNodeError,
+    HomeNodeManager,
+    _atomic_private_write,
+    _rotate_log,
+    _supervisor_process_marker,
+)
 
 HEALTH_FAILURE_LIMIT = 3
 
@@ -149,7 +156,7 @@ class NativeSupervisor:
         command = [
             self.spec["node"],
             entrypoint,
-            f"--dina-supervisor-token={self.token}",
+            f"--dina-supervisor-instance={_supervisor_process_marker(self.token)}",
         ]
         env = dict(self.spec["environment"])
         with log_path.open("ab", buffering=0) as log:
@@ -310,15 +317,17 @@ class NativeSupervisor:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--install-dir", required=True, type=Path)
-    parser.add_argument("--token", required=True)
+    parser.add_argument("--instance", required=True)
     args = parser.parse_args(argv)
+    token = os.environ.pop(SUPERVISOR_TOKEN_ENV, "")
     if (
-        len(args.token) != 48
-        or any(ch not in "0123456789abcdef" for ch in args.token)
+        len(token) != 48
+        or any(ch not in "0123456789abcdef" for ch in token)
+        or args.instance != _supervisor_process_marker(token)
     ):
         print("invalid supervisor token", file=sys.stderr)
         return 2
-    return NativeSupervisor(args.install_dir.expanduser().resolve(), args.token).run()
+    return NativeSupervisor(args.install_dir.expanduser().resolve(), token).run()
 
 
 if __name__ == "__main__":
