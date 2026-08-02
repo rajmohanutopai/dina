@@ -765,23 +765,42 @@ def test_install_moves_staging_before_sealing_it_read_only(
     assert stat_mode(manager.release_dir / config.release_id) == 0o500
 
 
+class _WindowsFlavoredOS:
+    """Proxy that reports os.name == 'nt' without mutating the real module.
+
+    Patching the real os.name breaks pathlib on POSIX ("cannot instantiate
+    'WindowsPath' on your system"), so tests must never do that.
+    """
+
+    def __init__(self, **overrides: object) -> None:
+        self._overrides = overrides
+
+    def __getattr__(self, item: str):
+        if item in self._overrides:
+            return self._overrides[item]
+        return getattr(os, item)
+
+
 def test_pid_probe_routes_to_the_windows_api_off_posix(monkeypatch) -> None:
     """os.kill(pid, 0) raises WinError 87 on Windows; the probe must never
     reach it there."""
     from dina_cli import home_node as home_node_module
 
     probed: list[int] = []
-    monkeypatch.setattr(home_node_module.os, "name", "nt", raising=False)
+
+    def forbidden_kill(_pid, _sig):
+        raise AssertionError("os.kill must not be used for liveness on Windows")
+
+    monkeypatch.setattr(
+        home_node_module,
+        "os",
+        _WindowsFlavoredOS(name="nt", kill=forbidden_kill),
+    )
     monkeypatch.setattr(
         home_node_module,
         "_windows_pid_exists",
         lambda pid: probed.append(pid) or True,
     )
-
-    def forbidden_kill(_pid, _sig):
-        raise AssertionError("os.kill must not be used for liveness on Windows")
-
-    monkeypatch.setattr(home_node_module.os, "kill", forbidden_kill)
 
     assert home_node_module._pid_exists(4321) is True
     assert probed == [4321]
@@ -796,7 +815,7 @@ def test_process_command_uses_cim_on_windows(monkeypatch) -> None:
         calls.append(list(argv))
         return subprocess.CompletedProcess(argv, 0, stdout="node core.cjs\n", stderr="")
 
-    monkeypatch.setattr(home_node_module.os, "name", "nt", raising=False)
+    monkeypatch.setattr(home_node_module, "os", _WindowsFlavoredOS(name="nt"))
     monkeypatch.setattr(home_node_module.subprocess, "run", fake_run)
 
     assert home_node_module._process_command(777) == "node core.cjs"

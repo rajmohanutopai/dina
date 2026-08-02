@@ -2055,16 +2055,6 @@ def _tail_lines(path: Path, count: int) -> list[str]:
 
 
 def _process_command(pid: int) -> str | None:
-    if sys.platform.startswith("linux"):
-        try:
-            return (
-                Path(f"/proc/{pid}/cmdline")
-                .read_bytes()
-                .replace(b"\x00", b" ")
-                .decode("utf-8", errors="replace")
-            )
-        except OSError:
-            return None
     if os.name == "nt":
         try:
             result = subprocess.run(
@@ -2084,6 +2074,16 @@ def _process_command(pid: int) -> str | None:
             command = result.stdout.strip()
             return command or None
         except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+    if sys.platform.startswith("linux"):
+        try:
+            return (
+                Path(f"/proc/{pid}/cmdline")
+                .read_bytes()
+                .replace(b"\x00", b" ")
+                .decode("utf-8", errors="replace")
+            )
+        except OSError:
             return None
     try:
         result = subprocess.run(
