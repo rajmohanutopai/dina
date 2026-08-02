@@ -685,8 +685,11 @@ class HomeNodeManager:
                 "installed_at": self._now(),
             }
             self._write_private_json(staging / ".install.json", metadata)
-            _make_release_read_only(staging)
+            # Seal only after the move: macOS rename() refuses to move a
+            # directory the caller cannot write, so a pre-sealed staging tree
+            # makes installation fail with EACCES there.
             os.replace(staging, destination)
+            _make_release_read_only(destination)
         return release_id, manifest
 
     def _read_release_bundle(
@@ -1231,11 +1234,7 @@ class HomeNodeManager:
 
     @staticmethod
     def _pid_matches(pid: int, token: str, marker: str) -> bool:
-        if pid <= 1:
-            return False
-        try:
-            os.kill(pid, 0)
-        except (ProcessLookupError, PermissionError):
+        if not _pid_exists(pid):
             return False
         command = _process_command(pid)
         if command is None:
@@ -2066,6 +2065,26 @@ def _process_command(pid: int) -> str | None:
             )
         except OSError:
             return None
+    if os.name == "nt":
+        try:
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "(Get-CimInstance Win32_Process -Filter "
+                    f"'ProcessId={int(pid)}').CommandLine",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            command = result.stdout.strip()
+            return command or None
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
@@ -2079,9 +2098,26 @@ def _process_command(pid: int) -> str | None:
         return None
 
 
+def _windows_pid_exists(pid: int) -> bool:
+    """Probe liveness via OpenProcess: os.kill(pid, 0) is POSIX-only and
+    raises WinError 87 on Windows."""
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    ERROR_ACCESS_DENIED = 5
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    return kernel32.GetLastError() == ERROR_ACCESS_DENIED
+
+
 def _pid_exists(pid: int) -> bool:
     if pid <= 1:
         return False
+    if os.name == "nt":
+        return _windows_pid_exists(pid)
     try:
         os.kill(pid, 0)
         return True

@@ -734,6 +734,76 @@ def test_release_overrides_can_be_disabled(monkeypatch) -> None:
     assert manager._release_repository() == "rajmohanutopai/dina"
 
 
+def test_install_moves_staging_before_sealing_it_read_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """macOS rename() refuses to move an unwritable directory, so the staged
+    release must be sealed only after it reaches its final path."""
+    from dina_cli import home_node as home_node_module
+
+    real_replace = os.replace
+    moved_sources: list[int] = []
+
+    def recording_replace(source, target):
+        source_path = Path(source)
+        if source_path.name.startswith(".release-"):
+            moved_sources.append(source_path.stat().st_mode & 0o200)
+        return real_replace(source, target)
+
+    monkeypatch.setattr(home_node_module.os, "replace", recording_replace)
+    manager = _manager(tmp_path)
+
+    _install(manager, _bundle(tmp_path))
+
+    assert moved_sources, "install never moved a release staging directory"
+    assert all(mode != 0 for mode in moved_sources), (
+        "release staging was sealed read-only before the move"
+    )
+    config = manager._load_config()
+    assert config is not None
+    assert stat_mode(manager.release_dir / config.release_id) == 0o500
+
+
+def test_pid_probe_routes_to_the_windows_api_off_posix(monkeypatch) -> None:
+    """os.kill(pid, 0) raises WinError 87 on Windows; the probe must never
+    reach it there."""
+    from dina_cli import home_node as home_node_module
+
+    probed: list[int] = []
+    monkeypatch.setattr(home_node_module.os, "name", "nt", raising=False)
+    monkeypatch.setattr(
+        home_node_module,
+        "_windows_pid_exists",
+        lambda pid: probed.append(pid) or True,
+    )
+
+    def forbidden_kill(_pid, _sig):
+        raise AssertionError("os.kill must not be used for liveness on Windows")
+
+    monkeypatch.setattr(home_node_module.os, "kill", forbidden_kill)
+
+    assert home_node_module._pid_exists(4321) is True
+    assert probed == [4321]
+
+
+def test_process_command_uses_cim_on_windows(monkeypatch) -> None:
+    from dina_cli import home_node as home_node_module
+
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, stdout="node core.cjs\n", stderr="")
+
+    monkeypatch.setattr(home_node_module.os, "name", "nt", raising=False)
+    monkeypatch.setattr(home_node_module.subprocess, "run", fake_run)
+
+    assert home_node_module._process_command(777) == "node core.cjs"
+    assert calls[0][0] == "powershell"
+    assert any("ProcessId=777" in part for part in calls[0])
+
+
 def test_pid_matches_recognizes_current_and_legacy_supervisors(monkeypatch) -> None:
     from dina_cli import home_node as home_node_module
     from dina_cli.home_node import _supervisor_process_marker
