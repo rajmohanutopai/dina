@@ -124,7 +124,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
     normalized_readme = " ".join(readme.lower().split())
     gate = PLUGIN_ROOT / "bin" / "dina-gate"
 
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert "/dina:setup" in manifest["description"]
     assert mcp_config["mcpServers"]["dina"]["command"] == (
         "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli"

@@ -1,6 +1,6 @@
 {
   "name": "dina",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Install or repair Dina Home Node from Codex, select Codex as its foreground Brain, and add Core-owned safety gating, encrypted memory, services, Ranked Reviews, approvals, contact messaging, delegation, and PII controls.",
   "author": {
     "name": "Dina",

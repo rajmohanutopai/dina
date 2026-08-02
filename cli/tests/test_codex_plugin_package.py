@@ -71,7 +71,7 @@ def test_manifest_and_mcp_server_match_the_supported_cli_contract() -> None:
     mcp = _load_json(PLUGIN_ROOT / ".mcp.json")
 
     assert manifest["name"] == PLUGIN_ROOT.name
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert manifest["skills"] == "./skills/"
     assert manifest["mcpServers"] == "./.mcp.json"
     assert "hooks" not in manifest
