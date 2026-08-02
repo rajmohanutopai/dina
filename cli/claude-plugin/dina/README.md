@@ -11,7 +11,7 @@ tools over MCP. The bundle includes usage instructions; no separate
 Install the plugin first:
 
 ```text
-/plugin marketplace add rajmohanutopai/dina
+/plugin marketplace add rajmohanutopai/dina-plugins
 /plugin install dina@dina
 ```
 

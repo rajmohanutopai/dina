@@ -9,14 +9,12 @@ contact messaging and delegation, human approvals, and local PII scrubbing.
 Install the marketplace and plugin:
 
 ```bash
-codex plugin marketplace add rajmohanutopai/dina \
-  --sparse .agents/plugins \
-  --sparse cli/codex-plugin/plugins/dina
+codex plugin marketplace add rajmohanutopai/dina-plugins
 codex plugin add dina@dina
 ```
 
-The sparse paths keep Codex from materializing the rest of Dina's monorepo for
-this plugin installation.
+The marketplace repository is a small release mirror of the Dina monorepo, so
+installs stay light and update only when a plugin release is published.
 
 Start Codex, invoke `$dina-setup` or say **Set up Dina**, and follow the
 identity choice. Setup installs a compatible CLI in a plugin-managed

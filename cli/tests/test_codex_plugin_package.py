@@ -174,8 +174,8 @@ def test_plugin_documents_codex_specific_security_boundaries() -> None:
     assert "foreground Brain" in setup_skill
     assert "Never request, receive, paste, or" in setup_skill
     assert "No source checkout, Docker, global Python package" in readme
-    assert "--sparse .agents/plugins" in readme
-    assert "--sparse cli/codex-plugin/plugins/dina" in readme
+    assert "codex plugin marketplace add rajmohanutopai/dina-plugins" in readme
+    assert "--sparse" not in readme
 
     for skill_name in ("audit", "pair-phone"):
         maintenance_skill = (

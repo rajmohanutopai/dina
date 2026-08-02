@@ -78,7 +78,7 @@ endpoint and handle overrides.
 ## Install
 
 ```
-/plugin marketplace add rajmohanutopai/dina
+/plugin marketplace add rajmohanutopai/dina-plugins
 /plugin install dina@dina
 /dina:setup
 ```
