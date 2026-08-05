@@ -18,10 +18,10 @@ import { getThread, addMessage, type ChatMessage } from '@dina/brain/chat';
 import { addContact, getContact, updateContact } from '@dina/core';
 import {
   listQuarantined,
+  listBySender,
   getQuarantined,
   unquarantineSender,
   blockSender,
-  deleteQuarantined,
   quarantineSize,
   resetQuarantineState,
   receiveAndStage,
@@ -131,18 +131,34 @@ export function acceptFromQuarantine(quarantineId: string): QuarantineAction {
         };
       }
     }
-    // 2. Release every held message from this sender and re-stage it so the
-    //    drain runs the same enrichment + reminder pipeline it would have
-    //    run had the sender been a contact when the message first arrived.
-    const released = unquarantineSender(entry.senderDID);
-    for (const msg of released) {
+    // 2. Stage every held message BEFORE deleting its quarantine row. If the
+    //    durable staging write throws, the original row remains retryable
+    //    instead of being silently lost between the two stores. Successful
+    //    retries are safe because staging deduplicates on the message id.
+    const held = listBySender(entry.senderDID);
+    for (const msg of held) {
       const body = typeof msg.body === 'string' ? msg.body : JSON.stringify(msg.body);
       // `isContact: true` (6th arg) is the real "known sender" gate in
       // receiveAndStage — the `senderTrust` string only short-circuits
       // 'blocked'. We just added them as a contact above, so force-stage
       // (otherwise the message would re-quarantine in a loop).
-      receiveAndStage(msg.messageType, entry.senderDID, 'verified', body, msg.id, true);
+      const staged = receiveAndStage(
+        msg.messageType,
+        entry.senderDID,
+        'verified',
+        body,
+        msg.id,
+        true,
+      );
+      if (staged.action !== 'staged') {
+        return {
+          action: 'error',
+          senderDID: entry.senderDID,
+          error: `Could not process held message: ${staged.reason}`,
+        };
+      }
     }
+    unquarantineSender(entry.senderDID);
     return { action: 'accepted', senderDID: entry.senderDID };
   } catch (err) {
     return {

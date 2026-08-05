@@ -33,6 +33,7 @@
 #                 harness/run_local_grants.sh.
 #
 # Env overrides: UDID, MAESTRO, DINA, MOBILE_DID, PROVIDER_CORE_URL,
+#                MRS_PLATFORM (ios|android),
 #                CONTACT_PEER_URL (enables the contact-services leg).
 set -uo pipefail
 
@@ -47,6 +48,7 @@ DINA="${DINA:-.venv/bin/dina}"
 MOBILE_DID="${MOBILE_DID:-}"
 PROVIDER_CORE_URL="${PROVIDER_CORE_URL:-http://127.0.0.1:18298}"
 CONTACT_PEER_URL="${CONTACT_PEER_URL:-}"
+MRS_PLATFORM="${MRS_PLATFORM:-}"
 M="apps/mobile/maestro"
 
 CONTINUE=0
@@ -66,8 +68,56 @@ PASS=(); FAILED=(); SKIP=()
 # is true ONLY when explicitly requested — never in the default sweep.
 want()       { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 want_optin() { [ "$ONLY" = "$1" ]; }
-flow()   { "$MAESTRO" --udid "$UDID" test "$1" >/dev/null 2>&1; }
-flow_e() { local f="$1"; shift; "$MAESTRO" --udid "$UDID" test "$@" "$f" >/dev/null 2>&1; }
+# iOS can drop the first touch immediately after `launchApp` while the app is
+# still becoming active. Prepare a same-directory copy so relative `runFlow`
+# imports keep working, and consume that activation touch in the inert header
+# band before the scenario's first real action. Android does not need this.
+prepare_flow() {
+  local source="$1"
+  if [ "$MRS_PLATFORM" != "ios" ]; then
+    printf '%s\n' "$source"
+    return
+  fi
+  local prepared
+  prepared="$(dirname "$source")/.mrs-ios-activation-$$-$(basename "$source")"
+  awk '
+    function nudge() {
+      print "- tapOn:"
+      print "    point: 50%,8%"
+      print "- waitForAnimationToEnd"
+      print "- extendedWaitUntil:"
+      print "    visible:"
+      print "      id: root-layout-boot-ready"
+      print "    timeout: 60000"
+    }
+    /^- launchApp$/ { print; nudge(); next }
+    /^- launchApp:/ { in_launch = 1; print; next }
+    in_launch && /^- / { nudge(); in_launch = 0 }
+    { print }
+    END { if (in_launch) nudge() }
+  ' "$source" > "$prepared"
+  printf '%s\n' "$prepared"
+}
+
+flow() {
+  local f prepared rc
+  f="$1"
+  prepared="$(prepare_flow "$f")"
+  "$MAESTRO" --udid "$UDID" test "$prepared" >/dev/null 2>&1
+  rc=$?
+  [ "$prepared" = "$f" ] || rm -f "$prepared"
+  return "$rc"
+}
+flow_e() {
+  local f prepared rc
+  f="$1"
+  shift
+  prepared="$(prepare_flow "$f")"
+  "$MAESTRO" --udid "$UDID" test "$@" "$prepared" >/dev/null 2>&1
+  rc=$?
+  [ "$prepared" = "$f" ] || rm -f "$prepared"
+  return "$rc"
+}
 ok()    { PASS+=("$1");   echo "  ✓ PASS  $1"; }
 bad()   { FAILED+=("$1"); echo "  ✗ FAIL  $1"; }
 skip()  { SKIP+=("$1");   echo "  ↷ SKIP  $1 — $2"; }
@@ -246,7 +296,16 @@ if want composer; then
   echo "═══ Phase 10: composer modes ═══"
   # Hybrid runner — Maestro asserts the chips, idb/adb performs the OS-swipe
   # that drives the RN horizontal ScrollView (Maestro can't).
-  check_cmd "composer_modes" "$M/run_composer_modes.sh" || true
+  composer_platform="${MRS_PLATFORM:-}"
+  if [ -z "$composer_platform" ]; then
+    if command -v adb >/dev/null 2>&1 && [ "$(adb -s "$UDID" get-state 2>/dev/null || true)" = "device" ]; then
+      composer_platform="android"
+    else
+      composer_platform="ios"
+    fi
+  fi
+  check_cmd "composer_modes" env MAESTRO_BIN="$MAESTRO" \
+    "$M/run_composer_modes.sh" "$composer_platform" "$UDID" || true
 fi
 
 # ── Phase 11 — Four Laws (B4 Sancho-moment; B1 Silence-tier deferred) ──

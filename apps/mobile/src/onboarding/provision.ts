@@ -66,12 +66,12 @@ import {
 } from '@dina/core';
 import { applyDinaPlcUpdate } from '@dina/home-node';
 
-
 import { unlock } from '../hooks/useUnlock';
 import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
 import { setDisplayNameOverride } from '../services/display_name_override';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
 import { saveIdentitySeeds } from '../services/identity_store';
+import { writeInstallMarker } from '../services/install_marker';
 import {
   DEFAULT_PDS_URL,
   loadInfraPreferences,
@@ -209,16 +209,19 @@ function derivePdsPassword(masterSeed: Uint8Array): string {
 }
 
 export async function provisionIdentity(opts: ProvisionOptions): Promise<ProvisionResult> {
+  // Provisioning can start immediately after an in-process "Erase everything"
+  // transition, without UnlockGate remounting. Establish the current-install
+  // marker before any keychain write so the next cold boot never mistakes the
+  // new identity for keychain state left behind by an uninstalled app.
+  writeInstallMarker();
+
   const mnemonicStr = opts.mnemonic.map((w) => w.trim().toLowerCase()).join(' ');
   const msgboxEndpoint = opts.msgboxEndpoint ?? resolveMsgBoxURL();
 
   // Resolve PDS URL from explicit option > persisted prefs > env > default.
   const infra = await loadInfraPreferences();
   const pdsURL =
-    opts.pdsURL ??
-    infra.pdsUrl ??
-    process.env.EXPO_PUBLIC_DINA_PDS_URL ??
-    DEFAULT_PDS_URL;
+    opts.pdsURL ?? infra.pdsUrl ?? process.env.EXPO_PUBLIC_DINA_PDS_URL ?? DEFAULT_PDS_URL;
 
   // 1. Entropy from mnemonic — 32-byte master seed.
   progress(opts.onProgress, 'deriving_seed');
@@ -337,9 +340,7 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
     savePdsEmail(email),
     // Stamp the AppView pref too — first-run gate may have set it
     // already, but be idempotent against partial state.
-    infra.appViewURL === null
-      ? Promise.resolve()
-      : saveAppViewURL(infra.appViewURL),
+    infra.appViewURL === null ? Promise.resolve() : saveAppViewURL(infra.appViewURL),
   ]);
 
   // Persist the name the user gave at "what should I call you" as the local
@@ -518,6 +519,9 @@ export async function recoverIdentity(opts: {
   if (opts.handle.trim().length === 0) {
     throw new Error('recoverIdentity: handle is required');
   }
+  // Same invariant as fresh provisioning: marker first, keychain second.
+  writeInstallMarker();
+
   const mnemonicStr = opts.mnemonic.map((w) => w.trim().toLowerCase()).join(' ');
 
   progress(opts.onProgress, 'deriving_seed');
@@ -544,11 +548,7 @@ export async function recoverIdentity(opts: {
   const password = derivePdsPassword(masterSeed);
   const handle = opts.handle.trim().toLowerCase();
   const email = defaultEmailForHandle(handle);
-  await Promise.all([
-    savePdsHandle(handle),
-    savePdsPassword(password),
-    savePdsEmail(email),
-  ]);
+  await Promise.all([savePdsHandle(handle), savePdsPassword(password), savePdsEmail(email)]);
 
   progress(opts.onProgress, 'persisting_did');
   await savePersistedDid(opts.expectedDid);
@@ -608,9 +608,7 @@ function extractPdsHost(pdsURLOrHost: string): string {
   const trimmed = pdsURLOrHost.trim();
   if (trimmed.length === 0) return 'pds.dinakernel.com';
   try {
-    const url = new URL(
-      trimmed.includes('://') ? trimmed : `https://${trimmed}`,
-    );
+    const url = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
     return url.host;
   } catch {
     return trimmed.replace(/^https?:\/\//, '').replace(/\/.*$/, '');

@@ -8,6 +8,13 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+# A cold Android release boot may spend several seconds deriving keys before
+# the tab shell mounts. Wait for the real navigation surface instead of racing
+# it immediately after launch.
+- extendedWaitUntil:
+    visible:
+      id: 'tab-people'
+    timeout: 60000
 # Navigate by tab testID — never the "People" label. Text-matching the
 # tab bar is what broke the cross-platform run.
 - tapOn:
@@ -24,7 +31,13 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'add-contact-name-input'
 - inputText: 'Alonso'
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: 'add-contact-save'
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 80
+    centerElement: true
 - tapOn:
     id: 'add-contact-save'
 - extendedWaitUntil:
@@ -38,7 +51,6 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'chat-input'
 - inputText: 'Alonso loves cold brew coffee'
-- hideKeyboard
 - tapOn:
     id: 'send-button'
 # LLM payload assertion — the model confirms the store in natural language.

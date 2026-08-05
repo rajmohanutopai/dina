@@ -766,7 +766,17 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           provider: provider.name,
           llm: createProviderReasoningLLM(provider),
         }),
-        classifyError: classifyInternalBrainError,
+        classifyError: (error) => {
+          const classified = classifyInternalBrainError(error);
+          // This is the bounded, prompt-safe classification, never the raw
+          // provider/SDK error or request content.
+          log({
+            event: 'node.internal_brain_execution_error',
+            error: classified.message,
+            retryable: classified.retryable,
+          });
+          return classified;
+        },
         setInterval: options.setInterval,
         clearInterval: options.clearInterval,
       });
@@ -1157,8 +1167,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // HTTP client to the brain's `/api/v1/service/config` proxy (so the
     // My-Services publish form actually reaches Core). On native it returns the
     // in-process client unchanged.
-    setServiceConfigCoreClient(resolveServiceConfigCoreClient(options.coreClient));
-    globalDisposers.push(resetServiceConfigCoreClient);
+    const serviceConfigCoreClient = resolveServiceConfigCoreClient(options.coreClient);
+    setServiceConfigCoreClient(serviceConfigCoreClient);
+    globalDisposers.push(() => resetServiceConfigCoreClient(serviceConfigCoreClient));
     // R4-03 — on web, wire the notification inbox to the split server's durable
     // log (`/api/v1/notifications` + SSE) so watch/push results surface in the
     // browser Activity inbox. A no-op on native (the in-process SQLite log backs

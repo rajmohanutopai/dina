@@ -5,7 +5,7 @@
 # navigation, but it CANNOT drive the small RN horizontal ScrollView that holds
 # the 6 mode chips — only an OS-level swipe (idb on iOS, adb on Android) scrolls
 # it. So this script:
-#   1. maestro test composer_modes.yaml          — chips render, Task gated
+#   1. maestro test composer_modes.yaml          — stable chips render
 #   2. OS swipe to scroll the strip + tap Talk    — idb (iOS) / adb (Android)
 #   3. maestro test composer_talk_assert.yaml     — Talk navigated to the picker
 #
@@ -66,17 +66,22 @@ os_tap() { # x y
 
 echo "== [2/3] scroll strip + tap Talk ($PLATFORM swipe) =="
 ASK=$(read_bounds index-mode-chip-ask)
-REV=$(read_bounds index-mode-chip-reviews)
+# With no paired agent Reviews is visible at rest. A paired agent inserts Task,
+# so Reviews can be clipped; Services remains the rightmost stable anchor.
+RIGHT=$(read_bounds index-mode-chip-reviews)
+[ -n "$RIGHT" ] || RIGHT=$(read_bounds index-mode-chip-services)
 [ -n "$ASK" ] || { echo "FAIL: ask chip not found"; exit 1; }
-[ -n "$REV" ] || { echo "FAIL: reviews chip not found"; exit 1; }
+[ -n "$RIGHT" ] || { echo "FAIL: right-side composer anchor not found"; exit 1; }
 read -r AX1 AY1 AX2 AY2 <<<"$ASK"
-read -r RX1 RY1 RX2 RY2 <<<"$REV"
+read -r RX1 RY1 RX2 RY2 <<<"$RIGHT"
 read -r ACX ACY <<<"$(center "$AX1" "$AY1" "$AX2" "$AY2")"
 read -r RCX RCY <<<"$(center "$RX1" "$RY1" "$RX2" "$RY2")"
-# Drag from the Reviews chip toward the Ask chip (content moves left → reveals
-# Talk). Two passes guarantee Talk clears the clip edge.
+# Drag from the rightmost visible chip toward Ask (content moves left and
+# reveals Reviews + Talk). Two passes guarantee Talk clears the clip edge.
 os_swipe "$RCX" "$RCY" "$ACX" "$ACY"; sleep 1
 os_swipe "$RCX" "$RCY" "$ACX" "$ACY"; sleep 1
+REV=$(read_bounds index-mode-chip-reviews)
+[ -n "$REV" ] || { echo "FAIL: reviews chip not in hierarchy after swipe"; exit 1; }
 TALK=$(read_bounds index-mode-chip-talk)
 [ -n "$TALK" ] || { echo "FAIL: talk chip not in hierarchy"; exit 1; }
 read -r TX1 TY1 TX2 TY2 <<<"$TALK"

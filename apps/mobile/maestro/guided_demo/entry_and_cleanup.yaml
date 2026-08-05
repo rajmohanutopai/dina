@@ -1,9 +1,8 @@
 # MRS-GD-01 — Guided demo gate: entry → start → banner → exit cleanup.
 #
 # Drives the data-scope guided demo's app-shell surfaces (GuidedDemoGate,
-# wired in app/_layout under UnlockGate). Requires a FRESH install (the entry
-# screen is first-run-only — gated on the `guided_demo.entry_seen` flag), so
-# run after onboarding on a clean device/sim.
+# wired in app/_layout under UnlockGate). On the first run it uses the entry
+# screen; on later release-test passes it replays the same demo from Help.
 #
 # This flow asserts the gate flow + that exiting returns to a normal, empty
 # Chat. The scripted CONTENT (Emma/chair/agent/salon) + demo-data providers
@@ -13,44 +12,67 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+# `launchApp` returns when the native activity is ready, before the encrypted
+# boot can finish rendering React Native. Wait for either supported entry
+# surface so the conditional branches below cannot both race and skip.
+- extendedWaitUntil:
+    visible:
+      text: ".*(See Dina in action|Open help).*"
+    timeout: 60000
 # First run after onboarding: the entry screen replaces Chat.
+- runFlow:
+    when:
+      visible:
+        id: "guided-demo-entry"
+    commands:
+      - assertVisible:
+          text: "See Dina in action"
+      - tapOn:
+          id: "guided-demo-start"
+# Repeat runs: Help exposes the supported replay entry point. These conditions
+# are mutually exclusive because Help is not mounted over the first-run gate.
+- runFlow:
+    when:
+      visible:
+        id: "root-layout-help"
+    commands:
+      - tapOn:
+          id: "root-layout-help"
+      - extendedWaitUntil:
+          visible:
+            id: "help-replay-demo"
+          timeout: 15000
+      - tapOn:
+          id: "help-replay-demo"
+# Enter the isolated guided_demo scope; banner appears.
 - extendedWaitUntil:
     visible:
-      id: 'guided-demo-entry'
-    timeout: 30000
-- assertVisible:
-    text: 'See Dina in action'
-# Start the demo → enter the isolated guided_demo scope; banner appears.
-- tapOn:
-    id: 'guided-demo-start'
-- extendedWaitUntil:
-    visible:
-      id: 'guided-demo-banner'
+      id: "guided-demo-banner"
     timeout: 15000
 - assertVisible:
-    text: '.*sample data only.*'
+    text: ".*[Gg]uided demo.*1/12.*"
 # The runner is armed at step 1 with its caption + a Next affordance.
 - assertVisible:
-    id: 'guided-demo-caption'
+    id: "guided-demo-caption"
 - assertVisible:
-    id: 'guided-demo-next'
+    id: "guided-demo-next"
 # The normal Chat composer is present beneath the banner (real surface).
 - assertVisible:
-    id: 'index-mode-chip-remember'
+    id: "index-mode-chip-remember"
 # Run the first scripted step through the REAL /remember path; the runner
 # advances and the banner persists with the next step's caption.
 - tapOn:
-    id: 'guided-demo-next'
+    id: "guided-demo-next"
 - extendedWaitUntil:
     visible:
-      id: 'guided-demo-caption'
+      id: "guided-demo-caption"
     timeout: 20000
 # Exit the demo → cleanup runs, banner disappears, Chat stays usable + empty.
 - tapOn:
-    id: 'guided-demo-exit'
+    id: "guided-demo-exit"
 - extendedWaitUntil:
     notVisible:
-      id: 'guided-demo-banner'
+      id: "guided-demo-banner"
     timeout: 20000
 - assertVisible:
-    id: 'index-mode-chip-remember'
+    id: "index-mode-chip-remember"

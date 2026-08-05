@@ -34,6 +34,8 @@ const ALLOWED_DEEP_LINK_ROOTS: ReadonlySet<string> = new Set([
   'reminders',
   'notifications',
   'approvals', // shows the pending-approvals list; navigating there auto-approves nothing
+  'runs',
+  'subscriptions',
 ]);
 
 /**
@@ -70,6 +72,11 @@ export function safeDeepLink(raw: string): string | null {
 function normaliseDeepLinkPath(link: string): string {
   const approvalMatch = link.match(/^(?:dina:\/\/)?\/?approvals(?:\/[^/?#]+)?(?:[/?#]|$)/);
   if (approvalMatch !== null) return '/notifications?filter=needs_action';
+  // Briefing producers retain rows in Activity, but the mobile app has no
+  // briefing-detail route. Land on the durable Activity record instead of an
+  // Expo Router 404.
+  const briefingMatch = link.match(/^(?:dina:\/\/)?\/?briefings(?:\/[^/?#]+)?(?:[/?#]|$)/);
+  if (briefingMatch !== null) return '/notifications?filter=all';
   if (link.startsWith('dina://')) return `/${link.slice('dina://'.length)}`;
   return link;
 }
@@ -84,6 +91,31 @@ function normaliseDeepLinkPath(link: string): string {
  */
 export function resolveSafeDeepLink(raw: string): string | null {
   return safeDeepLink(normaliseDeepLinkPath(raw));
+}
+
+export interface ColdStartDeepLinkDeps {
+  getInitialURL: () => Promise<string | null>;
+  routerReplace: (path: string) => void;
+}
+
+/**
+ * iOS fallback for a cold-launch URL that Expo Router's synchronous linking
+ * registry did not retain. This deliberately reuses the same narrow allowlist
+ * as notification taps; OAuth and all sensitive/external routes remain owned
+ * by their existing flows.
+ */
+export async function handleColdStartDeepLink(deps: ColdStartDeepLinkDeps): Promise<boolean> {
+  try {
+    const raw = await deps.getInitialURL();
+    if (raw === null) return false;
+    const safe = resolveSafeDeepLink(raw);
+    if (safe === null) return false;
+    deps.routerReplace(safe);
+    return true;
+  } catch {
+    // Startup navigation is best-effort; a linking failure must not brick boot.
+    return false;
+  }
 }
 
 export interface NotificationTapResult {

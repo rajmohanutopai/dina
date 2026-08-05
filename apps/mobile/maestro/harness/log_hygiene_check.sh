@@ -29,9 +29,10 @@ VAULT_TOKENS=(
 SECRET_RES=(
   'AIza[0-9A-Za-z_-]{20,}'                 # Google / Gemini API key
   'sk-[A-Za-z0-9]{20,}'                    # OpenAI-style key
-  '[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'  # app-password shape (e.g. PDS app password)
-  '\b([a-z]+ ){11,}[a-z]+\b'              # 12-/24-word mnemonic run (rough)
+  '(^|[^[:alnum:]-])([[:lower:][:digit:]]{4}-){3}[[:lower:][:digit:]]{4}([^[:alnum:]-]|$)'  # exact PDS app-password shape, not a UUID prefix
 )
+
+MNEMONIC_SCANNER="$(dirname "$0")/log_hygiene_mnemonic_scan.mjs"
 
 # Ban the EXACT PDS app password too, loaded at RUNTIME from the gitignored
 # sanity env if present — so the literal secret never lives in this script.
@@ -54,14 +55,33 @@ for f in "$@"; do
     line="$(grep -nE "$re" "$f" | head -1 || true)"
     [ -n "$line" ] && hit "secret pattern /$re/" "$line"
   done
-  # did:plc / did:key in plaintext other than the owner's own DID. Pass the
-  # owner DID via OWNER_DID to allowlist it.
+  # A word-count regex flags ordinary log prose. Check BIP-39 vocabulary and
+  # checksum instead, and report only the line number so the phrase itself is
+  # never copied from the device log into CI output.
+  mnemonic_lines="$(node "$MNEMONIC_SCANNER" "$f" 2>/dev/null)"
+  mnemonic_status=$?
+  if [ "$mnemonic_status" -ne 0 ]; then
+    hit "mnemonic scanner failed closed" "scanner exit $mnemonic_status"
+  elif [ -n "$mnemonic_lines" ]; then
+    hit "valid BIP-39 recovery phrase" "line(s): $(echo "$mnemonic_lines" | paste -sd, -)"
+  fi
+  # did:plc / did:key in Dina-owned logs other than the owner's own DID. Pass
+  # the owner DID via OWNER_DID to allowlist it. Apple's privileged networking
+  # debug stream prints request URLs (for example plc.directory/<contact-did>)
+  # even when application logging is silent. That is OS transport telemetry,
+  # not a log Dina can redact; exclude only those Apple subsystem lines from
+  # this DID check. Vault content and secrets above still scan every line.
   owner="${OWNER_DID:-}"
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    if [ -n "$owner" ] && echo "$line" | grep -qF "$owner"; then continue; fi
-    hit "contact DID in plaintext" "$line"
-  done < <(grep -noE 'did:(plc|key):[A-Za-z0-9]+' "$f" 2>/dev/null | grep -vF "${owner:-__none__}" | head -3)
+  while IFS= read -r match; do
+    [ -z "$match" ] && continue
+    did="${match#*:}"
+    [ -n "$owner" ] && [ "$did" = "$owner" ] && continue
+    hit "contact DID in plaintext" "$match"
+  done < <(
+    grep -vE '\[com\.apple\.(network|CFNetwork):' "$f" 2>/dev/null \
+      | grep -noE 'did:(plc|key):[A-Za-z0-9]+' \
+      | head -3
+  )
 done
 
 if [ "$fail" -ne 0 ]; then

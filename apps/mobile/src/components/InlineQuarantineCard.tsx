@@ -22,13 +22,12 @@
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 
+import { updateMessageMetadataById, type ChatMessage } from '@dina/brain/chat';
 
 import { acceptQuarantine, blockQuarantine } from '../hooks/quarantine_actions';
 import { colors, radius, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
-
-import type { ChatMessage } from '@dina/brain/chat';
 
 export interface InlineQuarantineCardProps {
   message: ChatMessage;
@@ -37,14 +36,37 @@ export interface InlineQuarantineCardProps {
 interface QuarantineMetadata {
   quarantineId: string;
   senderDID: string;
+  status: 'pending' | 'accepted' | 'blocked';
 }
 
 function readMetadata(m: ChatMessage): QuarantineMetadata | null {
-  const lc = m.metadata?.lifecycle as { kind?: unknown; quarantineId?: unknown; senderDID?: unknown } | undefined;
+  const lc = m.metadata?.lifecycle as
+    | { kind?: unknown; quarantineId?: unknown; senderDID?: unknown; status?: unknown }
+    | undefined;
   if (!lc || lc.kind !== 'quarantine_request') return null;
   if (typeof lc.quarantineId !== 'string' || lc.quarantineId.length === 0) return null;
   if (typeof lc.senderDID !== 'string' || lc.senderDID.length === 0) return null;
-  return { quarantineId: lc.quarantineId, senderDID: lc.senderDID };
+  const status = lc.status === 'accepted' || lc.status === 'blocked' ? lc.status : 'pending';
+  return { quarantineId: lc.quarantineId, senderDID: lc.senderDID, status };
+}
+
+function persistResolution(
+  message: ChatMessage,
+  meta: QuarantineMetadata,
+  status: 'accepted' | 'blocked',
+): void {
+  const lifecycle = message.metadata?.lifecycle;
+  updateMessageMetadataById(message.threadId, message.id, {
+    lifecycle: {
+      ...(lifecycle !== null && typeof lifecycle === 'object'
+        ? (lifecycle as Record<string, unknown>)
+        : {}),
+      kind: 'quarantine_request',
+      quarantineId: meta.quarantineId,
+      senderDID: meta.senderDID,
+      status,
+    },
+  });
 }
 
 function shortDID(did: string): string {
@@ -52,26 +74,38 @@ function shortDID(did: string): string {
   return `${did.slice(0, 14)}…${did.slice(-4)}`;
 }
 
-export function InlineQuarantineCard({ message }: InlineQuarantineCardProps): React.JSX.Element | null {
+export function InlineQuarantineCard({
+  message,
+}: InlineQuarantineCardProps): React.JSX.Element | null {
   const meta = readMetadata(message);
   const [pending, setPending] = useState(false);
-  const [resolved, setResolved] = useState<'accepted' | 'blocked' | null>(null);
+  const [resolved, setResolved] = useState<'accepted' | 'blocked' | null>(
+    meta?.status === 'accepted' || meta?.status === 'blocked' ? meta.status : null,
+  );
 
   const onAccept = useCallback(() => {
     if (meta === null || pending || resolved !== null) return;
     setPending(true);
     void acceptQuarantine(meta.quarantineId, meta.senderDID)
-      .then((ok) => setResolved(ok ? 'accepted' : null))
+      .then((ok) => {
+        if (!ok) return;
+        persistResolution(message, meta, 'accepted');
+        setResolved('accepted');
+      })
       .finally(() => setPending(false));
-  }, [meta, pending, resolved]);
+  }, [message, meta, pending, resolved]);
 
   const onBlock = useCallback(() => {
     if (meta === null || pending || resolved !== null) return;
     setPending(true);
     void blockQuarantine(meta.quarantineId, meta.senderDID)
-      .then((ok) => setResolved(ok ? 'blocked' : null))
+      .then((ok) => {
+        if (!ok) return;
+        persistResolution(message, meta, 'blocked');
+        setResolved('blocked');
+      })
       .finally(() => setPending(false));
-  }, [meta, pending, resolved]);
+  }, [message, meta, pending, resolved]);
 
   if (meta === null) return null;
 
@@ -83,7 +117,9 @@ export function InlineQuarantineCard({ message }: InlineQuarantineCardProps): Re
       <Text testID={`quarantine-card-body-${meta.quarantineId}`} style={styles.body}>
         Someone who isn&apos;t in your contacts wants to message you.
       </Text>
-      <Text testID={`quarantine-card-did-${meta.quarantineId}`} style={styles.did}>{shortDID(meta.senderDID)}</Text>
+      <Text testID={`quarantine-card-did-${meta.quarantineId}`} style={styles.did}>
+        {shortDID(meta.senderDID)}
+      </Text>
       {resolved === null && (
         <View style={styles.row}>
           <TouchableOpacity
@@ -109,7 +145,7 @@ export function InlineQuarantineCard({ message }: InlineQuarantineCardProps): Re
         </View>
       )}
       {resolved === 'accepted' && (
-        <Text style={styles.statusAccepted}>Added to contacts. Showing their message…</Text>
+        <Text style={styles.statusAccepted}>Added to contacts. Processing their message…</Text>
       )}
       {resolved === 'blocked' && <Text style={styles.statusBlocked}>Blocked.</Text>}
       <MessageTimestamp timestamp={message.timestamp} />

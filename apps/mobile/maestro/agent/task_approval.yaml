@@ -8,7 +8,8 @@
 #
 # Driven by `harness/agent_mrs_driver.sh task`, which issues
 # `dina task --dry-run "<desc>"` (validate-only, no runner needed) BEFORE
-# this flow and polls `dina validate-status <id>` AFTER → expects approved.
+# this flow. The dry-run's temporary session ends when the command returns,
+# so the durable card transition is the terminal assertion for this scenario.
 # (Full autonomous execution = the deprecated OpenClaw/Hermes runner path,
 # out of scope; the approval GATE is the safety-relevant core.)
 appId: com.dinakernel.mobile

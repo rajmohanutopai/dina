@@ -10,6 +10,8 @@
 #  - dev build: dismiss the Expo dev-menu (tap outside) before running.
 appId: com.dinakernel.mobile
 ---
+- launchApp:
+    stopApp: true
 # Dev-build only: dismiss the Expo dev-menu intro if it's covering the welcome
 # screen (tap its Continue, then tap outside the panel). No-ops on a clean
 # welcome (optional tap + a harmless tap on the top status area).
@@ -25,9 +27,9 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'owner-name-input'
 - inputText: 'Alonso'
-- hideKeyboard
-- tapOn:
-    id: 'shell-primary'
+# Android 17 can interpret Maestro's hideKeyboard as Back after direct text
+# injection. Submit through the field's real "Done" action instead.
+- pressKey: Enter
 # Handle: prefilled "alonso" (taken from prior runs) → use an available suggestion.
 - extendedWaitUntil:
     visible:

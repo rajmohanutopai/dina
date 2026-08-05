@@ -23,7 +23,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 
 import {
   canonicalJson,
@@ -45,6 +45,43 @@ import type { PluginManifest } from '@dina/protocol';
 const ARCHIVE_MAGIC = DINA_FILE_MAGIC;
 const ARCHIVE_VERSION = DINA_FILE_VERSION;
 const ARCHIVE_FORMAT = 'dina-archive-v1' as const;
+
+/**
+ * JSON cannot represent SQLite BLOB values. In particular, op-sqlite returns
+ * BLOBs as `ArrayBuffer`, which plain JSON.stringify silently turns into `{}`.
+ * Encode every binary scalar explicitly so export/import preserves embeddings
+ * and any future BLOB columns across storage adapters.
+ */
+const ARCHIVE_BLOB_TAG = '__dina_blob_hex_v1' as const;
+
+function binaryBytes(value: unknown): Uint8Array | null {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return null;
+}
+
+function archiveJsonReplacer(this: Record<string, unknown>, key: string, value: unknown): unknown {
+  // Read from the holder so Node Buffer's toJSON() cannot erase its binary
+  // identity before the replacer sees it.
+  const original = key === '' ? value : this[key];
+  const bytes = binaryBytes(original);
+  return bytes === null ? value : { [ARCHIVE_BLOB_TAG]: bytesToHex(bytes) };
+}
+
+function archiveJsonReviver(_key: string, value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length !== 1 || keys[0] !== ARCHIVE_BLOB_TAG) return value;
+
+  const hex = record[ARCHIVE_BLOB_TAG];
+  if (typeof hex !== 'string' || hex.length % 2 !== 0 || !/^[0-9a-f]*$/.test(hex)) {
+    throw new Error('archive: invalid encoded BLOB');
+  }
+  return hexToBytes(hex);
+}
 
 // ---------------------------------------------------------------
 // Table policy — what travels in an archive, and what never does.
@@ -260,6 +297,7 @@ function stableStringify(rows: DBRow[]): string {
       for (const k of Object.keys(r).sort()) sorted[k] = (r as Record<string, unknown>)[k];
       return sorted;
     }),
+    archiveJsonReplacer,
   );
 }
 
@@ -674,7 +712,10 @@ export async function readManifest(
   passphrase: string,
 ): Promise<ArchivePayloadV1> {
   const { manifestBytes } = await decryptArchive(archive, passphrase);
-  const payload = JSON.parse(new TextDecoder().decode(manifestBytes)) as ArchivePayloadV1;
+  const payload = JSON.parse(
+    new TextDecoder().decode(manifestBytes),
+    archiveJsonReviver,
+  ) as ArchivePayloadV1;
   if (!payload.header || payload.header.format !== ARCHIVE_FORMAT) {
     throw new Error('archive: invalid manifest format');
   }
@@ -703,7 +744,7 @@ export async function verifyArchive(archive: Uint8Array, passphrase: string): Pr
 // ---------------------------------------------------------------
 
 async function encodeArchive(payload: ArchivePayloadV1, passphrase: string): Promise<Uint8Array> {
-  const manifestBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const manifestBytes = new TextEncoder().encode(JSON.stringify(payload, archiveJsonReplacer));
   const wrapped = await wrapSeed(passphrase, manifestBytes);
 
   const saltLen = wrapped.salt.length;

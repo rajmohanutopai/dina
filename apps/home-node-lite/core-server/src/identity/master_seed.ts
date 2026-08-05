@@ -9,7 +9,7 @@
  *
  * **Two persistence modes** (ARCHITECTURE.md §5.3):
  *
- *   1. **Convenience** (task 4.52): raw 64-byte seed written to
+ *   1. **Convenience** (task 4.52): raw seed material written to
  *      `<vaultDir>/keyfile` with mode `0o600`. No passphrase
  *      required; anyone with filesystem read access to the Home Node
  *      has the seed. Target audience: single-operator VPS where
@@ -65,6 +65,8 @@ export const WRAPPED_SEED_NAME = 'wrapped_seed.bin';
 export const RECOVERY_PHRASE_NAME = 'recovery-phrase.txt';
 /** Expected master-seed length — Dina uses raw 256-bit mnemonic entropy. */
 export const SEED_LEN_BYTES = 32;
+/** Pre-portable-identity Home Nodes persisted the BIP-39 PBKDF2 seed. */
+export const LEGACY_SEED_LEN_BYTES = 64;
 
 export type SeedSource =
   | { kind: 'generated'; mnemonic: string; seed: Uint8Array; recoveryPhrasePath: string }
@@ -126,7 +128,12 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
 }
 
 /**
- * Validate + read a keyfile. Enforces 600 mode + expected length.
+ * Validate + read a keyfile. Enforces 600 mode + a supported seed length.
+ *
+ * Existing 64-byte files must be consumed unchanged: they were the source of
+ * the node's derived DID and vault keys. Rewriting them as 32-byte entropy is
+ * impossible without the original mnemonic and would rotate the identity.
+ * New Home Nodes still persist only canonical 32-byte entropy.
  * Throws if the file is too lax, wrong size, or unreadable.
  */
 async function readKeyfile(keyfilePath: string): Promise<Uint8Array> {
@@ -139,9 +146,10 @@ async function readKeyfile(keyfilePath: string): Promise<Uint8Array> {
     );
   }
   const buf = await fs.readFile(keyfilePath);
-  if (buf.length !== SEED_LEN_BYTES) {
+  if (buf.length !== SEED_LEN_BYTES && buf.length !== LEGACY_SEED_LEN_BYTES) {
     throw new Error(
-      `keyfile length is ${buf.length} bytes, expected ${SEED_LEN_BYTES}`,
+      `keyfile length is ${buf.length} bytes, expected ${SEED_LEN_BYTES} ` +
+        `or legacy ${LEGACY_SEED_LEN_BYTES}`,
     );
   }
   return new Uint8Array(buf);

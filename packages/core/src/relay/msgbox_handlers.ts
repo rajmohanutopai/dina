@@ -126,15 +126,12 @@ export async function handleInboundD2D(
   env: MsgBoxEnvelope,
   resolveSender: (did: string) => Promise<{ keys: Uint8Array[]; trust: string }>,
 ): Promise<D2DInboundResult> {
-  // TEMP DIAGNOSTIC LOG — confirms MsgBox is delivering D2D envelopes
-  // to the receive pipeline. Pairs with the stageMessage log to
-  // distinguish "transport broken" from "transport OK, my code bypassed".
+  // Metadata-only diagnostic: identity fields are deliberately omitted because
+  // contact DIDs reveal the owner's social graph in device logs.
   console.log(
     '[d2d:handleInboundD2D]',
     JSON.stringify({
-      from: env.from_did,
-      to: env.to_did,
-      id: env.id,
+      id: env.id.slice(0, 8),
       hasCiphertext: typeof env.ciphertext === 'string' && env.ciphertext.length > 0,
     }),
   );
@@ -210,7 +207,7 @@ export async function handleInboundD2D(
     // decrypt / pipeline error otherwise vanishes with no trace, making a
     // dropped message indistinguishable from "never arrived".
     console.error(
-      `[d2d:handleInboundD2D] FAILED id=${env.id.slice(0, 8)} from=${env.from_did.slice(0, 24)}: ${
+      `[d2d:handleInboundD2D] FAILED id=${env.id.slice(0, 8)}: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -266,7 +263,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       return;
     }
 
-    console.log(`[RPC] recv from=${env.from_did.slice(0, 30)}... id=${env.id.slice(0, 8)}`);
+    console.log(`[RPC] recv id=${env.id.slice(0, 8)}`);
     // 1. Decrypt before any routing decision — the inner path tells
     //    us whether this is a pair-ceremony request or a normal
     //    signed call. Remember the sender's nonce scheme so the
@@ -294,14 +291,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       typeof inner.path !== 'string' ||
       !inner.headers
     ) {
-      await sendRPCError(
-        env,
-        myDID,
-        privateKey,
-        400,
-        'Malformed RPC inner payload',
-        nonceScheme,
-      );
+      await sendRPCError(env, myDID, privateKey, 400, 'Malformed RPC inner payload', nonceScheme);
       return;
     }
 
@@ -310,17 +300,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       await sendRPCError(env, myDID, privateKey, 400, 'Malformed RPC request target', nonceScheme);
       return;
     }
-    const isPairPath =
-      inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(requestTarget.path);
+    const isPairPath = inner.method.toUpperCase() === 'POST' && PAIR_PATHS.has(requestTarget.path);
 
-    console.log(
-      `[RPC] in from=${env.from_did.slice(0, 30)} path=${inner.path} pair=${isPairPath} method=${inner.method}`,
-    );
+    console.log(`[RPC] in path=${inner.path} pair=${isPairPath} method=${inner.method}`);
     if (isPairPath) {
       // Metadata only — never the inner body. (Pair bodies are lower
       // sensitivity than vault reads, but the same stdout-PII rule applies and
       // the body adds no debugging value over path + sender.)
-      console.log(`[PAIR] inbound ${inner.path} from=${env.from_did}`);
+      console.log(`[PAIR] inbound ${inner.path}`);
     }
 
     if (isPairPath) {
@@ -330,7 +317,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       // envelope's did:key must derive from the body's public key.
       const publicKeyMultibase = extractPairPublicKey(inner.body);
 
-      console.log(`[RPC] pair body pub=${publicKeyMultibase?.slice(0, 20)}`);
+      console.log(`[RPC] pair body hasPublicKey=${publicKeyMultibase !== null}`);
       if (publicKeyMultibase === null) {
         console.error(`[RPC] pair reject: no public_key in body`);
         appendAudit(env.from_did, 'pair_identity_mismatch', myDID, `id=${env.id}`);
@@ -345,9 +332,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
         return;
       }
       if (!verifyPairingIdentityBinding(publicKeyMultibase, env.from_did)) {
-        console.error(
-          `[RPC] pair reject: binding mismatch env.from_did=${env.from_did} body.public_key=${publicKeyMultibase}`,
-        );
+        console.error('[RPC] pair reject: envelope DID does not match supplied public key');
         appendAudit(env.from_did, 'pair_identity_mismatch', myDID, `id=${env.id}`);
         await sendRPCError(
           env,
@@ -378,14 +363,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
           const sigBytes = hexToBytes(inner.headers['X-Signature']);
           if (!verify(cliPub, new TextEncoder().encode(canonical), sigBytes)) {
             appendAudit(env.from_did, 'pair_sig_invalid', myDID, `id=${env.id}`);
-            await sendRPCError(
-              env,
-              myDID,
-              privateKey,
-              401,
-              'Invalid pair signature',
-              nonceScheme,
-            );
+            await sendRPCError(env, myDID, privateKey, 401, 'Invalid pair signature', nonceScheme);
             return;
           }
         } catch {
@@ -410,28 +388,14 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       // Signed-RPC path: requires prior pairing + full auth.
       if (!isDevice(env.from_did)) {
         appendAudit(env.from_did, 'rpc_unregistered_device', myDID, `id=${env.id}`);
-        await sendRPCError(
-          env,
-          myDID,
-          privateKey,
-          403,
-          'Device not registered',
-          nonceScheme,
-        );
+        await sendRPCError(env, myDID, privateKey, 403, 'Device not registered', nonceScheme);
         return;
       }
 
       // Identity binding: envelope from_did must match inner X-DID.
       if (env.from_did !== inner.headers?.['X-DID']) {
         appendAudit(env.from_did, 'rpc_identity_mismatch', myDID, `id=${env.id}`);
-        await sendRPCError(
-          env,
-          myDID,
-          privateKey,
-          403,
-          'Identity binding failed',
-          nonceScheme,
-        );
+        await sendRPCError(env, myDID, privateKey, 403, 'Identity binding failed', nonceScheme);
         return;
       }
 
@@ -702,6 +666,6 @@ function base64ToBytes(b64: string): Uint8Array {
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 }

@@ -1,9 +1,8 @@
 # Composer modes (docs/COMPOSER_MODES_DESIGN.md) — the 6-chip strip + Talk nav.
 #
-# Pure-Maestro portion: assert the explicit-mode chips render and that the Task
-# chip is gated on a paired agent (hidden when none is paired). The chips sit in
-# a horizontally-scrollable strip; Ask / Remember / Services / Reviews are on the
-# first screen and asserted here.
+# Pure-Maestro portion: assert the stable explicit-mode chips render. A paired
+# agent inserts Task before Services, which can move Reviews beyond the clipped
+# edge; the hybrid runner scrolls and verifies Reviews + Talk independently.
 #
 # Talk is the 6th chip and is CLIPPED off the right edge of the strip at rest.
 # Maestro's swipe/scrollUntilVisible cannot drive this small RN horizontal
@@ -17,16 +16,9 @@ appId: com.dinakernel.mobile
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: 'index-mode-chip-ask'
+      id: "index-mode-chip-ask"
     timeout: 60000
 - assertVisible:
-    id: 'index-mode-chip-remember'
+    id: "index-mode-chip-remember"
 - assertVisible:
-    id: 'index-mode-chip-services'
-- assertVisible:
-    id: 'index-mode-chip-reviews'
-# Task is gated on a paired delegation agent — absent on a node with none paired
-# (design 4, 11). (When an agent IS paired, the chip appears; not asserted here
-# because pairing state varies by device.)
-- assertNotVisible:
-    id: 'index-mode-chip-task'
+    id: "index-mode-chip-services"

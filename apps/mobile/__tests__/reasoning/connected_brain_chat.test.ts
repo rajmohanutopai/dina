@@ -122,7 +122,7 @@ afterEach(() => {
 });
 
 describe('connected Brain mobile chat projection', () => {
-  it('leaves the legacy Brain path untouched only when no managed answer backend exists', async () => {
+  it('leaves the agentic Ask path untouched when no connected answer backend exists', async () => {
     expect(await trySubmitConnectedBrainAsk('What should I buy?')).toEqual({ handled: false });
     expect(getThread('main')).toEqual([]);
 
@@ -130,6 +130,17 @@ describe('connected Brain mobile chat projection', () => {
     state.backends = [backend({ allowed_task_kinds: ['intent.route'] })];
     wireFake(state);
     expect(await trySubmitConnectedBrainAsk('What should I buy?')).toEqual({ handled: false });
+    expect(state.submitted).toEqual([]);
+    expect(getThread('main')).toEqual([]);
+
+    state.backends = [
+      backend({
+        backend_id: 'internal',
+        kind: 'internal_brain',
+        availability: 'always_on',
+      }),
+    ];
+    expect(await trySubmitConnectedBrainAsk('Set a reminder')).toEqual({ handled: false });
     expect(state.submitted).toEqual([]);
     expect(getThread('main')).toEqual([]);
   });

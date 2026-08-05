@@ -10,7 +10,11 @@ import {
   classifyProviderErrorKind,
   providerErrorMessageForKind,
 } from '../llm/provider_error_classify';
-import { reasonWithPreparedContext, type ReasoningLLM } from '../pipeline/chat_reasoning';
+import {
+  reasonWithPreparedContext,
+  type PreparedReasoningStage,
+  type ReasoningLLM,
+} from '../pipeline/chat_reasoning';
 
 import type { LLMProvider } from '../llm/adapters/provider';
 import type {
@@ -29,6 +33,23 @@ export interface InternalBrainExecutorOptions {
 export interface InternalBrainErrorClassification {
   message: string;
   retryable: boolean;
+}
+
+class EmptyReasoningProviderResponseError extends Error {
+  constructor() {
+    super('reasoning provider returned no usable answer');
+    this.name = 'EmptyReasoningProviderResponseError';
+  }
+}
+
+class InternalBrainStageError extends Error {
+  constructor(
+    readonly stage: PreparedReasoningStage | 'prepare',
+    readonly originalError: unknown,
+  ) {
+    super(`internal Brain failed during ${stage}`);
+    this.name = 'InternalBrainStageError';
+  }
 }
 
 function inputRecord(claim: ReasoningClaim): Record<string, unknown> {
@@ -55,45 +76,53 @@ export function createInternalBrainExecutor(
     if (claim.taskKind !== 'answer.compose') {
       throw new Error(`internal Brain does not implement ${claim.taskKind}`);
     }
-    const input = inputRecord(claim);
-    if (typeof input.query !== 'string' || input.query.trim() === '') {
-      throw new Error('invalid answer.compose query');
-    }
-    const projected = claim.context?.items ?? [];
-    const result = await reasonWithPreparedContext(
-      {
-        query: input.query,
-        persona: options.persona ?? 'general',
-        provider: options.provider,
-      },
-      {
-        items: projected.map((item) => ({
-          id: item.sourceId,
-          content_l0: item.text,
-          score: item.confidence ?? 1,
-          persona: options.persona ?? 'projected',
-        })),
-        tokenEstimate: tokenEstimate(projected.map((item) => item.text)),
-        personas: projected.length === 0 ? [] : [options.persona ?? 'projected'],
-      },
-      {
-        toolsCalled: projected.some((item) => item.sourceType === 'review')
-          ? ['search_peerlens']
-          : [],
-        ...(options.llm === undefined ? {} : { llm: options.llm }),
-        ...(execution?.signal === undefined ? {} : { signal: execution.signal }),
-      },
-    );
-    const evidenceIds = result.sources.filter((sourceId) =>
-      claim.allowedEvidenceIds.includes(sourceId),
-    );
-    return {
-      result: {
-        answer: result.answer,
+    let stage: PreparedReasoningStage | 'prepare' = 'prepare';
+    try {
+      const input = inputRecord(claim);
+      if (typeof input.query !== 'string' || input.query.trim() === '') {
+        throw new Error('invalid answer.compose query');
+      }
+      const projected = claim.context?.items ?? [];
+      const result = await reasonWithPreparedContext(
+        {
+          query: input.query,
+          persona: options.persona ?? 'general',
+          provider: options.provider,
+        },
+        {
+          items: projected.map((item) => ({
+            id: item.sourceId,
+            content_l0: item.text,
+            score: item.confidence ?? 1,
+            persona: options.persona ?? 'projected',
+          })),
+          tokenEstimate: tokenEstimate(projected.map((item) => item.text)),
+          personas: projected.length === 0 ? [] : [options.persona ?? 'projected'],
+        },
+        {
+          toolsCalled: projected.some((item) => item.sourceType === 'review')
+            ? ['search_peerlens']
+            : [],
+          ...(options.llm === undefined ? {} : { llm: options.llm }),
+          ...(execution?.signal === undefined ? {} : { signal: execution.signal }),
+          onStage: (nextStage) => {
+            stage = nextStage;
+          },
+        },
+      );
+      const evidenceIds = result.sources.filter((sourceId) =>
+        claim.allowedEvidenceIds.includes(sourceId),
+      );
+      return {
+        result: {
+          answer: result.answer,
+          ...(evidenceIds.length === 0 ? {} : { evidenceIds }),
+        },
         ...(evidenceIds.length === 0 ? {} : { evidenceIds }),
-      },
-      ...(evidenceIds.length === 0 ? {} : { evidenceIds }),
-    };
+      };
+    } catch (error) {
+      throw new InternalBrainStageError(stage, error);
+    }
   };
 }
 
@@ -105,7 +134,10 @@ export function createProviderReasoningLLM(provider: LLMProvider): ReasoningLLM 
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
     });
     if (response.finishReason === 'error' || response.content.trim() === '') {
-      throw new Error(`reasoning provider ${provider.name} returned no answer`);
+      // Empty/max-token/safety-filtered completions are not evidence that the
+      // request itself is invalid. Let Core's bounded attempt budget retry the
+      // job instead of making one provider hiccup a permanent chat failure.
+      throw new EmptyReasoningProviderResponseError();
     }
     return response.content;
   };
@@ -117,11 +149,22 @@ export function createProviderReasoningLLM(provider: LLMProvider): ReasoningLLM 
  * can repeat costs or invalid requests indefinitely.
  */
 export function classifyInternalBrainError(error: unknown): InternalBrainErrorClassification {
-  const raw = error instanceof Error ? error.message : String(error);
+  const stage = error instanceof InternalBrainStageError ? error.stage : null;
+  const underlying = error instanceof InternalBrainStageError ? error.originalError : error;
+  if (underlying instanceof EmptyReasoningProviderResponseError) {
+    return {
+      message: 'The AI provider returned no usable answer.',
+      retryable: true,
+    };
+  }
+  const raw = underlying instanceof Error ? underlying.message : String(underlying);
   const kind = classifyProviderErrorKind(raw);
   if (kind === null) {
     return {
-      message: 'The configured Dina Brain could not complete this reasoning request.',
+      message:
+        stage === null
+          ? 'The configured Dina Brain could not complete this reasoning request.'
+          : `The configured Dina Brain could not complete the ${stage} stage.`,
       retryable: false,
     };
   }

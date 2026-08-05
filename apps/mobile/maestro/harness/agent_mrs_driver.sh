@@ -29,11 +29,37 @@ cd "$ROOT"
 DINA="${DINA:-.venv/bin/dina}"
 MAESTRO="${MAESTRO:-/opt/homebrew/opt/maestro/bin/maestro}"
 UDID="${UDID:-6D57099D-48DA-430D-B4BB-1A2BF1EBACB7}"
+MRS_PLATFORM="${MRS_PLATFORM:-ios}"
 FLOWS="apps/mobile/maestro/agent"
 SCENARIO="${1:-risky}"
 
 fail() { echo "MRS-agent[$SCENARIO] FAIL — $1"; exit 1; }
-maestro() { "$MAESTRO" --udid "$UDID" test "$1" 2>&1 | grep -vE "WARNING|^$"; }
+maestro() {
+  local source="$1" prepared="$1" rc
+  if [ "$MRS_PLATFORM" = "ios" ]; then
+    prepared="$(dirname "$source")/.mrs-ios-activation-$$-$(basename "$source")"
+    awk '
+      function nudge() {
+        print "- tapOn:"
+        print "    point: 50%,8%"
+        print "- waitForAnimationToEnd"
+        print "- extendedWaitUntil:"
+        print "    visible:"
+        print "      id: root-layout-boot-ready"
+        print "    timeout: 60000"
+      }
+      /^- launchApp$/ { print; nudge(); next }
+      /^- launchApp:/ { in_launch = 1; print; next }
+      in_launch && /^- / { nudge(); in_launch = 0 }
+      { print }
+      END { if (in_launch) nudge() }
+    ' "$source" > "$prepared"
+  fi
+  "$MAESTRO" --udid "$UDID" test "$prepared" 2>&1 | grep -vE "WARNING|^$"
+  rc=${PIPESTATUS[0]}
+  [ "$prepared" = "$source" ] || rm -f "$prepared"
+  return "$rc"
+}
 
 # Start a fresh session; echo the sess-id. (Agents can't list sessions, so we
 # capture the id from the start output.)
@@ -57,7 +83,7 @@ case "$SCENARIO" in
     echo "proposal=$pid"
     maestro "$FLOWS/risky_action_approval.yaml" || { end_session "$sid"; fail "approval flow failed"; }
     sleep 3
-    status="$("$DINA" validate-status "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
+    status="$("$DINA" validate-status --session "$sid" "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
     end_session "$sid"
     [ "$status" = "approved" ] || fail "validate-status=$status (expected approved)"
     echo "MRS-08 PASS — agent HIGH-risk action approved on device"
@@ -96,16 +122,18 @@ case "$SCENARIO" in
     # MRS-06 — agent task delegation is gated by a MODERATE intent approval
     # before any runner executes. `--dry-run` validates the intent + raises
     # the card WITHOUT needing a configured runner, then returns (decoupled,
-    # like validate). Approve on-device → validate-status flips to approved.
+    # like validate). Approve on-device → the durable pending card clears.
     out="$("$DINA" task --dry-run "Fetch my new email" 2>&1)"
     echo "$out"
     pid="$(echo "$out" | grep -oE 'prop-intent-[a-f0-9]+' | head -1)"
     [ -n "$pid" ] || fail "no proposal id from task --dry-run"
     echo "proposal=$pid"
     maestro "$FLOWS/task_approval.yaml" || fail "approval flow failed"
-    sleep 3
-    status="$("$DINA" validate-status "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
-    [ "$status" = "approved" ] || fail "validate-status=$status (expected approved)"
+    # `task --dry-run` deliberately ends its temporary session before it
+    # returns, so a later agent-authenticated `validate-status` call cannot
+    # reuse that session. The end-to-end assertion here is therefore the
+    # durable approval card itself: it was created by the real task gate,
+    # approved on-device, and removed from the pending inbox.
     echo "MRS-06 PASS — agent task delegation gated + approved on device"
     ;;
 
@@ -124,7 +152,7 @@ case "$SCENARIO" in
     echo "proposal=$pid"
     maestro "$FLOWS/risky_action_deny.yaml" || { end_session "$sid"; fail "deny flow failed"; }
     sleep 3
-    status="$("$DINA" validate-status "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
+    status="$("$DINA" validate-status --session "$sid" "$pid" 2>&1 | grep '^status:' | awk '{print $2}')"
     end_session "$sid"
     [ "$status" = "denied" ] || fail "validate-status=$status (expected denied)"
     echo "MRS-08 PASS (deny) — agent HIGH-risk action DENIED on device"
@@ -180,6 +208,11 @@ case "$SCENARIO" in
       kill -0 "$fpid" 2>/dev/null || break; sleep 1
     done
     kill "$fpid" 2>/dev/null || true
+    wait "$fpid" 2>/dev/null || true
+    if [ "$blocked" -eq 1 ]; then
+      "$MAESTRO" --udid "$UDID" test -e PERSONA=finance "$FLOWS/vault_read_deny.yaml" \
+        >/dev/null 2>&1 || { end_session "$sid"; fail "finance approval cleanup failed"; }
+    fi
     end_session "$sid"; echo "--- finance ask ---"; cat "$askf"; rm -f "$askh" "$askf"
     [ "$blocked" -eq 1 ] || fail "finance ask did NOT re-prompt — cross-vault grant leak"
     echo "MRS-07 PASS (C3) — health grant did NOT leak to finance (re-prompted)"
@@ -205,6 +238,11 @@ case "$SCENARIO" in
       kill -0 "$p2" 2>/dev/null || break; sleep 1
     done
     kill "$p2" 2>/dev/null || true
+    wait "$p2" 2>/dev/null || true
+    if [ "$blocked" -eq 1 ]; then
+      "$MAESTRO" --udid "$UDID" test -e PERSONA=health "$FLOWS/vault_read_deny.yaml" \
+        >/dev/null 2>&1 || { end_session "$s2"; fail "session-2 approval cleanup failed"; }
+    fi
     end_session "$s2"; echo "--- session-2 ask ---"; cat "$askh2"; rm -f "$askh2"
     [ "$blocked" -eq 1 ] || fail "new session did NOT re-prompt — session grant leaked across sessions"
     echo "MRS-07 PASS (C4) — session grant did NOT carry to a new session (re-prompted)"

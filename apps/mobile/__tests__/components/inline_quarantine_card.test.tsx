@@ -36,7 +36,9 @@ const SENDER = 'did:plc:alonsoquarantinecard';
 
 function lastMessage(): ChatMessage {
   const thread = getThread(THREAD);
-  return thread[thread.length - 1]!;
+  const message = thread[thread.length - 1];
+  if (message === undefined) throw new Error('expected a quarantine-card message');
+  return message;
 }
 
 /** Reproduce the scenario: a stranger's message arrives → quarantined →
@@ -83,6 +85,9 @@ describe('MRS-05 quarantine card — right card, internals, working buttons', ()
     // Card internals flip to the resolved state. The action is async now (it
     // awaits Core on web; native resolves a microtask later), so `findByText`.
     expect(await screen.findByText(/Added to contacts/i)).toBeTruthy();
+    expect((lastMessage().metadata?.lifecycle as { status?: unknown } | undefined)?.status).toBe(
+      'accepted',
+    );
     // Real action ran: sender is now a verified contact, quarantine cleared,
     // and the held message re-staged (claimable by the drain).
     expect(getContact(SENDER)?.trustLevel).toBe('verified');
@@ -97,10 +102,37 @@ describe('MRS-05 quarantine card — right card, internals, working buttons', ()
     fireEvent.press(screen.getByText('Block'));
 
     expect(await screen.findByText(/Blocked/i)).toBeTruthy();
+    expect((lastMessage().metadata?.lifecycle as { status?: unknown } | undefined)?.status).toBe(
+      'blocked',
+    );
     // New contract: a real block persists a 'blocked' contact policy, so the
     // receive pipeline drops every future message from this DID pre-gate.
     // (Previously this only deleted the held rows and the next message just
     // re-quarantined.)
     expect(getContact(SENDER)?.trustLevel).toBe('blocked');
+  });
+
+  it('rehydrates a resolved card without showing its actions again', () => {
+    const quarantineId = stageQuarantineCard();
+    const message = lastMessage();
+    const resolvedMessage: ChatMessage = {
+      ...message,
+      metadata: {
+        ...(message.metadata ?? {}),
+        lifecycle: {
+          kind: 'quarantine_request',
+          quarantineId,
+          senderDID: SENDER,
+          messageType: 'social.update',
+          status: 'accepted',
+        },
+      },
+    };
+
+    render(<InlineQuarantineCard message={resolvedMessage} />);
+
+    expect(screen.getByText(/Processing their message/i)).toBeTruthy();
+    expect(screen.queryByText('Add to contacts')).toBeNull();
+    expect(screen.queryByText('Block')).toBeNull();
   });
 });

@@ -6,10 +6,11 @@
 # credential, done by hand.
 #
 # Notes learned the hard way:
-#  - `hideKeyboard` before each Continue: the soft keyboard covers
-#    `shell-primary` after a text field.
-#  - The handle field pre-fills from the owner name, which may be taken —
-#    erase + type a unique one so re-runs don't collide on test-pds.
+#  - Submit text fields through their real keyboard actions. On Android 17,
+#    Maestro's `hideKeyboard` can become a Back action after direct injection.
+#  - The PDS returns available handle suggestions when the name-derived handle
+#    is taken. Selecting one is more robust than interpolating a random value
+#    through a nested Maestro flow, which does not preserve `output` reliably.
 #  - Skips the recovery-phrase verify via "I'll do this later"
 #    (shell-secondary), the normal fresh-provision path.
 #  - Expo DEV build: `clearState` wipes the dev-client's Metro URL → dev
@@ -18,46 +19,46 @@
 #    On a RELEASE/preview build, re-add `launchApp: { clearState: true }`.
 appId: com.dinakernel.mobile
 ---
+- launchApp:
+    stopApp: true
 # Welcome → Get started
 - tapOn:
-    id: 'shell-primary'
+    id: "shell-primary"
 
 # Choose → Create a new Dina  (NOT the existing-AT-proto path)
 - tapOn:
-    id: 'mode-choice-card-create-a-new-dina'
+    id: "mode-choice-card-create-a-new-dina"
 
 # Owner name
 - tapOn:
-    id: 'owner-name-input'
-- inputText: 'Alonso'
-- hideKeyboard
-- tapOn:
-    id: 'shell-primary'
+    id: "owner-name-input"
+- inputText: "Alonso"
+- pressKey: Enter
 
-# Handle — erase the name-derived pre-fill, type a unique one.
-- evalScript: ${output.handle = 'alonso' + Math.floor(Math.random() * 1000000)}
-- tapOn:
-    id: 'handle-prefix-input'
-- eraseText
-- inputText: ${output.handle}
+# Handle — use a server-confirmed suggestion so repeat runs stay deterministic.
 - extendedWaitUntil:
     visible:
-      id: 'handle-status-available'
+      id: "handle-suggestion-.*"
     timeout: 25000
-- hideKeyboard
 - tapOn:
-    id: 'shell-primary'
+    id: "handle-suggestion-.*"
+- extendedWaitUntil:
+    visible:
+      id: "handle-status-available"
+    timeout: 25000
+- tapOn:
+    id: "shell-primary"
 
 # Passphrase (auto-unlock is the default startup mode)
 - tapOn:
-    id: 'passphrase-input'
-- inputText: 'dina-test-pass-123'
+    id: "passphrase-input"
+- inputText: "dina-test-pass-123"
+- pressKey: Enter
+- inputText: "dina-test-pass-123"
 - tapOn:
-    id: 'passphrase-confirm-input'
-- inputText: 'dina-test-pass-123'
-- hideKeyboard
+    text: "This encrypts your vault.*"
 - tapOn:
-    id: 'shell-primary'
+    id: "shell-primary"
 
 # Recovery-phrase reveal/verify is NO LONGER in onboarding — the phrase is
 # generated silently and backed up later via the deferred backup prompt (see
@@ -72,10 +73,10 @@ appId: com.dinakernel.mobile
 # (onboarding-ai-provider-<type> + onboarding-ai-key-input + verify).
 - extendedWaitUntil:
     visible:
-      id: 'onboarding-ai-connected'
+      id: "onboarding-ai-connected"
     timeout: 20000
 - tapOn:
-    id: 'shell-primary'
+    id: "shell-primary"
 
 # Provisioning (createAccount on test-pds + PLC) → on a clean install the
 # first-run GUIDED-DEMO ENTRY now shows here (see GuidedDemoGate); skip the tour
@@ -84,11 +85,11 @@ appId: com.dinakernel.mobile
 # this flow assumes a fresh install, same as its no-clearState note above.)
 - extendedWaitUntil:
     visible:
-      id: 'guided-demo-entry'
+      id: "guided-demo-entry"
     timeout: 90000
 - tapOn:
-    id: 'guided-demo-skip'
+    id: "guided-demo-skip"
 - extendedWaitUntil:
     visible:
-      id: 'index-mode-chip-remember'
+      id: "index-mode-chip-remember"
     timeout: 15000

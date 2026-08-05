@@ -78,7 +78,17 @@ export interface PreparedReasoningOptions {
   llm?: ReasoningLLM;
   /** Claim cancellation propagated to the provider request. */
   signal?: AbortSignal;
+  /** Safe execution-stage telemetry; never receives prompt or response data. */
+  onStage?: (stage: PreparedReasoningStage) => void;
 }
+
+export type PreparedReasoningStage =
+  | 'pre_screen'
+  | 'context'
+  | 'cloud_gate'
+  | 'provider'
+  | 'output_guard'
+  | 'rehydrate';
 
 /** Register the reasoning LLM. */
 export function registerReasoningLLM(llm: ReasoningLLM): void {
@@ -148,6 +158,7 @@ async function runReasoning(
   }
 
   // 0. Anti-Her pre-screening (Law 4: never simulate emotional companionship)
+  options.onStage?.('pre_screen');
   const preScreen = await preScreenMessage(req.query);
   trace.step('anti_her_screen', {
     category: preScreen.category,
@@ -174,6 +185,7 @@ async function runReasoning(
   }
 
   // 1. Load either vault-assembled context or a Core-authorized projection.
+  options.onStage?.('context');
   const context = await loadContext(trace);
   const sources = context.items.map((item) => item.id);
 
@@ -201,6 +213,7 @@ async function runReasoning(
     `Context:\n${contextText}\n\nQuestion: ${req.query}`;
 
   // 3. Cloud gate — PII scrub if needed
+  options.onStage?.('cloud_gate');
   const gate = checkCloudGate(fullPrompt, req.persona, req.provider);
   trace.step('cloud_gate', {
     allowed: gate.allowed,
@@ -227,7 +240,14 @@ async function runReasoning(
   // 4. LLM reasoning
   let rawAnswer: string;
   if (effectiveLLM) {
-    options.signal?.throwIfAborted();
+    options.onStage?.('provider');
+    // React Native's AbortSignal implementation does not consistently expose
+    // the newer `throwIfAborted()` convenience method. The `aborted` property
+    // is portable across Hermes, browsers, and Node.
+    if (options.signal?.aborted === true) {
+      const reason = options.signal.reason;
+      throw reason instanceof Error ? reason : new Error('reasoning request aborted');
+    }
     rawAnswer = await effectiveLLM(req.query, gate.scrubbedText ?? fullPrompt, {
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
@@ -246,6 +266,7 @@ async function runReasoning(
   //    A Core-prepared projection may carry review evidence; its adapter passes
   //    the corresponding trust-tool marker so earned rating language survives.
   //    `userPrompt` lets the recommendation audit honour solicited prompts.
+  options.onStage?.('output_guard');
   const scanResult = await scanResponse(rawAnswer, {
     persona: req.persona,
     piiScrubbed: gate.scrubbed,
@@ -268,6 +289,7 @@ async function runReasoning(
 
   // 7. Rehydrate PII tokens if scrubbed
   if (gate.scrubbed && gate.vault) {
+    options.onStage?.('rehydrate');
     finalAnswer = rehydrateResponse(finalAnswer, gate.vault);
     trace.step('pii_rehydrate', { rehydrated: true });
   }

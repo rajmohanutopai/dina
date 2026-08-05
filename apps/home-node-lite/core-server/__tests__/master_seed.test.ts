@@ -15,6 +15,7 @@ import {
   WRAPPED_SEED_NAME,
   RECOVERY_PHRASE_NAME,
   SEED_LEN_BYTES,
+  LEGACY_SEED_LEN_BYTES,
 } from '../src/identity/master_seed';
 
 async function mkTmpDir(): Promise<string> {
@@ -174,14 +175,32 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
       }
     });
 
-    it('rejects keyfile of the wrong length', async () => {
+    it('loads a legacy 64-byte seed unchanged so its identity does not rotate', async () => {
       const dir = await mkTmpDir();
       try {
-        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(64), {
+        const legacySeed = Buffer.from(
+          Array.from({ length: LEGACY_SEED_LEN_BYTES }, (_, index) => index),
+        );
+        await fs.writeFile(path.join(dir, KEYFILE_NAME), legacySeed, {
+          mode: KEYFILE_MODE,
+        });
+        const result = await loadOrGenerateSeed(dir);
+        expect(result.kind).toBe('loaded_convenience');
+        if (result.kind !== 'loaded_convenience') return;
+        expect(Array.from(result.seed)).toEqual(Array.from(legacySeed));
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects keyfile of an unsupported length', async () => {
+      const dir = await mkTmpDir();
+      try {
+        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(31), {
           mode: KEYFILE_MODE,
         });
         await expect(loadOrGenerateSeed(dir)).rejects.toThrow(
-          /keyfile length is 64 bytes, expected 32/,
+          /keyfile length is 31 bytes, expected 32 or legacy 64/,
         );
       } finally {
         await fs.rm(dir, { recursive: true, force: true });

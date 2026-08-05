@@ -72,6 +72,15 @@ export interface ScheduleReminderToolOptions {
    */
   sourceItemId?: string;
   /**
+   * New memory text that authorizes reminder planning in the /remember path.
+   *
+   * When present, the model must quote a time-bearing excerpt from this text
+   * in `source_excerpt`. Recalled vault facts may enrich the reminder, but
+   * cannot independently create one. /ask omits this option because the ask
+   * itself is already the direct reminder request.
+   */
+  sourceText?: string;
+  /**
    * Fallback persona resolver, evaluated only when the LLM omits an
    * explicit `persona` arg. The /remember loop passes the persona the
    * item was just routed to (via `route_to_persona`) so the reminder
@@ -117,6 +126,27 @@ export interface ScheduleReminderOutcome {
 
 const ISO_LIKE = /^\d{4}-\d{2}-\d{2}/;
 
+const TEMPORAL_SOURCE_PATTERNS = [
+  /\b(?:today|tomorrow|tonight|later|soon|next|this|every|daily|weekly|monthly|yearly|annually)\b/i,
+  /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+  /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
+  /\b(?:birthday|anniversary|appointment|deadline|meeting|arrival|arriving|depart(?:ure|ing)?|due)\b/i,
+  /\b(?:in|within)\s+(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:minute|hour|day|week|month|year)s?\b/i,
+  /\b(?:at|by|before|after)\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?\b/i,
+  /\b\d{1,2}(?::\d{2})\s*(?:a\.?m\.?|p\.?m\.?)?\b/i,
+  /\b\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?)\b/i,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+  /\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/,
+] as const;
+
+function normalizeSourceText(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+function hasTemporalSourceBasis(value: string): boolean {
+  return TEMPORAL_SOURCE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
 function parseDueAt(raw: unknown): number | null {
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     return raw;
@@ -148,12 +178,16 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
     })();
   const nowMsFn = opts.nowMsFn ?? (() => Date.now());
   const sourceItemId = opts.sourceItemId ?? '';
+  const sourceText = opts.sourceText;
   const resolvePersona = opts.resolvePersona;
 
   return {
     name: 'schedule_reminder',
     description:
-      "Schedule a reminder that fires once at a specific time. Use it whenever the memory or request is time-bound and the user would want a heads-up — an appointment, a deadline, a payment, an arrival, OR a birthday / anniversary. Don't use it to store plain facts (those just go in a persona vault). You resolve the timing yourself: turn 'in 5 minutes', 'tomorrow at 9am', or a bare date into a concrete due_at (ISO-8601 string OR epoch milliseconds) BEFORE calling. For an annually-recurring date like a birthday or anniversary, schedule its NEXT occurrence — if this year's date has already passed, use next year — and fire ahead of time (e.g. a few days before) when the user would want to prepare. Call the tool more than once when a single event deserves multiple reminders (e.g. a prep reminder a few days out and a day-of reminder).",
+      "Schedule a reminder that fires once at a specific time. Use it whenever the memory or request is time-bound and the user would want a heads-up — an appointment, a deadline, a payment, an arrival, OR a birthday / anniversary. Don't use it to store plain facts (those just go in a persona vault). You resolve the timing yourself: turn 'in 5 minutes', 'tomorrow at 9am', or a bare date into a concrete due_at (ISO-8601 string OR epoch milliseconds) BEFORE calling. For an annually-recurring date like a birthday or anniversary, schedule its NEXT occurrence — if this year's date has already passed, use next year — and fire ahead of time (e.g. a few days before) when the user would want to prepare. Call the tool more than once when a single event deserves multiple reminders (e.g. a prep reminder a few days out and a day-of reminder)." +
+      (sourceText === undefined
+        ? ''
+        : ' This Remember call is source-bound: source_excerpt MUST quote the exact words in the NEW memory that make it time-bound. Recalled vault facts may enrich the reminder but are not authority to schedule one.'),
     parameters: {
       type: 'object',
       properties: {
@@ -172,13 +206,40 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
           description:
             "OPTIONAL. The persona vault the reminder belongs to (e.g. 'general', 'health', 'work'). Defaults to 'general' when omitted. Use the same persona the user implied — health-related reminders go to 'health', work tasks to 'work'.",
         },
+        ...(sourceText === undefined
+          ? {}
+          : {
+              source_excerpt: {
+                type: 'string',
+                description:
+                  'An exact quote from the new memory containing its date, time, deadline, or temporal event. Do not quote recalled vault context.',
+              },
+            }),
       },
-      required: ['message', 'due_at'],
+      required:
+        sourceText === undefined ? ['message', 'due_at'] : ['message', 'due_at', 'source_excerpt'],
     },
     async execute(args): Promise<ScheduleReminderOutcome> {
       const message = String(args.message ?? '').trim();
       if (message === '') {
         return { status: 'rejected', error: 'message is required' };
+      }
+
+      if (sourceText !== undefined) {
+        const sourceExcerpt = String(args.source_excerpt ?? '').trim();
+        const normalizedSource = normalizeSourceText(sourceText);
+        const normalizedExcerpt = normalizeSourceText(sourceExcerpt);
+        if (
+          normalizedExcerpt === '' ||
+          !normalizedSource.includes(normalizedExcerpt) ||
+          !hasTemporalSourceBasis(sourceExcerpt)
+        ) {
+          return {
+            status: 'rejected',
+            error:
+              'source_excerpt must quote time-bearing words from the new memory; recalled facts cannot create a reminder',
+          };
+        }
       }
 
       const dueAtMs = parseDueAt(args.due_at);

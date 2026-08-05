@@ -139,6 +139,62 @@ describe('createInternalBrainExecutor', () => {
       }),
     );
   });
+
+  it('accepts a React Native-shaped AbortSignal without throwIfAborted', async () => {
+    const llm = jest.fn(async () => 'Portable signal answer.');
+    const execute = createInternalBrainExecutor({ provider: 'isolated', llm });
+    const reactNativeSignal = {
+      aborted: false,
+      reason: undefined,
+    } as AbortSignal;
+
+    await expect(execute(claim(), { signal: reactNativeSignal })).resolves.toMatchObject({
+      result: { answer: expect.stringContaining('Portable signal answer.') },
+    });
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies an empty provider completion as retryable', async () => {
+    const llm = createProviderReasoningLLM({
+      name: 'isolated',
+      supportsStreaming: false,
+      supportsToolCalling: false,
+      supportsEmbedding: false,
+      chat: async () => ({
+        content: '',
+        toolCalls: [],
+        model: 'test',
+        usage: { inputTokens: 1, outputTokens: 0 },
+        finishReason: 'max_tokens',
+      }),
+      stream: async function* () {
+        yield { type: 'done' as const };
+      },
+      embed: async () => ({ embedding: new Float64Array(), model: 'test', dimensions: 0 }),
+    });
+
+    const error = await llm('query', 'context').catch((caught: unknown) => caught);
+    expect(classifyInternalBrainError(error)).toEqual({
+      message: 'The AI provider returned no usable answer.',
+      retryable: true,
+    });
+  });
+
+  it('retains only the safe failed pipeline stage for an unknown executor error', async () => {
+    const execute = createInternalBrainExecutor({
+      provider: 'isolated',
+      llm: async () => {
+        throw new Error('SDK response included private prompt text');
+      },
+    });
+
+    const error = await execute(claim()).catch((caught: unknown) => caught);
+    expect(classifyInternalBrainError(error)).toEqual({
+      message: 'The configured Dina Brain could not complete the provider stage.',
+      retryable: false,
+    });
+    expect(String((error as Error).message)).not.toContain('private prompt');
+  });
 });
 
 describe('classifyInternalBrainError', () => {

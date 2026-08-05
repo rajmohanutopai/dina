@@ -414,13 +414,16 @@ describe('brain-server — boot (task 5.1)', () => {
         status: 'complete',
         answer: { text: 'server coordinator answered' },
       });
-      // Two provider.chat calls: (1) the pre-flight retrieval planner
-      // (taskType: 'intent_classification', emits a structured plan
-      // before the agentic loop), and (2) the agentic loop itself
-      // (taskType: 'reason'). The planner is fail-soft — if the
-      // scripted provider returned malformed JSON the plan is empty
-      // and the loop runs unchanged, but the call still counts.
-      expect(provider.chat).toHaveBeenCalledTimes(2);
+      // Four provider.chat calls per ask on the coordinator path:
+      // (1) the Anti-Her pre-screen (Law 4 runs before anything else),
+      // (2) the pre-flight retrieval planner (taskType:
+      // 'intent_classification', emits a structured plan before the
+      // agentic loop), (3) the per-turn intent-hint classifier that
+      // buildPromptForTurn shares with the direct handler, and (4) the
+      // agentic loop itself (taskType: 'reason'). Pre-screen, planner,
+      // and hint classifier are all fail-soft — malformed scripted
+      // output leaves the loop unchanged, but every call still counts.
+      expect(provider.chat).toHaveBeenCalledTimes(4);
 
       // Core configured + ask wired + staging drain running → /readyz
       // returns 200 (status: 'ok'). Real runtime status: boot is fully

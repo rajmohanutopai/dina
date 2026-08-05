@@ -46,7 +46,16 @@ import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
 import React, { useEffect, useSyncExternalStore } from 'react';
-import { Modal, Platform, Pressable, TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import {
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  TouchableOpacity,
+  View,
+  Text,
+  StyleSheet,
+} from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -68,7 +77,7 @@ import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import { closeMenu, getMenuOpen, openMenu, subscribeMenuOpen } from '../src/navigation/menu_state';
 import { parentRouteFor } from '../src/navigation/parent_route';
-import { handleNotificationTap } from '../src/notifications/deep_link';
+import { handleColdStartDeepLink, handleNotificationTap } from '../src/notifications/deep_link';
 import {
   ensureChannels,
   rescheduleAllReminders,
@@ -502,6 +511,31 @@ export default function RootLayout() {
 
   const router = useRouter();
   const pathname = usePathname();
+  const coldStartDeepLinkHandledRef = React.useRef(false);
+
+  // Expo Router uses expo-linking's synchronous iOS registry for its initial
+  // route. On a terminated-app custom-scheme launch that registry can be empty
+  // even though React Native retained the launch URL; warm links are unaffected.
+  // Re-read it once after unlock and pass it through the same narrow allowlist
+  // used for untrusted notification links.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !unlocked || coldStartDeepLinkHandledRef.current) {
+      return;
+    }
+    if (bootState.status !== 'ready') return;
+    coldStartDeepLinkHandledRef.current = true;
+    let cancelled = false;
+    void handleColdStartDeepLink({
+      getInitialURL: () => Linking.getInitialURL(),
+      routerReplace: (path: string) => {
+        if (!cancelled) router.replace(path as never);
+      },
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bootState.status, router, unlocked]);
+
   // Menu open state lives in a module singleton so per-tab Stack
   // headers (`app/peerlens/_layout.tsx`, `app/vault/_layout.tsx`) can
   // open it from inside their nav trees too.
@@ -652,7 +686,10 @@ export default function RootLayout() {
 
   return (
     <KeyboardProvider>
-      <View style={{ flex: 1 }}>
+      <View
+        style={{ flex: 1 }}
+        testID={bootState.status === 'ready' ? 'root-layout-boot-ready' : undefined}
+      >
         <UnlockGate>
           <GuidedDemoGate
             // Disable the first-run guided-demo gate under E2E autopilot

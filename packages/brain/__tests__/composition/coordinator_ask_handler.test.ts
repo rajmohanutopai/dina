@@ -18,10 +18,7 @@
  *     thread.
  */
 
-import {
-  createPersona,
-  resetPersonaState,
- clearVaults, storeItem } from '@dina/core';
+import { createPersona, resetPersonaState, clearVaults, storeItem } from '@dina/core';
 
 import { getThread, resetThreads } from '../../src/chat/thread';
 import {
@@ -36,16 +33,9 @@ import {
 import { getAskApprovalGateway } from '../../src/composition/ask_gateway_registry';
 import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
-import type {
-  ChatResponse,
-  LLMProvider,
-  ToolCall,
-} from '../../src/llm/adapters/provider';
+import type { ChatResponse, LLMProvider, ToolCall } from '../../src/llm/adapters/provider';
 import type { CreateWorkflowTaskInput, WorkflowTask } from '@dina/core';
 
 const REQUESTER = 'did:key:zBridgeTester';
@@ -136,26 +126,50 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
 // Fake AskCoordinatorCoreClient — in-memory workflow task store.
 // ---------------------------------------------------------------------------
 
-interface FakeTask { id: string; status: string; payload: string }
+interface FakeTask {
+  id: string;
+  status: string;
+  payload: string;
+}
 
 function makeFakeCoreClient(): {
   client: AskCoordinatorCoreClient & BuildAgenticAskPipelineInput['coreClient'];
   tasks: Map<string, FakeTask>;
 } {
   const tasks = new Map<string, FakeTask>();
-  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const setStatus = (id: string, s: string) => {
+    const t = tasks.get(id);
+    if (t) t.status = s;
+  };
   const client = {
-    async findContactsByPreference() { return []; },
+    async findContactsByPreference() {
+      return [];
+    },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
-      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      const t: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
       tasks.set(input.id, t);
       return { task: t as unknown as WorkflowTask, deduped: false };
     },
-    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
-    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
-    async approveWorkflowTask(id: string) { setStatus(id, 'queued'); return tasks.get(id) as unknown as WorkflowTask; },
-    async cancelWorkflowTask(id: string) { setStatus(id, 'cancelled'); return tasks.get(id) as unknown as WorkflowTask; },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      setStatus(id, 'completed');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async approveWorkflowTask(id: string) {
+      setStatus(id, 'queued');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async cancelWorkflowTask(id: string) {
+      setStatus(id, 'cancelled');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
   };
   return { client, tasks };
 }
@@ -170,6 +184,9 @@ function buildCoord(llm: LLMProvider, fastPathMs: number) {
     coreClient: client,
     cloudConsentGranted: true,
   });
+  // These tests isolate coordinator→chat lifecycle delivery. Classifier and
+  // output-guard parity have dedicated coverage in ask_coordinator.test.ts.
+  pipeline.handlerOptions = {};
   return createAskCoordinator({
     pipeline,
     coreClient: client,
@@ -369,8 +386,7 @@ describe('createCoordinatorAskHandler — pending_approval deferred delivery', (
     const { handler, dispose } = createCoordinatorAskHandler({
       coordinator: coord,
       requesterDid: REQUESTER,
-      formatResumeHeader: ({ approvalId }) =>
-        `Operator approved (${approvalId}). Continuing:`,
+      formatResumeHeader: ({ approvalId }) => `Operator approved (${approvalId}). Continuing:`,
     });
 
     try {

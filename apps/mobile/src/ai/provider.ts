@@ -145,6 +145,11 @@ export function parseOpenAIModelId(pseudo: string): {
 
 const KEYCHAIN_SERVICE_PREFIX = 'dina.llm.';
 
+// react-native-keychain rejects empty usernames/passwords on Android. Keep a
+// non-secret tombstone so an explicit removal still suppresses the optional
+// development fallback without relying on an invalid keychain value.
+const REMOVED_API_KEY_SENTINEL = '__dina_api_key_removed__';
+
 /** Store an API key securely. */
 export async function saveApiKey(provider: ProviderType, key: string): Promise<void> {
   await Keychain.setGenericPassword(provider, key, {
@@ -185,9 +190,9 @@ const DEV_API_KEYS: Record<ProviderType, string> = {
  * Resolution precedence:
  *   1. iOS Keychain — if the user has explicitly interacted with this
  *      provider (set OR removed), the keychain has an entry. An entry
- *      with a non-empty password is the user's key; an entry with an
- *      empty password is "explicitly removed" — return null and skip
- *      the dev-env fallback.
+ *      with a normal password is the user's key; the removal sentinel
+ *      means "explicitly removed" — return null and skip the dev-env
+ *      fallback.
  *   2. Bundle-time `EXPO_PUBLIC_DINA_DEV_*` fallback — used only when
  *      the keychain has NO entry at all (fresh install on a dev
  *      simulator). The moment the user saves or removes via Settings,
@@ -204,9 +209,9 @@ export async function getApiKey(provider: ProviderType): Promise<string | null> 
     service: `${KEYCHAIN_SERVICE_PREFIX}${provider}`,
   });
   if (result !== false) {
-    // Keychain has an entry — empty password means "explicitly
-    // removed", not "fall back to dev". Don't consult DEV_API_KEYS.
-    return result.password.length > 0 ? result.password : null;
+    // Keychain has an entry — the tombstone means "explicitly removed",
+    // not "fall back to dev". Don't consult DEV_API_KEYS.
+    return result.password === REMOVED_API_KEY_SENTINEL ? null : result.password;
   }
   const devKey = DEV_API_KEYS[provider];
   if (devKey) return devKey;
@@ -216,16 +221,16 @@ export async function getApiKey(provider: ProviderType): Promise<string | null> 
 /**
  * Remove a stored API key.
  *
- * Writes an empty string to the keychain rather than deleting the
- * entry, so a subsequent `getApiKey` sees the entry-with-empty-value
- * as "user explicitly removed" and does NOT fall back to the
- * `EXPO_PUBLIC_DINA_DEV_*` env var. A true `resetGenericPassword`
- * here would let the dev fallback resurrect the key on the next
- * read — exactly the bug this commit fixes.
+ * Writes a non-secret tombstone to the keychain rather than deleting
+ * the entry, so a subsequent `getApiKey` sees "user explicitly
+ * removed" and does NOT fall back to the `EXPO_PUBLIC_DINA_DEV_*`
+ * env var. A true `resetGenericPassword` here would let the dev
+ * fallback resurrect the key on the next read.
  */
 export async function removeApiKey(provider: ProviderType): Promise<void> {
-  await Keychain.setGenericPassword(provider, '', {
+  await Keychain.setGenericPassword(provider, REMOVED_API_KEY_SENTINEL, {
     service: `${KEYCHAIN_SERVICE_PREFIX}${provider}`,
+    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
   });
 }
 

@@ -39,13 +39,13 @@ export interface ConnectedBrainAskResult {
   unavailableSources?: ('review' | 'service')[];
 }
 
-function isManagedAnswerBackend(backend: OwnerReasoningBackendView): boolean {
-  return backend.allowed_task_kinds.includes('answer.compose');
+function isConnectedAnswerBackend(backend: OwnerReasoningBackendView): boolean {
+  return backend.kind === 'connected_host' && backend.allowed_task_kinds.includes('answer.compose');
 }
 
 function isLiveBackend(backend: OwnerReasoningBackendView, nowMs: number): boolean {
   return (
-    isManagedAnswerBackend(backend) &&
+    isConnectedAnswerBackend(backend) &&
     backend.enabled &&
     backend.revoked_at === null &&
     (backend.expires_at === null || backend.expires_at > nowMs)
@@ -181,11 +181,12 @@ function reasoningClient(
 }
 
 /**
- * Submit through the managed reasoning plane whenever the owner has a backend
- * binding for answers. Core selects the eligible backend after deriving the
- * actual sensitivity. `handled:false` is reserved for pre-migration/degraded
- * installs with no managed answer backend, where the legacy direct Brain path
- * remains the compatibility fallback.
+ * Submit through the managed reasoning plane whenever the owner has explicitly
+ * enabled a connected-host binding for answers. The always-on internal Brain
+ * is deliberately excluded: normal mobile Ask already runs Dina's agentic
+ * coordinator, whose local tools provide reminders, services, reviews, and
+ * delegation. Treating the internal completion worker as a connected host
+ * would silently replace that richer path with answer-only synthesis.
  */
 export async function trySubmitConnectedBrainAsk(
   query: string,
@@ -210,8 +211,8 @@ export async function trySubmitConnectedBrainAsk(
     );
     return { handled: true };
   }
-  const managed = backends.filter(isManagedAnswerBackend);
-  if (managed.length === 0) return { handled: false };
+  const connected = backends.filter(isConnectedAnswerBackend);
+  if (connected.length === 0) return { handled: false };
 
   // Persist the user turn first. Its stable id is the crash-recovery and
   // idempotency anchor; Core stores no duplicate raw chat context.
@@ -220,7 +221,7 @@ export async function trySubmitConnectedBrainAsk(
     reasoningBackendId: 'policy-selected',
   });
   const purpose = purposeFor(threadId, userMessage.id);
-  if (!managed.some((backend) => isLiveBackend(backend, Date.now()))) {
+  if (!connected.some((backend) => isLiveBackend(backend, Date.now()))) {
     addMessage(threadId, 'error', 'No approved reasoning backend is currently available.', {
       sources: [userMessage.id],
     });

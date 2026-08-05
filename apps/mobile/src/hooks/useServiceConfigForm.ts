@@ -39,7 +39,11 @@ export function setServiceConfigCoreClient(next: ServiceConfigCoreClient | null)
   client = next;
 }
 
-export function resetServiceConfigCoreClient(): void {
+export function resetServiceConfigCoreClient(expected?: ServiceConfigCoreClient): void {
+  // An older node may finish disposing after a replacement node has already
+  // installed its client (app reload / StrictMode teardown). Only the owner
+  // that installed the current client may clear it.
+  if (expected !== undefined && client !== expected) return;
   client = null;
 }
 

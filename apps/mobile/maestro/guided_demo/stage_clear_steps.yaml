@@ -37,14 +37,18 @@ appId: com.dinakernel.mobile
     text: '.*cold brew.*'
 
 # Advance step1 (navigate to People › Relations). Its clearStage wipes step0's
-# bubbles. The dock + Next button render at the Tabs level, so they persist on
-# the People tab. Wait for step2's caption to confirm step1 ran + Next re-enabled.
+# bubbles. Assert the state produced by this step rather than the following
+# step's caption; the dock describes the step that just ran.
 - tapOn:
     id: 'guided-demo-next'
 - extendedWaitUntil:
     visible:
-      text: '.*something private.*'
+      text: 'Relations'
     timeout: 20000
+- assertVisible:
+    text: 'Emma'
+- assertVisible:
+    text: 'Alonso'
 
 # Advance step2 (back to Chat + post Health + Finance remembers).
 - tapOn:
@@ -57,6 +61,8 @@ appId: com.dinakernel.mobile
 # ── Invariant A again: step2 is also multi-message → both bubbles present ─────
 - assertVisible:
     text: '.*spending under.*'
+- assertVisible:
+    text: '.*something private.*'
 
 # ── Invariant B: the stage CLEARED across steps ─────────────────────────────
 # step0's bubbles were wiped when step1 began → gone now (not merely scrolled:
@@ -65,16 +71,14 @@ appId: com.dinakernel.mobile
     text: '.*Emma is my daughter.*'
 
 # Advance step3 (birthday) — proves the clear between two CONSECUTIVE chat steps.
-- extendedWaitUntil:
-    visible:
-      text: '.*Add a date.*'
-    timeout: 20000
 - tapOn:
     id: 'guided-demo-next'
 - extendedWaitUntil:
     visible:
       text: ".*Emma's birthday is on Nov 7.*"
     timeout: 30000
+- assertVisible:
+    text: '.*Add a date.*'
 
 # ── Invariant B (chat→chat): step2's bubbles are gone after step3 began ──────
 - assertNotVisible:

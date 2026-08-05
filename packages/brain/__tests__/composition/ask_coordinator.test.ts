@@ -6,10 +6,7 @@
  * exercises the same composer behind HTTP routes.
  */
 
-import {
-  createPersona,
-  resetPersonaState,
- clearVaults, storeItem } from '@dina/core';
+import { createPersona, resetPersonaState, clearVaults, storeItem } from '@dina/core';
 
 import {
   buildAgenticAskPipeline,
@@ -23,10 +20,7 @@ import {
 } from '../../src/composition/ask_coordinator';
 import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
 import type {
   ChatMessage,
@@ -137,7 +131,11 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
 // Fake AskCoordinatorCoreClient — in-memory workflow task store.
 // ---------------------------------------------------------------------------
 
-interface FakeTask { id: string; status: string; payload: string }
+interface FakeTask {
+  id: string;
+  status: string;
+  payload: string;
+}
 
 function makeFakeCoreClient(): {
   client: AskCoordinatorCoreClient & BuildAgenticAskPipelineInput['coreClient'];
@@ -145,21 +143,41 @@ function makeFakeCoreClient(): {
   setStatus: (id: string, s: string) => void;
 } {
   const tasks = new Map<string, FakeTask>();
-  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const setStatus = (id: string, s: string) => {
+    const t = tasks.get(id);
+    if (t) t.status = s;
+  };
   const client = {
     // find_preferred_provider surface
-    async findContactsByPreference() { return []; },
+    async findContactsByPreference() {
+      return [];
+    },
     // workflow approval surface
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
-      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      const t: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
       tasks.set(input.id, t);
       return { task: t as unknown as WorkflowTask, deduped: false };
     },
-    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
-    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
-    async approveWorkflowTask(id: string) { setStatus(id, 'queued'); return tasks.get(id) as unknown as WorkflowTask; },
-    async cancelWorkflowTask(id: string) { setStatus(id, 'cancelled'); return tasks.get(id) as unknown as WorkflowTask; },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      setStatus(id, 'completed');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async approveWorkflowTask(id: string) {
+      setStatus(id, 'queued');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
+    async cancelWorkflowTask(id: string) {
+      setStatus(id, 'cancelled');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
   };
   return { client, tasks, setStatus };
 }
@@ -168,8 +186,10 @@ function buildPipeline(args: {
   llm: LLMProvider;
   coreClient: BuildAgenticAskPipelineInput['coreClient'];
   appViewClient?: BuildAgenticAskPipelineInput['appViewClient'];
+  /** Keep the classifier/scanner only in tests explicitly exercising parity. */
+  withHandlerOptions?: boolean;
 }) {
-  return buildAgenticAskPipeline({
+  const pipeline = buildAgenticAskPipeline({
     llm: args.llm,
     providerName: 'gemini',
     appViewClient: args.appViewClient ?? fakeAppView(),
@@ -177,6 +197,8 @@ function buildPipeline(args: {
     coreClient: args.coreClient,
     cloudConsentGranted: true,
   });
+  if (args.withHandlerOptions !== true) pipeline.handlerOptions = {};
+  return pipeline;
 }
 
 beforeEach(() => {
@@ -380,6 +402,57 @@ describe('createAskCoordinator — Pattern A end-to-end', () => {
     expect(final?.pausedStateJson).toBeUndefined();
   });
 
+  it('applies the output guard after an approval-resumed completion', async () => {
+    createPersona('health', 'sensitive');
+    setAccessiblePersonas(['health']);
+    storeItem('health', { type: 'note', summary: 'BP', body: '120/80' });
+
+    const llm = makeScripted();
+    llm.push(
+      toolCallResp({
+        id: 'c1',
+        name: 'vault_search',
+        arguments: { query: 'BP', persona: 'health' },
+      }),
+      answerResp("Your BP was 120/80. I'm always here for you."),
+    );
+
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    const scanner = jest.fn(async () => ({
+      content: 'Your BP was 120/80.',
+      mutated: true,
+      reason: 'sentences_removed' as const,
+      flagged: { anti_her_sentences: [2] },
+    }));
+    pipeline.handlerOptions.guardScanner = scanner;
+    const coord = createAskCoordinator({
+      pipeline,
+      coreClient: client,
+      executeFn: buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT }),
+      systemPrompt: SYSTEM_PROMPT,
+      fastPathMs: 1_000,
+    });
+
+    const submit = await coord.handleAsk({
+      question: 'what was my BP?',
+      requesterDid: REQUESTER,
+    });
+    if (submit.kind !== 'fast_path' || submit.body.status !== 'pending_approval') {
+      throw new Error('expected pending_approval');
+    }
+
+    await coord.gateway.approve(submit.body.approval_id!);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const status = await coord.handleStatus(submit.body.request_id);
+    expect(status).toMatchObject({
+      kind: 'found',
+      body: { status: 'complete', answer: { text: 'Your BP was 120/80.' } },
+    });
+    expect(scanner).toHaveBeenCalledTimes(1);
+  });
+
   it('handleStatus returns 404 for unknown request_id', async () => {
     const llm = makeScripted();
     const { client } = makeFakeCoreClient();
@@ -503,6 +576,75 @@ describe('workflowTaskAsSource adapter', () => {
 });
 
 describe('buildAgenticExecuteFn translation', () => {
+  it('redirects clear companionship-seeking before any LLM or tool call', async () => {
+    const llm = makeScripted();
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({
+      id: 'ask-anti-her',
+      question: 'I feel so lonely',
+      requesterDid: REQUESTER,
+    });
+
+    expect(out).toEqual({
+      kind: 'answer',
+      answer: {
+        text: 'I understand how you feel. Reaching out to someone you trust — a friend, family member, or counselor — can make a real difference.',
+      },
+    });
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it('adds the pipeline intent hint to an ordinary coordinator turn', async () => {
+    const llm = makeScripted();
+    llm.push(answerResp('Network-aware answer.'));
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    pipeline.handlerOptions.intentClassifier = {
+      classify: jest.fn(async () => ({
+        sources: ['provider_services'],
+        relevant_personas: [],
+        toc_evidence: {},
+        temporal: 'live_state',
+        reasoning_hint: 'Look for live service data.',
+      })),
+    } as never;
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({ id: 'ask-hint', question: 'Is it open?', requesterDid: REQUESTER });
+
+    expect(out).toEqual({ kind: 'answer', answer: { text: 'Network-aware answer.' } });
+    expect(llm.calls[0]?.options?.systemPrompt).toContain(
+      'Routing hint from the intent classifier:',
+    );
+    expect(llm.calls[0]?.options?.systemPrompt).toContain('Look for live service data.');
+  });
+
+  it('applies the pipeline output guard before answer shaping', async () => {
+    const llm = makeScripted();
+    llm.push(answerResp("I'm always here for you. Call Sancho instead."));
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    pipeline.handlerOptions.guardScanner = jest.fn(async () => ({
+      content: 'Call Sancho instead.',
+      mutated: true,
+      reason: 'sentences_removed' as const,
+      flagged: { anti_her_sentences: [1] },
+    }));
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({ id: 'ask-guard', question: 'Help me', requesterDid: REQUESTER });
+
+    expect(out).toEqual({ kind: 'answer', answer: { text: 'Call Sancho instead.' } });
+    expect(pipeline.handlerOptions.guardScanner).toHaveBeenCalledWith({
+      userPrompt: 'Help me',
+      response: "I'm always here for you. Call Sancho instead.",
+      toolsCalled: [],
+    });
+  });
+
   it('translates loop completion → answer outcome', async () => {
     const llm = makeScripted();
     llm.push(answerResp('hi'));
@@ -517,7 +659,9 @@ describe('buildAgenticExecuteFn translation', () => {
 
   it('tags the answer with reviewsrc:<count> when search_peerlens returned reviews', async () => {
     const llm = makeScripted();
-    llm.push(toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'ergonomic chair' } }));
+    llm.push(
+      toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'ergonomic chair' } }),
+    );
     llm.push(answerResp('The ErgoFlex 2 is the best fit.'));
 
     const { client } = makeFakeCoreClient();
@@ -540,7 +684,9 @@ describe('buildAgenticExecuteFn translation', () => {
 
   it('does NOT tag reviewSource when search_peerlens returned nothing', async () => {
     const llm = makeScripted();
-    llm.push(toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'obscure thing' } }));
+    llm.push(
+      toolCallResp({ id: 'p1', name: 'search_peerlens', arguments: { query: 'obscure thing' } }),
+    );
     llm.push(answerResp('I have no network reviews for that.'));
 
     const { client } = makeFakeCoreClient();
@@ -554,7 +700,10 @@ describe('buildAgenticExecuteFn translation', () => {
     const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
 
     const out = await fn({ id: 'ask-1', question: 'q', requesterDid: REQUESTER });
-    expect(out).toEqual({ kind: 'answer', answer: { text: 'I have no network reviews for that.' } });
+    expect(out).toEqual({
+      kind: 'answer',
+      answer: { text: 'I have no network reviews for that.' },
+    });
   });
 
   it('translates approval_required loop bail → approval outcome (Pattern B re-run path)', async () => {
@@ -684,14 +833,22 @@ describe('createCoordinatorAskHandler — forced composer lanes (production brid
         answer: {
           text: 'Asking the restaurant…',
           serviceQueries: [
-            { taskId: 'task-1', queryId: 'q-1', capability: 'price_check', serviceName: 'Kebab Co' },
+            {
+              taskId: 'task-1',
+              queryId: 'q-1',
+              capability: 'price_check',
+              serviceName: 'Kebab Co',
+            },
           ],
         },
       }),
       systemPrompt: SYSTEM_PROMPT,
       fastPathMs: 5_000,
     });
-    const { handler, dispose } = createCoordinatorAskHandler({ coordinator, requesterDid: REQUESTER });
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator,
+      requesterDid: REQUESTER,
+    });
     try {
       const r = await handler('price of a kebab', {
         threadId: 'main',

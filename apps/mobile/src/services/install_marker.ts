@@ -167,7 +167,9 @@ export function deleteInstallMarker(): void {
 
 /**
  * Write the marker. Idempotent — safe to call when the file already
- * exists. Called from the boot path after the orphan check completes.
+ * exists. Called from the boot path after the orphan check completes and
+ * before provisioning writes keychain state (including an immediate
+ * re-onboard after an in-process erase).
  */
 export function writeInstallMarker(now: number = Date.now()): void {
   const f = markerFile();

@@ -1759,7 +1759,7 @@ def audit(ctx: click.Context, limit: int, action_filter: str) -> None:
 @click.option(
     "--config-dir",
     default=None,
-    help="[headless] Config directory (default: .dina/cli in cwd)",
+    help="[headless] Exact config directory (default: DINA_CONFIG_DIR, agent-host profile, or ~/.dina/cli)",
 )
 @click.option(
     "--setup-code",
@@ -2183,7 +2183,7 @@ def _configure_headless(
     config_dir_path: str | None,
 ) -> None:
     """Headless configure: all params from CLI flags, zero prompts."""
-    from .config import set_config_dir
+    from .config import _resolve_config_dir, set_config_dir
     from .signing import CLIIdentity
 
     # Validate transport requirements up front so the error surfaces before
@@ -2197,11 +2197,14 @@ def _configure_headless(
             "--transport=msgbox requires both --msgbox-url and --homenode-did"
         )
 
-    # Set config directory
+    # Use the same owner-controlled resolution as every subsequent CLI command.
+    # Repository-local state is deliberately not an implicit default: a working
+    # tree is untrusted input to a coding agent. `--config-dir` is exact, matching
+    # its help text and the Home Node enrollment APIs.
     if config_dir_path:
-        cfg_dir = Path(config_dir_path) / ".dina" / "cli"
+        cfg_dir = Path(config_dir_path).expanduser()
     else:
-        cfg_dir = Path.cwd() / ".dina" / "cli"
+        cfg_dir = _resolve_config_dir()
     set_config_dir(cfg_dir)
 
     click.echo(f"  Config dir: {cfg_dir}")

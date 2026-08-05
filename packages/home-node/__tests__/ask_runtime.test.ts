@@ -3,7 +3,6 @@ import { buildHomeNodeAskRuntime } from '../ask-runtime';
 import type { AppViewClient, LLMProvider } from '@dina/brain';
 import type { CoreClient } from '@dina/core';
 
-
 describe('@dina/home-node/ask-runtime', () => {
   it('builds the shared Pattern A ask coordinator from injected Core, AppView, and LLM handles', async () => {
     const provider = scriptedProvider('shared ask runtime answered');
@@ -29,7 +28,8 @@ describe('@dina/home-node/ask-runtime', () => {
       },
     });
     expect(result.body.request_id).toMatch(/^[0-9a-f]{32}$/);
-    expect(provider.chat).toHaveBeenCalledTimes(1);
+    // Production runtime: classify intent, compose answer, then guard-scan it.
+    expect(provider.chat).toHaveBeenCalledTimes(3);
     expect(runtime.orchestrator).toBeDefined();
   });
 
@@ -62,7 +62,8 @@ describe('@dina/home-node/ask-runtime', () => {
       status: 200,
       body: { status: 'complete' },
     });
-    expect(provider.chat).toHaveBeenCalledTimes(1);
+    // Handle-mode uses the same complete reasoning pipeline as server-mode.
+    expect(provider.chat).toHaveBeenCalledTimes(3);
     expect(issueQueryToDID).not.toHaveBeenCalled();
   });
 
@@ -74,14 +75,18 @@ describe('@dina/home-node/ask-runtime', () => {
       providerName: 'gemini' as const,
     };
 
-    expect(() => buildHomeNodeAskRuntime({ ...base, core: undefined as never }))
-      .toThrow(/core is required/);
-    expect(() => buildHomeNodeAskRuntime({ ...base, appView: undefined as never }))
-      .toThrow(/appView is required/);
-    expect(() => buildHomeNodeAskRuntime({ ...base, llm: undefined as never }))
-      .toThrow(/llm is required/);
-    expect(() => buildHomeNodeAskRuntime({ ...base, providerName: undefined as never }))
-      .toThrow(/providerName is required/);
+    expect(() => buildHomeNodeAskRuntime({ ...base, core: undefined as never })).toThrow(
+      /core is required/,
+    );
+    expect(() => buildHomeNodeAskRuntime({ ...base, appView: undefined as never })).toThrow(
+      /appView is required/,
+    );
+    expect(() => buildHomeNodeAskRuntime({ ...base, llm: undefined as never })).toThrow(
+      /llm is required/,
+    );
+    expect(() => buildHomeNodeAskRuntime({ ...base, providerName: undefined as never })).toThrow(
+      /providerName is required/,
+    );
   });
 });
 
@@ -134,8 +139,8 @@ function stubHandleCore() {
     findContactsByPreference: jest.fn(async () => []),
     createWorkflowTask: jest.fn(async () => ({ task: {} as never, deduped: false })),
     getWorkflowTask: jest.fn(async () => null),
-    completeWorkflowTask: jest.fn(async () => ({} as never)),
-    approveWorkflowTask: jest.fn(async () => ({} as never)),
-    cancelWorkflowTask: jest.fn(async () => ({} as never)),
+    completeWorkflowTask: jest.fn(async () => ({}) as never),
+    approveWorkflowTask: jest.fn(async () => ({}) as never),
+    cancelWorkflowTask: jest.fn(async () => ({}) as never),
   };
 }

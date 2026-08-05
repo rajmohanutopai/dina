@@ -156,6 +156,16 @@ function restoreTier(tier: string): PersonaTier {
   return (RESTORE_VALID_TIERS.has(tier) ? tier : 'locked') as PersonaTier;
 }
 
+/**
+ * Register an archive-only persona in both the live registry and the durable
+ * identity database. Archive import runs after onboarding, so a custom persona
+ * created here must survive the restart that completes restore.
+ */
+export function registerRestoredPersona(name: string, tier: string): void {
+  if (personaExists(name)) return;
+  createPersona(name, restoreTier(tier), undefined, { persist: true });
+}
+
 /** The active provider. */
 let provider: ProductionDBProvider | null = null;
 /**
@@ -364,9 +374,7 @@ export async function initializePersistence(
       // tier — an access downgrade. Default personas are re-seeded with their
       // canonical tiers on next boot; an unknown tier from a (corrupt/hostile)
       // archive falls back to the most restrictive tier — fail safe.
-      if (!personaExists(name)) {
-        createPersona(name, restoreTier(tier));
-      }
+      registerRestoredPersona(name, tier);
       const adapter = await openPersonaVault(provider, name);
       setVaultRepository(name, new SQLiteVaultRepository(adapter));
       setTopicRepository(name, new SQLiteTopicRepository(adapter));

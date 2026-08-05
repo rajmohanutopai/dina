@@ -872,6 +872,54 @@ def test_configure_headless_setup_code(tmp_path):
     assert kwargs["role"] == "agent"
 
 
+def test_configure_headless_honors_dina_config_dir_exactly(tmp_path):
+    """Automation can isolate pairing state without writing into the checkout."""
+    from dina_cli import config as config_module
+
+    target = tmp_path / "isolated-cli"
+    old_dir = config_module.CONFIG_DIR
+    runner = CliRunner()
+    try:
+        result = runner.invoke(
+            cli,
+            [
+                "configure", "--headless", "--role", "agent",
+                "--transport", "direct", "--core-url", "http://127.0.0.1:9",
+            ],
+            env={"DINA_CONFIG_DIR": str(target)},
+        )
+        assert result.exit_code == 0, result.output
+        assert (target / "config.json").is_file()
+        assert config_module.CONFIG_DIR == target
+    finally:
+        config_module.set_config_dir(old_dir)
+
+
+def test_configure_headless_config_dir_is_exact(tmp_path):
+    """`--config-dir X` writes to X, not the surprising X/.dina/cli."""
+    from dina_cli import config as config_module
+
+    target = tmp_path / "explicit-cli"
+    old_dir = config_module.CONFIG_DIR
+    runner = CliRunner()
+    try:
+        result = runner.invoke(
+            cli,
+            [
+                "configure", "--headless", "--role", "agent",
+                "--transport", "direct", "--core-url", "http://127.0.0.1:9",
+                "--config-dir", str(target),
+            ],
+            env={},
+        )
+        assert result.exit_code == 0, result.output
+        assert (target / "config.json").is_file()
+        assert not (target / ".dina" / "cli" / "config.json").exists()
+        assert config_module.CONFIG_DIR == target
+    finally:
+        config_module.set_config_dir(old_dir)
+
+
 def test_configure_rejects_corrupted_setup_code(tmp_path):
     """A string that claims to be a setup code but doesn't parse must fail
     loudly (re-copy) — NOT silently fall through to manual prompts."""

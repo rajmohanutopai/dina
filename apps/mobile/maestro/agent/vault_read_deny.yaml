@@ -1,0 +1,42 @@
+# Test cleanup for an intentionally blocked vault read. The driver proves the
+# request reached pending approval, then uses this flow to resolve the durable
+# card so one negative scenario cannot contaminate the next MRS case.
+appId: com.dinakernel.mobile
+---
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: 'tab-activity'
+- tapOn:
+    id: 'filter-needs_action'
+- extendedWaitUntil:
+    visible:
+      text: '${PERSONA}'
+    timeout: 25000
+- tapOn:
+    id: 'approvals-deny-appr-.*-${PERSONA}'
+- extendedWaitUntil:
+    visible:
+      text: 'Deny "Vault access"?'
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        text: 'DENY'
+    commands:
+      - tapOn:
+          text: 'DENY'
+- runFlow:
+    when:
+      visible:
+        text: 'Deny "Vault access"?'
+    commands:
+      - tapOn:
+          text: 'Deny'
+          index: 1
+- extendedWaitUntil:
+    notVisible:
+      text: '${PERSONA}'
+    timeout: 15000
+- assertVisible:
+    text: 'All caught up'

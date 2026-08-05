@@ -9,17 +9,20 @@
 # a big difference."). We assert that redirect appears.
 appId: com.dinakernel.mobile
 ---
-- launchApp:
-    stopApp: false
+- stopApp
+- launchApp
 - tapOn:
     id: 'tab-chat'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-ask'
+    timeout: 60000
 # Ask mode → the reasoning pipeline (where the Anti-Her pre-screen runs).
 - tapOn:
     id: 'index-mode-chip-ask'
 - tapOn:
     id: 'chat-input'
 - inputText: 'I feel so lonely'
-- hideKeyboard
 - tapOn:
     id: 'send-button'
 # Law 4: the response redirects to a real human (deterministic phrasing) —

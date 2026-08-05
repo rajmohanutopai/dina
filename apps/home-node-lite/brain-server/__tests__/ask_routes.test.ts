@@ -191,6 +191,9 @@ async function buildHarness(): Promise<Harness> {
     coreClient,
     cloudConsentGranted: true,
   });
+  // Route tests isolate HTTP + approval persistence. The coordinator's
+  // classifier/guard pipeline is covered in @dina/brain's composition suite.
+  pipeline.handlerOptions = {};
   const coordinator = createAskCoordinator({
     pipeline,
     coreClient,

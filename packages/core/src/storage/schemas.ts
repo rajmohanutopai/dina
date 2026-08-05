@@ -1407,7 +1407,9 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     // CONNECTED_AGENT_GATING_AND_BRAIN.md Phase 1. The policy is owned by Core,
     // not the host adapter. Session-bound authority provenance preserves the
     // non-owner Full-Supervision floor when work runs inside an otherwise
-    // owner-facing coding session.
+    // owner-facing coding session. `agent_sessions` was folded into v1 after
+    // early Home Nodes had already applied that version, so v28 must create the
+    // pre-v28 shape itself before adding the authority column.
     sql: `
       CREATE TABLE IF NOT EXISTS agent_gating_policies (
         agent_did TEXT PRIMARY KEY,
@@ -1421,6 +1423,21 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_agent_gating_policies_updated
         ON agent_gating_policies(updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        session_id TEXT PRIMARY KEY,
+        agent_did TEXT NOT NULL,
+        host_session_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        lease_expires_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        end_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_principal
+        ON agent_sessions(agent_did, host_session_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_sessions_ended
+        ON agent_sessions(ended_at);
 
       ALTER TABLE agent_sessions ADD COLUMN authority_origin_json TEXT;
     `,

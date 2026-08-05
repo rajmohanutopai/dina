@@ -26,3 +26,14 @@ appId: com.dinakernel.mobile
     visible:
       text: '.*did:plc:.*'
     timeout: 15000
+# Leave the app in a neutral state for the next MRS phase. Native iOS Modal
+# content is exposed as one accessibility element on recent simulator runtimes,
+# so child testIDs (including the visible close button) are not addressable.
+# Tapping the backdrop exercises the same onClose path without a pixel-specific
+# dependency on the sheet's close icon.
+- tapOn:
+    point: 50%,20%
+- extendedWaitUntil:
+    notVisible:
+      id: 'identity-modal-backdrop'
+    timeout: 5000

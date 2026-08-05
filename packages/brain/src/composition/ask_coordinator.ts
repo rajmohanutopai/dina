@@ -57,20 +57,23 @@ import {
   type AskEvent,
   type AskPersistenceAdapter,
 } from '../ask/ask_registry';
+import { generateHumanRedirect } from '../guardian/anti_her';
+import { preScreenMessage } from '../guardian/anti_her_classify';
 import {
   resumeAgenticTurn,
   runAgenticTurn,
   type AgenticLoopResult,
 } from '../reasoning/agentic_loop';
-import { formatCurrentTimeBlock } from '../reasoning/ask_handler';
+import { formatCurrentTimeBlock, formatIntentHintBlock } from '../reasoning/ask_handler';
 import {
   applyForcedLanePrompt,
   enforceForcedLaneAnswer,
   forcedLaneIncompleteAnswer,
+  isReviewsLane,
+  isServicesLane,
   scopeToolsForLane,
 } from '../reasoning/forced_lane';
-
-
+import { IntentClassifier } from '../reasoning/intent_classifier';
 import type { AgenticAskPipeline } from './agentic_ask';
 import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { VaultApprovalWorkflowClient } from './persona_guard';
@@ -227,15 +230,18 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
       // tool result already in transcript, so a stale `now_iso` here
       // would mislead any follow-up tool call (e.g. a second
       // `schedule_reminder` after the user re-confirms).
-      return resumeAgenticTurn({
+      const result = await resumeAgenticTurn({
         provider,
         tools,
-        systemPrompt: applyForcedLanePrompt(
-          `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
+        systemPrompt: await buildPromptForTurn(
+          opts.pipeline,
+          systemPrompt,
+          ctx.question,
           ctx.forcedSources,
         ),
         pausedState,
       });
+      return guardCompletedResult(opts.pipeline, result, ctx.question);
     },
     // On a completed resume, shape the FULL answer (text + serviceQueries +
     // reviewSource + missingCapabilities) AND apply the forced-lane gate, using
@@ -307,6 +313,18 @@ export function buildAgenticExecuteFn(args: {
   }
   const { pipeline, systemPrompt, preFlight } = args;
   return async (input) => {
+    // Law 4 must run before classification, retrieval, tools, or the main LLM.
+    // The legacy/direct Ask path already does this in chat_reasoning; mobile and
+    // Home Node use this coordinator path in production, so enforce the same
+    // invariant here rather than relying on the model to redirect itself.
+    const preScreen = await preScreenMessage(input.question);
+    if (preScreen.shouldRedirect) {
+      return {
+        kind: 'answer',
+        answer: { text: generateHumanRedirect([]) },
+      };
+    }
+
     // Explicit composer lane (Services/Reviews): scope the tools to the lane's
     // allowlist (+ enrichment) so the loop physically cannot wander off-lane.
     // No-op for plain Ask. Shared with `makeAgenticAskHandler` via forced_lane.
@@ -328,8 +346,10 @@ export function buildAgenticExecuteFn(args: {
     // session must stay synced with wall-clock — `now_iso` baked in at
     // `buildAgenticExecuteFn` time would silently age across turns.
     // Then append the imperative forced-lane block when a lane is forced.
-    const promptForTurn = applyForcedLanePrompt(
-      `${formatCurrentTimeBlock()}\n\n${systemPrompt}`,
+    const promptForTurn = await buildPromptForTurn(
+      pipeline,
+      systemPrompt,
+      input.question,
       input.forcedSources,
     );
 
@@ -371,8 +391,60 @@ export function buildAgenticExecuteFn(args: {
       const message = err instanceof Error ? err.message : String(err);
       return { kind: 'failure', failure: { kind: 'execute_crashed', message } };
     }
+    result = await guardCompletedResult(pipeline, result, input.question);
     return translateLoopResult(result, input.question, input.forcedSources);
   };
+}
+
+/** Build the same per-turn prompt used by the direct agentic Ask handler. */
+async function buildPromptForTurn(
+  pipeline: AgenticAskPipeline,
+  baseSystemPrompt: string,
+  question: string,
+  forcedSources?: readonly IntentSource[],
+): Promise<string> {
+  let prompt = `${formatCurrentTimeBlock()}\n\n${baseSystemPrompt}`;
+
+  // Explicit lanes are imperative and skip advisory classification.
+  if (isServicesLane(forcedSources) || isReviewsLane(forcedSources)) {
+    return applyForcedLanePrompt(prompt, forcedSources);
+  }
+
+  const classifier = pipeline.handlerOptions.intentClassifier;
+  if (classifier === undefined) return prompt;
+
+  let hint;
+  try {
+    hint = await classifier.classify(question);
+  } catch {
+    hint = IntentClassifier.default();
+  }
+  const block = formatIntentHintBlock(hint);
+  if (block !== '') prompt = `${prompt}\n\n${block}`;
+  return prompt;
+}
+
+/** Apply the existing fail-open output guard before result/lane shaping. */
+async function guardCompletedResult(
+  pipeline: AgenticAskPipeline,
+  result: AgenticLoopResult,
+  question: string,
+): Promise<AgenticLoopResult> {
+  const scanner = pipeline.handlerOptions.guardScanner;
+  if (result.finishReason !== 'completed' || result.answer === '' || scanner === undefined) {
+    return result;
+  }
+
+  try {
+    const decision = await scanner({
+      userPrompt: question,
+      response: result.answer,
+      toolsCalled: result.toolCalls.map((call) => call.name),
+    });
+    return { ...result, answer: decision.content };
+  } catch {
+    return result;
+  }
 }
 
 /**

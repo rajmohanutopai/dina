@@ -4,7 +4,9 @@
  * Source: ARCHITECTURE.md Task 6.19
  */
 
-import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import { makeFakePeopleRepo } from '@dina/test-harness';
+
+import { getThread, resetThreads } from '../../../brain/src/chat/thread';
 import {
   addContact,
   getContact,
@@ -15,7 +17,12 @@ import {
   setContactRepository,
   type ContactRepository,
 } from '../../../core/src/contacts/repository';
-import { quarantineMessage, resetQuarantineState } from '../../../core/src/d2d/quarantine';
+import { clearGatesState } from '../../../core/src/d2d/gates';
+import { quarantineMessage } from '../../../core/src/d2d/quarantine';
+import {
+  InMemoryStagingRepository,
+  setStagingRepository,
+} from '../../../core/src/staging/repository';
 import { claim, resetStagingState } from '../../../core/src/staging/service';
 import {
   getQuarantinedMessages,
@@ -34,7 +41,9 @@ import {
  * does not release a message on a failed trust upgrade.
  */
 function makeFailingUpdateContactRepo(): ContactRepository {
-  const noop = (): void => {};
+  const noop = (): void => {
+    /* this test repository intentionally discards successful writes */
+  };
   return {
     add: noop,
     get: () => null,
@@ -52,9 +61,16 @@ function makeFailingUpdateContactRepo(): ContactRepository {
     findByPreferredFor: () => [],
   };
 }
-import { clearGatesState } from '../../../core/src/d2d/gates';
 
-import { makeFakePeopleRepo } from '@dina/test-harness';
+class FailSecondStagingIngestRepository extends InMemoryStagingRepository {
+  private ingestCalls = 0;
+
+  override ingest(item: Parameters<InMemoryStagingRepository['ingest']>[0]): boolean {
+    this.ingestCalls += 1;
+    if (this.ingestCalls === 2) throw new Error('simulated second staging write failure');
+    return super.ingest(item);
+  }
+}
 
 describe('D2D Message View Hook (6.19)', () => {
   beforeEach(() => {
@@ -158,6 +174,35 @@ describe('D2D Message View Hook (6.19)', () => {
         expect(getQuarantinedMessages().some((m) => m.id === q.id)).toBe(true); // not released
       } finally {
         setContactRepository(null);
+      }
+    });
+
+    it('keeps every held row retryable when staging fails part-way through', () => {
+      const sender = 'did:plc:partialstagingfailure';
+      const repo = new FailSecondStagingIngestRepository();
+      setStagingRepository(repo);
+      quarantineMessage(sender, 'social.update', JSON.stringify({ text: 'first' }), 1);
+      const second = quarantineMessage(
+        sender,
+        'social.update',
+        JSON.stringify({ text: 'second' }),
+        2,
+      );
+
+      try {
+        const failed = acceptFromQuarantine(second.id);
+        expect(failed.action).toBe('error');
+        expect(getQuarantinedMessages()).toHaveLength(2);
+
+        // The first write deduplicates on retry; the previously failing second
+        // write succeeds, and only then are both durable quarantine rows removed.
+        const retried = acceptFromQuarantine(second.id);
+        expect(retried.action).toBe('accepted');
+        expect(getQuarantinedMessages()).toHaveLength(0);
+        expect(claim(10)).toHaveLength(2);
+      } finally {
+        resetStagingState();
+        setStagingRepository(null);
       }
     });
   });

@@ -40,14 +40,24 @@ function arg(name: string, fallback?: string): string {
 }
 
 const procs: ChildProcess[] = [];
-function killAll(): void {
-  for (const p of procs) {
+function stopProcessTree(p: ChildProcess): void {
+  if (p.pid === undefined) return;
+  try {
+    // On POSIX each harness Core gets its own process group. `npx tsx` starts
+    // child processes, so killing only the wrapper leaves an orphan Core that
+    // poisons the next run's fixed port and holds its scratch vault open.
+    if (process.platform !== 'win32') process.kill(-p.pid, 'SIGTERM');
+    else p.kill('SIGTERM');
+  } catch {
     try {
       p.kill('SIGTERM');
     } catch {
-      /* ignore */
+      /* already gone */
     }
   }
+}
+function killAll(): void {
+  for (const p of procs) stopProcessTree(p);
 }
 process.on('exit', killAll);
 process.on('SIGINT', () => {
@@ -73,7 +83,11 @@ function pipe(tag: string, p: ChildProcess): void {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
-async function waitFor(label: string, fn: () => Promise<boolean>, timeoutMs: number): Promise<void> {
+async function waitFor(
+  label: string,
+  fn: () => Promise<boolean>,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -141,6 +155,7 @@ async function main(): Promise<void> {
   log('setup', `booting sender lite-Core (→ ${to})…`);
   const p = spawn('npx', ['tsx', 'src/bin.ts'], {
     cwd: CORE_DIR,
+    detached: process.platform !== 'win32',
     env: {
       ...process.env,
       DINA_CORE_PORT: String(TX_CORE),
@@ -171,11 +186,23 @@ async function main(): Promise<void> {
     log('wait', `holding send until ${waitFile} appears…`);
     const deadline = Date.now() + 180_000;
     while (!existsSync(waitFile) && Date.now() < deadline) await sleep(1000);
-    log('wait', existsSync(waitFile) ? 'go signal received ✓' : 'wait-file timeout — sending anyway');
+    log(
+      'wait',
+      existsSync(waitFile) ? 'go signal received ✓' : 'wait-file timeout — sending anyway',
+    );
   }
 
   // Add the mobile DID as a contact so the egress gate passes.
-  log('seed', JSON.stringify(await debug(TX_CORE, 'POST', '/v1/contacts', { did: to, display_name: 'Mobile', trust_level: 'verified' })));
+  log(
+    'seed',
+    JSON.stringify(
+      await debug(TX_CORE, 'POST', '/v1/contacts', {
+        did: to,
+        display_name: 'Mobile',
+        trust_level: 'verified',
+      }),
+    ),
+  );
 
   log('send', `${name} → mobile: "${text}"`);
   const sent = await debug(TX_CORE, 'POST', '/v1/msg/send', {

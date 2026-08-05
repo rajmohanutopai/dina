@@ -29,7 +29,7 @@ import { shutdownAllPersistence } from '../storage/init';
 import { clearDisplayNameOverride } from './display_name_override';
 import { clearPersistedDid } from './identity_record';
 import { clearIdentitySeeds } from './identity_store';
-import { clearOrphanKeychainState, deleteInstallMarker } from './install_marker';
+import { clearOrphanKeychainState, writeInstallMarker } from './install_marker';
 import { clearAutoPassphrase } from './startup_preferences';
 import { clearWrappedSeed } from './wrapped_seed_store';
 
@@ -138,18 +138,15 @@ export async function eraseEverythingLocal(): Promise<void> {
     // can't reach Keychain at all (extremely rare).
   }
 
-  // Delete the install marker so the next boot is treated as a true
-  // fresh install rather than a returning user with a missing
-  // wrapped seed (which `unlock_gate` interprets as "orphan keychain
-  // — wipe everything"). Without this the next boot would still work
-  // but would re-run the orphan-detect path defensively.
-  try {
-    deleteInstallMarker();
-  } catch {
-    // Best-effort.
-  }
-
   await signOutLocal();
+
+  // This is still the same app installation. Keep/recreate its marker so
+  // re-onboarding in the current JS session can safely write a new wrapped
+  // seed. If the marker were deleted here, UnlockGate would not remount to
+  // recreate it; the next cold boot would misclassify that new seed as an
+  // orphan left by an uninstalled copy and wipe it. A real OS uninstall
+  // removes the marker with the documents directory, preserving MT-27.
+  writeInstallMarker();
 }
 
 /** True for SQLite database files (and their WAL/SHM sidecars). */

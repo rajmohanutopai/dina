@@ -140,10 +140,7 @@ describe('buildRememberRuntime', () => {
         },
       },
     ];
-    const { provider } = scripted([
-      { toolCalls: tcs },
-      { content: 'Saved.', toolCalls: [] },
-    ]);
+    const { provider } = scripted([{ toolCalls: tcs }, { content: 'Saved.', toolCalls: [] }]);
     const { run } = buildRememberRuntime({
       llm: provider,
       personas: [{ name: 'general' }, { name: 'finance' }],
@@ -154,14 +151,8 @@ describe('buildRememberRuntime', () => {
     });
 
     expect(result.text).toBe('Saved.');
-    expect(result.toolNames).toEqual([
-      'route_to_persona',
-      'link_to_person',
-      'bind_preference',
-    ]);
-    expect(result.sideEffects.routes).toEqual([
-      { primary: 'finance', secondary: [] },
-    ]);
+    expect(result.toolNames).toEqual(['route_to_persona', 'link_to_person', 'bind_preference']);
+    expect(result.sideEffects.routes).toEqual([{ primary: 'finance', secondary: [] }]);
     expect(result.sideEffects.people).toHaveLength(1);
     expect(result.sideEffects.people[0]?.canonicalName).toBe('Emma');
     expect(result.sideEffects.preferences).toHaveLength(1);
@@ -179,7 +170,11 @@ describe('buildRememberRuntime', () => {
           {
             id: 't2',
             name: 'schedule_reminder',
-            arguments: { message: "Emma's birthday is coming up", due_at: dueAt },
+            arguments: {
+              message: "Emma's birthday is coming up",
+              due_at: dueAt,
+              source_excerpt: "Emma's birthday is on Nov 7",
+            },
           },
         ],
       },
@@ -256,7 +251,10 @@ describe('buildRememberRuntime', () => {
     };
 
     const { run } = buildRememberRuntime({ llm: provider, personas: [{ name: 'general' }] });
-    const result = await run({ memoryText: "Emma's birthday is on Nov 7", sourceItemId: 'stage-1' });
+    const result = await run({
+      memoryText: "Emma's birthday is on Nov 7",
+      sourceItemId: 'stage-1',
+    });
 
     expect(result.toolNames).toContain('vault_search');
     // The recall result must have been fed back into the loop — without the
@@ -297,6 +295,7 @@ describe('buildRememberRuntime', () => {
                 arguments: {
                   message: 'Alonso arriving at 4pm — have a matcha latte ready',
                   due_at: dueAt,
+                  source_excerpt: 'at 4pm',
                 },
               },
             ],
@@ -357,6 +356,35 @@ describe('buildRememberRuntime', () => {
     expect(result.sideEffects.routes).toEqual([]);
     expect(result.sideEffects.people).toEqual([]);
     expect(result.sideEffects.preferences).toEqual([]);
+  });
+
+  it('rejects a reminder derived only from recalled context', async () => {
+    const dueAt = new Date(Date.now() + 3_600_000).toISOString();
+    const { provider } = scripted([
+      {
+        toolCalls: [
+          {
+            id: 't1',
+            name: 'schedule_reminder',
+            arguments: {
+              message: "Emma's birthday is coming up",
+              due_at: dueAt,
+              source_excerpt: 'Emma',
+            },
+          },
+        ],
+      },
+      { content: 'Saved.', toolCalls: [] },
+    ]);
+    const { run } = buildRememberRuntime({
+      llm: provider,
+      personas: [{ name: 'general' }],
+    });
+
+    const result = await run({ memoryText: 'Emma loves dinosaurs' });
+
+    expect(result.toolNames).toEqual(['schedule_reminder']);
+    expect(result.sideEffects.reminders).toEqual([]);
   });
 
   it('renders metadata trailer when type / source / sender / subject are present', async () => {

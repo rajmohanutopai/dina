@@ -20,10 +20,23 @@ appId: com.dinakernel.mobile
 - launchApp:
     stopApp: false
 - tapOn:
+    id: 'tab-chat'
+- extendedWaitUntil:
+    visible:
+      id: 'index-mode-chip-ask'
+    timeout: 15000
+- tapOn:
     id: 'index-mode-chip-ask'
+- extendedWaitUntil:
+    visible:
+      id: 'chat-input'
+    timeout: 10000
 - tapOn:
     id: 'chat-input'
-- inputText: "When's the next bus 42 at my stop?"
+# The hosted test AppView is shared and retains other eta_query fixtures. An
+# explicit remote location lets this harness publish its provider in an empty
+# geo cell, so the model cannot nondeterministically select a stale fixture.
+- inputText: "When's the next bus 42 in Ushuaia, Argentina?"
 - tapOn:
     id: 'send-button'
 # Discovery → D2D handoff → provider daemon claim → stub ETA reply. The stub

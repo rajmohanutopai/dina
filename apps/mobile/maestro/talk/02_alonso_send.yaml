@@ -19,7 +19,13 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'add-contact-name-input'
 - inputText: 'Sancho'
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: 'add-contact-save'
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 80
+    centerElement: true
 - tapOn:
     id: 'add-contact-save'
 - extendedWaitUntil:
@@ -31,6 +37,5 @@ appId: com.dinakernel.mobile
 - tapOn:
     id: 'chat-message-input'
 - inputText: "It's Alonso — coming over tomorrow morning!"
-- hideKeyboard
 - tapOn:
     id: 'chat-send'

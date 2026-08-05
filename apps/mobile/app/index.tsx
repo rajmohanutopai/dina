@@ -10,6 +10,7 @@
 
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useHeaderHeight } from '@react-navigation/elements';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -266,6 +267,7 @@ function chatRowProps(item: UiMessage, index: number): ViewProps {
 // an open-ended chatbot (Anti-Her). Talk is rendered separately below as a
 // navigation chip (contact picker), not a text mode.
 export default function ChatScreen() {
+  const headerHeight = useHeaderHeight();
   const router = useRouter();
   // While the guided demo's bottom dock is up, reserve extra space at the end of
   // the message list so the last message isn't hidden behind it (the dock is an
@@ -676,10 +678,12 @@ export default function ChatScreen() {
       // (behavior=undefined): SDK 55 / Android 15 edge-to-edge neutralises
       // adjustResize, so the OS stops shrinking the view and the composer
       // ends up UNDER the keyboard (#390). `padding` makes KeyboardAvoidingView
-      // do the lift itself from the JS keyboard frame. Offset subtracts the
-      // tab bar (88pt iOS, 64pt Android) so we don't over-lift.
+      // do the lift itself from the JS keyboard frame. iOS keeps its existing
+      // tab-bar offset. On Android the KAV measures this route relative to the
+      // native Stack header, so use React Navigation's known header height
+      // rather than its unreliable best-effort `automaticOffset` lookup.
       behavior="padding"
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : headerHeight}
     >
       <StatusBar style="dark" />
 

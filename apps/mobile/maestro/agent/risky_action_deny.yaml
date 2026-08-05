@@ -30,11 +30,24 @@ appId: com.dinakernel.mobile
     visible:
       text: 'Deny "transfer_money"?'
     timeout: 10000
-# Two "Deny" elements now: index 0 = the card button behind the scrim, index 1
-# = the Alert's destructive confirm.
-- tapOn:
-    text: 'Deny'
-    index: 1
+# Android exposes only the native Alert button and uppercases its label. iOS
+# keeps the card button in the hierarchy behind the scrim, so its Alert confirm
+# remains the second title-cased match.
+- runFlow:
+    when:
+      visible:
+        text: 'DENY'
+    commands:
+      - tapOn:
+          text: 'DENY'
+- runFlow:
+    when:
+      visible:
+        text: 'Deny "transfer_money"?'
+    commands:
+      - tapOn:
+          text: 'Deny'
+          index: 1
 # The inbox clears — Needs-action returns to "All caught up".
 - extendedWaitUntil:
     notVisible:

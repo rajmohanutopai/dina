@@ -127,9 +127,7 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
   const personasInput = input.personas;
   const resolvePersonas: () => readonly { name: string; description?: string }[] =
     typeof personasInput === 'function' ? personasInput : () => personasInput;
-  const today =
-    input.today ??
-    new Date().toISOString().slice(0, 10);
+  const today = input.today ?? new Date().toISOString().slice(0, 10);
   const timezone =
     input.timezone ??
     (() => {
@@ -176,6 +174,9 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
         createScheduleReminderTool({
           defaultPersona,
           defaultTimezone: timezone,
+          // A recalled birthday or deadline may enrich this memory, but it
+          // must not become a new reminder unless THIS memory is time-bound.
+          sourceText: turn.memoryText,
           // Link the reminder back to the staged item so the chat reply
           // can surface a "Reminders set" card for it.
           sourceItemId: turn.sourceItemId,
@@ -245,7 +246,10 @@ function renderUserMessage(turn: RememberTurnInput): string {
   const sid = turn.senderIdentity;
   if (sid !== undefined && sid.name.trim() !== '') {
     const rel = sid.relationship?.trim();
-    lines.push('', rel !== undefined && rel !== '' ? `Sender: ${sid.name} (${rel})` : `Sender: ${sid.name}`);
+    lines.push(
+      '',
+      rel !== undefined && rel !== '' ? `Sender: ${sid.name} (${rel})` : `Sender: ${sid.name}`,
+    );
   }
   // Structured recall: what we already know about the sender (from the
   // people graph's subject links). Lets the agent enrich a terse arrival

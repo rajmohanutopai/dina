@@ -125,6 +125,13 @@ let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let shouldReconnect = true;
 let stateHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+/**
+ * Monotonic fence for socket callbacks. React Native can deliver a late
+ * `auth_success` / `onclose` after a replacement socket is already live.
+ * Without a fence, that stale callback mutates the replacement's module-wide
+ * state and can start an endless duplicate-connection loop at the relay.
+ */
+let connectionGeneration = 0;
 
 // Keepalive state (issue #351) — reset per connection in onopen.
 let lastInboundAtMs = 0;
@@ -346,6 +353,9 @@ export function wakeRelay(): void {
   // Detach handlers FIRST so its async `onclose` can't schedule a
   // competing reconnect after we've kicked a fresh one.
   if (ws !== null) {
+    // Retire this generation before closing. A callback already queued on the
+    // RN bridge must not be allowed to affect the replacement below.
+    connectionGeneration++;
     ws.onopen = null;
     ws.onmessage = null;
     ws.onclose = null;
@@ -389,7 +399,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // ("INVALID_STATE_ERR" on RN), which surfaces as a LogBox toast
     // that intercepts taps and looks to the user like the whole UI
     // is frozen.
-     
+
     console.warn(
       `[WS] sendEnvelope DROP type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} state ws=${ws !== null} conn=${connected} auth=${authenticated} ready=${ws?.readyState ?? '-'}`,
     );
@@ -401,9 +411,9 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // Trace event — `console.log` (not `.error`) so RN's LogBox stays
     // empty on a healthy session. Only genuine failures should trip
     // LogBox; routine "frame went out OK" is metro-only telemetry.
-     
+
     console.log(
-      `[WS] sendEnvelope OK type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} to=${envelope.to_did?.slice(0, 30)} bytes=${wire.byteLength}`,
+      `[WS] sendEnvelope OK type=${envelope.type} id=${envelope.id?.slice(0, 8)} dir=${envelope.direction ?? '-'} bytes=${wire.byteLength}`,
     );
     return true;
   } catch (err) {
@@ -412,7 +422,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
     // covers the bottom tab bar + intercepts taps. The caller already
     // gets a falsy return and `sendOrRetryUntilExpired` will replay,
     // so escalating to console.error every time was wrong.
-     
+
     console.warn(
       `[WS] sendEnvelope THREW type=${envelope.type} id=${envelope.id?.slice(0, 8)} err=${(err as Error).message}`,
     );
@@ -435,12 +445,18 @@ export async function disconnect(): Promise<void> {
     stateHeartbeatTimer = null;
   }
   if (ws) {
+    const socket = ws;
+    connectionGeneration++;
+    ws = null;
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onclose = null;
+    socket.onerror = null;
     try {
-      ws.close();
+      socket.close();
     } catch {
       /* ok */
     }
-    ws = null;
   }
   connected = false;
   authenticated = false;
@@ -479,19 +495,35 @@ export function resetConnectionState(): void {
 function doConnect(url: string): void {
   if (!wsFactory) return;
 
+  // A reconnect timer can race a foreground wake or a second close event.
+  // Never replace a live/connecting socket: doing so loses the only reference
+  // to it while its callbacks remain active.
+  if (ws !== null) return;
+
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  let socket: WSLike;
   try {
-    ws = wsFactory(url);
+    socket = wsFactory(url);
   } catch {
     scheduleReconnect();
     return;
   }
+  const generation = ++connectionGeneration;
+  ws = socket;
+  connected = false;
+  authenticated = false;
+  authChallengeSeen = false;
 
-  ws.onopen = () => {
+  socket.onopen = () => {
+    if (!isCurrentSocket(socket, generation)) return;
     connected = true;
-    reconnectAttempt = 0; // reset backoff on successful connect
     // Healthy connect — trace, not error (see sendEnvelope OK comment).
-     
-    console.log(`[WS] onopen url=${url} did=${homeNodeDID.slice(0, 30)}`);
+
+    console.log(`[WS] onopen url=${url}`);
     // Wait for auth_challenge from server — handled in onmessage
 
     // Keepalive state is per-connection (issue #351).
@@ -504,15 +536,15 @@ function doConnect(url: string): void {
     // a half-open socket gives no signal at all.
     if (stateHeartbeatTimer !== null) clearInterval(stateHeartbeatTimer);
     stateHeartbeatTimer = setInterval(() => {
-       
       console.log(
-        `[WS] state did=${homeNodeDID.slice(0, 30)} ws=${ws !== null} ready=${ws?.readyState ?? '-'} conn=${connected} auth=${authenticated}`,
+        `[WS] state ws=${ws !== null} ready=${ws?.readyState ?? '-'} conn=${connected} auth=${authenticated}`,
       );
       keepaliveTick();
     }, KEEPALIVE_TICK_MS);
   };
 
-  ws.onmessage = (event) => {
+  socket.onmessage = (event) => {
+    if (!isCurrentSocket(socket, generation)) return;
     // MsgBox speaks JSON over WS. Most frames are strings, but RN
     // WebSocket polyfills surface binary frames as ArrayBuffer, a
     // typed-array view, OR Blob depending on platform. Decode
@@ -522,12 +554,14 @@ function doConnect(url: string): void {
     const decoded = coerceToString(event.data);
     if (decoded === null) return;
     if (typeof decoded === 'string') {
-      handleFrameText(decoded);
+      handleFrameText(decoded, socket, generation);
     } else {
       // Blob path — async decode.
       decoded.then(
         (text) => {
-          if (text !== null) handleFrameText(text);
+          if (text !== null && isCurrentSocket(socket, generation)) {
+            handleFrameText(text, socket, generation);
+          }
         },
         () => {
           /* blob read failed — drop */
@@ -536,18 +570,20 @@ function doConnect(url: string): void {
     }
   };
 
-  ws.onclose = (ev) => {
+  socket.onclose = (ev) => {
+    if (!isCurrentSocket(socket, generation)) return;
     // Close is the lifecycle's normal terminator (server reaped, app
     // backgrounded, OS suspended the socket) — trace level. Reconnect
     // logic below handles any actually-needed recovery.
-     
+
     console.log(
-      `[WS] onclose did=${homeNodeDID.slice(0, 30)} code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated} willReconnect=${shouldReconnect}`,
+      `[WS] onclose code=${ev?.code ?? '-'} reason=${ev?.reason ?? '-'} wasAuth=${authenticated} willReconnect=${shouldReconnect}`,
     );
     connected = false;
     authenticated = false;
     authChallengeSeen = false;
     ws = null;
+    connectionGeneration++;
     if (stateHeartbeatTimer !== null) {
       clearInterval(stateHeartbeatTimer);
       stateHeartbeatTimer = null;
@@ -555,7 +591,8 @@ function doConnect(url: string): void {
     if (shouldReconnect) scheduleReconnect();
   };
 
-  ws.onerror = (ev) => {
+  socket.onerror = (ev) => {
+    if (!isCurrentSocket(socket, generation)) return;
     // ev is `unknown` per WSLike — RN polyfill surfaces { message }, browser
     // surfaces an Event with { type }. Best-effort string-coerce both.
     const msg =
@@ -567,10 +604,14 @@ function doConnect(url: string): void {
     // escalates to a fatal RedBox on the dev-client (and breaks the e2e loop)
     // for what is usually just an ENOTCONN on a network-reachability change.
     // Same rationale as the auth-frame downgrade in handleFrameText().
-     
+
     console.warn(`[WS] onerror msg=${msg !== '' ? msg : '(no message)'}`);
     // Error triggers close, which triggers reconnect
   };
+}
+
+function isCurrentSocket(socket: WSLike, generation: number): boolean {
+  return ws === socket && connectionGeneration === generation;
 }
 
 /**
@@ -589,7 +630,6 @@ function keepaliveTick(): void {
   // recycle the socket so a fresh connect re-runs the handshake.
   if (!authenticated) {
     if (now - lastInboundAtMs > AUTH_STALE_MS) {
-       
       console.warn(
         `[WS] auth never completed after ${now - lastInboundAtMs}ms — forcing reconnect`,
       );
@@ -601,7 +641,6 @@ function keepaliveTick(): void {
   // Staleness first: a dead socket gets reconnected, not pinged again.
   const staleAfterMs = pongSeen ? PONG_STALE_MS : FALLBACK_STALE_MS;
   if (now - lastInboundAtMs > staleAfterMs) {
-     
     console.warn(
       `[WS] stale — no inbound for ${now - lastInboundAtMs}ms (threshold=${staleAfterMs}, pongSeen=${pongSeen}) — forcing reconnect`,
     );
@@ -618,7 +657,7 @@ function keepaliveTick(): void {
     } catch (err) {
       // A throwing send is a hard dead-socket signal — don't wait out
       // the staleness window.
-       
+
       console.warn(`[WS] ping send threw (${(err as Error).message}) — forcing reconnect`);
       forceReconnect();
     }
@@ -633,31 +672,40 @@ function keepaliveTick(): void {
  */
 function forceReconnect(): void {
   if (ws === null) return;
-  try {
-    ws.close();
-  } catch {
-    // close() threw — run the onclose bookkeeping ourselves so the
-    // reconnect loop still engages.
-    connected = false;
-    authenticated = false;
-    authChallengeSeen = false;
-    ws = null;
-    if (stateHeartbeatTimer !== null) {
-      clearInterval(stateHeartbeatTimer);
-      stateHeartbeatTimer = null;
-    }
-    if (shouldReconnect) scheduleReconnect();
+  const socket = ws;
+
+  // Retire synchronously instead of relying on an eventually-delivered
+  // `onclose`. That guarantees a foreground wake or another close cannot
+  // overlap a new socket with this one.
+  connectionGeneration++;
+  ws = null;
+  connected = false;
+  authenticated = false;
+  authChallengeSeen = false;
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onclose = null;
+  socket.onerror = null;
+  if (stateHeartbeatTimer !== null) {
+    clearInterval(stateHeartbeatTimer);
+    stateHeartbeatTimer = null;
   }
+  try {
+    socket.close();
+  } catch {
+    /* already dead */
+  }
+  if (shouldReconnect) scheduleReconnect();
 }
 
 /** Parse + route a decoded JSON frame. Shared between string + Blob paths. */
-function handleFrameText(text: string): void {
+function handleFrameText(text: string, socket: WSLike, generation: number): void {
+  if (!isCurrentSocket(socket, generation)) return;
   lastInboundAtMs = Date.now();
   let msg: { type?: string } & Record<string, unknown>;
   try {
     msg = JSON.parse(text) as { type?: string } & Record<string, unknown>;
   } catch {
-     
     console.error(`[WS] frame_unparseable preview=${text.slice(0, 120)}`);
     return;
   }
@@ -671,32 +719,29 @@ function handleFrameText(text: string): void {
   if (msg.type === 'auth_challenge' && !authenticated) {
     // Healthy handshake step — trace. Was `.error` and lit LogBox up
     // every cold launch; that buried real warnings under noise.
-     
+
     console.log('[WS] frame=auth_challenge — replying');
-    handleAuthChallenge(msg as unknown as { nonce: string; ts: number });
+    handleAuthChallenge(msg as unknown as { nonce: string; ts: number }, socket, generation);
     return;
   }
   if (msg.type === 'auth_success') {
     // Same rationale as auth_challenge — happy-path trace.
-     
+
     console.log('[WS] frame=auth_success — authenticated');
-    authenticated = true;
-    fireAuthenticated();
+    markAuthenticated(socket, generation);
     return;
   }
   if (!authenticated && isEnvelopeLike(msg) && authChallengeSeen) {
     // Production relay skips the explicit `auth_success` and just
     // streams buffered envelopes — so this branch is the *normal*
     // promotion path on a real backend. Trace, not error.
-     
+
     console.log('[WS] envelope arrived pre-auth_success — flipping to authenticated');
-    authenticated = true;
-    fireAuthenticated();
+    markAuthenticated(socket, generation);
   }
   if (authenticated) {
-     
     console.log(
-      `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'} from=${typeof msg.from_did === 'string' ? msg.from_did.slice(0, 30) : '-'}`,
+      `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'}`,
     );
     dispatchEnvelope(msg as unknown as MsgBoxEnvelope);
   } else {
@@ -704,15 +749,24 @@ function handleFrameText(text: string): void {
     // emits an auth_challenge before we accept any other frame). The
     // misbehaving-relay scenario is rare; keep this at `.log` so the
     // first few seconds after connect don't light up LogBox.
-     
-    console.log(
-      `[WS] frame dropped pre-auth type=${msg.type} authChalSeen=${authChallengeSeen}`,
-    );
+
+    console.log(`[WS] frame dropped pre-auth type=${msg.type} authChalSeen=${authChallengeSeen}`);
   }
 }
 
-function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
-  if (!ws || !homeNodePrivateKey || !homeNodeDID) return;
+function markAuthenticated(socket: WSLike, generation: number): void {
+  if (!isCurrentSocket(socket, generation) || authenticated) return;
+  authenticated = true;
+  reconnectAttempt = 0;
+  fireAuthenticated();
+}
+
+function handleAuthChallenge(
+  challenge: { nonce: string; ts: number },
+  socket: WSLike,
+  generation: number,
+): void {
+  if (!isCurrentSocket(socket, generation) || !homeNodePrivateKey || !homeNodeDID) return;
 
   const sig = signHandshake(challenge.nonce, String(challenge.ts), homeNodePrivateKey);
   const pubHex = bytesToHex(getPublicKey(homeNodePrivateKey));
@@ -724,15 +778,12 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   // window throws INVALID_STATE_ERR synchronously and bubbles out as
   // a LogBox toast. We re-arm by waiting for the next auth_challenge
   // — the relay re-sends it on its own retry cadence.
-  if (ws.readyState !== WS_OPEN) {
-     
-    console.warn(
-      `[WS] auth_challenge ignored — ws not open (readyState=${ws.readyState})`,
-    );
+  if (socket.readyState !== WS_OPEN) {
+    console.warn(`[WS] auth_challenge ignored — ws not open (readyState=${socket.readyState})`);
     return;
   }
   try {
-    ws.send(
+    socket.send(
       JSON.stringify({
         type: 'auth_response',
         did: homeNodeDID,
@@ -741,7 +792,6 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
       }),
     );
   } catch (err) {
-     
     console.warn(`[WS] auth_response send failed: ${(err as Error).message}`);
     return;
   }
@@ -760,9 +810,8 @@ function handleAuthChallenge(challenge: { nonce: string; ts: number }): void {
   // waits forever for an `auth_success` that never arrives on the real
   // relay, even though sig verification succeeded.
   setTimeout(() => {
-    if (ws !== null && connected && authChallengeSeen) {
-      authenticated = true;
-      fireAuthenticated();
+    if (isCurrentSocket(socket, generation) && connected && authChallengeSeen) {
+      markAuthenticated(socket, generation);
     }
   }, 500);
 }
@@ -821,16 +870,12 @@ function isEnvelopeLike(msg: unknown): msg is MsgBoxEnvelope {
 function dispatchEnvelope(env: MsgBoxEnvelope): void {
   // Finding #9: Validate to_did matches our DID — reject misdirected envelopes
   if (env.to_did && homeNodeDID && env.to_did !== homeNodeDID) {
-     
-    console.error(
-      `[WS] dispatch DROP misdirected to=${env.to_did.slice(0, 30)} self=${homeNodeDID.slice(0, 30)} id=${env.id?.slice(0, 8)}`,
-    );
+    console.error(`[WS] dispatch DROP misdirected id=${env.id?.slice(0, 8)}`);
     return;
   }
 
   // Finding #9: Reject expired envelopes (expires_at is unix seconds)
   if (env.expires_at && env.expires_at < Math.floor(Date.now() / 1000)) {
-     
     console.error(
       `[WS] dispatch DROP expired exp=${env.expires_at} now=${Math.floor(Date.now() / 1000)} id=${env.id?.slice(0, 8)}`,
     );
@@ -840,21 +885,18 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
   switch (env.type) {
     case 'd2d':
       if (d2dHandler) d2dHandler(env);
-      else
-         
-        console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
+      else console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
       break;
     case 'rpc':
       if (env.direction === 'request' && rpcHandler) rpcHandler(env);
       else if (env.direction === 'request')
-         
         console.error(`[WS] dispatch DROP no rpcHandler id=${env.id?.slice(0, 8)}`);
       else
         // RPC responses on the home node are an expected case (the
         // home node only consumes incoming *requests*; responses
         // come back along the same socket but are routed by id, not
         // by handler) — trace, not error.
-         
+
         console.log(
           `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
         );
@@ -867,9 +909,13 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
 
 function scheduleReconnect(): void {
   if (!shouldReconnect || !currentURL) return;
+  // Coalesce duplicate close/error paths. Only one reconnect attempt may be
+  // pending for the singleton relay connection.
+  if (reconnectTimer !== null) return;
   const delay = computeReconnectDelay(reconnectAttempt);
   reconnectAttempt++;
   reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
     if (currentURL && shouldReconnect) doConnect(currentURL);
   }, delay);
 }

@@ -8,14 +8,14 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { registerDevice, resetCallerTypeState } from '../../src/auth/caller_type';
 import { sign, getPublicKey } from '../../src/crypto/ed25519';
 import { sealDecrypt, sealEncrypt } from '../../src/crypto/nacl';
-import { sealMessage, buildMessage } from '../../src/d2d/envelope';
+import { sealMessage } from '../../src/d2d/envelope';
 import { deriveDIDKey } from '../../src/identity/did';
 import {
   handleInboundD2D,
@@ -31,7 +31,6 @@ import {
   getIdentity,
   resetConnectionState,
   setWSFactory,
-  sendEnvelope,
   isAuthenticated,
   type WSLike,
   type MsgBoxEnvelope,
@@ -178,12 +177,20 @@ describe('MsgBox Envelope Handlers', () => {
     });
 
     it('processes a valid D2D envelope through receive pipeline', async () => {
+      const infoLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       const env = buildSealedD2DEnvelope();
-      const result = await handleInboundD2D(env, resolveSender);
-      expect(result.success).toBe(true);
-      expect(result.senderDID).toBe(SENDER_DID);
-      expect(result.messageType).toBe('social.update');
-      expect(result.pipelineAction).toBeDefined();
+      try {
+        const result = await handleInboundD2D(env, resolveSender);
+        expect(result.success).toBe(true);
+        expect(result.senderDID).toBe(SENDER_DID);
+        expect(result.messageType).toBe('social.update');
+        expect(result.pipelineAction).toBeDefined();
+        const output = infoLog.mock.calls.flat().join(' ');
+        expect(output).not.toContain(SENDER_DID);
+        expect(output).not.toContain(HOME_DID);
+      } finally {
+        infoLog.mockRestore();
+      }
     });
 
     it('rejects envelope with no ciphertext', async () => {
@@ -220,6 +227,7 @@ describe('MsgBox Envelope Handlers', () => {
     });
 
     it('handles malformed JSON ciphertext gracefully', async () => {
+      const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
       const env: MsgBoxEnvelope = {
         type: 'd2d',
         id: 'test-3',
@@ -227,9 +235,14 @@ describe('MsgBox Envelope Handlers', () => {
         to_did: HOME_DID,
         ciphertext: 'not-json',
       };
-      const result = await handleInboundD2D(env, resolveSender);
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      try {
+        const result = await handleInboundD2D(env, resolveSender);
+        expect(result.success).toBe(false);
+        expect(result.error).toBeDefined();
+        expect(errorLog.mock.calls.flat().join(' ')).not.toContain(SENDER_DID);
+      } finally {
+        errorLog.mockRestore();
+      }
     });
   });
 
@@ -270,15 +283,21 @@ describe('MsgBox Envelope Handlers', () => {
     });
 
     it('routes valid RPC through handler chain', async () => {
+      const infoLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID);
-      await handleInboundRPC(env);
-      expect(mockRouter).toHaveBeenCalledWith(
-        'GET',
-        '/v1/vault',
-        expect.objectContaining({ 'X-DID': CLI_DID }),
-        expect.any(String),
-        expect.any(Object), // AbortSignal
-      );
+      try {
+        await handleInboundRPC(env);
+        expect(mockRouter).toHaveBeenCalledWith(
+          'GET',
+          '/v1/vault',
+          expect.objectContaining({ 'X-DID': CLI_DID }),
+          expect.any(String),
+          expect.any(Object), // AbortSignal
+        );
+        expect(infoLog.mock.calls.flat().join(' ')).not.toContain(CLI_DID);
+      } finally {
+        infoLog.mockRestore();
+      }
     });
 
     it('verifies query-bearing requests against separate path and query components', async () => {
@@ -316,7 +335,8 @@ describe('MsgBox Envelope Handlers', () => {
 
       expect(mockRouter).not.toHaveBeenCalled();
       const responseEnvelope = JSON.parse(sent[sent.length - 1]) as MsgBoxEnvelope;
-      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext!, 'base64'));
+      if (responseEnvelope.ciphertext === undefined) throw new Error('expected encrypted response');
+      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext, 'base64'));
       const decoded = sealDecrypt(sealed, CLI_PUB, CLI_SEED);
       const response = JSON.parse(new TextDecoder().decode(decoded)) as CoreRPCResponse;
       expect(response).toMatchObject({
@@ -347,7 +367,8 @@ describe('MsgBox Envelope Handlers', () => {
 
       const responseEnvelope = JSON.parse(sent[sent.length - 1]) as MsgBoxEnvelope;
       expect(responseEnvelope.direction).toBe('response');
-      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext!, 'base64'));
+      if (responseEnvelope.ciphertext === undefined) throw new Error('expected encrypted response');
+      const sealed = new Uint8Array(Buffer.from(responseEnvelope.ciphertext, 'base64'));
       const plaintext = sealDecrypt(sealed, CLI_PUB, CLI_SEED);
       const response = JSON.parse(new TextDecoder().decode(plaintext)) as CoreRPCResponse;
 
@@ -651,9 +672,17 @@ describe('MsgBox Envelope Handlers', () => {
         code: '123456',
         public_key: publicKeyToMultibase(wrongPub),
       });
-      await handleInboundRPC(env);
-      // Router never called — binding failed before dispatch.
-      expect(pairRouter).not.toHaveBeenCalled();
+      const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await handleInboundRPC(env);
+        // Router never called — binding failed before dispatch.
+        expect(pairRouter).not.toHaveBeenCalled();
+        const output = errorLog.mock.calls.flat().join(' ');
+        expect(output).not.toContain(AGENT_DID);
+        expect(output).not.toContain(publicKeyToMultibase(wrongPub));
+      } finally {
+        errorLog.mockRestore();
+      }
     });
 
     it('rejects a pair envelope when body.public_key is missing', async () => {
@@ -680,8 +709,9 @@ describe('MsgBox Envelope Handlers', () => {
     it('getIdentity returns configured identity', () => {
       const id = getIdentity();
       expect(id).not.toBeNull();
-      expect(id!.did).toBe(HOME_DID);
-      expect(id!.privateKey).toBe(TEST_ED25519_SEED);
+      if (id === null) throw new Error('expected configured identity');
+      expect(id.did).toBe(HOME_DID);
+      expect(id.privateKey).toBe(TEST_ED25519_SEED);
     });
 
     it('getIdentity returns null when not configured', () => {

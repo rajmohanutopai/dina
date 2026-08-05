@@ -42,12 +42,19 @@ appId: com.dinakernel.mobile
 - eraseText
 - inputText: 'maestro-approval-phone'
 - pressKey: Enter
+- scrollUntilVisible:
+    element:
+      id: 'paired-devices-generate'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+    visibilityPercentage: 50
 - tapOn:
     id: 'paired-devices-generate'
-- extendedWaitUntil:
-    visible:
-      id: 'paired-devices-setup-code'
-    timeout: 20000
+    # Android can consume the first tap while the TextInput relinquishes
+    # focus. Retry only when the hierarchy did not change; iOS therefore
+    # still generates exactly one short-lived code.
+    retryTapIfNoChange: true
 - scrollUntilVisible:
     element:
       id: 'paired-devices-setup-code'

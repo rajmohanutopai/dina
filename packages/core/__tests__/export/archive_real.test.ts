@@ -98,10 +98,15 @@ function seedIdentity(a: DatabaseAdapter): void {
     ['grant-secret', 'did:plc:emma', 'route-42', 'eta_query', 'standing', 1],
   );
 }
-function seedVaultItem(a: DatabaseAdapter, id: string, text: string): void {
+function seedVaultItem(
+  a: DatabaseAdapter,
+  id: string,
+  text: string,
+  embedding: Uint8Array | null = null,
+): void {
   a.execute(
-    'INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at) VALUES (?,?,?,?,?)',
-    [id, text, 1, 1, 1],
+    'INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at, embedding) VALUES (?,?,?,?,?,?)',
+    [id, text, 1, 1, 1, embedding],
   );
 }
 
@@ -194,7 +199,14 @@ describe('real export → clean-install import', () => {
     let archive: Uint8Array;
     try {
       seedIdentity(src.id);
-      seedVaultItem(src.personas.get('general')!.adapter, 'v-gen', 'general note');
+      seedVaultItem(
+        src.personas.get('general')!.adapter,
+        'v-gen',
+        'general note',
+        // Node returns this SQLite BLOB as Buffer; mobile op-sqlite returns an
+        // ArrayBuffer. Both must survive the archive JSON codec byte-for-byte.
+        new Uint8Array([0x01, 0x7f, 0x80, 0xff]),
+      );
       seedVaultItem(src.personas.get('health')!.adapter, 'v-health', 'bp 120/80');
       setArchiveDataSource(dataSourceFor(src));
       archive = await createArchive(PASS);
@@ -224,6 +236,10 @@ describe('real export → clean-install import', () => {
           .adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v-gen'])[0]
           ?.content_l0,
       ).toBe('general note');
+      const restoredEmbedding = dest.personas
+        .get('general')!
+        .adapter.query('SELECT embedding FROM vault_items WHERE id = ?', ['v-gen'])[0]?.embedding;
+      expect(Array.from(restoredEmbedding as Uint8Array)).toEqual([0x01, 0x7f, 0x80, 0xff]);
       expect(
         dest.personas
           .get('health')!

@@ -63,8 +63,8 @@ jest.mock('../../src/services/install_marker', () => ({
   clearOrphanKeychainState: jest.fn(async () => {
     callLog.push('clearOrphanKeychainState');
   }),
-  deleteInstallMarker: jest.fn(() => {
-    callLog.push('deleteInstallMarker');
+  writeInstallMarker: jest.fn(() => {
+    callLog.push('writeInstallMarker');
   }),
 }));
 
@@ -92,10 +92,7 @@ import { resetUnlockState } from '../../src/hooks/useUnlock';
 import { clearDisplayNameOverride } from '../../src/services/display_name_override';
 import { clearPersistedDid } from '../../src/services/identity_record';
 import { clearIdentitySeeds } from '../../src/services/identity_store';
-import {
-  clearOrphanKeychainState,
-  deleteInstallMarker,
-} from '../../src/services/install_marker';
+import { clearOrphanKeychainState, writeInstallMarker } from '../../src/services/install_marker';
 import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
 import { clearAutoPassphrase } from '../../src/services/startup_preferences';
 import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
@@ -148,7 +145,7 @@ describe('eraseEverythingLocal', () => {
     __resetFileSystemMock();
   });
 
-  it('closes persistence, deletes every .sqlite-family file, cancels notifications, sweeps keychain, drops marker, then runs signOutLocal', async () => {
+  it('closes persistence, deletes every .sqlite-family file, cancels notifications, sweeps keychain, signs out, then preserves the current-install marker', async () => {
     __setEntries([
       'identity.sqlite',
       'identity.sqlite-wal',
@@ -174,20 +171,21 @@ describe('eraseEverythingLocal', () => {
     expect(__getEntries()).toEqual([]);
 
     // Order: shutdown FIRST (release file locks), file delete next,
-    // notifications cancelled, broad keychain sweep, install-marker
-    // drop, THEN signOutLocal at the end (keys last so a crash mid-
-    // wipe leaves the device cleanly re-onboardable).
+    // notifications cancelled, broad keychain sweep, signOutLocal (keys
+    // last), THEN current-install marker re-established. The marker must
+    // survive an in-process re-onboard or the next boot erases the new seed
+    // as an apparent orphan.
     expect(callLog).toEqual([
       'shutdownAllPersistence',
       'cancelAllScheduledNotificationsAsync',
       'clearOrphanKeychainState',
-      'deleteInstallMarker',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
       'clearDisplayNameOverride',
       'clearAutoPassphrase',
       'resetUnlockState',
+      'writeInstallMarker',
     ]);
   });
 
@@ -204,17 +202,18 @@ describe('eraseEverythingLocal', () => {
     expect(clearOrphanKeychainState).toHaveBeenCalledTimes(1);
   });
 
-  it('deletes the install marker so the next boot is treated as a true fresh install', async () => {
+  it('keeps a marker for this installation so immediate re-onboarding survives restart', async () => {
     await eraseEverythingLocal();
-    expect(deleteInstallMarker).toHaveBeenCalledTimes(1);
+    expect(writeInstallMarker).toHaveBeenCalledTimes(1);
   });
 
   it('still finishes the keychain sweep when notifications cancellation throws', async () => {
-    (Notifications.cancelAllScheduledNotificationsAsync as jest.Mock)
-      .mockRejectedValueOnce(new Error('expo-notifications init failed'));
+    (Notifications.cancelAllScheduledNotificationsAsync as jest.Mock).mockRejectedValueOnce(
+      new Error('expo-notifications init failed'),
+    );
     await eraseEverythingLocal();
     expect(clearOrphanKeychainState).toHaveBeenCalled();
-    expect(deleteInstallMarker).toHaveBeenCalled();
+    expect(writeInstallMarker).toHaveBeenCalled();
     expect(resetUnlockState).toHaveBeenCalled();
   });
 
@@ -228,12 +227,7 @@ describe('eraseEverythingLocal', () => {
   });
 
   it('does NOT delete non-sqlite files in the document directory', async () => {
-    __setEntries([
-      'identity.sqlite',
-      'fonts.cache',
-      'image-cache.png',
-      'expo-config.json',
-    ]);
+    __setEntries(['identity.sqlite', 'fonts.cache', 'image-cache.png', 'expo-config.json']);
 
     await eraseEverythingLocal();
 
@@ -271,11 +265,7 @@ describe('eraseEverythingLocal', () => {
   });
 
   it('one file failing to delete does not abort the rest of the wipe', async () => {
-    __setEntries([
-      'identity.sqlite',
-      'general.sqlite',
-      'health.sqlite',
-    ]);
+    __setEntries(['identity.sqlite', 'general.sqlite', 'health.sqlite']);
     __throwOnDelete('general.sqlite'); // simulate a stuck file lock on one
 
     await eraseEverythingLocal();
@@ -309,13 +299,13 @@ describe('eraseEverythingLocal', () => {
       'shutdownAllPersistence',
       'cancelAllScheduledNotificationsAsync',
       'clearOrphanKeychainState',
-      'deleteInstallMarker',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
       'clearDisplayNameOverride',
       'clearAutoPassphrase',
       'resetUnlockState',
+      'writeInstallMarker',
     ]);
   });
 });

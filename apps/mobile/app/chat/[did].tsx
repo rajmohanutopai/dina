@@ -13,6 +13,7 @@
  */
 
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
@@ -45,6 +46,7 @@ import { ChatSendError } from '../../src/services/chat_d2d';
 import { colors, spacing, textStyles } from '../../src/theme';
 
 export default function ChatScreen() {
+  const headerHeight = useHeaderHeight();
   const params = useLocalSearchParams<{ did: string }>();
   const router = useRouter();
   const peerDID = typeof params.did === 'string' ? params.did : '';
@@ -156,8 +158,7 @@ export default function ChatScreen() {
   // (first label of resolved PLC handle) > truncated DID. Tapping the
   // header opens the IdentityModal with the full handle, DID, and
   // PLC services.
-  const title =
-    peerContact?.displayName ?? displayNameOf(resolvedHandle, peerDID);
+  const title = peerContact?.displayName ?? displayNameOf(resolvedHandle, peerDID);
 
   const [identityOpen, setIdentityOpen] = useState(false);
 
@@ -165,10 +166,11 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       // `padding` on both platforms — Android's adjustResize is neutralised by
       // SDK 55 edge-to-edge, so behavior=undefined left the composer under the
-      // keyboard (#390). Offset subtracts the tab bar (88pt iOS, 64pt Android).
+      // keyboard (#390). Android measures this route below its native Stack
+      // header, so subtract that known height instead of a device constant.
       behavior="padding"
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : headerHeight}
     >
       <Stack.Screen
         options={{
@@ -323,8 +325,7 @@ function Bubble({
   // validates the shape and renders null on a malformed row.
   if (
     message.type === 'dina' &&
-    (message.metadata?.lifecycle as { kind?: unknown } | undefined)?.kind ===
-      'grant_request_prompt'
+    (message.metadata?.lifecycle as { kind?: unknown } | undefined)?.kind === 'grant_request_prompt'
   ) {
     return <InlineGrantRequestCard message={message} contactName={contactName} />;
   }
@@ -356,13 +357,17 @@ function DeliveryIndicator({ status }: { status: 'sending' | 'delivered' | 'fail
   // Single character so each bubble row stays visually compact.
   const glyph = status === 'sending' ? '···' : status === 'delivered' ? '✓' : '!';
   const label =
-    status === 'sending' ? 'Sending' : status === 'delivered' ? 'Delivered to relay' : 'Failed to send';
+    status === 'sending'
+      ? 'Sending'
+      : status === 'delivered'
+        ? 'Delivered to relay'
+        : 'Failed to send';
   const color =
     status === 'failed'
       ? colors.error
       : status === 'delivered'
-      ? colors.textMuted
-      : colors.textMuted;
+        ? colors.textMuted
+        : colors.textMuted;
   return (
     <Text
       style={[styles.deliveryIndicator, { color }]}

@@ -31,7 +31,6 @@ import {
   type WSLike,
 } from '../../src/relay/msgbox_ws';
 
-
 interface MockWS extends WSLike {
   sentFrames: unknown[];
   closeCalls: number;
@@ -68,9 +67,7 @@ function makeMockWS(): MockWS {
 }
 
 function pingsSent(ws: MockWS): unknown[] {
-  return ws.sentFrames.filter(
-    (f) => (f as { type?: string }).type === 'ping',
-  );
+  return ws.sentFrames.filter((f) => (f as { type?: string }).type === 'ping');
 }
 
 describe('MsgBox WS keepalive (issue #351)', () => {
@@ -223,6 +220,25 @@ describe('MsgBox WS keepalive (issue #351)', () => {
     expect(ws.closeCalls).toBe(0);
   });
 
+  it('does not emit a remote DID while dispatching an envelope', async () => {
+    const ws = await connectAndAuth();
+    const remoteDid = 'did:key:z6MkRemoteContactForLogTest';
+    const infoLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'd2d',
+          id: 'log-redaction-test',
+          from_did: remoteDid,
+          to_did: '',
+        }),
+      });
+      expect(infoLog.mock.calls.flat().join(' ')).not.toContain(remoteDid);
+    } finally {
+      infoLog.mockRestore();
+    }
+  });
+
   it('disconnect() stops the keepalive timer — no pings or closes afterwards', async () => {
     const ws = await connectAndAuth();
     await disconnect();
@@ -231,6 +247,44 @@ describe('MsgBox WS keepalive (issue #351)', () => {
     jest.advanceTimersByTime(FALLBACK_STALE_MS * 2);
     expect(pingsSent(ws)).toHaveLength(pingsAtDisconnect);
     expect(sockets.length).toBe(1); // no reconnect after explicit disconnect
+  });
+
+  it('ignores late auth and close callbacks from a replaced socket', async () => {
+    const old = await connectAndAuth();
+    const staleMessage = old.onmessage;
+    const staleClose = old.onclose;
+
+    old.close();
+    jest.advanceTimersByTime(2_000);
+    expect(sockets).toHaveLength(2);
+
+    const current = sockets[1];
+    current.onopen?.();
+    current.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n2', ts: 2 }) });
+
+    // A queued callback from the retired socket must not authenticate or
+    // close the replacement.
+    staleMessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    expect(isAuthenticated()).toBe(false);
+
+    current.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    expect(isAuthenticated()).toBe(true);
+    staleClose?.({ code: 1000, reason: 'late close' });
+    expect(isAuthenticated()).toBe(true);
+
+    jest.advanceTimersByTime(120_000);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('coalesces repeated close callbacks into one reconnect', async () => {
+    const current = await connectAndAuth();
+    const close = current.onclose;
+
+    close?.({ code: 1006, reason: 'first' });
+    close?.({ code: 1006, reason: 'duplicate' });
+    jest.advanceTimersByTime(2_000);
+
+    expect(sockets).toHaveLength(2);
   });
 });
 

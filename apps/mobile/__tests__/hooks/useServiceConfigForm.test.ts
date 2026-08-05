@@ -81,6 +81,19 @@ function stubClient(init: {
 describe('useServiceConfigForm', () => {
   beforeEach(() => resetServiceConfigCoreClient());
 
+  it('does not let an older node clear a replacement client', async () => {
+    const { client: older, calls: olderCalls } = stubClient({});
+    const { client: replacement, calls: replacementCalls } = stubClient({});
+
+    setServiceConfigCoreClient(older);
+    setServiceConfigCoreClient(replacement);
+    resetServiceConfigCoreClient(older);
+
+    await listServiceListings();
+    expect(replacementCalls.list).toBe(1);
+    expect(olderCalls.list).toBe(0);
+  });
+
   it('throws when used before setServiceConfigCoreClient is called', async () => {
     await expect(loadServiceConfig()).rejects.toBeInstanceOf(ServiceConfigNotConfiguredError);
     await expect(saveServiceConfig(VALID_CONFIG)).rejects.toBeInstanceOf(

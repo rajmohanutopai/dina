@@ -126,6 +126,17 @@ describe('Schema definitions', () => {
     expect(IDENTITY_MIGRATIONS[0].sql).toContain('kv_store');
   });
 
+  it('v28 repairs early databases before altering agent_sessions', () => {
+    const migration = IDENTITY_MIGRATIONS.find((item) => item.version === 28);
+    expect(migration).toBeDefined();
+    const createAt = migration!.sql.indexOf('CREATE TABLE IF NOT EXISTS agent_sessions');
+    const alterAt = migration!.sql.indexOf(
+      'ALTER TABLE agent_sessions ADD COLUMN authority_origin_json',
+    );
+    expect(createAt).toBeGreaterThanOrEqual(0);
+    expect(alterAt).toBeGreaterThan(createAt);
+  });
+
   it('identity schema can be applied to in-memory adapter', () => {
     const db = new InMemoryDatabaseAdapter();
     const applied = applyMigrations(db, IDENTITY_MIGRATIONS);

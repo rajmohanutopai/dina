@@ -23,22 +23,56 @@ appId: com.dinakernel.mobile
     id: 'root-layout-menu-row-vault'
 - extendedWaitUntil:
     visible:
-      id: 'vault-new-vault'
+      text: 'YOUR VAULTS'
     timeout: 20000
-- tapOn:
-    id: 'vault-new-vault'
-- tapOn:
-    id: 'vault-name-input'
-- inputText: 'salon'
-- tapOn:
-    id: 'vault-tier-standard'
-- tapOn:
-    id: 'vault-description-input'
-- inputText: 'My salon business: opening hours, appointments, client bookings, services and prices'
-- hideKeyboard
-- tapOn:
-    id: 'vault-create'
+# First execution creates Salon. Repeat release passes reuse it, which also
+# proves an app upgrade did not lose the durable custom-persona registry.
+- runFlow:
+    when:
+      notVisible:
+        id: 'vault-open-salon'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'vault-new-vault'
+          direction: DOWN
+          centerElement: true
+          timeout: 10000
+      - tapOn:
+          id: 'vault-new-vault'
+      - extendedWaitUntil:
+          visible:
+            id: 'vault-name-input'
+          timeout: 15000
+      - tapOn:
+          id: 'vault-name-input'
+      - inputText: 'salon'
+      - tapOn:
+          id: 'vault-tier-standard'
+      - scrollUntilVisible:
+          element:
+            id: 'vault-description-input'
+          direction: DOWN
+          centerElement: true
+          timeout: 10000
+      - tapOn:
+          id: 'vault-description-input'
+      - inputText: 'My salon business: opening hours, appointments, client bookings, services and prices'
+      - scrollUntilVisible:
+          element:
+            id: 'vault-create'
+          direction: DOWN
+          centerElement: true
+          timeout: 10000
+      - tapOn:
+          id: 'vault-create'
 # It lands in the list (created + visible).
+- scrollUntilVisible:
+    element:
+      id: 'vault-open-salon'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - extendedWaitUntil:
     visible:
       id: 'vault-open-salon'
@@ -46,7 +80,7 @@ appId: com.dinakernel.mobile
 
 # ── SAME session: remember salon hours → must route to the Salon vault ──
 - tapOn:
-    id: 'root-layout-back'
+    id: 'tab-chat'
 - extendedWaitUntil:
     visible:
       id: 'index-mode-chip-remember'
@@ -74,6 +108,12 @@ appId: com.dinakernel.mobile
     id: 'root-layout-menu'
 - tapOn:
     id: 'root-layout-menu-row-vault'
+- scrollUntilVisible:
+    element:
+      id: 'vault-open-salon'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - extendedWaitUntil:
     visible:
       id: 'vault-open-salon'

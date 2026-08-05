@@ -31,9 +31,11 @@ appId: com.dinakernel.mobile
 # The persona it wants to read is shown as the tag (here: health).
 - assertVisible:
     text: 'health'
-# Session-scope Approve — direct call, no confirm Alert.
+# Session-scope Approve — direct call, no confirm Alert. Match the direct
+# approval id rather than `approvals-approve-.*`, which also matches the
+# preceding `approvals-approve-once-*` button on Android.
 - tapOn:
-    id: 'approvals-approve-.*'
+    id: 'approvals-approve-appr-.*-health'
 - extendedWaitUntil:
     notVisible:
       text: 'Vault read approval'

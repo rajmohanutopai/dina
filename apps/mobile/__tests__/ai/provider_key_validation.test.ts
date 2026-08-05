@@ -143,10 +143,15 @@ describe('saveApiKey / removeApiKey / getApiKey — sticky-remove vs dev-env fal
      
     await jest.isolateModulesAsync(async () => {
       const { saveApiKey, removeApiKey, getApiKey } = require('../../src/ai/provider');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Keychain = require('../../src/services/keychain');
       await saveApiKey('gemini', 'AIza-user-saved-key-1234567890abcdef');
       expect(await getApiKey('gemini')).toBe('AIza-user-saved-key-1234567890abcdef');
       await removeApiKey('gemini');
       expect(await getApiKey('gemini')).toBeNull();
+      const raw = await Keychain.getGenericPassword({ service: 'dina.llm.gemini' });
+      expect(raw).not.toBe(false);
+      if (raw !== false) expect(raw.password).toMatch(/\S/);
     });
   });
 });

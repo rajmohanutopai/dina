@@ -18,10 +18,7 @@
       "bundleIdentifier": "com.dinakernel.mobile",
       "icon": "./assets/branding/dina-icon.png",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "remote-notification",
-          "fetch"
-        ],
+        "UIBackgroundModes": ["remote-notification", "fetch"],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -45,6 +42,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/with-monorepo-bundle-inputs",
       [
         "expo-notifications",
         {

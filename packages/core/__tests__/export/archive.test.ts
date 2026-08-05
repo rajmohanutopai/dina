@@ -20,9 +20,11 @@ import {
   isPathSafe,
   checkCompatibility,
   listArchiveContents,
+  setArchiveDataSource,
 } from '../../src/export/archive';
 
-import type { ArchiveManifest } from '../../src/export/archive';
+import type { ArchiveDataSource, ArchiveManifest } from '../../src/export/archive';
+import type { DatabaseAdapter, DBRow } from '../../src/storage/db_adapter';
 
 describe('Export Archive (.dina format)', () => {
   let archive: Uint8Array;
@@ -31,7 +33,10 @@ describe('Export Archive (.dina format)', () => {
     archive = await createArchive(TEST_PASSPHRASE);
   }, 30_000);
 
-  afterEach(() => resetImportHandler());
+  afterEach(() => {
+    resetImportHandler();
+    setArchiveDataSource(null);
+  });
 
   describe('createArchive', () => {
     it('creates an encrypted archive', () => {
@@ -142,6 +147,61 @@ describe('Export Archive (.dina format)', () => {
       expect(imported).not.toBeNull();
       expect(imported!.header.format).toBe('dina-archive-v1');
     }, 60_000);
+
+    it('round-trips op-sqlite ArrayBuffer BLOB values', async () => {
+      const sourceBlob = new Uint8Array([0x00, 0x7f, 0x80, 0xff]).buffer;
+      const sourceAdapter: DatabaseAdapter = {
+        isOpen: true,
+        execute: () => undefined,
+        run: () => 0,
+        transaction: (fn) => fn(),
+        close: () => undefined,
+        query: <T extends DBRow>(sql: string): T[] =>
+          (sql.includes('FROM vault_items')
+            ? [
+                {
+                  id: 'blob-item',
+                  embedding: sourceBlob as unknown as Uint8Array,
+                },
+              ]
+            : []) as unknown as T[],
+      };
+      const source: ArchiveDataSource = {
+        identityAdapter: () => null,
+        personaSources: async () => [{ name: 'general', tier: 'default', adapter: sourceAdapter }],
+        openPersonaForRestore: async () => sourceAdapter,
+        hasExistingUserData: async () => false,
+      };
+      setArchiveDataSource(source);
+      const blobArchive = await createArchive(TEST_PASSPHRASE);
+
+      const manifest = await readManifest(blobArchive, TEST_PASSPHRASE);
+      const encoded = manifest.personas[0]?.tables.vault_items?.[0]?.embedding;
+      expect(encoded).toBeInstanceOf(Uint8Array);
+      expect(Array.from(encoded as Uint8Array)).toEqual([0x00, 0x7f, 0x80, 0xff]);
+
+      const boundParams: unknown[][] = [];
+      const destinationAdapter: DatabaseAdapter = {
+        isOpen: true,
+        execute: (_sql, params) => {
+          if (params !== undefined) boundParams.push(params);
+        },
+        query: () => [],
+        run: () => 0,
+        transaction: (fn) => fn(),
+        close: () => undefined,
+      };
+      setArchiveDataSource({
+        identityAdapter: () => null,
+        personaSources: async () => [],
+        openPersonaForRestore: async () => destinationAdapter,
+        hasExistingUserData: async () => false,
+      });
+      await importArchive(blobArchive, TEST_PASSPHRASE);
+
+      const restoredBlob = boundParams.flat().find((value) => value instanceof Uint8Array);
+      expect(Array.from(restoredBlob as Uint8Array)).toEqual([0x00, 0x7f, 0x80, 0xff]);
+    }, 30_000);
   });
 
   describe('path traversal protection', () => {
