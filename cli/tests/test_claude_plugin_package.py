@@ -124,7 +124,7 @@ def test_plugin_bundle_contains_its_runtime_and_recovery_docs() -> None:
     normalized_readme = " ".join(readme.lower().split())
     gate = PLUGIN_ROOT / "bin" / "dina-gate"
 
-    assert manifest["version"] == "0.3.1"
+    assert manifest["version"] == "0.3.2"
     assert "/dina:setup" in manifest["description"]
     assert mcp_config["mcpServers"]["dina"]["command"] == (
         "${CLAUDE_PLUGIN_ROOT}/bin/dina-cli"
@@ -424,7 +424,7 @@ with log.open("a", encoding="utf-8") as out:
     out.write(json.dumps(args) + "\\n")
 
 if args == ["--version"]:
-    print("dina-agent, version 0.20.9")
+    print("dina-agent, version 0.20.11")
     raise SystemExit(0)
 
 if command_args[:2] == ["agent-host", "setup"]:
@@ -435,7 +435,7 @@ if command_args[:2] == ["agent-host", "setup"]:
             "kind": "setup_status",
             "host": host,
             "ready": installed,
-            "cli": {{"available": True, "version": "0.20.9"}},
+            "cli": {{"available": True, "version": "0.20.11"}},
             "home_node": {{
                 "installed": installed,
                 "running": installed,

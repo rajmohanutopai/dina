@@ -1,7 +1,7 @@
 {
   "name": "dina",
   "displayName": "Dina",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Your sovereign personal AI, inside the agent you already use. Run /dina:setup after installation to install or repair the local Home Node without a source checkout. Once Claude Code launches the hook supervisor, every normal tool call passes a Core-owned deterministic safety gate and gate failures block, with a disclosed host-mediated residual. Includes portable encrypted memory, services, owner-approved contact messaging and delegation, intent validation, and PII scrubbing over MCP.",
   "author": { "name": "Dina" },
   "keywords": ["security", "gate", "agent-safety", "memory", "privacy", "mcp"],
