@@ -2,7 +2,7 @@
   "name": "@dina/commerce-protocol",
   "version": "0.1.0",
   "private": true,
-  "description": "Dina Commerce Pack wire protocol — canonical money/quantity arithmetic, domain-separated digests, quote/order lifecycle types + validators, frozen conformance vectors. Zero runtime deps; usable by plugins, Core validators, AppView, SDKs, and third-party providers (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §6.1).",
+  "description": "Dina Commerce Pack wire protocol \u2014 canonical money/quantity arithmetic, domain-separated digests, quote/order lifecycle types + validators, frozen conformance vectors. Zero runtime deps; usable by plugins, Core validators, AppView, SDKs, and third-party providers (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md \u00a76.1).",
   "keywords": [
     "dina",
     "commerce",
@@ -21,7 +21,8 @@
   },
   "files": [
     "dist/",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "publishConfig": {
     "main": "./dist/index.js",

@@ -87,6 +87,26 @@ describe('validateProductRelationshipClaim (§9.4)', () => {
     ).toMatch(/must be a ProductRef/);
   });
 
+  it('rejects a ProductRef object on an OPERATOR relationship (the inverse)', () => {
+    // The direction that was open. "manufactured_by" a PRODUCT is not a
+    // typo the projection can absorb: it composes inherited manufacturer
+    // standing along an edge that means nothing.
+    expect(
+      validateProductRelationshipClaim({
+        ...base,
+        relationship: 'manufactured_by',
+        object: { scheme: 'gtin', value: '09506000134369' },
+      }),
+    ).toMatch(/must carry a did/);
+    expect(
+      validateProductRelationshipClaim({
+        ...base,
+        relationship: 'sold_by',
+        object: { scheme: 'gtin', value: '09506000134369' },
+      }),
+    ).toMatch(/must carry a did/);
+  });
+
   it('enforces temporal validity ordering', () => {
     expect(
       validateProductRelationshipClaim({

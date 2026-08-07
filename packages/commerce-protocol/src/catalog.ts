@@ -258,6 +258,15 @@ export function validateProductRelationshipClaim(claim: unknown): string | null 
     );
     if (err) return err;
   } else {
+    // The discriminant runs in BOTH directions. Checking only "a DID object
+    // needs a DID relationship" left the inverse open: `manufactured_by`
+    // with a ProductRef object passed validation, so a claim asserting that
+    // a product is manufactured BY ANOTHER PRODUCT would enter the
+    // relationship projection and corrupt manufacturer standing — inherited
+    // reputation composed along an edge that means nothing.
+    if (DID_OBJECT_RELATIONSHIPS.has(claim.relationship)) {
+      return `relationshipClaim: "${claim.relationship}" relates a product to an OPERATOR — object must carry a did`;
+    }
     const err = validateProductRef(claim.object);
     if (err) return `relationshipClaim.object: ${err}`;
   }

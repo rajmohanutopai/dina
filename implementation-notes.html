@@ -801,6 +801,44 @@
       survival.
     </p>
 
+    <h3>WS-1.4 and WS-1.10 — discriminant both ways, and the freeze made honest <span class="meta">(done)</span></h3>
+    <p>
+      <strong>Relationship discriminant.</strong> <code>validateProductRelationshipClaim</code>
+      checked "a DID object needs a DID relationship" but not the inverse, so
+      <code>manufactured_by</code> with a <code>ProductRef</code> object passed — a claim that a
+      product is manufactured BY ANOTHER PRODUCT would enter the relationship projection and compose
+      inherited manufacturer standing along an edge that means nothing. Both directions now
+      enforced; mutation-verified.
+    </p>
+    <p>
+      <strong>The pre-freeze note now lives where a port would read it</strong> —
+      <code>packages/commerce-protocol/docs/conformance.md</code>, added to the package's published
+      <code>files</code> so a consumer actually receives it. Recording it only in these notes would
+      have satisfied the task and helped nobody: a Go or Rust implementor reads the package, not my
+      working notes.
+    </p>
+    <p>
+      It states plainly that <code>1.x</code> is unstable until Phase 0 exits, that no implementation
+      may claim conformance, that records signed before the freeze may not verify after it, and that
+      changes land without a version bump — with the three incompatible ones (<code>HeldEvidence</code>,
+      <code>computeTotal</code>, <code>BuyerQuoteContext</code>) listed in a changelog. It also lists
+      the Phase 0 exit criteria as checkboxes with the open ones unticked, and declares which §25.1
+      vector categories are still missing rather than implying full coverage.
+    </p>
+    <p>
+      <strong>Five tests keep the document honest.</strong> A prose warning nobody checks decays —
+      the version drifts, the freeze happens informally, or the note gets deleted in a tidy-up. The
+      tests assert the doc names the version the code emits, carries the declaration while the
+      version is 1.x, records the incompatible changes, lists checkable exit criteria, and admits
+      the vector gaps. Deleting the warning is a decision that asserts the wire is stable; it should
+      fail loudly here rather than quietly in someone else's port.
+    </p>
+    <p class="meta">
+      Tests: 219 commerce-protocol, workspace typecheck and eslint clean. Remaining in WS-1: exact
+      conversation-version pinning (1.7), the catalog Phase-0 record contract (1.8), and the
+      remaining §25.1 vector categories (1.9).
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
