@@ -260,12 +260,20 @@ describe.each([
         currentEpoch: () => '2',
       });
 
+      const receiptsBefore = h.receipts.listByOrder(BUYER_DID, order.purchase_order_id).length;
       const result = restored.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'cancelled');
-      expect('error' in result && result.error).toMatch(/restore fence first/);
-      // The head did not move.
+      // WS-4.4 moved this refusal EARLIER — the order-level pre-restore check
+      // now fires before the chain-level one, so the message names the order
+      // rather than the fence. The stronger property is that it refuses
+      // before writing anything: the old path recorded a cancellation receipt
+      // and THEN failed at the signer, leaving durable evidence of a decision
+      // that was never made.
+      expect('error' in result && result.error).toMatch(/order predates a restore/);
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.headDigest).toBe(
         headBefore.headDigest,
       );
+      const receiptsAfter = h.receipts.listByOrder(BUYER_DID, order.purchase_order_id).length;
+      expect(receiptsAfter).toBe(receiptsBefore);
     });
 
     it('refuses to sign a GENESIS for an order that predates a restore (§16.2)', () => {
@@ -319,6 +327,69 @@ describe.each([
       const result = restored.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'cancelled');
       expect('error' in result && result.error).toMatch(/order predates a restore/);
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+    });
+
+    it('a RE-ADOPTED order cannot be CANCELLED until it is reconciled (§16.2)', () => {
+      // The sibling of the genesis rule, and the one that matters more.
+      // Re-adoption rebuilds the reference from the buyer's held
+      // acknowledgement, so the order arrives back in `reserved` — which the
+      // cancellation race arm reads as "not yet decided" and would resolve by
+      // refunding the hold and signing a terminal cancellation_won genesis.
+      // But this node has no idea what it actually decided before the loss:
+      // the buyer may hold an acceptance. Deciding now forks the chain
+      // against a record the buyer can prove.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const heldAck = JSON.parse(
+        h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.acknowledgementJson ?? '{}',
+      ) as OrderAcknowledgement;
+
+      const fresh = makeHarness();
+      try {
+        const engineB = new CommerceLifecycleEngine({
+          tx: fresh.tx,
+          orders: makeOrders(fresh.orderRefs, clock),
+          chains: makeChains(fresh.statusHeads, clock, () => '1'),
+          receipts: fresh.receipts,
+          families: makeFamilies(fresh.quotes, clock, () => '1'),
+          supplierDid: () => SUPPLIER_DID,
+          now: () => clock.now,
+          currentEpoch: () => '1',
+          verifyHeldEvidence: () => true,
+        });
+        engineB.reconcile(
+          {
+            protocol_version: '1.0',
+            purchase_order_id: order.purchase_order_id,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: order.order_digest,
+            idempotency_key: order.idempotency_key,
+            held_acknowledgement: evid(heldAck),
+          },
+          BUYER_DID,
+        );
+        expect(
+          fresh.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.reconciliationRequired,
+        ).toBe(true);
+
+        const result = engineB.resolveCancellation(
+          makeCancellation(order),
+          BUYER_DID,
+          () => 'cancelled',
+        );
+        expect('error' in result && result.error).toMatch(/awaiting reconciliation/);
+        // Nothing decided and nothing recorded, so a cancellation retried
+        // after reconciliation still gets a real answer.
+        expect(fresh.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+        expect(
+          fresh.receipts
+            .listByOrder(BUYER_DID, order.purchase_order_id)
+            .filter((r) => r.domain === 'cancellation'),
+        ).toEqual([]);
+      } finally {
+        fresh.cleanup();
+      }
     });
 
     it('a RE-ADOPTED order cannot sign a genesis until it is reconciled (§16.2)', () => {

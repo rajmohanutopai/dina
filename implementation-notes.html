@@ -1202,6 +1202,45 @@
       2,839 server, 3,293 mobile; typecheck clean, no new lint errors.
     </p>
 
+    <h3>WS-4.4 — a cancellation could decide an order whose decision was lost <span class="meta">(done)</span></h3>
+    <p>
+      <strong>The hole.</strong> The cancellation race treats <code>reserved</code> as "not yet
+      decided" and lets the cancellation win: it refunds the hold and signs a terminal
+      <code>cancellation_won</code> genesis. After a restore that reading is unsound. An order
+      restored as reserved may have been accepted AFTER the backup was taken — the buyer holds an
+      acknowledgement this node no longer has. Deciding it now forks the chain against a record the
+      buyer can prove, and refunds capacity that was actually committed.
+    </p>
+    <p>
+      <strong>The same hole through re-adoption, which is worse.</strong> Re-adoption rebuilds the
+      reference from the buyer's held acknowledgement, so the order arrives back in
+      <code>reserved</code> having never been decided by THIS node's records at all.
+    </p>
+    <p>
+      <strong>It answers nothing and records nothing.</strong> The guard fires before the receipt
+      write. The old path wrote a cancellation receipt and THEN failed at the signer, leaving durable
+      evidence of a decision never made; now a cancellation retried after reconciliation still gets a
+      real answer. The buyer's route to certainty is <code>order_reconcile</code>, the capability
+      designed for exactly "I do not know what happened".
+    </p>
+    <p>
+      <strong>Deliberately not <code>pending_review</code>.</strong> The result union has no
+      "unresolved" arm, and <code>pending_review</code> was the tempting fit — but it claims a human
+      is looking at the order, which is false, and it would let
+      <code>finalizePendingCancellation</code> decide the very order that cannot be decided.
+    </p>
+    <p>
+      <strong>One existing test changed meaning, and I did not weaken it.</strong> A test asserted
+      the chain-level refusal message; the order-level guard now fires first, so the message names
+      the order rather than the fence. I updated it and ADDED the stronger assertion the change
+      earns: no receipt is written. The first mutation run also showed the reconciliation-flag guard
+      surviving — no test covered cancelling a re-adopted order — so that case is now covered too.
+    </p>
+    <p class="meta">
+      Verification: 1 new test, 1 updated, 2 mutations each caught after the gap was closed. Tests:
+      6,357 core; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

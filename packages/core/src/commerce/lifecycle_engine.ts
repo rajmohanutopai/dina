@@ -561,6 +561,41 @@ export class CommerceLifecycleEngine {
         return;
       }
 
+      // §16.2 (WS-4.4) — a cancellation may not DECIDE an order whose
+      // post-backup decision was lost.
+      //
+      // RACE ARM 1 below treats `reserved` as "not yet decided" and lets the
+      // cancellation win: it refunds the hold and signs a `cancellation_won`
+      // genesis. After a restore that reading is unsound. An order restored
+      // as reserved may have been accepted AFTER the backup was taken — the
+      // buyer holds an acknowledgement this node no longer has. Deciding it
+      // now forks the chain against the record the buyer already holds and
+      // refunds capacity that was actually committed.
+      //
+      // Nothing local can tell the two apart, which is what reconciliation
+      // is for. So this answers nothing and RECORDS nothing: no receipt, no
+      // frozen result. The buyer's route to certainty is `order_reconcile`,
+      // and its cancellation gets a real decision once the order is
+      // reconciled and this guard stops firing.
+      //
+      // Deliberately NOT `pending_review`: that claims a human is looking at
+      // it, which is false, and would let `finalizePendingCancellation`
+      // decide the very order we cannot decide.
+      if (ref.reconciliationRequired) {
+        outcome = {
+          error:
+            'commerce: order is awaiting reconciliation — it cannot be cancelled yet (§16.2)',
+        };
+        return;
+      }
+      if (BigInt(ref.admittedEpoch) < BigInt(this.deps.currentEpoch())) {
+        outcome = {
+          error:
+            'commerce: order predates a restore — reconcile it before cancelling (§16.2)',
+        };
+        return;
+      }
+
       const nowMs = this.deps.now();
       this.deps.receipts.put({
         recordDigest: cancellation.cancellation_digest,
