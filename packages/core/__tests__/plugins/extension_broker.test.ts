@@ -18,6 +18,9 @@ import { ExtensionOperationBroker } from '../../src/plugins/extension_broker';
 import { ExtensionOperationRegistry } from '../../src/plugins/extension_ops';
 import {
   HostOperationDispatcher,
+  createPluginHostRuntime,
+  getPluginHostRuntime,
+  installPluginHostRuntime,
   makeBoundedAppViewSearch,
 } from '../../src/plugins/host_operations';
 import { applyMigrations } from '../../src/storage/migration';
@@ -475,5 +478,109 @@ describe('host operation dispatcher (§3.4 FR-P9)', () => {
     const result = outcome.result as { hits: unknown[]; truncated: boolean };
     expect(result.hits).toHaveLength(5);
     expect(result.truncated).toBe(true);
+  });
+});
+
+/**
+ * §3.4 composition (WS-3.4/3.5).
+ *
+ * Both boots compose this plane through ONE helper. The alternative — an
+ * option each composition root remembers to pass — is how the provider-ingress
+ * bridge, the commerce engines, and the epoch service all came to exist with
+ * no caller. This test holds the helper's contract; a static guard below holds
+ * the rule that nothing else constructs the parts.
+ */
+describe('plugin host-operation plane composition', () => {
+  let dir: string;
+  let adapter: NodeSQLiteAdapter;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xop-comp-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+  });
+
+  afterEach(() => {
+    installPluginHostRuntime(null);
+    adapter.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('builds a broker and dispatcher that already know each other', async () => {
+    const registry = new ExtensionOperationRegistry();
+    registry.register({
+      operationName: OP,
+      paramsSchema: PARAMS_SCHEMA,
+      resultSchema: RESULT_SCHEMA,
+      adapterVersion: '1',
+      requiredFeature: 'commerce-host-ops-v1',
+      actionClass: 'read',
+    });
+    const runtime = createPluginHostRuntime({ db: adapter, registry, validate });
+
+    // The dispatcher resolves result schemas through the registry it was
+    // composed with — nothing to wire up afterwards.
+    runtime.dispatcher.register(OP, async () => ({ kind: 'completed', result: { hits: 1 } }));
+    const proposal = runtime.broker.propose({
+      installId: INSTALL,
+      capability: { id: 'com.acme.commerce.request_quote', host_operations: [OP] },
+      operationName: OP,
+      params: { query: 'chairs' },
+      idempotencyKey: 'idem-composed',
+      registry,
+    });
+    if (!proposal.ok) throw new Error('expected a proposal');
+    runtime.broker.permit(proposal.value.proposalId);
+
+    expect(await runtime.dispatcher.run(proposal.value.proposalId)).toEqual({
+      ok: true,
+      state: 'completed',
+    });
+  });
+
+  it('is null until installed, so callers fail closed', () => {
+    installPluginHostRuntime(null);
+    expect(getPluginHostRuntime()).toBeNull();
+
+    const registry = new ExtensionOperationRegistry();
+    installPluginHostRuntime(createPluginHostRuntime({ db: adapter, registry, validate }));
+    expect(getPluginHostRuntime()).not.toBeNull();
+  });
+
+  it('only the composition root constructs the broker and dispatcher', () => {
+    // The static rule. `createPluginHostRuntime` lives in host_operations.ts,
+    // so that file plus the classes' own modules may name them; a boot or a
+    // route that builds its own gets a differently-wired pair and nobody
+    // notices until an effect goes missing.
+    const SRC = path.join(__dirname, '..', '..', 'src');
+    const strip = (t: string) =>
+      t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const walk = (d: string): string[] =>
+      fs
+        .readdirSync(d, { withFileTypes: true })
+        .flatMap((e) =>
+          e.isDirectory()
+            ? walk(path.join(d, e.name))
+            : e.name.endsWith('.ts')
+              ? [path.join(d, e.name)]
+              : [],
+        );
+    const owners = new Set(['host_operations.ts', 'extension_broker.ts']);
+    const offenders: string[] = [];
+    for (const file of walk(SRC)) {
+      if (owners.has(path.basename(file))) continue;
+      const body = strip(fs.readFileSync(file, 'utf8'));
+      for (const cls of ['ExtensionOperationBroker', 'HostOperationDispatcher']) {
+        if (new RegExp(`new ${cls}\\s*\\(`).test(body)) {
+          offenders.push(`${path.basename(file)} constructs ${cls}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

@@ -57,6 +57,8 @@ import {
   setClassificationJobRepository,
   setCommandReceiptRepository,
   setDrainAuthorizationRepository,
+  createPluginHostRuntime,
+  installPluginHostRuntime,
   setExtensionOperationRegistry,
   setCommandTxRunner,
   setCompletionReceiptRepository,
@@ -477,7 +479,15 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
         },
       }),
     );
-    setExtensionOperationRegistry(new ExtensionOperationRegistry());
+    // §3.4 host-operation plane: the durable proposal broker + the dispatcher
+    // that executes permitted proposals. Composed through ONE helper so both
+    // boots get the same object — an option each root must remember to pass
+    // is an option one of them forgets.
+    const extensionRegistry = new ExtensionOperationRegistry();
+    setExtensionOperationRegistry(extensionRegistry);
+    installPluginHostRuntime(
+      createPluginHostRuntime({ db: inputs.databaseAdapter, registry: extensionRegistry }),
+    );
     setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(inputs.databaseAdapter));
     // One atomic commit for each owner command's mutation + its receipt (§5/§12.5).
     const cmdReceiptDb = inputs.databaseAdapter;

@@ -211,3 +211,28 @@ export type {
   RegisteredExtensionOperation,
   HostOperationGateResult,
 } from './src/plugins/extension_ops';
+// §3.4 host-operation plane (WS-3.4/3.5): the durable proposal broker and the
+// dispatcher that executes permitted proposals. Both boots compose it through
+// `createPluginHostRuntime`.
+export {
+  ExtensionOperationBroker,
+} from './src/plugins/extension_broker';
+export type {
+  ExtensionProposal,
+  ExtensionProposalState,
+  ConsentedCapability,
+} from './src/plugins/extension_broker';
+export {
+  HostOperationDispatcher,
+  makeBoundedAppViewSearch,
+  createPluginHostRuntime,
+  installPluginHostRuntime,
+  getPluginHostRuntime,
+} from './src/plugins/host_operations';
+export type {
+  PluginHostRuntime,
+  HostOperationContext,
+  HostOperationExecutor,
+  HostOperationOutcome,
+  DispatchResult,
+} from './src/plugins/host_operations';

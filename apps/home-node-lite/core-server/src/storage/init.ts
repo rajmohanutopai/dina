@@ -61,6 +61,8 @@ import {
   setClassificationJobRepository,
   setCommandReceiptRepository,
   setDrainAuthorizationRepository,
+  createPluginHostRuntime,
+  installPluginHostRuntime,
   setExtensionOperationRegistry,
   setCommandTxRunner,
   setCompletionReceiptRepository,
@@ -399,7 +401,15 @@ export async function initializeStorage(
   // Extension-operation registry (§3.4): code-shipped adapter
   // registrations land here at boot; empty until a pack ships — the
   // gate then denies every declared-but-unshipped operation.
-  setExtensionOperationRegistry(new ExtensionOperationRegistry());
+  // §3.4 host-operation plane: the durable proposal broker + the dispatcher
+  // that executes permitted proposals. Composed through ONE helper so both
+  // boots get the same object — an option each root must remember to pass
+  // is an option one of them forgets.
+  const extensionRegistry = new ExtensionOperationRegistry();
+  setExtensionOperationRegistry(extensionRegistry);
+  installPluginHostRuntime(
+    createPluginHostRuntime({ db: identityDB, registry: extensionRegistry }),
+  );
   // §9.13 drain authorizations: rebind drain + lifecycle continuity.
   setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(identityDB));
   // Push subscription store — the default-deny authorization gate + rate/cry-wolf

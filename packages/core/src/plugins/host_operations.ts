@@ -23,7 +23,11 @@
  * check, a false "failed" costs a duplicate effect.
  */
 
-import type { ExtensionOperationBroker, ExtensionProposal } from './extension_broker';
+import { ExtensionOperationBroker } from './extension_broker';
+
+import type { ExtensionProposal } from './extension_broker';
+import type { ExtensionOperationRegistry } from './extension_ops';
+import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
  * What an executor may see. Deliberately narrow: the params the broker
@@ -217,4 +221,59 @@ export function makeBoundedAppViewSearch(deps: {
       result: { hits: hits.slice(0, deps.maxResults), truncated: hits.length > deps.maxResults },
     };
   };
+}
+
+// ---------------------------------------------------------------------------
+// Composition (WS-3.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The §3.4 host-operation plane as one installed object.
+ *
+ * Composed HERE rather than at each boot for the reason this codebase has
+ * relearned repeatedly: an option every composition root must remember to
+ * pass is an option one of them forgets, and the result is a subsystem that
+ * validates, publishes, and then refuses on the node where the line is
+ * missing. Both boots call one function.
+ */
+export interface PluginHostRuntime {
+  broker: ExtensionOperationBroker;
+  dispatcher: HostOperationDispatcher;
+  registry: ExtensionOperationRegistry;
+}
+
+let hostRuntime: PluginHostRuntime | null = null;
+
+export function createPluginHostRuntime(deps: {
+  db: DatabaseAdapter;
+  registry: ExtensionOperationRegistry;
+  now?: () => number;
+  /** Injected so Core carries no schema library (see the broker's deps). */
+  validate?: (value: unknown, schema: unknown) => string | null;
+}): PluginHostRuntime {
+  const now = deps.now ?? (() => Date.now());
+  const broker = new ExtensionOperationBroker({
+    db: deps.db,
+    now,
+    ...(deps.validate === undefined ? {} : { validate: deps.validate }),
+  });
+  const dispatcher = new HostOperationDispatcher({
+    broker,
+    // Read from the registry at settle time, resolved through the digest the
+    // proposal pinned — the broker compares against what it was given, so a
+    // registry that has since changed cannot retroactively widen a result.
+    resultSchemaFor: (name) => deps.registry.get(name)?.resultSchema,
+  });
+  return { broker, dispatcher, registry: deps.registry };
+}
+
+/** Install at boot; pass null on shutdown. */
+export function installPluginHostRuntime(value: PluginHostRuntime | null): void {
+  hostRuntime = value;
+}
+
+/** Null until composed. Callers must fail closed — a node with no host-op
+ *  plane cannot broker an effect, and must not pretend otherwise. */
+export function getPluginHostRuntime(): PluginHostRuntime | null {
+  return hostRuntime;
 }

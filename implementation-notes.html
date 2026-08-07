@@ -1451,6 +1451,34 @@
       mutations caught. Tests: 6,394 core, 2,839 server, 3,293 mobile; typecheck and lint clean.
     </p>
 
+    <h3>Composing the host-operation plane, before it became the eighth orphan <span class="meta">(3.4/3.5)</span></h3>
+    <p>
+      <strong>I had just built another unreachable pair.</strong> The broker and the dispatcher
+      reached each other and nothing else. That is the defect this work has found in seven of the
+      thirteen preceding items, and I was one commit from adding an eighth — so I stopped and wired
+      it rather than moving to WS-3.7.
+    </p>
+    <p>
+      <strong>One helper, both boots.</strong> <code>createPluginHostRuntime</code> builds the broker
+      and the dispatcher already knowing each other, and both storage inits call it where they
+      already composed the operation registry. The alternative — an option each composition root
+      remembers to pass — is precisely how the provider-ingress bridge, the commerce engines, and the
+      epoch service each came to exist with no caller.
+    </p>
+    <p>
+      <strong>And a static guard, because a convention is not a mechanism.</strong> Nothing outside
+      the owning modules may construct either class; a boot or route that builds its own gets a
+      differently-wired pair and nobody notices until an effect goes missing. Proven non-vacuous by
+      dropping an offending file in and watching the guard name it.
+    </p>
+    <p class="meta">
+      3.4 and 3.5 are now composed on a running node. Still open and recorded as such: no
+      owner-facing permit surface, no sweeper over <code>listExecuting()</code>, no runner path that
+      calls <code>propose</code>, and only the bounded search operation exists. Verification: 3 new
+      tests (25 in the file), boundary guard proven non-vacuous. Tests: 6,397 core, 2,839 server,
+      3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
