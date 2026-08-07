@@ -333,6 +333,52 @@ describe('compatibility gate (§14: derived ∪ declared ⊆ supported)', () => 
     expect(result.missing).toContain('some.future.feature');
   });
 
+  it('INSTALLS a provider-kind capability — the §11.2a Phase 1 exit dependency', async () => {
+    // Until this shipped, `kind.provider` was manifest vocabulary the install
+    // gate rejected, so a Supplier plugin could not be installed at all and
+    // every commerce engine behind it was unreachable in production. The
+    // execution lane is the same one tools use (plugin:<install_id>, same
+    // claim-token, lease, retry and pinned-schema discipline); the claim
+    // guard already refuses a provider envelope on a tool-only consent and
+    // vice versa. This was the last gate, not a new lane.
+    const base = runnerManifest();
+    const m: PluginManifest = {
+      ...base,
+      capabilities: [{ ...base.capabilities[0]!, kinds: ['provider'] }],
+    };
+    const { rkey, verifier } = fakeVerifier(m);
+    setRepoProofVerifier(verifier);
+    const result = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('a kind the node cannot deliver is STILL refused, so the gate is not merely open', async () => {
+    // The contrast that keeps the previous test honest: opening one kind must
+    // not open every kind.
+    const base = runnerManifest();
+    const m: PluginManifest = {
+      ...base,
+      capabilities: [{ ...base.capabilities[0]!, kinds: ['provider', 'notify'] }],
+    };
+    const { rkey, verifier } = fakeVerifier(m);
+    setRepoProofVerifier(verifier);
+    const result = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok || result.code !== 'needs_newer_dina') throw new Error(JSON.stringify(result));
+    expect(result.missing).toContain('kind.notify');
+    expect(result.missing).not.toContain('kind.provider');
+  });
+
   it('needs_newer_dina when a kind the node cannot yet deliver is DERIVED (notify is P3)', async () => {
     const base = runnerManifest();
     const m: PluginManifest = {

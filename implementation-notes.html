@@ -652,6 +652,35 @@
       dropping the existence check for status (4 red). All three branches load-bearing.
     </p>
 
+    <h3>WS-3.1 — provider-kind capabilities are installable <span class="meta">(done)</span></h3>
+    <p>
+      <code>NODE_SUPPORTED_FEATURES</code> now ships <code>kind.provider</code>. Until this, the
+      manifest vocabulary existed but the §14 compatibility gate rejected it, so a Supplier plugin
+      could not be installed at all — and every commerce engine behind it was unreachable in
+      production no matter how well tested. The spec calls this a Phase 1 exit dependency (§11.2a);
+      it was the single largest reason the green suite overstated the state.
+    </p>
+    <p>
+      <strong>Why this is one line and not a new subsystem.</strong> Provider capabilities execute on
+      the same lane tools use — <code>plugin:&lt;install_id&gt;</code>, identical claim-token, lease,
+      retry and pinned-schema discipline — and the claim guard already computes
+      <code>requiredKind = envelope.service_ingress !== undefined ? 'provider' : 'tool'</code>,
+      refusing a provider envelope on a tool-only consent and the reverse. The ingress bridge,
+      binding resolution and response path were built in CMC-5. The install gate was the last door,
+      not a missing floor.
+    </p>
+    <p>
+      <strong>The paired test matters more than the passing one.</strong> A manifest declaring
+      <code>['provider', 'notify']</code> must still be refused with <code>kind.notify</code>
+      missing and <code>kind.provider</code> present in neither list — otherwise "we opened one kind"
+      and "we stopped checking kinds" look identical from a green suite.
+    </p>
+    <p class="meta">
+      Tests: 64 install-service, 6,311 core, workspace typecheck clean. Mutation — removing
+      <code>kind.provider</code> fails 2 tests. Next: the composition root wiring (WS-3.6) and the
+      ingress journey, which together make the first retailer/manufacturer scenario runnable.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

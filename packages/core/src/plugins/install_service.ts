@@ -61,6 +61,17 @@ import { getPluginInstallRepository, type PluginInstallRef } from './registry';
  */
 export const NODE_SUPPORTED_FEATURES: ReadonlySet<string> = new Set([
   'kind.tool',
+  // §11.2a — provider-kind capabilities answer inbound D2D service queries
+  // through `createProviderIngressTask`. Shipping this feature is what makes
+  // a Supplier plugin installable at all; until now the manifest vocabulary
+  // existed but the install gate rejected it, so every commerce engine
+  // behind it was unreachable in production.
+  //
+  // The execution lane is the same one tools use — `plugin:<install_id>`
+  // with identical claim-token, lease, retry and pinned-schema discipline —
+  // and the claim guard already refuses a provider envelope on a tool-only
+  // consent and vice versa. So this is the LAST gate, not a new lane.
+  'kind.provider',
   'idempotent_retry',
 ]);
 
