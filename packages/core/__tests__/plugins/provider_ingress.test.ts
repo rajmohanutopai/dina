@@ -14,13 +14,13 @@ import { pluginLane, type PluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
-  InMemoryCommerceOrderRefRepository,
-} from '../../src/commerce/order_refs';
-import {
   CommerceOrderStore,
   installCommerceRuntime,
   type CommerceRuntime,
 } from '../../src/commerce';
+import {
+  InMemoryCommerceOrderRefRepository,
+} from '../../src/commerce/order_refs';
 import { claimPluginTask } from '../../src/plugins/claim_guard';
 import { buildPluginEnvelope } from '../../src/plugins/dispatch';
 import { createProviderIngressTask } from '../../src/plugins/provider_ingress';
@@ -426,6 +426,62 @@ describe('provider ingress bridge (§11.2a)', () => {
         expect(workflow.store().getByCorrelationId(q.queryId)).toEqual([]);
       },
     );
+
+    it('ADMITS order_reconcile for an order this supplier has no record of (§12.7/§16.2)', () => {
+      // The disaster-recovery case, and the one an earlier version of this
+      // gate silently disabled. Reconcile exists to resolve outcome_unknown:
+      // the buyer submitted an order and never learned whether it landed. The
+      // case that matters most is the one where this supplier holds NO
+      // reference — it crashed before the durable write, or restored a backup
+      // taken before the order arrived. Requiring an existing reference makes
+      // exactly that unanswerable.
+      //
+      // Absence is the ANSWER (never_received), not the denial.
+      const result = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('q-reconcile-unknown'),
+          capability: 'order_reconcile',
+          fromDid: BUYER_DID,
+          params: { purchase_order_id: 'po-never-arrived', buyer_did: BUYER_DID },
+        },
+        nowMs: T0,
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('still denies order_reconcile whose payload names a DIFFERENT buyer', () => {
+      // Authorization without existence is not authorization without proof:
+      // the buyer-bound payload must name the authenticated sender.
+      const result = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('q-reconcile-spoof'),
+          capability: 'order_reconcile',
+          fromDid: OTHER_BUYER,
+          params: { purchase_order_id: PO, buyer_did: BUYER_DID },
+        },
+        nowMs: T0,
+      });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.code).toBe('order_subject_denied');
+    });
+
+    it('order_status for an unknown order stays DENIED, so absence is not an oracle', () => {
+      // The contrast that makes the split safe. Reconcile is answerable
+      // without a reference; status is not — it would turn "does this order
+      // exist" into a question a stranger can ask.
+      const result = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: orderQuery('order_status', BUYER_DID, 'po-never-arrived'),
+        nowMs: T0,
+      });
+      expect(result.ok).toBe(false);
+      expect(!result.ok && result.code).toBe('order_subject_denied');
+    });
 
     it('admits the same capability for the order OWNER', () => {
       const result = createProviderIngressTask({

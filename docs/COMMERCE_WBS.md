@@ -58,7 +58,7 @@ individually tested; the shape was what failed.
 | 0.3b | `ReconciliationService` — evidence verified before the chain moves | §12.7 §16.2 | **TODO** | 0.3 | Reconcile coordinated as an application service; re-adoption reconstructs enough state to clear `reconciliation_required` |
 | 0.4 | `register(quote, expectedBuyerDid)` — audience binding as a required argument | §9.8 §14.2 | **DONE** | 0.1 | Both inline buyer comparisons deleted; a new registration path cannot compile without naming its expected audience. Mutation: deleting the guard fails 4 tests across both paths |
 | 0.5 | Ledger boundary made real: composition root + static guard | §16.2 | **DONE** | 0.2 0.3 | `commerce/runtime.ts` composes once; all five per-repository globals removed; engines depend on aggregate stores; `boundary.test.ts` asserts all four rules over the source |
-| 0.6 | Separate authorization from existence at the ingress gate | §11.2 §16.2 | **TODO** | — | `order_reconcile` still serves the `never_received` / re-adoption case; non-disclosing rejection preserved for non-buyers |
+| 0.6 | Separate authorization from existence at the ingress gate | §11.2 §16.2 | **DONE** | — | `order_reconcile` is entitlement-by-evidence (buyer-bound payload) and reaches the handler with no local reference; `order_status`/`cancel_order` stay entitlement-by-possession. 3 mutations caught |
 | 0.7 | Type the wire boundary — structural validation → signature/identity/digest → domain construction | §9.12 | **TODO** | 0.2 0.3 | No `as` cast across the wire boundary; rehydration uses the same checked constructor as ingress; `decisionOutcome` has a default arm |
 
 **Why 0.3 is the critical one:** the restore-fence rule is currently a predicate

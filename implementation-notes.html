@@ -618,6 +618,40 @@
       provider install and the composition root that first makes commerce reachable.
     </p>
 
+    <h3>WS-0.6 — authorization separated from existence at the ingress gate <span class="meta">(done)</span></h3>
+    <p>
+      The §11.2 gate treated all three order-scoped capabilities identically: prove you own an
+      existing order reference, or be refused. That was right for two of them and broke the third.
+    </p>
+    <p>
+      <strong>The defect, which was mine.</strong> <code>order_reconcile</code> exists to resolve
+      <code>outcome_unknown</code> (§12.7/§16.2): the buyer submitted an order and never learned
+      whether it landed. The case that matters most is the one where the supplier holds NO
+      reference — it crashed before the durable write, or restored a backup taken before the order
+      arrived. Requiring an existing reference made exactly that case unanswerable. My own §11.2
+      remediation silently disabled the disaster recovery it sat next to.
+    </p>
+    <p>
+      <strong>The fix is a distinction, not a bypass.</strong> Two capabilities are
+      <em>entitlement-by-possession</em> (<code>order_status</code>, <code>cancel_order</code>): you
+      may ask about an order you own, so the reference IS the proof and absence stays a denial. One
+      is <em>entitlement-by-evidence</em> (<code>order_reconcile</code>): authorization comes from
+      the buyer-bound payload, which must name the authenticated sender, and whether a reference
+      exists is the handler's answer rather than the gate's business.
+    </p>
+    <p>
+      <strong>Why this leaks nothing.</strong> A reconcile for someone else's order is keyed on the
+      authenticated sender and also answers <code>never_received</code>, so "no such order" and "not
+      your order" stay indistinguishable — the endpoint is not an existence oracle. That is exactly
+      why the same relaxation would be wrong for <code>order_status</code>, and a test now pins that
+      contrast rather than leaving it as reasoning in a comment.
+    </p>
+    <p class="meta">
+      Tests: 17 ingress, 6,309 core, workspace typecheck clean. Mutations — restoring the
+      reference requirement for reconcile (1 red), dropping the payload buyer binding (2 red),
+      dropping the existence check for status (4 red). All three branches load-bearing.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

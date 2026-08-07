@@ -30,9 +30,9 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { pluginLane } from '@dina/protocol';
 
+import { getCommerceRuntime } from '../commerce/runtime';
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
-import { getCommerceRuntime } from '../commerce/runtime';
 
 import { buildPluginEnvelope } from './dispatch';
 import { getPluginInstallRepository } from './registry';
@@ -85,13 +85,43 @@ export interface ProviderIngressQuery {
  * canonical NSID, because the service lane carries the short form while
  * the manifest and spec use the NSID.
  */
-const ORDER_SCOPED_CAPABILITIES: ReadonlySet<string> = new Set([
+/**
+ * §11.2 order-scoped capabilities, split by what AUTHORIZES the caller.
+ *
+ * These two are entitlement-by-possession: you may ask about an order you
+ * already own, so an existing reference under the authenticated sender IS
+ * the ownership proof. No reference, no answer.
+ */
+const REQUIRES_EXISTING_ORDER: ReadonlySet<string> = new Set([
+  // Both spellings: a capability config may carry the short id or the NSID.
   'order_status',
-  'order_reconcile',
   'cancel_order',
   'com.dinakernel.commerce.order_status',
-  'com.dinakernel.commerce.order_reconcile',
   'com.dinakernel.commerce.cancel_order',
+]);
+
+/**
+ * `order_reconcile` is entitlement-by-EVIDENCE, and the difference is not a
+ * nicety — it is §12.7/§16.2 disaster recovery.
+ *
+ * Reconcile exists to resolve `outcome_unknown`: the buyer submitted an
+ * order and never learned whether it landed. The most important case is the
+ * one where this supplier holds NO reference — it crashed before the durable
+ * write, or restored a backup taken before the order arrived. Requiring an
+ * existing reference makes exactly that case unanswerable, which is how an
+ * earlier version of this gate silently disabled the recovery path it was
+ * meant to protect.
+ *
+ * So absence of a reference is the ANSWER (`never_received`), never the
+ * denial. Authorization instead comes from the request payload, which is
+ * buyer-bound: the caller must name itself as the buyer. That leaks nothing,
+ * because a reconcile for an order belonging to someone else is keyed on the
+ * authenticated sender and also answers `never_received` — the two are
+ * indistinguishable, so the endpoint is not an existence oracle.
+ */
+const SELF_AUTHORIZING_BY_PAYLOAD: ReadonlySet<string> = new Set([
+  'order_reconcile',
+  'com.dinakernel.commerce.order_reconcile',
 ]);
 
 /**
@@ -118,15 +148,23 @@ const ORDER_SUBJECT_DENIED = {
  * denied rather than dispatched unchecked.
  */
 function authorizeOrderSubject(query: ProviderIngressQuery): ProviderIngressResult | null {
-  if (!ORDER_SCOPED_CAPABILITIES.has(query.capability)) return null;
+  const needsOrder = REQUIRES_EXISTING_ORDER.has(query.capability);
+  const selfAuthorizing = SELF_AUTHORIZING_BY_PAYLOAD.has(query.capability);
+  if (!needsOrder && !selfAuthorizing) return null;
 
   const params = query.params;
-  const purchaseOrderId =
-    typeof params === 'object' && params !== null
-      ? (params as Record<string, unknown>).purchase_order_id
-      : undefined;
+  const record =
+    typeof params === 'object' && params !== null ? (params as Record<string, unknown>) : null;
+  const purchaseOrderId = record?.purchase_order_id;
   if (typeof purchaseOrderId !== 'string' || purchaseOrderId === '') {
     return ORDER_SUBJECT_DENIED;
+  }
+
+  if (selfAuthorizing) {
+    // Authorization WITHOUT existence. The payload must name the
+    // authenticated sender as the buyer; whether a reference exists is the
+    // handler's answer, not this gate's business.
+    return record?.buyer_did === query.fromDid ? null : ORDER_SUBJECT_DENIED;
   }
 
   // Through the composition root, so ingress holds an aggregate store and
@@ -134,10 +172,9 @@ function authorizeOrderSubject(query: ProviderIngressQuery): ProviderIngressResu
   const orders = getCommerceRuntime()?.orders ?? null;
   if (orders === null) return ORDER_SUBJECT_DENIED;
 
-  // §11.2 subject authorization: the authenticated caller must BE the
-  // order's buyer. `load` is scoped to (buyerDid, purchaseOrderId), so a
-  // caller who is not the buyer gets null and the same non-disclosing
-  // rejection as a caller asking about an order that does not exist.
+  // Entitlement by possession: `load` is keyed on (buyerDid, purchaseOrderId),
+  // so a hit proves the sender is the buyer and every miss — absent, unknown,
+  // or someone else's — collapses to one non-disclosing answer.
   const order = orders.load(query.fromDid, purchaseOrderId);
   if (order === null) return ORDER_SUBJECT_DENIED;
   return null;
