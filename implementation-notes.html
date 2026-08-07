@@ -1412,6 +1412,45 @@
       server, 3,293 mobile; typecheck and lint clean.
     </p>
 
+    <h3>WS-3.5 — typed host operations <span class="meta">(part)</span></h3>
+    <p>
+      <strong>One sentence is the whole rule:</strong> the runner supplies the PARAMS, Dina supplies
+      the AUTHORITY. That is enforced structurally rather than by checking — the context an executor
+      receives carries the validated params and the asking install's identity, and has no field for a
+      credential, a session, or a key. A runner cannot smuggle authority through a payload because
+      there is nowhere to put it. Everything an executor needs in order to ACT is closed over at
+      composition time by the boot that owns those things.
+    </p>
+    <p>
+      <strong>A thrown executor settles <code>outcome_unknown</code>, never <code>failed</code>.</strong>
+      A socket can die after the bytes have left, so a throw cannot distinguish "never happened" from
+      "happened and the wire died". Calling it failed invites a retry that sends twice. The
+      asymmetry is deliberate and costed: a false "unknown" costs an operator a manual check, a false
+      "failed" costs a duplicate effect. Executors that CAN characterise a failure return
+      <code>failed</code> themselves and stay retryable.
+    </p>
+    <p>
+      <strong>"Bounded" is a security property, not a performance note.</strong> An unbounded search
+      lets a runner page an entire index through a channel the owner approved for one lookup. The cap
+      is applied in Core after the search returns, and the request carries no limit field at all — so
+      there is nothing for a runner to widen.
+    </p>
+    <p>
+      <strong>Mutation distinguished a layered pair from dead code, again.</strong> The dispatcher's
+      `permitted` pre-check survived deletion, because the broker's own CAS catches the same case.
+      Defeating BOTH lets an unpermitted proposal execute (11 tests red), so they are layered rather
+      than duplicated: the pre-check reports which state blocked it and avoids parsing params for a
+      proposal that cannot run, the CAS makes two concurrent dispatchers resolve to one winner. Kept
+      and documented, where the redundant buyer check in WS-4.3 was deleted — the difference is
+      whether removing both changes behaviour.
+    </p>
+    <p class="meta">
+      PART: only the bounded search exists. D2D send, publication candidate and connector broker are
+      not written, and no boot registers an executor — so 3.4 and 3.5 are now reachable from each
+      other but still not from a running node. Verification: 9 new tests (22 in the file), 8
+      mutations caught. Tests: 6,394 core, 2,839 server, 3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

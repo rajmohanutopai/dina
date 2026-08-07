@@ -118,6 +118,14 @@ export type {
 } from './drain_authorizations';
 
 // §11.2a provider-ingress bridge.
+export { HostOperationDispatcher, makeBoundedAppViewSearch } from './host_operations';
+export type {
+  HostOperationContext,
+  HostOperationExecutor,
+  HostOperationOutcome,
+  DispatchResult,
+  DispatchRefusal,
+} from './host_operations';
 export { ExtensionOperationBroker } from './extension_broker';
 export type {
   ExtensionProposal,

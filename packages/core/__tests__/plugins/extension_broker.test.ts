@@ -16,6 +16,10 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { ExtensionOperationBroker } from '../../src/plugins/extension_broker';
 import { ExtensionOperationRegistry } from '../../src/plugins/extension_ops';
+import {
+  HostOperationDispatcher,
+  makeBoundedAppViewSearch,
+} from '../../src/plugins/host_operations';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -302,5 +306,174 @@ describe('extension-operation broker (§3.4)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected refusal');
     expect(result.refusal).toBe('params_rejected');
+  });
+});
+
+/**
+ * Typed host operations (§3.4 FR-P9, WS-3.5).
+ *
+ * The broker records what a runner asked for; the dispatcher is what happens.
+ * The rule under test is one sentence: the runner supplies the PARAMS, Dina
+ * supplies the AUTHORITY.
+ */
+describe('host operation dispatcher (§3.4 FR-P9)', () => {
+  let dir: string;
+  let adapter: NodeSQLiteAdapter;
+  let broker: ExtensionOperationBroker;
+  let registry: ExtensionOperationRegistry;
+  let dispatcher: HostOperationDispatcher;
+  const now = 1_700_000_000_000;
+  const consented = { id: 'com.acme.commerce.request_quote', host_operations: [OP] };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xop-run-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    registry = new ExtensionOperationRegistry();
+    registry.register({
+      operationName: OP,
+      paramsSchema: PARAMS_SCHEMA,
+      resultSchema: RESULT_SCHEMA,
+      adapterVersion: '1',
+      requiredFeature: 'commerce-host-ops-v1',
+      actionClass: 'read',
+    });
+    broker = new ExtensionOperationBroker({ db: adapter, now: () => now, validate });
+    dispatcher = new HostOperationDispatcher({
+      broker,
+      resultSchemaFor: (name) => registry.get(name)?.resultSchema,
+    });
+  });
+
+  afterEach(() => {
+    adapter.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function permitted(key = 'idem-run'): string {
+    const proposal = broker.propose({
+      installId: INSTALL,
+      capability: consented,
+      operationName: OP,
+      params: { query: 'chairs' },
+      idempotencyKey: key,
+      registry,
+    });
+    if (!proposal.ok) throw new Error('expected a proposal');
+    broker.permit(proposal.value.proposalId);
+    return proposal.value.proposalId;
+  }
+
+  it('an executor sees the params and NOTHING identity-shaped', async () => {
+    // The whole point: a runner cannot smuggle authority through a payload,
+    // because the context it reaches has no field for one.
+    let seen: Record<string, unknown> | null = null;
+    dispatcher.register(OP, async (ctx) => {
+      seen = { ...ctx } as unknown as Record<string, unknown>;
+      return { kind: 'completed', result: { hits: 1 } };
+    });
+    await dispatcher.run(permitted());
+
+    expect(Object.keys(seen ?? {}).sort()).toEqual([
+      'capabilityId',
+      'installId',
+      'operationName',
+      'params',
+      'proposalId',
+    ]);
+  });
+
+  it('runs a permitted proposal to completion', async () => {
+    dispatcher.register(OP, async () => ({ kind: 'completed', result: { hits: 2 } }));
+    const id = permitted();
+    expect(await dispatcher.run(id)).toEqual({ ok: true, state: 'completed' });
+    expect(JSON.parse(broker.get(id)?.resultJson ?? 'null')).toEqual({ hits: 2 });
+  });
+
+  it('refuses to run a proposal that was never permitted', async () => {
+    dispatcher.register(OP, async () => ({ kind: 'completed', result: { hits: 1 } }));
+    const proposal = broker.propose({
+      installId: INSTALL,
+      capability: consented,
+      operationName: OP,
+      params: { query: 'chairs' },
+      idempotencyKey: 'idem-unpermitted',
+      registry,
+    });
+    if (!proposal.ok) throw new Error('expected a proposal');
+    const outcome = await dispatcher.run(proposal.value.proposalId);
+    expect(outcome).toMatchObject({ ok: false, refusal: 'not_permitted' });
+    expect(broker.get(proposal.value.proposalId)?.state).toBe('proposed');
+  });
+
+  it('an operation this node does not ship is a refusal, not a crash', async () => {
+    // A manifest may legitimately declare an operation a given node lacks.
+    const outcome = await dispatcher.run(permitted());
+    expect(outcome).toMatchObject({ ok: false, refusal: 'no_executor' });
+    // And the proposal is untouched: nothing was attempted.
+    expect(broker.get(permitted('idem-run'))?.state).toBe('permitted');
+  });
+
+  it('a THROWN executor settles as outcome_unknown, never failed', async () => {
+    // A socket can die after the bytes left. Calling that `failed` invites a
+    // retry that sends twice; `outcome_unknown` is terminal and forbids it.
+    dispatcher.register(OP, async () => {
+      throw new Error('socket closed mid-send');
+    });
+    const id = permitted();
+    expect(await dispatcher.run(id)).toEqual({ ok: true, state: 'outcome_unknown' });
+    const row = broker.get(id);
+    expect(row?.state).toBe('outcome_unknown');
+    expect(row?.refusalReason).toContain('socket closed mid-send');
+  });
+
+  it('an executor that CAN characterise its failure returns failed', async () => {
+    dispatcher.register(OP, async () => ({ kind: 'failed', error: 'appview refused the query' }));
+    const id = permitted();
+    expect(await dispatcher.run(id)).toEqual({ ok: true, state: 'failed' });
+    expect(broker.get(id)?.state).toBe('failed');
+  });
+
+  it('a result violating the PINNED schema lands as failed', async () => {
+    dispatcher.register(OP, async () => ({ kind: 'completed', result: { hits: 1, extra: 'x' } }));
+    const id = permitted();
+    // Reports what actually landed, not what the executor hoped.
+    expect(await dispatcher.run(id)).toEqual({ ok: true, state: 'failed' });
+    expect(broker.get(id)?.state).toBe('failed');
+    expect(broker.get(id)?.resultJson).toBeNull();
+  });
+
+  it('two executors cannot claim one operation', () => {
+    dispatcher.register(OP, async () => ({ kind: 'completed', result: { hits: 1 } }));
+    expect(() => dispatcher.register(OP, async () => ({ kind: 'failed', error: 'x' }))).toThrow(
+      /already has an executor/,
+    );
+  });
+
+  it('the bounded AppView search truncates in CORE, not at the caller', async () => {
+    // "Bounded" is the security property. An unbounded search lets a runner
+    // page the whole index through a channel approved for one lookup — and
+    // the request carries no limit field at all, so it cannot be widened.
+    const search = makeBoundedAppViewSearch({
+      search: async () => Array.from({ length: 50 }, (_, i) => ({ id: i })),
+      maxResults: 5,
+    });
+    const outcome = await search({
+      proposalId: 'p',
+      installId: INSTALL,
+      capabilityId: consented.id,
+      operationName: OP,
+      params: { query: 'chairs' },
+    });
+    expect(outcome.kind).toBe('completed');
+    if (outcome.kind !== 'completed') throw new Error('expected completion');
+    const result = outcome.result as { hits: unknown[]; truncated: boolean };
+    expect(result.hits).toHaveLength(5);
+    expect(result.truncated).toBe(true);
   });
 });
