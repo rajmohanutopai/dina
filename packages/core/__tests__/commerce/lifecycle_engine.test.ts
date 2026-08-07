@@ -48,6 +48,7 @@ import {
   makeSignedQuote,
   makeChains,
   makeFamilies,
+  makeOrders,
 } from './helpers';
 
 interface Harness {
@@ -122,7 +123,7 @@ describe.each([
     clock = { now: T0 };
     admission = new CommerceAdmissionEngine({
       tx: h.tx,
-      orderRefs: h.orderRefs,
+      orders: makeOrders(h.orderRefs, clock),
       families: makeFamilies(h.quotes, clock, () => '1'),
       receipts: h.receipts,
       supplierDid: SUPPLIER_DID,
@@ -131,7 +132,7 @@ describe.each([
     });
     engine = new CommerceLifecycleEngine({
       tx: h.tx,
-      orderRefs: h.orderRefs,
+      orders: makeOrders(h.orderRefs, clock),
       chains: makeChains(h.statusHeads, clock, () => '1'),
       receipts: h.receipts,
       families: makeFamilies(h.quotes, clock, () => '1'),
@@ -220,7 +221,7 @@ describe.each([
 
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -252,7 +253,7 @@ describe.each([
 
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -276,7 +277,7 @@ describe.each([
 
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -311,7 +312,7 @@ describe.each([
       try {
         const engineB = new CommerceLifecycleEngine({
           tx: fresh.tx,
-          orderRefs: fresh.orderRefs,
+          orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '1'),
           receipts: fresh.receipts,
           families: makeFamilies(fresh.quotes, clock, () => '1'),
@@ -354,7 +355,7 @@ describe.each([
 
       const atomicAdmission = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '1'),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -385,7 +386,7 @@ describe.each([
 
       const brokenAdmission = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '1'),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -422,7 +423,7 @@ describe.each([
       // Restore: the live epoch moves to 2, the chain head stays at 1.
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -473,7 +474,7 @@ describe.each([
       };
       const withLoss = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: lossy,
         families: makeFamilies(h.quotes, clock, () => '1'),
@@ -524,7 +525,7 @@ describe.each([
       };
       const withTamper = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: tampered,
         families: makeFamilies(h.quotes, clock, () => '1'),
@@ -570,7 +571,7 @@ describe.each([
       };
       const withSwap = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: swapped,
         families: makeFamilies(h.quotes, clock, () => '1'),
@@ -830,7 +831,7 @@ describe.each([
       // tests stub it as "authentic for records this supplier signed".
       const restoredEngine = new CommerceLifecycleEngine({
         tx: restored.tx,
-        orderRefs: restored.orderRefs,
+        orders: makeOrders(restored.orderRefs, clock),
         chains: makeChains(restored.statusHeads, clock, () => '2'),
         receipts: restored.receipts,
         families: makeFamilies(restored.quotes, clock, () => '2'),
@@ -884,7 +885,7 @@ describe.each([
         try {
           const noVerifier = new CommerceLifecycleEngine({
             tx: unverified.tx,
-            orderRefs: unverified.orderRefs,
+            orders: makeOrders(unverified.orderRefs, clock),
             chains: makeChains(unverified.statusHeads, clock, () => '2'),
             receipts: unverified.receipts,
             families: makeFamilies(unverified.quotes, clock, () => '2'),
@@ -921,7 +922,7 @@ describe.each([
       try {
         const restoredEngine = new CommerceLifecycleEngine({
           tx: restored.tx,
-          orderRefs: restored.orderRefs,
+          orders: makeOrders(restored.orderRefs, clock),
           chains: makeChains(restored.statusHeads, clock, () => '2'),
           receipts: restored.receipts,
           families: makeFamilies(restored.quotes, clock, () => '2'),
@@ -980,7 +981,7 @@ describe.each([
       const restored = makeHarness();
       const restoredEngine = new CommerceLifecycleEngine({
         tx: restored.tx,
-        orderRefs: restored.orderRefs,
+        orders: makeOrders(restored.orderRefs, clock),
         chains: makeChains(restored.statusHeads, clock, () => '2'),
         receipts: restored.receipts,
         families: makeFamilies(restored.quotes, clock, () => '2'),
@@ -1115,7 +1116,7 @@ describe.each([
       const build = (verify?: () => boolean) =>
         new CommerceLifecycleEngine({
           tx: fresh.tx,
-          orderRefs: fresh.orderRefs,
+          orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '2'),
           receipts: fresh.receipts,
           families: makeFamilies(fresh.quotes, clock, () => '2'),
@@ -1169,7 +1170,7 @@ describe.each([
       let epoch = '1';
       const restoredEngine = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => epoch),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => epoch),
@@ -1219,7 +1220,7 @@ describe.each([
 
       const noVerifier = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -1286,7 +1287,7 @@ describe.each([
 
       const fencing = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -1330,7 +1331,7 @@ describe.each([
 
       const fencing = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -1385,7 +1386,7 @@ describe.each([
       // this test would pass for the wrong reason.
       const fencingEngine = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -1456,7 +1457,7 @@ describe.each([
 
       const corruptEngine = new CommerceLifecycleEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: corruptReceipts,
         families: makeFamilies(h.quotes, clock, () => '1'),

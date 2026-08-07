@@ -72,13 +72,15 @@ export interface QuoteFamilyDeps {
   /** Core's current commerce epoch; a quote must carry EXACTLY this. */
   currentEpoch: () => string;
   /**
-   * The Business DID this Core signs as. A family in this ledger must be
+   * The Business DID this Core signs as. A THUNK, because identity boots
+   * after storage — capturing a value here would freeze a placeholder into
+   * every quote this node ever authenticates. A family in this ledger must be
    * this supplier's own quote — the identity check lives here rather than
    * in a caller because a plugin-supplied candidate reaches registration
    * through more than one path (initial, counterproposal, post-restore
    * re-offer) and every one of them must be bound.
    */
-  supplierDid: string;
+  supplierDid: () => string;
   now: () => number;
 }
 
@@ -156,7 +158,7 @@ export class QuoteFamily {
     // §9.12 — a quote candidate arrives from an UNTRUSTED runner. Every
     // field it carries that Core will authenticate has to be bound here,
     // because after registration the digest makes it Core's own word.
-    if (quote.supplier_did !== deps.supplierDid) {
+    if (quote.supplier_did !== deps.supplierDid()) {
       return refuse('foreign_supplier');
     }
     // The epoch must be EXACTLY current, not merely "not stale". A
@@ -215,7 +217,7 @@ export class QuoteFamily {
     // local copy would answer with a vaguer message than the real one.
     // A revision is signed NOW, so it too must carry the live epoch
     // exactly — the same future-epoch escape exists on this path.
-    if (next.supplier_did !== this.deps.supplierDid) return refuse('foreign_supplier');
+    if (next.supplier_did !== this.deps.supplierDid()) return refuse('foreign_supplier');
     const epoch = this.deps.currentEpoch();
     if (BigInt(next.supplier_epoch) < BigInt(epoch)) return refuse('stale_epoch');
     if (BigInt(next.supplier_epoch) > BigInt(epoch)) return refuse('future_epoch');

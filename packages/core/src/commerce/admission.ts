@@ -43,9 +43,9 @@ import {
   type SignedQuote,
 } from '@dina/commerce-protocol';
 
+import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamily, type QuoteFamilyStore, type QuoteRefusal } from './quote_family';
 
-import type { CommerceOrderRefRepository } from './order_refs';
 import type { CommerceReceiptRepository } from './receipts';
 import type { TxRunner } from '../run/tx';
 
@@ -65,7 +65,12 @@ export type SupplierDecision =
 
 export interface AdmissionEngineDeps {
   tx: TxRunner;
-  orderRefs: CommerceOrderRefRepository;
+  /**
+   * Order state as an aggregate store. The raw reference repository is
+   * deliberately not a dependency — `CommerceOrder.decide()` is worthless
+   * while `refs.decide()` stays reachable from here.
+   */
+  orders: CommerceOrderStore;
   /**
    * Quote state, reached ONLY as aggregates. The raw ledger repository is
    * deliberately not a dependency here: `QuoteFamily.hold()` is worthless
@@ -290,11 +295,11 @@ export class CommerceAdmissionEngine {
   }
 
   private admitInTx(order: PurchaseOrderProposal): AdmissionOutcome {
-    const { orderRefs } = this.deps;
+    const { orders } = this.deps;
 
     // STEP 1 — replay lookup by BOTH keys, conflicts before any use check.
-    const byOrderId = orderRefs.getByOrderId(order.buyer_did, order.purchase_order_id);
-    const byKey = orderRefs.getByIdempotencyKey(order.buyer_did, order.idempotency_key);
+    const byOrderId = orders.load(order.buyer_did, order.purchase_order_id)?.ref ?? null;
+    const byKey = orders.byIdempotencyKey(order.buyer_did, order.idempotency_key);
     if (byOrderId || byKey) {
       if (!byOrderId || !byKey || byOrderId.purchaseOrderId !== byKey.purchaseOrderId) {
         return {
@@ -380,7 +385,7 @@ export class CommerceAdmissionEngine {
       return this.recordAdmissionRejection(order, ADMISSION_REASON[held.refusal]);
     }
     const nowMs = this.deps.now();
-    const created = this.deps.orderRefs.createReserved({
+    const created = this.deps.orders.createReserved({
       buyerDid: order.buyer_did,
       purchaseOrderId: order.purchase_order_id,
       idempotencyKey: order.idempotency_key,
@@ -429,7 +434,7 @@ export class CommerceAdmissionEngine {
       reason_code: reasonCode,
       ...(currentQuoteDigest !== undefined ? { current_quote_digest: currentQuoteDigest } : {}),
     });
-    const created = this.deps.orderRefs.createReserved({
+    const created = this.deps.orders.createReserved({
       buyerDid: order.buyer_did,
       purchaseOrderId: order.purchase_order_id,
       idempotencyKey: order.idempotency_key,
@@ -448,10 +453,19 @@ export class CommerceAdmissionEngine {
     if (!created) {
       throw new Error('admission: concurrent reservation race — transaction retries');
     }
-    this.deps.orderRefs.decide(order.buyer_did, order.purchase_order_id, {
+    // Through the aggregate: an immediate rejection is still a decision and
+    // must cross the same legality check as any other.
+    const rejected = this.deps.orders.load(order.buyer_did, order.purchase_order_id);
+    if (rejected === null) {
+      throw new CommerceIntegrityError('rejection lost its own reservation');
+    }
+    const recorded = rejected.decide({
       acknowledgementJson: JSON.stringify(acknowledgement),
       decidedAt: nowMs,
     });
+    if (!recorded.ok) {
+      throw new CommerceIntegrityError(`rejection could not be recorded: ${recorded.refusal}`);
+    }
     this.persistAcknowledgement(order, acknowledgement, nowMs);
     return { kind: 'rejected', acknowledgement };
   }
@@ -464,7 +478,8 @@ export class CommerceAdmissionEngine {
   markEffectStarted(buyerDid: string, purchaseOrderId: string): boolean {
     let marked = false;
     this.deps.tx(() => {
-      marked = this.deps.orderRefs.markEffectStarted(buyerDid, purchaseOrderId);
+      const order = this.deps.orders.load(buyerDid, purchaseOrderId);
+      marked = order !== null && order.markEffectStarted().ok;
     });
     return marked;
   }
@@ -483,11 +498,12 @@ export class CommerceAdmissionEngine {
       error: 'admission: unknown order',
     };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
-      if (!ref) {
+      const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
+      if (refOrder === null) {
         result = { error: 'admission: unknown order' };
         return;
       }
+      const ref = refOrder.ref;
       if (ref.state === 'decided') {
         result = {
           acknowledgement: JSON.parse(ref.acknowledgementJson ?? 'null') as OrderAcknowledgement,
@@ -544,11 +560,12 @@ export class CommerceAdmissionEngine {
               }
             : { kind: 'counterproposal', replacement_quote: decision.replacementQuote },
       );
-      const decided = this.deps.orderRefs.decide(buyerDid, purchaseOrderId, {
+      const outcome = refOrder.decide({
         acknowledgementJson: JSON.stringify(acknowledgement),
         externalRef: decision.kind === 'accepted' ? (decision.externalRef ?? null) : null,
         decidedAt: nowMs,
       });
+      const decided = outcome.ok;
       if (!decided) {
         result = { error: 'admission: decision CAS lost — already decided' };
         return;
@@ -591,7 +608,7 @@ export class CommerceAdmissionEngine {
     const timedOut: string[] = [];
     this.deps.tx(() => {
       const nowMs = this.deps.now();
-      for (const ref of this.deps.orderRefs.listExpiredPreEffect(nowMs)) {
+      for (const ref of this.deps.orders.listExpiredPreEffect(nowMs)) {
         const orderReceipt = this.deps.receipts.get(ref.orderDigest);
         if (!orderReceipt) continue;
         const order = JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal;
@@ -599,12 +616,16 @@ export class CommerceAdmissionEngine {
           kind: 'rejected',
           reason_code: 'decision_timeout',
         });
-        const decided = this.deps.orderRefs.decide(ref.buyerDid, ref.purchaseOrderId, {
+        const sweptOrder = this.deps.orders.load(ref.buyerDid, ref.purchaseOrderId);
+        if (sweptOrder === null) continue;
+        // requirePreEffect: a decision_timeout may NEVER decide an
+        // effect_started row — the external effect may have happened.
+        const decided = sweptOrder.decide({
           acknowledgementJson: JSON.stringify(acknowledgement),
           decidedAt: nowMs,
           requirePreEffect: true,
         });
-        if (!decided) continue;
+        if (!decided.ok) continue;
         this.familyFor(ref.quoteId).settle(ref.purchaseOrderId, 'refunded');
         this.persistAcknowledgement(order, acknowledgement, nowMs);
         timedOut.push(ref.purchaseOrderId);

@@ -15,8 +15,12 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
   InMemoryCommerceOrderRefRepository,
-  setCommerceOrderRefRepository,
 } from '../../src/commerce/order_refs';
+import {
+  CommerceOrderStore,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../src/commerce';
 import { claimPluginTask } from '../../src/plugins/claim_guard';
 import { buildPluginEnvelope } from '../../src/plugins/dispatch';
 import { createProviderIngressTask } from '../../src/plugins/provider_ingress';
@@ -398,10 +402,12 @@ describe('provider ingress bridge (§11.2a)', () => {
         decisionDeadlineAt: T0 + 60_000,
         createdAt: T0,
       });
-      setCommerceOrderRefRepository(orders);
+      installCommerceRuntime({
+        orders: new CommerceOrderStore({ refs: orders, now: () => Date.now() }),
+      } as unknown as CommerceRuntime);
     });
 
-    afterEach(() => setCommerceOrderRefRepository(null));
+    afterEach(() => installCommerceRuntime(null));
 
     it.each(['order_status', 'order_reconcile', 'cancel_order'])(
       'denies %s from a peer who does not own the order',
@@ -463,7 +469,7 @@ describe('provider ingress bridge (§11.2a)', () => {
     });
 
     it('fails CLOSED when no order store is wired', () => {
-      setCommerceOrderRefRepository(null);
+      installCommerceRuntime(null);
       const result = createProviderIngressTask({
         workflow,
         capabilityConfig: binding(),

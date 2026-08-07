@@ -225,12 +225,3 @@ export class InMemoryCommerceStatusHeadRepository implements CommerceStatusHeadR
   }
 }
 
-let repository: CommerceStatusHeadRepository | null = null;
-
-export function setCommerceStatusHeadRepository(repo: CommerceStatusHeadRepository | null): void {
-  repository = repo;
-}
-
-export function getCommerceStatusHeadRepository(): CommerceStatusHeadRepository | null {
-  return repository;
-}

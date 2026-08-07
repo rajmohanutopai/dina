@@ -29,11 +29,9 @@ import {
   SQLiteCommandReceiptRepository,
   ExtensionOperationRegistry,
   SQLiteDrainAuthorizationRepository,
-  SQLiteCommerceEpochWatermarkRepository,
-  SQLiteCommerceOrderRefRepository,
-  SQLiteCommerceQuoteLedgerRepository,
-  SQLiteCommerceReceiptRepository,
-  SQLiteCommerceStatusHeadRepository,
+  createCommerceRuntime,
+  installCommerceRuntime,
+  getCommerceEpochService,
   SQLiteCompletionReceiptRepository,
   SQLiteErasureKeyStore,
   SQLiteMessageRepository,
@@ -62,13 +60,8 @@ import {
   SQLitePushSubscriptionRepository,
   setClassificationJobRepository,
   setCommandReceiptRepository,
-  setCommerceEpochWatermarkRepository,
   setDrainAuthorizationRepository,
   setExtensionOperationRegistry,
-  setCommerceOrderRefRepository,
-  setCommerceQuoteLedgerRepository,
-  setCommerceReceiptRepository,
-  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setCompletionReceiptRepository,
   setD2DOutboxRepository,
@@ -379,11 +372,30 @@ export async function initializeStorage(
   // Commerce Pack stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §15.5/§16.2):
   // order-reference/idempotency with effect phases, quote head CAS + use holds,
   // status head CAS, durable receipts, counterparty epoch watermarks.
-  setCommerceOrderRefRepository(new SQLiteCommerceOrderRefRepository(identityDB));
-  setCommerceQuoteLedgerRepository(new SQLiteCommerceQuoteLedgerRepository(identityDB));
-  setCommerceStatusHeadRepository(new SQLiteCommerceStatusHeadRepository(identityDB));
-  setCommerceReceiptRepository(new SQLiteCommerceReceiptRepository(identityDB));
-  setCommerceEpochWatermarkRepository(new SQLiteCommerceEpochWatermarkRepository(identityDB));
+  // Composed ONCE, here. Production code receives aggregate stores and
+  // cannot reach the raw mutators (ARCH-0). Identity and the commerce epoch
+  // are read through thunks because both boot after storage;
+  // `currentEpoch()` throws until the epoch record is published, which is
+  // the §16.2 fail-closed posture rather than an oversight.
+  installCommerceRuntime(
+    createCommerceRuntime({
+      adapter: identityDB,
+      supplierDid: () => {
+        const did = getNodeDID();
+        if (did === null) {
+          throw new Error('commerce: business identity not established — signing is fail-closed');
+        }
+        return did;
+      },
+      currentEpoch: () => {
+        const service = getCommerceEpochService();
+        if (service === null) {
+          throw new Error('commerce: epoch service not installed — signing is fail-closed (§16.2)');
+        }
+        return service.currentEpoch();
+      },
+    }),
+  );
   // Extension-operation registry (§3.4): code-shipped adapter
   // registrations land here at boot; empty until a pack ships — the
   // gate then denies every declared-but-unshipped operation.

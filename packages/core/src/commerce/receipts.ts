@@ -156,12 +156,3 @@ export class InMemoryCommerceReceiptRepository implements CommerceReceiptReposit
   }
 }
 
-let repository: CommerceReceiptRepository | null = null;
-
-export function setCommerceReceiptRepository(repo: CommerceReceiptRepository | null): void {
-  repository = repo;
-}
-
-export function getCommerceReceiptRepository(): CommerceReceiptRepository | null {
-  return repository;
-}

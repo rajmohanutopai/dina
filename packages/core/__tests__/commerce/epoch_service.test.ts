@@ -44,7 +44,7 @@ function makeService(repo: FakeRepo) {
   const service = new CommerceEpochService({
     tx: (fn) => fn(),
     families: new QuoteFamilyStore({ ledger: quotes, currentEpoch: () => '1',
-    supplierDid: SUPPLIER_DID, now: () => T0 }),
+    supplierDid: () => SUPPLIER_DID, now: () => T0 }),
     receipts,
     businessDid: SUPPLIER_DID,
     fetchLive: repo.fetchLive,
@@ -125,7 +125,7 @@ describe('CommerceEpochService', () => {
     const loser = new CommerceEpochService({
       tx: (fn) => fn(),
       families: new QuoteFamilyStore({ ledger: loserQuotes, currentEpoch: () => '1',
-    supplierDid: SUPPLIER_DID, now: () => T0 }),
+    supplierDid: () => SUPPLIER_DID, now: () => T0 }),
       receipts: loserReceipts,
       businessDid: SUPPLIER_DID,
       fetchLive: async () => {
@@ -189,7 +189,7 @@ describe('CommerceEpochService', () => {
         families: new QuoteFamilyStore({
           ledger: new InMemoryCommerceQuoteLedgerRepository(),
           currentEpoch: () => '1',
-    supplierDid: SUPPLIER_DID,
+    supplierDid: () => SUPPLIER_DID,
           now: () => T0,
         }),
         receipts: new InMemoryCommerceReceiptRepository(),

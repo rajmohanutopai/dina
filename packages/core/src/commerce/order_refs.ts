@@ -301,12 +301,3 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   }
 }
 
-let repository: CommerceOrderRefRepository | null = null;
-
-export function setCommerceOrderRefRepository(repo: CommerceOrderRefRepository | null): void {
-  repository = repo;
-}
-
-export function getCommerceOrderRefRepository(): CommerceOrderRefRepository | null {
-  return repository;
-}

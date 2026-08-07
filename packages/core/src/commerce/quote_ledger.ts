@@ -290,12 +290,3 @@ export class InMemoryCommerceQuoteLedgerRepository implements CommerceQuoteLedge
   }
 }
 
-let repository: CommerceQuoteLedgerRepository | null = null;
-
-export function setCommerceQuoteLedgerRepository(repo: CommerceQuoteLedgerRepository | null): void {
-  repository = repo;
-}
-
-export function getCommerceQuoteLedgerRepository(): CommerceQuoteLedgerRepository | null {
-  return repository;
-}

@@ -41,11 +41,10 @@ import {
   SQLiteCommandReceiptRepository,
   ExtensionOperationRegistry,
   SQLiteDrainAuthorizationRepository,
-  SQLiteCommerceEpochWatermarkRepository,
-  SQLiteCommerceOrderRefRepository,
-  SQLiteCommerceQuoteLedgerRepository,
-  SQLiteCommerceReceiptRepository,
-  SQLiteCommerceStatusHeadRepository,
+  createCommerceRuntime,
+  getNodeDID,
+  installCommerceRuntime,
+  getCommerceEpochService,
   SQLiteCompletionReceiptRepository,
   SQLiteErasureKeyStore,
   SQLiteMessageRepository,
@@ -57,13 +56,8 @@ import {
   configureRateLimiter,
   setClassificationJobRepository,
   setCommandReceiptRepository,
-  setCommerceEpochWatermarkRepository,
   setDrainAuthorizationRepository,
   setExtensionOperationRegistry,
-  setCommerceOrderRefRepository,
-  setCommerceQuoteLedgerRepository,
-  setCommerceReceiptRepository,
-  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setCompletionReceiptRepository,
   setErasureKeyStore,
@@ -459,14 +453,29 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(inputs.databaseAdapter));
     setCommandReceiptRepository(new SQLiteCommandReceiptRepository(inputs.databaseAdapter));
     // Commerce Pack stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §15.5/§16.2).
-    setCommerceOrderRefRepository(new SQLiteCommerceOrderRefRepository(inputs.databaseAdapter));
-    setCommerceQuoteLedgerRepository(
-      new SQLiteCommerceQuoteLedgerRepository(inputs.databaseAdapter),
-    );
-    setCommerceStatusHeadRepository(new SQLiteCommerceStatusHeadRepository(inputs.databaseAdapter));
-    setCommerceReceiptRepository(new SQLiteCommerceReceiptRepository(inputs.databaseAdapter));
-    setCommerceEpochWatermarkRepository(
-      new SQLiteCommerceEpochWatermarkRepository(inputs.databaseAdapter),
+    // Composed ONCE (ARCH-0): production code receives aggregate stores and
+    // cannot reach the raw mutators. Identity and epoch are thunks because
+    // both resolve after storage; commerce signing is fail-closed until they do.
+    installCommerceRuntime(
+      createCommerceRuntime({
+        adapter: inputs.databaseAdapter,
+        supplierDid: () => {
+          const did = getNodeDID();
+          if (did === null) {
+            throw new Error('commerce: business identity not established — signing is fail-closed');
+          }
+          return did;
+        },
+        currentEpoch: () => {
+          const service = getCommerceEpochService();
+          if (service === null) {
+            throw new Error(
+              'commerce: epoch service not installed — signing is fail-closed (§16.2)',
+            );
+          }
+          return service.currentEpoch();
+        },
+      }),
     );
     setExtensionOperationRegistry(new ExtensionOperationRegistry());
     setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(inputs.databaseAdapter));

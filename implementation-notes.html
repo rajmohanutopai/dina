@@ -576,6 +576,48 @@
       failure swallowed instead of rolling back (2 red). Both caught.
     </p>
 
+    <h3>WS-0.5 — the boundary made real <span class="meta">(done)</span></h3>
+    <p>
+      <code>packages/core/src/commerce/runtime.ts</code> composes the commerce stores once.
+      Production code receives <code>QuoteFamilyStore</code>, <code>StatusChainStore</code> and
+      <code>CommerceOrderStore</code>; the five mutable per-repository globals are gone, and both
+      boot paths install one runtime instead of five raw repositories.
+    </p>
+    <p>
+      <strong>Why this mattered more than it looked.</strong> I previously told the owner "the ledger
+      is hidden — grep-verified". That was true of call sites and false of the boundary: the raw
+      repositories were still exported from the package root AND installed into mutable globals, so
+      any future caller could reach past every aggregate rule with no compiler or test failure. A
+      grep proves a fact about today; it says nothing about the design.
+    </p>
+    <p>
+      <strong>The guard is now static, not behavioural.</strong>
+      <code>__tests__/commerce/boundary.test.ts</code> asserts over the SOURCE: no production file
+      outside an owner calls a raw mutator, no per-repository globals exist, no engine declares a raw
+      repository dependency, and only the composition root constructs SQLite repositories.
+      Behavioural tests cannot express this — they test what the code does, and the risk here is what
+      a future caller could do. It fails on the commit that reintroduces a bypass rather than on the
+      incident that exploits one.
+    </p>
+    <p>
+      <strong>It immediately found two things I had missed</strong> while believing the item was
+      finished: the fifth global (<code>watermarks.ts</code>) was still there, and both engines still
+      declared <code>orderRefs: CommerceOrderRefRepository</code> even though
+      <code>CommerceOrder</code> existed. That is the guard doing exactly the job a grep could not.
+    </p>
+    <p>
+      <strong>Design decision: lazy identity.</strong> <code>supplierDid</code> and
+      <code>currentEpoch</code> are thunks, because storage initialises before identity and before
+      the commerce epoch is published. Capturing a value at composition would freeze a placeholder
+      into every quote the node ever authenticates. Both throw until established, which is the §16.2
+      fail-closed posture rather than an oversight.
+    </p>
+    <p class="meta">
+      Tests: 414 commerce + plugins, 6,306 core, workspace typecheck clean. Next: WS-0.6 (separate
+      authorization from existence at the ingress gate) and 0.7 (type the wire boundary), then WS-3
+      provider install and the composition root that first makes commerce reachable.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

@@ -45,10 +45,10 @@ import {
 import { canonicalJson } from '@dina/commerce-protocol';
 
 import { ackIdSuffix } from './admission';
+import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
 import { type ChainRefusal, type StatusChainStore } from './status_chain';
 
-import type { CommerceOrderRefRepository } from './order_refs';
 import type { CommerceReceiptRepository } from './receipts';
 import type { TxRunner } from '../run/tx';
 
@@ -85,7 +85,12 @@ export const NON_DISCLOSING_ERROR = 'commerce: unknown order or unauthorized cal
 
 export interface LifecycleEngineDeps {
   tx: TxRunner;
-  orderRefs: CommerceOrderRefRepository;
+  /**
+   * Order state as an aggregate store. The raw reference repository is
+   * deliberately not a dependency — `CommerceOrder.decide()` is worthless
+   * while `refs.decide()` stays reachable from here.
+   */
+  orders: CommerceOrderStore;
   /**
    * Status-chain state as aggregates. The raw head repository is deliberately
    * NOT a dependency: `StatusChain.advance()` is worthless if `casAdvance()`
@@ -180,7 +185,8 @@ export class CommerceLifecycleEngine {
   signGenesis(buyerDid: string, purchaseOrderId: string): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
+      const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
+      const ref = refOrder?.ref ?? null;
       if (!ref || ref.state !== 'decided') {
         outcome = { error: 'status: genesis requires a decided order (§9.11)' };
         return;
@@ -239,7 +245,8 @@ export class CommerceLifecycleEngine {
   ): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
+      const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
+      const ref = refOrder?.ref ?? null;
       const chain = this.deps.chains.load(buyerDid, purchaseOrderId);
       if (!ref || !chain.exists) {
         outcome = { error: 'status: no chain for this order — sign the genesis first' };
@@ -373,7 +380,8 @@ export class CommerceLifecycleEngine {
   ): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
+      const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
+      const ref = refOrder?.ref ?? null;
       if (!ref) {
         outcome = { error: NON_DISCLOSING_ERROR };
         return;
@@ -509,10 +517,11 @@ export class CommerceLifecycleEngine {
 
     let outcome: CancellationResult | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(
+      const refOrder = this.deps.orders.load(
         authenticatedBuyerDid,
         cancellation.purchase_order_id,
       );
+      const ref = refOrder?.ref ?? null;
       // Non-disclosing: unknown order, foreign order, and digest
       // mismatch are indistinguishable (§12.8).
       if (!ref || ref.orderDigest !== cancellation.order_digest) {
@@ -606,15 +615,19 @@ export class CommerceLifecycleEngine {
           );
           return;
         }
-        const decided = this.deps.orderRefs.decide(
+        // requirePreEffect: a cancellation may not decide an order whose
+        // external effect has already started.
+        const cancelOrder = this.deps.orders.load(
           authenticatedBuyerDid,
           cancellation.purchase_order_id,
-          {
+        );
+        const decided =
+          cancelOrder !== null &&
+          cancelOrder.decide({
             acknowledgementJson: JSON.stringify(acknowledgement),
             decidedAt: nowMs,
             requirePreEffect: true,
-          },
-        );
+          }).ok;
         if (!decided) {
           // Lost the race to a concurrent decision inside another tx.
           outcome = { error: 'cancellation: decision race lost — retry reconcile' };
@@ -788,7 +801,8 @@ export class CommerceLifecycleEngine {
 
     let outcome: OrderReconcileResult | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(authenticatedBuyerDid, request.purchase_order_id);
+      const refOrder = this.deps.orders.load(authenticatedBuyerDid, request.purchase_order_id);
+      const ref = refOrder?.ref ?? null;
       // §9.13 typed negotiation: route by the order's PINNED major. A
       // request naming another major must not be parsed and answered as
       // v1 — the retained prior-major handler owns those, and an unknown
@@ -857,10 +871,11 @@ export class CommerceLifecycleEngine {
         // §15.5 dual-key check BEFORE writing. The store enforces two
         // unique identities — (buyer, purchase_order_id) and
         // (buyer, idempotency_key) — and re-adoption must respect both.
-        const byOrderId = this.deps.orderRefs.getByOrderId(
+        const byOrderIdOrder = this.deps.orders.load(
           authenticatedBuyerDid,
           request.purchase_order_id,
         );
+        const byOrderId = byOrderIdOrder?.ref ?? null;
         if (byOrderId) {
           // Already present: a replay is fine ONLY if it describes the
           // same order. A different digest under the same id is a
@@ -872,7 +887,7 @@ export class CommerceLifecycleEngine {
           outcome = this.decisionOutcome(heldRecord);
           return;
         }
-        const byKey = this.deps.orderRefs.getByIdempotencyKey(
+        const byKey = this.deps.orders.byIdempotencyKey(
           authenticatedBuyerDid,
           request.idempotency_key,
         );
@@ -885,7 +900,7 @@ export class CommerceLifecycleEngine {
           return;
         }
 
-        const created = this.deps.orderRefs.createReserved({
+        const created = this.deps.orders.createReserved({
           buyerDid: authenticatedBuyerDid,
           purchaseOrderId: request.purchase_order_id,
           idempotencyKey: request.idempotency_key,
@@ -918,14 +933,16 @@ export class CommerceLifecycleEngine {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
         }
-        const decided = this.deps.orderRefs.decide(
+        const adopted = this.deps.orders.load(
           authenticatedBuyerDid,
           request.purchase_order_id,
-          {
+        );
+        const decided =
+          adopted !== null &&
+          adopted.decide({
             acknowledgementJson: JSON.stringify(heldRecord),
             decidedAt: nowMs,
-          },
-        );
+          }).ok;
         if (!decided) {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
@@ -944,10 +961,11 @@ export class CommerceLifecycleEngine {
         // telling the buyer the order is durably re-adopted. A received_*
         // answer is a durability claim; it must be backed by a row that
         // actually exists and matches (§15.5, §16.2).
-        const persisted = this.deps.orderRefs.getByOrderId(
+        const persistedOrder = this.deps.orders.load(
           authenticatedBuyerDid,
           request.purchase_order_id,
         );
+        const persisted = persistedOrder?.ref ?? null;
         if (
           !persisted ||
           persisted.state !== 'decided' ||
@@ -1122,7 +1140,8 @@ export class CommerceLifecycleEngine {
     buyerDid: string,
     purchaseOrderId: string,
   ): { error: string } | null {
-    const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
+    const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
+    const ref = refOrder?.ref ?? null;
     if (!ref || ref.state !== 'decided') {
       return { error: 'status: genesis requires a decided order (§9.11)' };
     }
@@ -1185,7 +1204,8 @@ export class CommerceLifecycleEngine {
   ): CancellationResult | { error: string } {
     let outcome: CancellationResult | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
-      const ref = this.deps.orderRefs.getByOrderId(authenticatedBuyerDid, purchaseOrderId);
+      const refOrder = this.deps.orders.load(authenticatedBuyerDid, purchaseOrderId);
+      const ref = refOrder?.ref ?? null;
       if (!ref) {
         outcome = { error: NON_DISCLOSING_ERROR };
         return;

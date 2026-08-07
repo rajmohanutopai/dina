@@ -67,14 +67,3 @@ export class InMemoryCommerceEpochWatermarkRepository implements CommerceEpochWa
   }
 }
 
-let repository: CommerceEpochWatermarkRepository | null = null;
-
-export function setCommerceEpochWatermarkRepository(
-  repo: CommerceEpochWatermarkRepository | null,
-): void {
-  repository = repo;
-}
-
-export function getCommerceEpochWatermarkRepository(): CommerceEpochWatermarkRepository | null {
-  return repository;
-}

@@ -20,8 +20,10 @@ import {
 } from '@dina/commerce-protocol';
 
 import {
+  CommerceOrderStore,
   QuoteFamilyStore,
   StatusChainStore,
+  type CommerceOrderRefRepository,
   type CommerceQuoteLedgerRepository,
   type CommerceStatusHeadRepository,
 } from '../../src/commerce';
@@ -37,6 +39,14 @@ export const hash: Sha256Fn = (data) => sha256(data);
  * Status-chain state as the production code sees it: an aggregate store,
  * never the raw head repository.
  */
+/** Order state as production sees it: an aggregate store. */
+export function makeOrders(
+  refs: CommerceOrderRefRepository,
+  clock: { now: number },
+): CommerceOrderStore {
+  return new CommerceOrderStore({ refs, now: () => clock.now });
+}
+
 export function makeChains(
   heads: CommerceStatusHeadRepository,
   clock: { now: number },
@@ -51,7 +61,12 @@ export function makeFamilies(
   currentEpoch: () => string = () => '1',
   supplierDid: string = SUPPLIER_DID,
 ): QuoteFamilyStore {
-  return new QuoteFamilyStore({ ledger, currentEpoch, supplierDid, now: () => clock.now });
+  return new QuoteFamilyStore({
+    ledger,
+    currentEpoch,
+    supplierDid: () => supplierDid,
+    now: () => clock.now,
+  });
 }
 
 export const BUYER_DID = 'did:plc:buyer1234';

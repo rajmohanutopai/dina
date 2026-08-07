@@ -32,7 +32,7 @@ import { pluginLane } from '@dina/protocol';
 
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
-import { getCommerceOrderRefRepository } from '../commerce/order_refs';
+import { getCommerceRuntime } from '../commerce/runtime';
 
 import { buildPluginEnvelope } from './dispatch';
 import { getPluginInstallRepository } from './registry';
@@ -129,11 +129,17 @@ function authorizeOrderSubject(query: ProviderIngressQuery): ProviderIngressResu
     return ORDER_SUBJECT_DENIED;
   }
 
-  const orders = getCommerceOrderRefRepository();
+  // Through the composition root, so ingress holds an aggregate store and
+  // cannot reach the raw order-reference mutators.
+  const orders = getCommerceRuntime()?.orders ?? null;
   if (orders === null) return ORDER_SUBJECT_DENIED;
 
-  const ref = orders.getByOrderId(query.fromDid, purchaseOrderId);
-  if (ref === null) return ORDER_SUBJECT_DENIED;
+  // §11.2 subject authorization: the authenticated caller must BE the
+  // order's buyer. `load` is scoped to (buyerDid, purchaseOrderId), so a
+  // caller who is not the buyer gets null and the same non-disclosing
+  // rejection as a caller asking about an order that does not exist.
+  const order = orders.load(query.fromDid, purchaseOrderId);
+  if (order === null) return ORDER_SUBJECT_DENIED;
   return null;
 }
 

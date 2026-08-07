@@ -17,6 +17,7 @@ import { registerEngagementProvider, collectNotificationBriefingItems } from '@d
 import { resetThreads } from '@dina/brain/chat';
 import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/notifications';
 import {
+  installCommerceRuntime,
   hydrateContactDirectory,
   resetContactDirectory,
   rebuildContactProjections,
@@ -56,13 +57,8 @@ import {
   setClassificationJobRepository,
   setCompletionReceiptRepository,
   setCommandReceiptRepository,
-  setCommerceEpochWatermarkRepository,
   setDrainAuthorizationRepository,
   setExtensionOperationRegistry,
-  setCommerceOrderRefRepository,
-  setCommerceQuoteLedgerRepository,
-  setCommerceReceiptRepository,
-  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setErasureKeyStore,
   setRunDispatchService,
@@ -607,11 +603,7 @@ export async function shutdownAllPersistence(): Promise<void> {
     setCommandReceiptRepository(null);
     // Commerce stores must not leak across identities (cross-identity
     // teardown, same as every Tier-0 store above).
-    setCommerceOrderRefRepository(null);
-    setCommerceQuoteLedgerRepository(null);
-    setCommerceStatusHeadRepository(null);
-    setCommerceReceiptRepository(null);
-    setCommerceEpochWatermarkRepository(null);
+    installCommerceRuntime(null);
     setExtensionOperationRegistry(null);
     setDrainAuthorizationRepository(null);
     setCommandTxRunner(null);

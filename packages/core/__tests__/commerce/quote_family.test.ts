@@ -24,7 +24,7 @@ function makeStore(epoch = '1') {
   const store = new QuoteFamilyStore({
     ledger,
     currentEpoch: () => clock.epoch,
-    supplierDid: SUPPLIER_DID,
+    supplierDid: () => SUPPLIER_DID,
     now: () => clock.now,
   });
   return { ledger, clock, store };

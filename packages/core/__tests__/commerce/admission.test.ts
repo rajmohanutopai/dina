@@ -34,6 +34,7 @@ import {
   makeOrder,
   makeProjection,
   makeFamilies,
+  makeOrders,
   makeQuoteRequest,
   makeRevision,
   makeSignedQuote,
@@ -102,7 +103,7 @@ describe.each([
     clock = { now: T_ADMIT };
     engine = new CommerceAdmissionEngine({
       tx: h.tx,
-      orderRefs: h.orderRefs,
+      orders: makeOrders(h.orderRefs, clock),
       families: makeFamilies(h.quotes, clock),
       receipts: h.receipts,
       supplierDid: SUPPLIER_DID,
@@ -426,7 +427,7 @@ describe.each([
       const replacement = makeSignedQuote(request, { quote_id: 'q-reoffer' });
       const withSeam = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -492,7 +493,7 @@ describe.each([
       });
       const withSeam = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -522,7 +523,7 @@ describe.each([
       const bad = makeSignedQuote(request, { quote_id: quote.quote_id, quote_revision: '2' });
       const withBadSeam = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -554,7 +555,7 @@ describe.each([
       // Restore: epoch moves to 2. Nothing voids this head.
       const restored = new CommerceAdmissionEngine({
         tx: h.tx,
-        orderRefs: h.orderRefs,
+        orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '2'),
         receipts: h.receipts,
         supplierDid: SUPPLIER_DID,
@@ -755,7 +756,7 @@ describe('no nested transactions (mobile op-sqlite safety)', () => {
     const clock = { now: T_ADMIT };
     const engine = new CommerceAdmissionEngine({
       tx: strictTx,
-      orderRefs: new InMemoryCommerceOrderRefRepository(),
+      orders: makeOrders(new InMemoryCommerceOrderRefRepository(), clock),
       families: makeFamilies(quotes, clock),
       receipts,
       supplierDid: SUPPLIER_DID,
