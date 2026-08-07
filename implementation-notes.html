@@ -1019,6 +1019,69 @@
       files only.
     </p>
 
+    <h3>WS-3.2 — the listing rule and the answering rule disagreed <span class="meta">(part)</span></h3>
+    <p>
+      <strong>The defect.</strong> <code>validateServiceListing</code> has accepted a complete plugin
+      binding as an execution plane since the plugin substrate landed, so a commerce listing bound to
+      a Supplier plugin saves and publishes cleanly. <code>ServiceHandler.handleQuery</code> knew only
+      two planes — an agent binding and a Tier-1 instruction — and answered
+      <code>capability_not_executable</code> to every query such a listing received. One rule decided
+      what could be published and a different rule decided what could be answered. That is also why
+      the provider-ingress bridge had no caller: there was no code path that could ever have reached
+      it.
+    </p>
+    <p>
+      <strong>Injected, not imported.</strong> Brain now recognises the plugin plane and hands the
+      query to a <code>ProviderIngressSubmitter</code> supplied by Core — the same seam shape as
+      <code>ServiceReasoningSubmitter</code>. The handler decides WHICH plane answers; Core owns what
+      that plane does. Brain learns nothing about installs, manifest CIDs, or workflow tasks.
+    </p>
+    <p>
+      <strong>Defaulted in the shared runtime, not at each boot.</strong>
+      <code>buildHomeNodeServiceRuntime</code> resolves the submitter from the wired
+      <code>WorkflowService</code>, so both boots get it with no boot-side line to forget. An option
+      each composition root had to remember is exactly how a plane comes to validate, save, publish,
+      advertise itself, and then answer <code>unavailable</code> on the one node where somebody
+      forgot. A node with no workflow service gets null and plugin-bound capabilities refuse.
+    </p>
+    <p>
+      <strong>Both execution paths, not just the easy one.</strong> A <code>review</code>-policy
+      capability goes through approval first, and <code>executeAndRespond</code> now routes to the
+      plugin after the operator approves. Handling only the auto path would have left a silent hole:
+      the approval succeeds, the query falls into the delegation path the operator never configured,
+      and the requester waits out its TTL while everything looks fine.
+    </p>
+    <p>
+      <strong>Refusals are relayed, and stay non-disclosing.</strong> The typed ingress code reaches
+      the requester; Core's message does not, because it is written for an operator reading logs and
+      an order-scoped denial must not become an oracle for enumerating order ids.
+    </p>
+    <p>
+      <strong>Three test problems found by mutation.</strong> Two mutations I first ran did not
+      survive, they CRASHED the suite (unused-variable and unreachable-code errors), which reports as
+      "0 total" and is not evidence of anything; redone shape-preserving. A third genuinely survived:
+      nothing tested the runtime DEFAULT — both my tests passed an explicit submitter or none, so
+      deleting the default entirely changed nothing. Fixed by registering a workflow service and
+      watching the refusal code change from <code>plugin_lane_unavailable</code> to a real ingress
+      verdict. And my empty-string binding test covered one of three symmetric fields; the other two
+      guards were dead. Made table-driven rather than trusting symmetry — the same reasoning that
+      left three guards unexercised earlier in this work.
+    </p>
+    <p>
+      <strong>One assertion I wrote was wrong about the system, and the system was right.</strong> I
+      expected <code>install_unavailable</code> from a node with no installs; the bridge answered
+      <code>order_subject_denied</code>, because §11.2 subject authorization runs BEFORE binding
+      resolution so an unauthorized sender cannot probe install state through the typed codes either.
+      Corrected the test to the real ordering.
+    </p>
+    <p class="meta">
+      Still open: the completion side. A runner result flowing back through the pinned result schema
+      to a D2D <code>service.response</code> as the Business DID is implemented but not driven end to
+      end by a test, so 3.2 stays PART. Verification: 10 new tests (7 handler, 3 runtime), 8
+      mutations caught. Tests: 6,340 core, 3,567 brain, 27 home-node, 2,834 server, 3,293 mobile;
+      typecheck clean, no new lint errors.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

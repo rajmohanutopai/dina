@@ -4,6 +4,7 @@
 
 import {
   WorkflowConflictError,
+  type ProviderIngressSubmitter,
   type ServiceConfig,
   type ServiceReasoningSubmitter,
 } from '@dina/core';
@@ -142,6 +143,7 @@ function makeHandler(opts: {
   nowSec?: number;
   uuid?: string;
   reasoningSubmitter?: ServiceReasoningSubmitter;
+  providerIngressSubmitter?: ProviderIngressSubmitter;
   rejectResponder?: ServiceRejectResponder;
   notifier?: Parameters<typeof ServiceHandler.prototype.handleQuery>[0] extends infer _
     ? never
@@ -158,6 +160,9 @@ function makeHandler(opts: {
       ? {}
       : { reasoningSubmitter: opts.reasoningSubmitter }),
     ...(opts.rejectResponder === undefined ? {} : { rejectResponder: opts.rejectResponder }),
+    ...(opts.providerIngressSubmitter === undefined
+      ? {}
+      : { providerIngressSubmitter: opts.providerIngressSubmitter }),
   });
 }
 
@@ -1671,4 +1676,294 @@ describe('ServiceHandler connected-Brain execution strategy', () => {
     expect(offered[0]).toMatchObject({ operatorApproved: true });
     expect(core.cancelCalls).toEqual([{ id: 'approval-read', reason: 'executed_via_reasoning' }]);
   });
+});
+
+// ---------------------------------------------------------------------------
+// §11.2a — the plugin execution plane (WS-3.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * `validateServiceListing` has accepted a complete plugin binding as an
+ * execution plane since the plugin substrate landed, so a commerce listing
+ * bound to a Supplier plugin saves cleanly. The handler did not recognise
+ * that plane and answered `capability_not_executable` to every query it
+ * received: the listing rule and the answering rule disagreed, and the
+ * provider-ingress bridge that was supposed to run had no caller at all.
+ */
+const PLUGIN_CONFIG: ServiceConfig = {
+  isDiscoverable: true,
+  name: 'ChairMaker',
+  capabilities: {
+    order_status: {
+      pluginInstallId: 'inst-1',
+      pluginManifestCid: 'bafycid',
+      pluginCapabilityId: 'com.dinakernel.commerce.order_status',
+      responsePolicy: 'auto',
+    },
+    cancel_order: {
+      pluginInstallId: 'inst-1',
+      pluginManifestCid: 'bafycid',
+      pluginCapabilityId: 'com.dinakernel.commerce.cancel_order',
+      responsePolicy: 'review',
+    },
+  },
+};
+
+const pluginQuery = {
+  query_id: 'q-plugin-1',
+  capability: 'order_status',
+  params: { purchase_order_id: 'po-1' },
+  ttl_seconds: 60,
+};
+
+function recordingSubmitter(
+  result: ReturnType<ProviderIngressSubmitter> = { ok: true, taskId: 'plg-task-1' },
+): { fn: ProviderIngressSubmitter; calls: Parameters<ProviderIngressSubmitter>[0][] } {
+  const calls: Parameters<ProviderIngressSubmitter>[0][] = [];
+  return {
+    calls,
+    fn: (args) => {
+      calls.push(args);
+      return result;
+    },
+  };
+}
+
+
+/**
+ * Records what the handler sent back to the requester. `jest.fn(async () =>
+ * undefined)` infers a ZERO-argument tuple, so its recorded calls cannot be
+ * indexed — the assertions have to reach the arguments, not just the count.
+ */
+function rejectRecorder(): {
+  fn: ServiceRejectResponder;
+  sent: { status: string; error: string }[];
+} {
+  const sent: { status: string; error: string }[] = [];
+  return {
+    sent,
+    fn: async (_fromDID, body) => {
+      sent.push(body as unknown as { status: string; error: string });
+    },
+  };
+}
+
+describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
+  it('dispatches an auto-policy plugin capability to its install', async () => {
+    const core = stubCore();
+    const submitter = recordingSubmitter();
+    const handler = makeHandler({
+      core,
+      config: PLUGIN_CONFIG,
+      providerIngressSubmitter: submitter.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(submitter.calls).toHaveLength(1);
+    const [call] = submitter.calls;
+    // The binding travels whole. A partial one would let a dispatch reach an
+    // install with no CID pin — the stale-binding case the pin prevents.
+    expect(call.capabilityConfig).toEqual({
+      pluginInstallId: 'inst-1',
+      pluginManifestCid: 'bafycid',
+      pluginCapabilityId: 'com.dinakernel.commerce.order_status',
+    });
+    expect(call.query.fromDid).toBe(REQUESTER);
+    expect(call.query.queryId).toBe('q-plugin-1');
+    expect(call.query.capability).toBe('order_status');
+    // No generic delegation task: this capability is answered by the install
+    // or not at all.
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  it('does NOT fall through to the generic delegation path', async () => {
+    // A capability carrying BOTH a plugin binding and an agent binding must
+    // still go to the plugin. Falling back would hand a commerce order to an
+    // agent the operator bound for something else entirely.
+    const core = stubCore();
+    const submitter = recordingSubmitter();
+    const hybrid: ServiceConfig = {
+      ...PLUGIN_CONFIG,
+      capabilities: {
+        order_status: {
+          ...PLUGIN_CONFIG.capabilities.order_status,
+          mcpServer: 'some-agent',
+          mcpTool: 'do_thing',
+        },
+      },
+    };
+    const handler = makeHandler({
+      core,
+      config: hybrid,
+      providerIngressSubmitter: submitter.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(submitter.calls).toHaveLength(1);
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  it('answers unavailable when the node runs no plugins at all', async () => {
+    // No submitter wired. Silence would leave the requester waiting out its
+    // TTL for an answer that was never coming.
+    const core = stubCore();
+    const rejected = rejectRecorder();
+    const handler = makeHandler({ core, config: PLUGIN_CONFIG, rejectResponder: rejected.fn });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(rejected.sent).toHaveLength(1);
+    expect(rejected.sent[0]).toMatchObject({
+      status: 'unavailable',
+      error: 'plugin_lane_unavailable',
+    });
+  });
+
+  it('relays a typed refusal to the requester', async () => {
+    const core = stubCore();
+    const submitter = recordingSubmitter({
+      ok: false,
+      code: 'order_subject_denied',
+      error: 'provider ingress: no such order for this sender',
+    });
+    const rejected = rejectRecorder();
+    const handler = makeHandler({
+      core,
+      config: PLUGIN_CONFIG,
+      providerIngressSubmitter: submitter.fn,
+      rejectResponder: rejected.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(rejected.sent).toHaveLength(1);
+    const [sent] = rejected.sent;
+    // The CODE reaches the requester; Core's operator-facing message does
+    // not, because an order-scoped denial has to stay non-disclosing.
+    expect(sent.status).toBe('unavailable');
+    expect(sent.error).toBe('order_subject_denied');
+    expect(JSON.stringify(sent)).not.toContain('no such order for this sender');
+  });
+
+  it('a review-policy plugin capability waits for approval, then dispatches', async () => {
+    const core = stubCore();
+    const submitter = recordingSubmitter();
+    const handler = makeHandler({
+      core,
+      config: PLUGIN_CONFIG,
+      uuid: 'appr-1',
+      providerIngressSubmitter: submitter.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, {
+      query_id: 'q-cancel-1',
+      capability: 'cancel_order',
+      params: { purchase_order_id: 'po-1' },
+      ttl_seconds: 60,
+    });
+    // Approval first — nothing reaches the install yet.
+    expect(submitter.calls).toHaveLength(0);
+    expect(core.createCalls).toHaveLength(1);
+    const approvalTaskId = core.createCalls[0]?.id ?? '';
+
+    await handler.executeAndRespond(approvalTaskId, {
+      from_did: REQUESTER,
+      query_id: 'q-cancel-1',
+      capability: 'cancel_order',
+      params: { purchase_order_id: 'po-1' },
+      ttl_seconds: 60,
+    });
+
+    // Without the post-approval branch the query falls into the delegation
+    // path the operator never configured: the approval looks like it worked
+    // and the requester waits out its TTL.
+    expect(submitter.calls).toHaveLength(1);
+    expect(submitter.calls[0]?.query.capability).toBe('cancel_order');
+    expect(core.cancelCalls.map((c) => c.reason)).toContain('executed_via_plugin');
+  });
+
+  it('a capability with NO plane at all is still refused', async () => {
+    const core = stubCore();
+    const rejected = rejectRecorder();
+    const handler = makeHandler({
+      core,
+      config: {
+        isDiscoverable: true,
+        name: 'Empty',
+        capabilities: { order_status: { responsePolicy: 'auto' } },
+      },
+      providerIngressSubmitter: recordingSubmitter().fn,
+      rejectResponder: rejected.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(core.createCalls).toHaveLength(0);
+    expect(rejected.sent[0]).toMatchObject({ error: 'capability_not_executable' });
+  });
+
+  it('a PARTIAL binding is not a plane', async () => {
+    // `validateServiceListing` rejects a partial binding, but a config
+    // written before that rule — or through a bypassing client — must not
+    // dispatch to an install id with no CID pin.
+    const core = stubCore();
+    const submitter = recordingSubmitter();
+    const rejected = rejectRecorder();
+    const handler = makeHandler({
+      core,
+      config: {
+        isDiscoverable: true,
+        name: 'Half',
+        capabilities: { order_status: { pluginInstallId: 'inst-1', responsePolicy: 'auto' } },
+      },
+      providerIngressSubmitter: submitter.fn,
+      rejectResponder: rejected.fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(submitter.calls).toHaveLength(0);
+    expect(rejected.sent[0]).toMatchObject({ error: 'capability_not_executable' });
+  });
+
+  // Distinct from the missing-key case: all three keys are PRESENT, so a
+  // check that only asked "is the key there?" would dispatch to an install
+  // pinned to an empty CID, or to an empty install id — neither matches
+  // anything. Table-driven over all three because the fields are symmetric
+  // and testing one of them proves only that one guard exists; the other two
+  // would sit there unexercised, which is how a guard becomes dead code.
+  it.each(['pluginInstallId', 'pluginManifestCid', 'pluginCapabilityId'] as const)(
+    'an EMPTY %s is not a plane either',
+    async (blankField) => {
+      const core = stubCore();
+      const submitter = recordingSubmitter();
+      const rejected = rejectRecorder();
+      const handler = makeHandler({
+        core,
+        config: {
+          isDiscoverable: true,
+          name: 'Blank',
+          capabilities: {
+            order_status: {
+              pluginInstallId: 'inst-1',
+              pluginManifestCid: 'bafycid',
+              pluginCapabilityId: 'com.dinakernel.commerce.order_status',
+              responsePolicy: 'auto',
+              [blankField]: '',
+            },
+          },
+        },
+        providerIngressSubmitter: submitter.fn,
+        rejectResponder: rejected.fn,
+      });
+
+      await handler.handleQuery(REQUESTER, pluginQuery);
+
+      expect(submitter.calls).toHaveLength(0);
+      expect(rejected.sent[0]).toMatchObject({ error: 'capability_not_executable' });
+    },
+  );
 });

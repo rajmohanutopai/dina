@@ -10,8 +10,9 @@ import {
   type ServiceRejectResponder,
   type WorkflowEventDeliverer,
 } from '@dina/brain';
+import { createProviderIngressSubmitter, getWorkflowService } from '@dina/core';
 
-import type { CoreClient, ServiceReasoningSubmitter } from '@dina/core';
+import type { CoreClient, ProviderIngressSubmitter, ServiceReasoningSubmitter } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 export interface HomeNodeServiceRuntimeOptions {
@@ -33,6 +34,15 @@ export interface HomeNodeServiceRuntimeOptions {
   inboundNotifier?: ServiceInboundNotifier;
   /** Optional shared connected-Brain execution strategy. */
   reasoningSubmitter?: ServiceReasoningSubmitter;
+  /**
+   * Optional override for the §11.2a plugin plane. Defaulted from the wired
+   * `WorkflowService`, so both boots get it without remembering to pass it —
+   * the alternative is a plane that exists, validates, publishes, and then
+   * answers `unavailable` on the one node where somebody forgot the line.
+   * Tests pass their own; a node with no workflow service gets null and
+   * plugin-bound capabilities refuse.
+   */
+  providerIngressSubmitter?: ProviderIngressSubmitter;
   workflowEventIntervalMs?: number;
   approvalReconcileIntervalMs?: number;
   nowMsFn?: () => number;
@@ -68,6 +78,19 @@ export function buildHomeNodeServiceRuntime(
 ): HomeNodeServiceRuntime {
   validateServiceRuntimeOptions(options);
 
+  // §11.2a plugin plane. Resolved HERE rather than at each boot: the
+  // capability is a property of the node (does it run a workflow service?),
+  // not a decision each composition root should make differently.
+  const workflow = getWorkflowService();
+  const providerIngressSubmitter =
+    options.providerIngressSubmitter ??
+    (workflow === null
+      ? null
+      : createProviderIngressSubmitter({
+          workflow,
+          ...(options.nowMsFn !== undefined ? { nowMs: options.nowMsFn } : {}),
+        }));
+
   const handler = new ServiceHandler({
     coreClient: options.core,
     readConfig: options.readConfig,
@@ -77,6 +100,7 @@ export function buildHomeNodeServiceRuntime(
     ...(options.reasoningSubmitter !== undefined
       ? { reasoningSubmitter: options.reasoningSubmitter }
       : {}),
+    ...(providerIngressSubmitter === null ? {} : { providerIngressSubmitter }),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.nowSecFn !== undefined ? { nowSecFn: options.nowSecFn } : {}),
     ...(options.generateUUID !== undefined ? { generateUUID: options.generateUUID } : {}),

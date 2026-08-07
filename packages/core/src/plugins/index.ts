@@ -118,5 +118,9 @@ export type {
 } from './drain_authorizations';
 
 // §11.2a provider-ingress bridge.
-export { createProviderIngressTask } from './provider_ingress';
-export type { ProviderIngressResult, ProviderIngressQuery } from './provider_ingress';
+export { createProviderIngressTask, createProviderIngressSubmitter } from './provider_ingress';
+export type {
+  ProviderIngressResult,
+  ProviderIngressQuery,
+  ProviderIngressSubmitter,
+} from './provider_ingress';

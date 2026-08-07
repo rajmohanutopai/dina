@@ -1,3 +1,5 @@
+import { InMemoryWorkflowRepository, WorkflowService, setWorkflowService } from '@dina/core';
+
 import { buildHomeNodeServiceRuntime } from '../service-runtime';
 
 import type { CoreClient } from '@dina/core';
@@ -299,3 +301,114 @@ function stubCore() {
   };
   return { client: core as unknown as CoreClient, ...core };
 }
+
+/**
+ * §11.2a — the plugin plane is defaulted HERE, not at each boot.
+ *
+ * The alternative was an option every composition root had to remember to
+ * pass. That is how the ingress bridge came to exist with no caller at all:
+ * a plane can validate, save, publish and advertise itself, and still answer
+ * `unavailable` on the one node where somebody forgot the line. Defaulting
+ * from the wired `WorkflowService` makes "does this node run plugins?" a
+ * property of the node rather than a decision each boot makes differently.
+ */
+describe('@dina/home-node/service-runtime — plugin plane default (§11.2a)', () => {
+  const PLUGIN_CONFIG: ServiceConfig = {
+    isDiscoverable: true,
+    name: 'ChairMaker',
+    capabilities: {
+      order_status: {
+        pluginInstallId: 'inst-1',
+        pluginManifestCid: 'bafycid',
+        pluginCapabilityId: 'com.dinakernel.commerce.order_status',
+        responsePolicy: 'auto',
+      },
+    },
+  };
+
+  const PLUGIN_QUERY = {
+    query_id: 'q-plugin-1',
+    capability: 'order_status',
+    params: { purchase_order_id: 'po-1' },
+    ttl_seconds: 60,
+  };
+
+  async function dispatchPluginQuery(
+    overrides: Partial<Parameters<typeof buildHomeNodeServiceRuntime>[0]> = {},
+  ) {
+    const core = stubCore();
+    const rejections: { status: string; error: string }[] = [];
+    const runtime = buildHomeNodeServiceRuntime({
+      core: core.client,
+      appView: stubAppView(),
+      readConfig: () => PLUGIN_CONFIG,
+      rejectResponder: async (_did, body) => {
+        rejections.push(body as unknown as { status: string; error: string });
+      },
+      deliver: jest.fn(),
+      nowSecFn: () => 1_000,
+      generateUUID: () => 'uuid-1',
+      ...overrides,
+    });
+    await runtime.dispatcher.dispatch(
+      REQUESTER,
+      { type: 'service.query', from: REQUESTER, to: 'did:plc:server' } as never,
+      PLUGIN_QUERY,
+    );
+    return { core, rejections };
+  }
+
+  it('hands a plugin-bound capability to the submitter, not the delegation lane', async () => {
+    const calls: unknown[] = [];
+    const { core } = await dispatchPluginQuery({
+      providerIngressSubmitter: (args) => {
+        calls.push(args);
+        return { ok: true, taskId: 'plg-1' };
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    // No generic delegation task: the install answers, or nothing does.
+    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+  });
+
+  it('refuses when no workflow service is wired, rather than silently queuing', async () => {
+    // No `WorkflowService` registered in this test process, so the default
+    // resolves to null. A node that cannot run plugins must SAY so — silence
+    // leaves the requester waiting out its TTL.
+    setWorkflowService(null);
+    const { core, rejections } = await dispatchPluginQuery();
+
+    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({
+      status: 'unavailable',
+      error: 'plugin_lane_unavailable',
+    });
+  });
+
+  it('DEFAULTS the submitter from the wired workflow service', async () => {
+    // Passing an explicit submitter proves the option is forwarded; it says
+    // nothing about the default, which is the part both boots depend on and
+    // neither passes. Registering a workflow service and watching the refusal
+    // code CHANGE — from "this node runs no plugins" to a real ingress
+    // verdict — is what shows the default resolved.
+    const workflow = new WorkflowService({ repository: new InMemoryWorkflowRepository() });
+    setWorkflowService(workflow);
+    try {
+      const { core, rejections } = await dispatchPluginQuery();
+
+      expect(core.createWorkflowTask).not.toHaveBeenCalled();
+      expect(rejections).toHaveLength(1);
+      expect(rejections[0]?.error).not.toBe('plugin_lane_unavailable');
+      // The bridge ran and refused on its own terms. The code is
+      // `order_subject_denied` rather than `install_unavailable` because
+      // `order_status` is order-scoped: §11.2 subject authorization runs
+      // BEFORE binding resolution, so an unauthorized sender cannot probe
+      // install state through the typed unavailable codes either.
+      expect(rejections[0]?.error).toBe('order_subject_denied');
+    } finally {
+      setWorkflowService(null);
+    }
+  });
+});

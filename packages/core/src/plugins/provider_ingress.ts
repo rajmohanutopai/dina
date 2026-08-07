@@ -57,6 +57,24 @@ export type ProviderIngressResult =
       error: string;
     };
 
+/**
+ * The seam Brain's `ServiceHandler` calls to answer a query whose capability
+ * is bound to a provider plugin (§11.2a).
+ *
+ * Injected rather than imported, for the same reason
+ * `ServiceReasoningSubmitter` is: the handler decides WHICH plane answers a
+ * query, and Core owns what that plane does. Brain never learns about plugin
+ * installs, workflow tasks, or manifest CIDs — it hands over an authenticated
+ * query and receives a typed outcome.
+ */
+export type ProviderIngressSubmitter = (args: {
+  capabilityConfig: Pick<
+    ServiceCapabilityConfig,
+    'pluginInstallId' | 'pluginManifestCid' | 'pluginCapabilityId'
+  >;
+  query: ProviderIngressQuery;
+}) => ProviderIngressResult;
+
 export interface ProviderIngressQuery {
   /** Transport-authenticated requester DID. */
   fromDid: string;
@@ -327,4 +345,25 @@ export function createProviderIngressTask(args: {
     }
     throw error;
   }
+}
+
+/**
+ * Build the submitter Brain's `ServiceHandler` is given at composition.
+ *
+ * `nowMs` is a parameter for the same reason it is everywhere else in this
+ * subsystem: dedup keys and task deadlines must be reproducible in a test
+ * without waiting for a clock.
+ */
+export function createProviderIngressSubmitter(deps: {
+  workflow: WorkflowService;
+  nowMs?: () => number;
+}): ProviderIngressSubmitter {
+  const now = deps.nowMs ?? (() => Date.now());
+  return ({ capabilityConfig, query }) =>
+    createProviderIngressTask({
+      workflow: deps.workflow,
+      capabilityConfig,
+      query,
+      nowMs: now(),
+    });
 }

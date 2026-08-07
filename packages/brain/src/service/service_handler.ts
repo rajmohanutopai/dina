@@ -38,7 +38,12 @@ import { getCapability, getTTL } from './capabilities/registry';
 import { validateAgainstSchema } from './capabilities/schema_validator';
 import { canonicalCapabilitySchemaHash } from './service_publisher';
 
-import type { CoreClient, ServiceReasoningSubmission, ServiceReasoningSubmitter } from '@dina/core';
+import type {
+  CoreClient,
+  ProviderIngressSubmitter,
+  ServiceReasoningSubmission,
+  ServiceReasoningSubmitter,
+} from '@dina/core';
 import type {
   ServiceQueryExecutionPayload,
   ServiceConfig,
@@ -219,6 +224,13 @@ export interface ServiceHandlerOptions {
    * existing Tier-1/agent workflow remains the execution path.
    */
   reasoningSubmitter?: ServiceReasoningSubmitter;
+  /**
+   * Optional Core-owned PLUGIN executor (§11.2a). Offered only to a
+   * capability carrying a complete plugin binding. Absent means this node
+   * cannot run provider plugins, and such a capability answers `unavailable`
+   * rather than falling through to a plane it was never configured for.
+   */
+  providerIngressSubmitter?: ProviderIngressSubmitter;
   /** Structured log sink. Defaults to no-op. */
   logger?: (entry: Record<string, unknown>) => void;
   /** Wall-clock source (seconds). Defaults to `Math.floor(Date.now()/1000)`. */
@@ -237,6 +249,7 @@ export class ServiceHandler {
   private readonly inboundNotifier: ServiceInboundNotifier | null;
   private readonly rejectResponder: ServiceRejectResponder | null;
   private readonly reasoningSubmitter: ServiceReasoningSubmitter | null;
+  private readonly providerIngressSubmitter: ProviderIngressSubmitter | null;
   private readonly log: (entry: Record<string, unknown>) => void;
   private readonly nowSecFn: () => number;
   private readonly generateUUID: () => string;
@@ -250,6 +263,7 @@ export class ServiceHandler {
     this.inboundNotifier = options.inboundNotifier ?? null;
     this.rejectResponder = options.rejectResponder ?? null;
     this.reasoningSubmitter = options.reasoningSubmitter ?? null;
+    this.providerIngressSubmitter = options.providerIngressSubmitter ?? null;
     this.log =
       options.logger ??
       (() => {
@@ -303,7 +317,14 @@ export class ServiceHandler {
       cap.mcpTool !== '';
     const hasInstructionPlane =
       typeof cap.instruction === 'string' && cap.instruction.trim() !== '';
-    if (!hasAgentPlane && !hasInstructionPlane) {
+    // §11.2a — the plugin plane. `validateServiceListing` has accepted a
+    // complete plugin binding as an execution plane since the substrate
+    // landed, so a listing bound to a provider plugin saves cleanly; this
+    // handler did not recognise it, and answered `capability_not_executable`
+    // to every query it received. The listing rule and the answering rule
+    // have to be the same rule.
+    const hasPluginPlane = pluginBinding(cap) !== null;
+    if (!hasAgentPlane && !hasInstructionPlane && !hasPluginPlane) {
       await this.sendError(fromDID, query, 'unavailable', 'capability_not_executable');
       return;
     }
@@ -332,7 +353,90 @@ export class ServiceHandler {
       await this.createApprovalTask(fromDID, strippedQuery, cap);
       return;
     }
+    // The plugin plane is checked BEFORE the generic execution path. A
+    // capability carrying a binding is answered by that install or not at
+    // all: falling through would hand the query to an agent or instruction
+    // plane the operator never configured for it.
+    if (hasPluginPlane) {
+      await this.dispatchToPlugin(fromDID, strippedQuery, cap, config);
+      return;
+    }
     await this.createExecutionTask(fromDID, strippedQuery, cap);
+  }
+
+  /**
+   * Hand an authenticated query to the install bound to its capability
+   * (§11.2a). Brain does no plugin reasoning of its own: Core's submitter
+   * resolves the binding, enforces subject authorization, and creates the
+   * task on the install's private lane. A typed refusal comes back as a
+   * `service.response` so the requester learns now instead of waiting out
+   * its TTL.
+   */
+  private async dispatchToPlugin(
+    fromDID: string,
+    query: ServiceQueryBody,
+    cap: ServiceCapabilityConfig,
+    config: ServiceConfig | null,
+  ): Promise<void> {
+    const binding = pluginBinding(cap);
+    if (binding === null || this.providerIngressSubmitter === null) {
+      // Fail closed. No submitter means this node cannot run provider
+      // plugins at all, which is a configuration fact the requester should
+      // hear as `unavailable` rather than as silence.
+      this.log({
+        event: 'service.query.plugin_unavailable',
+        from: fromDID,
+        capability: query.capability,
+        reason: binding === null ? 'no_binding' : 'no_submitter',
+      });
+      await this.sendError(fromDID, query, 'unavailable', 'plugin_lane_unavailable');
+      return;
+    }
+
+    const outcome = this.providerIngressSubmitter({
+      capabilityConfig: binding,
+      query: {
+        fromDid: fromDID,
+        queryId: query.query_id,
+        capability: query.capability,
+        serviceRkey: this.rkeyForQuery(query) ?? 'self',
+        params: query.params,
+        ttlSeconds: query.ttl_seconds,
+        ...(config?.name === undefined ? {} : { serviceName: config.name }),
+        ...(() => {
+          const snapshot = snapshotForCapability(config, query.capability);
+          return snapshot === undefined ? {} : { schemaSnapshot: snapshot };
+        })(),
+      },
+    });
+
+    if (!outcome.ok) {
+      this.log({
+        event: 'service.query.plugin_refused',
+        from: fromDID,
+        capability: query.capability,
+        code: outcome.code,
+      });
+      // The refusal CODE is the requester-facing detail; the message is
+      // not, because Core's messages are written for an operator reading
+      // logs and an order-scoped denial must stay non-disclosing.
+      await this.sendError(fromDID, query, 'unavailable', outcome.code);
+      return;
+    }
+
+    this.log({
+      event: 'service.query.plugin_dispatched',
+      from: fromDID,
+      capability: query.capability,
+      task_id: outcome.taskId,
+    });
+    await this.fireInboundNotifier({
+      kind: 'execution',
+      taskId: outcome.taskId,
+      fromDID,
+      capability: query.capability,
+      serviceName: config?.name ?? '',
+    });
   }
 
   /**
@@ -364,6 +468,29 @@ export class ServiceHandler {
         : parseServiceListingUri(payload.service_uri)?.rkey,
     );
     const cap = findCapabilityConfig(config, payload.capability);
+    // §11.2a — a review-gated plugin capability must reach its install AFTER
+    // the operator approves. Without this branch the approval succeeds and
+    // the query falls into the agent/instruction delegation path, which the
+    // operator never configured for it: the requester waits out its TTL and
+    // the approval looks like it worked.
+    if (cap !== null && pluginBinding(cap) !== null) {
+      await this.dispatchToPlugin(
+        payload.from_did,
+        {
+          query_id: payload.query_id,
+          capability: payload.capability,
+          params: payload.params,
+          ttl_seconds: ttl,
+          ...(payload.schema_hash === undefined ? {} : { schema_hash: payload.schema_hash }),
+          ...(payload.service_uri === undefined ? {} : { service_uri: payload.service_uri }),
+          ...(payload.grant_id === undefined ? {} : { grant_id: payload.grant_id }),
+        },
+        cap,
+        config,
+      );
+      await this.cancelApprovalAfterExecution(approvalTaskId, 'executed_via_plugin');
+      return;
+    }
     const reasoning =
       cap === null
         ? null
@@ -1009,6 +1136,33 @@ export function findCapabilityConfig(
  * Resolves through the alias↔canonical map (Layer 5) so a canonical query
  * still finds an alias-keyed published schema.
  */
+/**
+ * The §11.2a plugin plane, or null.
+ *
+ * All three fields or none: `validateServiceListing` rejects a partial
+ * binding (`partial_plugin_binding`), and reading one here would let a
+ * half-written config dispatch to an install id with no CID pin — exactly
+ * the stale-binding case the pin exists to prevent.
+ */
+function pluginBinding(cap: ServiceCapabilityConfig): {
+  pluginInstallId: string;
+  pluginManifestCid: string;
+  pluginCapabilityId: string;
+} | null {
+  const { pluginInstallId, pluginManifestCid, pluginCapabilityId } = cap;
+  if (
+    typeof pluginInstallId !== 'string' ||
+    pluginInstallId === '' ||
+    typeof pluginManifestCid !== 'string' ||
+    pluginManifestCid === '' ||
+    typeof pluginCapabilityId !== 'string' ||
+    pluginCapabilityId === ''
+  ) {
+    return null;
+  }
+  return { pluginInstallId, pluginManifestCid, pluginCapabilityId };
+}
+
 export function snapshotForCapability(
   config: ServiceConfig | null,
   capability: string,
