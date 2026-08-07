@@ -168,13 +168,24 @@ describe('validateSignedQuote', () => {
 });
 
 describe('verifySignedQuoteForBuyer', () => {
-  const quote = makeSignedQuote();
+  const retainedRequest = makeQuoteRequest();
+  const quote = makeSignedQuote({ request: retainedRequest });
+  // Narrowed once: the fixture always builds exactly one line, and asserting
+  // that at every use site is noise the lint rule is right to reject.
+  const [baseLine] = quote.lines;
+  const [baseRequestLine] = retainedRequest.lines;
+  if (baseLine === undefined || baseRequestLine === undefined) {
+    throw new Error('fixture: expected one quote line and one request line');
+  }
   const context: BuyerQuoteContext = {
     buyer_did: BUYER_DID,
     authenticated_supplier_did: SUPPLIER_DID,
     retained_request_digest: quote.request_digest,
     sent_projection_digest: quote.priced_delivery_projection_digest,
     epoch_watermark: '0',
+    retained_request: retainedRequest,
+    // Inside the quote's validity window (valid_until 2026-08-08T09:00Z).
+    at_iso: '2026-08-07T12:00:00Z',
   };
 
   it('accepts a quote answering the exact retained question', () => {
@@ -201,6 +212,99 @@ describe('verifySignedQuoteForBuyer', () => {
     expect(
       verifySignedQuoteForBuyer(quote, { ...context, sent_projection_digest: 'b'.repeat(64) }, hash),
     ).toMatch(/projection sent at quote stage/);
+  });
+
+  it('rejects an EXPIRED quote even when everything else verifies', () => {
+    // A cryptographically valid quote whose window has closed is not
+    // acceptable terms. Ranking or approving one wastes the owner's decision
+    // and lets a later stage refuse what the buyer already agreed to.
+    expect(
+      verifySignedQuoteForBuyer(quote, { ...context, at_iso: '2026-08-09T00:00:00Z' }, hash),
+    ).toMatch(/valid_until has passed/);
+    // The exact boundary is still inside the window.
+    expect(
+      verifySignedQuoteForBuyer(quote, { ...context, at_iso: quote.valid_until }, hash),
+    ).toBeNull();
+  });
+
+  it('rejects a quote that INVENTS a line the buyer never requested', () => {
+    // The request digest proves the supplier saw the request; it proves
+    // nothing about whether the lines correspond to it.
+    const invented = makeSignedQuote({
+      request: retainedRequest,
+      overrides: { lines: [{ ...baseLine, line_id: 'l-not-asked' }] },
+    });
+    expect(verifySignedQuoteForBuyer(invented, context, hash)).toMatch(/invented line/);
+  });
+
+  it('rejects a quote that renames the product the buyer asked for', () => {
+    const renamed = makeSignedQuote({
+      request: retainedRequest,
+      overrides: {
+        lines: [
+          {
+            ...baseLine,
+            requested_product: { scheme: 'gtin', value: '00000000000000' },
+          },
+        ],
+      },
+    });
+    expect(verifySignedQuoteForBuyer(renamed, context, hash)).toMatch(/does not match the product/);
+  });
+
+  it('rejects a SUBSTITUTE where the buyer allowed none (§20.4 bait-and-switch)', () => {
+    // acceptable_substitutions defaults to `none`. A supplier offering
+    // something else must not rely on the buyer noticing by eye.
+    const substituted = makeSignedQuote({
+      request: retainedRequest,
+      overrides: {
+        lines: [
+          {
+            ...baseLine,
+            offered_product: { scheme: 'gtin', value: '09506000134369' },
+          },
+        ],
+      },
+    });
+    expect(verifySignedQuoteForBuyer(substituted, context, hash)).toMatch(/allowed none/);
+  });
+
+  it('accepts a permitted substitution that carries evidence, and refuses one that does not', () => {
+    const permissive = makeQuoteRequest({
+      lines: [{ ...baseRequestLine, acceptable_substitutions: 'equivalent' }],
+    });
+    const base = makeSignedQuote({ request: permissive });
+    const [permissiveLine] = base.lines;
+    if (permissiveLine === undefined) throw new Error('fixture: expected one line');
+    const withoutEvidence = makeSignedQuote({
+      request: permissive,
+      overrides: {
+        lines: [{ ...permissiveLine, offered_product: { scheme: 'gtin', value: '09506000134369' } }],
+      },
+    });
+    const permissiveContext: BuyerQuoteContext = {
+      ...context,
+      retained_request: permissive,
+      retained_request_digest: base.request_digest,
+      sent_projection_digest: base.priced_delivery_projection_digest,
+    };
+    expect(verifySignedQuoteForBuyer(withoutEvidence, permissiveContext, hash)).toMatch(
+      /substitution_evidence/,
+    );
+
+    const withEvidence = makeSignedQuote({
+      request: permissive,
+      overrides: {
+        lines: [
+          {
+            ...permissiveLine,
+            offered_product: { scheme: 'gtin', value: '09506000134369' },
+            substitution_evidence: ['same formulation, different pack'],
+          },
+        ],
+      },
+    });
+    expect(verifySignedQuoteForBuyer(withEvidence, permissiveContext, hash)).toBeNull();
   });
 
   it('rejects an epoch below the watermark (§16.2 restore fence)', () => {

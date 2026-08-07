@@ -445,6 +445,22 @@ export interface BuyerQuoteContext {
   sent_projection_digest: string;
   /** Highest supplier_epoch seen from this supplier ("0" when none). */
   epoch_watermark: string;
+  /**
+   * The exact retained QuoteRequest this quote claims to answer.
+   *
+   * The digest alone proves the supplier SAW the request; it proves nothing
+   * about whether the quote's LINES correspond to it. Without the request
+   * body a quote can reuse a genuine digest while inventing line ids,
+   * misnaming `requested_product`, or substituting a different exact variant
+   * where the buyer said `none` — and the buyer would authorise the wrong
+   * goods against a quote that verifies.
+   */
+  retained_request: QuoteRequest;
+  /**
+   * Acceptance time (canonical ISO UTC). A cryptographically valid but
+   * EXPIRED quote must not be ranked, approved, or shown as live.
+   */
+  at_iso: string;
 }
 
 /**
@@ -475,7 +491,67 @@ export function verifySignedQuoteForBuyer(
   if (BigInt(q.supplier_epoch) < BigInt(context.epoch_watermark)) {
     return 'quote: supplier_epoch is below the watermark — stale pre-restore signer (§16.2)';
   }
+  if (context.retained_request.request_id !== q.request_id) {
+    return 'quote: request_id does not match the retained request';
+  }
+  // Expiry compared here rather than imported from order.ts: quote.ts is
+  // the earlier module in the dependency order, and the comparison is two
+  // canonical ISO strings.
+  if (isoUtcMillis(context.at_iso) > isoUtcMillis(q.valid_until)) {
+    return 'quote: valid_until has passed — expired quotes are not acceptable terms';
+  }
+  const lines = verifyQuoteLinesAnswerRequest(q, context.retained_request);
+  if (lines !== null) return lines;
   return null;
+}
+
+/**
+ * §9.7/§9.8 — does every quoted line actually answer a requested line?
+ *
+ * A quote may price a SUBSET of the request (a supplier that cannot supply
+ * everything still gives a usable answer), but it may not invent lines, and
+ * each line it does price must name the product the buyer asked for unless
+ * the buyer permitted a substitution.
+ */
+export function verifyQuoteLinesAnswerRequest(
+  quote: SignedQuote,
+  request: QuoteRequest,
+): string | null {
+  const asked = new Map(request.lines.map((l) => [l.line_id, l]));
+  const seen = new Set<string>();
+  for (const line of quote.lines) {
+    const source = asked.get(line.line_id);
+    if (source === undefined) {
+      return `quote.lines[${line.line_id}]: no such line in the retained request — invented line`;
+    }
+    if (seen.has(line.line_id)) {
+      return `quote.lines[${line.line_id}]: quoted twice`;
+    }
+    seen.add(line.line_id);
+
+    if (!sameProduct(line.requested_product, source.product)) {
+      return `quote.lines[${line.line_id}]: requested_product does not match the product the buyer asked for`;
+    }
+
+    // Substitution authority is the buyer's to grant, and defaults to NONE.
+    // A supplier offering something other than what was asked, without that
+    // permission, is a bait-and-switch the buyer must not be asked to
+    // notice by eye (§20.4).
+    const policy = source.acceptable_substitutions ?? 'none';
+    const substituted = !sameProduct(line.offered_product, line.requested_product);
+    if (substituted && policy === 'none') {
+      return `quote.lines[${line.line_id}]: offers a substitute where the buyer allowed none`;
+    }
+    if (substituted && !Array.isArray(line.substitution_evidence)) {
+      return `quote.lines[${line.line_id}]: a substitution must carry substitution_evidence`;
+    }
+  }
+  return null;
+}
+
+/** Exact product identity: scheme AND value, never name similarity. */
+function sameProduct(a: ProductRef, b: ProductRef): boolean {
+  return a.scheme === b.scheme && a.value === b.value;
 }
 
 /**

@@ -764,6 +764,43 @@
       than tested.
     </p>
 
+    <h3>WS-1.5 — buyer-side quote verification <span class="meta">(done)</span></h3>
+    <p>
+      <code>verifySignedQuoteForBuyer</code> previously bound only the request DIGEST. That proves
+      the supplier SAW the request; it proves nothing about whether the quote's lines correspond to
+      it. A quote could reuse a genuine digest while inventing line ids, misnaming
+      <code>requested_product</code>, or substituting a different exact variant where the buyer said
+      <code>none</code> — and the buyer's Dina would authorise the wrong goods against a quote that
+      verified cleanly.
+    </p>
+    <p>
+      <strong>Five bindings added,</strong> each mutation-verified: expiry against a canonical
+      acceptance time; <code>request_id</code> agreement; every quoted line must correspond to a
+      requested line (a quote may price a SUBSET, but may not invent); exact product identity by
+      scheme AND value, never name similarity; and substitution authority, which defaults to
+      <code>none</code> and requires <code>substitution_evidence</code> when granted.
+    </p>
+    <p>
+      <strong>Design decision: subset yes, invention no.</strong> A supplier that cannot supply
+      every line still gives a usable answer, so a partial quote is legal. What is not legal is a
+      line the buyer never asked for — that is the §20.4 bait-and-switch surface, and it must not
+      rely on the owner noticing by eye.
+    </p>
+    <p>
+      <strong>Context now carries the retained REQUEST, not just its digest.</strong> That is a
+      wire-adjacent API change to <code>BuyerQuoteContext</code>, and it is the point: a verifier
+      that cannot see what was asked cannot check that the answer matches. It also carries
+      <code>at_iso</code>, because "is this quote still live" is a question about a moment, and a
+      verifier without a clock silently answers "always".
+    </p>
+    <p class="meta">
+      Tests: 213 commerce-protocol, 6,327 core, workspace typecheck and eslint clean. Mutations —
+      expiry, line correspondence, product identity, substitution authority, substitution evidence.
+      All five red. One mutation initially crashed the suite rather than running (removing a guard
+      made a variable possibly-undefined); redone type-soundly, since a crashed suite is not a
+      survival.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
