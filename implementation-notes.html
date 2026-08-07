@@ -1288,6 +1288,48 @@
       server, 3,293 mobile; typecheck and lint clean.
     </p>
 
+    <h3>WS-4.5 — "business records survive" is not satisfied by rows in a table <span class="meta">(part)</span></h3>
+    <p>
+      <strong>The finding.</strong> <code>uninstall</code> had no commerce awareness. Every commerce
+      lifecycle capability — <code>order_status</code>, <code>cancel_order</code>,
+      <code>order_reconcile</code> — reaches its answer through the backing install's binding, so
+      removing that install while orders are open leaves the records intact and UNREACHABLE. The
+      buyer can never learn the outcome of an order the supplier committed to. §16.4 says business
+      records survive; surviving in storage is not the promise.
+    </p>
+    <p>
+      <strong>Refuse rather than warn.</strong> The uninstall throws a typed error carrying the open
+      count, so the operator is told what to do — resolve those orders by delivering, cancelling or
+      reconciling them — rather than being handed a wall.
+    </p>
+    <p>
+      <strong><code>delivered</code> is deliberately NOT terminal for this count.</strong> It becomes
+      terminal only once its dispute window elapses, and a chain inside that window is still an open
+      obligation. Counting it as finished would let an uninstall strand exactly the orders a dispute
+      is most likely to concern.
+    </p>
+    <p>
+      <strong>Conservative on purpose, and I want this flagged.</strong> The count is NODE-WIDE,
+      because an order reference does not record which install served it. On a node running one
+      Supplier plugin — the only shipped shape — that is exact. On a multi-plugin node it can refuse
+      an uninstall that would have been safe. I chose that direction because refusing costs an
+      operator a conversation while permitting costs a buyer their recourse, but recording the
+      order → install attribution would make it precise, and that is worth doing before multi-plugin
+      nodes are real.
+    </p>
+    <p>
+      <strong>Mutation caught the usual gap.</strong> Three counting mutations went red immediately;
+      the GUARD ITSELF survived, because nothing drove <code>uninstall</code>. Adding that test
+      surfaced two API facts I had assumed wrong: an unknown install id returns early (correctly —
+      nothing to strand), and without a device-revoke callback the teardown stops at paused rather
+      than deleting the row.
+    </p>
+    <p class="meta">
+      PART: pause and update semantics (§16.3, §16.5) are not addressed, and the WBS makes 4.5
+      depend on the update-rebind coordinator (3.7), which is not built. Verification: 5 new tests, 4
+      mutations caught. Tests: 6,370 core, 2,839 server, 3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

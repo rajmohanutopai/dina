@@ -98,7 +98,22 @@ export interface CommerceRuntime {
   lifecycle: CommerceLifecycleEngine;
   /** Why commerce cannot act right now, if it cannot. See below. */
   availability: () => CommerceAvailability;
+  /**
+   * §16.4 — how many commercial obligations are still open. A cross-store
+   * question (undecided orders live in one store, unfinished chains in
+   * another), so it belongs to the root rather than to either aggregate.
+   */
+  inFlightCount: () => number;
 }
+
+/**
+ * States a chain never leaves. `delivered` is deliberately absent: it is
+ * terminal only once its dispute window elapses, and a chain sitting inside
+ * that window is still an open obligation — a buyer can still dispute it.
+ * Counting it as finished would let an uninstall strand exactly the orders a
+ * dispute is most likely to concern.
+ */
+const TERMINAL_CHAIN_STATES = ['rejected', 'cancelled', 'disputed'] as const;
 
 /**
  * Whether this node can act as a commerce supplier at this moment.
@@ -194,6 +209,13 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
     admission,
     lifecycle,
+    inFlightCount: () => {
+      // Undecided orders: the supplier owes an answer it has not given.
+      // Unfinished chains: the supplier owes an outcome it has not reached.
+      return (
+        orders.countReserved() + heads.countNonTerminal(TERMINAL_CHAIN_STATES)
+      );
+    },
     availability: () => {
       try {
         inputs.supplierDid();

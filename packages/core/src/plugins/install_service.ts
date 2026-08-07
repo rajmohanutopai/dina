@@ -41,6 +41,7 @@ import {
   type RepoProofVerifier,
 } from '@dina/protocol';
 
+import { getCommerceRuntime } from '../commerce/runtime';
 import { getWorkflowService } from '../workflow/service';
 
 import { recordDecisionSafe } from './decisions';
@@ -919,6 +920,22 @@ export function terminateInstallInFlight(
  * survives) so a retry/sweep can finish it. Without a callback it returns the
  * device DID for the caller to revoke.
  */
+/**
+ * §16.4 — refuses a teardown that would strand open commercial obligations.
+ * A typed error rather than a boolean: an uninstall the owner asked for and
+ * did not get must say why, and the count is what makes the message
+ * actionable ("3 orders still open") rather than a wall.
+ */
+export class PluginCommerceObligationError extends Error {
+  constructor(readonly openObligations: number) {
+    super(
+      `plugin uninstall refused: ${openObligations} commerce order(s) are still open. ` +
+        'Resolve them (deliver, cancel, or reconcile) before removing the plugin that answers for them (§16.4).',
+    );
+    this.name = 'PluginCommerceObligationError';
+  }
+}
+
 export async function uninstall(
   installId: string,
   nowMs: number,
@@ -933,6 +950,31 @@ export async function uninstall(
   // row removed rather than leaving a stuck, un-torn-down install.
   const rawStatusAtEntry = install === null ? installs.rawStatus(installId) : null;
   if (install === null && rawStatusAtEntry === null) return null;
+  // §16.4 — business records survive an uninstall, but SURVIVING IN STORAGE
+  // is not the promise. Every commerce lifecycle capability (`order_status`,
+  // `cancel_order`, `order_reconcile`) reaches its answer through this
+  // install's binding, so tearing it down while obligations are open leaves
+  // the buyer permanently unable to learn the outcome of an order this
+  // supplier committed to. The records would be intact and unreachable.
+  //
+  // So the uninstall is REFUSED while anything is open. The operator resolves
+  // those orders first — deliver, cancel, or reconcile them — which is the
+  // accountability the rule exists to protect.
+  //
+  // Conservative on purpose: the count is node-wide, because an order
+  // reference does not record WHICH install served it. On a node running one
+  // Supplier plugin — the only shipped shape — that is exact. On a
+  // multi-plugin node it can refuse an uninstall that would have been safe,
+  // and refusing costs an operator a conversation while permitting costs a
+  // buyer their recourse.
+  const commerce = getCommerceRuntime();
+  if (commerce !== null) {
+    const open = commerce.inFlightCount();
+    if (open > 0) {
+      throw new PluginCommerceObligationError(open);
+    }
+  }
+
   const nowSec = Math.floor(nowMs / 1000);
   const deviceDid =
     install !== null ? install.deviceDid : (installs.rawDeviceDid(installId) ?? undefined);

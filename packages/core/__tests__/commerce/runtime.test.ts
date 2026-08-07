@@ -33,6 +33,11 @@ import {
   commerceAvailability,
   type CommerceRuntime,
 } from '../../src/commerce/runtime';
+import { uninstall } from '../../src/plugins/install_service';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { tier0TxRunner } from '../../src/run/tx';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -274,5 +279,170 @@ describe('commerce composition root', () => {
       idempotency_key: 'idem-po-2',
     });
     expect(runtime.admission.admitOrder(next, BUYER_DID)).toEqual({ kind: 'reserved' });
+  });
+});
+
+/**
+ * §16.4 (WS-4.5) — an uninstall must not strand open obligations.
+ *
+ * "Business records survive" is not satisfied by rows remaining in a table.
+ * Every commerce lifecycle capability reaches its answer through the backing
+ * install's binding, so removing the install while orders are open leaves the
+ * records intact and unreachable — the buyer can never learn the outcome of
+ * an order the supplier committed to.
+ */
+describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
+  let fixture: Fixture;
+  let clock: { now: number };
+  const request = makeQuoteRequest();
+
+  beforeEach(() => {
+    fixture = openDb();
+    clock = { now: T_ADMIT };
+  });
+  afterEach(() => {
+    installCommerceRuntime(null);
+    fixture.cleanup();
+  });
+
+  function build() {
+    return createCommerceRuntime({
+      adapter: fixture.adapter,
+      supplierDid: () => SUPPLIER_DID,
+      currentEpoch: () => '1',
+      now: () => clock.now,
+    });
+  }
+
+  function seedQuote(runtime: CommerceRuntime) {
+    const quote = makeSignedQuote(request);
+    runtime.receipts.put({
+      recordDigest: request.request_digest,
+      domain: 'request',
+      buyerDid: request.buyer_did,
+      quoteId: quote.quote_id,
+      purchaseOrderId: '',
+      recordJson: JSON.stringify(request),
+      evidenceJson: '{}',
+      createdAt: clock.now,
+    });
+    runtime.admission.registerSignedQuote(quote);
+    return quote;
+  }
+
+  it('a node with no commerce activity owes nothing', () => {
+    expect(build().inFlightCount()).toBe(0);
+  });
+
+  it('an UNDECIDED order is an open obligation', () => {
+    // The supplier has been asked and has not answered. Removing the plugin
+    // now means the answer never comes.
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+
+    expect(runtime.inFlightCount()).toBe(1);
+  });
+
+  it('an accepted order stays open until its chain reaches a terminal state', () => {
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+    runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'so-1',
+    });
+    // Decided, so no longer an undecided order — but the chain is `accepted`,
+    // which is the middle of the obligation, not the end of it.
+    expect(runtime.inFlightCount()).toBe(1);
+
+    runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+      state: 'cancelled',
+    });
+    expect(runtime.inFlightCount()).toBe(0);
+  });
+
+  it('UNINSTALL is refused while an obligation is open, and allowed once it closes', async () => {
+    // The guard the count exists for. Without it the plugin is removed, the
+    // records stay in their tables, and every order_status / cancel_order /
+    // order_reconcile the buyer sends answers `install_unavailable` for ever.
+    const runtime = build();
+    installCommerceRuntime(runtime);
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    try {
+      const installId = installs.createPending({
+        publisherDid: 'did:plc:acme',
+        pluginId: 'com.acme.commerce.supplier',
+        label: '',
+        executionMode: 'runner',
+        currentCid: 'bafyreicid1',
+        currentVersion: '0.1.0',
+        manifest: {
+          $type: 'com.dinakernel.plugin.release',
+          plugin_id: 'com.acme.commerce.supplier',
+          version: '0.1.0',
+          display_name: 'Supplier',
+          execution: { mode: 'runner' },
+          capabilities: [
+            {
+              id: 'com.acme.commerce.request_quote',
+              display_name: 'Request quote',
+              interaction: 'query',
+              action_class: 'quote',
+              privacy_class: 'personal',
+              kinds: ['provider'],
+              result_schema: { type: 'object' },
+            },
+          ],
+        } as never,
+        installScopeHash: 's'.repeat(64),
+        capabilityHashes: { 'com.acme.commerce.request_quote': 'h'.repeat(64) },
+        behaviorHash: 'b'.repeat(64),
+        presentationHash: 'p'.repeat(64),
+        trustAnchor: { kind: 'repo_proof' },
+        pendingExpiresAtSec: Math.floor(clock.now / 1000) + 900,
+        nowMs: clock.now,
+      });
+      installs.activate(installId, 'did:plc:plugindevice', clock.now);
+
+      await expect(uninstall(installId, clock.now)).rejects.toThrow(
+        /commerce order\(s\) are still open/,
+      );
+      // Still installed: the refusal did not half-tear-down.
+      expect(installs.getById(installId)?.status).toBe('active');
+
+      // Resolve the obligation and the teardown proceeds.
+      runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+        kind: 'rejected',
+        reasonCode: 'out_of_stock',
+      });
+      expect(runtime.inFlightCount()).toBe(0);
+      // With a device-revoke callback the teardown runs to completion and
+      // the row is removed; without one it stops at paused and hands the
+      // device DID back to the caller.
+      await uninstall(installId, clock.now, async () => ({ durable: true }));
+      expect(installs.getById(installId)).toBeNull();
+    } finally {
+      setPluginInstallRepository(null);
+    }
+  });
+
+  it('a REJECTED order closes immediately', () => {
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+    runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+      kind: 'rejected',
+      reasonCode: 'out_of_stock',
+    });
+    expect(runtime.inFlightCount()).toBe(0);
   });
 });

@@ -22,6 +22,13 @@ export interface CommerceStatusHead {
 
 export interface CommerceStatusHeadRepository {
   get(buyerDid: string, purchaseOrderId: string): CommerceStatusHead | null;
+
+  /**
+   * §16.4 — how many chains have NOT reached a terminal state. An uninstall
+   * that strands these leaves the buyer unable to learn the outcome of an
+   * order this supplier committed to.
+   */
+  countNonTerminal(terminalStates: readonly string[]): number;
   /** Insert the genesis head (sequence "0"). False when one exists. */
   initGenesis(head: CommerceStatusHead): boolean;
   /** CAS the head forward against the expected digest. */
@@ -84,6 +91,15 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
       [buyerDid, purchaseOrderId],
     );
     return rows[0] ? rowToHead(rows[0]) : null;
+  }
+
+  countNonTerminal(terminalStates: readonly string[]): number {
+    const placeholders = terminalStates.map(() => '?').join(', ');
+    const rows = this.db.query<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM commerce_status_heads WHERE state NOT IN (${placeholders})`,
+      [...terminalStates],
+    );
+    return Number(rows[0]?.c ?? 0);
   }
 
   initGenesis(head: CommerceStatusHead): boolean {
@@ -180,6 +196,15 @@ export class InMemoryCommerceStatusHeadRepository implements CommerceStatusHeadR
   get(buyerDid: string, purchaseOrderId: string): CommerceStatusHead | null {
     const head = this.heads.get(this.key(buyerDid, purchaseOrderId));
     return head ? { ...head } : null;
+  }
+
+  countNonTerminal(terminalStates: readonly string[]): number {
+    const terminal = new Set(terminalStates);
+    let count = 0;
+    for (const head of this.heads.values()) {
+      if (!terminal.has(head.state)) count += 1;
+    }
+    return count;
   }
 
   initGenesis(head: CommerceStatusHead): boolean {

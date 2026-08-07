@@ -204,6 +204,11 @@ export class CommerceOrderStore {
   }
 
   /** §9.13 drain release — non-terminal count for a pinned major. */
+  /** §16.4 — undecided orders: answers this supplier still owes. */
+  countReserved(): number {
+    return this.deps.refs.listReserved().length;
+  }
+
   countReservedByMajor(major: string): number {
     return this.deps.refs.countReservedByMajor(major);
   }
