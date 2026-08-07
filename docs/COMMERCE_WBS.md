@@ -235,7 +235,7 @@ quotes a live supplier from proof-bound catalog data.*
 |----|-------------|------|--------|-----|
 | 11.1 | Protocol vectors complete | §25.1 | **PART** | See 1.9 |
 | 11.2 | Plugin security tests | §25.2 | **PART** | Substrate covered; commerce lane not |
-| 11.3 | Commerce workflow tests | §25.3 | **PART** | Engine-level covered; no end-to-end journey |
+| 11.3 | Commerce workflow tests | §25.3 | **PART** | Engine-level covered; supplier-side journey now covered end to end by `procurement_scenario.test.ts` (retailer↔manufacturer, both backends, mutation-verified). Still missing: two real Dinas over D2D, catalog discovery, revocation |
 | 11.4 | AppView tests | §25.4 | **TODO** | Blocked on WS-5 |
 | 11.5 | Managed-runtime tests | §25.5 | **TODO** | Blocked on WS-8 |
 | 11.6 | **Manual acceptance journey — 15 steps** | §25.6 | **TODO** | Two real Dinas: install → catalog → publish → discover → quote → approve → accept → **restart both** → matching receipts → revoke and prove no further work |

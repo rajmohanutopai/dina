@@ -681,6 +681,43 @@
       ingress journey, which together make the first retailer/manufacturer scenario runnable.
     </p>
 
+    <h3>Procurement scenario — Sancho buys from ChairMaker <span class="meta">(done)</span></h3>
+    <p>
+      <code>packages/core/__tests__/commerce/procurement_scenario.test.ts</code>. Eight cases across
+      both storage backends, walking the supplier-side spine as a journey rather than as isolated
+      rules: quote &rarr; order &rarr; accept &rarr; prepare &rarr; partially fulfil &rarr; dispatch
+      &rarr; deliver, plus restart, capacity exhaustion, audience binding, restore fencing, and both
+      reconcile cases (<code>processing</code> and <code>never_received</code>).
+    </p>
+    <p>
+      <strong>Why a scenario at all.</strong> Every other commerce test drives one engine and asserts
+      one rule, and that suite stayed green through thirty defects. A journey test is worth having
+      precisely because it does not know which rule it is checking — it notices when the journey
+      stops working, which is the failure mode unit tests are structurally blind to.
+    </p>
+    <p>
+      <strong>Scope stated so the tick is not over-read.</strong> No catalog publication or AppView
+      discovery (WS-5, unbuilt), no plugin runner or D2D transport (engines are driven directly, as
+      the composition root will drive them), no external ERP. This is the supplier-side spine end to
+      end — NOT the §25.6 manual acceptance journey, which additionally needs two real Dinas, a
+      published catalog, and a revocation step.
+    </p>
+    <p>
+      <strong>Two authoring errors worth recording,</strong> because both were the test being wrong
+      about the spec rather than the code being wrong. <code>delivered</code> is a
+      discriminated-union arm that FORBIDS a line snapshot (§9.11) — dispatched already carried the
+      final quantities, and repeating them would let two records disagree. And a competitor
+      attacking an audience-bound quote must name ITSELF as buyer; an order naming Sancho is caught
+      earlier still, as a caller/payload mismatch, so my first version tested a different (weaker)
+      thing than it claimed.
+    </p>
+    <p class="meta">
+      Tests: 16 scenario cases (8 × 2 backends), 6,327 core, workspace typecheck clean. Mutation
+      against the scenario ALONE — acceptance/genesis atomicity (6 red), §15.5 replay lookup (2),
+      §9.8 audience binding (2), capacity exhaustion (2). The scenario is load-bearing on its own,
+      not a narrative over rules other tests already cover.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
