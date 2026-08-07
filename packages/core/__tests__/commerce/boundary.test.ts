@@ -97,6 +97,31 @@ describe('commerce aggregate boundary', () => {
     }
   });
 
+  it('only the composition root constructs the commerce engines', () => {
+    // The engines were previously built by tests and by nothing else, so the
+    // whole subsystem was unreachable in production and no test could notice.
+    // Construction is now the root's job for a second reason too: the engines
+    // must share ONE Tier-0 transaction runner and be tied to each other
+    // (§12.8 acceptance-with-genesis). A caller that builds its own gets
+    // neither, and gets them silently.
+    const engines = [
+      'CommerceAdmissionEngine',
+      'CommerceLifecycleEngine',
+      'CommerceEpochService',
+    ];
+    const offenders: string[] = [];
+    for (const file of tsFiles(CORE_SRC)) {
+      if (path.basename(file) === 'runtime.ts' && file.includes('commerce')) continue;
+      const body = code(fs.readFileSync(file, 'utf8'));
+      for (const engine of engines) {
+        if (new RegExp(`new ${engine}\\s*\\(`).test(body)) {
+          offenders.push(`${path.basename(file)} constructs ${engine}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('only the composition root constructs SQLite commerce repositories', () => {
     const offenders: string[] = [];
     for (const file of tsFiles(CORE_SRC)) {

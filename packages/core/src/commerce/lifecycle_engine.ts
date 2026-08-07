@@ -99,7 +99,13 @@ export interface LifecycleEngineDeps {
   receipts: CommerceReceiptRepository;
   /** Quote state as aggregates; the raw ledger is not reachable here. */
   families: QuoteFamilyStore;
-  supplierDid: string;
+  /**
+   * Acting supplier Business DID, read per use — a thunk for the same
+   * reason `currentEpoch` below is one. Identity resolves after storage,
+   * and an engine holding a captured DID would either be unbuildable at
+   * boot or sign under an empty one. Reading it per use fails closed.
+   */
+  supplierDid: () => string;
   now: () => number;
   /** Current commerce epoch (§16.2); CMC-6 wires the live provider. */
   currentEpoch: () => string;
@@ -397,7 +403,7 @@ export class CommerceLifecycleEngine {
           const receipt = evidence.record;
           return (
             validateCommerceOrderStatus(receipt, hash) === null &&
-            receipt.supplier_did === this.deps.supplierDid &&
+            receipt.supplier_did === this.deps.supplierDid() &&
             receipt.buyer_did === buyerDid &&
             receipt.purchase_order_id === purchaseOrderId &&
             this.deps.verifyHeldEvidence?.({
@@ -413,7 +419,7 @@ export class CommerceLifecycleEngine {
               ...(evidence.signer_key_id !== undefined
                 ? { signerKeyId: evidence.signer_key_id }
                 : {}),
-              supplierDid: this.deps.supplierDid,
+              supplierDid: this.deps.supplierDid(),
             }) === true
           );
         })
@@ -584,7 +590,7 @@ export class CommerceLifecycleEngine {
           purchase_order_id: cancellation.purchase_order_id,
           order_digest: ref.orderDigest,
           buyer_did: authenticatedBuyerDid,
-          supplier_did: this.deps.supplierDid,
+          supplier_did: this.deps.supplierDid(),
           issued_at: isoNow(nowMs),
           kind: 'rejected' as const,
           reason_code: 'cancelled_by_buyer',
@@ -863,7 +869,7 @@ export class CommerceLifecycleEngine {
         const invalid = validateOrderAcknowledgement(heldRecord, hash);
         if (
           invalid ||
-          heldRecord.supplier_did !== this.deps.supplierDid ||
+          heldRecord.supplier_did !== this.deps.supplierDid() ||
           heldRecord.buyer_did !== authenticatedBuyerDid ||
           heldRecord.purchase_order_id !== request.purchase_order_id ||
           heldRecord.order_digest !== request.order_digest ||
@@ -873,7 +879,7 @@ export class CommerceLifecycleEngine {
             recordDigest: heldRecord.acknowledgement_digest,
             signature: held.signature,
             ...(held.signer_key_id !== undefined ? { signerKeyId: held.signer_key_id } : {}),
-            supplierDid: this.deps.supplierDid,
+            supplierDid: this.deps.supplierDid(),
           }) !== true
         ) {
           outcome = { error: NON_DISCLOSING_ERROR };
@@ -1009,7 +1015,7 @@ export class CommerceLifecycleEngine {
           const receipt = evidence.record;
           return (
             validateCommerceOrderStatus(receipt, hash) === null &&
-            receipt.supplier_did === this.deps.supplierDid &&
+            receipt.supplier_did === this.deps.supplierDid() &&
             receipt.buyer_did === authenticatedBuyerDid &&
             receipt.purchase_order_id === request.purchase_order_id &&
             this.deps.verifyHeldEvidence?.({
@@ -1025,7 +1031,7 @@ export class CommerceLifecycleEngine {
               ...(evidence.signer_key_id !== undefined
                 ? { signerKeyId: evidence.signer_key_id }
                 : {}),
-              supplierDid: this.deps.supplierDid,
+              supplierDid: this.deps.supplierDid(),
             }) === true
           );
         });
@@ -1097,7 +1103,7 @@ export class CommerceLifecycleEngine {
       protocol_version: pinnedVersion,
       purchase_order_id: purchaseOrderId,
       buyer_did: buyerDid,
-      supplier_did: this.deps.supplierDid,
+      supplier_did: this.deps.supplierDid(),
       ...fields,
     };
     return {

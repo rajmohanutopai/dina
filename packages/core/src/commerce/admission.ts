@@ -76,8 +76,17 @@ export interface AdmissionEngineDeps {
    */
   families: QuoteFamilyStore;
   receipts: CommerceReceiptRepository;
-  /** Acting supplier Business DID (acknowledgement identity). */
-  supplierDid: string;
+  /**
+   * Acting supplier Business DID (acknowledgement identity), read per use.
+   *
+   * A thunk rather than a captured string, for the same reason
+   * `QuoteFamilyStore` takes one: identity resolves AFTER storage, so an
+   * engine built at storage-init time would capture whatever was there —
+   * nothing. Reading it at each use also makes the failure the right one:
+   * with no established identity the thunk throws and the operation fails
+   * closed, instead of signing an acknowledgement under an empty DID.
+   */
+  supplierDid: () => string;
   /** Injected clock, epoch ms. */
   now: () => number;
   /** Bounded decision deadline for pre_effect reservations (§9.9 step 3). */
@@ -235,7 +244,7 @@ export class CommerceAdmissionEngine {
       if (heldQuote === null) {
         return 'quote ledger: retained head quote is missing — cannot verify the revision (§9.8)';
       }
-      if (heldQuote.supplier_did !== this.deps.supplierDid) {
+      if (heldQuote.supplier_did !== this.deps.supplierDid()) {
         return 'quote ledger: retained head was signed by a different supplier (§9.8)';
       }
       const advanced = family.advance(quote, heldQuote, verifyQuoteRevisionExtends);
@@ -274,7 +283,7 @@ export class CommerceAdmissionEngine {
         error: 'admission: body buyer_did does not match the authenticated sender (§9.7)',
       };
     }
-    if (order.supplier_did !== this.deps.supplierDid) {
+    if (order.supplier_did !== this.deps.supplierDid()) {
       return { kind: 'conflict', error: 'admission: order addresses a different supplier' };
     }
     const version = checkProtocolVersion(order.protocol_version);
@@ -742,7 +751,7 @@ export class CommerceAdmissionEngine {
       purchase_order_id: order.purchase_order_id,
       order_digest: order.order_digest,
       buyer_did: order.buyer_did,
-      supplier_did: this.deps.supplierDid,
+      supplier_did: this.deps.supplierDid(),
       issued_at: isoNow(this.deps.now()),
       ...variant,
     };

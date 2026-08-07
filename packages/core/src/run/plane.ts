@@ -51,7 +51,7 @@ import { getRunRepository, type RunRepository } from './repository';
 import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
 import { RunService, setRunService } from './service';
 import { RunSweeper, RunTerminationService } from './termination';
-import { makeReentrantTxRunner, type TxRunner } from './tx';
+import { tier0TxRunner, type TxRunner } from './tx';
 
 
 import type { RunRecord } from './domain';
@@ -222,7 +222,7 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   // command's outer transaction and a nested plane/service write share a single
   // depth counter (op-sqlite forbids a nested `BEGIN`). Standalone/test callers
   // that omit `deps.tx` get a plane-local runner over `db`.
-  const tx = deps.tx ?? makeReentrantTxRunner(deps.db);
+  const tx = deps.tx ?? tier0TxRunner(deps.db);
   // Resolve exactly ONE erasure backend and use it for BOTH the frozen
   // `erasure_mode` probe AND the payload store that holds the leaf keys (Codex/
   // Claude finding): probing one backend while the payload store uses another

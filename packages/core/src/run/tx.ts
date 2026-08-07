@@ -47,3 +47,30 @@ export function makeReentrantTxRunner(db: TxCapableDb): TxRunner {
     }
   };
 }
+
+/**
+ * The ONE re-entrant runner for a given Tier-0 db.
+ *
+ * "Boots MUST construct exactly one runner per db and pass the SAME instance
+ * everywhere" was a rule stated in a comment and enforced by nothing, and the
+ * boots did not follow it: each passed a raw `(fn) => db.transaction(fn)` to
+ * `setCommandTxRunner`, and the run plane later built a second runner and
+ * overwrote the registration. Two depth counters over one db is precisely the
+ * nested-`BEGIN` crash the counter exists to prevent — it stayed invisible only
+ * because nothing yet nested across the two.
+ *
+ * Commerce makes that luck run out: its engines write to the same Tier-0 db,
+ * and they are composed at storage-init time, long before the run plane exists.
+ * So the identity of the runner is derived from the db rather than remembered
+ * by each caller. Ask for the runner for a db and you get the same one, whoever
+ * you are and whenever you ask.
+ */
+const TIER0_RUNNERS = new WeakMap<TxCapableDb, TxRunner>();
+
+export function tier0TxRunner(db: TxCapableDb): TxRunner {
+  const existing = TIER0_RUNNERS.get(db);
+  if (existing !== undefined) return existing;
+  const runner = makeReentrantTxRunner(db);
+  TIER0_RUNNERS.set(db, runner);
+  return runner;
+}

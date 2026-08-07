@@ -885,6 +885,75 @@
       vector categories (1.9).
     </p>
 
+    <h3>WS-3.6 — the engines were built by nobody <span class="meta">(part)</span></h3>
+    <p>
+      <strong>What I found.</strong> <code>CommerceAdmissionEngine</code>,
+      <code>CommerceLifecycleEngine</code> and <code>CommerceEpochService</code> are constructed
+      nowhere outside a test file. Both boots install the commerce STORES and stop. So every
+      assertion in the six hundred-odd commerce tests was about objects that production never made:
+      no path could admit an order or sign a status, and no test could notice, because each test
+      builds its own engines. Wiring a subsystem up to its own doorstep and no further is a failure
+      mode unit tests are structurally blind to.
+    </p>
+    <p>
+      <strong>Engines now come from the composition root.</strong> <code>createCommerceRuntime</code>
+      returns <code>admission</code> and <code>lifecycle</code> alongside the stores, so both boots
+      get them with no boot-side change — the payoff of having one root rather than a wiring
+      recipe each boot repeats. The root is also the only place that can tie
+      <code>createAcceptedGenesisInTx</code>, which is what makes acceptance and its status genesis
+      one transaction (§12.8); admission must not learn about status chains and the lifecycle engine
+      must not learn about admission, so nothing below the root can make that knot.
+    </p>
+    <p>
+      <strong>Identity became a thunk in both engines.</strong> They took <code>supplierDid</code> as
+      a captured string while <code>currentEpoch</code> next to it was already a function — and that
+      inconsistency was the reason the engines could not be composed at storage-init time at all.
+      Identity resolves after storage, so a captured DID is either unavailable or empty. Read per
+      use, an absent identity throws at the moment of use and the operation fails closed, which is
+      what §16.2 asks for.
+    </p>
+    <p>
+      <strong>One transaction runner per database, by construction.</strong> <code>tx.ts</code> said
+      "boots MUST construct exactly one runner per Tier-0 db and pass the SAME instance", and both
+      boots did not: each passed a raw <code>(fn) =&gt; db.transaction(fn)</code>, and the run plane
+      later built a second runner and overwrote the registration. Two depth counters over one
+      database is the nested-<code>BEGIN</code> crash the counter exists to prevent; it stayed
+      invisible only because nothing yet nested across the two. Commerce writes to that same
+      database and is composed long before the run plane exists, so the luck was about to run out.
+      <code>tier0TxRunner(db)</code> now derives the runner from the database, so asking twice
+      returns the same object. A rule each caller had to remember became a fact.
+    </p>
+    <p>
+      <strong>A typed answer for "commerce is not configured".</strong> Both refusals arrive as
+      thrown errors, which is right for a signing path and wrong for a caller that only wants to
+      know whether to offer commerce at all — that caller would have to catch an exception and read
+      its message. <code>commerceAvailability()</code> answers
+      <code>not_installed</code> / <code>no_identity</code> / <code>no_epoch</code> / available.
+    </p>
+    <p>
+      <strong>Honest status: commerce is wired but still switched off.</strong> Nothing installs
+      <code>CommerceEpochService</code> — it needs a CAS-capable PDS publisher, which is WS-2.4 — so
+      on a real boot <code>availability()</code> reports <code>no_epoch</code> and every commerce
+      operation refuses. That is the DoD's "disabled cleanly when unconfigured" half, and it is the
+      correct §16.2 posture, but it is not commerce running end to end. I am recording 3.6 as PART,
+      not DONE.
+    </p>
+    <p>
+      <strong>Tech debt removed while here.</strong> The procurement scenario built THREE engines —
+      a plain admission engine, a lifecycle engine, and a second "atomic" admission engine — and
+      used the plain one for exactly one call, <code>registerSignedQuote</code>, which the wired
+      engine does identically. It was testing a configuration that no longer ships. Collapsed to
+      one admission engine matching production.
+    </p>
+    <p class="meta">
+      Verification: 8 new composition-root tests over a real SQLCipher file, plus a boundary test
+      forbidding engine construction outside the root. Five mutations, each caught and none
+      crashing the suite: genesis closure unwired (2 red), runner not shared (1), timeout default
+      removed (1), availability always true (2), and an engine constructed in a stray production
+      file (1, named by file). Tests: 6,340 core, 2,825 server, 3,293 mobile; workspace typecheck
+      and eslint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

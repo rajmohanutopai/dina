@@ -119,38 +119,30 @@ describe.each([
 
   /** Build the manufacturer's engines at the current epoch. */
   function engines() {
-    const admission = new CommerceAdmissionEngine({
-      tx: node.tx,
-      orders: makeOrders(node.orderRefs, clock),
-      families: makeFamilies(node.quotes, clock, () => epoch.value),
-      receipts: node.receipts,
-      supplierDid: MANUFACTURER,
-      now: () => clock.now,
-      decisionTimeoutMs: 60_000,
-    });
     const lifecycle = new CommerceLifecycleEngine({
       tx: node.tx,
       orders: makeOrders(node.orderRefs, clock),
       chains: makeChains(node.statusHeads, clock, () => epoch.value),
       receipts: node.receipts,
       families: makeFamilies(node.quotes, clock, () => epoch.value),
-      supplierDid: MANUFACTURER,
+      supplierDid: () => MANUFACTURER,
       now: () => clock.now,
       currentEpoch: () => epoch.value,
       verifyHeldEvidence: () => true,
     });
-    // Acceptance and its status genesis commit together (§12.8).
-    const atomic = new CommerceAdmissionEngine({
+    // Acceptance and its status genesis commit together (§12.8) — the same
+    // tie the composition root makes in production.
+    const admission = new CommerceAdmissionEngine({
       tx: node.tx,
       orders: makeOrders(node.orderRefs, clock),
       families: makeFamilies(node.quotes, clock, () => epoch.value),
       receipts: node.receipts,
-      supplierDid: MANUFACTURER,
+      supplierDid: () => MANUFACTURER,
       now: () => clock.now,
       decisionTimeoutMs: 60_000,
       createAcceptedGenesisInTx: (b, po) => lifecycle.createAcceptedGenesisInTx(b, po),
     });
-    return { admission, lifecycle, atomic };
+    return { admission, lifecycle };
   }
 
   beforeEach(() => {
@@ -173,7 +165,7 @@ describe.each([
   afterEach(() => node.cleanup());
 
   it('walks the whole journey: quote, order, accept, fulfil, deliver', () => {
-    const { admission, lifecycle, atomic } = engines();
+    const { admission, lifecycle } = engines();
 
     // 1. ChairMaker prices Sancho's request and signs a quote.
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
@@ -181,11 +173,11 @@ describe.each([
 
     // 2. Sancho approves an exact order against that quote.
     const order = makeOrder(quote, pricedProjection);
-    expect(atomic.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    expect(admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
 
     // 3. ChairMaker accepts. The status chain opens in the SAME transaction,
     //    so there is no window where the order is decided but unchained.
-    const decided = atomic.decideOrder(RETAILER, order.purchase_order_id, {
+    const decided = admission.decideOrder(RETAILER, order.purchase_order_id, {
       kind: 'accepted',
       supplierOrderId: 'CM-1001',
     });
@@ -240,8 +232,8 @@ describe.each([
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
     expect(first.admission.registerSignedQuote(quote)).toBeNull();
     const order = makeOrder(quote, pricedProjection);
-    expect(first.atomic.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
-    const decided = first.atomic.decideOrder(RETAILER, order.purchase_order_id, {
+    expect(first.admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    const decided = first.admission.decideOrder(RETAILER, order.purchase_order_id, {
       kind: 'accepted',
       supplierOrderId: 'CM-1001',
     });
@@ -252,7 +244,7 @@ describe.each([
 
     // The retailer re-submits (it never saw the reply). §15.5 replay returns
     // the RECORDED answer rather than admitting a second order.
-    const replay = second.atomic.admitOrder(order, RETAILER);
+    const replay = second.admission.admitOrder(order, RETAILER);
     expect(replay.kind).toBe('replay');
     if (replay.kind !== 'replay') throw new Error('expected replay');
     expect(replay.acknowledgement.kind).toBe('accepted');
@@ -266,19 +258,19 @@ describe.each([
   });
 
   it('refuses a second order once the quote capacity is spent', () => {
-    const { admission, atomic } = engines();
+    const { admission } = engines();
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1', max_uses: '1' });
     expect(admission.registerSignedQuote(quote)).toBeNull();
 
     const first = makeOrder(quote, pricedProjection);
-    expect(atomic.admitOrder(first, RETAILER)).toEqual({ kind: 'reserved' });
+    expect(admission.admitOrder(first, RETAILER)).toEqual({ kind: 'reserved' });
 
     // A DIFFERENT order against the same single-use quote.
     const second = makeOrder(quote, pricedProjection, {
       purchase_order_id: 'po-2',
       idempotency_key: 'idem-po-2',
     });
-    const outcome = atomic.admitOrder(second, RETAILER);
+    const outcome = admission.admitOrder(second, RETAILER);
     expect(outcome.kind).toBe('rejected');
     if (outcome.kind !== 'rejected' || outcome.acknowledgement.kind !== 'rejected') {
       throw new Error('expected a rejected acknowledgement');
@@ -290,7 +282,7 @@ describe.each([
     // §9.8 audience binding, from the buyer's side of the fence. The refusal
     // is non-disclosing: a stranger learns nothing about whether the quote
     // exists.
-    const { admission, atomic } = engines();
+    const { admission } = engines();
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
     expect(admission.registerSignedQuote(quote)).toBeNull();
 
@@ -303,7 +295,7 @@ describe.each([
       purchase_order_id: 'po-competitor',
       idempotency_key: 'idem-competitor',
     });
-    const outcome = atomic.admitOrder(order, 'did:plc:competitor99');
+    const outcome = admission.admitOrder(order, 'did:plc:competitor99');
     expect(outcome.kind).toBe('rejected');
     if (outcome.kind !== 'rejected' || outcome.acknowledgement.kind !== 'rejected') {
       throw new Error('expected a rejected acknowledgement');
@@ -316,8 +308,8 @@ describe.each([
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
     expect(before.admission.registerSignedQuote(quote)).toBeNull();
     const order = makeOrder(quote, pricedProjection);
-    expect(before.atomic.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
-    const decided = before.atomic.decideOrder(RETAILER, order.purchase_order_id, {
+    expect(before.admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    const decided = before.admission.decideOrder(RETAILER, order.purchase_order_id, {
       kind: 'accepted',
       supplierOrderId: 'CM-1001',
     });
@@ -355,11 +347,11 @@ describe.each([
   it('an unanswered submission reconciles instead of being ordered twice (§12.7)', () => {
     // The outcome_unknown case: Sancho's Dina submitted and never heard back.
     // Blind resubmission would risk a duplicate order, so it asks instead.
-    const { admission, atomic, lifecycle } = engines();
+    const { admission, lifecycle } = engines();
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
     expect(admission.registerSignedQuote(quote)).toBeNull();
     const order = makeOrder(quote, pricedProjection);
-    expect(atomic.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    expect(admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
 
     const answer = lifecycle.reconcile(
       {
@@ -402,11 +394,11 @@ describe.each([
     // The dual harness is the point: an in-memory pass that a real SQLCipher
     // database would fail is not evidence. This case exists so the label is
     // visible in the report rather than implied.
-    const { admission, atomic } = engines();
+    const { admission } = engines();
     const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
     expect(admission.registerSignedQuote(quote)).toBeNull();
     const order = makeOrder(quote, pricedProjection);
-    expect(atomic.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    expect(admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
     expect(node.orderRefs.getByOrderId(RETAILER, order.purchase_order_id)?.state).toBe('reserved');
   });
 });
