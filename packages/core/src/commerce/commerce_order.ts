@@ -142,7 +142,7 @@ export class CommerceOrder {
    * what the acknowledgement already says. Asking a human to confirm
    * something the records already establish trains them to click through.
    */
-  reconcile(options: { orderProposalJson: string; presentedDigest: string; atEpoch: string }): OrderOutcome {
+  reconcile(options: { presentedDigest: string; atEpoch: string }): OrderOutcome {
     // Layered with the repository's `reconciliation_required = 1` CAS on
     // purpose, and the pair is load-bearing: this one gives the caller a
     // precise refusal for an order that was never re-adopted, the CAS makes
@@ -156,7 +156,6 @@ export class CommerceOrder {
     // would then sign a genesis describing lines nobody agreed to.
     if (options.presentedDigest !== this.row.orderDigest) return refuse('order_digest_mismatch');
     const done = this.deps.refs.reconcile(this.row.buyerDid, this.row.purchaseOrderId, {
-      orderJson: options.orderProposalJson,
       atEpoch: options.atEpoch,
     });
     return done ? allow(undefined) : refuse('reconcile_cas_lost');
@@ -192,7 +191,7 @@ export class CommerceOrderStore {
   createReserved(
     ref: Omit<
       CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt' | 'orderJson'
+      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
     >,
   ): boolean {
     return this.deps.refs.createReserved(ref);

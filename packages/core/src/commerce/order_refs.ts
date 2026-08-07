@@ -51,12 +51,6 @@ export interface CommerceOrderRef {
    * actually know what this order is".
    */
   reconciliationRequired: boolean;
-  /**
-   * §16.2 (WS-4.3) — the digest-verified order proposal recovered by the
-   * reconciliation ceremony. Empty until then, and empty forever for an
-   * order this node admitted itself (it never lost the proposal).
-   */
-  orderJson: string;
   state: CommerceOrderRefState;
   effectPhase: CommerceEffectPhase;
   /** Recorded SIGNED acknowledgement JSON once decided (§15.5). */
@@ -84,7 +78,7 @@ export interface CommerceOrderRefRepository {
   createReserved(
     ref: Omit<
       CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt' | 'orderJson'
+      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
     >,
   ): boolean;
   /** CAS reserved/pre_effect -> effect_started. Durable BEFORE the effect. */
@@ -103,7 +97,7 @@ export interface CommerceOrderRefRepository {
   reconcile(
     buyerDid: string,
     purchaseOrderId: string,
-    options: { orderJson: string; atEpoch: string },
+    options: { atEpoch: string },
   ): boolean;
   /** Reserved rows for the restart sweeper (§9.9 step 3). */
   listReserved(): CommerceOrderRef[];
@@ -124,7 +118,6 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
     pinnedVersion: String(row.pinned_version),
     admittedEpoch: String(row.admitted_epoch),
     reconciliationRequired: Number(row.reconciliation_required) === 1,
-    orderJson: String(row.order_json ?? ''),
     state: String(row.state) as CommerceOrderRefState,
     effectPhase: String(row.effect_phase) as CommerceEffectPhase,
     acknowledgementJson:
@@ -138,8 +131,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
 
 const SELECT = `
   SELECT buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-         quote_digest, pinned_version, admitted_epoch, reconciliation_required, order_json,
-         state, effect_phase, acknowledgement_json,
+         quote_digest, pinned_version, admitted_epoch, reconciliation_required, state, effect_phase, acknowledgement_json,
          external_ref, decision_deadline_at, created_at, decided_at
   FROM commerce_order_refs
 `;
@@ -166,7 +158,7 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
   createReserved(
     ref: Omit<
       CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt' | 'orderJson'
+      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
     >,
   ): boolean {
     try {
@@ -228,13 +220,13 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
   reconcile(
     buyerDid: string,
     purchaseOrderId: string,
-    options: { orderJson: string; atEpoch: string },
+    options: { atEpoch: string },
   ): boolean {
     const affected = this.db.run(
       `UPDATE commerce_order_refs
-       SET order_json = ?, admitted_epoch = ?, reconciliation_required = 0
+       SET admitted_epoch = ?, reconciliation_required = 0
        WHERE buyer_did = ? AND purchase_order_id = ? AND reconciliation_required = 1`,
-      [options.orderJson, options.atEpoch, buyerDid, purchaseOrderId],
+      [options.atEpoch, buyerDid, purchaseOrderId],
     );
     return affected > 0;
   }
@@ -288,17 +280,13 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   createReserved(
     ref: Omit<
       CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt' | 'orderJson'
+      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
     >,
   ): boolean {
     if (this.byOrderId.has(this.orderKey(ref.buyerDid, ref.purchaseOrderId))) return false;
     if (this.getByIdempotencyKey(ref.buyerDid, ref.idempotencyKey)) return false;
     this.byOrderId.set(this.orderKey(ref.buyerDid, ref.purchaseOrderId), {
       ...ref,
-      // Empty on admission: this node received the proposal and never lost
-      // it. Only the reconciliation ceremony fills it, for an order rebuilt
-      // from a counterparty's evidence.
-      orderJson: '',
       state: 'reserved',
       effectPhase: 'pre_effect',
       acknowledgementJson: null,
@@ -329,11 +317,10 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   reconcile(
     buyerDid: string,
     purchaseOrderId: string,
-    options: { orderJson: string; atEpoch: string },
+    options: { atEpoch: string },
   ): boolean {
     const ref = this.byOrderId.get(this.orderKey(buyerDid, purchaseOrderId));
     if (!ref || !ref.reconciliationRequired) return false;
-    ref.orderJson = options.orderJson;
     ref.admittedEpoch = options.atEpoch;
     ref.reconciliationRequired = false;
     return true;

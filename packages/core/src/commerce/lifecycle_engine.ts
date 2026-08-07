@@ -1230,14 +1230,32 @@ export class CommerceLifecycleEngine {
       const loaded = this.deps.orders.load(authenticatedBuyerDid, order.purchase_order_id);
       if (loaded === null) return;
       const done = loaded.reconcile({
-        orderProposalJson: JSON.stringify(order),
         presentedDigest: order.order_digest,
         // Stamp the CURRENT epoch: the order is described again and belongs
         // to this generation. Leaving the old epoch would keep it fenced by
         // the pre-restore check and the ceremony would achieve nothing.
         atEpoch: this.deps.currentEpoch(),
       });
-      outcome = done.ok ? { ok: true } : { error: NON_DISCLOSING_ERROR };
+      if (!done.ok) return;
+
+      // Put the recovered proposal where the code that needs it LOOKS. The
+      // receipt store is the durable home of every commerce document, keyed
+      // by digest, and `signStatusUpdate` reads the order receipt to check
+      // cumulative line snapshots — it fails `order receipt missing` without
+      // one. Recording the proposal anywhere else would clear the flag and
+      // leave the order still unable to move, which is a ceremony that
+      // reports success and achieves nothing.
+      this.deps.receipts.put({
+        recordDigest: order.order_digest,
+        domain: 'order',
+        buyerDid: order.buyer_did,
+        quoteId: order.quote_id,
+        purchaseOrderId: order.purchase_order_id,
+        recordJson: JSON.stringify(order),
+        evidenceJson: '{}',
+        createdAt: this.deps.now(),
+      });
+      outcome = { ok: true };
     });
     return outcome;
   }

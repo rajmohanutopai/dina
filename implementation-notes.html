@@ -1330,6 +1330,42 @@
       mutations caught. Tests: 6,370 core, 2,839 server, 3,293 mobile; typecheck and lint clean.
     </p>
 
+    <h3>The procurement scenario found a defect my unit test could not <span class="meta">(4.3 correction)</span></h3>
+    <p>
+      <strong>What happened.</strong> I added a Sancho/ChairMaker journey for the hardest restore
+      case: ChairMaker restores a backup taken BEFORE the order arrived, so the order is not stale
+      on that node — it is ABSENT, and only Sancho's copy proves it happened. Re-adoption recovers
+      it, the order is frozen, the ceremony unfreezes it, and trading resumes.
+    </p>
+    <p>
+      <strong>It failed at the last step</strong> with
+      <code>status: order receipt missing — store integrity failure</code>. My WS-4.3 ceremony
+      stored the recovered proposal on the order REFERENCE, in a column I added for the purpose. The
+      code that needs the proposal — <code>signStatusUpdate</code>, checking cumulative line
+      snapshots — reads the RECEIPT store. So the ceremony cleared the flag, reported success, and
+      left the order still unable to move. My unit test only advanced as far as the genesis, which
+      does not read the proposal, so it passed.
+    </p>
+    <p>
+      <strong>The fix removed the column rather than adding a second reader.</strong> The receipt
+      store is already the durable home of every commerce document, keyed by digest; a second copy
+      on the reference is the duplicate-owner smell I have deleted three times elsewhere in this
+      work. The ceremony now writes the proposal as the order receipt, and the schema column,
+      repository field, and row plumbing I had added are gone.
+    </p>
+    <p>
+      <strong>Why this is the argument for scenario tests.</strong> Every unit involved was correct
+      and passing. The defect lived in the seam between "where the ceremony writes" and "where the
+      lifecycle reads" — invisible to any test that exercises one side. It is the same shape as the
+      seven wiring gaps found earlier in this work, and it was caught by walking the whole journey
+      once.
+    </p>
+    <p class="meta">
+      WS-4.3 is more complete than it was, and the note above it should be read with this
+      correction. Tests: 6,372 core (211 commerce), 2,839 server, 3,293 mobile; typecheck and lint
+      clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

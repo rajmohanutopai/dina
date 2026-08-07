@@ -373,9 +373,12 @@ describe.each([
 
         const after = fresh.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id);
         expect(after?.reconciliationRequired).toBe(false);
-        // The recovered proposal is STORED — that is what makes the clearing
-        // honest rather than a flag flip: the node can describe the order now.
-        expect(JSON.parse(after?.orderJson ?? '{}').order_digest).toBe(order.order_digest);
+        // The recovered proposal is stored as the ORDER RECEIPT — the durable
+        // home every other path reads. That is what makes the clearing honest
+        // rather than a flag flip: `signStatusUpdate` needs this receipt, so
+        // recording it elsewhere would clear the flag and leave the order
+        // still unable to move.
+        expect(fresh.receipts.get(order.order_digest)?.domain).toBe('order');
 
         // Unfrozen: genesis now signs.
         const genesis = engineB.signGenesis(BUYER_DID, order.purchase_order_id);

@@ -24,6 +24,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { commerceRecordDigest } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
@@ -49,6 +50,7 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   BUYER_DID,
   SUPPLIER_DID,
+  hash,
   makeChains,
   makeFamilies,
   makeOrder,
@@ -56,6 +58,7 @@ import {
   makeQuoteRequest,
   makeSignedQuote,
 } from './helpers';
+
 
 import type { CommerceOrderStatus, OrderAcknowledgement } from '@dina/commerce-protocol';
 
@@ -342,6 +345,96 @@ describe.each([
       state: 'preparing',
     });
     expect('status_digest' in resumed).toBe(true);
+  });
+
+  it('ChairMaker loses the order entirely, recovers it from Sancho, and trades again', () => {
+    // The hardest restore case, and the one the earlier fence test does not
+    // reach: ChairMaker restores a backup taken BEFORE Sancho's order arrived.
+    // The order is not stale on this node — it is ABSENT. Only Sancho's copy
+    // proves it ever happened.
+    const before = engines();
+    const quote = makeSignedQuote(request, { quote_id: 'q-chairs-1' });
+    expect(before.admission.registerSignedQuote(quote)).toBeNull();
+    const order = makeOrder(quote, pricedProjection);
+    expect(before.admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    const decided = before.admission.decideOrder(RETAILER, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'CM-1001',
+    });
+    if (!('acknowledgement' in decided)) throw new Error('expected acceptance');
+    // Sancho keeps the signed acknowledgement. That is the whole of its
+    // evidence, and after the restore it is the whole of the truth.
+    const heldAck = decided.acknowledgement;
+
+    // ChairMaker restores a backup from before the order. A fresh node with
+    // nothing: no order reference, no chain, no quote family.
+    const restored = makeNode();
+    const previous = node;
+    node = restored;
+    try {
+      const after = engines();
+
+      // Sancho asks what happened, presenting what it holds. ChairMaker
+      // RE-ADOPTS the order rather than answering `never_received` — the
+      // acknowledgement is its own signature and it must honour it.
+      const answer = after.lifecycle.reconcile(
+        {
+          protocol_version: '1.0',
+          purchase_order_id: order.purchase_order_id,
+          buyer_did: RETAILER,
+          supplier_did: MANUFACTURER,
+          order_digest: order.order_digest,
+          idempotency_key: order.idempotency_key,
+          held_acknowledgement: { record: heldAck, signature: 'cd'.repeat(32) },
+        },
+        RETAILER,
+      );
+      expect('outcome' in answer && answer.outcome).toBe('received_accepted');
+
+      // The order is back, but ChairMaker cannot describe it: re-adoption
+      // recovered the DECISION, not the order's lines. So it is frozen — it
+      // may not open a chain, and it may not be cancelled either. Both would
+      // commit ChairMaker to something it cannot see.
+      const frozenGenesis = after.lifecycle.signGenesis(RETAILER, order.purchase_order_id);
+      expect('error' in frozenGenesis).toBe(true);
+      const cancellationDraft = {
+        protocol_version: '1.0',
+        cancellation_id: 'cx-lost-1',
+        purchase_order_id: order.purchase_order_id,
+        order_digest: order.order_digest,
+        idempotency_key: 'idem-cx-lost-1',
+        issued_at: '2026-08-07T12:40:00.000Z',
+      };
+      const frozenCancel = after.lifecycle.resolveCancellation(
+        {
+          ...cancellationDraft,
+          cancellation_digest: commerceRecordDigest(
+            'cancellation',
+            cancellationDraft as Record<string, unknown>,
+            hash,
+          ),
+        },
+        RETAILER,
+        () => 'cancelled',
+      );
+      expect('error' in frozenCancel && frozenCancel.error).toMatch(/awaiting reconciliation/);
+
+      // Sancho presents the order itself. Its digest matches the one inside
+      // ChairMaker's own acknowledgement, so ChairMaker can accept it as the
+      // order it agreed to — and is describable again.
+      expect(after.lifecycle.reconcileRestoredOrder(order, RETAILER)).toEqual({ ok: true });
+
+      // Trading resumes: the chain opens and moves.
+      const genesis = after.lifecycle.signGenesis(RETAILER, order.purchase_order_id);
+      expect('status_digest' in genesis && genesis.sequence).toBe('0');
+      const preparing = after.lifecycle.signStatusUpdate(RETAILER, order.purchase_order_id, {
+        state: 'preparing',
+      });
+      expect('status_digest' in preparing).toBe(true);
+    } finally {
+      restored.cleanup();
+      node = previous;
+    }
   });
 
   it('an unanswered submission reconciles instead of being ordered twice (§12.7)', () => {
