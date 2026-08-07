@@ -162,13 +162,21 @@ export function computeTotal(
     }
     const amount = moneyMinorUnits(charge.amount);
     total = charge.operation === 'add' ? total + amount : total - amount;
-    if (total < 0n) {
-      return {
-        value: null,
-        error: `total: charge "${charge.label}" drives the total negative — invalid`,
-      };
-    }
   }
+  // Non-negativity is a property of the FINAL total, not of every
+  // intermediate running value.
+  //
+  // Rejecting mid-sum made validity depend on charge ORDER: subtotal 100,
+  // subtract 200, add 500 was refused, while the same three charges
+  // reordered summed to 400 and passed. §9.1 specifies a plain integer sum,
+  // and two conforming implementations that iterate a charge set in
+  // different orders must agree — otherwise the byte-identical guarantee the
+  // whole protocol rests on is false for any document with a discount
+  // preceding a surcharge, which is an ordinary invoice shape.
+  //
+  // The final check itself lives in `minorUnitsToString`, which already
+  // refuses a negative bigint. Re-checking it here would duplicate a rule
+  // that has an owner — a mutation proved the duplicate was a no-op.
   const { value, error } = minorUnitsToString(total);
   if (error) return { value: null, error: `total: ${error}` };
   return { value: { currency, minor_units: value as string }, error: null };

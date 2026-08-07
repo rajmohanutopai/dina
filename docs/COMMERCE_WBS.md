@@ -79,7 +79,7 @@ reject the same malformed cases.*
 | ID | Deliverable | Spec | Status | Depends | Definition of Done |
 |----|-------------|------|--------|---------|--------------------|
 | 1.1 | Money, quantity, unit vocabulary — **closed list, custom units rejected** *(owner decision, §27 Q4 closed)* | §9.1 §9.2 | **DONE** | — | Integer minor units; unit + pack conversion; custom units rejected. Widening after freeze is additive only |
-| 1.2 | Exact arithmetic contract | §9.1 | **PART** | 1.1 | Rational subtotal, single round-half-even. **Open:** total validity depends on charge ordering — sum all signed adjustments, then bound the final total |
+| 1.2 | Exact arithmetic contract | §9.1 | **DONE** | 1.1 | Rational subtotal, single round-half-even, order-independent totals; non-negativity owned by `minorUnitsToString`; permutation-equivalence + rejection vectors frozen |
 | 1.3 | Canonicalization + 10 domain-separated digests | §9.12 | **DONE** | 1.1 | Byte-exact canonical JSON; domain separation per record type |
 | 1.4 | Product reference + exact-variant identity | §9.3 §9.4 | **PART** | 1.3 | **Open:** relationship/object discriminant not enforced in both directions (a `ProductRef` passes where a DID is required) |
 | 1.5 | Quote request / signed quote / revision chain | §9.7 §9.8 | **PART** | 1.3 | **Open:** buyer verification binds only the request digest — quote lines, `requested_product` identity and substitution authority unchecked; expired quotes accepted |
@@ -88,7 +88,7 @@ reject the same malformed cases.*
 | 1.8 | Catalog declaration + snapshot wire contract, pointer/tombstone, root + proof verification | §10.2 §10.3 | **TODO** | 1.3 | Canonical snapshot digest/root, pointer sequence, CAS-chain validator, withdrawal record, bounded-page proof |
 | 1.9 | Frozen conformance vectors | §25.1 | **PART** | 1.1–1.8 | Have arithmetic, digests, malformed. **Missing:** unit/pack conversion, product normalization, relationship canonicalization + temporal validity, catalog snapshot roots, substitution/variant mismatch, exact-variant projection, schema-version/unknown-field behaviour |
 | 1.10 | **Declare `1.x` unfrozen** until Phase 0 exit, then freeze at `1.0` *(owner decision 2026-08-07)* | §9.13 §25.1 | **TODO** | — | Dated pre-freeze note in `packages/protocol/docs/conformance.md` §changelog, not only in implementation-notes; no conformance claim and no third-party targeting until it is lifted |
-| 1.11 | `validateIsoUtc` rejects impossible calendar dates (`2026-02-30`) | §9.12 | **TODO** | — | Round-trip check; vector added |
+| 1.11 | `validateIsoUtc` rejects impossible calendar dates (`2026-02-30`) | §9.12 | **DONE** | — | Round-trips the parsed instant; leap days and month ends still accepted; mutation-verified |
 
 **Phase 0 cannot be declared frozen** while 1.8, 1.9 and 1.10 are open.
 

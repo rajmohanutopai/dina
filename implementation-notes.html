@@ -718,6 +718,52 @@
       not a narrative over rules other tests already cover.
     </p>
 
+    <h3>WS-1 protocol defects — arithmetic order and calendar dates <span class="meta">(done)</span></h3>
+    <p>
+      <strong>Totals were order-dependent, which breaks §9.1 interop.</strong>
+      <code>computeTotal</code> rejected any INTERMEDIATE negative running value, so subtotal 100,
+      subtract 200, add 500 was refused while the same three charges reordered summed to 400 and
+      passed. §9.1 specifies a plain integer sum, so two conforming implementations iterating a
+      charge set differently must agree — otherwise the byte-identical guarantee is false for any
+      invoice where a discount precedes a surcharge, which is an ordinary shape. Non-negativity is
+      now a property of the RESULT.
+    </p>
+    <p>
+      <strong>The existing test asserted the wrong behaviour</strong> and had to be replaced rather
+      than adjusted: it explicitly pinned "order of add/subtract cannot rescue an intermediate
+      negative". A test encoding a non-authoritative interpretation is worse than no test, because
+      it converts a defect into a defended decision.
+    </p>
+    <p>
+      <strong>And then my own fix contained the same smell.</strong> I added an explicit final
+      non-negativity check to <code>computeTotal</code>; a mutation showed deleting it changed
+      nothing, because <code>minorUnitsToString</code> already refuses a negative bigint. Removed —
+      re-checking a rule that has an owner is the scattering this refactor exists to end. The test
+      now pins the OWNER's message, so a future duplicate cannot satisfy it while the real guard is
+      deleted.
+    </p>
+    <p>
+      <strong>Frozen vectors, including a rejection.</strong> Three new cases:
+      <code>charge_order_discount_first</code> and <code>charge_order_surcharge_first</code> must
+      produce identical totals, plus <code>final_total_negative_is_invalid</code>. The vector runner
+      now handles expected-rejection cases, because a permutation pair is meaningless if an
+      implementation can also accept what this one refuses.
+    </p>
+    <p>
+      <strong><code>validateIsoUtc</code> accepted impossible dates.</strong>
+      <code>Date.parse('2026-02-30T00:00:00Z')</code> succeeds and silently means 2 March. A
+      timestamp that means a different day than it reads is worse than one that is rejected: it is
+      digest-covered, so two implementations disagreeing about whether to normalise produce
+      different bytes for the same input. Now round-trips the parsed instant and refuses a
+      mismatch — with a real leap day (2028-02-29) and a legitimate month end still accepted, so
+      the check is not a blanket refusal.
+    </p>
+    <p class="meta">
+      Tests: 208 commerce-protocol, 6,327 core, workspace typecheck clean. Mutations — final
+      non-negativity owner (1 red), calendar rollover guard (1 red). One duplicate deleted rather
+      than tested.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

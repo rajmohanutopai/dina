@@ -167,6 +167,84 @@
         }
       ],
       "expected_minor_units": "53000"
+    },
+    {
+      "name": "charge_order_discount_first",
+      "note": "§9.1 is a plain integer sum, so a discount preceding a surcharge must give the same total as the reverse. An implementation that rejects intermediate negatives disagrees here.",
+      "currency": "INR",
+      "line_subtotals": [
+        "100"
+      ],
+      "charges": [
+        {
+          "kind": "discount",
+          "label": "big",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "200"
+          },
+          "operation": "subtract"
+        },
+        {
+          "kind": "delivery",
+          "label": "later add",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "500"
+          },
+          "operation": "add"
+        }
+      ],
+      "expected_minor_units": "400"
+    },
+    {
+      "name": "charge_order_surcharge_first",
+      "note": "Permutation of the case above. Both MUST produce 400.",
+      "currency": "INR",
+      "line_subtotals": [
+        "100"
+      ],
+      "charges": [
+        {
+          "kind": "delivery",
+          "label": "later add",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "500"
+          },
+          "operation": "add"
+        },
+        {
+          "kind": "discount",
+          "label": "big",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "200"
+          },
+          "operation": "subtract"
+        }
+      ],
+      "expected_minor_units": "400"
+    },
+    {
+      "name": "final_total_negative_is_invalid",
+      "note": "Non-negativity is a property of the RESULT, not of the running value.",
+      "currency": "INR",
+      "line_subtotals": [
+        "100"
+      ],
+      "charges": [
+        {
+          "kind": "discount",
+          "label": "too big",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "200"
+          },
+          "operation": "subtract"
+        }
+      ],
+      "expected_error_contains": "negative"
     }
   ]
 }

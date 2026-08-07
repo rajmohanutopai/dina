@@ -50,7 +50,19 @@ export function validateIsoUtc(value: unknown, field: string): string | null {
   if (typeof value !== 'string' || !ISO_UTC.test(value)) {
     return `${field}: must be a canonical ISO 8601 UTC timestamp (Z suffix, optional .mmm)`;
   }
-  if (Number.isNaN(Date.parse(value))) return `${field}: is not a real instant`;
+  const millis = Date.parse(value);
+  if (Number.isNaN(millis)) return `${field}: is not a real instant`;
+  // `Date.parse` accepts impossible calendar dates by ROLLING THEM OVER:
+  // "2026-02-30T00:00:00Z" parses happily as 2 March. A timestamp that
+  // silently means a different day than it reads is worse than one that is
+  // rejected — it is digest-covered, so two implementations that disagree
+  // about whether to normalise produce different bytes for the same input.
+  // Round-tripping the parsed instant back to its calendar fields is the
+  // cheapest way to insist the string means what it says.
+  const round = new Date(millis).toISOString();
+  if (round.slice(0, 10) !== value.slice(0, 10)) {
+    return `${field}: names a date that does not exist`;
+  }
   return null;
 }
 

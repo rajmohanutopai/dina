@@ -123,6 +123,21 @@ describe('canonical ISO UTC timestamps', () => {
     expect(validateIsoUtc('2026-08-07T10:00:00.500Z', 't')).toBeNull();
   });
 
+  it('rejects impossible calendar dates instead of rolling them over', () => {
+    // `Date.parse` accepts 2026-02-30 and silently means 2 March. A
+    // timestamp that means a different day than it reads is worse than one
+    // that is rejected: it is digest-covered, so two implementations
+    // disagreeing about whether to normalise produce different bytes for the
+    // same input.
+    expect(validateIsoUtc('2026-02-30T00:00:00Z', 't')).toMatch(/does not exist/);
+    expect(validateIsoUtc('2025-02-29T00:00:00Z', 't')).toMatch(/does not exist/);
+    expect(validateIsoUtc('2026-04-31T00:00:00Z', 't')).toMatch(/does not exist/);
+    // A real leap day still passes — the check must not be a blanket refusal.
+    expect(validateIsoUtc('2028-02-29T00:00:00Z', 't')).toBeNull();
+    // And a legitimate end-of-month is untouched.
+    expect(validateIsoUtc('2026-01-31T23:59:59.999Z', 't')).toBeNull();
+  });
+
   it('rejects offsets, missing Z, and odd fractions', () => {
     for (const t of [
       '2026-08-07T10:00:00+05:30',

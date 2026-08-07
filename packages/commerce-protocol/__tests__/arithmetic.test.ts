@@ -179,18 +179,30 @@ describe('computeTotal', () => {
     ).toMatch(/mixed currencies/);
   });
 
-  it('rejects a subtraction that drives the total negative', () => {
+  it('rejects a subtraction that drives the FINAL total negative', () => {
+    // Non-negativity did not go away when order-independence landed; it
+    // moved from every intermediate value to the result, and is owned by
+    // minorUnitsToString rather than duplicated in computeTotal.
     const { value, error } = computeTotal(
       'INR',
       [inr('100')],
       [{ kind: 'discount', label: 'too big', amount: inr('200'), operation: 'subtract' }],
     );
     expect(value).toBeNull();
-    expect(error).toMatch(/negative/);
+    // Pin the OWNER's message, so a future duplicate check in computeTotal
+    // cannot satisfy this test while the real guard is deleted.
+    expect(error).toMatch(/money: computed value is negative/);
   });
 
-  it('order of add/subtract cannot rescue an intermediate negative', () => {
-    const { error } = computeTotal(
+  it('the total is INDEPENDENT of charge order (§9.1 plain integer sum)', () => {
+    // This replaces a test that asserted the opposite. Rejecting an
+    // intermediate negative made validity depend on iteration order:
+    // subtotal 100, subtract 200, add 500 was refused, while the same three
+    // charges reordered summed to 400 and passed. §9.1 specifies a plain
+    // integer sum, so two conforming implementations iterating a charge set
+    // differently must agree — otherwise byte-identical totals are false for
+    // any invoice where a discount precedes a surcharge, which is ordinary.
+    const discountFirst = computeTotal(
       'INR',
       [inr('100')],
       [
@@ -198,7 +210,17 @@ describe('computeTotal', () => {
         { kind: 'delivery', label: 'later add', amount: inr('500'), operation: 'add' },
       ],
     );
-    expect(error).toMatch(/negative/);
+    const addFirst = computeTotal(
+      'INR',
+      [inr('100')],
+      [
+        { kind: 'delivery', label: 'later add', amount: inr('500'), operation: 'add' },
+        { kind: 'discount', label: 'big', amount: inr('200'), operation: 'subtract' },
+      ],
+    );
+    expect(discountFirst.error).toBeNull();
+    expect(discountFirst.value).toEqual(addFirst.value);
+    expect(discountFirst.value?.minor_units).toBe('400');
   });
 
   it('fails on overflow instead of wrapping', () => {

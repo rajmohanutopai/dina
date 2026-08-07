@@ -24,9 +24,9 @@ import {
 import { validateMoney, type Money } from '../src/money';
 import { validateQuantity, type Quantity } from '../src/quantity';
 import { termsDigestInput, validateSignedQuote, type SignedQuote } from '../src/quote';
+import { validateOrderReconcileRequest } from '../src/reconcile';
 import { validateCommerceOrderStatus } from '../src/status';
 
-import { validateOrderReconcileRequest } from '../src/reconcile';
 
 import {
   makeAcceptedAck,
@@ -70,10 +70,13 @@ interface ArithmeticVector {
   }[];
   totals: {
     name: string;
+    note?: string;
     currency: string;
     line_subtotals: string[];
     charges: Charge[];
-    expected_minor_units: string;
+    /** Exactly one of these is present per case. */
+    expected_minor_units?: string;
+    expected_error_contains?: string;
   }[];
 }
 
@@ -99,6 +102,14 @@ describe('frozen arithmetic vectors', () => {
       c.line_subtotals.map((minor_units) => ({ currency: c.currency, minor_units })),
       c.charges,
     );
+    // A frozen vector pins REJECTIONS as tightly as results: an
+    // implementation that accepts what this one refuses is not conformant
+    // either, and the permutation pair below is meaningless without it.
+    if (c.expected_error_contains !== undefined) {
+      expect(value).toBeNull();
+      expect(error).toContain(c.expected_error_contains);
+      return;
+    }
     expect(error).toBeNull();
     expect(value?.minor_units).toBe(c.expected_minor_units);
   });
