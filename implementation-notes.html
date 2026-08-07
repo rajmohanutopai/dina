@@ -1366,6 +1366,52 @@
       clean.
     </p>
 
+    <h3>WS-3.4 — the extension-operation broker <span class="meta">(part)</span></h3>
+    <p>
+      <strong>The problem §3.4 solves.</strong> A plugin runner is untrusted code out of process
+      that must be able to ask for effects only Dina can perform — search the AppView, send a D2D
+      message — without ever holding the authority to perform them. The answer is a four-step
+      protocol, and this is its state machine: propose, permit, execute, verify.
+    </p>
+    <p>
+      <strong>Durable first, because every step boundary is a crash boundary.</strong> The proposal
+      is recorded before anything is permitted, so a crash leaves a readable row rather than an
+      intention that evaporated. <code>executing</code> is written BEFORE the effect, so a crash
+      mid-effect is discoverable through <code>listExecuting()</code> instead of being retried into
+      a double send. That is also why <code>outcome_unknown</code> is a first-class terminal state
+      rather than an error: an effect that MAY have happened is a different fact from one that
+      certainly did not, and only the first forbids a retry.
+    </p>
+    <p>
+      <strong>Two orderings that are load-bearing.</strong> Deny-before-validation: an operation the
+      capability never declared is refused without consulting the registry or touching params —
+      those params are not input this node should be parsing. And params are validated BEFORE the
+      row exists, because a recorded proposal is something the owner may be asked to permit, and it
+      should never be possible to be asked about params nobody checked.
+    </p>
+    <p>
+      <strong>Schema digests pinned at proposal time.</strong> The registry's schemas change when an
+      adapter updates. A proposal permitted under one contract must be verified under that same
+      contract, or an update silently reinterprets a decision the owner already made. A result that
+      violates the pinned schema is recorded <code>failed</code> and the drifted payload never
+      lands.
+    </p>
+    <p>
+      <strong>Refusals are recorded, cancellation is bounded.</strong> A silent drop leaves the
+      runner retrying for ever and the owner with no record of a decision they made. A runner may
+      withdraw before a decision but never after execution begins — an effect that may already have
+      happened cannot be un-asked.
+    </p>
+    <p class="meta">
+      PART, and the honest gap is the one this work keeps finding: NOTHING CALLS IT. There is no
+      typed host operation to execute (3.5), no owner-facing permit surface, and no sweeper wired
+      over <code>listExecuting()</code>. I am recording that plainly rather than marking DONE,
+      because "built and unreachable" has been the defect in seven of the eleven items before this
+      one. Verification: 13 tests, 7 mutations, all caught (one of my first mutations was a no-op —
+      an appended comment rather than a behaviour change — and was redone). Tests: 6,385 core, 2,839
+      server, 3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

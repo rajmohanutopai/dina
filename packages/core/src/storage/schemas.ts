@@ -1653,6 +1653,38 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         PRIMARY KEY (buyer_did, purchase_order_id)
       );
 
+      -- §3.4 (WS-3.4) — the extension-operation broker's durable ledger.
+      --
+      -- A plugin runner never holds Dina's authority. It PROPOSES a typed
+      -- host operation; the proposal is recorded here BEFORE anything is
+      -- permitted or executed, so a crash between any two steps leaves a
+      -- readable state rather than an effect nobody can account for. The
+      -- schema digests are pinned at proposal time: a later adapter update
+      -- cannot silently reinterpret a recorded history.
+      CREATE TABLE IF NOT EXISTS plugin_extension_proposals (
+        proposal_id TEXT PRIMARY KEY,
+        install_id TEXT NOT NULL,
+        capability_id TEXT NOT NULL,
+        operation_name TEXT NOT NULL,
+        params_json TEXT NOT NULL,
+        params_schema_digest TEXT NOT NULL,
+        result_schema_digest TEXT NOT NULL,
+        -- proposed -> permitted -> executing -> {completed | failed | outcome_unknown}
+        -- proposed -> {refused | cancelled}
+        state TEXT NOT NULL,
+        refusal_reason TEXT,
+        result_json TEXT,
+        -- One proposal per (install, idempotency key): a runner that retries
+        -- after a lost response must not produce a second effect.
+        idempotency_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER,
+        settled_at INTEGER,
+        UNIQUE (install_id, idempotency_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_plugin_ext_proposals_state
+        ON plugin_extension_proposals (state, created_at);
+
       CREATE TABLE IF NOT EXISTS commerce_receipts (
         record_digest TEXT PRIMARY KEY,
         domain TEXT NOT NULL

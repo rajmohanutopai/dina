@@ -118,6 +118,14 @@ export type {
 } from './drain_authorizations';
 
 // §11.2a provider-ingress bridge.
+export { ExtensionOperationBroker } from './extension_broker';
+export type {
+  ExtensionProposal,
+  ExtensionProposalState,
+  BrokerOutcome,
+  BrokerRefusal,
+  ConsentedCapability,
+} from './extension_broker';
 export { createProviderIngressTask, createProviderIngressSubmitter } from './provider_ingress';
 export type {
   ProviderIngressResult,
