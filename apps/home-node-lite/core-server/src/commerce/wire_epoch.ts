@@ -36,6 +36,8 @@ import {
 } from '@dina/commerce-protocol';
 import {
   CommerceEpochService,
+  clearCommerceRestorePending,
+  isCommerceRestorePending,
   setCommerceEpochService,
   type CommerceReceiptRepository,
   type QuoteFamilyStore,
@@ -43,6 +45,7 @@ import {
 } from '@dina/core';
 
 import type { PdsIdentity } from '../identity/provision_pds';
+import type { DatabaseAdapter } from '@dina/core/storage';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -55,6 +58,13 @@ export interface WireCommerceEpochOptions {
   families: QuoteFamilyStore;
   receipts: CommerceReceiptRepository;
   logger: { info: (o: unknown, m: string) => void; warn: (o: unknown, m: string) => void };
+  /**
+   * Tier-0 database, read to decide whether this boot owes a RESTORE fence
+   * (§16.2 / WS-4.2). The archive import writes a durable marker inside its
+   * own transaction; a boot that finds it must increment the epoch and void
+   * capacity rather than adopt the live epoch unchanged.
+   */
+  adapter: DatabaseAdapter;
   fetch?: typeof globalThis.fetch;
   nowFn?: () => number;
 }
@@ -172,9 +182,27 @@ export function wireCommerceEpoch(options: WireCommerceEpochOptions): WiredComme
   return {
     service,
     establish: async () => {
+      // §16.2 — which path this boot takes is decided by whether a restore
+      // fence is owed, NOT by configuration. `establish()` adopts the live
+      // epoch; after a restore that would leave every restored quote head
+      // matching the current epoch, and the backup's spent capacity would be
+      // spendable again.
+      const restorePending = isCommerceRestorePending(options.adapter);
       try {
-        const record = await service.establish();
+        const record = restorePending
+          ? await service.establishAfterRestore()
+          : await service.establish();
         setCommerceEpochService(service);
+        if (restorePending) {
+          // Clear ONLY now: the higher epoch is published and the capacity
+          // void committed. Clearing before either would let the next boot
+          // skip a fence that never ran.
+          clearCommerceRestorePending(options.adapter);
+          logger.info(
+            { epoch: record.epoch },
+            'commerce restore fence complete — capacity voided, epoch incremented',
+          );
+        }
         logger.info(
           { epoch: record.epoch, reason: record.reason },
           'commerce epoch established — commerce signing enabled',
@@ -185,8 +213,15 @@ export function wireCommerceEpoch(options: WireCommerceEpochOptions): WiredComme
         // reports `no_epoch` and every commerce operation refuses, which
         // is the §16.2 posture. Installing a service whose `currentEpoch()`
         // throws would report the same thing less clearly.
+        // The marker is deliberately LEFT SET on failure: the obligation
+        // survives until it is discharged, so a node that could not reach
+        // its repo retries the fence on the next boot instead of quietly
+        // adopting the live epoch later.
         logger.warn(
-          { error: err instanceof Error ? err.message : String(err) },
+          {
+            error: err instanceof Error ? err.message : String(err),
+            restorePending,
+          },
           'commerce epoch not established — commerce stays disabled',
         );
         return null;

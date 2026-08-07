@@ -22,3 +22,4 @@ export * from './watermarks';
 export * from './admission';
 export * from './lifecycle_engine';
 export * from './epoch_service';
+export * from './restore_marker';

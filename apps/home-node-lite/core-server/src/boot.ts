@@ -555,6 +555,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           await wireCommerceEpoch({
             pdsIdentity,
             businessDid: pdsIdentity.did,
+            adapter: result.identityDB,
             tx: tier0TxRunner(result.identityDB),
             families: commerceRuntime.families,
             receipts: commerceRuntime.receipts,

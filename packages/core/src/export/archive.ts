@@ -34,6 +34,10 @@ import {
   validatePluginManifest,
 } from '@dina/protocol';
 
+import {
+  COMMERCE_RESTORE_PENDING_KEY,
+  markCommerceRestorePending,
+} from '../commerce/restore_marker';
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
 import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
 import { validatePersonaName } from '../persona/service';
@@ -184,7 +188,14 @@ function isSensitiveKvKey(key: unknown): boolean {
  * into an orphan guided-demo scope. The actual demo rows are already excluded
  * (they're scope-tagged, and the archive only exports user-scope rows).
  */
-const EPHEMERAL_KV_PATTERNS: RegExp[] = [/^guided_demo\./];
+const EPHEMERAL_KV_PATTERNS: RegExp[] = [
+  /^guided_demo\./,
+  // §16.2 — the commerce restore-fence marker describes THIS node's pending
+  // obligation, not the backup's content. Exporting it would make a backup
+  // taken while a fence was owed demand a second fence, on a different node,
+  // for an event that already happened here.
+  new RegExp(`^${COMMERCE_RESTORE_PENDING_KEY}$`),
+];
 
 function isEphemeralKvKey(key: unknown): boolean {
   if (typeof key !== 'string') return false;
@@ -675,6 +686,24 @@ export async function importArchive(
           clearTable(idAdapter, t);
         }
       }
+
+      // §16.2 (WS-4.2) — the commerce restore fence, armed HERE.
+      //
+      // The commerce operational tables are in the archive on purpose: quote
+      // heads, status heads, and the USE COUNTERS. Restoring them faithfully
+      // means the backup's spent capacity comes back looking exactly like
+      // capacity this node spent itself — because that is what a faithful
+      // restore is. Nothing in the data can tell the two apart.
+      //
+      // So the obligation to void it is written down in the SAME transaction
+      // that restores it. A marker written afterwards could be lost to a
+      // crash in between, leaving resurrected counters with no fence pending
+      // — the exact state this prevents, reachable by unlucky timing.
+      //
+      // Unconditional: no attempt to detect "did this archive actually carry
+      // commerce rows?". An empty commerce set costs one wasted epoch
+      // increment; a missed one lets capacity be spent twice.
+      markCommerceRestorePending(idAdapter, Date.now());
     });
   }
 

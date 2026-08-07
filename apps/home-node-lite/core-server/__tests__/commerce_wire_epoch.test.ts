@@ -9,14 +9,26 @@
  * yes would let a broken publisher pass.
  */
 
+
+
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { validateCommerceEpochRecord, type Sha256Fn } from '@dina/commerce-protocol';
 import {
+  IDENTITY_MIGRATIONS,
   InMemoryCommerceQuoteLedgerRepository,
   InMemoryCommerceReceiptRepository,
   QuoteFamilyStore,
+  applyMigrations,
+  isCommerceRestorePending,
+  markCommerceRestorePending,
 } from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { wireCommerceEpoch } from '../src/commerce/wire_epoch';
 
@@ -88,10 +100,40 @@ function fakePds() {
   return { fetchFn, state, calls, raceOnNextRead };
 }
 
+/**
+ * A real Tier-0 database: the fence decision is READ from it (the archive
+ * import writes the marker there), so a stub would test a different system.
+ */
+function openDb(): { adapter: NodeSQLiteAdapter; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'epoch-'));
+  const adapter = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: randomBytes(32).toString('hex'),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
+  applyMigrations(adapter, IDENTITY_MIGRATIONS);
+  return {
+    adapter,
+    cleanup: () => {
+      adapter.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+let db: { adapter: NodeSQLiteAdapter; cleanup: () => void };
+
+beforeEach(() => {
+  db = openDb();
+});
+afterEach(() => db.cleanup());
+
 function wire(fetchFn: typeof globalThis.fetch, businessDid = BUSINESS_DID) {
   const ledger = new InMemoryCommerceQuoteLedgerRepository();
   const receipts = new InMemoryCommerceReceiptRepository();
   return wireCommerceEpoch({
+    adapter: db.adapter,
     pdsIdentity: {
       did: BUSINESS_DID,
       handle: 'supplier.test',
@@ -244,5 +286,83 @@ describe('commerce epoch repo wiring', () => {
     // the CAS would be doing the work, not the validation.
     expect(pds.calls.length).toBe(writesBefore);
     expect((pds.state.record as { epoch?: string }).epoch).toBe('77');
+  });
+});
+
+/**
+ * §16.2 / WS-4.2 — the restore fence, decided at boot.
+ *
+ * The archive carries the commerce operational tables on purpose, including
+ * the USE COUNTERS. A restored node that adopts the live epoch unchanged has
+ * every restored quote head matching it, so capacity already spent is
+ * spendable again — the resurrection the fence exists to prevent, arriving
+ * through the front door rather than through a bug in the fence.
+ */
+describe('commerce restore fence at boot', () => {
+  it('a normal boot ADOPTS the live epoch — no gratuitous increment', async () => {
+    const pds = fakePds();
+    await wire(pds.fetchFn).establish();
+    expect((pds.state.record as { epoch: string }).epoch).toBe('1');
+
+    const second = wire(pds.fetchFn);
+    await second.establish();
+    // Still 1. A boot that always incremented would void live capacity on
+    // every restart, which is a different way to lose a supplier's business.
+    expect((pds.state.record as { epoch: string }).epoch).toBe('1');
+  });
+
+  it('a boot after import INCREMENTS the epoch and clears the marker', async () => {
+    const pds = fakePds();
+    await wire(pds.fetchFn).establish();
+
+    // What the archive import does, in its own transaction.
+    markCommerceRestorePending(db.adapter, NOW);
+    expect(isCommerceRestorePending(db.adapter)).toBe(true);
+
+    const restored = wire(pds.fetchFn);
+    const record = await restored.establish();
+
+    expect(record?.epoch).toBe('2');
+    expect(record?.reason).toBe('restore');
+    // Restored quote heads carry epoch 1 and are now STALE against 2, so
+    // their counters cannot be spent again.
+    expect(isCommerceRestorePending(db.adapter)).toBe(false);
+  });
+
+  it('leaves the marker SET when the fence cannot complete', async () => {
+    // The obligation outlives the failed attempt. Clearing it here would let
+    // a later boot adopt the live epoch and trade on resurrected capacity —
+    // silently, because by then nothing remembers a restore happened.
+    markCommerceRestorePending(db.adapter, NOW);
+    const unreachable = (async () => {
+      throw new Error('connection refused');
+    }) as unknown as typeof globalThis.fetch;
+
+    expect(await wire(unreachable).establish()).toBeNull();
+    expect(isCommerceRestorePending(db.adapter)).toBe(true);
+  });
+
+  it('retries the fence on the NEXT boot after a failure', async () => {
+    markCommerceRestorePending(db.adapter, NOW);
+    const unreachable = (async () => {
+      throw new Error('connection refused');
+    }) as unknown as typeof globalThis.fetch;
+    await wire(unreachable).establish();
+
+    // Repo comes back. This boot must still fence, not adopt.
+    const pds = fakePds();
+    const record = await wire(pds.fetchFn).establish();
+    // No live record existed, so the fence publishes the genesis; the point
+    // is that the marker was consumed by a fence, not skipped.
+    expect(record).not.toBeNull();
+    expect(isCommerceRestorePending(db.adapter)).toBe(false);
+  });
+
+  it('an unreadable kv_store is read as "fence owed"', async () => {
+    // Fail closed. "No marker found" is the answer that resurrects capacity,
+    // and a database we cannot query is not evidence this node is safe to
+    // trade from.
+    db.adapter.execute('DROP TABLE kv_store');
+    expect(isCommerceRestorePending(db.adapter)).toBe(true);
   });
 });

@@ -20,8 +20,14 @@ import { computePluginDigests, normalizePluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
+  COMMERCE_RESTORE_PENDING_KEY,
+  isCommerceRestorePending,
+  markCommerceRestorePending,
+} from '../../src/commerce/restore_marker';
+import {
   createArchive,
   importArchive,
+  readManifest,
   setArchiveDataSource,
   type ArchiveDataSource,
   type ArchivePersonaSource,
@@ -1126,5 +1132,65 @@ describe('export excludes guided-demo scope', () => {
     } finally {
       closeBundle(dest);
     }
+  });
+});
+
+/**
+ * §16.2 / WS-4.2 — the archive arms the commerce restore fence.
+ *
+ * The commerce operational tables travel in the archive on purpose, USE
+ * COUNTERS included. Restored faithfully, spent capacity comes back
+ * indistinguishable from capacity this node spent itself. The only moment
+ * anyone knows a restore happened is inside the import, so the obligation to
+ * void that capacity is written down there — in the same transaction, so a
+ * crash cannot separate the counters from the fence they owe.
+ */
+describe('commerce restore fence marker (§16.2)', () => {
+  it('an import arms the fence', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      expect(isCommerceRestorePending(dest.id)).toBe(false);
+
+      await importArchive(archive, PASS);
+
+      // Set unconditionally: no attempt to detect whether THIS archive
+      // carried commerce rows. An empty commerce set costs one wasted epoch
+      // increment; a missed one lets capacity be spent twice.
+      expect(isCommerceRestorePending(dest.id)).toBe(true);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  it('the marker does NOT travel in an archive', async () => {
+    // It describes THIS node's pending obligation, not the backup's content.
+    // Exported, a backup taken while a fence was owed would demand a second
+    // fence on a different node for an event that already happened here.
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      markCommerceRestorePending(src.id, Date.now());
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const manifest = await readManifest(archive, PASS);
+    const kv = manifest.identity.tables.kv_store ?? [];
+    expect(kv.map((r) => r.key)).not.toContain(COMMERCE_RESTORE_PENDING_KEY);
   });
 });

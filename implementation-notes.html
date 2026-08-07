@@ -1148,6 +1148,60 @@
       protocol, 3,567 brain, 2,834 server, 3,293 mobile; typecheck and lint clean.
     </p>
 
+    <h3>WS-4.2 — the restore fence had no trigger, and I had just made it reachable <span class="meta">(part)</span></h3>
+    <p>
+      <strong>Say the bad part first: my own WS-2.4 change opened this.</strong> Before it, nothing
+      installed the epoch service, so <code>currentEpoch()</code> threw and commerce refused
+      everything — a restored node was safe by accident. Installing the epoch service made
+      <code>establish()</code> run on every boot, and <code>establish()</code> ADOPTS the live epoch.
+      A node restored from a backup would come up, adopt the unchanged epoch, and find every restored
+      quote head matching it. The backup's use counters would be live again: capacity already spent,
+      spendable a second time. That is the resurrection §16.2 exists to prevent, and I put the last
+      piece in place for it two items ago.
+    </p>
+    <p>
+      <strong>Why nothing caught it.</strong> <code>establishAfterRestore()</code> — which increments
+      the epoch, voids unexpired capacity, and writes the fence receipt — is fully implemented and
+      well tested, and had no caller anywhere. The same shape as the engines and the ingress bridge:
+      correct code, reachable by nobody.
+    </p>
+    <p>
+      <strong>Why a marker rather than a check.</strong> Nothing in restored data distinguishes it
+      from data this node wrote itself — that is what a faithful restore MEANS, and the commerce
+      tables are in the archive deliberately (restoring receipts without heads and counters would
+      re-serve quotes against reset counters or re-sign forked heads). The knowledge that a restore
+      happened exists for exactly one moment, inside the import, and has to be written down before it
+      is lost.
+    </p>
+    <p>
+      <strong>Written in the import's OWN transaction.</strong> A marker written after the import
+      committed could be lost to a crash in between, leaving resurrected counters with no fence
+      pending — the precise state this prevents, reachable by unlucky timing. Inside the same
+      transaction, restored capacity and the obligation to void it are one atomic fact.
+    </p>
+    <p>
+      <strong>Three deliberate asymmetries.</strong> The marker is set <em>unconditionally</em>, with
+      no attempt to detect whether a given archive carried commerce rows: an empty commerce set costs
+      one wasted epoch increment, a missed one lets capacity be spent twice. It is <em>left set</em>
+      when the fence cannot complete, so a node that could not reach its repo retries next boot
+      instead of quietly adopting the live epoch later. And an unreadable <code>kv_store</code> reads
+      as "fence owed" — "no marker found" is the answer that resurrects capacity, and a database we
+      cannot query is not evidence that this node is safe to trade from.
+    </p>
+    <p>
+      <strong>It does not travel.</strong> The marker describes THIS node's pending obligation, not
+      the backup's content. Exported, a backup taken while a fence was owed would demand a second
+      fence on a different node for an event that already happened here.
+    </p>
+    <p class="meta">
+      Recorded as PART, not DONE. The owner decision says preflight must prove the archive is intact
+      and authentic — row counts, digests, required-table coverage, cross-table invariants — and that
+      is not implemented; restore still trusts the archive's structure. What IS closed is the half
+      the decision calls out as mandatory regardless: counters are never adopted. Verification: 7
+      tests (5 boot-side, 2 archive-side), 5 mutations, all caught first attempt. Tests: 6,355 core,
+      2,839 server, 3,293 mobile; typecheck clean, no new lint errors.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
