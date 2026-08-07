@@ -408,6 +408,11 @@ export type {
 // effects + PersonaCipher + the run plane + the D2D receive hook.
 export { wireRunPlaneNode } from './run/plane_node';
 export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './run/plane_node';
+// The ONE re-entrant Tier-0 transaction coordinator. Boots and app-level
+// wiring take the runner for a db from `tier0TxRunner`, so every writer over
+// that db shares one depth counter (op-sqlite rejects a nested BEGIN).
+export { tier0TxRunner, makeReentrantTxRunner } from './run/tx';
+export type { TxRunner, TxCapableDb } from './run/tx';
 // Push services (PUSH_SERVICES_ARCHITECTURE.md §6/§8/§9)
 export {
   classifyPushTier,

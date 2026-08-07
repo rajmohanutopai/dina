@@ -954,6 +954,71 @@
       and eslint clean.
     </p>
 
+    <h3>WS-2.4 — the epoch service had no repo <span class="meta">(part)</span></h3>
+    <p>
+      <strong>Why commerce was still off after WS-3.6.</strong> The epoch service takes its repo as
+      two injected callbacks, a live read and a CAS write, because the PDS client is app-level
+      wiring. Nothing supplied them, so the service was never built,
+      <code>getCommerceEpochService()</code> returned null forever, and every signing path refused.
+    </p>
+    <p>
+      <strong>The PDS client could not do the CAS.</strong> <code>PDSPublisher.putRecord</code> sent
+      no <code>swapRecord</code>, which is a blind overwrite — fine for a service profile, wrong for
+      the one record whose entire purpose is to serialize concurrent writers. Two nodes restoring
+      from the same backup would both believe they published epoch N+1, and two divergent
+      generations of quotes would exist under one business identity. <code>putRecord</code> now takes
+      an optional swap, <code>PDSPublisherError.casLost</code> distinguishes a lost race from a
+      refusing repo, and <code>getRecord</code> was added (the class had no read at all) because a
+      swap needs the CID of the thing it replaces.
+    </p>
+    <p>
+      <strong>Fail-closed in three places.</strong> An unreachable repo throws rather than reading as
+      "no record" — treating it as absence would publish a genesis over a live chain. A record that
+      fails validation throws for the same reason. And the genesis writes with
+      <code>swapRecord: null</code>, so it lands only if nothing is there.
+    </p>
+    <p>
+      <strong>Three of my first five mutations survived, and two were real false greens.</strong>
+      The "restorer that lost the race" test never produced a race:
+      <code>establishAfterRestore</code> re-reads at the top of every attempt, so the second node
+      simply saw the new value and there was no conflict to lose. The fake PDS now has a one-shot
+      hook that moves the live record between a reader's read and its publish, which is the only
+      window in which a writer can actually lose. The "corrupt record" test asserted the record was
+      unchanged — but the CAS would have rejected the genesis anyway, so the test passed while the
+      validation did nothing. It now asserts no write was even ATTEMPTED.
+    </p>
+    <p>
+      <strong>One guard I could not reach, and said so in the code.</strong> The check that refuses
+      to swap against a predecessor this node never read is unreachable through the service, which
+      always passes back the record the closure just cached — I tried overlapping restores and could
+      not construct a case. It stands as an assertion on the <code>EpochPublisher</code> contract and
+      now THROWS rather than returning false, because "retry" cannot fix a caller handing us a
+      predecessor we never saw. The comment says plainly that it is unexercised rather than implying
+      coverage.
+    </p>
+    <p>
+      <strong>Wired at boot, and only on success.</strong> The server calls it where the PDS
+      publisher is already wired. When establishment fails the service is left UNINSTALLED, so
+      <code>commerceAvailability()</code> reports <code>no_epoch</code> — installing a service whose
+      <code>currentEpoch()</code> throws would report the same thing less clearly. A node without
+      <code>DINA_PDS_PROVISION</code> has no repo, so commerce is simply off there.
+    </p>
+    <p class="meta">
+      Still open: no periodic revalidation of the live epoch (a forgotten pre-restore node signs at
+      its cached epoch indefinitely), and the mobile boot has no epoch wiring, so commerce is
+      server-only today. Verification: 9 new tests against a fake PDS that enforces swap semantics;
+      mutations for swap-omitted (3 red), swap-key-not-sent (3), CAS-loss-not-retried (1) and
+      corrupt-read-as-absent (1). Tests: 6,340 core, 2,834 server, 3,557 brain; typecheck and eslint
+      clean.
+    </p>
+    <p class="meta">
+      Two process notes. I ran <code>git stash</code> to check whether two lint errors pre-dated my
+      change — a git write I should not have made without asking; it restored cleanly and
+      <code>git show HEAD:file</code> answers the same question. And an <code>eslint --fix</code>
+      aimed too broadly reformatted seven unrelated files; reverted, and the diff is this item's
+      files only.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

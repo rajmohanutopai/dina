@@ -58,8 +58,10 @@ import {
   getNodeDID,
   HEALTHZ_PATH,
   getWorkflowRepository,
+  getCommerceRuntime,
   getWorkflowService,
   registerService,
+  tier0TxRunner,
   SQLiteWorkflowRepository,
   TaskExpirySweeper,
   setCodingPermitAuthority,
@@ -84,6 +86,7 @@ import { createAgentFacades } from './agent/facades';
 import { makeHttpAskHandler } from './agent/http_ask_handler';
 import { PhoneApprovalManager } from './approval/phone_approval_manager';
 import { wireServiceProfilePublisher, type WiredServicePublisher } from './appview/wire_publisher';
+import { wireCommerceEpoch } from './commerce/wire_epoch';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
 import { deriveIdentity } from './identity/derivations';
@@ -541,6 +544,23 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
         wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
+        // §16.2 — the commerce restore fence. The epoch record lives in this
+        // node's OWN repo, outside every backup, and nothing may be signed
+        // until it is published. A node with no PDS has no repo to publish
+        // to, so commerce simply stays disabled there; `establish()` is
+        // awaited because a partly-established epoch is not a state we want
+        // requests arriving into.
+        const commerceRuntime = getCommerceRuntime();
+        if (commerceRuntime !== null) {
+          await wireCommerceEpoch({
+            pdsIdentity,
+            businessDid: pdsIdentity.did,
+            tx: tier0TxRunner(result.identityDB),
+            families: commerceRuntime.families,
+            receipts: commerceRuntime.receipts,
+            logger,
+          }).establish();
+        }
         const reviewRepo = getReviewPublishRepository();
         if (reviewRepo !== null) {
           reviewPublishSupervisor = new ReviewPublishSupervisor({

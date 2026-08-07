@@ -36,6 +36,26 @@ export interface PutRecordResult {
   cid: string;
 }
 
+/** Optional compare-and-swap for `putRecord`. */
+export interface PutRecordOptions {
+  /**
+   * The CID this write expects to replace. `null` requires that NO record
+   * exists at the key. Omit the property for a blind overwrite.
+   *
+   * When the live record is something else the PDS rejects with
+   * `InvalidSwap`, which surfaces as a `PDSPublisherError` whose
+   * `casLost` is true — a lost race, not a failure to reach the repo.
+   */
+  swapRecord?: string | null;
+}
+
+/** A record read back from a repo, with the CID a later CAS write needs. */
+export interface GetRecordResult {
+  uri: string;
+  cid: string;
+  value: Record<string, unknown>;
+}
+
 /** Configuration for `PDSPublisher`. */
 export interface PDSPublisherOptions {
   /** Base URL of the PDS (trailing slash stripped). */
@@ -66,6 +86,16 @@ export class PDSPublisherError extends Error {
   ) {
     super(message);
     this.name = 'PDSPublisherError';
+  }
+
+  /**
+   * The write lost a compare-and-swap: the record at the key was not the
+   * one the caller expected to replace. A caller that serializes through
+   * CAS must re-read and retry, which is different from every other
+   * failure here — those mean the repo is unreachable or refusing.
+   */
+  get casLost(): boolean {
+    return this.xrpcError === 'InvalidSwap';
   }
 }
 
@@ -141,19 +171,23 @@ export class PDSPublisher {
     collection: string,
     rkey: string,
     record: Record<string, unknown>,
+    options: PutRecordOptions = {},
   ): Promise<PutRecordResult> {
     validateCollectionAndRkey(collection, rkey);
     const session = await this.ensureSession();
-    const body = await this.post(
-      '/xrpc/com.atproto.repo.putRecord',
-      {
-        repo: session.did,
-        collection,
-        rkey,
-        record,
-      },
-      session.accessJwt,
-    );
+    const payload: Record<string, unknown> = {
+      repo: session.did,
+      collection,
+      rkey,
+      record,
+    };
+    // AT Protocol compare-and-swap. `swapRecord` present means "write only
+    // if the record I am replacing is still exactly this one"; null means
+    // "only if nothing is there". Omitting the key entirely is a blind
+    // overwrite — which is what every caller got before, and is wrong for
+    // any record whose whole purpose is to serialize concurrent writers.
+    if ('swapRecord' in options) payload.swapRecord = options.swapRecord ?? null;
+    const body = await this.post('/xrpc/com.atproto.repo.putRecord', payload, session.accessJwt);
     if (!body || typeof body !== 'object') {
       throw new PDSPublisherError('putRecord: malformed response', null);
     }
@@ -162,6 +196,53 @@ export class PDSPublisher {
       throw new PDSPublisherError('putRecord: response missing uri/cid', null);
     }
     return { uri: r.uri, cid: r.cid };
+  }
+
+  /**
+   * Read a record back, with the CID a later compare-and-swap needs.
+   * Returns null when no record exists at the key — an absent record is an
+   * answer, not a failure. Every other non-success throws, so a caller
+   * that must fail closed cannot mistake an unreachable repo for an empty
+   * one.
+   *
+   * `did` defaults to the authenticated account: reading another repo is
+   * legal AT Protocol, and the epoch fetcher does not need it, but a
+   * caller that passes one gets it rather than silently reading its own.
+   */
+  async getRecord(collection: string, rkey: string, did?: string): Promise<GetRecordResult | null> {
+    validateCollectionAndRkey(collection, rkey);
+    const session = await this.ensureSession();
+    const params = new URLSearchParams({
+      repo: did ?? session.did,
+      collection,
+      rkey,
+    });
+    const url = `${this.pdsUrl}/xrpc/com.atproto.repo.getRecord?${params.toString()}`;
+    const resp = await this.rawGet(url, session.accessJwt);
+    if (resp.status === 400) {
+      const err = await toPDSError('/xrpc/com.atproto.repo.getRecord', resp);
+      // `RecordNotFound` is the only 400 that means "nothing there". Any
+      // other 400 is a malformed request or a refusing repo and must not
+      // be read as absence.
+      if (err.xrpcError === 'RecordNotFound') return null;
+      throw err;
+    }
+    if (resp.status !== 200) {
+      if (resp.status === 401) this.invalidateSession();
+      throw await toPDSError('/xrpc/com.atproto.repo.getRecord', resp);
+    }
+    const body = await parseJSON(resp);
+    if (!body || typeof body !== 'object') {
+      throw new PDSPublisherError('getRecord: malformed response', null);
+    }
+    const r = body as Record<string, unknown>;
+    if (typeof r.uri !== 'string' || typeof r.cid !== 'string') {
+      throw new PDSPublisherError('getRecord: response missing uri/cid', null);
+    }
+    if (r.value === null || typeof r.value !== 'object') {
+      throw new PDSPublisherError('getRecord: response missing value', null);
+    }
+    return { uri: r.uri, cid: r.cid, value: r.value as Record<string, unknown> };
   }
 
   /**
@@ -266,6 +347,22 @@ export class PDSPublisher {
       throw await toPDSError(path, resp);
     }
     return parseJSON(resp);
+  }
+
+  private async rawGet(url: string, accessJwt: string): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await this.fetchFn(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json', Authorization: `Bearer ${accessJwt}` },
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw new PDSPublisherError(`network error: ${(err as Error).message}`, null);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async rawPost(
