@@ -32,6 +32,7 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { parsePluginEnvelope } from '../../src/workflow/plugin_envelope';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
+import { makeServiceResponseBridgeSender } from '../../src/workflow/response_bridge_sender';
 import { WorkflowService, type ServiceQueryBridgeContext } from '../../src/workflow/service';
 
 const CAP = 'com.acme.commerce.request_quote';
@@ -202,6 +203,136 @@ describe('provider ingress bridge (§11.2a)', () => {
       resultJSON: JSON.stringify({ answer: 'quote attached' }),
     });
     expect(bridged[0]?.schemaSnapshot?.schema_hash).toBe('a'.repeat(64));
+  });
+
+  /**
+   * The loop above stops at the bridge CONTEXT, because the harness stubs
+   * `responseBridgeSender`. That proves the correlation survives the plugin
+   * lane, and nothing about what the peer actually receives — so the half of
+   * §11.2a step 4 that matters to a buyer (a `service.response` whose result
+   * was checked against the schema the buyer was shown) went unexercised.
+   *
+   * These drive the REAL sender.
+   */
+  describe('completion → service.response (§11.2a step 4)', () => {
+    let sent: { to: string; body: Record<string, unknown> }[];
+
+    function withRealBridge(): WorkflowService {
+      sent = [];
+      return new WorkflowService({
+        repository: workflowRepo,
+        nowMsFn: () => T0,
+        responseBridgeSender: makeServiceResponseBridgeSender({
+          sendResponse: async (to, body) => {
+            sent.push({ to, body: body as unknown as Record<string, unknown> });
+          },
+          // The bootstrap injects the validator so Core carries no schema
+          // library. A bridge wired WITHOUT it silently forwards drift.
+          validateResult: (value, schema) => {
+            const shape = schema as { required?: string[]; additionalProperties?: boolean };
+            if (value === null || typeof value !== 'object') return 'result must be an object';
+            const record = value as Record<string, unknown>;
+            for (const key of shape.required ?? []) {
+              if (!(key in record)) return `missing required property "${key}"`;
+            }
+            if (shape.additionalProperties === false) {
+              const allowed = new Set(
+                Object.keys(
+                  (schema as { properties?: Record<string, unknown> }).properties ?? {},
+                ),
+              );
+              for (const key of Object.keys(record)) {
+                if (!allowed.has(key)) return `unexpected property "${key}"`;
+              }
+            }
+            return null;
+          },
+        }),
+      });
+    }
+
+    /** Create the ingress task, claim it, and finish it with `result`. */
+    async function runToCompletion(service: WorkflowService, result: string): Promise<void> {
+      const created = createProviderIngressTask({
+        workflow: service,
+        capabilityConfig: binding(),
+        query: query(),
+        nowMs: T0,
+      });
+      if (!created.ok) throw new Error(`ingress task not created: ${created.code}`);
+      const install = installs.getById(installId);
+      if (!install) throw new Error('install missing');
+      const claim = claimPluginTask({
+        repo: workflowRepo,
+        install,
+        deviceDid: PLUGIN_DID,
+        nowMs: T0 + 1000,
+        leaseMs: 60_000,
+      });
+      const claimed = claim.task;
+      if (!claimed) throw new Error('claim returned no task');
+      service.complete(claimed.id, result, 'answered', PLUGIN_DID, claimed.claim_id);
+      await service.flushBridgeInFlight();
+    }
+
+    it('answers the BUYER, correlated to its own query', async () => {
+      const service = withRealBridge();
+      await runToCompletion(service, JSON.stringify({ answer: 'quote attached' }));
+
+      expect(sent).toHaveLength(1);
+      // Addressed to the authenticated requester, not to the runner and not
+      // broadcast: the plugin never learns who else this node serves.
+      expect(sent[0]?.to).toBe(BUYER_DID);
+      expect(sent[0]?.body).toMatchObject({
+        query_id: 'q-100',
+        capability: 'request_quote',
+        status: 'success',
+        result: { answer: 'quote attached' },
+      });
+    });
+
+    it('refuses to forward a result the PINNED schema rejects', async () => {
+      // The buyer chose this supplier against a published schema hash. A
+      // runner that drifts must not have its drift relayed as a success —
+      // the buyer would parse a shape it never agreed to.
+      const service = withRealBridge();
+      await runToCompletion(service, JSON.stringify({ answer: 'ok', secret_margin: '0.42' }));
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.body).toMatchObject({ query_id: 'q-100', status: 'error' });
+      expect(String(sent[0]?.body.error)).toContain('result_schema_violation');
+      // The drifted payload itself never travels.
+      expect(JSON.stringify(sent[0]?.body)).not.toContain('0.42');
+    });
+
+    it('a missing required field is a violation, not a partial success', async () => {
+      const service = withRealBridge();
+      await runToCompletion(service, JSON.stringify({ note: 'no answer field' }));
+
+      expect(String(sent[0]?.body.error)).toContain('result_schema_violation');
+      expect(sent[0]?.body.status).toBe('error');
+    });
+
+    it('unparseable runner output still answers, so the buyer stops waiting', async () => {
+      // Silence here is the worst outcome: the buyer waits out its TTL and
+      // cannot tell a broken supplier from a slow one.
+      const service = withRealBridge();
+      await runToCompletion(service, 'not json at all');
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.body.status).toBe('error');
+      expect(String(sent[0]?.body.error)).toContain('malformed_result');
+    });
+
+    it('forwards an explicit unavailable verbatim rather than faking success', async () => {
+      const service = withRealBridge();
+      await runToCompletion(
+        service,
+        JSON.stringify({ status: 'unavailable', error: 'out_of_stock' }),
+      );
+
+      expect(sent[0]?.body).toMatchObject({ status: 'unavailable', error: 'out_of_stock' });
+    });
   });
 
   it('two peers reusing the same query_id do NOT collide (§11.2a sender scoping)', () => {

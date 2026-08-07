@@ -1074,12 +1074,28 @@
       resolution so an unauthorized sender cannot probe install state through the typed codes either.
       Corrected the test to the real ordering.
     </p>
+    <p>
+      <strong>The completion half, closed.</strong> The existing full-loop test stopped at the bridge
+      CONTEXT, because the harness stubs <code>responseBridgeSender</code>. That proves the
+      correlation survives the plugin lane and says nothing about what the peer receives — so the
+      half of §11.2a step 4 a buyer actually cares about was unexercised. Five tests now drive the
+      REAL sender: a conforming result answers the buyer; a result the pinned schema rejects becomes
+      <code>result_schema_violation</code> and the drifted payload never travels; a missing required
+      field is a violation rather than a partial success; unparseable runner output still answers, so
+      the buyer stops waiting instead of learning nothing until its TTL; and an explicitly tagged
+      <code>unavailable</code> is forwarded verbatim rather than dressed as success.
+    </p>
+    <p>
+      <strong>Two more mutations crashed rather than survived</strong> — the same trap as before,
+      both from TypeScript narrowing (inverting a null check makes the following field access a
+      compile error). Redone shape-preserving: disable validation by flipping the status it triggers
+      on, and defeat ingress recognition by parsing an empty envelope. All five completion mutations
+      then came back red.
+    </p>
     <p class="meta">
-      Still open: the completion side. A runner result flowing back through the pinned result schema
-      to a D2D <code>service.response</code> as the Business DID is implemented but not driven end to
-      end by a test, so 3.2 stays PART. Verification: 10 new tests (7 handler, 3 runtime), 8
-      mutations caught. Tests: 6,340 core, 3,567 brain, 27 home-node, 2,834 server, 3,293 mobile;
-      typecheck clean, no new lint errors.
+      3.2 is now DONE. Verification: 15 new tests (7 handler, 3 runtime, 5 completion), 13 mutations
+      caught across the two halves. Tests: 6,345 core, 3,567 brain, 27 home-node, 2,834 server, 3,293
+      mobile; typecheck clean, no new lint errors.
     </p>
 
     <h2>Dual review — four rounds</h2>
