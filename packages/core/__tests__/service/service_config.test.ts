@@ -13,6 +13,10 @@ import * as path from 'node:path';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
+import {
   ServiceConfig,
   clearServiceConfig,
   getServiceConfig,
@@ -24,6 +28,7 @@ import {
   setServiceConfig,
   setServiceConfigDurable,
   validateServiceConfig,
+  validateServiceConfigForSave,
 } from '../../src/service/service_config';
 import {
   InMemoryServiceConfigRepository,
@@ -32,6 +37,8 @@ import {
 } from '../../src/service/service_config_repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+
+import type { PluginManifest } from '@dina/protocol';
 
 const validConfig: ServiceConfig = {
   isDiscoverable: true,
@@ -539,5 +546,188 @@ describe('multi-listing (per-rkey)', () => {
     setServiceConfigRepository(repo);
     await hydrateServiceConfig();
     expect(getServiceConfig('route-7')).toEqual(secondConfig);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §23 FR-P2 — the listing binding is resolved at the SAVE boundary (WS-3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * `validateServiceListing` lives in `@dina/protocol` and can only check shape,
+ * because that package must stay dependency-free. So a provider could save and
+ * PUBLISH a listing naming an install that does not exist, pinning a manifest
+ * CID the install no longer runs, or naming a capability the manifest never
+ * declared as a provider. Each of those advertises a capability on the AppView
+ * that answers `install_unavailable` to every buyer who acts on it — a
+ * discovery result that cannot be fulfilled, which is worse for a buyer than
+ * not appearing at all.
+ */
+describe('plugin binding resolution at save (§23 FR-P2)', () => {
+  const CAP_ID = 'com.acme.commerce.request_quote';
+  const CID = 'bafyreicid1';
+  let dir: string;
+  let adapter: NodeSQLiteAdapter;
+  let installs: SQLitePluginInstallRepository;
+  let installId: string;
+
+  function manifest(kinds: string[]): PluginManifest {
+    return {
+      $type: 'com.dinakernel.plugin.release',
+      plugin_id: 'com.acme.commerce.supplier',
+      version: '0.1.0',
+      display_name: 'Supplier',
+      execution: { mode: 'runner' },
+      capabilities: [
+        {
+          id: CAP_ID,
+          display_name: 'Request quote',
+          interaction: 'query',
+          action_class: 'quote',
+          privacy_class: 'personal',
+          kinds,
+          result_schema: { type: 'object' },
+        },
+      ],
+    } as unknown as PluginManifest;
+  }
+
+  function seed(
+    kinds: string[] = ['provider'],
+    cid = CID,
+    deviceDid = 'did:plc:plugindevice',
+  ): string {
+    const id = installs.createPending({
+      publisherDid: 'did:plc:acme',
+      pluginId: 'com.acme.commerce.supplier',
+      label: '',
+      executionMode: 'runner',
+      currentCid: cid,
+      currentVersion: '0.1.0',
+      manifest: manifest(kinds),
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: { [CAP_ID]: 'h'.repeat(64) },
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+      trustAnchor: { kind: 'repo_proof' },
+      pendingExpiresAtSec: Math.floor(Date.now() / 1000) + 900,
+      nowMs: Date.now(),
+    });
+    installs.activate(id, deviceDid, Date.now());
+    return id;
+  }
+
+  function listing(overrides: Record<string, unknown> = {}): unknown {
+    return {
+      isDiscoverable: false,
+      discoverability: 'known_only',
+      name: 'ChairMaker',
+      capabilities: {
+        'com.acme.commerce.request_quote': {
+          responsePolicy: 'auto',
+          category: 'commerce',
+          pluginInstallId: installId,
+          pluginManifestCid: CID,
+          pluginCapabilityId: CAP_ID,
+          ...overrides,
+        },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws33-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    installs = new SQLitePluginInstallRepository(adapter);
+    setPluginInstallRepository(installs);
+    installId = seed();
+  });
+
+  afterEach(() => {
+    setPluginInstallRepository(null);
+    try {
+      adapter.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function codes(result: ReturnType<typeof validateServiceConfigForSave>): string[] {
+    return result.ok ? [] : (result.details ?? []).map((d) => d.code);
+  }
+
+  it('accepts a binding that resolves to an active install running that manifest', () => {
+    const result = validateServiceConfigForSave(listing());
+    expect(codes(result)).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('refuses a binding naming an install this node does not have', () => {
+    const result = validateServiceConfigForSave(listing({ pluginInstallId: 'inst-nope' }));
+    expect(codes(result)).toContain('plugin_install_unknown');
+  });
+
+  it('refuses to publish against a PAUSED install', () => {
+    // Publishing here would advertise a capability the operator has
+    // deliberately switched off.
+    installs.pause(installId, Date.now(), 'manual');
+    expect(codes(validateServiceConfigForSave(listing()))).toContain('plugin_install_not_active');
+  });
+
+  it('refuses a CID the install no longer runs', () => {
+    // The §9.13 rebind flow updates the binding. Until it does, a listing
+    // pinned to the old manifest promises terms the running code may not
+    // honour, and ingress would refuse it anyway.
+    expect(codes(validateServiceConfigForSave(listing({ pluginManifestCid: 'bafyreiother' })))).toContain(
+      'plugin_binding_stale',
+    );
+  });
+
+  it('refuses a capability the manifest never declared', () => {
+    expect(
+      codes(validateServiceConfigForSave(listing({ pluginCapabilityId: 'com.acme.invented' }))),
+    ).toContain('plugin_capability_unknown');
+  });
+
+  it('refuses a TOOL capability published as a service', () => {
+    // A tool answers Dina's own questions; a provider answers a PEER's.
+    // Publishing a tool as a service would route a stranger's query into a
+    // capability the owner consented to for something else entirely.
+    // A SECOND device DID: `activate` refuses when another active install
+    // already owns a device, which would leave this one pending and report
+    // `plugin_install_not_active` — the right answer to a different question.
+    installId = seed(['tool'], CID, 'did:plc:plugindevice2');
+    expect(codes(validateServiceConfigForSave(listing()))).toContain(
+      'plugin_capability_not_provider',
+    );
+  });
+
+  it('fails CLOSED when the node has no plugin registry', () => {
+    // "No registry" is not evidence that the install is fine; the listing
+    // would be unanswerable on this node.
+    setPluginInstallRepository(null);
+    expect(codes(validateServiceConfigForSave(listing()))).toContain('plugin_install_unknown');
+  });
+
+  it('leaves a listing with no plugin binding alone', () => {
+    const result = validateServiceConfigForSave({
+      isDiscoverable: false,
+      discoverability: 'known_only',
+      name: 'Alonso Salon',
+      capabilities: {
+        appointment_availability: {
+          responsePolicy: 'auto',
+          category: 'appointments',
+          instruction: 'Answer from the salon calendar.',
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
   });
 });

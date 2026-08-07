@@ -123,6 +123,15 @@ export type ListingValidationCode =
   | 'subject_auth_needs_review'
   | 'missing_execution_plane'
   | 'partial_plugin_binding'
+  // §23 FR-P2 — resolved against the install registry, which lives in Core.
+  // The codes are declared HERE because they are part of the save-boundary
+  // contract every editor surface reports; the CHECK cannot live here,
+  // because this package must stay dependency-free.
+  | 'plugin_install_unknown'
+  | 'plugin_install_not_active'
+  | 'plugin_binding_stale'
+  | 'plugin_capability_unknown'
+  | 'plugin_capability_not_provider'
   | 'talk_must_be_known_only'
   | 'no_capabilities';
 

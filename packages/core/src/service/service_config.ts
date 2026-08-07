@@ -23,10 +23,14 @@ import {
   resolveCanonicalCapability,
   validateServiceListing,
 } from '@dina/protocol';
-import type { ListingValidationError } from '@dina/protocol';
+
+
+import { getPluginInstallRepository } from '../plugins/registry';
 
 import { configEventChannel } from './config_event_channel';
 import { getServiceConfigRepository } from './service_config_repository';
+
+import type { ListingValidationError , ServiceConfig } from '@dina/protocol';
 // Layer 5 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1) — canonicalize the
 // inbound capability so an alias-configured provider accepts the
 // canonical query. Pure/sync from the shared registry; keeps
@@ -42,7 +46,6 @@ export type {
   ServiceCapabilitySchemas,
   ServiceConfig,
 } from '@dina/protocol';
-import type { ServiceConfig } from '@dina/protocol';
 
 /**
  * Default listing key. A single-listing provider uses `'self'`; a multi-listing
@@ -204,13 +207,106 @@ export function validateServiceConfigForSave(
   const listing = validateServiceListing(value, {
     requireExplicitDiscoverability: true,
   });
-  return listing.ok
-    ? { ok: true, config: value }
-    : {
-        ok: false,
-        error: 'invalid service listing',
-        details: listing.errors,
-      };
+  if (!listing.ok) {
+    return {
+      ok: false,
+      error: 'invalid service listing',
+      details: listing.errors,
+    };
+  }
+  const bindingErrors = resolvePluginBindings(value);
+  if (bindingErrors.length > 0) {
+    return {
+      ok: false,
+      error: 'invalid service listing',
+      details: bindingErrors,
+    };
+  }
+  return { ok: true, config: value };
+}
+
+/**
+ * §23 FR-P2 — a listing's plugin binding must name a REAL install at save
+ * time, not merely be well-formed.
+ *
+ * `validateServiceListing` lives in `@dina/protocol` and checks shape: all
+ * three binding fields together, or none. It cannot check more, because it has
+ * no install registry and must stay dependency-free. So a provider could save
+ * and PUBLISH a listing naming an install that does not exist, or pinning a
+ * manifest CID the install no longer runs, or naming a capability the manifest
+ * never declared as a provider. Every such listing advertises itself on the
+ * AppView and then answers `install_unavailable` to every buyer who acts on it
+ * — a discovery result that cannot be fulfilled, which is worse than not being
+ * discoverable at all.
+ *
+ * Resolving here binds the listing to the exact `(install_id, manifest CID,
+ * capability)` triple at the moment of publication, which is where the spec
+ * says the binding is recorded.
+ *
+ * FAIL CLOSED: a binding on a node with no plugin registry is rejected. The
+ * listing would be unanswerable there, and "no registry" is not evidence that
+ * the install is fine.
+ */
+function resolvePluginBindings(config: ServiceConfig): ListingValidationError[] {
+  const errors: ListingValidationError[] = [];
+  const capabilities = config.capabilities ?? {};
+  for (const [name, cap] of Object.entries(capabilities)) {
+    const installId = cap.pluginInstallId ?? '';
+    const boundCid = cap.pluginManifestCid ?? '';
+    const capabilityId = cap.pluginCapabilityId ?? '';
+    // An incomplete binding is already `partial_plugin_binding`; an absent one
+    // is simply a non-plugin capability. Neither is this check's business.
+    if (installId === '' || boundCid === '' || capabilityId === '') continue;
+
+    const installs = getPluginInstallRepository();
+    const install = installs?.getById(installId) ?? null;
+    if (install === null) {
+      errors.push({
+        code: 'plugin_install_unknown',
+        capability: name,
+        message: `"${name}" is bound to plugin install ${installId}, which is not installed on this node.`,
+      });
+      continue;
+    }
+    if (install.status !== 'active') {
+      errors.push({
+        code: 'plugin_install_not_active',
+        capability: name,
+        message: `"${name}" is bound to a plugin install that is ${install.status}. Activate it before publishing this capability.`,
+      });
+      continue;
+    }
+    if (install.currentCid !== boundCid) {
+      errors.push({
+        code: 'plugin_binding_stale',
+        capability: name,
+        message: `"${name}" pins a manifest this install no longer runs. Re-bind it to the current version before publishing.`,
+      });
+      continue;
+    }
+    const declared = install.manifest.capabilities.find(
+      (c: { id: string; kinds?: readonly string[] }) => c.id === capabilityId,
+    );
+    if (declared === undefined) {
+      errors.push({
+        code: 'plugin_capability_unknown',
+        capability: name,
+        message: `"${name}" names capability ${capabilityId}, which this plugin's manifest does not declare.`,
+      });
+      continue;
+    }
+    if (!(declared.kinds ?? []).includes('provider')) {
+      // A tool capability answers Dina's own questions; a provider capability
+      // answers a PEER's. Publishing a tool as a service would route a
+      // stranger's query into a capability consented for something else.
+      errors.push({
+        code: 'plugin_capability_not_provider',
+        capability: name,
+        message: `"${name}" names capability ${capabilityId}, which is not consented as a provider capability.`,
+      });
+    }
+  }
+  return errors;
 }
 
 /**

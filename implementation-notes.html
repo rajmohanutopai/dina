@@ -1098,6 +1098,56 @@
       mobile; typecheck clean, no new lint errors.
     </p>
 
+    <h3>WS-3.3 — a listing could publish a binding that never resolves <span class="meta">(done)</span></h3>
+    <p>
+      <strong>What was missing.</strong> <code>validateServiceListing</code> lives in
+      <code>@dina/protocol</code> and checks the binding's SHAPE — all three fields together, or none.
+      It cannot check more, because that package is deliberately dependency-free and has no install
+      registry. So nothing stopped a provider saving and publishing a listing that named an install
+      this node does not have, pinned a manifest CID the install no longer runs, or named a
+      capability the manifest never declared. Each of those advertises a capability on the AppView
+      and then answers <code>install_unavailable</code> to every buyer who acts on it. For a buyer,
+      a discovery result that cannot be fulfilled is worse than not appearing at all.
+    </p>
+    <p>
+      <strong>Where the check belongs.</strong> <code>validateServiceConfigForSave</code> in Core —
+      its own docstring already says it is the shared save boundary for every editor and agent
+      surface, and Core is where the install registry lives. The codes are declared in the protocol
+      package because they are part of the contract every surface reports; the CHECK cannot live
+      there. Five refusals, each with its own code and its own operator-facing sentence: unknown
+      install, non-active install, stale CID, undeclared capability, and a TOOL capability published
+      as a service.
+    </p>
+    <p>
+      <strong>That last one is a consent boundary, not a typo check.</strong> A tool capability
+      answers Dina's own questions; a provider capability answers a PEER's. Publishing a tool as a
+      service would route a stranger's query into a capability the owner consented to for something
+      else entirely.
+    </p>
+    <p>
+      <strong>Save-time checking does not replace query-time checking.</strong> A listing valid at
+      save can go stale afterwards — the install gets paused, or updated to a new CID. Ingress keeps
+      its own identical checks; this one exists so the failure surfaces to the OPERATOR while they
+      are editing, rather than to a buyer weeks later.
+    </p>
+    <p>
+      <strong>My test fixtures were wrong three times before the code was.</strong> Missing
+      <code>category</code>, then an invalid category for that capability, then a bare
+      <code>request_quote</code> that is neither an official capability nor a namespaced custom one.
+      Each was a real listing rule doing its job. The fourth failure was mine too: I hand-rolled a
+      manifest that <code>activate</code> accepted but <code>getById</code> could not read back, so
+      the install vanished silently — fixed by using the manifest shape the ingress suite already
+      proves round-trips. And the tool-capability test failed until I gave the second install its own
+      device DID, because <code>activate</code> refuses when another active install already owns a
+      device — which would have reported "not active", the right answer to a different question.
+    </p>
+    <p class="meta">
+      Verification: 8 tests, 7 mutations caught. Two mutations crashed rather than survived (removing
+      a null guard makes the following field access uncompilable under strict TS); for those, the
+      reported CODE was mutated instead, which is what the tests actually pin. Tests: 6,353 core, 724
+      protocol, 3,567 brain, 2,834 server, 3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
