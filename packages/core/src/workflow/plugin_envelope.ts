@@ -149,6 +149,29 @@ export interface PluginTaskEnvelope {
    */
   readonly resource?: string;
   readonly value?: number;
+  /**
+   * Provider-ingress correlation (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md
+   * §11.2a): present ONLY on tasks created from an inbound D2D service
+   * query. Presence switches the claim guard's consented-kind check to
+   * `provider` (a provider task can never ride a `tool` consent, nor the
+   * reverse) and lets the response bridge answer the querying peer when
+   * the runner completes. `schema_snapshot` here is the PUBLISHED service
+   * schema the requester saw — distinct from the envelope-level
+   * `schema_snapshot`, which pins the plugin capability's result schema.
+   */
+  readonly service_ingress?: {
+    readonly from_did: string;
+    readonly query_id: string;
+    readonly capability: string;
+    readonly service_rkey: string;
+    readonly ttl_seconds?: number;
+    readonly service_name?: string;
+    readonly schema_snapshot?: {
+      readonly params: Record<string, unknown>;
+      readonly result: Record<string, unknown>;
+      readonly schema_hash: string;
+    };
+  };
 }
 
 /** Round-15 #7: the EXACT top-level key set a plugin envelope may carry. Any
@@ -173,6 +196,8 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   // PLG-29 #4: grant-authorization artifacts for the claim-time digest recompute.
   'resource',
   'value',
+  // §11.2a provider-ingress correlation block.
+  'service_ingress',
 ]);
 
 /**
@@ -250,6 +275,76 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
     (p.value !== undefined && (typeof p.value !== 'number' || !Number.isFinite(p.value)))
   ) {
     return null;
+  }
+  // §11.2a service_ingress: when present, every identity field must be
+  // well-formed — malformed correlation quarantines the whole envelope
+  // (a task the bridge cannot answer must never dispatch).
+  if (p.service_ingress !== undefined) {
+    const si = p.service_ingress;
+    if (si === null || typeof si !== 'object' || Array.isArray(si)) return null;
+    const ingress = si as Record<string, unknown>;
+    const KNOWN_INGRESS_FIELDS = new Set([
+      'from_did',
+      'query_id',
+      'capability',
+      'service_rkey',
+      'ttl_seconds',
+      'service_name',
+      'schema_snapshot',
+    ]);
+    for (const k of Object.keys(ingress)) {
+      if (!KNOWN_INGRESS_FIELDS.has(k)) return null;
+    }
+    if (
+      !isBoundedIdentityString(ingress.from_did) ||
+      !isBoundedIdentityString(ingress.query_id) ||
+      !isBoundedIdentityString(ingress.capability) ||
+      !isBoundedIdentityString(ingress.service_rkey) ||
+      (ingress.ttl_seconds !== undefined &&
+        (typeof ingress.ttl_seconds !== 'number' ||
+          !Number.isInteger(ingress.ttl_seconds) ||
+          ingress.ttl_seconds < 1 ||
+          ingress.ttl_seconds > 86400)) ||
+      (ingress.service_name !== undefined &&
+        (typeof ingress.service_name !== 'string' || ingress.service_name.length > 256))
+    ) {
+      return null;
+    }
+    // The published-service schema snapshot is narrowed with the same
+    // rigor as its envelope-level sibling: exact inner key set, plain
+    // objects only, bounded hash string, and the shared depth/byte
+    // caps — an over-wide block is a smuggling channel straight past
+    // params/context inspection.
+    if (ingress.schema_snapshot !== undefined) {
+      const snap = ingress.schema_snapshot;
+      if (snap === null || typeof snap !== 'object' || Array.isArray(snap)) return null;
+      const snapRecord = snap as Record<string, unknown>;
+      const KNOWN_SNAPSHOT_FIELDS = new Set(['params', 'result', 'schema_hash']);
+      for (const k of Object.keys(snapRecord)) {
+        if (!KNOWN_SNAPSHOT_FIELDS.has(k)) return null;
+      }
+      if (
+        snapRecord.params === null ||
+        typeof snapRecord.params !== 'object' ||
+        Array.isArray(snapRecord.params) ||
+        snapRecord.result === null ||
+        typeof snapRecord.result !== 'object' ||
+        Array.isArray(snapRecord.result) ||
+        typeof snapRecord.schema_hash !== 'string' ||
+        snapRecord.schema_hash.length === 0 ||
+        snapRecord.schema_hash.length > 128
+      ) {
+        return null;
+      }
+      if (exceedsDepth(snapRecord, MAX_SCHEMA_SNAPSHOT_DEPTH)) return null;
+      let snapshotBytes: number;
+      try {
+        snapshotBytes = new TextEncoder().encode(JSON.stringify(snapRecord) ?? '').length;
+      } catch {
+        return null;
+      }
+      if (snapshotBytes > MAX_SCHEMA_SNAPSHOT_BYTES) return null;
+    }
   }
   // A 'grant'-authorized invocation MUST name its grant (the claim guard
   // validates that exact grant); a grant_id without kind:'grant' is incoherent.

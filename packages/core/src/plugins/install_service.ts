@@ -44,6 +44,7 @@ import {
 import { getWorkflowService } from '../workflow/service';
 
 import { recordDecisionSafe } from './decisions';
+import { getDrainAuthorizationRepository } from './drain_authorizations';
 import { getPluginGrantRepository } from './grants';
 import { getPluginInstallRepository, type PluginInstallRef } from './registry';
 
@@ -879,6 +880,9 @@ export function terminateInstallInFlight(
   reason: string,
   nowMs: number,
 ): string[] {
+  // §9.13: teardown also drops every drain authorization — a revoked
+  // install must not keep admitting prior-CID work through stale entries.
+  getDrainAuthorizationRepository()?.removeByInstall(installId);
   const service = getWorkflowService();
   if (service === null) return [];
   const lane = pluginLane(installId);

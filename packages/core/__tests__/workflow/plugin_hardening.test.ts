@@ -505,7 +505,7 @@ describe('parsePluginEnvelope', () => {
   it('PLG-29 #14: an oversized or control-char identity field quarantines the envelope', () => {
     expect(parsePluginEnvelope(pluginPayload({ install_id: 'i'.repeat(257) }))).toBeNull();
     expect(parsePluginEnvelope(pluginPayload({ capability_id: 'cap‮evil' }))).toBeNull();
-    expect(parsePluginEnvelope(pluginPayload({ manifest_cid: 'c d' }))).toBeNull();
+    expect(parsePluginEnvelope(pluginPayload({ manifest_cid: 'c\u0000d' }))).toBeNull();
     expect(parsePluginEnvelope(pluginPayload({ execution_id: 'e'.repeat(1000) }))).toBeNull();
   });
 

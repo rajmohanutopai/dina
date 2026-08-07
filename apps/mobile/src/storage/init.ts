@@ -56,6 +56,13 @@ import {
   setClassificationJobRepository,
   setCompletionReceiptRepository,
   setCommandReceiptRepository,
+  setCommerceEpochWatermarkRepository,
+  setDrainAuthorizationRepository,
+  setExtensionOperationRegistry,
+  setCommerceOrderRefRepository,
+  setCommerceQuoteLedgerRepository,
+  setCommerceReceiptRepository,
+  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setErasureKeyStore,
   setRunDispatchService,
@@ -598,6 +605,15 @@ export async function shutdownAllPersistence(): Promise<void> {
     setClassificationJobRepository(null);
     setCompletionReceiptRepository(null);
     setCommandReceiptRepository(null);
+    // Commerce stores must not leak across identities (cross-identity
+    // teardown, same as every Tier-0 store above).
+    setCommerceOrderRefRepository(null);
+    setCommerceQuoteLedgerRepository(null);
+    setCommerceStatusHeadRepository(null);
+    setCommerceReceiptRepository(null);
+    setCommerceEpochWatermarkRepository(null);
+    setExtensionOperationRegistry(null);
+    setDrainAuthorizationRepository(null);
     setCommandTxRunner(null);
     setErasureKeyStore(null);
     setRunDispatchService(null);

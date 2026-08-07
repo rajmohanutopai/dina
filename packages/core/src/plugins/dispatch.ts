@@ -512,6 +512,9 @@ export function buildPluginEnvelope(args: {
     resource?: string;
     value?: number;
   };
+  /** §11.2a provider-ingress correlation — present only for tasks created
+   *  from an inbound D2D service query (provider_ingress.ts). */
+  serviceIngress?: PluginTaskEnvelope['service_ingress'];
 }): PluginTaskEnvelope {
   const cap = args.install.manifest.capabilities.find((c) => c.id === args.capabilityId);
   if (cap === undefined) {
@@ -590,6 +593,9 @@ export function buildPluginEnvelope(args: {
             : {}),
         }
       : {}),
+    // §11.2a: the ingress correlation block, present only for tasks
+    // created from an inbound service query (provider_ingress.ts).
+    ...(args.serviceIngress !== undefined ? { service_ingress: args.serviceIngress } : {}),
   };
 }
 

@@ -52,7 +52,8 @@
   },
   "dependencies": {
     "@dina/protocol": "*",
-    "@dina/test-harness": "*"
+    "@dina/test-harness": "*",
+    "@dina/commerce-protocol": "*"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

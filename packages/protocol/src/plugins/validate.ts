@@ -107,6 +107,7 @@ const KNOWN_CAPABILITY_FIELDS = new Set([
   'intent_phrases',
   'data_scope',
   'network_domains',
+  'host_operations',
 ]);
 
 const ACTION_CLASSES = new Set(['read', 'quote', 'write', 'booking', 'payment', 'agentic']);
@@ -1349,6 +1350,36 @@ function validateCapability(
         err('bad_domain', `${p}.network_domains`, `"${d}" is not a bare hostname`);
       }
     }
+    // host_operations (§3.4): bounded allowlist of registered
+    // extension-operation names. Shape-only here; the per-install
+    // consent gate and deny-before-validation live in Core.
+    const hostOps = arrayField(
+      cap.host_operations,
+      'bad_host_operation',
+      `${p}.host_operations`,
+      err,
+    );
+    if (hostOps.length > PLUGIN_CAPS.MAX_HOST_OPERATIONS) {
+      err(
+        'too_many_host_operations',
+        `${p}.host_operations`,
+        `≤ ${PLUGIN_CAPS.MAX_HOST_OPERATIONS} host operations`,
+      );
+    }
+    for (const op of hostOps) {
+      if (
+        typeof op !== 'string' ||
+        op.length === 0 ||
+        op.length > 128 ||
+        !/^[a-z0-9_.:-]+$/.test(op)
+      ) {
+        err(
+          'bad_host_operation',
+          `${p}.host_operations`,
+          `"${String(op)}" is not a valid operation name`,
+        );
+      }
+    }
     // Interpreted-only fields leaking into runner caps.
     if (
       cap.machine !== undefined ||
@@ -1370,12 +1401,13 @@ function validateCapability(
       cap.data_scope !== undefined ||
       cap.network_domains !== undefined ||
       cap.intent_phrases !== undefined ||
-      cap.effects !== undefined
+      cap.effects !== undefined ||
+      cap.host_operations !== undefined
     ) {
       err(
         'runner_fields_on_interpreted',
         p,
-        'kinds/effects/intent_phrases/data_scope/network_domains are runner-mode fields',
+        'kinds/effects/intent_phrases/data_scope/network_domains/host_operations are runner-mode fields',
       );
     }
   }
@@ -1747,6 +1779,7 @@ function assertNormalized(
     check(`${p}.ops_used`, cap.ops_used);
     check(`${p}.intent_phrases`, cap.intent_phrases);
     check(`${p}.network_domains`, cap.network_domains);
+    check(`${p}.host_operations`, cap.host_operations);
     check(`${p}.data_scope.categories`, cap.data_scope?.categories);
     check(`${p}.data_scope.personas`, cap.data_scope?.personas);
   }

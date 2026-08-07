@@ -91,8 +91,7 @@ export function isListingPublishable(config: ServiceConfig): boolean {
   // talk+public/unlisted bypass at the listing layer, not just the grant layer.
   if (effectiveSurface(config) === 'talk') return false;
   return (
-    effectiveListingStatus(config) === 'active' &&
-    effectiveDiscoverability(config) !== 'known_only'
+    effectiveListingStatus(config) === 'active' && effectiveDiscoverability(config) !== 'known_only'
   );
 }
 
@@ -123,6 +122,7 @@ export type ListingValidationCode =
   | 'public_sensitive_capability'
   | 'subject_auth_needs_review'
   | 'missing_execution_plane'
+  | 'partial_plugin_binding'
   | 'talk_must_be_known_only'
   | 'no_capabilities';
 
@@ -183,7 +183,8 @@ export function validateServiceListing(
   if (isListingPublishable(config) && Object.keys(config.capabilities ?? {}).length === 0) {
     errors.push({
       code: 'no_capabilities',
-      message: 'A live service must advertise at least one capability (add one, or pause the listing).',
+      message:
+        'A live service must advertise at least one capability (add one, or pause the listing).',
     });
   }
 
@@ -253,7 +254,27 @@ export function validateServiceListing(
       capConfig.mcpTool !== '';
     const hasInstructionPlane =
       typeof capConfig.instruction === 'string' && capConfig.instruction.trim() !== '';
-    if (effectiveListingStatus(config) === 'active' && !hasAgentPlane && !hasInstructionPlane) {
+    // §11.2a plugin-install plane: all three binding fields, together.
+    const pluginFields = [
+      capConfig.pluginInstallId,
+      capConfig.pluginManifestCid,
+      capConfig.pluginCapabilityId,
+    ];
+    const pluginFieldCount = pluginFields.filter((v) => typeof v === 'string' && v !== '').length;
+    const hasPluginPlane = pluginFieldCount === 3;
+    if (pluginFieldCount > 0 && pluginFieldCount < 3) {
+      errors.push({
+        code: 'partial_plugin_binding',
+        capability: raw,
+        message: `"${raw}" must set pluginInstallId, pluginManifestCid, and pluginCapabilityId together.`,
+      });
+    }
+    if (
+      effectiveListingStatus(config) === 'active' &&
+      !hasAgentPlane &&
+      !hasInstructionPlane &&
+      !hasPluginPlane
+    ) {
       errors.push({
         code: 'missing_execution_plane',
         capability: raw,
@@ -264,7 +285,11 @@ export function validateServiceListing(
     if (cls.kind === 'official' && cls.canonical !== undefined) {
       const def = getCatalogCapability(cls.canonical);
       if (def !== null) {
-        if (category !== undefined && category.trim() !== '' && !def.category_ids.includes(category)) {
+        if (
+          category !== undefined &&
+          category.trim() !== '' &&
+          !def.category_ids.includes(category)
+        ) {
           errors.push({
             code: 'category_not_allowed',
             capability: raw,

@@ -130,6 +130,21 @@ const IDENTITY_TABLES = [
   // clears the target's stale decisions first (they'd otherwise linger against a
   // restored install_id).
   'plugin_decisions',
+  // Commerce (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §16.2): the
+  // receipt store is durable commercial memory (like plugin_decisions), and —
+  // unlike the usual live-authority posture — the spec REQUIRES the
+  // operational tables (order refs with effect phases, quote heads/uses,
+  // status heads) in the archive: restoring receipts without them would
+  // re-serve quotes with reset counters or re-sign forked heads. Watermarks
+  // travel too, so a restored BUYER keeps its rollback protection. The
+  // stale-backup residual is fenced by the commerce epoch (§16.2), not by
+  // excluding these tables.
+  'commerce_receipts',
+  'commerce_order_refs',
+  'commerce_quote_heads',
+  'commerce_quote_uses',
+  'commerce_status_heads',
+  'commerce_epoch_watermarks',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */
@@ -643,8 +658,20 @@ export async function importArchive(
       // and must be re-consented. On overwrite, clear the target's grant / use
       // / stat rows (which are NOT in the archive) so a restored install can't
       // inherit stale grants the target happened to hold for the same id.
+      //
+      // plugin_drain_authorizations belongs in this list for the same reason
+      // and was missing: a drain / lifecycle_continuity row is LIVE authority
+      // for a PRIOR manifest CID. Left behind, it re-attaches to a restored
+      // install that reuses the install id and admits prior-CID claims the
+      // owner never re-consented — the exact posture the PAUSED-on-restore
+      // rule exists to prevent (§9.13, §16.2).
       if (opts.force) {
-        for (const t of ['plugin_grants', 'plugin_grant_uses', 'plugin_capability_stats']) {
+        for (const t of [
+          'plugin_grants',
+          'plugin_grant_uses',
+          'plugin_capability_stats',
+          'plugin_drain_authorizations',
+        ]) {
           clearTable(idAdapter, t);
         }
       }

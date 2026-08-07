@@ -1477,3 +1477,6 @@ export * from './reasoning/broker';
 export * from './reasoning/commit_bridge';
 export * from './reasoning/service_execution';
 export * from './reasoning/job_projection';
+
+// Commerce Pack Core stores (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §23)
+export * from './commerce';

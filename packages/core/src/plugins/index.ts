@@ -88,3 +88,35 @@ export type {
 } from './dispatch';
 export { validateAgainstSchema } from './schema_validate';
 export type { SchemaValidationResult } from './schema_validate';
+
+// Extension-operation registry + §3.4 invocation gate (commerce §25.2:
+// deny-before-validation for undeclared host operations).
+export {
+  ExtensionOperationRegistry,
+  checkHostOperationInvocation,
+  setExtensionOperationRegistry,
+  getExtensionOperationRegistry,
+} from './extension_ops';
+export type {
+  ExtensionActionClass,
+  ExtensionOperationDef,
+  RegisteredExtensionOperation,
+  HostOperationGateResult,
+} from './extension_ops';
+
+// §9.13 drain authorizations (rebind drain + lifecycle continuity).
+export {
+  SQLiteDrainAuthorizationRepository,
+  InMemoryDrainAuthorizationRepository,
+  setDrainAuthorizationRepository,
+  getDrainAuthorizationRepository,
+} from './drain_authorizations';
+export type {
+  DrainAuthorization,
+  DrainAuthorizationKind,
+  DrainAuthorizationRepository,
+} from './drain_authorizations';
+
+// §11.2a provider-ingress bridge.
+export { createProviderIngressTask } from './provider_ingress';
+export type { ProviderIngressResult, ProviderIngressQuery } from './provider_ingress';

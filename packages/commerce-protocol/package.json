@@ -1,0 +1,49 @@
+{
+  "name": "@dina/commerce-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dina Commerce Pack wire protocol — canonical money/quantity arithmetic, domain-separated digests, quote/order lifecycle types + validators, frozen conformance vectors. Zero runtime deps; usable by plugins, Core validators, AppView, SDKs, and third-party providers (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §6.1).",
+  "keywords": [
+    "dina",
+    "commerce",
+    "protocol",
+    "procurement"
+  ],
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "require": "./dist/index.js",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc --project tsconfig.build.json",
+    "test": "jest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@noble/hashes": "^2.0.0",
+    "@types/jest": "^29.5.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0"
+  }
+}

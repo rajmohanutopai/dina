@@ -1,0 +1,224 @@
+{
+  "description": "Phase 0 exit: independent implementations must REJECT these, with the pinned error substring.",
+  "money": [
+    {
+      "name": "leading_zero",
+      "input": {
+        "currency": "INR",
+        "minor_units": "01"
+      },
+      "error_includes": "canonical"
+    },
+    {
+      "name": "negative",
+      "input": {
+        "currency": "INR",
+        "minor_units": "-1"
+      },
+      "error_includes": "canonical"
+    },
+    {
+      "name": "float",
+      "input": {
+        "currency": "INR",
+        "minor_units": "1.5"
+      },
+      "error_includes": "canonical"
+    },
+    {
+      "name": "lowercase_currency",
+      "input": {
+        "currency": "inr",
+        "minor_units": "1"
+      },
+      "error_includes": "ISO 4217"
+    },
+    {
+      "name": "overflow",
+      "input": {
+        "currency": "INR",
+        "minor_units": "1111111111111111"
+      },
+      "error_includes": "magnitude bound"
+    }
+  ],
+  "quantity": [
+    {
+      "name": "trailing_zero_fraction",
+      "input": {
+        "value": "1.50",
+        "unit_code": "kg"
+      },
+      "error_includes": "canonical"
+    },
+    {
+      "name": "scale_overflow",
+      "input": {
+        "value": "1.2345",
+        "unit_code": "kg"
+      },
+      "error_includes": "declared scale"
+    },
+    {
+      "name": "missing_unit",
+      "input": {
+        "value": "100",
+        "unit_code": ""
+      },
+      "error_includes": "unknown unit"
+    },
+    {
+      "name": "custom_unit_v1",
+      "input": {
+        "value": "1",
+        "unit_code": "custom:did:plc:x#sack"
+      },
+      "error_includes": "custom units are not valid in v1"
+    },
+    {
+      "name": "fraction_on_count_unit",
+      "input": {
+        "value": "1.5",
+        "unit_code": "each"
+      },
+      "error_includes": "declared scale"
+    }
+  ],
+  "line_subtotal": [
+    {
+      "name": "pack_evidence_conversion",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "100"
+      },
+      "quantity": {
+        "value": "24",
+        "unit_code": "each"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "case"
+      },
+      "error_includes": "no exact declared conversion"
+    },
+    {
+      "name": "cross_dimension",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "100"
+      },
+      "quantity": {
+        "value": "1",
+        "unit_code": "kg"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "l"
+      },
+      "error_includes": "no exact declared conversion"
+    }
+  ],
+  "quote": [
+    {
+      "name": "tampered_line_subtotal",
+      "mutate": {
+        "path": "lines.0.line_subtotal.minor_units",
+        "value": "49999"
+      },
+      "error_includes": "does not equal the §9.1 recomputation"
+    },
+    {
+      "name": "tampered_total",
+      "mutate": {
+        "path": "total.minor_units",
+        "value": "1"
+      },
+      "error_includes": "total"
+    },
+    {
+      "name": "tampered_terms_digest",
+      "mutate": {
+        "path": "terms_digest",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "error_includes": "terms_digest"
+    },
+    {
+      "name": "rev1_with_previous",
+      "mutate": {
+        "path": "previous_quote_digest",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "error_includes": "absent on revision \"1\""
+    },
+    {
+      "name": "epoch_zero",
+      "mutate": {
+        "path": "supplier_epoch",
+        "value": "0"
+      },
+      "error_includes": "supplier_epoch"
+    },
+    {
+      "name": "max_uses_zero",
+      "mutate": {
+        "path": "max_uses",
+        "value": "0"
+      },
+      "error_includes": "max_uses"
+    }
+  ],
+  "held_evidence": [
+    {
+      "name": "bare_record_without_signature",
+      "evidence_omits_signature": true,
+      "error_includes": "signature"
+    },
+    {
+      "name": "empty_signature",
+      "signature": "",
+      "error_includes": "signature"
+    },
+    {
+      "name": "non_hex_signature",
+      "signature": "not-hex-at-all",
+      "error_includes": "lowercase hex"
+    },
+    {
+      "name": "odd_length_hex_signature",
+      "signature": "abc",
+      "error_includes": "lowercase hex"
+    },
+    {
+      "name": "uppercase_hex_signature",
+      "signature": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB",
+      "error_includes": "lowercase hex"
+    }
+  ],
+  "status": [
+    {
+      "name": "supplier_signed_submitted",
+      "mutate": {
+        "path": "state",
+        "value": "submitted"
+      },
+      "error_includes": "buyer-local"
+    },
+    {
+      "name": "lines_on_accepted",
+      "mutate": {
+        "path": "lines",
+        "value": [
+          {
+            "line_id": "l1",
+            "fulfilled_quantity": {
+              "value": "1",
+              "unit_code": "each"
+            }
+          }
+        ]
+      },
+      "error_includes": "forbidden for state"
+    }
+  ]
+}

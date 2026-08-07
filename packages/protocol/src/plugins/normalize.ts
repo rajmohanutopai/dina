@@ -90,6 +90,9 @@ function normalizeCapability(cap: PluginCapabilityDecl): PluginCapabilityDecl {
     ...(cap.network_domains !== undefined
       ? { network_domains: normalizeStringSet(cap.network_domains) }
       : {}),
+    ...(cap.host_operations !== undefined
+      ? { host_operations: normalizeStringSet(cap.host_operations) }
+      : {}),
     ...(cap.data_scope !== undefined ? { data_scope: normalizeDataScope(cap.data_scope) } : {}),
   };
 }

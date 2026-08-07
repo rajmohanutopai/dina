@@ -27,6 +27,13 @@ import {
   RunService,
   SQLiteClassificationJobRepository,
   SQLiteCommandReceiptRepository,
+  ExtensionOperationRegistry,
+  SQLiteDrainAuthorizationRepository,
+  SQLiteCommerceEpochWatermarkRepository,
+  SQLiteCommerceOrderRefRepository,
+  SQLiteCommerceQuoteLedgerRepository,
+  SQLiteCommerceReceiptRepository,
+  SQLiteCommerceStatusHeadRepository,
   SQLiteCompletionReceiptRepository,
   SQLiteErasureKeyStore,
   SQLiteMessageRepository,
@@ -55,6 +62,13 @@ import {
   SQLitePushSubscriptionRepository,
   setClassificationJobRepository,
   setCommandReceiptRepository,
+  setCommerceEpochWatermarkRepository,
+  setDrainAuthorizationRepository,
+  setExtensionOperationRegistry,
+  setCommerceOrderRefRepository,
+  setCommerceQuoteLedgerRepository,
+  setCommerceReceiptRepository,
+  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setCompletionReceiptRepository,
   setD2DOutboxRepository,
@@ -362,6 +376,20 @@ export async function initializeStorage(
   // command re-execute.
   setCommandReceiptRepository(new SQLiteCommandReceiptRepository(identityDB));
   setCommandTxRunner((fn) => identityDB.transaction(fn));
+  // Commerce Pack stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §15.5/§16.2):
+  // order-reference/idempotency with effect phases, quote head CAS + use holds,
+  // status head CAS, durable receipts, counterparty epoch watermarks.
+  setCommerceOrderRefRepository(new SQLiteCommerceOrderRefRepository(identityDB));
+  setCommerceQuoteLedgerRepository(new SQLiteCommerceQuoteLedgerRepository(identityDB));
+  setCommerceStatusHeadRepository(new SQLiteCommerceStatusHeadRepository(identityDB));
+  setCommerceReceiptRepository(new SQLiteCommerceReceiptRepository(identityDB));
+  setCommerceEpochWatermarkRepository(new SQLiteCommerceEpochWatermarkRepository(identityDB));
+  // Extension-operation registry (§3.4): code-shipped adapter
+  // registrations land here at boot; empty until a pack ships — the
+  // gate then denies every declared-but-unshipped operation.
+  setExtensionOperationRegistry(new ExtensionOperationRegistry());
+  // §9.13 drain authorizations: rebind drain + lifecycle continuity.
+  setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(identityDB));
   // Push subscription store — the default-deny authorization gate + rate/cry-wolf
   // counters (PUSH_SERVICES_ARCHITECTURE.md §6/§15).
   setPushSubscriptionRepository(new SQLitePushSubscriptionRepository(identityDB));

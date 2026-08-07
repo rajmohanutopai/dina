@@ -39,6 +39,13 @@ import {
   RunService,
   SQLiteClassificationJobRepository,
   SQLiteCommandReceiptRepository,
+  ExtensionOperationRegistry,
+  SQLiteDrainAuthorizationRepository,
+  SQLiteCommerceEpochWatermarkRepository,
+  SQLiteCommerceOrderRefRepository,
+  SQLiteCommerceQuoteLedgerRepository,
+  SQLiteCommerceReceiptRepository,
+  SQLiteCommerceStatusHeadRepository,
   SQLiteCompletionReceiptRepository,
   SQLiteErasureKeyStore,
   SQLiteMessageRepository,
@@ -50,6 +57,13 @@ import {
   configureRateLimiter,
   setClassificationJobRepository,
   setCommandReceiptRepository,
+  setCommerceEpochWatermarkRepository,
+  setDrainAuthorizationRepository,
+  setExtensionOperationRegistry,
+  setCommerceOrderRefRepository,
+  setCommerceQuoteLedgerRepository,
+  setCommerceReceiptRepository,
+  setCommerceStatusHeadRepository,
   setCommandTxRunner,
   setCompletionReceiptRepository,
   setErasureKeyStore,
@@ -444,6 +458,18 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     setClassificationJobRepository(new SQLiteClassificationJobRepository(inputs.databaseAdapter));
     setCompletionReceiptRepository(new SQLiteCompletionReceiptRepository(inputs.databaseAdapter));
     setCommandReceiptRepository(new SQLiteCommandReceiptRepository(inputs.databaseAdapter));
+    // Commerce Pack stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §15.5/§16.2).
+    setCommerceOrderRefRepository(new SQLiteCommerceOrderRefRepository(inputs.databaseAdapter));
+    setCommerceQuoteLedgerRepository(
+      new SQLiteCommerceQuoteLedgerRepository(inputs.databaseAdapter),
+    );
+    setCommerceStatusHeadRepository(new SQLiteCommerceStatusHeadRepository(inputs.databaseAdapter));
+    setCommerceReceiptRepository(new SQLiteCommerceReceiptRepository(inputs.databaseAdapter));
+    setCommerceEpochWatermarkRepository(
+      new SQLiteCommerceEpochWatermarkRepository(inputs.databaseAdapter),
+    );
+    setExtensionOperationRegistry(new ExtensionOperationRegistry());
+    setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(inputs.databaseAdapter));
     // One atomic commit for each owner command's mutation + its receipt (§5/§12.5).
     const cmdReceiptDb = inputs.databaseAdapter;
     setCommandTxRunner((fn) => cmdReceiptDb.transaction(fn));

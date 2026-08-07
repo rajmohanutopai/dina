@@ -1526,6 +1526,167 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON reasoning_context_tickets(session_id, revoked_at);
     `,
   },
+  {
+    version: 31,
+    name: 'commerce_stores',
+    // Commerce Pack durable stores (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md
+    // §9.9/§9.11/§15.5/§16.2). Five tables:
+    //
+    // commerce_order_refs — the supplier-side order-reference/idempotency
+    // store. BOTH identities are unique per buyer ((buyerDid, purchaseOrderId)
+    // and (buyerDid, idempotencyKey)); a key arriving under the other order is
+    // a typed conflict, never aliasing. `state` is reserved-until-decided;
+    // `effect_phase` is written to 'effect_started' BEFORE the first external
+    // boundary attempt, so crash recovery can never time out (and refund) a
+    // reservation whose external order may exist. `pinned_major` routes
+    // prior-major lifecycle requests to the retained handler set (§9.13).
+    // acknowledgement_json is the recorded SIGNED acknowledgement — every
+    // terminal outcome, including rejections, persists it for replay.
+    //
+    // commerce_quote_heads — supplier-side CAS at signing: one row per
+    // quoteId holding the current head digest/revision plus the immutable
+    // maxUses and validity window; `voided` implements §16.2 restore voiding
+    // (capacity is never resurrected from a backup).
+    //
+    // commerce_quote_uses — provisional use holds keyed on the consuming
+    // order, mirroring plugin_grant_uses: held -> committed (accepted) or
+    // refunded (every rejection / counterproposal), so a stale-revision
+    // rejection never bricks the current revision's re-approval.
+    //
+    // commerce_status_heads — supplier-side status-chain CAS (§9.11): a
+    // conforming supplier cannot emit two valid successors of one status.
+    //
+    // commerce_receipts — the Core-owned durable commercial memory (§16.2):
+    // canonical quote chain, orders, acknowledgements, status chain,
+    // cancellations, reconciliation and restore-fence events with their
+    // verification evidence. Workflow rows stay the execution engine;
+    // receipts survive plugin pause/revoke/uninstall.
+    //
+    // commerce_epoch_watermarks — counterparty-side restore fence (§16.2):
+    // highest supplierEpoch seen per supplier DID; a newly signed record
+    // below the watermark is rejected as a stale pre-restore signer.
+    //
+    // Timestamps are caller-supplied epoch ms, matching every other Tier-0
+    // table. TEXT epoch/sequence columns carry canonical integer STRINGS
+    // (the wire form) — comparisons happen in JS via BigInt, never SQL.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_order_refs (
+        buyer_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        order_digest TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        quote_digest TEXT NOT NULL,
+        pinned_major TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'reserved'
+          CHECK (state IN ('reserved', 'decided')),
+        effect_phase TEXT NOT NULL DEFAULT 'pre_effect'
+          CHECK (effect_phase IN ('pre_effect', 'effect_started')),
+        acknowledgement_json TEXT,
+        external_ref TEXT,
+        decision_deadline_at INTEGER,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER,
+        PRIMARY KEY (buyer_did, purchase_order_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_order_refs_idem
+        ON commerce_order_refs(buyer_did, idempotency_key);
+      CREATE INDEX IF NOT EXISTS idx_commerce_order_refs_reserved
+        ON commerce_order_refs(state, effect_phase, decision_deadline_at)
+        WHERE state = 'reserved';
+
+      CREATE TABLE IF NOT EXISTS commerce_quote_heads (
+        quote_id TEXT PRIMARY KEY,
+        buyer_did TEXT NOT NULL,
+        head_digest TEXT NOT NULL,
+        head_revision TEXT NOT NULL,
+        max_uses TEXT NOT NULL DEFAULT '1',
+        valid_until INTEGER NOT NULL,
+        supplier_epoch TEXT NOT NULL,
+        voided INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_commerce_quote_heads_live
+        ON commerce_quote_heads(valid_until)
+        WHERE voided = 0;
+
+      CREATE TABLE IF NOT EXISTS commerce_quote_uses (
+        quote_id TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'held'
+          CHECK (state IN ('held', 'committed', 'refunded')),
+        created_at INTEGER NOT NULL,
+        settled_at INTEGER,
+        PRIMARY KEY (quote_id, purchase_order_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_status_heads (
+        buyer_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        head_digest TEXT NOT NULL,
+        head_sequence TEXT NOT NULL,
+        state TEXT NOT NULL,
+        supplier_epoch TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (buyer_did, purchase_order_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_receipts (
+        record_digest TEXT PRIMARY KEY,
+        domain TEXT NOT NULL
+          CHECK (domain IN (
+            'projection', 'request', 'quote', 'terms', 'order',
+            'acknowledgement', 'status', 'cancellation', 'result',
+            'epoch', 'restore_fence_event'
+          )),
+        buyer_did TEXT NOT NULL DEFAULT '',
+        quote_id TEXT NOT NULL DEFAULT '',
+        purchase_order_id TEXT NOT NULL DEFAULT '',
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_commerce_receipts_order
+        ON commerce_receipts(buyer_did, purchase_order_id);
+      CREATE INDEX IF NOT EXISTS idx_commerce_receipts_quote
+        ON commerce_receipts(quote_id);
+
+      CREATE TABLE IF NOT EXISTS commerce_epoch_watermarks (
+        supplier_did TEXT PRIMARY KEY,
+        epoch TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      -- Drain authorizations (§9.13): after an atomic rebind, the claim
+      -- guard admits prior-CID tasks ONLY through a live entry here.
+      -- 'drain' entries cover already-created tasks until the drain
+      -- deadline; 'lifecycle_continuity' entries admit NEW lifecycle
+      -- tasks (order_status / order_reconcile / cancel_order) bound to
+      -- non-terminal prior-major orders, released once the last such
+      -- order is terminal. Each row pins the AUTHORIZED prior values
+      -- the guard validates the envelope against (the current manifest
+      -- no longer matches by construction). Live authority — never
+      -- exported.
+      CREATE TABLE IF NOT EXISTS plugin_drain_authorizations (
+        install_id TEXT NOT NULL,
+        previous_cid TEXT NOT NULL,
+        capability_id TEXT NOT NULL,
+        kind TEXT NOT NULL
+          CHECK (kind IN ('drain', 'lifecycle_continuity')),
+        approved_scope_hash TEXT NOT NULL,
+        config_revision INTEGER NOT NULL,
+        action_class TEXT NOT NULL,
+        effects_idempotency TEXT NOT NULL,
+        result_schema_json TEXT NOT NULL,
+        params_schema_json TEXT NOT NULL DEFAULT 'null',
+        max_context_items INTEGER,
+        expires_at INTEGER,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (install_id, previous_cid, capability_id, kind)
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

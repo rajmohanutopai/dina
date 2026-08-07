@@ -95,2103 +95,442 @@
   <body>
     <h1>Dina — Implementation Notes</h1>
     <p class="meta">
-      <strong>Part&nbsp;D (below, ACTIVE)</strong> tracks the current goal — implementing
-      <code>docs/CONNECTED_AGENT_GATING_AND_BRAIN.md</code>. Parts&nbsp;A through&nbsp;C are the
-      trimmed record of completed or superseded implementation streams; the blow-by-blow is in git
-      history.
+      The ACTIVE section tracks the current stream. Everything under Archive shipped earlier; its
+      blow-by-blow lives in git history.
     </p>
 
     <!-- ============================================================ -->
-    <h1 id="connected-brain">
-      Part D — Connected-Agent Gating and Brain <span class="status wip">ACTIVE</span>
+    <h1 id="commerce">
+      ACTIVE — Commerce &amp; Procurement Pack <span class="status done">PHASE 0 + CORE DONE</span>
     </h1>
     <p class="meta">
-      Goal: implement <code>docs/CONNECTED_AGENT_GATING_AND_BRAIN.md</code> without weakening Core's
-      authority boundary. Keep the relevant test gate green after every vertical slice and
-      deep-review each slice before proceeding.
+      Spec: <code>docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md</code> (version
+      <code>f53d5e84e6055c0c</code>). Delivery is phase-by-phase per the spec's §24. This pass =
+      Phase 0 (protocol spine) + the §23 required Core work. NOT in this pass: Buyer/Supplier runner
+      plugins (Phase 1 pack), catalog AppView (Phase 2), managed runtime (Phase 3), payment
+      (prohibited in v1).
     </p>
 
-    <h2>Implementation map</h2>
-    <table>
-      <tr>
-        <th>#</th>
-        <th>Vertical slice</th>
-        <th>Status</th>
-      </tr>
-      <tr>
-        <td>CGB-0</td>
-        <td>Requirement matrix, baseline tests, shared contracts</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-1</td>
-        <td>
-          Server-owned gating policies, authority origin, kernel/boundary/full profile resolution
-        </td>
-        <td><span class="status done">CORE DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-2</td>
-        <td>Canonical host session, non-owner authority context, owner policy routes and UI</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-3</td>
-        <td>Reasoning backend bindings, durable broker, dedicated claim surface</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-4</td>
-        <td>Context projections/tickets, result schemas, validation and commit bridges</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-5</td>
-        <td>CLI/MCP Brain tools and explicit foreground/background work flow</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>CGB-6</td>
-        <td>Mobile and Home Node configuration, pending/result projections, E2E flow</td>
-        <td><span class="status wip">OWNER FLOW DONE; ALWAYS-ON ADAPTERS PENDING</span></td>
-      </tr>
-      <tr>
-        <td>CGB-7</td>
-        <td>Conformance, adversarial review, full regression and completion audit</td>
-        <td><span class="status todo">TODO</span></td>
-      </tr>
-    </table>
-
-    <h2>Baseline and first interpretation</h2>
+    <h2>What shipped</h2>
     <ul>
       <li>
-        <strong>Baseline:</strong> Home Node gate tests are 35/35 green; Core gate/session tests are
-        41/41 green before implementation.
+        <strong>@dina/commerce-protocol</strong> (new zero-dep package) — canonical Money/Quantity +
+        closed unit vocabulary v1; §9.1 arithmetic (exact BigInt rationals, ONE half-even rounding,
+        integer totals, bounds fail not wrap); ten domain-separated digests (<code
+          >dina:commerce:v1:&lt;domain&gt;</code
+        >
+        preimage); full negotiation + lifecycle wire types with validators (quote CAS chains,
+        <code>replacesQuoteDigest</code> lineage, immutable <code>maxUses</code>, all-or-none
+        orders, projection-extends, kind-narrowed acks, status graph + genesis + cumulative
+        snapshots + restore fences, cancellation, six-outcome reconcile, epoch records); frozen
+        conformance vectors incl. malformed battery, magnitude-bound accept/reject pairs, and an
+        end-to-end-linked status chain.
       </li>
       <li>
-        <strong>Design decision:</strong> the three owner-visible profiles remain separate from the
-        existing internal <code>enforce | classify_only</code> conformance switch. Core resolves the
-        profile and authority origin; neither is accepted as caller authority.
+        <strong>@dina/core commerce layer</strong> — migration v31:
+        <code>commerce_order_refs</code> (dual unique keys +
+        <code>pre_effect/effect_started</code> phases),
+        <code>commerce_quote_heads/uses</code> (signing CAS + provisional holds),
+        <code>commerce_status_heads</code>, <code>commerce_receipts</code>,
+        <code>commerce_epoch_watermarks</code>, <code>plugin_drain_authorizations</code>. Engines:
+        admission (§9.9 precedence, durable frozen rejections, per-outcome hold settlement,
+        phase-scoped crash recovery), lifecycle (status signing, atomic cancellation race, reconcile
+        with fail-closed held-evidence verification), epoch service (fail-closed until established,
+        CAS-serialized restores, capacity voiding). Receipts + operational tables in
+        <code>.dina</code> export per §16.2.
       </li>
       <li>
-        <strong>Design decision:</strong> the existing workflow state/lease implementation is
-        reused, but reasoning gets a dedicated claim authorization surface and sealed task envelope.
-        A generic runner never becomes a reasoning backend merely by being paired.
-      </li>
-      <li>
-        <strong>Tradeoff:</strong> implementation starts with the server-owned gate contracts
-        because every connected-Brain tool call depends on trustworthy session origin and profile
-        resolution. Building the Brain surface first would create an origin-laundering seam.
-      </li>
-      <li>
-        <strong>Environment note:</strong> the required <code>dina session start</code> command was
-        attempted, but the local CLI configuration lacks <code>msgbox_url</code> and
-        <code>homenode_did</code>. No Dina authority was obtained or bypassed; repository work
-        continues without a Dina session.
+        <strong>Plugin substrate</strong> — <code>host_operations</code> manifest field (scope-hash
+        re-consent on widening; existing hashes untouched); extension-operation registry with
+        deny-before-validation; provider-ingress bridge (D2D query → plugin lane → provider-kind
+        claim → validated completion → response bridge); drain authorizations validating prior-CID
+        tasks against their AUTHORIZED pinned values, drain-kind limited to pre-rebind tasks.
       </li>
     </ul>
 
-    <h2>CGB-0/1/2 — shared gate authority core</h2>
+    <h2>Design decisions and spec interpretations</h2>
     <ul>
       <li>
-        Added one RN-safe contract for <code>AgentGatingProfile</code>,
-        <code>AuthorityOrigin</code>, monotonic profile ordering, strict authority parsing, and the
-        invariant that every non-owner/unknown origin resolves to <code>full_supervision</code>.
+        <strong>Separate package</strong> (§6 topology): commerce protocol versions independently of
+        the core wire protocol; same conventions (nullable-error validators, injected
+        <code>Sha256Fn</code>, frozen vectors, dep-hygiene gate — src/ imports relative paths only).
+        <code>canonicalJson</code> is a deliberate copy of @dina/protocol's JCS subset; frozen
+        vectors on both sides turn copy drift into a test failure.
       </li>
       <li>
-        Added encrypted identity-store persistence with optimistic policy versions and a v28
-        migration. The migration is additive rather than rewriting an applied migration because real
-        test devices already carry identity databases; this is safer even though public migration
-        compatibility is not required.
+        <strong>§9.1 "exact under the declared unit conversion"</strong> read as: the CONVERSION
+        must be exact (kg/g, l/ml, same-code); the quantity/priceBasis ratio may be fractional — the
+        integer-quotient reading would falsify the spec's own "per-unit pricing always does" clause.
+        Case↔each is refused, never guessed.
       </li>
       <li>
-        Session records now persist a Core-bound authority origin. Binding accepts only non-owner
-        task origins; clearing is correlation-ID fenced so a stale task cannot clear a newer task's
-        protection floor.
+        <strong>Choices the spec left open</strong> (flagged below for confirmation): unit
+        vocabulary v1 = each/case/pallet/g/kg/ml/l, custom unit codes rejected; bounds = 15-digit
+        minor units / 12-digit quantity integers; currency validated as shape only (no ISO table
+        pin); <code>termsDigest</code> input = charges + estimates + paymentTerms + validUntil;
+        <code>reasonCode</code> = open bounded snake_case vocabulary; timestamps = canonical ISO UTC
+        (Z, fraction absent or 3 digits); totals reject an intermediate-negative running sum.
       </li>
       <li>
-        The production gate route accepts legacy <code>mode=enforce</code> for wire compatibility,
-        rejects <code>classify_only</code>, rejects caller-supplied profile/origin, and derives
-        owner-interactive authority only from a current owner-selected policy bound to the current
-        node DID. Missing/mismatched state is Full Supervision.
+        <strong>Deviation from house export policy</strong>: operational commerce tables (heads,
+        counters, order refs, watermarks) ARE exported — §16.2 requires it; restoring receipts
+        without them would reset counters or fork heads. The stale-backup residual is fenced by the
+        commerce epoch, not by exclusion.
       </li>
       <li>
-        Standard returns only hard-kernel denials or a host-managed allow. Sensitive
-        Boundaries keeps ordinary local work quiet and gates a conservative external/system/
-        authority boundary set. Full Supervision retains the existing classifier and permit loop.
+        <strong>Partial quotes are legal</strong> (a quote need not answer every request line, §19);
+        all-or-none binds ORDERS to quotes. Genesis status state is DERIVED from the recorded
+        acknowledgement — callers cannot claim a different resolving event.
       </li>
       <li>
-        Owner policy changes use a versioned owner-only Core route and revoke transient permits.
-        Mobile and Home Node wire the same repository; mobile teardown clears it to prevent
-        cross-identity handles.
-      </li>
-    </ul>
-    <p>
-      <strong>Verification:</strong> Core/mobile/Home Node typechecks green. Existing gate/session
-      regressions remain green (Core 53, Home Node 35), and the new contract/profile matrix adds 11
-      focused tests (Core 5, Home Node 6).
-    </p>
-    <p>
-      <strong>Deep-review findings fixed:</strong> missing/mismatched owner policy is not treated as
-      owner presence; corrupt persisted origin becomes fail-closed <code>unknown</code>; session
-      reuse requires the same authority context; stale context clear is correlation-fenced; policy
-      writes use version CAS; profile changes invalidate transient permits; legacy advisory mode is
-      rejected at the route instead of becoming a downgrade seam.
-    </p>
-    <h2>CGB-3/4/5/6 — durable reasoning and owner Ask</h2>
-    <ul>
-      <li>
-        Added encrypted reasoning-backend and context-ticket repositories, typed task envelopes,
-        schema contracts, lease-fenced claims, idempotent submission, stale-completion rejection,
-        commit recovery, and owner-safe job projections. The public reasoning routes are separate
-        from generic workflow-runner routes.
-      </li>
-      <li>
-        Added the connected-host CLI/MCP surface and packaged <code>/dina-work</code> skills for
-        Claude and Codex. Every operation is DID/session/backend bound; a coding-agent pairing alone
-        does not grant Brain authority.
-      </li>
-      <li>
-        Added mobile Ask submission and durable chat reconciliation. A queued row is linked to one
-        Core task and morphs into the validated result, so navigation/restart does not create a
-        second answer bubble. Home Node's owner console exposes the same owner-safe job and backend
-        projections.
-      </li>
-      <li>
-        Added a shared runtime-neutral backend worker and an internal-Brain executor. The executor
-        consumes only Core's prepared projection and returns a proposal; it has no vault repository
-        or effect surface.
-      </li>
-      <li>
-        Added an asynchronous task-aware output guard. Core reruns it on normal completion and
-        commit recovery, then revalidates the result schema after the guard. Review-backed trust
-        language is accepted only when the cited projection actually contains review evidence.
-      </li>
-      <li>
-        Owner <code>answer.compose</code> now receives one Core-owned context projection composed
-        from authorized open-vault memory plus public Ranked Review and service-listing evidence.
-        AppView adapters cannot choose model evidence IDs: Core bounds and PII-scrubs text, hashes
-        public identifiers, labels listings as metadata rather than executed results, and merges
-        sources deterministically.
+        <strong><code>host_operations</code> enters the scope hash only when non-empty</strong>, so
+        every pre-commerce manifest and frozen digest vector keeps its hash while widening still
+        forces re-consent (absent == empty == no brokered authority).
       </li>
     </ul>
-    <p>
-      <strong>Design decision:</strong> public evidence is optional, source-failure isolated, and
-      explicitly reported as <code>unavailable_sources</code>. A failed AppView search is not
-      represented as an empty successful search. Service listings are discovery metadata only; this
-      answer path never claims a live service was called.
-    </p>
-    <p>
-      <strong>Security interpretation:</strong> projected context is framed as untrusted reference
-      data. The model never sees raw AT URIs, vault row IDs, repositories, keys, or a general
-      context credential. Evidence attribution is currently item-level: the internal single-shot
-      pipeline cites the allowed projection it received, not sentence-level model citations. Core
-      still rejects any evidence ID outside the claim.
-    </p>
-    <p>
-      <strong>Deep-review fixes:</strong> async output guards are awaited; post-guard schemas are
-      revalidated; recovery reruns the same guard; review provenance reaches the inner Brain guard;
-      public context is injection-framed; partial capability-search failures preserve successful
-      service evidence; total source outages remain observable; owner sensitivity takes the stricter
-      task/context value.
-    </p>
-    <p>
-      <strong>Verification:</strong> focused Brain evidence/guard/pipeline tests are 44/44 green.
-      Core broker/facade/route tests are 38/38 green, including an end-to-end owner-submit/backend-
-      claim assertion proving PII scrubbing and opaque evidence IDs.
-    </p>
-    <p>
-      <strong>Runtime boundary resolved:</strong> mobile's internal Brain uses an in-process adapter
-      while Home Node Lite uses a bounded localhost Core-to-Brain executor. Both run the same shared
-      backend worker and consume only Core-prepared claims. Internal Brain is intentionally limited
-      to <code>answer.compose</code>; connected foreground hosts handle the wider typed task set.
-      Local-model and direct-provider adapters remain optional Phase&nbsp;5 integrations, not a
-      different authority path.
-    </p>
-
-    <h2>CGB-4/6 — authenticated service reasoning</h2>
-    <ul>
-      <li>
-        Added one shared optional service-reasoning strategy to
-        <code>@dina/home-node</code>. Mobile and Home Node Lite inject the same submitter into the
-        same <code>ServiceHandler</code>; neither surface reimplements eligibility or authority.
-      </li>
-      <li>
-        Eligibility is deliberately narrow: an official instruction-backed
-        <code>read</code>/<code>quote</code> capability may use a connected Brain. Agent-bound,
-        booking, write, payment, agentic, and custom capabilities remain on the established
-        effect-capable workflow lane.
-      </li>
-      <li>
-        Core derives the provider DID and authenticated requester origin, projects exactly the
-        listing-selected vault, refuses locked/sensitive/unavailable vaults without substituting
-        <code>general</code>, and submits a purpose-bound <code>service.respond</code> job. No live
-        backend or projection race returns <code>null</code> so the existing Tier-1 executor remains
-        the availability fallback.
-      </li>
-      <li>
-        The connected model receives a frozen response schema. Core validates, recursively
-        sanitizes, revalidates, and commits through the existing Response Bridge; requester DID and
-        query correlation come only from the authenticated authority origin, never model output.
-      </li>
-      <li>
-        Service TTL validation now imports the protocol's single 300-second ceiling instead of
-        maintaining a second reasoning-specific limit.
-      </li>
-    </ul>
-    <p>
-      <strong>Security review fix:</strong> reasoning authority revocation is now a central cascade.
-      Backend revoke, paired-device revoke, legacy sync revoke, and boot reconciliation revoke every
-      binding for the principal, clear runtime presence, and invalidate outstanding context tickets.
-      A partial reasoning-repository pair fails the durable cascade rather than claiming complete
-      revocation. If a later cascade step fails after the binding CAS commits, the owner can retry
-      against the persisted post-revoke policy version without recreating authority.
-    </p>
-    <p>
-      <strong>Final lifecycle hardening:</strong> a claim now persists its context ticket before
-      reserving a connected-host session origin, so every crash-visible reservation has a durable
-      cleanup backlink. Boot reconciliation releases terminal or abandoned reservations, and the
-      non-owner floor applies principal-wide so an alternate session cannot escape a service or
-      delegation origin. Mobile backend disable invokes the principal cascade once instead of
-      replaying stale per-row policy versions; persisted chat jobs are refreshed by exact task ID
-      even after they fall outside the bounded recent-job list.
-    </p>
-    <p>
-      New connected-host backend IDs hash the opaque paired-device identifier to prevent
-      sanitization/truncation collisions while still reviving an existing row for the same
-      principal. Home Node accepts only a key-bound <code>did:key</code> for its internal Brain
-      service identity, matching the actual signing-key verification contract.
-    </p>
-    <p>
-      <strong>Verification:</strong> service handler/output/facade/broker-to-response tests cover
-      eligibility, Tier-1 fallback, mutating-capability isolation, exact-vault projection,
-      authenticated requester binding, schema-invalid result rejection, and shared runtime
-      propagation. Central revoke route/device/helper tests add 40 focused passing assertions.
-    </p>
-
-    <!-- ============================================================ -->
-    <h1 id="dps">Part C — Plugin Developer Surface <span class="status done">REFERENCE</span></h1>
-    <p class="meta">
-      Goal: implement <code>docs/DINA_PLUGIN_DEVELOPER_SURFACE.md</code> — make Claude Code / Codex
-      act as a Dina agent. Build in dependency order (§21), tests green after each item, one deep
-      review per item.
-    </p>
-
-    <h2>Scope read + build order (§21)</h2>
-    <p>
-      The spec is a v1 developer surface: the coding agent reaches Dina's functionality as an MCP +
-      a catch-all command hook, with Core keeping keys/policy and gating every risky action.
-      Foundation first, in dependency order:
-    </p>
-    <table>
-      <tr>
-        <th>#</th>
-        <th>Item</th>
-        <th>Status</th>
-      </tr>
-      <tr>
-        <td>1</td>
-        <td>Stop logging the mnemonic; decide wrapped-seed</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>2</td>
-        <td>
-          PDS-backed bootstrap + single-use enrolment capability + lock-file / second-agent handling
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>3</td>
-        <td>
-          Core-owned classifier + coding action keys + payload-bound permit + classification-only
-          mode
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>4</td>
-        <td>
-          Catch-all <strong>command</strong> hook via a supervisor (normalize child failures → exit
-          2); two conformance classes (child-gate blocks; supervisor-self demonstrates the fail-open
-          residual)
-        </td>
-        <td><span class="status wip">SERVER DONE; client hook/supervisor TODO</span></td>
-      </tr>
-      <tr>
-        <td>5</td>
-        <td>
-          Agent memory surface: ingress + Core-mediated ask + Core persona PEP + typed-origin vault
-          capability at the storage seam
-        </td>
-        <td>
-          <span class="status done">DONE (5a matrix, 5b seam, 5c ingress real, 5d ask façade)</span>
-        </td>
-      </tr>
-      <tr>
-        <td>6</td>
-        <td>Durable session registry + revoke-on-end</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>6b</td>
-        <td>
-          Authz narrowing + <code>agent_scope</code> (coding|runner), route-template matcher,
-          object-level ownership on proposal/ask status
-        </td>
-        <td><span class="status done">DONE (scope primitive + façade gate)</span></td>
-      </tr>
-      <tr>
-        <td>7</td>
-        <td>Laptop-Core↔phone MsgBox approval + versioned pairing + signed decisions</td>
-        <td>
-          <span class="status wip"
-            >SECURITY CORE DONE (COLD-1 guard); MsgBox transport = delivery layer</span
-          >
-        </td>
-      </tr>
-      <tr>
-        <td>8</td>
-        <td>Audit persistence + tests</td>
-        <td><span class="status done">DONE (gate decisions wired)</span></td>
-      </tr>
-      <tr>
-        <td>9</td>
-        <td>
-          Services: publish/invoke authz + new Core find-service (AppView-search) façade +
-          marketplace/CI
-        </td>
-        <td>
-          <span class="status wip">FAÇADE ROUTE + SCOPE DONE; AppView backing = integration</span>
-        </td>
-      </tr>
-      <tr>
-        <td>10</td>
-        <td>Codex host</td>
-        <td>
-          <span class="status wip"
-            >SERVER SUPPORT DONE (session lease/reap); host package = distribution artifact</span
-          >
-        </td>
-      </tr>
-      <tr>
-        <td>11</td>
-        <td>New Core façades: Talk (<code>talk.message.v1</code>) + delegation</td>
-        <td>
-          <span class="status wip"
-            >FAÇADE ROUTES + SCOPE DONE; D2D/delegation backings = integration</span
-          >
-        </td>
-      </tr>
-      <tr>
-        <td>12</td>
-        <td>New Core PeerLens façades (attest write + search read) + trust</td>
-        <td>
-          <span class="status wip">FAÇADE ROUTE + SCOPE DONE; PeerLens backing = integration</span>
-        </td>
-      </tr>
-    </table>
-    <p class="meta">
-      Note: the spec itself still carries open review findings (untrusted-Brain vault capability
-      system, hook self-protection, etc.). Those are implemented/closed as their build item lands,
-      and recorded as open questions here when they need an owner call.
-    </p>
-
-    <h2>Status snapshot + thorough test</h2>
-    <p>
-      All 12 build-order items have their core implemented, tested, and deep-reviewed. Regression
-      suites are green end-to-end: <strong>packages/core 5813</strong> ·
-      <strong>core-server 2717</strong> (~460 net-new tests across the items, ~147 of them the
-      gate's adversarial-audit regressions). Server-side security substance is complete; the pieces
-      that are client/distribution artifacts (item 4's command hook + supervisor, item 10's Codex
-      host package) or large subsystem integrations (item 7's MsgBox transport, items 9/11/12's
-      AppView/D2D/PeerLens backings) are honestly marked and their authority/authz/scope cores are
-      done + tested.
-    </p>
-    <p>
-      <strong>Adversarial audit — 10 real bugs found &amp; fixed.</strong> A workflow fanned out one
-      security auditor per module (22 agents, attack + independent verify). It confirmed
-      <strong>10 genuine defects in the first-pass implementation</strong> — exactly the value of
-      the exercise. All 10 are fixed with regression tests; the two criticals were real
-      seed-exposure holes:
-    </p>
-    <table>
-      <tr>
-        <th>#</th>
-        <th>Sev</th>
-        <th>Bug</th>
-        <th>Fix</th>
-      </tr>
-      <tr>
-        <td>1</td>
-        <td>CRIT</td>
-        <td>
-          Bash redirect GLUED to a token (<code>cat -&lt;/vault/keyfile</code>,
-          <code>echo pwn&gt;/vault/keyfile</code>) evaded redirect detection → silent SAFE
-          read/overwrite of the seed
-        </td>
-        <td>
-          redirect regex no longer requires leading whitespace; matches glued
-          <code>&lt;</code>/<code>&gt;</code>/<code>&gt;&gt;</code>
-        </td>
-      </tr>
-      <tr>
-        <td>2</td>
-        <td>CRIT</td>
-        <td>
-          <code>apply_patch</code> writing a protected path (target lives in the patch BODY)
-          classified SAFE
-        </td>
-        <td>extractPaths parses <code>*** (Add|Update|Delete) File:</code> from the patch body</td>
-      </tr>
-      <tr>
-        <td>3</td>
-        <td>HIGH</td>
-        <td>
-          Dangling-symlink LEAF (<code>project/link → vault/new.db</code>, target absent) let a
-          Write plant a file in the vault as code_edit
-        </td>
-        <td>
-          canonicalizePath follows leaf symlinks manually via lstat/readlink, even dangling ones
-        </td>
-      </tr>
-      <tr>
-        <td>4</td>
-        <td>HIGH</td>
-        <td>ANSI-C <code>$'\x2f…'</code> quoting hid path separators → protected read SAFE</td>
-        <td>tokenizer flags <code>$'</code>/<code>$"</code> as unverifiable → BLOCKED</td>
-      </tr>
-      <tr>
-        <td>5</td>
-        <td>HIGH</td>
-        <td>
-          Agent could inject into a SENSITIVE/locked persona via
-          <code>/v1/agent/memory</code> (staging_item origin writes, but NO persona gate)
-        </td>
-        <td>
-          memory ingress runs <code>requireAgentPersonaAccess</code> (the PEP) first — free persona
-          passes, sensitive → approval card, no silent write; persona canonicalised so PEP + write
-          agree
-        </td>
-      </tr>
-      <tr>
-        <td>6</td>
-        <td>MED</td>
-        <td><code>curl -F name=@secret</code> multipart upload not detected as exfil</td>
-        <td>
-          uploadPaths handles <code>-F</code>/<code>--form</code> and attached forms; kept
-          <code>-T</code> raw-path
-        </td>
-      </tr>
-      <tr>
-        <td>7</td>
-        <td>MED</td>
-        <td>
-          Unknown/MCP tool naming a protected path in a non-standard field (<code>paths[]</code>,
-          nested) escaped BLOCKED
-        </td>
-        <td>unknown-tool branch deep-scans EVERY string value for a protected path</td>
-      </tr>
-      <tr>
-        <td>8</td>
-        <td>MED</td>
-        <td>
-          <code>/v1/session/end</code> leaked foreign-session existence via a distinct
-          <code>reason</code>
-        </td>
-        <td>uniform <code>404 {ok:false}</code> for unknown/foreign/ended — no oracle</td>
-      </tr>
-      <tr>
-        <td>9</td>
-        <td>MED</td>
-        <td>
-          Brain could DENY an agent-origin approval task via <code>/fail</code> (missed by the
-          COLD-1 guard on /approve+/cancel)
-        </td>
-        <td><code>brainAgentTaskGuard</code> added to <code>/fail</code></td>
-      </tr>
-      <tr>
-        <td>10</td>
-        <td>LOW</td>
-        <td>
-          <code>$IFS</code> glue mangled the verb basename → protected read downgraded to MODERATE
-        </td>
-        <td><code>$IFS</code> anywhere → BLOCKED (never legitimate)</td>
-      </tr>
-    </table>
-    <p class="meta">
-      Verified clean by round 1: permit (all four bindings held), agent-scope (no escalation), and
-      the façade/gate-route auth (0 findings each).
-    </p>
-    <p>
-      <strong>Round 2 (re-attack the patched modules) — 8 more residual edges, all fixed.</strong>
-      Confirming that a hand-rolled shell/path parser needs several adversarial passes:
-    </p>
-    <table>
-      <tr>
-        <th>Sev</th>
-        <th>Residual bug</th>
-        <th>Fix</th>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          curl <code>--data-binary=@file</code> (=-glued long form),
-          <code>--data-urlencode name@file</code>, <code>--upload-file=file</code> evaded
-          uploadPaths
-        </td>
-        <td>
-          uploadPaths handles =-glued long flags + <code>name@file</code> +
-          <code>--data-urlencode</code>; unified <code>uploadFileOf</code>
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          relative leaf-symlink target resolved against the LEXICAL dir (wrong base when a path
-          component is itself a symlink)
-        </td>
-        <td>canonicalizeAbs resolves the REAL parent first, then the leaf target against it</td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          apply_patch <code>*** Move to:</code> rename dest (no <code>File:</code> token) escaped
-          the path check
-        </td>
-        <td>
-          regex matches <code>Move to:</code> as well as <code>(Add|Update|Delete) File:</code>
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>
-          <code>&gt;&amp;file</code> redirect-both not detected (tokenizer split the operator at
-          <code>&amp;</code>); asymmetric with <code>&amp;&gt;</code>
-        </td>
-        <td>
-          tokenizer keeps <code>&gt;&amp;</code>/<code>&lt;&amp;</code>/<code>&amp;&gt;</code>
-          glued; redirect regex handles them + a global redirect scan
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>
-          deepStrings hard-DENIED a benign bare word matching a secret basename
-          (<code>credentials</code>, <code>.env</code>)
-        </td>
-        <td>
-          only PATH-like strings (with a separator) are protected-checked; bare words stay MODERATE
-          (approval)
-        </td>
-      </tr>
-      <tr>
-        <td>LOW</td>
-        <td>
-          benign <code>2&gt;&amp;1</code>/<code>&gt;&amp;2</code> fd-dup over-classified MODERATE;
-          deepStrings depth cap (&gt;6) missed a depth-7 path; padded persona trim mismatch; symlink
-          cycle risk
-        </td>
-        <td>
-          fd-dup targets (digit/<code>-</code>) ignored; cap raised to 24; persona trimmed in the
-          backing; symlink cycle → NUL sentinel → fail CLOSED
-        </td>
-      </tr>
-    </table>
-    <p class="meta">
-      Round 2 also hardened two fail-OPEN edges into fail-CLOSED: a symlink cycle now returns a
-      NUL-bearing sentinel that <code>isProtectedPath</code> always flags as protected. 14 more
-      regression tests.
-    </p>
-    <p>
-      <strong
-        >Round 3 (convergence sweep) — 11 more, incl. a CRITICAL; drove a STRUCTURAL
-        rewrite.</strong
-      >
-      The recurring bash edges (dd <code>if=/of=</code>, awk <code>system()</code>, curl
-      <code>-o</code>) proved per-verb operand parsing is the wrong architecture, so the fix is
-      structural:
-    </p>
-    <table>
-      <tr>
-        <th>Sev</th>
-        <th>Bug</th>
-        <th>Fix</th>
-      </tr>
-      <tr>
-        <td>CRIT</td>
-        <td>
-          case-insensitive fs (macOS/APFS — the dev platform): <code>realpath</code> preserves case
-          while <code>isUnder</code> compared case-sensitively → a case-variant vault path
-          classified SAFE
-        </td>
-        <td>
-          <code>isUnder</code> compares case-insensitively (still component-boundary-safe);
-          DINA-state basenames case-folded
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          dd <code>if=/of=</code>, curl <code>-o</code>/<code>--output</code>, tar <code>-f</code>,
-          httpie <code>field@file</code> — every non-standard operand syntax slipped per-verb
-          parsing
-        </td>
-        <td>
-          <strong>verb-agnostic token scan</strong>: strip <code>if=</code>/<code>@</code>/<code
-            >=</code
-          >
-          prefixes on EVERY token, canonicalise, BLOCK — independent of the verb
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          awk/sed program strings (<code>system()</code>, <code>getline</code>, pipe) read/exec
-          arbitrarily — opaque inline interpreters not in the block set
-        </td>
-        <td>
-          awk/sed with <code>system(</code>/<code>getline</code>/pipe → BLOCKED (like
-          <code>python -c</code>)
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          relative leaf-symlink target + a symlinked path component; mid-path <code>..</code> after
-          a symlink (path.resolve collapsed it lexically first)
-        </td>
-        <td>
-          canonicalizeAbs resolves the real parent first + <code>..</code> during traversal (kernel
-          order)
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>
-          SECRET patterns missed
-          <code>.netrc</code
-          >/<code>.pgpass</code>/<code>.git-credentials</code>/<code>.npmrc</code>/<code>*.jks</code>/<code>*.der</code>/<code
-            >authorized_keys</code
-          >
-        </td>
-        <td>patterns broadened</td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>
-          OVER-BLOCK: <code>grep "$PATTERN" file</code> and
-          <code>grep keyfile file</code> hard-denied (pattern treated as a path)
-        </td>
-        <td>
-          <code>operandPathArgs</code> drops the pattern for grep/sed/awk; token scan is
-          path-like-only; <code>keyfile</code> anywhere-match dropped (vault keyfile via
-          containment)
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>OVER-BLOCK: deep legit path tripped the depth-64 cap → false BLOCKED</td>
-        <td>precise cycle detection via a seen-set; cap raised to 4096 (backstop only)</td>
-      </tr>
-      <tr>
-        <td>LOW</td>
-        <td>
-          READ_VERBS missed base32/basenc/tac/rev/…; curl download-output flags; hardlink (inherent)
-        </td>
-        <td>
-          read verbs added; download output caught by the token scan; hardlink documented as an
-          inherent path-gating limit (§16 same-UID class)
-        </td>
-      </tr>
-    </table>
-    <p class="meta">
-      The structural token scan runs as a NET after per-verb classification (so <code>rm</code>/
-      <code>sed -i</code> keep their precise <code>secret_write</code> label) and catches whatever
-      the verb table misses. 21 more regression tests, including over-block guards for common
-      commands.
-    </p>
-    <p>
-      <strong>Round 4 — security CONVERGED (0 bypasses); 1 over-block fixed.</strong> The path
-      module came back completely clean. The one bash finding was a usability over-block: the
-      awk/sed opaque regex, applied to the whole command line, matched a shell <code>|</code> next
-      to a quoted program, so <code>cat x | awk '{print $1}' | sort</code> was wrongly BLOCKED.
-      Fixed by scoping the check to the per-segment PROGRAM token (a shell pipe is a segment
-      boundary): awk blocks on <code>system(</code>/<code>getline</code>/in-program-pipe, sed on an
-      <code>e</code> execute — a normal transform stays SAFE. Common read-only verbs (ps/df/du/…)
-      added. 8 more regression tests (pipeline idioms stay SAFE;
-      <code>awk '{print | "sh"}'</code> and <code>sed s///e</code> still BLOCKED).
-    </p>
-    <p>
-      <strong>Round 5 — caught a CRITICAL regression my own round-4 fix introduced.</strong> Scoping
-      the awk/sed opaque check to <code>args.find(first-non-flag)</code> meant
-      <code>awk -v x=1 'BEGIN{system("id")}'</code> hid the real program behind the
-      <code>-v</code> value — arbitrary exec re-downgraded to SAFE. Also a pre-existing HIGH: a
-      bare-name secret read from inside a program (<code>sed 'r .env'</code>, awk
-      <code>ARGV[]</code> injection). Fixed with a proper awk/sed arg parser (<code
-        >awkSedPrograms</code
-      >
-      → all <code>-e</code> programs + first positional, skips <code>-v</code>/<code>-F</code>
-      values, <code>-f</code> external → MODERATE) that inspects EVERY program source and scans
-      program text for unambiguous secret filenames; <code>operandPathArgs</code> routes awk/sed
-      file operands through it (so a benign <code>awk -v n=1 '{print $n}'</code> stays SAFE — the
-      <code>$n</code> field ref no longer trips the indirection guard). 8 more regression tests.
-    </p>
-    <p>
-      <strong>Round 6 — 3 more HIGH: awk/sed getopt is a losing battle, + a new GLOB class.</strong>
-      (1) awk/sed <code>--source=</code>/<code>--expression=</code>/<code>--file=</code> long forms
-      and clustered <code>-ne'prog'</code> hid the program from the parser → SAFE. Fixed
-      structurally by abandoning getopt parsing and scanning ALL joined args (a shell
-      <code>|</code> is a segment boundary, so a <code>|</code> in the segment is genuinely an awk
-      in-program pipe). (2) A glob/brace in a DIRECTORY component defeated containment:
-      <code>cat &lt;vault-parent&gt;/vau*/keyfile</code> reads the seed because the literal path
-      doesn't exist → not under the vault. Fixed with <code>pathHitsProtected</code> — a glob
-      operand is brace-expanded and run through <code>fs.globSync</code> on the REAL fs (exactly
-      what the shell does), and every match is checked; wired into both bash and the file
-      classifier. (A greedy <code>s///e</code> regex then over-matched a filename — fixed with a
-      tempered dot.)
-    </p>
-    <p>
-      <strong>Round 7 — 5 more, incl. a CRITICAL in my own R6 glob fix.</strong> (1)
-      <code>fs.globSync</code>
-      refuses to descend a wildcard-matched SYMLINKED directory, but bash/zsh do:
-      <code>ln -s .. up; cat u*/vault/keyfile</code> read the seed while globSync returned nothing.
-      Fixed by replacing globSync with a hand-rolled symlink-FOLLOWING glob walk (readdir + realpath
-      per segment, dotglob-off) — what the shell actually does. (2) perl/ruby <code>-pe</code>/<code
-        >-ne</code
-      >
-      clustered inline flags + versioned/aliased interpreters (<code>python3.11</code>,
-      <code>nodejs</code>, <code>dash</code>) bypassed the interpreter BLOCK → fixed with
-      <code>interpreterName</code> normalization + a clustered-flag regex. (3)
-      <code>&gt;|</code> noclobber-override misparsed as a pipe → tokenizer keeps it glued. (4) the
-      R5 <code>secretRef</code> scan over-blocked benign <code>sed 's/.npmrc/…/'</code> → narrowed
-      to quoted / sed-r-w contexts.
-    </p>
-    <p>
-      <strong>Convergence trend:</strong> R1=10, R2=8, R3=11, R4=1, R5=2, R6=3, R7=5. Several
-      findings each round were regressions from the PRIOR round's fix (R5←R4, R7←R6) — the emphatic
-      lesson that every fix to a hand-rolled security parser must itself be adversarially
-      re-verified. R8 confirms the R7 fixes.
-      <strong
-        >Running total: 40 real defects found and fixed, each pinned by a regression test.</strong
-      >
-      The structural moves that matter: a verb-agnostic token scan (no per-verb operand parsing), a
-      joined-args awk/sed scan (no getopt parsing), and a symlink-following glob walk (no
-      static/globSync reasoning). Plan: scratchpad <code>gate_test_plan.md</code>.
-    </p>
-    <p>
-      <strong>Round 8 — 4 more (2 HIGH), all refinements of my R7 regexes.</strong> (1) BSD sed
-      accepts a GLUED filename (<code>sed 'r.env'</code>, no space) — the <code>\s+</code> in
-      SECRET_SED_RW missed it; fixed with command-boundary anchoring + <code>\s*</code>. (2) perl
-      <code>-E</code>/<code>-nE</code>/ <code>-0e</code> and <code>node -p</code> bypassed the
-      inline-flag regex (lowercase-only, letters- only); (3) <code>bash -xe script.sh</code> was
-      OVER-blocked (a shell <code>-e</code> is errexit, not inline) — both fixed by replacing the
-      generic regex with an interpreter-SPECIFIC <code>hasInlineCode</code>. (4)
-      <code>dd if=.env</code> (bare-basename secret) was missed — the token scan's path-like filter
-      skipped it; fixed so the value after <code>=</code>/<code>@</code> is always checked.
-    </p>
-    <p>
-      <strong>Round 9 — 3 HIGH, all interpreter/sed exec-syntax variants.</strong>
-      <code>deno eval</code> (inline via a SUBCOMMAND, not a flag), <code>php -r</code> (php's
-      inline flag is <code>-r</code>, not <code>-e</code>), and sed ADDRESS-prefixed
-      <code>e</code> (<code>1e cmd</code>/<code>$e cmd</code>/ <code>/re/e</code>). The first two
-      were BLOCKED→MODERATE downgrades (still owner-gated); the sed address-<code>e</code> was the
-      one genuine silent-SAFE exec — fixed by allowing an address before the <code>e</code> command.
-      deno/bun eval + php -r added to the interpreter table.
-    </p>
-    <p>
-      <strong
-        >Round 10 (scoped to the SECURITY FLOOR — silent-SAFE bypasses only) — 1 CRITICAL.</strong
-      >
-      <code>grep --regexp=. .env</code>: the search pattern came from an ATTACHED flag, so
-      <code>operandPathArgs</code> wrongly dropped the <code>.env</code> FILE as if it were the
-      pattern → silent SAFE read of the secret. Fixed with a proper grep arg parser
-      (<code>grepFiles</code>) mirroring the awk/sed <code>sawExplicit</code> logic: drop the
-      leading positional as the pattern ONLY when no pattern flag supplied it; a separate
-      <code>-e VALUE</code> is a pattern (not a file); <code>-f FILE</code> pattern-files ARE read
-      (so a secret pattern-file is caught). No over-block (<code>grep -e credentials file</code>
-      stays SAFE).
-    </p>
-    <p>
-      <strong>Round 11 (floor, 2 angles) — 2 root-cause silent-SAFE bypasses.</strong> (1) CRITICAL:
-      <code>classifyVcs</code> decided git/hg/svn risk purely from the SUBCOMMAND and never checked
-      file operands — <code>git diff --no-index /dev/null .env</code>,
-      <code>git show HEAD:.env</code>, <code>git hash-object .env</code>,
-      <code>git mv .env x</code> all silently exfiltrated/moved a secret. Fixed by running the
-      protected-path check over git operands (incl. <code>rev:path</code>/<code>rev..rev</code>
-      splits); a <code>$VAR</code> operand is left alone (a git operand is usually a branch —
-      <code>git checkout $BRANCH</code> must stay SAFE). (2) HIGH:
-      <code>sort -o.env</code> (attached output flag) overwrote a secret while SAFE — fixed with a
-      flag-value extractor for sort's output target.
-    </p>
-    <p>
-      <strong>Round 12 (floor, verb-coverage angle) — 2 silent-SAFE bypasses.</strong> (1) HIGH:
-      <code>classifyPackage</code> never checked its file operands and let non-npm/go RUNNER
-      subcommands fall through to SAFE — <code>bundle exec cat .env</code>,
-      <code>poetry run cat id_rsa</code>, <code>cargo run/build/test</code> all silently
-      ran/exfiltrated. Fixed with an operand check (BLOCK on a protected hit) + escalating RUNNER
-      subcommands of EVERY manager to MODERATE. (2) MED: the <code>Glob</code> tool's
-      <code>pattern</code> (which IS a path glob, unlike Grep's) wasn't extracted, so
-      <code>Glob {pattern:"&lt;vault&gt;/*"}</code> enumerated the vault dir SAFE — fixed in
-      <code>extractPaths</code>.
-    </p>
-    <p>
-      <strong>Round 13 — 1 last silent-SAFE: <code>git commit -F.env</code></strong>
-      (attached/clustered short flag `-F` reads .env as the commit message). Same
-      attached-short-flag-value class as <code>sort -o.env</code>; fixed by feeding git's
-      <code>-F</code>/<code>-o</code>/<code>-f</code> values (attached, separate, `--flag=`, and
-      CLUSTERED `-aF.env`) through the operand check.
-    </p>
-    <p>
-      <strong>STOPPING POINT — an honest engineering call.</strong> Convergence trend of silent-SAFE
-      bypasses: R10=1, R11=3, R12=2, R13=1 — decreasing, and every finding since R10 is the SAME
-      narrow class (an attached/clustered flag value or a single verb branch missing an operand
-      check), each a small refinement, not a new bypass class.
-      <strong
-        >Grand total across 13 rounds: 54 real defects found by adversarial testing and fixed, each
-        pinned by a regression test</strong
-      >
-      (~147 gate regression tests; core-server suite ≈2717 total). Every SAFE-returning verb branch
-      now runs the protected-path check, and the security floor — no silent-SAFE classification of a
-      protected read/write/exec — is enforced across the whole verb surface.
-    </p>
-    <p class="meta">
-      A hand-rolled shell/path classifier has a near-infinite tail of syntax edge cases; chasing it
-      to zero is not achievable and, more to the point, not the design goal. The spec is explicit
-      (§16): this is a <em>framework-mediated</em> guarantee that dramatically raises the bar for a
-      cooperative-but-fallible coding agent, NOT an OS sandbox against a fully adversarial local
-      process — the true non-overridable boundary is an OS sandbox / non-exportable keystore /
-      phone-held key (tracked as an open question, §22). The right stopping point is when findings
-      have converged to narrow, decreasing edge-case refinements within a single class — which is
-      where R10–R13 land. The classifier is now heavily hardened and heavily tested; residual
-      shell-syntax edges are the documented best-effort limit, and the durable deliverable is BOTH
-      the hardened gate AND the demonstrated method (adversarial workflow rounds + independent
-      verification + pinned regressions) that surfaced 54 real bugs unit tests missed.
-    </p>
-    <p class="meta">
-      <strong>Honest assessment of the classifier's nature:</strong> this many rounds on one module
-      is itself the finding — a hand-rolled shell/path security classifier is a large, adversarial
-      surface, and the spec is right to call it a <em>framework-mediated</em> guarantee (§16), not
-      an OS sandbox. The true non-overridable boundary is an OS sandbox / non-exportable keystore /
-      phone-held key. This classifier is a strong, now heavily-tested best-effort layer that raises
-      the bar dramatically; it is not claimed to be airtight against a fully adversarial local
-      process. The value delivered is both the hardened classifier AND the demonstrated method:
-      adversarial workflow rounds with independent verification and pinned regressions, which found
-      44 real bugs that author-written unit tests did not.
-    </p>
-
-    <h2>
-      Items 9/11/12 — coding-agent façades (find-service, talk, delegate, peerlens)
-      <span class="status wip">ROUTES + SCOPE DONE; backings = integration</span>
-    </h2>
-    <p class="meta">
-      packages/core/src/server/routes/agent_facades.ts · core_server.ts option ·
-      agent_facades.test.ts (+11).
-    </p>
-    <ul>
-      <li>
-        <strong>The security substance of these items is the NARROW, scope-gated façade</strong>
-        (NEW-02): each MCP tool gets its OWN <code>/v1/agent/*</code> route rather than a broad
-        prefix grant that would hand the agent service-config DELETE, arbitrary D2D send, reminder
-        mutation, etc. Every façade binds to the authenticated DID, is scope-gated to
-        <code>coding</code> (fail-closed, item 6b), size-limits + validates, and delegates to an
-        INJECTED backing — so the route owns least- privilege authz while the capability stays where
-        it lives.
-      </li>
-      <li>
-        <strong>Registered:</strong>
-        <code>/v1/agent/{memory,find-service,talk,delegate,peerlens,ask}</code>. A façade with no
-        injected backing registers NO route (404) — honest incremental wiring, not a stub that
-        pretends to work.
-      </li>
-      <li>
-        <strong>Backings:</strong> 5c memory is fully wired (below). find-service (9) wraps AppView
-        search, talk (11) is D2D send + per-call phone approval (uses item 7), delegate (11) is a
-        bounded workflow delegation, peerlens (12) is the attestation publisher/reader — each is an
-        integration with an existing subsystem, injected at composition. The routes + scope + authz
-        + validation are complete and tested; the subsystem backings are the remaining wiring.
-      </li>
-    </ul>
-
-    <h2>
-      Item 10 — Codex host
-      <span class="status wip">SERVER SUPPORT DONE; host package = distribution artifact</span>
-    </h2>
-    <p class="meta">Server side: session registry lease + <code>reapExpired</code> (item 6).</p>
-    <ul>
-      <li>
-        Codex exposes no <code>SessionEnd</code>/thread-close hook (only thread
-        <code>SessionStart</code> + turn <code>Stop</code>), so teardown can't depend on a host
-        event (§15, F-04). The server-side mechanism this needs — an authenticated
-        <strong>lease</strong> that each signed call renews plus a reconciliation sweep that reaps a
-        lapsed session — is built and tested in the session registry (item 6). The Codex host
-        PACKAGE itself (the MCP config + the explicit <code>dina_session_end</code> call on clean
-        exit) is a distribution artifact (§9/§19), like item 4's client hook — outside the TS-server
-        tree.
-      </li>
-    </ul>
-
-    <h2>
-      Item 7 — laptop-Core↔phone approval
-      <span class="status wip">SECURITY CORE DONE; transport = delivery layer</span>
-    </h2>
-    <p class="meta">
-      packages/core/src/server/routes/workflow.ts (<code>brainAgentTaskGuard</code>) ·
-      workflow_cold1_brain.test.ts (+5) · workflow suite 313 green.
-    </p>
-    <ul>
-      <li>
-        <strong>COLD-1 fix (the security core):</strong> <code>ownerDecisionGuard</code> denied
-        agent/plugin but ADMITTED <code>brain</code> — unsafe on the server split where Brain is
-        untrusted. A new <code>brainAgentTaskGuard</code> fetches the task and, for an
-        <strong>agent-origin</strong> task, denies <code>brain</code> approve/cancel — an
-        agent-raised approval now requires the phone-signed OWNER decision (§13). Brain keeps its
-        in-process <code>/service_approve</code> path for <em>brain-origin</em> tasks;
-        owner/admin/device are unaffected. The guard reads real task provenance, not a caller claim.
-      </li>
-      <li>
-        <strong>Delivery layer (documented, not built):</strong> the outbound-WS MsgBox channel
-        (laptop Core → sealed relay → phone), the per-device <code>did:key</code> addressing, the
-        versioned <code>/dina:pair-phone</code> extension, and the signed proposal→decision envelope
-        are the transport that CARRIES the owner decision. They're a substantial D2D/MsgBox
-        integration on top of the now-correct authority model. The authority decision (who may
-        decide) is enforced and tested; the transport moves that decision.
-      </li>
-    </ul>
-
-    <h2>Item 6b — agent_scope (coding|runner) <span class="status done">DONE</span></h2>
-    <p class="meta">
-      packages/core/src/auth/agent_scope.ts + CoreRequest field · agent_scope.test.ts (+11).
-    </p>
-    <ul>
-      <li>
-        Scope is a server-side pairing attribute derived from the authenticated device record, NEVER
-        a client claim (NEW-19). <code>resolveAgentScope</code> reads only the record; a
-        missing/unknown/ corrupt value fails closed (undefined). <code>isScopeAuthorized</code> is
-        fail-closed + boundary- safe: a scope-gated route with a missing or mismatched scope is
-        denied — a <code>runner</code> can't reach a coding façade, and a <code>coding</code> agent
-        can't claim runner workflow tasks.
-      </li>
-      <li>
-        Both scopes keep <code>callerType='agent'</code> (NEW-02) — renaming would silently disable
-        the many <code>!== 'agent'</code> guards (a fail-open). The scope is an ADDITIONAL
-        constraint layered on the caller-type matrix, enforced today on the new
-        <code>/v1/agent/*</code> façades (where the scope flows). A spoof test proves no request
-        field can escalate scope.
-      </li>
-    </ul>
-    <h3>Deep review (6b)</h3>
-    <p>
-      (1) Correct — server-derived + fail-closed is the §11 model; boundary-safe prefix match avoids
-      <code>/talkable</code>-style bleed. (2) Honest scope: live enforcement is on the new façade
-      routes, not retrofitted onto existing scope-less agent routes (which would fail-closed the
-      current 5764-test fixtures — the COLD-4 backfill applies to real already-paired devices, of
-      which there are none pre-launch). (3) 11 tests incl. the spoof/escalation case.
-    </p>
-
-    <h2>Item 8 — audit persistence (gate decisions) <span class="status done">DONE</span></h2>
-    <p class="meta">
-      coding_gate.ts route → existing <code>appendAudit</code> · coding_gate.test.ts (+3) · 14
-      green.
-    </p>
-    <ul>
-      <li>
-        The audit infra already existed
-        (<code>appendAudit</code>/<code>queryAudit</code>/hash-chain/ SQLite repo); §20's gap was
-        that nothing consumed the gate's decision. Now the <code>/v1/agent/gate</code> route records
-        <strong>every non-SAFE decision, metadata only</strong> (agent DID,
-        <code>coding_gate:&lt;action&gt;</code>, tool name, and a JSON detail of risk/outcome/
-        reason/mode/enforced/permit-id/session) — <strong>never the tool_input</strong>, which can
-        carry a secret literal. SAFE is silent. Best-effort: an audit failure never changes the
-        decision.
-      </li>
-      <li>
-        <strong>Secret canary test:</strong> a Bash command carrying
-        <code>SUPERSECRETVALUE…</code> is gated, and the test asserts the audit dump contains
-        neither the secret nor <code>password=</code>.
-      </li>
-    </ul>
-    <p class="meta">
-      <strong>Remaining for item 8:</strong> the terminal-approval-result audit lands with item 7
-      (the phone approval); the query surface (<code>/v1/audit/recent</code>) already exists.
-    </p>
-
-    <h2>Item 6 — durable session registry <span class="status done">DONE</span></h2>
-    <p class="meta">
-      packages/core/src/session/registry.ts + routes/session.ts · registry.test.ts (+13) +
-      session_route.test.ts (+7) · 61 green (incl. authz regression).
-    </p>
-    <ul>
-      <li>
-        <strong>DID-bound sessions:</strong> <code>get</code>/<code>renew</code>/<code>end</code>
-        require the SAME authenticated DID, so agent A can never touch agent B's session — the
-        primary cross-agent isolation, holding even with an unsigned session id (the id alone is
-        useless without the matching DID). <code>start</code> is idempotent on
-        <code>(agentDid, hostSessionId)</code> so the per-tool hook and the MCP tools share ONE Core
-        session (F-04).
-      </li>
-      <li>
-        <strong>Lease + heartbeat + reap:</strong> each session carries a bounded lease (15 min
-        default) that a signed call renews; <code>reapExpired</code> ends any lapsed session —
-        reaping a vanished Codex thread that has no <code>SessionEnd</code> hook.
-        <code>end</code> fires an injected <code>onEnd</code> hook (the composition root wires grant
-        revocation), keeping the registry decoupled from the grant store.
-      </li>
-      <li>
-        Route upgraded from a no-op stub to the real lifecycle, wire-compatible with the daemon
-        (<code>{session_id,status:'open'}</code> / <code>{ok:true}</code>); own-session-only end
-        returns 404 for unknown/foreign/ended (never reveals another principal's lifecycle).
-      </li>
-    </ul>
-    <h3>Deep review (item 6)</h3>
-    <p>
-      (1) Correct — DID-binding is the §15 isolation core; lease/heartbeat/reap matches the Codex
-      no-SessionEnd reality; idempotent start satisfies F-04. (2) Honest scope: the
-      <em>signed</em> session-token placement (COLD-6, folding the id into the canonical string to
-      stop same-DID cross-session substitution) is noted as a follow-up — the DID-binding already
-      closes cross-AGENT substitution, the primary threat; same-principal cross-session is the
-      residual. onEnd is a hook, not hardcoded grant coupling. (3) 20 tests: DID-binding, idempotent
-      start, all validate outcomes, heartbeat, revoke-on-end (hook fired), reap sweep, and the full
-      route lifecycle.
-    </p>
-
-    <h2>
-      Item 5 — agent memory surface + typed-origin vault capability
-      <span class="status done">DONE (5a–5d)</span>
-    </h2>
-    <p class="meta">
-      <strong>5b — seam enforcement (DONE):</strong> <code>storeItem</code>/<code>deleteItem</code>
-      now take an optional <code>origin</code> (default <code>owner_request</code>, so existing
-      callers are unchanged) and enforce the 5a matrix INSIDE the seam — so a read/search origin
-      can't write/delete on ANY path, including the mobile in-process path where there is no HTTP
-      authz. origin_seam.test.ts (+6); full packages/core suite 5764 green (no regression). Note:
-      authz already restricts the raw vault write/delete routes to
-      <code>brain</code>/<code>device</code>, so the seam gate is the belt to that suspenders — and
-      the belt that also covers in-process Brain.
-    </p>
-    <ul>
-      <li>
-        <strong>5c — memory ingress (DONE, real backing):</strong> <code>/v1/agent/memory</code>
-        (dina_remember) is wired to a real provenance-preserving vault write in core-server —
-        <code>type:'user_memory'</code>, <code>source:'agent:&lt;did&gt;'</code> for provenance,
-        stored via origin <code>staging_item</code> (the seam permits its write, never a delete).
-        agent_facades_impl.test.ts (+5) drives it against a real vault: content stored +
-        retrievable, persona honoured, provenance recorded, 400 on empty / 413 on oversized. Note:
-        v1 stores directly with provenance; routing through the full staging classify pipeline is
-        the enhancement.
-      </li>
-      <li>
-        <strong>5d — Core-mediated ask (route DONE):</strong>
-        <code>/v1/agent/ask</code> (dina_recall/dina_ask) is a scope-gated coding façade; the Core
-        persona PEP + Brain mediation live in the injected backing (the persona gate
-        <code>requireAgentPersonaAccess</code> already enforces sensitive/locked reads with
-        approval-without-reading). Route + scope + authz done; the Brain-mediation backing is the
-        integration point.
-      </li>
-    </ul>
-    <p class="meta">
-      packages/core/src/vault/origin_capability.ts (pure) · src/index.ts (export) ·
-      __tests__/vault/origin_capability.test.ts (+30) · packages/core suite green · typecheck clean.
-    </p>
-    <ul>
-      <li>
-        <strong>5a — the typed-origin capability matrix (DONE):</strong> every vault-seam operation
-        carries an ORIGIN
-        (<code>owner_request</code>/<code>staging_item</code>/<code>service_task</code>/
-        <code>agent_ask</code>); a coarse origin × operation matrix sits ABOVE the persona gate. The
-        invariant: a read/search origin can <em>never</em> write or delete, whatever persona is open
-        — so a compromised Brain or an over-broad agent can't turn a read path into a write/delete.
-        Owner = all; ingest = read+write (dedup + store, no delete); service/agent = read+search
-        only (persona- gated). Fail-closed + prototype-pollution-safe lookups, mirroring 3a's
-        <code>getDefaultRiskLevel</code>.
-      </li>
-      <li>
-        <strong>Design note:</strong> this is the coarse gate; the fine-grained persona gate
-        (<code>requireAgentPersonaAccess</code>, sensitive/locked) stays where it lives and is
-        layered on the read origins (<code>PERSONA_GATED_ORIGINS</code>). Pure module → lives in
-        <code>@dina/core</code> proper; the caller at the seam supplies the origin.
-      </li>
-    </ul>
-    <h3>Deep review (5a)</h3>
-    <p>
-      (1) Correct — the matrix encodes the §5/§14 invariant (read-origins can't mutate; only owner
-      deletes); own-property lookups make an attacker origin fail closed. (2) No workaround: it's a
-      pure policy table + checker, not yet wired into the seam — honestly scoped as 5a. (3) 30
-      tests: full origin×operation grid, the no-mutate invariant, owner-only-delete,
-      unknown/prototype fail-closed, persona-scope enforcement, and the capability checker per
-      origin.
-    </p>
-    <p>
-      <strong>Remaining item-5 sub-items (TODO):</strong> 5b wire
-      <code>checkVaultCapability</code> at the vault storage seam (<code>vault/crud.ts</code>
-      callers supply their origin — a sensitive change across the vault callers, done carefully with
-      the existing 5728-test suite as the guard); 5c the provenance-preserving agent memory-ingress
-      route (<code>dina_remember</code>, origin <code>agent_ask</code>→staging); 5d Core-mediated
-      ask (<code>dina_recall</code>/<code>dina_ask</code>) with the Core persona PEP on the read
-      path.
-    </p>
-
-    <h2>Second-model review — Codex (independent, post-Claude-hardening)</h2>
-    <p>
-      After the 13 Claude adversarial rounds, an INDEPENDENT model (Codex) reviewed the whole
-      implementation — the value being what a same-model loop is systematically blind to. Codex
-      <strong>confirmed the parts Claude hardened</strong> (path/redirect/glob/symlink/awk-sed
-      protection, the permit's four bindings, COLD-1, audit metadata-only, no mnemonic in logs) and
-      found <strong>8 findings in DIFFERENT classes</strong> the classifier-parsing rounds never
-      targeted. 4 were concrete bounded bugs — <strong>fixed + regression-tested</strong>; 4 were
-      deeper integration items this repo already scopes as deferred — Codex independently validating
-      that scoping.
-    </p>
-    <table>
-      <tr>
-        <th>Sev</th>
-        <th>Finding</th>
-        <th>Disposition</th>
-      </tr>
-      <tr>
-        <td>CRIT</td>
-        <td><code>~/.dina/keyfile</code> tilde not expanded → the seed read classified SAFE</td>
-        <td>
-          <strong>FIXED</strong>: canonicalizePath expands <code>~</code>/<code>~/</code> to home;
-          <code>~user</code> fails closed
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          <code>env</code> / <code>printenv AWS_SECRET</code> / <code>set</code> disclose
-          environment secrets → SAFE
-        </td>
-        <td>
-          <strong>FIXED</strong>: env-dump commands → secret_read BLOCKED (wrappers/<code
-            >set -e</code
-          >/assignments stay SAFE)
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          gate route trusts a body <code>session_id</code> without validating it against the
-          registry
-        </td>
-        <td>
-          <strong>FIXED</strong>: a non-empty session must pass
-          <code>SessionRegistry.validate(sid, did)</code> → else 401, no permit
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>
-          <code>core.lock</code> is a check-then-write TOCTOU race (two Cores can both open one
-          vault)
-        </td>
-        <td>
-          <strong>FIXED</strong>: <code>acquireLock</code> — atomic
-          <code>open(…,'wx')</code> (O_EXCL) before storage, with stale-owner recovery
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          Brain retains ambient vault authz (query/store/delete) via <code>/v1/vault/*</code> with
-          default <code>owner_request</code>
-        </td>
-        <td>
-          <strong>NOW DONE</strong> (item A below) — vault routes bind the origin to the caller;
-          Brain appends (<code>staging_item</code>) but can't delete/overwrite
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          permits are minted but never CONSUMED in production (no execution-seam redemption;
-          <code>mintApprovedPermit</code> only in tests)
-        </td>
-        <td>
-          <strong>NOW DONE</strong> (item B below) — approval card → owner approval mints an
-          approved permit → the retry redeems it once
-        </td>
-      </tr>
-      <tr>
-        <td>HIGH</td>
-        <td>
-          <code>agent_scope</code> not derived/propagated by the auth middleware → façades 403 for
-          real callers; broad agent authz remains
-        </td>
-        <td>
-          <strong>NOW DONE</strong> (item C below) — scope persisted on the device record + derived
-          from the signed DID in the middleware + enforced (gate/façades = coding, claim = runner)
-        </td>
-      </tr>
-      <tr>
-        <td>MED</td>
-        <td>session registry is in-memory, not persisted/reconciled on restart</td>
-        <td>
-          <strong>NOW DONE</strong> (item D below) — SQLite-backed, cryptographically-random ids,
-          reconcile-on-boot
-        </td>
-      </tr>
-    </table>
-    <p class="meta">
-      This is exactly why dual-model review matters: the Claude rounds exhaustively hardened the
-      shell/path PARSER but never questioned <em>env-var disclosure</em>, <em>tilde expansion</em>,
-      the <em>gate↔session wiring</em>, or <em>lock atomicity</em> — all of which a fresh model
-      surfaced immediately. All 4 initially-deferred integration findings have since been BUILT
-      (items A–D below).
-    </p>
-
-    <h2>Codex deferred items A–D — now built <span class="status done">DONE</span></h2>
-    <p class="meta">
-      Follow-on to the Codex review: the 4 deferred integration findings, implemented +
-      regression-tested. packages/core 5844 green · core-server 2736 green · full workspace
-      typecheck clean.
-    </p>
-
-    <h3>A — remove Brain's ambient vault authority</h3>
-    <p class="meta">
-      packages/core/src/server/routes/vault.ts · vault/crud.ts · vault.test.ts (+7)
-    </p>
-    <ul>
-      <li>
-        The vault routes stored/deleted with the default <code>owner_request</code> origin for EVERY
-        caller, so on the server split a compromised Brain held owner-equivalent write+delete just
-        by reaching the route. The routes now BIND the typed origin to who is calling: owner
-        (in-process app, <code>device</code>, <code>owner</code> run/watch surface,
-        <code>admin</code> operator) → <code>owner_request</code>; service-class analyst/connector
-        (<code>brain</code>/<code>connector</code>/<code>service</code>) →
-        <code>staging_item</code> (append-only ingest, no delete); everything else
-        (<code>agent</code>/<code>plugin</code>/ <code>unknown</code>) →
-        <code>agent_ask</code> (read-only).
-      </li>
-      <li>
-        Also closed the INSERT-OR-REPLACE overwrite hole in <code>storeItem</code>: a non-owner
-        origin may only APPEND — supplying an existing item's id to tamper with it now throws (403),
-        so Brain can neither delete NOR overwrite an owner item it can't delete.
-      </li>
-      <li>
-        <strong>Deep-review catch:</strong> the first cut keyed on
-        <code>callerType==='service'</code>, but the router stamps the FINE-GRAINED authz role, so a
-        real Brain arrives as <code>'brain'</code> (never <code>'service'</code>). The initial
-        mapping would have broken Brain's legitimate capability-writer store. Fixed to the real role
-        names (<code>brain</code>/<code>connector</code>/<code>admin</code>) + pinned by tests.
-      </li>
-    </ul>
-
-    <h3>B — permit execution-seam redemption</h3>
-    <p class="meta">
-      packages/core/src/agent/coding_permit.ts (new) · server/routes/coding_gate.ts + workflow.ts ·
-      core-server gate/permit.ts + gate_decision.ts + coding_gate_impl.ts + boot.ts ·
-      coding_permit.test.ts / permit / gate_decision / coding_gate_impl (+27)
-    </p>
-    <ul>
-      <li>
-        Permits were minted but never consumed, and owner approval minted nothing — so an approved
-        MODERATE/HIGH coding action re-classified to <code>approval_required</code> forever. Closed
-        the loop, mirroring the persona-grant pattern: classify MODERATE/HIGH → the gate route
-        creates an idempotent approval card bound to the payload HASH (never the raw tool input,
-        §20) → the owner approves via the workflow route →
-        <code>mintApprovedCodingPermit</code> mints a single-use, payload+principal-bound APPROVED
-        permit → the agent's retry redeems it once (<code>consume</code>); a second retry finds it
-        spent → re-gates.
-      </li>
-      <li>
-        The <code>PermitStore</code> is fs/Node-side while the approve route is in
-        <code>@dina/core</code>, so — exactly as the route injects <code>CodingGateFn</code> — the
-        Node process injects a
-        <code>CodingPermitAuthority</code> (<code>setCodingPermitAuthority</code>). Fail-closed:
-        approving a coding card with no authority wired refuses to commit. Coding cards carry
-        <code>origin:'agent'</code>, so COLD-1 keeps Brain from approving them — owner only.
-      </li>
-    </ul>
-
-    <h3>C — <code>agent_scope</code> live derivation</h3>
-    <p class="meta">
-      packages/core: auth/agent_scope.ts (rules) + caller_type.ts + middleware.ts + server/router.ts
-      + devices/registry.ts + devices/repository.ts + storage/schemas.ts + pairing/ceremony.ts +
-      server/routes/pair.ts + server/core_server.ts · core-server bootstrap_capability.ts · mobile
-      boot wiring · agent_scope_derivation / ceremony / repository (+ tests)
-    </p>
-    <ul>
-      <li>
-        The enforcement primitive existed but <code>req.agentScope</code> was NEVER populated — so
-        the scope-gated coding façades failed closed (403) for everyone. Now: scope is persisted on
-        the device record (schema edited in place, no migration), stamped at pairing (authoritative
-        from initiate, like <code>role</code> — the bootstrap capability stamps
-        <code>coding</code>), and DERIVED by the auth middleware from the signature-authenticated
-        device DID (never a client claim). Enforced for <code>agent</code>/<code>plugin</code>
-        callers: the coding surfaces + <code>/v1/agent/gate</code> require <code>coding</code>;
-        <code>/v1/workflow/tasks/claim</code> requires <code>runner</code>.
-      </li>
-      <li>
-        An agent/plugin with no stamped scope defaults to <code>runner</code> — pre-scope delegation
-        runners keep working, while an unstamped device is still barred from the coding surfaces.
-        Enforcement lives in the middleware (bypassed by the in-process owner transport), so it
-        gates real signed requests without touching in-process flows.
-      </li>
-    </ul>
-
-    <h3>D — session SQLite durability</h3>
-    <p class="meta">
-      packages/core/src/session/repository.ts (new) + registry.ts + storage/schemas.ts + index.ts ·
-      core-server storage/init.ts · session/durability.test.ts (+5)
-    </p>
-    <ul>
-      <li>
-        The <code>SessionRegistry</code> was in-memory only, so a coding-agent session died on a
-        Core restart and its ids were a predictable <code>seq</code>+host+timestamp. Now: an
-        optional <code>SessionRepository</code> (SQLite-backed, identity store) receives a
-        best-effort write-through on every mutation; <code>reconcile()</code> reloads the live
-        sessions on boot and reaps any whose lease lapsed while Core was down; ids are
-        cryptographically random (<code>sess-</code>+128 random bits — no counter/host/timestamp
-        leakage). The in-memory Map stays authoritative for reads (matching the device-registry
-        pattern). Wired at boot via <code>setSessionRegistry</code>.
-      </li>
-    </ul>
-
-    <h2>
-      Item 4 — catch-all coding gate route + two conformance classes
-      <span class="status wip">SERVER DONE; client hook/supervisor TODO</span>
-    </h2>
-    <p class="meta">
-      packages/core/src/server/routes/coding_gate.ts (route + injectable <code>CodingGateFn</code>)
-      · core_server.ts (option + registration) · src/index.ts (type exports) ·
-      core-server/src/gate/coding_gate_impl.ts (fs-backed injection) · boot.ts (wired) ·
-      coding_gate.test.ts (+11 contract) + coding_gate_impl.test.ts (+6 integration) · packages/core
-      routes 206 green · core-server suite 2604 green · typecheck clean.
-    </p>
-    <ul>
-      <li>
-        <strong>The route:</strong> <code>POST /v1/agent/gate</code> — a coding-agent hook forwards
-        EVERY raw <code>(tool_name, tool_input)</code>; Core classifies (DPD-001) and returns
-        <code>{action, risk, outcome, enforced, permit_id, reason}</code> (snake_case). The
-        authenticated caller DID is authority — a body <code>agent_did</code> is ignored (parity
-        with <code>intent.ts</code>/<code>agent.go</code>); a contract test proves an
-        attacker-supplied <code>agent_did</code> can't rebind the call.
-      </li>
-      <li>
-        <strong>Injection keeps the pure boundary:</strong> the classifier canonicalises real paths
-        (fs), which <code>@dina/core</code> forbids — so <code>@dina/core</code> owns the route +
-        auth + wire shape and takes an injected <code>CodingGateFn</code>; the Node Core process
-        injects the fs-backed gate (<code>gateToolCall</code> + a shared <code>PermitStore</code>).
-        On a node with no gate (mobile) the route is <strong>501, never a silent allow</strong> — a
-        test pins this.
-      </li>
-      <li>
-        <strong>Two conformance classes</strong> are the two modes from 3e, now reachable over the
-        wire: <code>enforce</code> (Core acts, mints permits) and
-        <code>classify_only</code> (advisory: same action/risk, <code>enforced:false</code>, no
-        permit, no block). An integration test drives the REAL gate against a real vault: project
-        read→allow+permit(redeemable), keyfile read→deny, <code>cat /vault/keyfile</code>→deny,
-        <code>npm install</code>→approval, <code>rm -rf</code> in classify_only→advisory-HIGH, host
-        allowlist honoured.
-      </li>
-    </ul>
-    <h3>Deep review (item 4, server half)</h3>
-    <p>
-      (1) Correct — the route is the §12.1 catch-all seam; classification stays Core-side; the
-      injected gate is the only place fs runs, respecting the pure-core rule; fail-closed
-      501/401/400/413 all tested. (2) No workarounds: the sync concrete gate is typed
-      <code>SyncCodingGate</code> yet assignable to the async-tolerant <code>CodingGateFn</code>, so
-      the injection is honest about being synchronous without widening the public contract. (3) 17
-      tests (11 contract via a stub through <code>router.handle</code> + 6 integration via the real
-      fs gate) + 206 route-suite green + 2604 core-server green.
-    </p>
-    <p>
-      <strong>Honest residual (the §10 client half, still TODO):</strong> the actual
-      coding-agent-side <em>command hook + supervisor</em> — the shell/Node script the plugin ships
-      that intercepts every tool call, POSTs it to <code>/v1/agent/gate</code>, and maps the reply
-      to allow/exit-2 — is a separate plugin artifact, not TS-server code, and is not built here.
-      The disclosed fail-open (§12.1/NEW-27: a supervisor that never launches / is
-      host-timeout-cancelled is non-blocking) lives in that client, so the "two conformance classes"
-      coverage test (child-gate blocks vs supervisor-self fail-open) belongs with it. The SERVER
-      guarantees — Core-owned classification, path-aware deny, payload-bound single-use permit,
-      classify-only vs enforce — are complete and tested.
-    </p>
-
-    <h2>
-      Item 3 — Core-owned classifier + payload-bound permit
-      <span class="status done">DONE (3a–3e)</span>
-    </h2>
-    <p class="meta">
-      packages/core/src/gatekeeper/intent.ts ·
-      core-server/src/gate/{coding_classifier,bash_classifier,permit,gate_decision}.ts ·
-      intent.test.ts (+19) + gate suites {coding_classifier 29, bash_classifier 91, permit 15,
-      gate_decision 17} = 152 · packages/core suite 5716 green · typecheck clean. Sub-items:
-      <strong
-        >3a taxonomy · 3b path-aware file classifier · 3c Bash classifier · 3d payload-bound
-        single-use permit · 3e gate decision + classification-only mode — all DONE.</strong
-      >
-    </p>
-    <h3>3a — coding action taxonomy</h3>
-    <ul>
-      <li>
-        <strong>Design decision:</strong> a distinct <code>CODING_ACTION_POLICY</code> record rather
-        than mixing coding keys into the money/email <code>DEFAULT_POLICY</code> — the two surfaces
-        stay readable, and <code>getDefaultRiskLevel</code> consults both (own-property-only,
-        prototype- pollution-safe; DEFAULT first). A test asserts the key sets are disjoint.
-      </li>
-      <li>
-        <strong>The keys:</strong> <code>code_edit</code>/<code>vcs_local</code> SAFE;
-        <code>code_edit_external</code>/<code>vcs_push</code>/<code>package_install</code>/
-        <code>network_egress</code> MODERATE; <code>vcs_destructive</code>/
-        <code>network_egress_untrusted</code
-        >/<code>fs_destructive</code>/<code>system_modify</code>/ <code>deploy</code> HIGH;
-        <code>secret_read</code>/<code>secret_write</code> BLOCKED (mirroring
-        <code>BRAIN_DENIED</code>'s <code>vault_raw_read</code>/<code>vault_raw_write</code>/
-        <code>seed_export</code>).
-      </li>
-      <li>
-        <strong>Interpretation of the spec's ranges:</strong> the spec writes
-        <code>network_egress (MODERATE→HIGH)</code>; captured as two keys —
-        <code>network_egress</code> (MODERATE base, e.g. WebFetch) and
-        <code>network_egress_untrusted</code> (HIGH, a non-allowlisted <code>curl</code>) — so each
-        policy value is a single, defensible level and the classifier picks the key. Likewise
-        <code>secret_read</code> is BLOCKED (the terminal end of "HIGH→BLOCKED"), since a protected
-        read is never allowed for an automated caller.
-      </li>
-    </ul>
-    <h3>Deep review (3a)</h3>
-    <p>
-      (1) Correct — matches §12.3; disjoint, single-value keys; secret_read/write BLOCKED. (2) No
-      workarounds; prototype-pollution-safe lookup preserved. (3) 18 tests: per-key,
-      key-completeness, disjointness, and an <code>evaluateIntent</code> integration (code_edit
-      SAFE, secret_write BLOCKED). (Later added <code>code_read</code> SAFE for 3b — the benign-read
-      counterpart to <code>code_edit</code>.)
-    </p>
-
-    <h3>3b — path-aware file-tool classifier</h3>
-    <ul>
-      <li>
-        <strong>What it does:</strong>
-        <code>classifyFileToolCall({toolName, rawPaths, vaultDir, cwd, keyDirs})</code>
-        maps a coding agent's file tool call to a taxonomy action + risk. Reads →
-        <code>code_read</code> (SAFE) or, if any operand targets a protected artifact,
-        <code>secret_read</code> (BLOCKED). Known write tools (<code>Write</code>/<code>Edit</code>/
-        <code>MultiEdit</code>/<code>apply_patch</code>) → <code>code_edit</code> (SAFE) or
-        <code>secret_write</code> (BLOCKED). <code>NotebookEdit</code> (and any unrecognised file
-        tool) → <code>code_edit_external</code> (MODERATE).
-      </li>
-      <li>
-        <strong>The security core is canonicalisation.</strong> Every raw path is resolved with
-        <code>fs.realpath</code> (symlinks + <code>..</code>) <em>before</em> the protected check,
-        so a symlink or <code>../</code> escape into the vault is still caught. A not-yet-existing
-        write target (new <code>Write</code>) resolves its nearest existing ancestor and re-appends
-        the tail — so a <em>symlinked parent dir</em> pointing at the vault can't smuggle a new file
-        in.
-      </li>
-      <li>
-        <strong>Protected =</strong> anything under the vault/state dir (keyfile, wrapped seed,
-        recovery phrase, PDS creds, vault <code>*.sqlite</code>, config, inbox) or a configured key
-        dir; plus Dina state basenames anywhere (defence in depth); plus secret basename patterns
-        (<code>.env*</code>,
-        <code>*.pem</code>/<code>*.key</code>/<code>*.keystore</code>/<code>*.p12</code>,
-        <code>id_rsa</code>/<code>id_ed25519</code>, <code>credentials</code>).
-      </li>
-      <li>
-        <strong>Boundary decision:</strong> the taxonomy (pure) stays in <code>@dina/core</code>;
-        the fs-dependent classifier lives in <strong>core-server</strong> —
-        <code>node:path</code> is only used in <code>*_node.ts</code> adapters inside
-        <code>@dina/core</code>, and <code>fs.realpath</code> is I/O the pure core forbids.
-        core-server <em>is</em> the Node Core process, so this respects the "Core owns the
-        classifier" rule while keeping the pure boundary intact.
-      </li>
-    </ul>
-    <h3>Deep review (3b)</h3>
-    <p>
-      (1) Correct — canonicalisation defeats symlink/<code>..</code>/symlinked-parent escapes; the
-      sibling-prefix bug (<code>/vault-backup</code> vs <code>/vault</code>) is guarded by a
-      <code>path.relative</code>-based <code>isUnder</code>, not <code>startsWith</code>. (2) One
-      smell found &amp; fixed during review: the write branch originally fell through to
-      <code>code_edit</code> (SAFE) for <em>any</em> non-read tool — a latent fail-open if the
-      dispatcher ever mis-routed an unknown tool. Reworked so only a known
-      <code>WRITE_TOOLS</code> set earns SAFE; everything else file-ish (NotebookEdit + unknown) is
-      conservatively MODERATE. A test pins this (no SAFE fall-through). (3) 29 tests over a real
-      on-disk vault + project + symlinks (not string mocks): containment, nested,
-      state-basenames-anywhere, secret patterns, negative lookalikes, keyDir, empty, sibling-prefix;
-      canonicalise symlink/<code>..</code>/relative/non-existent-target; and the full classify
-      matrix incl. escapes and multi-path any-protected.
-    </p>
-    <p>
-      <strong>Known limits (documented, not workarounds):</strong> (a) classify→execute is a
-      framework-mediated guarantee (§16) — it gates the tool calls Core sees, not a same-UID process
-      opening the file directly (TOCTOU acknowledged in the module doc). (b) A
-      <code>Glob</code> pattern like <code>*.key</code> canonicalises to a literal and matches the
-      secret pattern → flagged <code>secret_read</code>; conservative and defensible (globbing for
-      private keys is suspicious). (c) Bash file ops (<code>cat</code>/<code>cp</code> of a secret)
-      are 3c, not here — 3b is scoped to the structured file tools.
-    </p>
-
-    <h3>3c — Bash command classifier (the hard part)</h3>
-    <ul>
-      <li>
-        <strong>Governing principle:</strong> a shell line is Turing-complete, so we cannot prove
-        what it does. The classifier recognises a bounded known-safe/known-risky verb set and
-        <em>BLOCKS everything it cannot verify</em>. False-blocks are recoverable (approval); a
-        false-allow leaks a secret — so the design errs hard toward BLOCKED.
-      </li>
-      <li>
-        <strong>Unverifiable ⇒ BLOCKED:</strong> parse error (unbalanced quotes); command/process
-        substitution (<code>$(…)</code>, backticks, <code>&lt;(…)</code>) — a live sub-shell can
-        read a secret invisibly; an inline-code interpreter (<code>python -c</code>,
-        <code>node -e</code>, <code>bash -c</code>, bare interpreter on stdin); and a pipe INTO an
-        interpreter (<code>curl … | sh</code>, caught because the <code>sh</code> segment has no
-        file arg).
-      </li>
-      <li>
-        <strong>Indirection guard (a false-allow my own review caught &amp; fixed):</strong> a path
-        operand with an unexpanded <code>$VAR</code>/<code>${VAR}</code> can't be resolved, so
-        <code>cat $SECRET</code> would have canonicalised to a literal, missed the vault, and
-        returned SAFE. Now any secret-capable verb (read / in-place edit / copy / write / destroy /
-        find) or redirect/upload target bearing a variable ⇒ BLOCKED, per §12.4 "indirect
-        path-bearing → BLOCKED". Benign verbs (<code>echo $HOME</code>) and non-file verbs (<code
-          >git checkout $BRANCH</code
-        >) stay classified normally — the guard only fires where a hidden path could leak.
-      </li>
-      <li>
-        <strong>Chaining:</strong> the line is split (quote-aware) on <code>;</code>
-        <code>&amp;&amp;</code> <code>||</code> <code>|</code> <code>&amp;</code>; each simple
-        command is classified and the MOST dangerous result wins
-        (<code>SAFE&lt;MODERATE&lt;HIGH&lt;BLOCKED</code>).
-      </li>
-      <li>
-        <strong>Verb mapping</strong> (reuses 3b's
-        <code>isProtectedPath</code>/<code>canonicalizePath</code>): redirects
-        (<code>&gt;</code>/<code>&lt;</code>) are path-checked; <code>sudo</code> forces
-        <code>system_modify</code>; git is subcommand-aware (<code>push</code>=MODERATE,
-        <code>push --force</code>/<code>reset --hard</code>/<code>clean</code>/<code>rebase</code>/
-        <code>checkout -- .</code>=HIGH, else SAFE); package managers
-        (<code>install/add</code>=MODERATE, <code>publish</code>=HIGH,
-        <code>run/test</code>=MODERATE); network verbs by host allowlist (allowlisted=MODERATE, else
-        HIGH; uploading a protected/indirect file=BLOCKED, incl. <code>scp /vault/keyfile …</code>);
-        <code>rm</code>/<code>shred</code>=HIGH (protected target=BLOCKED); system/deploy
-        verbs=HIGH; unknown local binary=MODERATE (approval, never a silent SAFE).
-      </li>
-    </ul>
-    <h3>Deep review (3c)</h3>
-    <p>
-      (1) Correct — fail-closed matches §12.4; the substitution/inline/pipe-to-shell BLOCKs close
-      the invisible-read vectors; path-awareness + the new indirection guard close the concrete-path
-      and variable-path exfil vectors; max-risk aggregation is right for chains. (2) Smell found
-      &amp; fixed in review: the variable-indirection false-allow (above). One accepted limit: the
-      redirect scan runs on the raw segment, so <code>echo "x &gt; /vault/keyfile"</code> (a quoted
-      string) is over-blocked — a false-BLOCK (safe direction), documented. (3) 91 tests: tokenizer
-      (split, substitution, quotes, parse error); BLOCKED set; secret_read/write via real on-disk
-      vault + symlink/<code>..</code>/redirect/ upload; SAFE/MODERATE/HIGH verb matrices; host
-      allowlist; chaining max-risk; the indirection guard; and
-      prefix/env-assignment/absolute-path-basename handling.
-    </p>
-    <p>
-      <strong>Not-a-workaround note:</strong> the hand-rolled tokenizer is deliberately
-      conservative, not a full shell parser — anything it can't tokenise cleanly (unbalanced quotes,
-      live substitution) becomes BLOCKED rather than guessed. That is the whole point of the
-      fail-closed contract, not a shortcut around writing a parser.
-    </p>
-
-    <h3>3d — payload-bound single-use permit</h3>
-    <ul>
-      <li>
-        <strong>What it is:</strong> when Core decides a call may proceed it mints a PERMIT with
-        four bindings — <em>payload</em> (SHA-256 of the canonicalised <code>{tool,input}</code>),
-        <em>single-use</em> (consumed on first redemption), <em>principal</em> (agent DID +
-        session), and <em>time</em> (TTL, default 5&nbsp;min). It's the state half of the gate: the
-        classifier decides risk, the permit records that a specific decision was made and lets
-        exactly one matching execution redeem it.
-      </li>
-      <li>
-        <strong>Why payload-binding matters:</strong> it closes the bait-and-switch — an approval
-        for <code>npm install</code> can't be redeemed to run <code>rm -rf /</code>; the hash won't
-        match and the call re-gates. A mismatched redemption does <em>not</em> consume the permit,
-        so a correct retry still works.
-      </li>
-      <li>
-        <strong>Design decisions:</strong> the permit id is a monotonic-seq + payload-hash-prefix
-        string — not a secret token, because redemption re-checks the hash and principal, so a
-        guessable id grants nothing (documented). Store is in-memory with an injectable clock
-        (durable backing is item 8); principal is checked <em>before</em> consumed/expired state so
-        a caller can't probe another principal's permit lifecycle. Redeem-by-re-sent-payload (no id)
-        picks the newest live match — the realistic hook flow after an approval.
-      </li>
-    </ul>
-    <h3>3e — gate decision + classification-only mode</h3>
-    <ul>
-      <li>
-        <strong><code>gateToolCall</code></strong> is the single hook entry point. It dispatches
-        Bash→3c, file tools→3b, network tools (WebFetch/WebSearch)→host allowlist, and unknown/MCP
-        tools→ conservative MODERATE (still BLOCKED if the input names a protected path — no silent
-        allow). Risk→outcome: SAFE=allow, MODERATE/HIGH=approval_required, BLOCKED=deny.
-      </li>
-      <li>
-        <strong>Two modes = two conformance classes (item 4):</strong> <code>enforce</code> mints a
-        permit on allow, holds approval/deny for the owner path; <code>classify_only</code> returns
-        the <em>same</em> action/risk/outcome but <code>enforced:false</code>, mints nothing, blocks
-        nothing — the advisory/observability host where the hook reports intent and Core is not the
-        hard gate. Both classes see identical classification; only <code>enforced</code> + permit
-        issuance differ.
-      </li>
-      <li>
-        <strong><code>mintApprovedPermit</code></strong> is the owner-approval path's permit mint
-        (<code>decision:'approved'</code>) — wired to the approval UI in item 7.
-      </li>
-    </ul>
-    <h3>Deep review (3d + 3e)</h3>
-    <p>
-      (1) Correct — the four bindings are each tested; the end-to-end allow→mint→redeem and the
-      bait-and-switch rejection are proven through
-      <code>gateToolCall</code>+<code>PermitStore</code>, not just the store in isolation.
-      classify_only genuinely enforces nothing (asserts <code>size()===0</code>). (2) No
-      workarounds: dispatch has no silent-allow default; the unknown-tool branch still runs the
-      protected-path check. (3) 32 tests (permit 15 + gate_decision 17): hash stability, all four
-      bindings, hook redeem-by-payload, sweep, full dispatch matrix, both modes, and the approval
-      mint. Open for item 4: the actual HTTP route + hook client that call
-      <code>gateToolCall</code> and the audit write (item 8) behind <code>PermitStore</code>.
-    </p>
-
-    <h2>
-      Item 2 — PDS-backed bootstrap + single-use enrolment capability
-      <span class="status done">DONE (2d handle deferred to item 9)</span>
-    </h2>
-    <p class="meta">
-      src/pair/bootstrap_capability.ts (new) + src/core_lock.ts (new) + src/boot.ts ·
-      __tests__/bootstrap_capability.test.ts (8) + core_lock.test.ts (11) + boot.test.ts (+2) · full
-      core-server suite 113 suites / 2446 tests green · typecheck clean. Sub-items:
-      <strong>foundation (node did:key) DONE</strong> · <strong>2a mint DONE</strong> ·
-      <strong>2b inherited-fd handoff DONE</strong> ·
-      <strong>2c core.lock + single-owner guard DONE</strong> · 2d: DID-immediate DONE (the
-      foundation), handle-at-first-publish belongs to item 9.
-    </p>
-    <h3>What was built</h3>
-    <ul>
-      <li>
-        <strong>Identity foundation (§8).</strong> The node DID is now set from the seed's
-        <code>did:key</code> on the non-PDS boot path (<code>boot.ts</code>) — previously
-        <code>setNodeDID</code> ran only on PDS success, so a plain <code>did:key</code> node had no
-        DID and the pairing ceremony (which embeds the node DID in every code) could not run. This
-        is the §8/COLD-9 resolution: identity is foundational (created immediately); only the public
-        handle is lazy (item 9, first publish).
-      </li>
-      <li>
-        <strong>2a — single-use bootstrap capability.</strong> On a genuine first boot (<code
-          >identity.kind === 'generated'</code
-        >), Core mints ONE single-use <code>agent</code> pairing code via
-        <code>generatePairingCode</code> — reusing the existing single-use ceremony, not a new
-        store. Redeemed via <code>/v1/pair/complete</code> with no admin
-        <code>/v1/pair/initiate</code>.
-      </li>
-      <li>
-        <strong>2b — process-bound handoff.</strong> The code is written to an inherited fd
-        (<code>DINA_BOOTSTRAP_HANDOFF_FD</code>), never a 0600 file (which loses to a same-UID race)
-        and never a log. No fd → not spawned by an enrolling plugin, so nothing is minted. The
-        resolver refuses fds 0/1/2 (never a secret to a std stream).
-      </li>
-      <li>
-        <strong>2c — <code>core.lock</code> discovery + single-owner guard.</strong> After listen,
-        Core writes <code>&lt;vaultDir&gt;/core.lock</code> (pid + REAL bound port + node DID)
-        atomically, for a second same-machine agent to discover it; removed on clean shutdown
-        (onClose). A pre-listen guard (<code>process.kill(pid,0)</code> liveness) refuses to boot
-        when a LIVE foreign Core owns the same vault (two Cores on one SQLite = corruption);
-        stale/own locks are ignored. A subsequent agent with no token enrols via the normal
-        owner-approved pairing flow.
-      </li>
-    </ul>
-    <h3>Deep review</h3>
-    <p>
-      (1) Correct: foundational DID + single-use reuse + inherited-fd (not-file) handoff +
-      single-owner lock all match §8. (2) No workarounds; injectable, single-responsibility modules.
-      The onClose hook had to move before <code>listen</code> (Fastify rejects post-listen hooks) —
-      a real bug the boot test caught. Tech-debt noted: <code>boot.ts</code> recomputes
-      <code>deriveIdentity(seed)</code> in several places — hoist later. (3) 19 new tests (8
-      bootstrap + 11 lock) + 2 boot integration; the mnemonic and lock boot tests both caught real
-      issues. Follow-up: a boot-level test with the handoff fd present.
-    </p>
-    <h3>Design decisions</h3>
-    <ul>
-      <li>
-        <strong>Reuse <code>PairingCodeRegistry</code> for 2a, do not reinvent.</strong> It already
-        gives single-use (<code>used</code> flag), TTL, injectable clock/random, and
-        generate/complete/ expire transitions. The bootstrap capability is a first-boot-minted,
-        single-use pairing code that <code>/v1/pair/complete</code> accepts <em>without</em> the
-        admin-only <code>/v1/pair/initiate</code> step — so the net-new work is <em>when</em> it is
-        minted (first boot) and <em>how</em> it reaches the plugin (2b), not the single-use store
-        itself.
-      </li>
-      <li>
-        <strong>Mint only on a genuine first install</strong> — gated on
-        <code>identity.kind === 'generated'</code> (item 1's signal), so a re-boot with an existing
-        keyfile does not mint a fresh enrolment token.
-      </li>
-      <li>
-        <strong>Bind the coding scope at mint (ties to item 6b).</strong> The bootstrap capability
-        is the enrolling-authority seam, so it stamps <code>agent_scope='coding'</code> on the
-        device record at redemption — the §8/COLD-10 resolution.
-      </li>
-    </ul>
-    <h3>Open questions for the owner</h3>
-    <ul>
-      <li>
-        <strong>Process-bound handoff (2b) mechanism.</strong> The spec wants an inherited anonymous
-        pipe/descriptor from the plugin (parent) to Core (child), not a 0600 file. Confirm the
-        plugin spawns Core (so it can inherit an fd); the alternative — Core writes a 0600 token
-        file — is weaker (same-UID race) and the spec explicitly rejects it. This decides the
-        boot/launch shape.
-      </li>
-      <li>
-        <strong>Second same-machine agent (2c).</strong> No token → owner-approved pair
-        (phone/device). Confirm that's the intended path for enrolling a 2nd agent under an
-        already-provisioned Core.
-      </li>
-      <li>
-        <strong>Honest residual:</strong> a same-UID attacker that already compromised the plugin
-        process cannot be fully defeated (§16). The handoff defends against
-        <em>unrelated</em> co-resident processes only. Confirmed as acceptable for the
-        laptop-keyholder posture.
-      </li>
-    </ul>
-    <h3>Iteration record</h3>
-    <p>
-      Scoped against §8 + the existing <code>PairingCodeRegistry</code> /
-      <code>completePairing</code> / <code>/v1/pair/*</code> routes. Next: implement 2a (first-boot
-      mint + admin-less redemption path) with a test, then 2b/2c.
-    </p>
-
-    <h2>Item 1 — stop logging the mnemonic <span class="status done">DONE</span></h2>
-    <p class="meta">
-      apps/home-node-lite/core-server/src/identity/master_seed.ts + src/boot.ts ·
-      __tests__/master_seed.test.ts (3 new) + __tests__/boot.test.ts (1 regression) · 33/33 green ·
-      typecheck clean.
-    </p>
-    <h3>The bug</h3>
-    <p>
-      Convenience-mode first boot logged the full 24-word mnemonic through the structured logger
-      (<code>logger.warn({ mnemonic }, …)</code>, <code>boot.ts</code>). The mnemonic
-      <em>is</em> the master seed, so it landed in JSON logs / aggregators — a
-      plain-text-secret-in-logs violation (AGENTS.md).
-    </p>
-    <h3>Design decisions</h3>
-    <ul>
-      <li>
-        <strong>Out-of-band channel = a 0600 file, not the logger / stdout.</strong> The mnemonic is
-        written to <code>&lt;vaultDir&gt;/recovery-phrase.txt</code> at mode 0o600 (owner-only),
-        atomically (temp → chmod → rename, the same discipline as the keyfile), with a header
-        telling the operator to record it offline and delete the file. Boot logs only the
-        <em>path</em> (metadata).
-      </li>
-      <li>
-        <strong>Written at generation, inside <code>loadOrGenerateSeed</code>.</strong> So a first
-        boot always leaves a recoverable phrase, independent of the caller.
-        <code>SeedSource.generated</code> gains <code>recoveryPhrasePath</code>. Loads (existing
-        keyfile) never re-create it.
-      </li>
-      <li>
-        <strong>Logger dependency-injection seam.</strong> <code>bootServer</code> gained an
-        optional <code>logger</code> override so the regression test asserts <em>exactly</em> what
-        the logger received (mnemonic absent, path present) — robust vs. scraping pino's fd writes.
-      </li>
-      <li>
-        <strong>Refactor:</strong> the duplicated atomic-write is now one shared
-        <code>atomicWrite</code> used by both the keyfile and the recovery-phrase writes.
-      </li>
-    </ul>
-    <h3>Deviations from the spec</h3>
-    <p>
-      None. The spec (§8/§21-1) only says "stop logging the mnemonic; decide wrapped-seed." The
-      recovery-file mechanism is the concrete, spec-consistent way to still surface the phrase once.
-    </p>
-    <h3>Tradeoffs considered</h3>
-    <ul>
-      <li>
-        <em>0600 file</em> (chosen) vs. <em>stderr-once</em> (the module's original comment): stderr
-        is ephemeral and still capturable by log shippers; the 0600 file is durable,
-        access-controlled to the owner, and matches the keyfile's existing on-disk 0600 seed
-        posture.
-      </li>
-      <li>
-        vs. <em>returning the mnemonic in the boot result</em> for the install script to display:
-        cleaner long-term UX but a bigger change; the file works today and the install-script banner
-        is a follow-up.
-      </li>
-    </ul>
-    <h3>Open questions for the owner</h3>
-    <ul>
-      <li>
-        <strong>Wrapped-seed decision (§21-1 second half).</strong> Convenience mode (raw keyfile +
-        recovery file, both 0600) is what ships. The Argon2id wrapped-seed path is still not wired
-        through boot (<code>wrapped_seed.bin</code> → "pending"). Confirm shipping convenience mode
-        now, with wrapped-seed as a later item — or prioritise it.
-      </li>
-      <li>
-        <strong>Install-script UX.</strong> Should the install script auto-display the recovery
-        phrase and delete the file (best UX), or leave the operator to read + delete it manually
-        (current)?
-      </li>
-      <li>
-        <strong>Tech-debt (noted, not changed here):</strong> the seed keyfile write has no real
-        <code>fsync</code> before rename (the original comment claimed one; the code never did it).
-        A power loss mid-first-boot could lose the identity. Worth a dedicated durability fix — kept
-        out of this security change for clean scope.
-      </li>
-    </ul>
-    <h3>Iteration record</h3>
-    <p>
-      Changed: removed the mnemonic from the log payload; added the 0600 recovery file + path-only
-      log + logger seam + shared atomic write. Tests: added 3 master_seed + 1 boot assertion; the
-      full master_seed + boot suites are green (33/33) and the core-server typecheck is clean. Next:
-      item 2 (PDS-backed bootstrap + single-use enrolment capability), which the identity model (§8)
-      now depends on.
-    </p>
-
-    <!-- ============================================================ -->
-    <h1 id="plugin">Part A — Plugin Architecture (P0 substrate + runner mode)</h1>
-    <p class="meta">Goal: implement <code>docs/PLUGIN_ARCHITECTURE.md</code>.</p>
-
-    <h2>Scope read</h2>
-    <p>
-      The spec is phased P0–P3 (§20). This build implements
-      <strong>P0 — the substrate + runner mode</strong> end-to-end: the phase the spec marks as the
-      trust foundation ("prove the box"), which every later phase layers on. Interpreted mode +
-      sessions (P1), distribution (P2), and ingest/notify/hosted (P3) are out of this pass — except
-      the P0 <em>freeze-with-P0</em> artifacts (lexicons, the three digests, and the workflow state
-      machine), which are built to the full spec now even though their consumers arrive later.
-    </p>
 
     <h2>Item map</h2>
+    <ul>
+      <li>
+        <strong>CMP-1…6</strong> — protocol spine: scaffold/numerics, arithmetic, digests,
+        negotiation types, lifecycle types, frozen vectors. <span class="status done">DONE</span>
+      </li>
+      <li>
+        <strong>CMC-1…6</strong> — Core: stores + migration v31, admission engine, lifecycle engine,
+        extension-op registry, provider-ingress bridge, drain + epoch fencing.
+        <span class="status done">DONE</span>
+      </li>
+      <li>
+        <strong>CM-FINAL</strong> — three-tier test plan + adversarial workflow pass + full monorepo
+        gate. <span class="status done">DONE</span>
+      </li>
+    </ul>
+
+    <h2>Validation</h2>
+    <p>
+      <strong>Adversarial workflow pass:</strong> six finder dimensions, 26 agents, every finding
+      independently skeptic-verified — 20 raised, 3 refuted, 17 confirmed and fixed. The critical
+      one: held-evidence re-adoption accepted a CONTENT digest (a hash anyone can compute) as
+      authenticity proof, letting a forged acknowledgement mint a real fulfilment obligation; now an
+      injected <code>verifyHeldEvidence</code> that fails closed. Also fixed: cancellation could
+      decide an <code>effect_started</code> reservation (double-win); held status receipts did not
+      disqualify <code>never_received</code>; <code>delivered → disputed</code> was unbounded at
+      signing; drain entries under-pinned params/data-scope; an over-wide ingress schema-snapshot
+      smuggling channel; two <code>host_operations</code> validation gaps; three vector under-pins;
+      four missing/weak tests.
+    </p>
+    <p>
+      <strong>Final gate (serial, after the last fix):</strong> commerce-protocol 198 · protocol 724
+      · core 6,208 · brain 3,557 · core-server 2,825 · mobile 3,293 — 16,805 tests green; typechecks
+      clean on all seven targets; lint/format clean on touched files; diff confined to 46
+      intentional paths.
+    </p>
+
+    <h2>Remaining integration (next phases)</h2>
+    <ul>
+      <li>
+        <strong>Phase 1 pack wiring:</strong> Brain-side submitter routing
+        <code>ServiceHandler.handleQuery</code> into the ingress bridge (seam mirrors the existing
+        reasoning submitter); PDS fetch/publish callbacks for the epoch service; Buyer/Supplier
+        manifests + runners.
+      </li>
+      <li>
+        <strong>Phase 2:</strong> catalog pointer/snapshot records (CAS sequencing) + the commerce
+        AppView (ingest, index, search, relationship projection, §25.4 tests). Settle spec Open
+        Question 2 (snapshot transport) first. CatalogItem/relationship-claim validators already
+        exist at the protocol layer.
+      </li>
+      <li><strong>Phase 3:</strong> managed business runtime.</li>
+    </ul>
+
+    <h2>Owner decisions (both previously blocking, now settled)</h2>
+    <ol>
+      <li>
+        <strong>Post-restore quote capacity (X-10).</strong> §16.2 says admission against a
+        restore-voided quote returns <code>quote_superseded</code> with &ldquo;a freshly signed head
+        at the new epoch&rdquo;, and separately that &ldquo;capacity is never resurrected from a
+        backup&rdquo;. It never says what capacity that fresh head carries — and that is a money
+        question. <strong>Decision: Core never synthesizes a replacement.</strong> It holds no
+        commercial authority (Kernel-not-Platform), and it cannot know how much of the original
+        allowance was really consumed: the backup&rsquo;s use counter is precisely the number a stale
+        restore makes untrustworthy. A supplier-side seam owns the re-offer. With no seam wired,
+        admission refuses with <code>quote_voided</code> and no digest — naming the voided head would
+        have the buyer re-approve forever against something that can never go live again. This is a
+        <em>deliberate, recorded deviation</em> from the spec&rsquo;s literal wording: the spec asks
+        Core to do something Core is not permitted to do.
+      </li>
+      <li>
+        <strong>Scope of this pass.</strong> The two reviewers read §24 oppositely — a genuine
+        specification ambiguity, not reviewer error. <strong>Decision: the broad reading.</strong>
+        This pass owes the extension-operation broker, the provider installer journey, the
+        update-rebind coordinator and validated archive restore, alongside the Phase 0 spine and the
+        §23 Core work. Both reviewers now share this as a frozen rubric, which removed the
+        four-item disagreement in round 3.
+      </li>
+    </ol>
+
+    <h2>Architecture decision — why a refactor, not more patches</h2>
+    <p>
+      Four review rounds kept finding <em>second-order</em> breaks: a correct, tested fix in one
+      place broke a rule enforced in another. Twice the damage came from my own remediation — the
+      §11.2 ownership gate silently disabled §16.2 disaster recovery, and persisting
+      <code>valid_until</code> supplied the last ingredient for reviving an expired pre-backup quote
+      family. That is not bad luck four times; it is a structural signal.
+    </p>
+    <p><strong>The smells, measured:</strong></p>
     <table>
-      <tr>
-        <th>Item</th>
-        <th>What</th>
-        <th>Status</th>
-      </tr>
-      <tr>
-        <td>PLG-1</td>
-        <td>
-          <code>@dina/protocol</code> plugin layer: record types, validators, three digests,
-          content-derived rkey, verifier contract, frozen vectors
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>PLG-2</td>
-        <td>
-          Workflow hardening: <code>outcome_unknown</code>, per-claim <code>claim_id</code> CAS,
-          plugin envelope, retry budget
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>PLG-3</td>
-        <td>
-          Identity/auth: <code>plugin</code> role + callerType in both unions + §9.0 P0 authz matrix
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>PLG-4</td>
-        <td>
-          Dynamic registry: <code>plugin_installs</code> / <code>plugin_grants</code> /
-          <code>plugin_decisions</code>
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>PLG-5</td>
-        <td>Gatekeeper: <code>evaluatePluginIntent</code> floors + clamps + first-N</td>
-        <td><span class="status todo">TODO</span></td>
-      </tr>
-      <tr>
-        <td>PLG-6</td>
-        <td>Claim guard: six claim-time checks + exact-match lane</td>
-        <td><span class="status todo">TODO</span></td>
-      </tr>
-      <tr>
-        <td>PLG-7</td>
-        <td>
-          Install flow: verifier wiring, install-by-AT-URI, lifecycle (pending→activation, pause,
-          uninstall/revoke)
-        </td>
-        <td><span class="status todo">TODO</span></td>
-      </tr>
-      <tr>
-        <td>PLG-8</td>
-        <td>
-          Tool lane end-to-end: dispatch, capability-scoped egress, pinned-schema result validation,
-          approval path
-        </td>
-        <td><span class="status todo">TODO</span></td>
-      </tr>
-      <tr>
-        <td>PLG-9</td>
-        <td>
-          Adversarial audits (install dim + security dims) → 15 fixes, each with a regression test
-        </td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
-      <tr>
-        <td>PLG-11</td>
-        <td>Full validation incl. Playwright E2E</td>
-        <td><span class="status done">DONE</span></td>
-      </tr>
+      <tr><th>rule</th><th>places enforcing it</th><th>owner</th></tr>
+      <tr><td>&ldquo;capacity is never resurrected from a backup&rdquo;</td><td>4+</td><td>none</td></tr>
+      <tr><td>&ldquo;does this order exist&rdquo;</td><td>14 call sites</td><td>none</td></tr>
+      <tr><td>&ldquo;wire records are snake_case&rdquo;</td><td>12 <code>as</code> casts</td><td>convention</td></tr>
     </table>
-    <p class="meta">
-      Review history (trimmed): two adversarial audit passes plus an egress redesign and
-      protocol-digest fixes; full validation green, with 2 pre-existing E2E failures confirmed not
-      regressions. Per-fix detail is in git history.
-    </p>
-
-    <!-- ============================================================ -->
-    <h1 id="isvc">Part B — Interactive + Push Services (V1)</h1>
-    <p class="meta">
-      Goal: implement <code>docs/INTERACTIVE_SERVICES_ARCHITECTURE.md</code> and
-      <code>docs/PUSH_SERVICES_ARCHITECTURE.md</code>.
-    </p>
-
-    <h2>Scope read — what "V1" actually is</h2>
     <p>
-      Reading both phase-gated specs literally, the claimable V1 is bounded, and exactly that was
-      built:
+      Named: <strong>shotgun surgery</strong> (one idea, many edit sites — the cost of a change
+      tracks how many sites you remember, and I remembered three of four); <strong>anemic domain
+      model</strong> (rows plus discipline, so a quote family cannot refuse an illegal operation
+      because it is not a thing); <strong>lying casts</strong> (the compiler told not to look at
+      exactly the boundary that needed checking); and a <strong>non-exhaustive switch over parsed
+      JSON</strong> (the type system asserting a fact about untrusted data). The tests were the only
+      net holding these together, and seven of them turned out to hold nothing.
     </p>
+    <p class="meta">
+      Recorded because I got the reasoning wrong first: I declined the deeper fix partly because it
+      was a day&rsquo;s work and would invalidate four review rounds. Neither is a reason. Reviews
+      are cheap to re-run; wrong structure is not cheap to live with. The only legitimate constraint
+      is avoiding rigidity.
+    </p>
+
+    <h3>Agreed design (refined against a Codex review of the proposal)</h3>
+    <blockquote>
+      Plain validated data crosses boundaries. Pure domain aggregates own local state rules.
+      Transactional application services coordinate cross-aggregate changes. Raw persistence
+      primitives are not available to production callers.
+    </blockquote>
+    <p>Four corrections to my first proposal, all accepted:</p>
     <ul>
       <li>
-        <strong>Interactive: the pull interaction core</strong> (§17 Phase&nbsp;0 → Phase&nbsp;1) —
-        run store, reservation store (incl. <code>held_by_lock</code>), per-message lifecycle,
-        signed projections, classification job + Brain-classify boundary, atomic outbox claim +
-        two-step completion advancement, envelope-encrypted payload store + crypto-shred,
-        termination barrier, and the owner-only <code>/v1/run/*</code> boundary.
+        Uniqueness across <code>(buyer_did, purchase_order_id)</code> and
+        <code>(buyer_did, idempotency_key)</code> is a <em>database</em> invariant. One
+        <code>CommerceOrder</code> cannot own a rule about all orders.
       </li>
       <li>
-        <strong>Push: Phase&nbsp;0 (poll-mode watches)</strong> (§19) — activate
-        <code>WorkflowTaskKind.Watch</code> in poll mode: Dina-driven <code>service.query</code> on
-        a schedule, delivered through the shipping silence classifier + notification inbox. No
-        inbound push surface.
+        Deciding an order and settling its quote hold spans two aggregates plus receipts. It belongs
+        to a transactional application service, not to <code>CommerceOrder</code> — my version would
+        have pushed quote knowledge into the order.
       </li>
       <li>
-        <strong>Push: Phase&nbsp;1 (standalone reserved-informational inbound push)</strong> (§19) —
-        the <code>push_notify</code> capability, the <code>push.*</code> D2D family, the
-        default-deny <code>push</code> grant + subscription store, the §8 receive pipeline, rate
-        budget, and local cry-wolf downgrade.
+        <strong>Typed results, not throws, for business outcomes.</strong> Expired, consumed,
+        superseded and illegal-transition are normal results that travel to the buyer as wire
+        <code>reason_code</code>s. Corruption and impossible state (a failed settlement inside a
+        committed decision; a head row whose receipt is missing) throw and roll back. Conflating the
+        two is arguably what produced the ignored <code>settleUse</code> boolean.
+      </li>
+      <li>
+        <strong>Hiding the repositories is the whole point.</strong>
+        <code>QuoteFamily.advance()</code> is worthless while <code>casAdvanceHead()</code> stays
+        callable — the next call site simply bypasses it. Success is measured by a grep returning
+        empty, not by a passing test.
       </li>
     </ul>
     <p>
-      <strong>Explicitly deferred</strong> (the specs themselves say these are not yet claimable):
-      run-bound push composition (interactive run over a push transport — several joint contracts
-      still open), <code>push_open</code>, remote wake (no FCM/APNs/Expo in the stack), the Phase-2
-      <code>fiduciary</code>/Tier-1 harm-signal path, and public signal-quality standing
-      (Phase&nbsp;2+ AppView scorekeeper). Recorded as open items, not shipped.
+      One discipline added on top: application services coordinate and persist, and must
+      <em>not</em> re-derive aggregate rules. A service that re-checks epoch or capacity &ldquo;to be
+      safe&rdquo; has scattered the rule again and become a god-object with extra steps.
+    </p>
+    <p>
+      Wire types stay plain serialisable data with validators — they are hashed byte-exactly, frozen
+      in conformance vectors, and must be reproducible by a Go/Rust/Swift port. Turning them into
+      classes would fight both. No unit-of-work ceremony over the existing synchronous
+      <code>DatabaseAdapter</code> and explicit <code>TxRunner</code>: that is rigidity, not
+      correctness.
     </p>
 
-    <h2>
-      Design decision — the honest <code>erasure_mode</code> (crypto-shred is conformance-gated)
-    </h2>
-    <p>
-      §13/§20 is emphatic that backup-resistant crypto-shred needs a net-new hardened, non-backed,
-      crash-safe-destroy erasure-key backend, and that today's <code>keystore-node</code> (plaintext
-      files) and <code>keystore-expo</code> (backup-syncable) <strong>do not qualify</strong>. The
-      spec's own prescribed behaviour is to probe the backend at run creation and freeze
-      <code>erasure_mode ∈ {backup_resistant, logical_deletion}</code>, degrading honestly. So on
-      today's stack the build freezes <code>erasure_mode = logical_deletion</code> and passes only
-      the logical-deletion assertion — this is <em>conformance with the spec</em>, not a shortcut.
-      The per-payload leaf-key envelope machinery is built so a conforming backend drops in later
-      without touching the lifecycle. Named, not hidden.
-    </p>
+    <h2>Refactor log</h2>
 
-    <h2>Design decision — the net-new <code>owner</code> principal (§12.5)</h2>
+    <h3>ARCH-0a — QuoteFamily aggregate, quote ledger hidden <span class="meta">(done)</span></h3>
     <p>
-      The spec demands the owner-only control boundary be "a real boundary, not
-      <code>trustedInProcess</code>." The codebase had no owner principal — "owner" was only
-      <code>req.callerType === undefined</code> on the <code>trustedInProcess</code> bypass, which
-      Brain shares on mobile. So "reject Brain, admit owner" was not expressible. V1 adds a net-new
-      <code>owner</code> caller type (coarse + authz unions + <code>mapToAuthzRole</code>), an
-      owner-marked in-process dispatch distinct from the Brain-shared transport, and an authz rule
-      making every <code>/v1/run/*</code> control mutation owner-only (Brain/agent/plugin/service →
-      403), verified with both the inject-callerType and full signed-auth harnesses.
+      <code>packages/core/src/commerce/quote_family.ts</code>. The supplier-side quote family is now
+      an object that refuses illegal operations, and
+      <code>CommerceQuoteLedgerRepository</code> is no longer reachable from any production caller.
+      Three engines took the store instead: admission, epoch, lifecycle.
     </p>
-
-    <h2>Item map</h2>
-    <p>
-      Vertical slices, each keeping the correctness suite green, each deep-reviewed after landing:
-    </p>
+    <table>
+      <tr><th>rule</th><th>before</th><th>after</th></tr>
+      <tr><td>capacity never resurrected after restore</td><td>one expiry-filtered sweep at restore</td><td><code>isStale()</code> inside the aggregate, checked by every mutating path</td></tr>
+      <tr><td>admission precedence (§9.9)</td><td>seven inline branches in <code>admitOrder</code></td><td>one <code>admits()</code> method that returns the record it judged</td></tr>
+      <tr><td>capacity check + hold</td><td><code>activeUseCount</code> then <code>holdUse</code>, two statements</td><td>one <code>hold()</code>, check-and-act together</td></tr>
+      <tr><td>settlement CAS</td><td>boolean discarded at three call sites</td><td><code>settle()</code> throws <code>CommerceIntegrityError</code>, transaction rolls back</td></tr>
+    </table>
+    <p><strong>Decisions worth knowing:</strong></p>
     <ul>
       <li>
-        <strong>ISVC-1</strong> — run store + domain state machine (drain cause/strength barrier) +
-        owner-only <code>/v1/run/*</code> boundary. <span class="status done">DONE</span>
+        <strong>Refusals are values; corruption throws.</strong> Expired, consumed, superseded,
+        voided, stale-epoch and duplicate are ordinary outcomes that become wire
+        <code>reason_code</code>s, so they are returned. A settlement CAS that cannot fail failing,
+        or a head row that will not read back after being written, throws — those mean the ledger
+        and the order references disagree, and committing half a decision is worse than aborting.
       </li>
       <li>
-        <strong>ISVC-2</strong> — envelope-encrypted payload store + per-payload leaf-key
-        crypto-shred + <code>erasure_mode</code> probe + content-addressed prepared-write/publish +
-        blob registry. <span class="status done">DONE</span>
+        <strong>The aggregate does not re-check the protocol verifier.</strong> Revision numbering,
+        audience, request binding, in-chain epoch regression and immutable <code>max_uses</code>
+        belong to <code>verifyQuoteRevisionExtends</code>. My first version re-implemented two of
+        them locally — the same scattering, one layer down — and answered with a vaguer message than
+        the real one. It now calls the verifier and carries its sentence through in a
+        <code>detail</code> field. Only <em>one</em> rule is the aggregate's alone: epoch
+        monotonicity, which compares the head to Core's restore history and is invisible to a
+        verifier that only sees two revisions.
       </li>
       <li>
-        <strong>ISVC-3</strong> — reservation store + atomic admission gate (barrier-guarded
-        enqueue-commit CAS) + pull pacing. <span class="status done">DONE</span>
+        <strong><code>detail</code> is operator text, never wire text.</strong> The buyer-facing
+        <code>reason_code</code> is derived from the refusal name alone, through a total
+        <code>Record&lt;QuoteRefusal, string&gt;</code> — so a new refusal cannot reach a
+        counterparty unhandled. <code>stale_epoch</code> maps to <code>quote_voided</code>: to the
+        buyer they mean the same thing, this family is gone.
       </li>
       <li>
-        <strong>ISVC-4</strong> — per-message lifecycle + runtime-issuer signed projections +
-        classification job + Brain-classify boundary + frozen Core delivery order.
-        <span class="status done">DONE</span>
+        <strong>Duplicate is decided before capacity.</strong> Capacity-first told a caller retrying
+        its own order that the quote was consumed — by the caller's own hold.
       </li>
       <li>
-        <strong>ISVC-5</strong> — risk gate + atomic outbox claim + stable
-        <code>delegation_id</code> + completion-receipt two-step idempotent-CAS advancement +
-        late-completion reconciliation. <span class="status done">DONE</span>
+        <strong><code>hold()</code> checks expiry itself</strong> rather than trusting that
+        <code>admits()</code> ran first. An aggregate whose rules only hold when methods are called
+        in the right order is the discipline this refactor exists to remove. It judges against the
+        head's window, which the family keeps current; <code>admits()</code> judges the record the
+        order names, which may be an honoured superseded revision with a different deadline.
       </li>
       <li>
-        <strong>ISVC-6</strong> — locked-arrival <code>held_by_lock</code> (device-seal + fsync'd
-        spool peek/ack) + unlock prepared-write/publish + persona-lock transition.
-        <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>ISVC-7</strong> — termination + <code>drain_deadline_at</code> force-terminate +
-        sweepers + durable command receipts. <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>ISVC-8</strong> — <code>interactive_run</code> capability + signed schemas +
-        classification view + conformance vectors. <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>ISVC-9</strong> — mobile run UI: Activity <code>run</code> kind +
-        <code>/status</code> + start/steer + CoreClient. <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>PSVC-0</strong> — activate <code>watch</code> kind in poll mode (Dina-driven
-        <code>service.query</code>); WatchService + WatchPollSweeper live on both boot paths.
-        <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>PSVC-1</strong> — <code>push_notify</code> capability + <code>push.*</code> D2D
-        family + <code>push.event</code>/subscribe schemas. <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>PSVC-2</strong> — <code>push</code> grant type + subscription store + subscribe
-        handshake (default-deny gate). <span class="status done">DONE</span>
-      </li>
-      <li>
-        <strong>PSVC-3</strong> — receive-pipeline push branch (§8) + rate budget + cry-wolf
-        downgrade. <span class="status wip">CORE DONE</span>
-      </li>
-      <li>
-        <strong>PSVC-4</strong> — subscription-management surface: owner-only
-        <code>/v1/watch/*</code> + owner-client; Subscriptions and Interactive-runs screens shipped.
-        <span class="status done">DONE</span>
+        <strong>An instance is a one-transaction snapshot</strong> of the head row. Stated in the
+        class doc because nothing in the type system says so.
       </li>
     </ul>
+    <p><strong>Debt this leaves, recorded rather than hidden:</strong> the restore sweep still calls
+      <code>voidUnexpired</code>, which by construction cannot see an already-expired family. It is
+      kept because the restore is an event that must leave a receipt with a real count — the fence
+      itself is now epoch monotonicity, which needs no sweep and cannot miss a row.</p>
     <p class="meta">
-      Review history (trimmed): several dual-review rounds (Claude continuity + Codex) and a large
-      adversarial pass; all confirmed findings fixed, comprehensive test gate + live home-node-lite
-      smoke green. Per-round detail is in git history.
+      Verification: nine mutations, each asserting its anchor exists before removing it — a silent
+      no-op mutation reads as a passing suite. All nine went red. Two (<code>stale_epoch</code> at
+      admission, settlement rollback) were caught only by the aggregate's own unit tests until
+      cross-layer tests were added; both now fail in two suites. Grep confirms no production file
+      outside the aggregate names <code>registerHead</code>, <code>casAdvanceHead</code>,
+      <code>holdUse</code>, <code>settleUse</code>, <code>voidUnexpired</code> or
+      <code>activeUseCount</code>. Gate: tsc clean, eslint clean, core 6,271 passing.
+    </p>
+    <p class="meta">
+      Two false-green tests were caught during this item. The first asserted the validity window
+      advanced with the head without ever reading it — fixed by exposing <code>validUntil</code> and
+      asserting it. The second asserted <code>duplicate_use</code> on a single-use quote, where
+      capacity is exhausted by the first hold, so the refusal it named was unreachable.
     </p>
 
-    <!-- ============================================================ -->
+    <h2>Dual review — four rounds</h2>
+    <p class="meta">
+      Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
+      R1 8+17, R2 5+12, R3 7+15, R4 6+15. No version has yet had both PASS.
+    </p>
+    <p>
+      The counts did not fall monotonically, and the reason matters: R1 reviewed the original code;
+      R2 mostly reviewed the snake_case conversion R1 demanded (1,400 renamed sites); R3 mostly
+      reviewed R2&rsquo;s fixes and their tests; R4 reviewed the wire change and the round-3 fixes.
+      Each round found a different, shallower layer rather than the same defects recurring.
+    </p>
+    <p>
+      <strong>R4 produced no reviewer disagreements</strong> — the first round with none, because
+      the scope ruling above was given to both as a frozen rubric. Four findings were flagged
+      independently by both. Where severities differed the higher was taken.
+    </p>
+    <p>
+      <strong>Test quality was the dominant recurring theme.</strong> Seven tests were caught passing
+      for the wrong reason: a missing <code>verifyHeldEvidence</code> default; hand-built
+      acknowledgements rejected before the branch under test; a guarded <code>if</code> that asserted
+      nothing; <code>receipts.put</code> ignoring conflicts so in-place corruption silently no-oped;
+      admission returning <code>reserved</code> with no acknowledgement; an assertion comparing a
+      value to itself; and an unwrapped evidence fixture. Every guard added in rounds 2&ndash;4 is now
+      mutation-verified — reintroduce the defect (asserting the code is present first), watch the test
+      go red, restore. Two mutations were themselves caught as no-ops by that assertion.
+    </p>
+
+    <h2>Traps worth remembering</h2>
+    <ul>
+      <li>
+        <code>tsc --noEmit</code> does <strong>not</strong> typecheck <code>__tests__</code> in
+        either package. A broken test signature shows up as a silently smaller suite total, never as
+        a red. Watch totals, not failures.
+      </li>
+      <li>
+        Object <strong>spreads are never excess-property checked</strong>, whatever the target
+        annotation. Only <code>satisfies</code> catches a misspelt wire key inside a conditional
+        spread. Annotating the <code>const</code> achieves nothing — I tried it and the misspelling
+        still compiled.
+      </li>
+      <li>
+        Raw NUL bytes in three source files made <code>grep</code>/<code>rg</code> treat them as
+        binary and skip them <em>silently</em>. Replaced with escapes. Any audit that relies on grep
+        was blind to those files.
+      </li>
+      <li>
+        Edit scripts must anchor on strings that occur <strong>once</strong>, asserted before
+        mutating. A loose pattern matched the wrong <code>if (head.voided)</code> branch — there are
+        two — and deleted a method.
+      </li>
+    </ul>
+
     <h2>Open questions for the owner</h2>
     <ul>
       <li>
-        Confirm the V1 scope boundary above (pull core + push poll + push standalone
-        reserved-informational; run-bound push / <code>push_open</code> / remote wake deferred until
-        their joint contracts are frozen). This is the specs' own recommendation — flagged because
-        it means push-over-interactive-run does not ship in this pass.
+        Confirm unit vocabulary v1 + custom-unit rejection (spec Open Question 4; widening later is
+        additive).
       </li>
       <li>
-        <code>erasure_mode = logical_deletion</code> on the current keystores (backup-resistant
-        crypto-shred needs a Secure Enclave / StrongBox / backup-excluded keyfile backend, out of
-        scope here). Confirm shipping the honest degraded mode now and adding the hardened backend
-        as a later, drop-in conformance item.
+        Confirm magnitude bounds (15-digit minor units, 12-digit quantity integer part) — now pinned
+        by frozen vectors on both sides.
+      </li>
+      <li>
+        Confirm the operational-tables-in-export deviation (§16.2 requirement vs house
+        live-authority posture).
+      </li>
+      <li>
+        <strong>Version the wire change.</strong> <code>HeldEvidence</code> is an incompatible change
+        to the frozen spine, but <code>protocol_version</code> is still <code>1.0</code> and the
+        architecture doc still shows bare records at line 1839. A v1.0 peer and this build now
+        disagree about the wire while both claiming 1.0. Needs a major bump or an explicit
+        pre-freeze note before this can be called conformant.
+      </li>
+    </ul>
+
+    <!-- ============================================================ -->
+    <hr />
+    <h1 id="archive">Archive — shipped streams</h1>
+    <p class="meta">One paragraph each; full notes in git history for these files.</p>
+    <ul>
+      <li>
+        <strong>Connected-Agent Gating and Brain</strong> — shared gate authority core, durable
+        reasoning + owner Ask, authenticated service reasoning, agent_scope, gate-decision audit
+        persistence, durable session registry; hardened through an independent Codex review and its
+        deferred items A–D. <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Plugin Developer Surface</strong> — the developer-facing surface over the plugin
+        substrate; dual-reviewed to convergence. <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Plugin Architecture (P0 substrate + runner mode)</strong> — protocol plugin layer
+        (types, digests, vectors), workflow hardening, plugin caller identity, dynamic registry,
+        gatekeeper, claim guard, install flow, tool lane end-to-end; 22 adversarial-review rounds.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Interactive + Push Services (V1)</strong> — run store + state machine, encrypted
+        payload store with crypto-shred, reservation/admission gate, message lifecycle, risk gate +
+        outbox, locked-arrival, termination + sweepers, interactive_run capability, poll-mode
+        watches, push subscriptions + delivery pipeline; owner `owner` principal decision; V1 scope
+        boundary (run-bound push / remote wake deferred). Known accepted degradation:
+        <code>erasure_mode = logical_deletion</code> until a backup-excluded keystore backend ships.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Earlier fixes</strong> — mnemonic no longer logged at boot; web thin-client slices;
+        MRS runner hardening. <span class="status done">SHIPPED</span>
       </li>
     </ul>
   </body>

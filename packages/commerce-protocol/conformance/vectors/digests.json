@@ -1,0 +1,404 @@
+{
+  "description": "§9.12 digest domains: preimage \"dina:commerce:v1:<domain>\\n\" + canonicalJson(record minus own digest field), SHA-256, lowercase hex.",
+  "buyer_did": "did:plc:buyer1234",
+  "supplier_did": "did:plc:supplier5678",
+  "domain_separation": {
+    "payload": {
+      "alpha": "1",
+      "beta": [
+        "x",
+        "y"
+      ]
+    },
+    "expected_by_domain": {
+      "projection": "f1998923e9234308612790e929f389540c41be362cd8f9f6faf3aa0503d0cf00",
+      "request": "7f58283d1a5743c2a53380ff0c9c81e66f3fbc18b74a2c56e3d4221136ce0f87",
+      "quote": "0c28d2ab7bd110d136b07999dae64c54addc97223f4af54dc4c75e67af053ebc",
+      "terms": "4788f533a018d2058717922cb0062c72a421394e98b14be4e5a32e9033411caa",
+      "order": "6caf28c4d2fb5809084d8f29473d50c9e10719e6055afc7e57609f3ad6e29dcb",
+      "acknowledgement": "083d55a27d3679a7854566eb8db1517e94ba0e21775c34df12009aa3e23d187a",
+      "status": "236e5f353fd0743766649ca309b942a7720a7a50db612f257163978a4091fc8a",
+      "cancellation": "e590848752c1237ad91f994154ef8791f40c00f093b1e1b6b85d452d1b042a66",
+      "result": "21311c246f153796a04e8b31bdbc577ca24fb00e5e966772f9ffa5ccefc49bf0",
+      "epoch": "7e2188dd14511d34752bfafeb35aeb5d0593f2b7520321b3e116829757265f19"
+    }
+  },
+  "records": [
+    {
+      "domain": "projection",
+      "digest_field": "projection_digest",
+      "record": {
+        "region": {
+          "scheme": "postal_area",
+          "value": "682001"
+        },
+        "projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44"
+      }
+    },
+    {
+      "domain": "projection",
+      "digest_field": "projection_digest",
+      "record": {
+        "region": {
+          "scheme": "postal_area",
+          "value": "682001"
+        },
+        "recipient_name": "Stores Desk",
+        "projection_digest": "d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1"
+      }
+    },
+    {
+      "domain": "request",
+      "digest_field": "request_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "request_id": "req-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "lines": [
+          {
+            "line_id": "l1",
+            "product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "requested_quantity": {
+              "value": "100",
+              "unit_code": "each"
+            }
+          }
+        ],
+        "delivery": {
+          "projection": {
+            "region": {
+              "scheme": "postal_area",
+              "value": "682001"
+            },
+            "projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44"
+          }
+        },
+        "issued_at": "2026-08-07T10:00:00Z",
+        "expires_at": "2026-08-08T10:00:00Z",
+        "idempotency_key": "idem-req-1",
+        "request_digest": "52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d"
+      }
+    },
+    {
+      "domain": "quote",
+      "digest_field": "quote_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "quote_id": "q-1",
+        "request_id": "req-1",
+        "request_digest": "52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_revision": "1",
+        "priced_delivery_projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44",
+        "lines": [
+          {
+            "line_id": "l1",
+            "requested_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "offered_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            },
+            "price_basis": {
+              "value": "1",
+              "unit_code": "each"
+            },
+            "unit_price": {
+              "currency": "INR",
+              "minor_units": "500"
+            },
+            "stock_status": "available",
+            "line_subtotal": {
+              "currency": "INR",
+              "minor_units": "50000"
+            }
+          }
+        ],
+        "charges": [],
+        "total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "issued_at": "2026-08-07T11:00:00Z",
+        "valid_until": "2026-08-08T09:00:00Z",
+        "supplier_epoch": "1",
+        "terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0"
+      }
+    },
+    {
+      "domain": "quote",
+      "digest_field": "quote_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "quote_id": "q-rich",
+        "request_id": "req-1",
+        "request_digest": "52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_revision": "1",
+        "priced_delivery_projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44",
+        "lines": [
+          {
+            "line_id": "l1",
+            "requested_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "offered_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            },
+            "price_basis": {
+              "value": "1",
+              "unit_code": "each"
+            },
+            "unit_price": {
+              "currency": "INR",
+              "minor_units": "500"
+            },
+            "stock_status": "available",
+            "line_subtotal": {
+              "currency": "INR",
+              "minor_units": "50000"
+            }
+          }
+        ],
+        "charges": [],
+        "total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "issued_at": "2026-08-07T11:00:00Z",
+        "valid_until": "2026-08-08T09:00:00Z",
+        "supplier_epoch": "1",
+        "max_uses": "3",
+        "estimated_dispatch_at": "2026-08-08T06:00:00.000Z",
+        "estimated_delivery_at": "2026-08-09T06:00:00.000Z",
+        "payment_terms": {
+          "credit_days": 30,
+          "text": "Net 30"
+        },
+        "reservations": [
+          {
+            "line_id": "l1",
+            "quantity_reserved": {
+              "value": "100",
+              "unit_code": "each"
+            },
+            "expires_at": "2026-08-08T08:00:00.000Z"
+          }
+        ],
+        "terms_digest": "43c02e309dfdc23628d50a6a66704f26e2d470597a1bb3a7a180611048c974d9",
+        "quote_digest": "01a2800fe6a7bc35e4b0d9b6978d1b945fcf136e53a753d3a6c687349af563ce"
+      }
+    },
+    {
+      "domain": "order",
+      "digest_field": "order_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_id": "q-1",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "accepted_lines": [
+          {
+            "line_id": "l1",
+            "product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            }
+          }
+        ],
+        "delivery": {
+          "region": {
+            "scheme": "postal_area",
+            "value": "682001"
+          },
+          "recipient_name": "Stores Desk",
+          "projection_digest": "d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1"
+        },
+        "approved_total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "accepted_terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "idempotency_key": "idem-po-1",
+        "submitted_at": "2026-08-07T12:00:00Z",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d"
+      }
+    },
+    {
+      "domain": "acknowledgement",
+      "digest_field": "acknowledgement_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "acknowledgement_id": "ack-1",
+        "purchase_order_id": "po-1",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "issued_at": "2026-08-07T12:05:00Z",
+        "kind": "accepted",
+        "supplier_order_id": "so-77",
+        "accepted_quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "accepted_at": "2026-08-07T12:05:00Z",
+        "acknowledgement_digest": "0e6f19420b13e8fd7a996ccb9877395b6aecb7d01fbd43dbad0e51fc450150e5"
+      }
+    },
+    {
+      "domain": "acknowledgement",
+      "digest_field": "acknowledgement_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "acknowledgement_id": "ack-2",
+        "purchase_order_id": "po-1",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "issued_at": "2026-08-07T12:05:00Z",
+        "kind": "rejected",
+        "reason_code": "quote_superseded",
+        "current_quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "acknowledgement_digest": "d4a301dceb7f6e79c56cb575278d35bd340585c66d4f54bb9ab6beee2e05c48a"
+      }
+    },
+    {
+      "domain": "status",
+      "digest_field": "status_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "sequence": "0",
+        "state": "accepted",
+        "supplier_epoch": "1",
+        "updated_at": "2026-08-07T12:06:00Z",
+        "status_digest": "fbb5aa0a4fe10f112de1fe10cb5f18add3e7bb02d463d8b6ad9cfb7e0b381cb5"
+      }
+    },
+    {
+      "domain": "status",
+      "digest_field": "status_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "sequence": "1",
+        "state": "preparing",
+        "supplier_epoch": "1",
+        "updated_at": "2026-08-07T12:06:00Z",
+        "previous_status_digest": "fbb5aa0a4fe10f112de1fe10cb5f18add3e7bb02d463d8b6ad9cfb7e0b381cb5",
+        "status_digest": "b1a7f493fba4062ca259f42ffe0d0d12c0c03df76ad5ea4bd8bc582d0ef25a69"
+      }
+    },
+    {
+      "domain": "status",
+      "digest_field": "status_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "sequence": "2",
+        "state": "partially_fulfilled",
+        "supplier_epoch": "1",
+        "updated_at": "2026-08-07T12:06:00Z",
+        "previous_status_digest": "b1a7f493fba4062ca259f42ffe0d0d12c0c03df76ad5ea4bd8bc582d0ef25a69",
+        "lines": [
+          {
+            "line_id": "l1",
+            "fulfilled_quantity": {
+              "value": "40",
+              "unit_code": "each"
+            }
+          }
+        ],
+        "status_digest": "a652b1e3a36684fe2dc9e2c96abea4db8156b90efd2dd06925d3f94fab395018"
+      }
+    },
+    {
+      "domain": "cancellation",
+      "digest_field": "cancellation_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "cancellation_id": "cx-1",
+        "purchase_order_id": "po-1",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+        "idempotency_key": "idem-cx-1",
+        "issued_at": "2026-08-07T12:10:00Z",
+        "cancellation_digest": "c58713a10c17591a3395fc8a074fe576399f5bd65e662abfb4024b671ce35f45"
+      }
+    },
+    {
+      "domain": "result",
+      "digest_field": "result_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "cancellation_id": "cx-1",
+        "purchase_order_id": "po-1",
+        "result": "cancelled",
+        "resolved_at": "2026-08-07T12:15:00Z",
+        "status_digest_at_resolution": "a652b1e3a36684fe2dc9e2c96abea4db8156b90efd2dd06925d3f94fab395018",
+        "result_digest": "88a38a6b49e62a8547759a693a2682aea30c745b095124cb20de6795c0ecc3b5"
+      }
+    },
+    {
+      "domain": "epoch",
+      "digest_field": "epoch_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "business_did": "did:plc:supplier5678",
+        "epoch": "1",
+        "reason": "initial",
+        "activated_at": "2026-08-07T00:00:00Z",
+        "epoch_digest": "13a0d4a6324ff9e2d3605b4966b567af7912363e5e5cc3f07831409c7434e01b"
+      }
+    },
+    {
+      "domain": "epoch",
+      "digest_field": "epoch_digest",
+      "record": {
+        "protocol_version": "1.0",
+        "business_did": "did:plc:supplier5678",
+        "epoch": "2",
+        "reason": "restore",
+        "activated_at": "2026-08-07T00:00:00Z",
+        "previous_epoch_digest": "13a0d4a6324ff9e2d3605b4966b567af7912363e5e5cc3f07831409c7434e01b",
+        "epoch_digest": "325847f9dd96087f52c3b4ff7d349e847331579a46da23a5e2f321af5a7a5589"
+      }
+    }
+  ],
+  "terms_digest": {
+    "description": "The frozen terms_digest input field set (implementation note).",
+    "quote_ref": "records[3]",
+    "input": {
+      "charges": [],
+      "valid_until": "2026-08-08T09:00:00Z"
+    },
+    "expected": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30"
+  }
+}

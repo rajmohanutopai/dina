@@ -88,6 +88,21 @@ export interface ServiceCapabilityConfig {
    * prefers "unsure — ask the provider" over stale-confident answers.
    */
   instructionUpdatedAt?: number;
+  /**
+   * Plugin-install execution plane
+   * (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §11.2a): the listing
+   * binds the EXACT (install_id, manifest CID, capability id) recorded
+   * at publication. Inbound queries become plugin tasks on that
+   * install's lane; a listing naming a paused/revoked/missing install
+   * answers with a typed unavailable error, never a stale cache.
+   *
+   * PROVIDER-PRIVATE like `instruction`: install ids and CIDs never
+   * enter the published PDS/AppView record. All three fields are set
+   * together (validated as a unit).
+   */
+  pluginInstallId?: string;
+  pluginManifestCid?: string;
+  pluginCapabilityId?: string;
   /** Whether responses are auto-sent or gated by operator review. */
   responsePolicy: ServiceResponsePolicy;
   /**

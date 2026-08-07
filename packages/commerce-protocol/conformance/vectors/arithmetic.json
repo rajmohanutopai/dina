@@ -1,0 +1,172 @@
+{
+  "description": "§9.1 v1 arithmetic contract: exact rational subtotal, ONE round-half-even, plain integer totals.",
+  "bounds": {
+    "money": {
+      "max_minor_unit_digits": 15,
+      "accepted": {
+        "currency": "INR",
+        "minor_units": "999999999999999"
+      },
+      "rejected": {
+        "currency": "INR",
+        "minor_units": "1111111111111111"
+      }
+    },
+    "quantity": {
+      "max_integer_digits": 12,
+      "accepted": {
+        "value": "999999999999",
+        "unit_code": "each"
+      },
+      "rejected": {
+        "value": "1111111111111",
+        "unit_code": "each"
+      }
+    }
+  },
+  "line_subtotals": [
+    {
+      "name": "per_unit_pricing_exact",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "500"
+      },
+      "quantity": {
+        "value": "100",
+        "unit_code": "each"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "each"
+      },
+      "expected_minor_units": "50000"
+    },
+    {
+      "name": "half_even_tie_rounds_to_even_up",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "15"
+      },
+      "quantity": {
+        "value": "1",
+        "unit_code": "each"
+      },
+      "price_basis": {
+        "value": "2",
+        "unit_code": "each"
+      },
+      "expected_minor_units": "8"
+    },
+    {
+      "name": "half_even_tie_rounds_to_even_down",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "17"
+      },
+      "quantity": {
+        "value": "1",
+        "unit_code": "each"
+      },
+      "price_basis": {
+        "value": "2",
+        "unit_code": "each"
+      },
+      "expected_minor_units": "8"
+    },
+    {
+      "name": "kg_gram_conversion_exact",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "50000"
+      },
+      "quantity": {
+        "value": "1500",
+        "unit_code": "g"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "kg"
+      },
+      "expected_minor_units": "75000"
+    },
+    {
+      "name": "fractional_vocabulary_scale",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "50000"
+      },
+      "quantity": {
+        "value": "1.5",
+        "unit_code": "kg"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "kg"
+      },
+      "expected_minor_units": "75000"
+    },
+    {
+      "name": "litre_ml_conversion_exact",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "9000"
+      },
+      "quantity": {
+        "value": "250",
+        "unit_code": "ml"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "l"
+      },
+      "expected_minor_units": "2250"
+    },
+    {
+      "name": "per_case_pricing_same_code",
+      "unit_price": {
+        "currency": "INR",
+        "minor_units": "120000"
+      },
+      "quantity": {
+        "value": "12",
+        "unit_code": "case"
+      },
+      "price_basis": {
+        "value": "1",
+        "unit_code": "case"
+      },
+      "expected_minor_units": "1440000"
+    }
+  ],
+  "totals": [
+    {
+      "name": "lines_plus_charges_integer_sum",
+      "currency": "INR",
+      "line_subtotals": [
+        "50000",
+        "2250"
+      ],
+      "charges": [
+        {
+          "kind": "delivery",
+          "label": "delivery",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "1500"
+          },
+          "operation": "add"
+        },
+        {
+          "kind": "discount",
+          "label": "first order",
+          "amount": {
+            "currency": "INR",
+            "minor_units": "750"
+          },
+          "operation": "subtract"
+        }
+      ],
+      "expected_minor_units": "53000"
+    }
+  ]
+}

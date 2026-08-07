@@ -24,6 +24,7 @@ import {
   type WorkflowEvent,
   type WorkflowTask,
 } from './domain';
+import { parsePluginEnvelope } from './plugin_envelope';
 import { WorkflowConflictError, type WorkflowRepository } from './repository';
 
 /** Input for `WorkflowService.create`. */
@@ -499,19 +500,39 @@ export class WorkflowService {
     // runner use, so a payload field can't exist for one hop and not
     // another. Null = not a service execution (other delegation kinds)
     // or unanswerable (missing identity fields) — nothing to bridge.
+    // §11.2a: a provider-ingress PLUGIN task carries its correlation in
+    // the plugin envelope's `service_ingress` block instead — second
+    // recognizer, same bridge, same durability semantics.
     const payload = parseServiceQueryExecutionPayload(task.payload);
-    if (payload === null) return;
-
-    const ctx: ServiceQueryBridgeContext = {
-      taskId: task.id,
-      fromDID: payload.from_did,
-      queryId: payload.query_id,
-      capability: payload.capability,
-      ttlSeconds: payload.ttl_seconds ?? 60,
-      resultJSON,
-      serviceName: payload.service_name ?? '',
-      schemaSnapshot: payload.schema_snapshot,
-    };
+    let ctx: ServiceQueryBridgeContext;
+    if (payload !== null) {
+      ctx = {
+        taskId: task.id,
+        fromDID: payload.from_did,
+        queryId: payload.query_id,
+        capability: payload.capability,
+        ttlSeconds: payload.ttl_seconds ?? 60,
+        resultJSON,
+        serviceName: payload.service_name ?? '',
+        schemaSnapshot: payload.schema_snapshot,
+      };
+    } else {
+      const envelope = parsePluginEnvelope(task.payload);
+      const ingress = envelope?.service_ingress;
+      if (envelope === null || ingress === undefined) return;
+      ctx = {
+        taskId: task.id,
+        fromDID: ingress.from_did,
+        queryId: ingress.query_id,
+        capability: ingress.capability,
+        ttlSeconds: ingress.ttl_seconds ?? 60,
+        resultJSON,
+        serviceName: ingress.service_name ?? '',
+        ...(ingress.schema_snapshot !== undefined
+          ? { schemaSnapshot: ingress.schema_snapshot }
+          : {}),
+      };
+    }
 
     const stashWritten = this.persistBridgeRecord(task, ctx, false);
 

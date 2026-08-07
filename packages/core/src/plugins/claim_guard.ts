@@ -35,6 +35,7 @@ import { canonicalJson, pluginLane } from '@dina/protocol';
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
 import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
+import { getDrainAuthorizationRepository } from './drain_authorizations';
 import { getPluginGrantRepository, invocationDigest } from './grants';
 import { validateAgainstSchema } from './schema_validate';
 
@@ -126,50 +127,102 @@ export function claimPluginTask(args: {
       failStale('envelope idempotency key diverged from the task column');
       continue;
     }
+    // §9.13 drain lane: a prior-CID envelope may be admitted ONLY
+    // through a live drain authorization for exactly this
+    // (install, previous CID, capability). The entry pins the
+    // AUTHORIZED prior values; checks 3c–3f/5/6 then validate against
+    // THOSE — the current manifest cannot vouch for a manifest it
+    // replaced. Entry creation (rebind flow / lifecycle continuity)
+    // happens from consented state, which is what makes the entry's
+    // existence the consent proof.
+    // ALL live entries are considered, and the task is admitted if ANY
+    // of them admits it: after a rebind a 'drain' entry (covering
+    // in-flight work) and a 'lifecycle_continuity' entry (admitting NEW
+    // prior-major lifecycle tasks, §9.13) are both normally live, and
+    // picking just one would let the drain entry's pre-rebind rule
+    // terminalize exactly the continuity tasks the spec protects.
+    const liveEntries =
+      envelope.manifest_cid !== install.currentCid
+        ? (getDrainAuthorizationRepository()?.listLive(
+            install.installId,
+            envelope.manifest_cid,
+            envelope.capability_id,
+            nowMs,
+          ) ?? [])
+        : [];
+    const admits = (entry: (typeof liveEntries)[number]): boolean =>
+      // 'drain' covers only tasks that existed at the rebind moment;
+      // 'lifecycle_continuity' also admits newly created tasks.
+      entry.kind === 'lifecycle_continuity' || task.created_at < entry.createdAt;
+    const drained =
+      envelope.manifest_cid !== install.currentCid ? (liveEntries.find(admits) ?? null) : null;
+    if (envelope.manifest_cid !== install.currentCid && drained === null) {
+      failStale(
+        liveEntries.length === 0
+          ? 'envelope manifest CID diverged from the install'
+          : 'drain entries admit only tasks created before the rebind',
+      );
+      continue;
+    }
     // Check 3 — capability consented (the capability-hash map IS the
-    // consent record: what the owner approved at install/update).
+    // consent record: what the owner approved at install/update). A
+    // drained task's consent proof is the drain entry instead — the
+    // capability may have left the CURRENT manifest entirely.
     const currentHash = install.capabilityHashes[envelope.capability_id];
-    if (currentHash === undefined) {
+    if (drained === null && currentHash === undefined) {
       failStale('capability no longer consented');
       continue;
     }
-    // Check 3b — the capability must exist in the stored manifest and be
-    // consented for the TOOL kind. The capability-hash map covers ALL
-    // declared capabilities, including provider-/ingest-only ones;
-    // presence there is NOT proof the owner consented to serve this
-    // capability as a tool on the install lane.
     const cap = install.manifest.capabilities.find((c) => c.id === envelope.capability_id);
-    if (cap === undefined) {
-      failStale('capability is not in the stored manifest');
-      continue;
-    }
-    if (!(cap.kinds ?? []).includes('tool')) {
-      failStale('capability not consented as a tool');
-      continue;
+    if (drained === null) {
+      // Check 3b — the capability must exist in the stored manifest and
+      // be consented for the required kind. The capability-hash map
+      // covers ALL declared capabilities, including provider-/ingest-only
+      // ones; presence there is NOT proof the owner consented to serve
+      // this capability under this kind on the install lane.
+      if (cap === undefined) {
+        failStale('capability is not in the stored manifest');
+        continue;
+      }
+      // §11.2a: the REQUIRED kind is keyed off the envelope. An ingress
+      // task (service_ingress present) may dispatch only a capability the
+      // owner consented as `provider`; every other plugin task requires
+      // `tool`. A provider task can never ride a tool consent, nor the
+      // reverse.
+      const requiredKind = envelope.service_ingress !== undefined ? 'provider' : 'tool';
+      if (!(cap.kinds ?? []).includes(requiredKind)) {
+        failStale(`capability not consented as a ${requiredKind}`);
+        continue;
+      }
     }
     // Checks 3c–3f — the pinned AUTHORITY fields are re-derived from the
-    // stored manifest, never trusted from the envelope. The envelope is
-    // built Core-side, but a stale or incorrect producer must not be able
-    // to point at a different manifest CID, mislabel the action class,
-    // change the retry contract, or pin a permissive result schema; each
-    // divergence terminalizes here, independently of how the envelope was
-    // assembled (defence-in-depth against a compromised producer).
-    if (envelope.manifest_cid !== install.currentCid) {
-      failStale('envelope manifest CID diverged from the install');
-      continue;
-    }
-    if (envelope.action_class !== cap.action_class) {
+    // stored manifest (or the drain entry's authorized prior values),
+    // never trusted from the envelope. The envelope is built Core-side,
+    // but a stale or incorrect producer must not be able to point at a
+    // different manifest CID, mislabel the action class, change the
+    // retry contract, or pin a permissive result schema; each divergence
+    // terminalizes here, independently of how the envelope was assembled
+    // (defence-in-depth against a compromised producer).
+    const expectedActionClass = drained !== null ? drained.actionClass : cap?.action_class;
+    if (envelope.action_class !== expectedActionClass) {
       failStale('envelope action_class diverged from the manifest');
       continue;
     }
-    const expectedIdem = cap.effects?.idempotency === 'supported' ? 'supported' : 'unsupported';
+    const expectedIdem =
+      drained !== null
+        ? drained.effectsIdempotency
+        : cap?.effects?.idempotency === 'supported'
+          ? 'supported'
+          : 'unsupported';
     if (envelope.effects_idempotency !== expectedIdem) {
       failStale('envelope effects idempotency diverged from the manifest');
       continue;
     }
-    if (
-      canonicalJson(envelope.schema_snapshot ?? null) !== canonicalJson(cap.result_schema ?? null)
-    ) {
+    const expectedSchemaJson =
+      drained !== null
+        ? canonicalJson(JSON.parse(drained.resultSchemaJson) as unknown)
+        : canonicalJson(cap?.result_schema ?? null);
+    if (canonicalJson(envelope.schema_snapshot ?? null) !== expectedSchemaJson) {
       failStale('envelope result schema diverged from the manifest');
       continue;
     }
@@ -177,9 +230,14 @@ export function claimPluginTask(args: {
     // params_schema. buildPluginEnvelope validates this at enqueue; re-checking
     // here means a producer that skipped it still can't dispatch off-contract
     // params (missing required fields, extra properties, wrong types) to the
-    // runner. Defence-in-depth on both produce and claim sides.
-    if (cap.params_schema !== undefined && cap.params_schema !== null) {
-      const paramsCheck = validateAgainstSchema(envelope.params, cap.params_schema);
+    // runner. Defence-in-depth on both produce and claim sides. Drained
+    // tasks were validated against the PRIOR params_schema at enqueue;
+    // the current schema cannot judge them (inspectability limits below
+    // still apply).
+    const consentedParamsSchema =
+      drained !== null ? (JSON.parse(drained.paramsSchemaJson) as unknown) : cap?.params_schema;
+    if (consentedParamsSchema !== undefined && consentedParamsSchema !== null) {
+      const paramsCheck = validateAgainstSchema(envelope.params, consentedParamsSchema);
       if (!paramsCheck.ok) {
         failStale(`params violate the consented params_schema: ${paramsCheck.error ?? 'unknown'}`);
         continue;
@@ -198,18 +256,28 @@ export function claimPluginTask(args: {
     // means a producer that skipped it still cannot flow unbounded or
     // unstructured context (raw vault data past the owner's ceiling) to the
     // runner. The non-bypassable execution boundary, not the producer, decides.
-    const ctxViolation = contextScopeViolation(envelope.context, cap.data_scope?.max_context_items);
+    const ctxViolation = contextScopeViolation(
+      envelope.context,
+      drained !== null
+        ? (drained.maxContextItems ?? undefined)
+        : cap?.data_scope?.max_context_items,
+    );
     if (ctxViolation !== null) {
       failStale(`context violates the consented data_scope: ${ctxViolation}`);
       continue;
     }
-    // Check 5 — pinned scope hash equals the CURRENT approved hash.
-    if (envelope.approved_scope_hash !== currentHash) {
+    // Check 5 — pinned scope hash equals the CURRENT approved hash
+    // (or, for a drained task, the hash AUTHORIZED for the prior CID).
+    const expectedScopeHash = drained !== null ? drained.approvedScopeHash : currentHash;
+    if (envelope.approved_scope_hash !== expectedScopeHash) {
       failStale('consent changed after this was queued');
       continue;
     }
-    // Check 6 — pinned config revision equals the CURRENT one.
-    if (envelope.config_revision !== install.configRevision) {
+    // Check 6 — pinned config revision equals the CURRENT one (or the
+    // drained task's authorized prior revision).
+    const expectedConfigRevision =
+      drained !== null ? drained.configRevision : install.configRevision;
+    if (envelope.config_revision !== expectedConfigRevision) {
       failStale('settings changed after this was queued');
       continue;
     }

@@ -142,6 +142,14 @@ export function scopeHashInput(
     config_schema: manifest.config_schema ?? null,
     // Routing consent (verbatim in the re-consent diff, §6).
     intent_phrases: cap.intent_phrases ?? [],
+    // §3.4 host_operations: consent-relevant — the install's brokered
+    // operation allowlist; widening it is a re-consent event. Included
+    // ONLY when non-empty so every pre-commerce manifest (and one that
+    // declares an empty list — no brokered authority either way) keeps
+    // its existing scope hash and frozen vector.
+    ...(cap.host_operations !== undefined && cap.host_operations.length > 0
+      ? { host_operations: cap.host_operations }
+      : {}),
     // Machine INTERFACE (move types + schemas) — not the wiring.
     machine_moves: cap.machine?.moves ?? null,
     ops_used: cap.ops_used ?? [],

@@ -120,6 +120,8 @@ export const PLUGIN_CAPS = Object.freeze({
   MAX_SHORT_DESCRIPTION_LENGTH: 400,
   /** network_domains entries per capability. */
   MAX_NETWORK_DOMAINS: 16,
+  /** host_operations per capability (§3.4 extension-operation allowlist). */
+  MAX_HOST_OPERATIONS: 16,
   // --- Round-16 bounds (fail-closed anti-amplification / anti-spoof) ---
   /** #14: data_scope.categories / .personas entry count + per-entry length. */
   MAX_DATA_CATEGORIES: 32,
@@ -287,6 +289,15 @@ export interface PluginCapabilityDecl {
   readonly data_scope?: PluginDataScope;
   /** Consent-card transparency, not a firewall (§17 honesty clause). */
   readonly network_domains?: readonly string[];
+  /**
+   * Core-brokered extension operations this capability may invoke
+   * (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §3.4): a bounded,
+   * sorted, deduplicated allowlist of registered operation names.
+   * Part of the canonical manifest bytes and the scope hash — widening
+   * it is a re-consent event. An operation not listed here is denied
+   * BEFORE validation.
+   */
+  readonly host_operations?: readonly string[];
 }
 
 /**

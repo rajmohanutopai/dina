@@ -183,3 +183,31 @@ export { WatchPollSweeper } from './src/watch/poll_sweeper';
 export type { WatchPollHandler } from './src/watch/poll_sweeper';
 export type { WatchPollPayload } from './src/watch/payload';
 export { buildWatchPollHandler, newWatchQueryId } from './src/watch/poll_query';
+// Commerce Pack Core stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §23)
+export * from './src/commerce';
+// §9.13 drain authorizations (rebind drain + lifecycle continuity)
+export {
+  SQLiteDrainAuthorizationRepository,
+  InMemoryDrainAuthorizationRepository,
+  setDrainAuthorizationRepository,
+  getDrainAuthorizationRepository,
+} from './src/plugins/drain_authorizations';
+export type {
+  DrainAuthorization,
+  DrainAuthorizationKind,
+  DrainAuthorizationRepository,
+} from './src/plugins/drain_authorizations';
+
+// Extension-operation registry (§3.4 commerce host-operations gate)
+export {
+  ExtensionOperationRegistry,
+  checkHostOperationInvocation,
+  setExtensionOperationRegistry,
+  getExtensionOperationRegistry,
+} from './src/plugins/extension_ops';
+export type {
+  ExtensionActionClass,
+  ExtensionOperationDef,
+  RegisteredExtensionOperation,
+  HostOperationGateResult,
+} from './src/plugins/extension_ops';
