@@ -329,6 +329,126 @@ describe.each([
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
     });
 
+    it('the reconciliation ceremony UNFREEZES a re-adopted order (§16.2)', () => {
+      // The other half of the two rules above. Re-adoption bars genesis and
+      // cancellation because the node cannot describe the order — and until
+      // this landed, NOTHING cleared that flag, so a re-adopted order was
+      // frozen for good. A rule with no exit is not a fence, it is a wall.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const heldAck = JSON.parse(
+        h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.acknowledgementJson ?? '{}',
+      ) as OrderAcknowledgement;
+
+      const fresh = makeHarness();
+      try {
+        const engineB = new CommerceLifecycleEngine({
+          tx: fresh.tx,
+          orders: makeOrders(fresh.orderRefs, clock),
+          chains: makeChains(fresh.statusHeads, clock, () => '1'),
+          receipts: fresh.receipts,
+          families: makeFamilies(fresh.quotes, clock, () => '1'),
+          supplierDid: () => SUPPLIER_DID,
+          now: () => clock.now,
+          currentEpoch: () => '1',
+          verifyHeldEvidence: () => true,
+        });
+        engineB.reconcile(
+          {
+            protocol_version: '1.0',
+            purchase_order_id: order.purchase_order_id,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: order.order_digest,
+            idempotency_key: order.idempotency_key,
+            held_acknowledgement: evid(heldAck),
+          },
+          BUYER_DID,
+        );
+        // Frozen: genesis refused.
+        expect('error' in engineB.signGenesis(BUYER_DID, order.purchase_order_id)).toBe(true);
+
+        // The buyer presents the order it holds.
+        expect(engineB.reconcileRestoredOrder(order, BUYER_DID)).toEqual({ ok: true });
+
+        const after = fresh.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id);
+        expect(after?.reconciliationRequired).toBe(false);
+        // The recovered proposal is STORED — that is what makes the clearing
+        // honest rather than a flag flip: the node can describe the order now.
+        expect(JSON.parse(after?.orderJson ?? '{}').order_digest).toBe(order.order_digest);
+
+        // Unfrozen: genesis now signs.
+        const genesis = engineB.signGenesis(BUYER_DID, order.purchase_order_id);
+        expect('status_digest' in genesis && genesis.sequence).toBe('0');
+      } finally {
+        fresh.cleanup();
+      }
+    });
+
+    it('refuses a proposal whose digest is not the order this node acknowledged', () => {
+      // The digest is the whole proof. Without it the ceremony accepts any
+      // document the buyer calls "the order", and the node then signs a
+      // genesis describing lines nobody agreed to.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const heldAck = JSON.parse(
+        h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.acknowledgementJson ?? '{}',
+      ) as OrderAcknowledgement;
+
+      const fresh = makeHarness();
+      try {
+        const engineB = new CommerceLifecycleEngine({
+          tx: fresh.tx,
+          orders: makeOrders(fresh.orderRefs, clock),
+          chains: makeChains(fresh.statusHeads, clock, () => '1'),
+          receipts: fresh.receipts,
+          families: makeFamilies(fresh.quotes, clock, () => '1'),
+          supplierDid: () => SUPPLIER_DID,
+          now: () => clock.now,
+          currentEpoch: () => '1',
+          verifyHeldEvidence: () => true,
+        });
+        engineB.reconcile(
+          {
+            protocol_version: '1.0',
+            purchase_order_id: order.purchase_order_id,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: order.order_digest,
+            idempotency_key: order.idempotency_key,
+            held_acknowledgement: evid(heldAck),
+          },
+          BUYER_DID,
+        );
+
+        // A DIFFERENT order, self-consistent, same id — the shape a buyer
+        // would forge to enlarge what it claims to have ordered.
+        const forged = makeOrder(
+          makeSignedQuote(request, { quote_id: 'q-forged' }),
+          priced_projection,
+          { purchase_order_id: order.purchase_order_id, buyer_reference: 'PO/FORGED' },
+        );
+        expect('error' in engineB.reconcileRestoredOrder(forged, BUYER_DID)).toBe(true);
+        expect(
+          fresh.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.reconciliationRequired,
+        ).toBe(true);
+      } finally {
+        fresh.cleanup();
+      }
+    });
+
+    it('a stranger cannot reconcile an order that is not theirs', () => {
+      const { order } = seedAdmittedOrder();
+      expect('error' in engine.reconcileRestoredOrder(order, 'did:plc:stranger99')).toBe(true);
+    });
+
+    it('an order that was never re-adopted has nothing to reconcile', () => {
+      // Clearing a flag that was never set would re-stamp `admitted_epoch` to
+      // a later epoch and could un-fence an order a restore had fenced.
+      const { order } = seedAdmittedOrder();
+      expect('error' in engine.reconcileRestoredOrder(order, BUYER_DID)).toBe(true);
+    });
+
     it('a RE-ADOPTED order cannot be CANCELLED until it is reconciled (§16.2)', () => {
       // The sibling of the genesis rule, and the one that matters more.
       // Re-adoption rebuilds the reference from the buyer's held

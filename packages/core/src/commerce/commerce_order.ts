@@ -35,7 +35,10 @@ export type OrderRefusal =
   | 'already_decided'
   | 'effect_already_started'
   | 'effect_started_cannot_time_out'
-  | 'decision_cas_lost';
+  | 'decision_cas_lost'
+  | 'not_awaiting_reconciliation'
+  | 'order_digest_mismatch'
+  | 'reconcile_cas_lost';
 
 export type OrderOutcome<T = void> =
   | { ok: true; value: T }
@@ -114,6 +117,50 @@ export class CommerceOrder {
     // corruption. The caller replays the recorded answer.
     return decided ? allow(undefined) : refuse('decision_cas_lost');
   }
+
+  /**
+   * §16.2 (WS-4.3) — the per-order reconciliation ceremony.
+   *
+   * A re-adopted order is rebuilt from the counterparty's held
+   * acknowledgement, which proves WHAT WAS DECIDED but carries none of the
+   * order's own content. Such an order cannot sign a genesis (it cannot
+   * describe its lines) and cannot be cancelled (this node does not know
+   * what it decided). Until now nothing could clear that: `reconciliation
+   * _required` was set by re-adoption and never unset anywhere, so a
+   * re-adopted order was frozen for good — a one-way door.
+   *
+   * The ceremony's bar is the ORDER PROPOSAL, presented by the buyer. That
+   * is the exact state this node lost, and the stored `orderDigest` — which
+   * came from the supplier's own signed acknowledgement — proves the
+   * presented proposal is the right one. A buyer cannot substitute a
+   * different order: the digest would not match.
+   *
+   * DELIBERATELY NOT an operator judgement call. The alternative design
+   * asked the owner "did we ship this?" before clearing. But a re-adopted
+   * order has no status chain at all, so there is no fulfilment to
+   * reconcile — the first status it can sign is the genesis, which states
+   * what the acknowledgement already says. Asking a human to confirm
+   * something the records already establish trains them to click through.
+   */
+  reconcile(options: { orderProposalJson: string; presentedDigest: string; atEpoch: string }): OrderOutcome {
+    // Layered with the repository's `reconciliation_required = 1` CAS on
+    // purpose, and the pair is load-bearing: this one gives the caller a
+    // precise refusal for an order that was never re-adopted, the CAS makes
+    // two concurrent ceremonies resolve to one winner. Removing either alone
+    // leaves the other covering the single-threaded case; removing both lets
+    // a second ceremony re-stamp `admitted_epoch` to a later epoch and
+    // un-fence an order a restore deliberately fenced.
+    if (!this.row.reconciliationRequired) return refuse('not_awaiting_reconciliation');
+    // The digest is the whole proof. Without this check the ceremony would
+    // accept any document the buyer chose to call "the order", and the node
+    // would then sign a genesis describing lines nobody agreed to.
+    if (options.presentedDigest !== this.row.orderDigest) return refuse('order_digest_mismatch');
+    const done = this.deps.refs.reconcile(this.row.buyerDid, this.row.purchaseOrderId, {
+      orderJson: options.orderProposalJson,
+      atEpoch: options.atEpoch,
+    });
+    return done ? allow(undefined) : refuse('reconcile_cas_lost');
+  }
 }
 
 /**
@@ -145,7 +192,7 @@ export class CommerceOrderStore {
   createReserved(
     ref: Omit<
       CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
+      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt' | 'orderJson'
     >,
   ): boolean {
     return this.deps.refs.createReserved(ref);

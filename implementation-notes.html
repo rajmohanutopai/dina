@@ -1241,6 +1241,53 @@
       6,357 core; typecheck and lint clean.
     </p>
 
+    <h3>WS-4.3 — the fence had no gate <span class="meta">(part)</span></h3>
+    <p>
+      <strong>I built a one-way door and then locked it harder.</strong> Re-adoption stamps
+      <code>reconciliation_required</code>, which bars chain creation — and, as of WS-4.4, bars
+      cancellation too. Nothing anywhere ever cleared that flag. A re-adopted order was frozen
+      permanently: it could never sign a status, and after my last commit it could never be
+      cancelled either. A rule with no exit is not a fence, it is a wall.
+    </p>
+    <p>
+      <strong>The bar is the order proposal, and the digest is the whole proof.</strong> The buyer
+      presents the proposal it holds; Core requires its digest to equal the one on the reference,
+      which came from this supplier's OWN signed acknowledgement. So the check binds the recovered
+      document to something the supplier already committed to — a buyer cannot substitute a larger
+      order, because the digest would not match. The proposal is then STORED, which is what makes
+      the clearing honest rather than a flag flip: the node can describe the order's lines again,
+      which is exactly the capability it lost.
+    </p>
+    <p>
+      <strong>Deliberately not an operator confirmation.</strong> The obvious alternative asks the
+      owner "did we ship this?" before clearing. But a re-adopted order has no status chain at all,
+      so there is no fulfilment to reconcile — the first status it can sign is the genesis, which
+      states what the acknowledgement already says. Asking a human to confirm something the records
+      establish trains them to click through, which costs more safety than it buys.
+    </p>
+    <p>
+      <strong>A SQLite-only failure the dual-backend harness caught.</strong> The in-memory
+      repository passed while SQLite returned an empty proposal: the new column was in the schema
+      and the UPDATE, but not in the SELECT's explicit column list. A single-backend test would have
+      shipped it.
+    </p>
+    <p>
+      <strong>Mutation found one piece of dead code and one honest pair.</strong> The explicit
+      buyer-DID comparison survived deletion, because <code>orders.load</code> is keyed on
+      (buyerDid, purchaseOrderId) — the lookup IS the ownership test, the same
+      entitlement-by-possession the ingress gate uses. Deleted rather than kept as a weaker second
+      copy of a rule, since the proposal is attacker-supplied and the key is not. The aggregate's
+      flag check and the repository's CAS also each survived alone — but removing BOTH fails, so
+      they are layered rather than duplicated: one gives a precise refusal, the other makes two
+      concurrent ceremonies resolve to one winner. Documented as such.
+    </p>
+    <p class="meta">
+      PART, not DONE: there is no owner-facing surface (route or UI) and no bulk sweep over all
+      non-terminal orders — the ceremony is per-order and caller-driven. Verification: 4 new tests,
+      4 mutations caught, 2 redundancies analysed rather than assumed. Tests: 6,365 core, 2,839
+      server, 3,293 mobile; typecheck and lint clean.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.

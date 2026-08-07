@@ -26,6 +26,7 @@ import {
   validateCancellationRequest,
   validateCommerceOrderStatus,
   validateOrderReconcileRequest,
+  validatePurchaseOrderProposal,
   statusIsTerminal,
   validateOrderAcknowledgement,
   verifyStatusLines,
@@ -1190,6 +1191,55 @@ export class CommerceLifecycleEngine {
     if (!created.ok) return { error: chainError(created) };
     this.persistStatus(status, quoteId, nowMs);
     return status;
+  }
+
+  /**
+   * §16.2 (WS-4.3) — the per-order reconciliation ceremony.
+   *
+   * Re-adoption rebuilds an order from the buyer's held acknowledgement and
+   * stamps it `reconciliationRequired`, which bars chain creation and (since
+   * WS-4.4) cancellation. NOTHING cleared that flag, so a re-adopted order
+   * stayed frozen for ever. This is the way out.
+   *
+   * The buyer presents the order proposal it holds. Core validates it and
+   * requires its digest to equal the one on the reference — which came from
+   * this supplier's own signed acknowledgement, so the check binds the
+   * recovered document to what the supplier already committed to. A
+   * different order cannot be substituted.
+   *
+   * Non-disclosing throughout: unknown order, another buyer's order, an
+   * order that was never re-adopted, and a mismatched proposal are one
+   * answer.
+   */
+  reconcileRestoredOrder(
+    proposal: unknown,
+    authenticatedBuyerDid: string,
+  ): { ok: true } | { error: string } {
+    const structural = validatePurchaseOrderProposal(proposal, hash);
+    if (structural !== null) return { error: structural };
+    const order = proposal as unknown as PurchaseOrderProposal;
+    // No separate buyer check: `orders.load` is keyed on (buyerDid,
+    // purchaseOrderId), so looking the order up under the AUTHENTICATED
+    // caller IS the ownership test — the same entitlement-by-possession the
+    // ingress gate uses. A comparison against the proposal's own `buyer_did`
+    // would be a second, weaker copy of a rule the lookup already enforces:
+    // the proposal is attacker-supplied, the key is not.
+
+    let outcome: { ok: true } | { error: string } = { error: NON_DISCLOSING_ERROR };
+    this.deps.tx(() => {
+      const loaded = this.deps.orders.load(authenticatedBuyerDid, order.purchase_order_id);
+      if (loaded === null) return;
+      const done = loaded.reconcile({
+        orderProposalJson: JSON.stringify(order),
+        presentedDigest: order.order_digest,
+        // Stamp the CURRENT epoch: the order is described again and belongs
+        // to this generation. Leaving the old epoch would keep it fenced by
+        // the pre-restore check and the ceremony would achieve nothing.
+        atEpoch: this.deps.currentEpoch(),
+      });
+      outcome = done.ok ? { ok: true } : { error: NON_DISCLOSING_ERROR };
+    });
+    return outcome;
   }
 
   /**

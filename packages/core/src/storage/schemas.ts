@@ -1591,6 +1591,14 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- the order itself. Without it a restored node re-signs a divergent
         -- sequence-0 record and forks against the genesis the buyer holds.
         admitted_epoch TEXT NOT NULL DEFAULT '1',
+        -- §16.2 (WS-4.3): the buyer-presented, digest-verified order proposal
+        -- recovered by the reconciliation ceremony. Empty for an order this
+        -- node admitted itself (it never lost the proposal) and for a
+        -- re-adopted order that has not yet been reconciled. Storing it is
+        -- what makes the ceremony's work durable: without the proposal a
+        -- re-adopted order can never describe its own lines, so it could
+        -- never sign a genesis and the flag could never honestly clear.
+        order_json TEXT NOT NULL DEFAULT '',
         -- §16.2: set when an order reference was rebuilt from a counterparty's
         -- held evidence rather than admitted here. Such an order is missing its
         -- lines, quote context and external state, so this node must not sign a
