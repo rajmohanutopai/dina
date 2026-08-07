@@ -14,6 +14,7 @@ import {
   verifyRestoreFence,
   type CancellationRequest,
   type CommerceOrderStatus,
+  type OrderAcknowledgement,
 } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -45,6 +46,7 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  makeChains,
   makeFamilies,
 } from './helpers';
 
@@ -130,7 +132,7 @@ describe.each([
     engine = new CommerceLifecycleEngine({
       tx: h.tx,
       orderRefs: h.orderRefs,
-      statusHeads: h.statusHeads,
+      chains: makeChains(h.statusHeads, clock, () => '1'),
       receipts: h.receipts,
       families: makeFamilies(h.quotes, clock, () => '1'),
       supplierDid: SUPPLIER_DID,
@@ -219,7 +221,7 @@ describe.each([
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -233,6 +235,177 @@ describe.each([
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.headDigest).toBe(
         headBefore.headDigest,
       );
+    });
+
+    it('refuses to sign a GENESIS for an order that predates a restore (§16.2)', () => {
+      // The escape no call-site check could catch. "There is no head yet, so
+      // nothing can be damaged" is false: the state that matters after a
+      // restore is the BUYER's copy. A restored supplier whose head row was
+      // lost would sign a second, different sequence-0 record; the buyer then
+      // holds two genesis records for one order and rejects the new one as a
+      // fork. The fence cannot repair it — unavailable before a genesis
+      // exists, blocked afterwards by the same-sequence fork check.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      // No genesis signed yet, and the local head row is absent exactly as it
+      // would be after restoring a backup taken before the genesis.
+
+      const restored = new CommerceLifecycleEngine({
+        tx: h.tx,
+        orderRefs: h.orderRefs,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
+        receipts: h.receipts,
+        families: makeFamilies(h.quotes, clock, () => '2'),
+        supplierDid: SUPPLIER_DID,
+        now: () => clock.now,
+        currentEpoch: () => '2',
+      });
+
+      const genesis = restored.signGenesis(BUYER_DID, order.purchase_order_id);
+      expect('error' in genesis && genesis.error).toMatch(/order predates a restore/);
+      // Nothing was written, so a later reconciliation still has a clean slate.
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+    });
+
+    it('refuses a cancellation-won GENESIS on a pre-restore order (§16.2)', () => {
+      // Same rule, reached through the private in-transaction signer. Worse
+      // than the successor case: this one would record a terminal
+      // rejected(cancelled_by_buyer) for an order the supplier may already
+      // have accepted and the buyer can prove with a signed acknowledgement.
+      const { order } = seedAdmittedOrder();
+
+      const restored = new CommerceLifecycleEngine({
+        tx: h.tx,
+        orderRefs: h.orderRefs,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
+        receipts: h.receipts,
+        families: makeFamilies(h.quotes, clock, () => '2'),
+        supplierDid: SUPPLIER_DID,
+        now: () => clock.now,
+        currentEpoch: () => '2',
+      });
+
+      const result = restored.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'cancelled');
+      expect('error' in result && result.error).toMatch(/order predates a restore/);
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+    });
+
+    it('a RE-ADOPTED order cannot sign a genesis until it is reconciled (§16.2)', () => {
+      // Re-adoption rebuilds an order reference from a buyer's held
+      // acknowledgement but not the order's lines or quote context, so the
+      // node cannot fully describe the order it just adopted. Stamping it
+      // pre-restore makes chain creation refuse: failing closed costs a
+      // refusal, failing open costs a second conflicting signature.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const ackRow = h.receipts.get(
+        JSON.parse(
+          h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.acknowledgementJson ??
+            'null',
+        )?.acknowledgement_digest ?? '',
+      );
+      expect(ackRow).not.toBeNull();
+
+      // A fresh node (nothing local) re-adopts from the buyer's evidence.
+      const fresh = makeHarness();
+      try {
+        const engineB = new CommerceLifecycleEngine({
+          tx: fresh.tx,
+          orderRefs: fresh.orderRefs,
+          chains: makeChains(fresh.statusHeads, clock, () => '1'),
+          receipts: fresh.receipts,
+          families: makeFamilies(fresh.quotes, clock, () => '1'),
+          supplierDid: SUPPLIER_DID,
+          now: () => clock.now,
+          currentEpoch: () => '1',
+          verifyHeldEvidence: () => true,
+        });
+        const heldAck = JSON.parse(
+          h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.acknowledgementJson ?? '{}',
+        ) as OrderAcknowledgement;
+        const adopted = engineB.reconcile(
+          {
+            protocol_version: '1.0',
+            purchase_order_id: order.purchase_order_id,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: order.order_digest,
+            idempotency_key: order.idempotency_key,
+            held_acknowledgement: evid(heldAck),
+          },
+          BUYER_DID,
+        );
+        expect('error' in adopted).toBe(false);
+
+        // The re-adopted order is stamped pre-restore, so no first status.
+        const genesis = engineB.signGenesis(BUYER_DID, order.purchase_order_id);
+        expect('error' in genesis && genesis.error).toMatch(/not reconciled/);
+      } finally {
+        fresh.cleanup();
+      }
+    });
+
+    it('acceptance opens the status chain in the SAME transaction (§12.8)', () => {
+      // Before this, acceptance and genesis were two transactions. A
+      // cancellation arriving in the gap saw a decided order with no chain
+      // and answered refused_policy; the same cancellation a moment later
+      // could cancel. The reason code depended on timing, not on the order.
+      const { order } = seedAdmittedOrder();
+
+      const atomicAdmission = new CommerceAdmissionEngine({
+        tx: h.tx,
+        orderRefs: h.orderRefs,
+        families: makeFamilies(h.quotes, clock, () => '1'),
+        receipts: h.receipts,
+        supplierDid: SUPPLIER_DID,
+        now: () => clock.now,
+        decisionTimeoutMs: 60_000,
+        createAcceptedGenesisInTx: (b, po) => engine.createAcceptedGenesisInTx(b, po),
+      });
+
+      const decided = atomicAdmission.decideOrder(BUYER_DID, order.purchase_order_id, {
+        kind: 'accepted',
+        supplierOrderId: 'so-atomic',
+      });
+      expect('acknowledgement' in decided).toBe(true);
+
+      // There is no observable window: the chain exists the moment the
+      // order is decided.
+      const head = h.statusHeads.get(BUYER_DID, order.purchase_order_id);
+      expect(head).not.toBeNull();
+      expect(head?.headSequence).toBe('0');
+      expect(head?.state).toBe('accepted');
+    });
+
+    it('a genesis failure rolls the ACCEPTANCE back rather than stranding it', () => {
+      // The other half of atomicity. An accepted order whose chain could not
+      // open is precisely the state the race exploited, so it must not be
+      // reachable — the decision rolls back and the buyer may retry.
+      const { order } = seedAdmittedOrder();
+
+      const brokenAdmission = new CommerceAdmissionEngine({
+        tx: h.tx,
+        orderRefs: h.orderRefs,
+        families: makeFamilies(h.quotes, clock, () => '1'),
+        receipts: h.receipts,
+        supplierDid: SUPPLIER_DID,
+        now: () => clock.now,
+        decisionTimeoutMs: 60_000,
+        createAcceptedGenesisInTx: () => ({ error: 'status: simulated chain failure' }),
+      });
+
+      expect(() =>
+        brokenAdmission.decideOrder(BUYER_DID, order.purchase_order_id, {
+          kind: 'accepted',
+          supplierOrderId: 'so-broken',
+        }),
+      ).toThrow(/could not open its status chain/);
+
+      // SQLite has real transactions; the in-memory runner is a pass-through.
+      if (_label === 'sqlite') {
+        expect(h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.state).toBe('reserved');
+        expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+      }
     });
 
     it('refuses an ordinary successor on a chain that predates a restore (§16.2)', () => {
@@ -250,7 +423,7 @@ describe.each([
       const restored = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -301,7 +474,7 @@ describe.each([
       const withLoss = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: lossy,
         families: makeFamilies(h.quotes, clock, () => '1'),
         supplierDid: SUPPLIER_DID,
@@ -352,7 +525,7 @@ describe.each([
       const withTamper = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: tampered,
         families: makeFamilies(h.quotes, clock, () => '1'),
         supplierDid: SUPPLIER_DID,
@@ -398,7 +571,7 @@ describe.each([
       const withSwap = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: swapped,
         families: makeFamilies(h.quotes, clock, () => '1'),
         supplierDid: SUPPLIER_DID,
@@ -658,7 +831,7 @@ describe.each([
       const restoredEngine = new CommerceLifecycleEngine({
         tx: restored.tx,
         orderRefs: restored.orderRefs,
-        statusHeads: restored.statusHeads,
+        chains: makeChains(restored.statusHeads, clock, () => '2'),
         receipts: restored.receipts,
         families: makeFamilies(restored.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -712,7 +885,7 @@ describe.each([
           const noVerifier = new CommerceLifecycleEngine({
             tx: unverified.tx,
             orderRefs: unverified.orderRefs,
-            statusHeads: unverified.statusHeads,
+            chains: makeChains(unverified.statusHeads, clock, () => '2'),
             receipts: unverified.receipts,
             families: makeFamilies(unverified.quotes, clock, () => '2'),
             supplierDid: SUPPLIER_DID,
@@ -749,7 +922,7 @@ describe.each([
         const restoredEngine = new CommerceLifecycleEngine({
           tx: restored.tx,
           orderRefs: restored.orderRefs,
-          statusHeads: restored.statusHeads,
+          chains: makeChains(restored.statusHeads, clock, () => '2'),
           receipts: restored.receipts,
           families: makeFamilies(restored.quotes, clock, () => '2'),
           supplierDid: SUPPLIER_DID,
@@ -808,7 +981,7 @@ describe.each([
       const restoredEngine = new CommerceLifecycleEngine({
         tx: restored.tx,
         orderRefs: restored.orderRefs,
-        statusHeads: restored.statusHeads,
+        chains: makeChains(restored.statusHeads, clock, () => '2'),
         receipts: restored.receipts,
         families: makeFamilies(restored.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -825,6 +998,8 @@ describe.each([
           quoteId: 'q-other',
           quoteDigest: 'c'.repeat(64),
           pinnedMajor: '1',
+        admittedEpoch: '1',
+        reconciliationRequired: false,
           decisionDeadlineAt: null,
           createdAt: clock.now,
         });
@@ -941,7 +1116,7 @@ describe.each([
         new CommerceLifecycleEngine({
           tx: fresh.tx,
           orderRefs: fresh.orderRefs,
-          statusHeads: fresh.statusHeads,
+          chains: makeChains(fresh.statusHeads, clock, () => '2'),
           receipts: fresh.receipts,
           families: makeFamilies(fresh.quotes, clock, () => '2'),
           supplierDid: SUPPLIER_DID,
@@ -995,7 +1170,7 @@ describe.each([
       const restoredEngine = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => epoch),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => epoch),
         supplierDid: SUPPLIER_DID,
@@ -1045,7 +1220,7 @@ describe.each([
       const noVerifier = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -1112,7 +1287,7 @@ describe.each([
       const fencing = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -1156,7 +1331,7 @@ describe.each([
       const fencing = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -1211,7 +1386,7 @@ describe.each([
       const fencingEngine = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '2'),
         receipts: h.receipts,
         families: makeFamilies(h.quotes, clock, () => '2'),
         supplierDid: SUPPLIER_DID,
@@ -1282,7 +1457,7 @@ describe.each([
       const corruptEngine = new CommerceLifecycleEngine({
         tx: h.tx,
         orderRefs: h.orderRefs,
-        statusHeads: h.statusHeads,
+        chains: makeChains(h.statusHeads, clock, () => '1'),
         receipts: corruptReceipts,
         families: makeFamilies(h.quotes, clock, () => '1'),
         supplierDid: SUPPLIER_DID,

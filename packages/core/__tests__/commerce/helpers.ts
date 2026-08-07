@@ -19,7 +19,12 @@ import {
   type SignedQuoteLine,
 } from '@dina/commerce-protocol';
 
-import { QuoteFamilyStore, type CommerceQuoteLedgerRepository } from '../../src/commerce';
+import {
+  QuoteFamilyStore,
+  StatusChainStore,
+  type CommerceQuoteLedgerRepository,
+  type CommerceStatusHeadRepository,
+} from '../../src/commerce';
 
 export const hash: Sha256Fn = (data) => sha256(data);
 
@@ -28,6 +33,18 @@ export const hash: Sha256Fn = (data) => sha256(data);
  * the raw ledger. Tests that reach past this are testing a surface the
  * engines no longer have.
  */
+/**
+ * Status-chain state as the production code sees it: an aggregate store,
+ * never the raw head repository.
+ */
+export function makeChains(
+  heads: CommerceStatusHeadRepository,
+  clock: { now: number },
+  currentEpoch: () => string = () => '1',
+): StatusChainStore {
+  return new StatusChainStore({ heads, currentEpoch, now: () => clock.now });
+}
+
 export function makeFamilies(
   ledger: CommerceQuoteLedgerRepository,
   clock: { now: number },

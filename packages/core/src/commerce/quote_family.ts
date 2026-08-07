@@ -47,6 +47,7 @@ export type QuoteRefusal =
   | 'stale_epoch'
   | 'future_epoch'
   | 'foreign_supplier'
+  | 'foreign_audience'
   | 'duplicate_use'
   | 'revision_rejected';
 
@@ -137,10 +138,21 @@ export class QuoteFamily {
    * Birth of a family (revision "1"). Binds supplier epoch at creation so
    * a family can never be born already stale.
    */
+  /**
+   * `expectedBuyerDid` is REQUIRED, not inferred from the quote. A runner
+   * supplies the quote; the caller supplies who it is supposed to be for.
+   * Making the expectation an argument is the difference between a rule
+   * every path must satisfy and a rule every path must remember — the
+   * audience check previously lived at call sites and was missed at the
+   * second one (counterproposal fixed, re-offer not) and would have been
+   * missed at the third.
+   */
   static register(
     deps: QuoteFamilyDeps,
     quote: SignedQuote,
+    expectedBuyerDid: string,
   ): QuoteOutcome<QuoteFamily> {
+    if (quote.buyer_did !== expectedBuyerDid) return refuse('foreign_audience');
     // §9.12 — a quote candidate arrives from an UNTRUSTED runner. Every
     // field it carries that Core will authenticate has to be bound here,
     // because after registration the digest makes it Core's own word.
@@ -330,12 +342,17 @@ export class QuoteFamily {
 export class QuoteFamilyStore {
   constructor(private readonly deps: QuoteFamilyDeps) {}
 
+  /** The live commerce epoch, for callers that must stamp it durably. */
+  currentEpoch(): string {
+    return this.deps.currentEpoch();
+  }
+
   load(quoteId: string): QuoteFamily | null {
     return QuoteFamily.load(this.deps, quoteId);
   }
 
-  register(quote: SignedQuote): QuoteOutcome<QuoteFamily> {
-    return QuoteFamily.register(this.deps, quote);
+  register(quote: SignedQuote, expectedBuyerDid: string): QuoteOutcome<QuoteFamily> {
+    return QuoteFamily.register(this.deps, quote, expectedBuyerDid);
   }
 
   /**

@@ -393,6 +393,8 @@ describe('provider ingress bridge (§11.2a)', () => {
         quoteId: 'q-1',
         quoteDigest: 'e'.repeat(64),
         pinnedMajor: '1',
+      admittedEpoch: '1',
+      reconciliationRequired: false,
         decisionDeadlineAt: T0 + 60_000,
         createdAt: T0,
       });

@@ -41,7 +41,7 @@ describe('QuoteFamily', () => {
       // back to life on top of the backup's stale use counters.
       const { store, clock } = makeStore('1');
       const quote = makeSignedQuote(request, { valid_until: '2026-08-08T09:00:00.000Z' });
-      const registered = store.register(quote);
+      const registered = store.register(quote, BUYER);
       expect(registered.ok).toBe(true);
 
       // Time passes: the family expires. Then a restore raises the epoch.
@@ -76,19 +76,19 @@ describe('QuoteFamily', () => {
       // counters come back with it.
       const { store } = makeStore('1');
       const quote = makeSignedQuote(request, { supplier_epoch: '999' });
-      expect(store.register(quote)).toEqual({ ok: false, refusal: 'future_epoch' });
+      expect(store.register(quote, BUYER)).toEqual({ ok: false, refusal: 'future_epoch' });
     });
 
     it('refuses to be BORN from another supplier (§9.12)', () => {
       const { store } = makeStore('1');
       const quote = makeSignedQuote(request, { supplier_did: 'did:plc:othersupplier9' });
-      expect(store.register(quote)).toEqual({ ok: false, refusal: 'foreign_supplier' });
+      expect(store.register(quote, BUYER)).toEqual({ ok: false, refusal: 'foreign_supplier' });
     });
 
     it('refuses a revision from another supplier, even one that extends cleanly', () => {
       const { store } = makeStore('1');
       const quote = makeSignedQuote(request);
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
       const hijack = makeRevision(quote, { supplier_did: 'did:plc:othersupplier9' });
       const outcome = reg.value.advance(hijack, quote, verifyQuoteRevisionExtends);
@@ -101,13 +101,13 @@ describe('QuoteFamily', () => {
       const { store, clock } = makeStore('2');
       clock.epoch = '2';
       const quote = makeSignedQuote(request, { supplier_epoch: '1' });
-      expect(store.register(quote)).toEqual({ ok: false, refusal: 'stale_epoch' });
+      expect(store.register(quote, BUYER)).toEqual({ ok: false, refusal: 'stale_epoch' });
     });
 
     it('allows normal operation within the current epoch', () => {
       const { store } = makeStore('1');
       const quote = makeSignedQuote(request);
-      const registered = store.register(quote);
+      const registered = store.register(quote, BUYER);
       if (!registered.ok) throw new Error('register failed');
       expect(registered.value.hold('po-1')).toEqual({ ok: true, value: undefined });
     });
@@ -117,7 +117,7 @@ describe('QuoteFamily', () => {
     it('advances the validity window WITH the head', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request);
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       const extended = makeRevision(quote, { valid_until: '2026-08-20T09:00:00.000Z' });
@@ -137,7 +137,7 @@ describe('QuoteFamily', () => {
     it('refuses a revision that does not extend the retained head', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request);
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       const fork = makeRevision(quote, { previous_quote_digest: 'a'.repeat(64) });
@@ -155,7 +155,7 @@ describe('QuoteFamily', () => {
       // "revision_rejected" alone tells an operator nothing.
       const { store } = makeStore('2');
       const quote = makeSignedQuote(request, { supplier_epoch: '2' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       const regressed = makeRevision(quote, { supplier_epoch: '1' });
@@ -180,7 +180,7 @@ describe('QuoteFamily', () => {
       // reason code depend on branch order rather than on the quote.
       const { store, clock } = makeStore();
       const quote = makeSignedQuote(request, { valid_until: '2026-08-08T09:00:00.000Z' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
       const next = makeRevision(quote, { valid_until: '2026-08-20T09:00:00.000Z' });
       expect(reg.value.advance(next, quote, verifyQuoteRevisionExtends).ok).toBe(true);
@@ -203,7 +203,7 @@ describe('QuoteFamily', () => {
     it('refuses a second hold for the same order while capacity remains', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request, { max_uses: '3' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
       expect(reg.value.hold('po-1').ok).toBe(true);
       expect(reg.value.hold('po-1')).toEqual({ ok: false, refusal: 'duplicate_use' });
@@ -217,7 +217,7 @@ describe('QuoteFamily', () => {
       // the discipline this refactor exists to remove.
       const { store, clock } = makeStore();
       const quote = makeSignedQuote(request, { valid_until: '2026-08-08T09:00:00.000Z' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       clock.now = Date.parse('2026-08-08T09:00:00.001Z');
@@ -230,7 +230,7 @@ describe('QuoteFamily', () => {
       // the quote was consumed — by the caller's own hold.
       const { store } = makeStore();
       const quote = makeSignedQuote(request, { max_uses: '1' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
       expect(reg.value.hold('po-1').ok).toBe(true);
       expect(reg.value.hold('po-1')).toEqual({ ok: false, refusal: 'duplicate_use' });
@@ -239,7 +239,7 @@ describe('QuoteFamily', () => {
     it('reports consumed capacity as a REFUSAL, not an error', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request, { max_uses: '1' });
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
       expect(reg.value.hold('po-1').ok).toBe(true);
 
@@ -256,7 +256,7 @@ describe('QuoteFamily', () => {
     it('THROWS when a settlement CAS fails — impossible state, not an outcome', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request);
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       // No hold was ever taken, so the CAS cannot succeed. Silently
@@ -268,7 +268,7 @@ describe('QuoteFamily', () => {
     it('returns typed refusals for every ordinary business outcome', () => {
       const { store } = makeStore();
       const quote = makeSignedQuote(request);
-      const reg = store.register(quote);
+      const reg = store.register(quote, BUYER);
       if (!reg.ok) throw new Error('register failed');
 
       const expired = reg.value.admits(

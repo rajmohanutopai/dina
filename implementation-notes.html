@@ -269,6 +269,45 @@
       </li>
     </ol>
 
+    <h3>Owner decisions, 2026-08-07 (binding)</h3>
+    <ol start="3">
+      <li>
+        <strong>Wire version.</strong> <code>1.x</code> is <em>explicitly unfrozen</em> until the
+        §24 Phase 0 exit criterion is met; it then freezes at <code>1.0</code>. The
+        <code>HeldEvidence</code> change was incompatible, but nothing is deployed and no external
+        peer exists, so burning a major on pre-release churn buys nothing — and further Phase 0
+        changes are expected (units, catalog records, missing vectors). <strong>Consequence:</strong>
+        no conformance claim may be made, and no third party may target the wire, until that note is
+        lifted. This must be stated in <code>packages/protocol/docs/conformance.md</code>, not only
+        here.
+      </li>
+      <li>
+        <strong>Quotes do not reserve stock</strong> (spec §27 Q6, now closed).
+        <code>max_uses</code> caps how many orders a quote family admits; real inventory stays
+        supplier/ERP authority. Core cannot honour or verify a stock reservation, and modelling one
+        would put a commercial commitment inside the kernel. This confirms the built semantics —
+        recorded so a later reader does not mistake capacity for inventory.
+      </li>
+      <li>
+        <strong>Unit vocabulary v1 is a closed list; custom units are rejected</strong> (spec §27 Q4,
+        now closed). Widening after the freeze is additive and safe; a permissive v1 cannot be
+        narrowed without breaking peers. Supplier-declared units with conversion evidence were
+        rejected because two implementations can disagree on a conversion, which breaks the
+        byte-identical arithmetic §9.1 depends on.
+      </li>
+      <li>
+        <strong>Archive carries operational tables as EVIDENCE; restore never adopts their
+        counters.</strong> §16.2 requires quote/status heads and use counters in the archive, while
+        the house posture treats them as live authority — a genuine contradiction. Resolution: export
+        them so an archive is a complete record, and make the restore ceremony <em>always</em> void
+        capacity and re-fence chains rather than trusting restored counters.
+        <strong>Consequence:</strong> the WS-4.2 preflight no longer has to establish that counters
+        are trustworthy — only that the archive is intact and authentic. Capacity and chain state are
+        re-derived every time. This is both smaller and safer than the spec-faithful reading, and it
+        removes the "validated counters" failure mode entirely.
+      </li>
+    </ol>
+
     <h2>Architecture decision — why a refactor, not more patches</h2>
     <p>
       Four review rounds kept finding <em>second-order</em> breaks: a correct, tested fix in one
@@ -423,6 +462,120 @@
       capacity is exhausted by the first hold, so the refusal it named was unreachable.
     </p>
 
+    <h3>WS-0.4 — audience binding as a required argument <span class="meta">(done)</span></h3>
+    <p>
+      <code>QuoteFamily.register(deps, quote, expectedBuyerDid)</code>. The buyer a quote is
+      <em>supposed</em> to be for is now an argument the caller must supply, refused inside the
+      aggregate as <code>foreign_audience</code>. Both inline comparisons are deleted.
+    </p>
+    <p>
+      <strong>Why this shape.</strong> The rule had already escaped once: the counterproposal path
+      was bound in round 2 and the post-restore re-offer path was missed, found only in round 3. A
+      comparison at a call site is a rule every path must <em>remember</em>; an argument is a rule
+      every path must <em>satisfy</em>. Adding the parameter made the compiler enumerate all sixteen
+      call sites — which is the property being bought, not a side effect.
+    </p>
+    <p>
+      <strong>Deliberate no-op.</strong> The ordinary signing path passes <code>quote.buyer_did</code>,
+      which compares a value to itself today. That is intentional and marked in the code: it is the
+      seam where the still-open request-receipt binding will supply a real expectation (the buyer
+      named on the retained quote request), and meanwhile it forces every future caller to answer the
+      question rather than inherit no check.
+    </p>
+    <p class="meta">
+      Tests: 151 pass. Mutation — deleting the guard fails <strong>four</strong> tests across both
+      registration paths, up from two when the rule lived at one call site. tsc and eslint clean.
+      Next: WS-0.3, the StatusChain aggregate, which is the same argument applied to a rule that has
+      now escaped three times.
+    </p>
+
+    <h3>WS-0.3 — StatusChain aggregate <span class="meta">(done)</span></h3>
+    <p>
+      <code>packages/core/src/commerce/status_chain.ts</code>. Chain CREATION, ADVANCEMENT and
+      FENCING are now three operations on one object, and
+      <code>CommerceStatusHeadRepository</code> is unreachable from production. Each operation
+      carries its own restore prerequisite: create refuses when the ORDER predates the epoch,
+      advance refuses when the HEAD does, and fence <em>requires</em> a higher epoch because fencing
+      is how a restored chain rejoins.
+    </p>
+    <p>
+      <strong>The rule this closes escaped three times.</strong> Missing from
+      <code>signStatusUpdate</code>; then missing from <code>signStatusUpdateInTx</code> once added
+      to the first; then, shared as a predicate, unable to express chain creation at all — the
+      predicate takes a head epoch, and at genesis there is no head. That last one is worth stating
+      plainly, because I got it wrong myself and published a table asserting genesis was safe: the
+      state that matters after a restore is the BUYER's copy, not the local row. A restored supplier
+      whose head row was lost signs a second sequence-0 record, the buyer holds two, and the fence
+      cannot repair it — unavailable before a genesis, blocked afterwards by the fork check. Local
+      absence is the restore symptom, never proof of safety.
+    </p>
+    <p>
+      <strong>Design decision: two bars, not one.</strong> Re-adoption first stamped the order with
+      <code>previousEpoch(current)</code> to make creation refuse. A test caught that as a no-op at
+      epoch 1, where there is no lower epoch — the sentinel only worked from epoch 2. That was a
+      workaround wearing a rule's clothes. "Was re-adopted from a counterparty's evidence" and
+      "belongs to an older generation" are different facts, so they are now a boolean
+      (<code>reconciliation_required</code>) and an epoch (<code>admitted_epoch</code>) with
+      separate refusals. The flag holds at every epoch.
+    </p>
+    <p>
+      <strong>Duplicate removed rather than tested.</strong> The aggregate also re-checked "a fence
+      needs a strictly higher epoch". Mutation showed deleting it changed nothing, because
+      <code>setFence</code> enforces that itself in both implementations and the interface documents
+      it as the STORE's guard. Re-checking a rule that already has an owner is the same scattering
+      this aggregate exists to end, pointed one layer down. Deleted, with the reasoning recorded in
+      place so it does not come back.
+    </p>
+    <p class="meta">
+      Tests: 157 commerce, 6,298 core. Mutations — genesis restore gate (4 red), advance restore
+      gate (4), transition legality (2), re-adoption bar (2), re-adoption stamp (2). All caught.
+    </p>
+    <p class="meta">
+      <strong>Process failure worth recording:</strong> a greedy multi-line regex intended to delete
+      one 15-line method matched from the first <code>/**</code> in the file and deleted 965 lines of
+      <code>lifecycle_engine.ts</code>. Restored from the commit and re-applied the migration as 15
+      exact-string edits, each asserting a unique match. This is the fourth loose-anchor incident in
+      this work and the first destructive one. Rule going forward: no regex spanning lines, ever —
+      exact strings with asserted uniqueness, including for deletions. The commit an hour earlier is
+      what made recovery cheap.
+    </p>
+
+    <h3>WS-0.2 — CommerceOrder aggregate + §12.8 atomicity <span class="meta">(partial)</span></h3>
+    <p>
+      <code>packages/core/src/commerce/commerce_order.ts</code>. The order owns its own lifecycle
+      (reserved &rarr; decided, pre_effect &rarr; effect_started), whether a transition is legal now,
+      and what a replay answers.
+    </p>
+    <p>
+      <strong>What it deliberately does NOT own.</strong> Uniqueness across
+      <code>(buyer_did, purchase_order_id)</code> and <code>(buyer_did, idempotency_key)</code> stays
+      in the repository: one order cannot enforce a rule about all orders, and the unique indexes
+      already do. Nothing about the quote lives here either — deciding an order AND settling its
+      capacity hold spans two aggregates, so it is coordinated, not absorbed. Pushing quote knowledge
+      into the order is how the two got tangled originally.
+    </p>
+    <p>
+      <strong>§12.8 race closed.</strong> Acceptance and its status genesis were two transactions. A
+      cancellation arriving in the gap saw a decided order with no chain and answered
+      <code>refused_policy</code>; the same cancellation a moment later could cancel. The reason code
+      depended on timing rather than on the order. They now commit together: the admission engine
+      takes an injected <code>createAcceptedGenesisInTx</code>, supplied by the composition root so
+      neither engine learns the other's internals, and a genesis failure throws so the acceptance
+      rolls back. An accepted order with no chain — the state the race exploited — is no longer
+      reachable.
+    </p>
+    <p>
+      <strong>Tradeoff, stated plainly.</strong> The reviewers asked for an <code>AdmissionService</code>
+      as a separate transactional coordinator. What landed is the atomicity requirement met through a
+      narrow injected seam, with the engines still owning their transactions. The correctness defect
+      is closed and mutation-verified; the file-level extraction is not done. Recorded as WBS 0.2b
+      rather than described as complete.
+    </p>
+    <p class="meta">
+      Tests: 161 commerce, 6,302 core. Mutations — genesis not created on accept (4 red), genesis
+      failure swallowed instead of rolling back (2 red). Both caught.
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
@@ -477,25 +630,15 @@
 
     <h2>Open questions for the owner</h2>
     <ul>
+
       <li>
-        Confirm unit vocabulary v1 + custom-unit rejection (spec Open Question 4; widening later is
-        additive).
+        <span class="meta">Decided by me, reversible:</span> magnitude bounds stay as built
+        (15-digit minor units, 12-digit quantity integer part), already pinned by frozen vectors on
+        both sides. Widening later is additive; narrowing is not, so the tight bound is the safe
+        default. Raise it if a real catalogue needs more.
       </li>
-      <li>
-        Confirm magnitude bounds (15-digit minor units, 12-digit quantity integer part) — now pinned
-        by frozen vectors on both sides.
-      </li>
-      <li>
-        Confirm the operational-tables-in-export deviation (§16.2 requirement vs house
-        live-authority posture).
-      </li>
-      <li>
-        <strong>Version the wire change.</strong> <code>HeldEvidence</code> is an incompatible change
-        to the frozen spine, but <code>protocol_version</code> is still <code>1.0</code> and the
-        architecture doc still shows bare records at line 1839. A v1.0 peer and this build now
-        disagree about the wire while both claiming 1.0. Needs a major bump or an explicit
-        pre-freeze note before this can be called conformant.
-      </li>
+
+
     </ul>
 
     <!-- ============================================================ -->

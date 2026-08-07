@@ -94,6 +94,20 @@ export interface AdmissionEngineDeps {
    * refuses rather than inventing terms.
    */
   resignVoidedQuote?: (voidedQuoteId: string, buyerDid: string) => SignedQuote | null;
+  /**
+   * §12.8 — create the accepted order's status genesis INSIDE the decision
+   * transaction. Acceptance and its genesis were two transactions, so a
+   * cancellation arriving between them saw a decided order with no chain and
+   * answered `refused_policy`, while the same cancellation a moment later
+   * could cancel. The reason code depended on timing rather than on the
+   * order.
+   *
+   * Supplied by the composition root (it closes over the lifecycle engine),
+   * because Core must not make the order aggregate know about status chains.
+   * Returning an error rolls the whole decision back: an accepted order
+   * without a chain is exactly the state this closes.
+   */
+  createAcceptedGenesisInTx?: (buyerDid: string, purchaseOrderId: string) => { error: string } | null;
 }
 
 function isoNow(nowMs: number): string {
@@ -125,6 +139,7 @@ const REGISTRATION_REFUSAL: Record<QuoteRefusal, string> = {
   future_epoch:
     'quote declares an epoch ahead of this Core — re-sign at the live epoch (§9.12/§16.2)',
   foreign_supplier: 'quote is signed by a different supplier — Core signs only its own (§9.12)',
+  foreign_audience: 'quote is addressed to a different buyer than this path expects (§9.8)',
   duplicate_use: 'a use already exists for this order',
   revision_rejected: 'revision does not extend the current head (§9.8)',
 };
@@ -155,6 +170,7 @@ const ADMISSION_REASON: Record<QuoteRefusal, string> = {
   // path cannot leak the supplier's signing state.
   future_epoch: 'quote_unknown',
   foreign_supplier: 'quote_unknown',
+  foreign_audience: 'quote_unknown',
   duplicate_use: 'quote_consumed',
   revision_rejected: 'quote_unknown',
 };
@@ -174,7 +190,13 @@ export class CommerceAdmissionEngine {
   registerSignedQuote(quote: SignedQuote): string | null {
     let error: string | null = null;
     this.deps.tx(() => {
-      error = this.registerSignedQuoteInTx(quote);
+      // The ordinary signing path has no third party to compare against —
+      // the supplier is signing a quote it composed for a buyer it chose.
+      // Stating `quote.buyer_did` is a no-op TODAY and is deliberate: it is
+      // the seam where the still-open request-receipt binding will supply a
+      // real expectation (the buyer named on the retained quote request),
+      // and it forces every future caller to answer the question.
+      error = this.registerSignedQuoteInTx(quote, quote.buyer_did);
     });
     return error;
   }
@@ -187,7 +209,7 @@ export class CommerceAdmissionEngine {
    * a transaction fails on mobile even though the reentrant test runner
    * hides it on the server.
    */
-  private registerSignedQuoteInTx(quote: SignedQuote): string | null {
+  private registerSignedQuoteInTx(quote: SignedQuote, expectedBuyerDid: string): string | null {
     const structural = validateSignedQuote(quote, hash);
     if (structural) return structural;
     const nowMs = this.deps.now();
@@ -198,7 +220,7 @@ export class CommerceAdmissionEngine {
     // the head" are all enforced inside QuoteFamily; adding copies here is
     // what scattered them in the first place.
     if (quote.quote_revision === '1') {
-      const born = this.deps.families.register(quote);
+      const born = this.deps.families.register(quote, expectedBuyerDid);
       if (!born.ok) return registrationError(born);
     } else {
       const family = this.deps.families.load(quote.quote_id);
@@ -366,6 +388,11 @@ export class CommerceAdmissionEngine {
       quoteId: order.quote_id,
       quoteDigest: order.quote_digest,
       pinnedMajor: protocolMajor(order.protocol_version),
+      // §16.2 — stamped at admission so chain CREATION can later ask
+      // whether this order predates a restore. At genesis there is no head
+      // to ask, so the order reference is the only thing that knows.
+      admittedEpoch: this.deps.families.currentEpoch(),
+      reconciliationRequired: false,
       decisionDeadlineAt: nowMs + this.deps.decisionTimeoutMs,
       createdAt: nowMs,
     });
@@ -410,6 +437,11 @@ export class CommerceAdmissionEngine {
       quoteId: order.quote_id,
       quoteDigest: order.quote_digest,
       pinnedMajor: protocolMajor(order.protocol_version),
+      // §16.2 — stamped at admission so chain CREATION can later ask
+      // whether this order predates a restore. At genesis there is no head
+      // to ask, so the order reference is the only thing that knows.
+      admittedEpoch: this.deps.families.currentEpoch(),
+      reconciliationRequired: false,
       decisionDeadlineAt: null,
       createdAt: nowMs,
     });
@@ -479,21 +511,13 @@ export class CommerceAdmissionEngine {
           result = { error: 'admission: counter must start a fresh quote_id (§9.9)' };
           return;
         }
-        // §9.8 audience binding. The replacement comes from an untrusted
-        // runner and is about to travel to THIS buyer inside a
-        // Core-authenticated acknowledgement. Unbound, a faulty or hostile
-        // runner could hand buyer A a quote priced for buyer B — line
-        // prices, totals and payment terms — and Core would vouch for it.
-        // (The supplier half of this identity check lives in
-        // QuoteFamily.register, which every registration path crosses.)
-        if (replacement.buyer_did !== order.buyer_did) {
-          result = { error: 'admission: counter must be addressed to this order buyer (§9.8)' };
-          return;
-        }
+        // §9.8 audience binding is stated as an EXPECTATION here and
+        // enforced inside QuoteFamily.register, so it cannot be forgotten
+        // by a future registration path.
         // Already inside deps.tx — use the primitive, never the
         // transaction-opening wrapper (§9.9 counterproposal; op-sqlite
         // cannot nest BEGIN).
-        const registration = this.registerSignedQuoteInTx(replacement);
+        const registration = this.registerSignedQuoteInTx(replacement, order.buyer_did);
         if (registration) {
           result = { error: registration };
           return;
@@ -540,6 +564,18 @@ export class CommerceAdmissionEngine {
         decision.kind === 'accepted' ? 'committed' : 'refunded',
       );
       this.persistAcknowledgement(order, acknowledgement, nowMs);
+
+      // §12.8 — the genesis commits WITH the acceptance or not at all.
+      if (decision.kind === 'accepted' && this.deps.createAcceptedGenesisInTx) {
+        const genesisError = this.deps.createAcceptedGenesisInTx(buyerDid, purchaseOrderId);
+        if (genesisError) {
+          // Roll the decision back rather than leave an accepted order whose
+          // chain does not exist — the window a cancellation would misread.
+          throw new CommerceIntegrityError(
+            `accepted order could not open its status chain: ${genesisError.error}`,
+          );
+        }
+      }
       result = { acknowledgement };
     });
     return result;
@@ -620,13 +656,10 @@ export class CommerceAdmissionEngine {
   private rejectVoidedFamily(order: PurchaseOrderProposal, family: QuoteFamily): AdmissionOutcome {
     const reoffer = this.deps.resignVoidedQuote?.(family.quoteId, order.buyer_did) ?? null;
     // The seam is ASKED for this buyer, but its answer is untrusted like
-    // any other runner output. Registration binds supplier and epoch; the
-    // buyer is a cross-aggregate fact only this method knows. Without it a
-    // re-offer addressed to someone else lands in this ledger and its
-    // digest travels to the wrong buyer — the same audience defect fixed
-    // on the counterproposal path, at the call site I missed.
-    if (reoffer !== null && reoffer.buyer_did === order.buyer_did) {
-      const registerError = this.registerSignedQuoteInTx(reoffer);
+    // any other runner output. The expectation travels into register(),
+    // which refuses a foreign audience — no inline comparison to forget.
+    if (reoffer !== null) {
+      const registerError = this.registerSignedQuoteInTx(reoffer, order.buyer_did);
       if (registerError === null) {
         return this.recordAdmissionRejection(order, 'quote_superseded', reoffer.quote_digest);
       }

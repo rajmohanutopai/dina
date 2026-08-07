@@ -1578,6 +1578,20 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         quote_id TEXT NOT NULL,
         quote_digest TEXT NOT NULL,
         pinned_major TEXT NOT NULL,
+        -- §16.2: the commerce epoch this order was ADMITTED under. Chain
+        -- creation needs it: at genesis there is no head to compare against,
+        -- so "does this order predate the restore" can only be answered by
+        -- the order itself. Without it a restored node re-signs a divergent
+        -- sequence-0 record and forks against the genesis the buyer holds.
+        admitted_epoch TEXT NOT NULL DEFAULT '1',
+        -- §16.2: set when an order reference was rebuilt from a counterparty's
+        -- held evidence rather than admitted here. Such an order is missing its
+        -- lines, quote context and external state, so this node must not sign a
+        -- first status for it until the per-order reconciliation ceremony runs.
+        -- A distinct FLAG rather than an epoch sentinel: "was re-adopted" and
+        -- "belongs to an older generation" are different facts, and at epoch 1
+        -- there is no lower epoch to encode the first one with.
+        reconciliation_required INTEGER NOT NULL DEFAULT 0,
         state TEXT NOT NULL DEFAULT 'reserved'
           CHECK (state IN ('reserved', 'decided')),
         effect_phase TEXT NOT NULL DEFAULT 'pre_effect'

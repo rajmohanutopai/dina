@@ -467,7 +467,10 @@ describe.each([
       });
       expect('error' in outcome).toBe(true);
       if (!('error' in outcome)) throw new Error('unreachable');
-      expect(outcome.error).toMatch(/addressed to this order buyer/);
+      // The refusal now comes from QuoteFamily.register, which is the
+      // point: the expectation is an argument every registration path must
+      // supply, not a comparison each call site must remember to write.
+      expect(outcome.error).toMatch(/addressed to a different buyer/);
       // Nothing was written: no foreign family in this supplier's ledger,
       // and the order is still undecided.
       expect(h.quotes.getHead('q-other-buyer')).toBeNull();

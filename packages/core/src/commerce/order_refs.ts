@@ -25,6 +25,27 @@ export interface CommerceOrderRef {
   quoteDigest: string;
   /** Commerce protocol MAJOR pinned at admission (§9.13 lifecycle routing). */
   pinnedMajor: string;
+  /**
+   * §16.2 — the commerce epoch in force when this order was admitted.
+   *
+   * Chain ADVANCEMENT can ask the status head whether it predates a
+   * restore. Chain CREATION cannot: at genesis there is no head. The
+   * order reference is the only durable record of when the order entered,
+   * so it is the only thing that can answer "may this node still sign a
+   * first status for you". Missing that, a restored supplier re-signs a
+   * divergent genesis and forks against the record the buyer already holds
+   * — unrepairable, because the fence needs a chain to fence.
+   */
+  admittedEpoch: string;
+  /**
+   * §16.2 — true when this reference was REBUILT from a counterparty's held
+   * evidence rather than admitted here. Such an order lacks its lines, quote
+   * context and external state, so chain creation is barred until the
+   * per-order reconciliation ceremony clears it. Distinct from
+   * `admittedEpoch`: that answers "which generation", this answers "do we
+   * actually know what this order is".
+   */
+  reconciliationRequired: boolean;
   state: CommerceOrderRefState;
   effectPhase: CommerceEffectPhase;
   /** Recorded SIGNED acknowledgement JSON once decided (§15.5). */
@@ -76,6 +97,8 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
     quoteId: String(row.quote_id),
     quoteDigest: String(row.quote_digest),
     pinnedMajor: String(row.pinned_major),
+    admittedEpoch: String(row.admitted_epoch),
+    reconciliationRequired: Number(row.reconciliation_required) === 1,
     state: String(row.state) as CommerceOrderRefState,
     effectPhase: String(row.effect_phase) as CommerceEffectPhase,
     acknowledgementJson:
@@ -89,7 +112,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
 
 const SELECT = `
   SELECT buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-         quote_digest, pinned_major, state, effect_phase, acknowledgement_json,
+         quote_digest, pinned_major, admitted_epoch, reconciliation_required, state, effect_phase, acknowledgement_json,
          external_ref, decision_deadline_at, created_at, decided_at
   FROM commerce_order_refs
 `;
@@ -123,8 +146,8 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
       const affected = this.db.run(
         `INSERT INTO commerce_order_refs (
            buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-           quote_digest, pinned_major, state, effect_phase, decision_deadline_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
+           quote_digest, pinned_major, admitted_epoch, reconciliation_required, state, effect_phase, decision_deadline_at, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
          ON CONFLICT DO NOTHING`,
         [
           ref.buyerDid,
@@ -134,6 +157,8 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
           ref.quoteId,
           ref.quoteDigest,
           ref.pinnedMajor,
+          ref.admittedEpoch,
+          ref.reconciliationRequired ? 1 : 0,
           ref.decisionDeadlineAt,
           ref.createdAt,
         ],

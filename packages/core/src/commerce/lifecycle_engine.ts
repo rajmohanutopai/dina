@@ -23,7 +23,6 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import {
   COMMERCE_PROTOCOL_VERSION,
   GENESIS_STATE_BY_EVENT,
-  LEGAL_TRANSITIONS,
   commerceRecordDigest,
   validateCancellationRequest,
   validateCommerceOrderStatus,
@@ -47,13 +46,38 @@ import { canonicalJson } from '@dina/commerce-protocol';
 
 import { ackIdSuffix } from './admission';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
+import { type ChainRefusal, type StatusChainStore } from './status_chain';
 
 import type { CommerceOrderRefRepository } from './order_refs';
 import type { CommerceReceiptRepository } from './receipts';
-import type { CommerceStatusHeadRepository } from './status_heads';
 import type { TxRunner } from '../run/tx';
 
 const hash: Sha256Fn = (data) => sha256(data);
+
+/**
+ * ChainRefusal -> operator-facing message. Total, so a refusal added to the
+ * aggregate cannot reach a caller as an unhandled case.
+ */
+const CHAIN_ERROR: Record<ChainRefusal, string> = {
+  no_chain: 'status: no chain for this order — sign the genesis first',
+  chain_exists: 'status: genesis already signed — CAS at signing (§9.11)',
+  order_awaiting_reconciliation:
+    'status: order was re-adopted and is not reconciled — cannot sign a first status (§16.2)',
+  order_predates_restore:
+    'status: order predates a restore — reconcile it before signing a first status (§16.2)',
+  chain_predates_restore:
+    'status: chain predates a restore — sign the restore fence first (§16.2)',
+  illegal_transition: 'status: illegal transition (§9.11)',
+  lines_violation: 'status: cumulative line snapshot violation (§9.11)',
+  fence_needs_higher_epoch: 'fence: requires a strictly higher epoch — restore first (§16.2)',
+  cas_lost: 'status: CAS at signing — concurrent successor won (§9.11)',
+};
+
+/** Prefer the aggregate's precise detail; fall back to the refusal name. */
+function chainError(outcome: { refusal: ChainRefusal; detail?: string }): string {
+  const base = CHAIN_ERROR[outcome.refusal];
+  return outcome.detail === undefined ? base : `${base}: ${outcome.detail}`;
+}
 
 /** Non-disclosing rejection: identical for "no such order", "not your
  *  order", and "digest mismatch" (§11.2). */
@@ -62,7 +86,12 @@ export const NON_DISCLOSING_ERROR = 'commerce: unknown order or unauthorized cal
 export interface LifecycleEngineDeps {
   tx: TxRunner;
   orderRefs: CommerceOrderRefRepository;
-  statusHeads: CommerceStatusHeadRepository;
+  /**
+   * Status-chain state as aggregates. The raw head repository is deliberately
+   * NOT a dependency: `StatusChain.advance()` is worthless if `casAdvance()`
+   * stays reachable, and `createGenesis()` is worthless if `initGenesis()` does.
+   */
+  chains: StatusChainStore;
   receipts: CommerceReceiptRepository;
   /** Quote state as aggregates; the raw ledger is not reachable here. */
   families: QuoteFamilyStore;
@@ -181,17 +210,15 @@ export class CommerceLifecycleEngine {
         outcome = { error: structural };
         return;
       }
-      const inserted = this.deps.statusHeads.initGenesis({
-        buyerDid,
-        purchaseOrderId,
-        headDigest: status.status_digest,
-        headSequence: '0',
-        state: status.state,
-        supplierEpoch: status.supplier_epoch,
-        updatedAt: nowMs,
-      });
-      if (!inserted) {
-        outcome = { error: 'status: genesis already signed — CAS at signing (§9.11)' };
+      // The chain decides whether it may be CREATED — including the §16.2
+      // question the old code could not ask, because answering it needs the
+      // epoch the ORDER was admitted under rather than a head that does not
+      // exist yet.
+      const created = this.deps.chains
+        .load(buyerDid, purchaseOrderId)
+        .createGenesis(status, ref);
+      if (!created.ok) {
+        outcome = { error: chainError(created) };
         return;
       }
       this.persistStatus(status, ref.quoteId, nowMs);
@@ -213,29 +240,16 @@ export class CommerceLifecycleEngine {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
     this.deps.tx(() => {
       const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
-      const head = this.deps.statusHeads.get(buyerDid, purchaseOrderId);
-      if (!ref || !head) {
+      const chain = this.deps.chains.load(buyerDid, purchaseOrderId);
+      if (!ref || !chain.exists) {
         outcome = { error: 'status: no chain for this order — sign the genesis first' };
         return;
       }
-      // §16.2 — the FIRST status signed for a non-terminal order after a
-      // restore must be the fence. Signing an ordinary successor first
-      // strands the order permanently: it stamps the new epoch onto the
-      // head, and signRestoreFence then requires an epoch strictly higher
-      // than the head's, which can never happen again. Meanwhile the buyer
-      // rejects that successor as a fork, because its previous_status_digest
-      // names a record the buyer never received.
-      if (this.chainPredatesRestore(head.supplierEpoch)) {
-        outcome = {
-          error: 'status: chain predates a restore — sign the restore fence first (§16.2)',
-        };
-        return;
-      }
+      const head = chain.head;
+      // The §16.2 restore prerequisite and transition legality moved into
+      // StatusChain.advance (applied below), so this method can no longer
+      // order them differently from the other signing path — or omit one.
       const fromState = head.state as OrderState;
-      if (!LEGAL_TRANSITIONS[fromState]?.includes(fields.state)) {
-        outcome = { error: `status: illegal transition ${fromState} -> ${fields.state} (§9.11)` };
-        return;
-      }
       const nowMs = this.deps.now();
       // §9.11: delivered -> disputed is legal only before the
       // digest-bound disputeWindowEndsAt — enforced at SIGNING, not
@@ -321,25 +335,11 @@ export class CommerceLifecycleEngine {
         outcome = loadedPrevious;
         return;
       }
-      const linesError = verifyStatusLines(status, order.accepted_lines, loadedPrevious);
-      if (linesError) {
-        outcome = { error: linesError };
-        return;
-      }
-      const advanced = this.deps.statusHeads.casAdvance(
-        buyerDid,
-        purchaseOrderId,
-        head.headDigest,
-        {
-          headDigest: status.status_digest,
-          headSequence: status.sequence,
-          state: status.state,
-          supplierEpoch: status.supplier_epoch,
-          updatedAt: nowMs,
-        },
+      const moved = chain.advance(status, loadedPrevious, () =>
+        verifyStatusLines(status, order.accepted_lines, loadedPrevious),
       );
-      if (!advanced) {
-        outcome = { error: 'status: CAS at signing — concurrent successor won (§9.11)' };
+      if (!moved.ok) {
+        outcome = { error: chainError(moved) };
         return;
       }
       this.persistStatus(status, ref.quoteId, nowMs);
@@ -417,11 +417,12 @@ export class CommerceLifecycleEngine {
         outcome = { error: 'fence: the order is already terminal — nothing to resume' };
         return;
       }
-      const head = this.deps.statusHeads.get(buyerDid, purchaseOrderId);
-      if (!head) {
+      const chain = this.deps.chains.load(buyerDid, purchaseOrderId);
+      if (!chain.exists) {
         outcome = { error: 'fence: no local chain for this order' };
         return;
       }
+      const head = chain.head;
       // NO ROLLBACK. The fence exists to fast-forward a restored
       // supplier to what the buyer can prove — never to move it
       // BACKWARD. Choosing the highest presented receipt is not enough:
@@ -480,14 +481,10 @@ export class CommerceLifecycleEngine {
         outcome = { error: structural };
         return;
       }
-      const fenced = this.deps.statusHeads.setFence(buyerDid, purchaseOrderId, {
-        headDigest: status.status_digest,
-        headSequence: status.sequence,
-        state: status.state,
-        supplierEpoch: status.supplier_epoch,
-        updatedAt: nowMs,
-      });
-      if (!fenced) {
+      // The chain owns "a fence needs a strictly higher epoch" and performs
+      // the write, so the fence path cannot drift from the other two.
+      const fencedOutcome = chain.fence(status);
+      if (!fencedOutcome.ok) {
         outcome = { error: 'fence: head CAS lost — retry after re-reading the chain' };
         return;
       }
@@ -649,6 +646,7 @@ export class CommerceLifecycleEngine {
           cancellation.purchase_order_id,
           'cancellation_won',
           ref.quoteId,
+          ref,
           nowMs,
         );
         if ('error' in genesis) {
@@ -667,7 +665,11 @@ export class CommerceLifecycleEngine {
       }
 
       // Decided order: consult the chain head.
-      const head = this.deps.statusHeads.get(authenticatedBuyerDid, cancellation.purchase_order_id);
+      const cancelChain = this.deps.chains.load(
+        authenticatedBuyerDid,
+        cancellation.purchase_order_id,
+      );
+      const head = cancelChain.exists ? cancelChain.head : null;
       if (!head) {
         // Decided but rejected/countered — nothing to cancel.
         outcome = this.recordResult(
@@ -891,6 +893,23 @@ export class CommerceLifecycleEngine {
           quoteId: '',
           quoteDigest: heldRecord.kind === 'accepted' ? heldRecord.accepted_quote_digest : '',
           pinnedMajor: heldRecord.protocol_version.split('.')[0] as string,
+          // §16.2 — a re-adopted order is stamped PRE-restore on purpose.
+          //
+          // Re-adoption rebuilds an order reference from a buyer's held
+          // acknowledgement but NOT the order's lines, quote context or
+          // external state (a recorded open finding). Until it does, this
+          // node must not be free to sign a first status for an order it
+          // cannot fully describe: the buyer may hold a chain this node knows
+          // nothing about, and a fresh genesis would fork against it.
+          //
+          // Stamping the previous epoch makes chain CREATION refuse until the
+          // per-order reconciliation ceremony runs. Failing closed costs a
+          // refusal; failing open costs a second, conflicting supplier
+          // signature that no fence can repair.
+          admittedEpoch: this.deps.currentEpoch(),
+          // The order is real but this node cannot yet describe it — bar
+          // chain creation until reconciliation clears it.
+          reconciliationRequired: true,
           decisionDeadlineAt: null,
           createdAt: nowMs,
         });
@@ -1035,23 +1054,6 @@ export class CommerceLifecycleEngine {
     return record;
   }
 
-  /**
-   * §16.2 — a chain that predates a restore must be FENCED before it
-   * moves. Named and shared because putting this inline in one signing
-   * path is exactly how it went missing from the other: `signStatusUpdate`
-   * had it, `signStatusUpdateInTx` (which cancellation uses) did not, so a
-   * policy-cancelled order could stamp the new epoch onto a stale head and
-   * strand the chain for good — while also recording a terminal
-   * `cancelled` the buyer can never accept.
-   *
-   * A third successor-signing path must call this too. ARCH-0c folds both
-   * paths into StatusChain, at which point the rule stops being something
-   * a caller has to remember.
-   */
-  private chainPredatesRestore(headSupplierEpoch: string): boolean {
-    return BigInt(headSupplierEpoch) < BigInt(this.deps.currentEpoch());
-  }
-
   private buildStatus(
     buyerDid: string,
     purchaseOrderId: string,
@@ -1093,6 +1095,7 @@ export class CommerceLifecycleEngine {
     purchaseOrderId: string,
     event: GenesisEvent,
     quoteId: string,
+    order: { admittedEpoch: string; reconciliationRequired: boolean },
     nowMs: number,
   ): CommerceOrderStatus | { error: string } {
     const status = this.buildStatus(buyerDid, purchaseOrderId, {
@@ -1101,18 +1104,37 @@ export class CommerceLifecycleEngine {
       supplier_epoch: this.deps.currentEpoch(),
       updated_at: isoNow(nowMs),
     });
-    const inserted = this.deps.statusHeads.initGenesis({
-      buyerDid,
-      purchaseOrderId,
-      headDigest: status.status_digest,
-      headSequence: '0',
-      state: status.state,
-      supplierEpoch: status.supplier_epoch,
-      updatedAt: nowMs,
-    });
-    if (!inserted) return { error: 'status: genesis already signed (§9.11)' };
+    const created = this.deps.chains
+      .load(buyerDid, purchaseOrderId)
+      .createGenesis(status, order);
+    if (!created.ok) return { error: chainError(created) };
     this.persistStatus(status, quoteId, nowMs);
     return status;
+  }
+
+  /**
+   * §12.8 — open an accepted order's status chain from INSIDE another
+   * engine's transaction. Exposed narrowly (no `tx` of its own) so the
+   * composition root can make acceptance and genesis atomic without either
+   * engine learning about the other's internals.
+   */
+  createAcceptedGenesisInTx(
+    buyerDid: string,
+    purchaseOrderId: string,
+  ): { error: string } | null {
+    const ref = this.deps.orderRefs.getByOrderId(buyerDid, purchaseOrderId);
+    if (!ref || ref.state !== 'decided') {
+      return { error: 'status: genesis requires a decided order (§9.11)' };
+    }
+    const signed = this.signGenesisInTx(
+      buyerDid,
+      purchaseOrderId,
+      'accepted',
+      ref.quoteId,
+      ref,
+      this.deps.now(),
+    );
+    return 'error' in signed ? signed : null;
   }
 
   /** Successor signing already inside the cancellation transaction. */
@@ -1123,11 +1145,6 @@ export class CommerceLifecycleEngine {
     head: { headDigest: string; headSequence: string; state: string; supplierEpoch: string },
     fields: StatusUpdateFields,
   ): CommerceOrderStatus | { error: string } {
-    // Same §16.2 prerequisite as the public path. Cancellation reaches
-    // this method directly, so the guard has to live here too.
-    if (this.chainPredatesRestore(head.supplierEpoch)) {
-      return { error: 'status: chain predates a restore — sign the restore fence first (§16.2)' };
-    }
     const nowMs = this.deps.now();
     const status = this.buildStatus(buyerDid, purchaseOrderId, {
       sequence: (BigInt(head.headSequence) + 1n).toString(10),
@@ -1136,14 +1153,15 @@ export class CommerceLifecycleEngine {
       supplier_epoch: this.deps.currentEpoch(),
       updated_at: isoNow(nowMs),
     });
-    const advanced = this.deps.statusHeads.casAdvance(buyerDid, purchaseOrderId, head.headDigest, {
-      headDigest: status.status_digest,
-      headSequence: status.sequence,
-      state: status.state,
-      supplierEpoch: status.supplier_epoch,
-      updatedAt: nowMs,
-    });
-    if (!advanced) return { error: 'status: CAS at signing — concurrent successor won (§9.11)' };
+    // Fail-closed predecessor load, same contract as the public path: the
+    // chain refuses to advance against a record it cannot verify. Cancellation
+    // transitions carry no line snapshot, so line verification is a no-op.
+    const loadedPrevious = this.loadHeadStatus(head.headDigest, 'previous head');
+    if ('error' in loadedPrevious) return loadedPrevious;
+    const moved = this.deps.chains
+      .load(buyerDid, purchaseOrderId)
+      .advance(status, loadedPrevious, () => null);
+    if (!moved.ok) return { error: chainError(moved) };
     this.persistStatus(status, ref.quoteId, nowMs);
     return status;
   }
