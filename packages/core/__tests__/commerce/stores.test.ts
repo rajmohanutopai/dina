@@ -83,7 +83,7 @@ const baseRef = {
   orderDigest: 'a'.repeat(64),
   quoteId: 'q-1',
   quoteDigest: 'b'.repeat(64),
-  pinnedMajor: '1',
+  pinnedVersion: '1.0',
         admittedEpoch: '1',
         reconciliationRequired: false,
   decisionDeadlineAt: T0 + 60_000,

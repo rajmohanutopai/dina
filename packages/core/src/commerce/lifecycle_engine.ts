@@ -21,7 +21,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
-  COMMERCE_PROTOCOL_VERSION,
   GENESIS_STATE_BY_EVENT,
   commerceRecordDigest,
   validateCancellationRequest,
@@ -205,12 +204,17 @@ export class CommerceLifecycleEngine {
             ? 'counterproposal'
             : 'rejected';
       const nowMs = this.deps.now();
-      const status = this.buildStatus(buyerDid, purchaseOrderId, {
-        sequence: '0',
-        state: GENESIS_STATE_BY_EVENT[event],
-        supplier_epoch: this.deps.currentEpoch(),
-        updated_at: isoNow(nowMs),
-      });
+      const status = this.buildStatus(
+        buyerDid,
+        purchaseOrderId,
+        {
+          sequence: '0',
+          state: GENESIS_STATE_BY_EVENT[event],
+          supplier_epoch: this.deps.currentEpoch(),
+          updated_at: isoNow(nowMs),
+        },
+        ref.pinnedVersion,
+      );
       const structural = validateCommerceOrderStatus(status, hash);
       if (structural) {
         outcome = { error: structural };
@@ -318,7 +322,7 @@ export class CommerceLifecycleEngine {
           : {}),
         supplier_epoch: this.deps.currentEpoch(),
         updated_at: isoNow(nowMs),
-      });
+      }, ref.pinnedVersion);
       const structural = validateCommerceOrderStatus(status, hash);
       if (structural) {
         outcome = { error: structural };
@@ -483,7 +487,7 @@ export class CommerceLifecycleEngine {
         restore_fence: true,
         updated_at: isoNow(nowMs),
       };
-      const status = this.buildStatus(buyerDid, purchaseOrderId, fenceFields);
+      const status = this.buildStatus(buyerDid, purchaseOrderId, fenceFields, ref.pinnedVersion);
       const structural = validateCommerceOrderStatus(status, hash);
       if (structural) {
         outcome = { error: structural };
@@ -530,7 +534,7 @@ export class CommerceLifecycleEngine {
       }
       // §9.13: a cancellation for a prior-major order is served by the
       // retained handler for that major, never re-parsed as v1.
-      if (!this.majorMatches(cancellation.protocol_version, ref.pinnedMajor)) {
+      if (!this.versionMatches(cancellation.protocol_version, ref.pinnedVersion)) {
         outcome = { error: NON_DISCLOSING_ERROR };
         return;
       }
@@ -567,7 +571,7 @@ export class CommerceLifecycleEngine {
       // acceptance atomically (§12.8/§9.11 cancellation_won genesis).
       if (ref.state === 'reserved') {
         const ackDraft = {
-          protocol_version: COMMERCE_PROTOCOL_VERSION,
+          protocol_version: ref.pinnedVersion,
           // SAME bounded helper as the admission path. This second
           // construction site kept `ack:${purchase_order_id}` after the
           // first was fixed: a legal 128-character order id produced a
@@ -612,6 +616,7 @@ export class CommerceLifecycleEngine {
             authenticatedBuyerDid,
             ref.quoteId,
             nowMs,
+            ref.pinnedVersion,
           );
           return;
         }
@@ -673,6 +678,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -692,6 +698,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -704,6 +711,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -719,6 +727,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -731,6 +740,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -768,6 +778,7 @@ export class CommerceLifecycleEngine {
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
+          ref.pinnedVersion,
         );
         return;
       }
@@ -778,6 +789,7 @@ export class CommerceLifecycleEngine {
         authenticatedBuyerDid,
         ref.quoteId,
         nowMs,
+        ref.pinnedVersion,
       );
     });
     return outcome;
@@ -807,7 +819,7 @@ export class CommerceLifecycleEngine {
       // request naming another major must not be parsed and answered as
       // v1 — the retained prior-major handler owns those, and an unknown
       // major gets a typed refusal rather than a silent downgrade.
-      if (ref && !this.majorMatches(request.protocol_version, ref.pinnedMajor)) {
+      if (ref && !this.versionMatches(request.protocol_version, ref.pinnedVersion)) {
         outcome = { error: NON_DISCLOSING_ERROR };
         return;
       }
@@ -907,7 +919,7 @@ export class CommerceLifecycleEngine {
           orderDigest: request.order_digest,
           quoteId: '',
           quoteDigest: heldRecord.kind === 'accepted' ? heldRecord.accepted_quote_digest : '',
-          pinnedMajor: heldRecord.protocol_version.split('.')[0] as string,
+          pinnedVersion: heldRecord.protocol_version,
           // §16.2 — a re-adopted order is stamped PRE-restore on purpose.
           //
           // Re-adoption rebuilds an order reference from a buyer's held
@@ -1076,9 +1088,13 @@ export class CommerceLifecycleEngine {
     buyerDid: string,
     purchaseOrderId: string,
     fields: StatusFields,
+    pinnedVersion: string,
   ): CommerceOrderStatus {
     const draft = {
-      protocol_version: COMMERCE_PROTOCOL_VERSION,
+      // §9.13 — the conversation's version, not this build's. A supplier
+      // that has upgraded must still speak to an in-flight order in the
+      // language it was opened in.
+      protocol_version: pinnedVersion,
       purchase_order_id: purchaseOrderId,
       buyer_did: buyerDid,
       supplier_did: this.deps.supplierDid,
@@ -1113,15 +1129,20 @@ export class CommerceLifecycleEngine {
     purchaseOrderId: string,
     event: GenesisEvent,
     quoteId: string,
-    order: { admittedEpoch: string; reconciliationRequired: boolean },
+    order: { admittedEpoch: string; reconciliationRequired: boolean; pinnedVersion: string },
     nowMs: number,
   ): CommerceOrderStatus | { error: string } {
-    const status = this.buildStatus(buyerDid, purchaseOrderId, {
-      sequence: '0',
-      state: GENESIS_STATE_BY_EVENT[event],
-      supplier_epoch: this.deps.currentEpoch(),
-      updated_at: isoNow(nowMs),
-    });
+    const status = this.buildStatus(
+      buyerDid,
+      purchaseOrderId,
+      {
+        sequence: '0',
+        state: GENESIS_STATE_BY_EVENT[event],
+        supplier_epoch: this.deps.currentEpoch(),
+        updated_at: isoNow(nowMs),
+      },
+      order.pinnedVersion,
+    );
     const created = this.deps.chains
       .load(buyerDid, purchaseOrderId)
       .createGenesis(status, order);
@@ -1160,7 +1181,7 @@ export class CommerceLifecycleEngine {
   private signStatusUpdateInTx(
     buyerDid: string,
     purchaseOrderId: string,
-    ref: { orderDigest: string; quoteId: string },
+    ref: { orderDigest: string; quoteId: string; pinnedVersion: string },
     head: { headDigest: string; headSequence: string; state: string; supplierEpoch: string },
     fields: StatusUpdateFields,
   ): CommerceOrderStatus | { error: string } {
@@ -1171,7 +1192,7 @@ export class CommerceLifecycleEngine {
       state: fields.state,
       supplier_epoch: this.deps.currentEpoch(),
       updated_at: isoNow(nowMs),
-    });
+    }, ref.pinnedVersion);
     // Fail-closed predecessor load, same contract as the public path: the
     // chain refuses to advance against a record it cannot verify. Cancellation
     // transitions carry no line snapshot, so line verification is a no-op.
@@ -1238,20 +1259,26 @@ export class CommerceLifecycleEngine {
         authenticatedBuyerDid,
         ref.quoteId,
         nowMs,
+        ref.pinnedVersion,
       );
     });
     return outcome;
   }
 
   /**
-   * §9.13 major routing: the wire `protocol_version` must agree with
-   * the major this order was pinned to at admission. Comparing MAJORS
-   * (not full versions) is deliberate — minor revisions stay
-   * compatible, majors do not.
+   * §9.13 conversation-version routing. The wire `protocol_version` must
+   * equal the EXACT version this order was opened with, not merely share a
+   * major.
+   *
+   * Same-major compatibility belongs to negotiation and routing, not to a
+   * conversation already under way: a 1.1 order receiving 1.0 continuation
+   * records means the schema hash and the record interpretation can disagree
+   * inside one chain, which is precisely what a pinned conversation exists
+   * to prevent.
    */
-  private majorMatches(protocolVersion: string, pinnedMajor: string): boolean {
-    if (pinnedMajor === '') return true; // legacy rows carry no pin
-    return protocolVersion.split('.')[0] === pinnedMajor;
+  private versionMatches(protocolVersion: string, pinnedVersion: string): boolean {
+    if (pinnedVersion === '') return true; // legacy rows carry no pin
+    return protocolVersion === pinnedVersion;
   }
 
   private findRecordedCancellation(
@@ -1285,9 +1312,10 @@ export class CommerceLifecycleEngine {
     buyerDid: string,
     quoteId: string,
     nowMs: number,
+    pinnedVersion: string,
   ): CancellationResult {
     const draft = {
-      protocol_version: COMMERCE_PROTOCOL_VERSION,
+      protocol_version: pinnedVersion,
       cancellation_id: cancellation.cancellation_id,
       purchase_order_id: cancellation.purchase_order_id,
       result: kind,

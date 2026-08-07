@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  COMMERCE_PROTOCOL_VERSION,
   commerceRecordDigest,
   verifyRestoreFence,
   type CancellationRequest,
@@ -164,6 +165,29 @@ describe.each([
     return { quote, order };
   }
 
+  /** Seed an admitted order whose conversation version is `version`. */
+  function seedAdmittedOrderAtVersion(version: string) {
+    const quote = makeSignedQuote(request, { quote_id: `q-${version}` });
+    h.receipts.put({
+      recordDigest: request.request_digest,
+      domain: 'request',
+      buyerDid: request.buyer_did,
+      quoteId: quote.quote_id,
+      purchaseOrderId: '',
+      recordJson: JSON.stringify(request),
+      evidenceJson: '{}',
+      createdAt: clock.now,
+    });
+    expect(admission.registerSignedQuote(quote)).toBeNull();
+    const order = makeOrder(quote, priced_projection, {
+      protocol_version: version,
+      purchase_order_id: `po-${version}`,
+      idempotency_key: `idem-${version}`,
+    });
+    expect(admission.admitOrder(order, BUYER_DID).kind).toBe('reserved');
+    return { quote, order };
+  }
+
   function acceptOrder(purchase_order_id: string) {
     const decided = admission.decideOrder(BUYER_DID, purchase_order_id, {
       kind: 'accepted',
@@ -172,12 +196,18 @@ describe.each([
     expect('acknowledgement' in decided).toBe(true);
   }
 
-  function makeCancellation(order: {
-    purchase_order_id: string;
-    order_digest: string;
-  }): CancellationRequest {
+  function makeCancellation(
+    order: {
+      purchase_order_id: string;
+      order_digest: string;
+    },
+    // The version is part of the DIGESTED body, so overriding it after
+    // construction produces an invalid record and every branch errors for
+    // the same uninformative reason. Build at the right version instead.
+    protocolVersion = '1.0',
+  ): CancellationRequest {
     const draft = {
-      protocol_version: '1.0',
+      protocol_version: protocolVersion,
       cancellation_id: 'cx-1',
       purchase_order_id: order.purchase_order_id,
       order_digest: order.order_digest,
@@ -407,6 +437,54 @@ describe.each([
         expect(h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.state).toBe('reserved');
         expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
       }
+    });
+
+    it('emits continuation records at the ORDER\'s version, not the build\'s (§9.13)', () => {
+      // The fixture order must differ from COMMERCE_PROTOCOL_VERSION, or
+      // "emits the pin" and "emits the build version" are indistinguishable
+      // and the test proves nothing. 1.1 is admissible: checkProtocolVersion
+      // accepts any same-major version.
+      const { order } = seedAdmittedOrderAtVersion('1.1');
+      expect(order.protocol_version).not.toBe(COMMERCE_PROTOCOL_VERSION);
+      acceptOrder(order.purchase_order_id);
+
+      const ackJson = h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)
+        ?.acknowledgementJson;
+      expect(JSON.parse(ackJson ?? '{}').protocol_version).toBe('1.1');
+
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if (!('status_digest' in genesis)) throw new Error(JSON.stringify(genesis));
+      expect(genesis.protocol_version).toBe('1.1');
+
+      const next = engine.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+        state: 'preparing',
+      });
+      if (!('status_digest' in next)) throw new Error(JSON.stringify(next));
+      expect(next.protocol_version).toBe('1.1');
+    });
+
+    it('refuses a lifecycle request whose version differs in the MINOR (§9.13)', () => {
+      // The case a major-only comparison waved through. Asserting merely
+      // that SOME error came back would pass for any reason, so pin the
+      // outcome: the same request at the pinned version must be ACCEPTED.
+      const { order } = seedAdmittedOrderAtVersion('1.1');
+      acceptOrder(order.purchase_order_id);
+
+      const wrongMinor = engine.resolveCancellation(
+        makeCancellation(order, '1.0'),
+        BUYER_DID,
+        () => 'refused_policy',
+      );
+      expect('error' in wrongMinor).toBe(true);
+
+      // The SAME request at the pinned version is accepted, so the refusal
+      // above is attributable to the version and not to anything else.
+      const pinned = engine.resolveCancellation(
+        makeCancellation(order, '1.1'),
+        BUYER_DID,
+        () => 'refused_policy',
+      );
+      expect('error' in pinned).toBe(false);
     });
 
     it('refuses an ordinary successor on a chain that predates a restore (§16.2)', () => {
@@ -998,7 +1076,7 @@ describe.each([
           orderDigest: 'a'.repeat(64),
           quoteId: 'q-other',
           quoteDigest: 'c'.repeat(64),
-          pinnedMajor: '1',
+          pinnedVersion: '1.0',
         admittedEpoch: '1',
         reconciliationRequired: false,
           decisionDeadlineAt: null,

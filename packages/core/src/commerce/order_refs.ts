@@ -23,8 +23,13 @@ export interface CommerceOrderRef {
   orderDigest: string;
   quoteId: string;
   quoteDigest: string;
-  /** Commerce protocol MAJOR pinned at admission (§9.13 lifecycle routing). */
-  pinnedMajor: string;
+  /**
+   * §9.13 — the EXACT protocol version of the order that opened this
+   * conversation. Continuation records are emitted at this version, and a
+   * lifecycle request must match it exactly. The MAJOR is derived from it
+   * where drain counting needs one; storing both invites them to disagree.
+   */
+  pinnedVersion: string;
   /**
    * §16.2 — the commerce epoch in force when this order was admitted.
    *
@@ -96,7 +101,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
     orderDigest: String(row.order_digest),
     quoteId: String(row.quote_id),
     quoteDigest: String(row.quote_digest),
-    pinnedMajor: String(row.pinned_major),
+    pinnedVersion: String(row.pinned_version),
     admittedEpoch: String(row.admitted_epoch),
     reconciliationRequired: Number(row.reconciliation_required) === 1,
     state: String(row.state) as CommerceOrderRefState,
@@ -112,7 +117,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
 
 const SELECT = `
   SELECT buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-         quote_digest, pinned_major, admitted_epoch, reconciliation_required, state, effect_phase, acknowledgement_json,
+         quote_digest, pinned_version, admitted_epoch, reconciliation_required, state, effect_phase, acknowledgement_json,
          external_ref, decision_deadline_at, created_at, decided_at
   FROM commerce_order_refs
 `;
@@ -146,7 +151,7 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
       const affected = this.db.run(
         `INSERT INTO commerce_order_refs (
            buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-           quote_digest, pinned_major, admitted_epoch, reconciliation_required, state, effect_phase, decision_deadline_at, created_at
+           quote_digest, pinned_version, admitted_epoch, reconciliation_required, state, effect_phase, decision_deadline_at, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
          ON CONFLICT DO NOTHING`,
         [
@@ -156,7 +161,7 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
           ref.orderDigest,
           ref.quoteId,
           ref.quoteDigest,
-          ref.pinnedMajor,
+          ref.pinnedVersion,
           ref.admittedEpoch,
           ref.reconciliationRequired ? 1 : 0,
           ref.decisionDeadlineAt,
@@ -217,7 +222,8 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
 
   countReservedByMajor(major: string): number {
     const rows = this.db.query<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM commerce_order_refs WHERE state = 'reserved' AND pinned_major = ?`,
+      `SELECT COUNT(*) AS n FROM commerce_order_refs
+       WHERE state = 'reserved' AND substr(pinned_version, 1, instr(pinned_version, '.') - 1) = ?`,
       [major],
     );
     return Number(rows[0]?.n ?? 0);
@@ -297,7 +303,7 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   }
 
   countReservedByMajor(major: string): number {
-    return this.listReserved().filter((r) => r.pinnedMajor === major).length;
+    return this.listReserved().filter((r) => r.pinnedVersion.split('.')[0] === major).length;
   }
 }
 

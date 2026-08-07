@@ -30,10 +30,8 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   validateOrderAcknowledgement,
   verifyQuoteRevisionExtends,
-  COMMERCE_PROTOCOL_VERSION,
   checkProtocolVersion,
   commerceRecordDigest,
-  protocolMajor,
   validatePurchaseOrderProposal,
   validateSignedQuote,
   verifyOrderAgainstQuote,
@@ -392,7 +390,10 @@ export class CommerceAdmissionEngine {
       orderDigest: order.order_digest,
       quoteId: order.quote_id,
       quoteDigest: order.quote_digest,
-      pinnedMajor: protocolMajor(order.protocol_version),
+      // §9.13 — pin the EXACT version the buyer opened with, so every
+      // continuation record for this order is emitted at it. A major alone
+      // let a 1.1 order receive 1.0 records.
+      pinnedVersion: order.protocol_version,
       // §16.2 — stamped at admission so chain CREATION can later ask
       // whether this order predates a restore. At genesis there is no head
       // to ask, so the order reference is the only thing that knows.
@@ -429,11 +430,17 @@ export class CommerceAdmissionEngine {
     currentQuoteDigest?: string,
   ): AdmissionOutcome {
     const nowMs = this.deps.now();
-    const acknowledgement = this.buildAcknowledgement(order, {
-      kind: 'rejected',
-      reason_code: reasonCode,
-      ...(currentQuoteDigest !== undefined ? { current_quote_digest: currentQuoteDigest } : {}),
-    });
+    const acknowledgement = this.buildAcknowledgement(
+      order,
+      {
+        kind: 'rejected',
+        reason_code: reasonCode,
+        ...(currentQuoteDigest !== undefined ? { current_quote_digest: currentQuoteDigest } : {}),
+      },
+      // The order has not been admitted yet, so there is no pinned row; the
+      // proposal itself names the conversation's version.
+      order.protocol_version,
+    );
     const created = this.deps.orders.createReserved({
       buyerDid: order.buyer_did,
       purchaseOrderId: order.purchase_order_id,
@@ -441,7 +448,10 @@ export class CommerceAdmissionEngine {
       orderDigest: order.order_digest,
       quoteId: order.quote_id,
       quoteDigest: order.quote_digest,
-      pinnedMajor: protocolMajor(order.protocol_version),
+      // §9.13 — pin the EXACT version the buyer opened with, so every
+      // continuation record for this order is emitted at it. A major alone
+      // let a 1.1 order receive 1.0 records.
+      pinnedVersion: order.protocol_version,
       // §16.2 — stamped at admission so chain CREATION can later ask
       // whether this order predates a restore. At genesis there is no head
       // to ask, so the order reference is the only thing that knows.
@@ -559,6 +569,7 @@ export class CommerceAdmissionEngine {
                   : {}),
               }
             : { kind: 'counterproposal', replacement_quote: decision.replacementQuote },
+        ref.pinnedVersion,
       );
       const outcome = refOrder.decide({
         acknowledgementJson: JSON.stringify(acknowledgement),
@@ -612,10 +623,11 @@ export class CommerceAdmissionEngine {
         const orderReceipt = this.deps.receipts.get(ref.orderDigest);
         if (!orderReceipt) continue;
         const order = JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal;
-        const acknowledgement = this.buildAcknowledgement(order, {
-          kind: 'rejected',
-          reason_code: 'decision_timeout',
-        });
+        const acknowledgement = this.buildAcknowledgement(
+          order,
+          { kind: 'rejected', reason_code: 'decision_timeout' },
+          ref.pinnedVersion,
+        );
         const sweptOrder = this.deps.orders.load(ref.buyerDid, ref.purchaseOrderId);
         if (sweptOrder === null) continue;
         // requirePreEffect: a decision_timeout may NEVER decide an
@@ -710,9 +722,13 @@ export class CommerceAdmissionEngine {
         }
       | { kind: 'rejected'; reason_code: string; current_quote_digest?: string }
       | { kind: 'counterproposal'; replacement_quote: SignedQuote },
+    pinnedVersion: string,
   ): OrderAcknowledgement {
     const draft = {
-      protocol_version: COMMERCE_PROTOCOL_VERSION,
+      // §9.13 — emitted at the version the BUYER opened the conversation
+      // with, not at this build's. A node that has moved on must still
+      // answer an in-flight order in the language it was asked in.
+      protocol_version: pinnedVersion,
       // Deterministic per order: a replayed decision produces the same
       // record bytes and digest.
       // Bounded AND deterministic. `ack:${purchase_order_id}` overflowed:

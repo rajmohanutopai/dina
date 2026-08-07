@@ -1577,7 +1577,14 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         order_digest TEXT NOT NULL,
         quote_id TEXT NOT NULL,
         quote_digest TEXT NOT NULL,
-        pinned_major TEXT NOT NULL,
+        -- §9.13: the EXACT protocol version of the order that opened this
+        -- conversation, not just its major. Every continuation record for
+        -- this order is emitted at this version, and a lifecycle request
+        -- must match it exactly. Storing only the major let a 1.1 order
+        -- receive 1.0 continuation records, so schema hashes and record
+        -- interpretation could disagree inside one chain. The major is
+        -- derived from this when drain counting needs it.
+        pinned_version TEXT NOT NULL,
         -- §16.2: the commerce epoch this order was ADMITTED under. Chain
         -- creation needs it: at genesis there is no head to compare against,
         -- so "does this order predate the restore" can only be answered by

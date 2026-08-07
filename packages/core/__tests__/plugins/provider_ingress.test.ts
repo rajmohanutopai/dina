@@ -396,7 +396,7 @@ describe('provider ingress bridge (§11.2a)', () => {
         orderDigest: 'd'.repeat(64),
         quoteId: 'q-1',
         quoteDigest: 'e'.repeat(64),
-        pinnedMajor: '1',
+        pinnedVersion: '1.0',
       admittedEpoch: '1',
       reconciliationRequired: false,
         decisionDeadlineAt: T0 + 60_000,

@@ -839,6 +839,52 @@
       remaining §25.1 vector categories (1.9).
     </p>
 
+    <h3>WS-1.7 — a conversation pins an exact version, not a major <span class="meta">(done)</span></h3>
+    <p>
+      <strong>The defect.</strong> A reservation recorded <code>pinned_major</code>, and every
+      generated record — acknowledgement, status update, receipt — hard-coded the build's
+      <code>COMMERCE_PROTOCOL_VERSION</code>. So a buyer who proposed at <code>1.1</code> against a
+      <code>1.1</code> quote received a <code>1.0</code> acknowledgement and a <code>1.0</code>
+      status chain, and the mismatch passed the check because only the major was compared. §9.13
+      says a conversation is conducted at one version throughout. Ours drifted at the first record
+      the supplier emitted.
+    </p>
+    <p>
+      <strong>The fix.</strong> <code>pinned_major</code> became <code>pinned_version</code>,
+      carrying the exact string from <code>order.protocol_version</code> at reservation. Every
+      emitter now takes the pinned version as an argument rather than reading a module constant:
+      <code>buildAcknowledgement</code>, <code>buildStatus</code>, <code>recordResult</code>, and
+      both signing paths. <code>majorMatches</code> became <code>versionMatches</code> and demands
+      exact equality. The major is still derived from the pin where drain accounting genuinely wants
+      a major (<code>substr(...instr(...))</code> in SQL, <code>split('.')[0]</code> in memory) —
+      that is a different question and keeps its own answer.
+    </p>
+    <p>
+      <strong>Where the build version still belongs.</strong> Nothing in the engines imports
+      <code>COMMERCE_PROTOCOL_VERSION</code> any more; the two leftover imports were dead and are
+      gone. Deciding whether an <em>incoming</em> record's version is one this build can parse is a
+      different question from which version this conversation speaks, and it stays owned by
+      <code>checkProtocolVersion</code>.
+    </p>
+    <p>
+      <strong>Two tests I wrote were false green, and the fix was structural.</strong> The first
+      seeded a fixture at <code>1.0</code> — equal to the build version, so a record emitted at
+      either would be indistinguishable and the mutation survived. The second asserted only that
+      "some error" came back, which the wrong error satisfies. Overriding
+      <code>protocol_version</code> on an already-built record does not work either: the version is
+      digest-covered, so an override produces a record that fails signature verification for an
+      unrelated reason and the test goes green for the wrong cause. The helpers now
+      <em>build</em> at the target version — <code>seedAdmittedOrderAtVersion('1.1')</code> and
+      <code>makeCancellation(order, protocolVersion)</code> — and the assertions discriminate accept
+      from reject.
+    </p>
+    <p class="meta">
+      Verification: three mutations, each 2 tests red — exact-version match, status emits the pin,
+      acknowledgement emits the pin. Tests: 6,331 core passing, workspace typecheck and eslint
+      clean. Remaining in WS-1: the catalog Phase-0 record contract (1.8) and the remaining §25.1
+      vector categories (1.9).
+    </p>
+
     <h2>Dual review — four rounds</h2>
     <p class="meta">
       Two independent reviewers: a Claude continuity subagent and Codex via the openai-codex plugin.
