@@ -46,6 +46,7 @@ import { getWorkflowService } from '../workflow/service';
 
 import { recordDecisionSafe } from './decisions';
 import { getDrainAuthorizationRepository } from './drain_authorizations';
+import { getExtensionOperationRegistry } from './extension_ops';
 import { getPluginGrantRepository } from './grants';
 import { getPluginInstallRepository, type PluginInstallRef } from './registry';
 
@@ -75,6 +76,47 @@ export const NODE_SUPPORTED_FEATURES: ReadonlySet<string> = new Set([
   'kind.provider',
   'idempotent_retry',
 ]);
+
+/**
+ * Feature-token prefix for §3.4 extension operations.
+ *
+ * The validator derives one token per declared `host_operations` entry, so
+ * the install gate can refuse a plugin whose operations this node has no
+ * adapter for. Without it, such a manifest installed cleanly and failed at
+ * DISPATCH — after the owner had already consented to something the node
+ * could never do.
+ */
+export const HOST_OP_FEATURE_PREFIX = 'host_op.';
+
+/**
+ * Is this extension operation registered on THIS node?
+ *
+ * Fail closed when no registry is installed: a node with no extension-op
+ * plane cannot serve any of them, and treating "not wired yet" as "yes"
+ * is how the gate came to pass everything in the first place.
+ */
+function hostOperationAvailable(operationName: string): boolean {
+  return getExtensionOperationRegistry()?.get(operationName) !== undefined;
+}
+
+/**
+ * The coarse features registered operations advertise (§3.4).
+ *
+ * `ExtensionOperationDef.requiredFeature` — "compatibility gate at install
+ * time" — was declared on every registered operation and read by nothing.
+ * It answers a question the per-operation check cannot: a manifest may
+ * declare `required_features: ['commerce-host-ops-v1']` to say "I need a
+ * node that does commerce host operations at all", without naming which.
+ *
+ * The two checks catch different lies. Per-operation catches "you asked
+ * for an adapter I do not have"; this catches "you declared a family I do
+ * not serve". Neither subsumes the other.
+ */
+function registeredOperationFeatures(): ReadonlySet<string> {
+  const registry = getExtensionOperationRegistry();
+  if (registry === null) return new Set();
+  return new Set(registry.list().map((op) => op.requiredFeature));
+}
 
 /** Pending installs expire after 15 minutes un-consented (§14 sweeper). */
 export const PENDING_INSTALL_TTL_SEC = 15 * 60;
@@ -1131,7 +1173,18 @@ export function vetReleaseManifest(
 
   // §14 compatibility gate: derived (∪ declared) ⊆ supported — fail
   // closed on anything this node doesn't recognize.
-  const missing = validation.derivedFeatures.filter((f) => !NODE_SUPPORTED_FEATURES.has(f));
+  //
+  // `host_op.*` is resolved against the LIVE registry rather than the
+  // constant set, because what a node can do for a plugin is what its boot
+  // registered, not what its build shipped. Two nodes on the same Dina
+  // version can differ here — one has a stock adapter installed, the other
+  // does not — and the constant would have to lie about one of them.
+  const operationFeatures = registeredOperationFeatures();
+  const missing = validation.derivedFeatures.filter((f) =>
+    f.startsWith(HOST_OP_FEATURE_PREFIX)
+      ? !hostOperationAvailable(f.slice(HOST_OP_FEATURE_PREFIX.length))
+      : !NODE_SUPPORTED_FEATURES.has(f) && !operationFeatures.has(f),
+  );
   if (missing.length > 0) {
     return {
       ok: false,

@@ -28,6 +28,10 @@ import {
   setPluginDecisionRepository,
   getPluginDecisionRepository,
 } from '../../src/plugins/decisions';
+import {
+  ExtensionOperationRegistry,
+  setExtensionOperationRegistry,
+} from '../../src/plugins/extension_ops';
 import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import {
   attestVerifiedRelease,
@@ -377,6 +381,150 @@ describe('compatibility gate (§14: derived ∪ declared ⊆ supported)', () => 
     if (result.ok || result.code !== 'needs_newer_dina') throw new Error(JSON.stringify(result));
     expect(result.missing).toContain('kind.notify');
     expect(result.missing).not.toContain('kind.provider');
+  });
+
+  it('refuses a host_operation this node has no adapter for (§3.4)', async () => {
+    // The gate that was missing. `host_operations` names were shape-checked
+    // and then forgotten: a manifest could declare `commerce.reserve_stock`
+    // on a node with no such adapter, install cleanly, and fail at DISPATCH
+    // — after the owner had consented to something the node could never do.
+    //
+    // Resolved against the LIVE registry, not a constant, because what a
+    // node can do is what its boot registered. Two nodes on one Dina version
+    // legitimately differ here.
+    const base = runnerManifest();
+    const m: PluginManifest = {
+      ...base,
+      capabilities: [
+        { ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] },
+      ],
+    };
+    const { rkey, verifier } = fakeVerifier(m);
+    setRepoProofVerifier(verifier);
+
+    // No registry installed at all: fail closed. "Not wired yet" is not "yes".
+    setExtensionOperationRegistry(null);
+    const noPlane = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(noPlane.ok).toBe(false);
+    if (noPlane.ok || noPlane.code !== 'needs_newer_dina') throw new Error(JSON.stringify(noPlane));
+    expect(noPlane.missing).toContain('host_op.commerce.reserve_stock');
+
+    // A registry that knows a DIFFERENT operation is still a refusal.
+    const registry = new ExtensionOperationRegistry();
+    registry.register({
+      operationName: 'commerce.something_else',
+      paramsSchema: { type: 'object' },
+      resultSchema: { type: 'object' },
+      adapterVersion: '1.0.0',
+      requiredFeature: 'commerce-host-ops-v1',
+      actionClass: 'read',
+    });
+    setExtensionOperationRegistry(registry);
+    const wrongOp = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(wrongOp.ok).toBe(false);
+    if (wrongOp.ok || wrongOp.code !== 'needs_newer_dina') throw new Error(JSON.stringify(wrongOp));
+    expect(wrongOp.missing).toContain('host_op.commerce.reserve_stock');
+  });
+
+  it('admits a host_operation this node HAS registered', async () => {
+    // The control. A gate that refuses everything is not a gate.
+    const base = runnerManifest();
+    const m: PluginManifest = {
+      ...base,
+      capabilities: [
+        { ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] },
+      ],
+    };
+    const { rkey, verifier } = fakeVerifier(m);
+    setRepoProofVerifier(verifier);
+    const registry = new ExtensionOperationRegistry();
+    registry.register({
+      operationName: 'commerce.reserve_stock',
+      paramsSchema: { type: 'object' },
+      resultSchema: { type: 'object' },
+      adapterVersion: '1.0.0',
+      requiredFeature: 'commerce-host-ops-v1',
+      actionClass: 'read',
+    });
+    setExtensionOperationRegistry(registry);
+    const result = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('honours a DECLARED host-ops family feature, which a node only has if it registered one', async () => {
+    // `ExtensionOperationDef.requiredFeature` — "compatibility gate at
+    // install time" — was set on every registered operation and read by
+    // nothing. It answers what the per-operation check cannot: a plugin
+    // saying "I need a node that does commerce host operations at all",
+    // without naming which one.
+    const m: PluginManifest = {
+      ...runnerManifest(),
+      required_features: ['commerce-host-ops-v1'],
+    };
+    const { rkey, verifier } = fakeVerifier(m);
+    setRepoProofVerifier(verifier);
+
+    setExtensionOperationRegistry(null);
+    const bare = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(bare.ok).toBe(false);
+    if (bare.ok || bare.code !== 'needs_newer_dina') throw new Error(JSON.stringify(bare));
+    expect(bare.missing).toContain('commerce-host-ops-v1');
+
+    // A node that registered an operation in that family serves it.
+    const registry = new ExtensionOperationRegistry();
+    registry.register({
+      operationName: 'commerce.reserve_stock',
+      paramsSchema: { type: 'object' },
+      resultSchema: { type: 'object' },
+      adapterVersion: '1.0.0',
+      requiredFeature: 'commerce-host-ops-v1',
+      actionClass: 'read',
+    });
+    setExtensionOperationRegistry(registry);
+    const served = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(served.ok).toBe(true);
+
+    // And a DIFFERENT family is still refused, so the union is not a blanket.
+    const other: PluginManifest = {
+      ...runnerManifest(),
+      required_features: ['payments-host-ops-v1'],
+    };
+    const otherProof = fakeVerifier(other);
+    setRepoProofVerifier(otherProof.verifier);
+    const refused = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey: otherProof.rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(refused.ok).toBe(false);
+    if (refused.ok || refused.code !== 'needs_newer_dina') throw new Error(JSON.stringify(refused));
+    expect(refused.missing).toContain('payments-host-ops-v1');
   });
 
   it('needs_newer_dina when a kind the node cannot yet deliver is DERIVED (notify is P3)', async () => {

@@ -1378,6 +1378,17 @@ function validateCapability(
           `${p}.host_operations`,
           `"${String(op)}" is not a valid operation name`,
         );
+      } else {
+        // DERIVED AS A FEATURE (§3.4), so the §14 compatibility gate can
+        // refuse at INSTALL a plugin whose operations this node has no
+        // adapter for. Shape-checking the name alone let such a manifest
+        // install cleanly and fail at dispatch instead — the owner having
+        // already consented to something the node could never do.
+        //
+        // Unlike every other derived token, the supported set for these is
+        // not a constant: it is whatever the running node registered. The
+        // install gate resolves it against the live registry.
+        derived.add(`host_op.${op}`);
       }
     }
     // Interpreted-only fields leaking into runner caps.
