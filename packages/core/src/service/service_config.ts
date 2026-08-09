@@ -88,6 +88,27 @@ export function getServiceConfig(rkey: string = DEFAULT_LISTING_RKEY): ServiceCo
 }
 
 /**
+ * Make the in-memory cache agree with a row that is ALREADY durable.
+ *
+ * Unlike `setServiceConfig` this writes no repository row and runs no
+ * validation: the caller has just written the row itself, inside its own
+ * transaction, and re-validating a stored config here could reject a listing
+ * the database has already committed — leaving memory and disk permanently
+ * disagreeing with no way to reconcile.
+ *
+ * The one caller today is the update-rebind coordinator (§9.13), which rewrites
+ * pinned manifest CIDs in SQL and then publishes the result once the
+ * transaction commits. Do not reach for this to save a repo write on an
+ * ordinary save path — `setServiceConfig` and `setServiceConfigDurable` are
+ * the paths that own validation.
+ */
+export function adoptServiceConfigInMemory(rkey: string, config: ServiceConfig): void {
+  configs.set(rkey, config);
+  notifyListeners(rkey, config);
+  configEventChannel().emitConfigChanged();
+}
+
+/**
  * List every configured listing (multi-listing per DID). Sorted by rkey for a
  * stable order. SYNC — reads the in-memory map populated by
  * `hydrateServiceConfig()` + every `setServiceConfig`.

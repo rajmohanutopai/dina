@@ -310,12 +310,20 @@ export function verifyStatusSuccession(
  * head or a strict ancestor of it (post-backup signatures lost). A
  * predecessor outside the held chain is a fork. Returns
  * 'head' | 'ancestor' on acceptance, an error string on rejection.
+ *
+ * `at_iso` is the RECEIVER's clock, exactly as `verifyStatusSuccession`
+ * takes it, and for the same reason: the fence's own `updated_at` is
+ * supplier-written, so a deadline checked against it is a deadline the
+ * supplier sets. It is required rather than optional because an
+ * optional clock that skips the check when omitted is precisely the
+ * bug this parameter was added to close.
  */
 export function verifyRestoreFence(
   fence: CommerceOrderStatus,
   held_chain: readonly CommerceOrderStatus[],
   order_lines: readonly PurchaseOrderLine[],
   sha256: Sha256Fn,
+  at_iso: string,
 ): 'head' | 'ancestor' | string {
   // Structural validation FIRST. A fence arrives from a supplier that
   // just restored from backup — the least trustworthy moment in the
@@ -358,6 +366,26 @@ export function verifyRestoreFence(
     !LEGAL_TRANSITIONS[predecessor.state].includes(fence.state)
   ) {
     return `fence: illegal state "${fence.state}" from fenced predecessor state "${predecessor.state}"`;
+  }
+  // The dispute deadline binds the FENCE path too.
+  //
+  // Without this, `delivered -> disputed` was reachable through a route
+  // that never checked the window, while the ordinary route
+  // (`verifyStatusSuccession`) refused it. A supplier could therefore
+  // dispute an order whose window closed long ago simply by marking the
+  // record `restore_fence: true` — a recovery mechanism used to escape a
+  // deadline, which is the shape of every privilege escalation.
+  //
+  // Bound to the PREDECESSOR's window, because the predecessor is the
+  // delivered record the buyer holds and its `dispute_window_ends_at` is
+  // the one both sides already agreed to.
+  if (predecessor.state === 'delivered' && fence.state === 'disputed') {
+    if (
+      predecessor.dispute_window_ends_at !== undefined &&
+      isoUtcMillis(at_iso) > isoUtcMillis(predecessor.dispute_window_ends_at)
+    ) {
+      return 'fence: delivered -> disputed is legal only before dispute_window_ends_at (§9.11)';
+    }
   }
   // Fulfilment must restate or legally advance the fenced predecessor,
   // bounded by the ORDERED quantities. A fence that silently inflates a

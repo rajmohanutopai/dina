@@ -40,6 +40,7 @@ import {
   SQLiteClassificationJobRepository,
   SQLiteCommandReceiptRepository,
   ExtensionOperationRegistry,
+  registerCommerceHostOperations,
   SQLiteDrainAuthorizationRepository,
   createCommerceRuntime,
   getNodeDID,
@@ -57,6 +58,13 @@ import {
   setClassificationJobRepository,
   setCommandReceiptRepository,
   setDrainAuthorizationRepository,
+  setUpdateRebindCoordinator,
+  UpdateRebindCoordinator,
+  getDrainAuthorizationRepository,
+  getPluginInstallRepository,
+  getCommerceRuntime,
+  rebindListingsForUpdate,
+  tier0TxRunner,
   createPluginHostRuntime,
   installPluginHostRuntime,
   setExtensionOperationRegistry,
@@ -102,6 +110,7 @@ export const MOBILE_PERSONA_DESCRIPTIONS: Record<string, string> = {
 };
 import { isAppViewStub } from './appview_stub';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
+import { startMobileCommercePlane } from './commerce_plane';
 import { createDemoServiceResponder } from './demo_service_responder';
 import { setOwnerRunClient } from './owner_run_client';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
@@ -485,13 +494,56 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     // is an option one of them forgets.
     const extensionRegistry = new ExtensionOperationRegistry();
     setExtensionOperationRegistry(extensionRegistry);
+    // §3.4 — the operations a capability may DECLARE. The registry was built
+    // empty and only the DISPATCHER was populated, so every declared operation
+    // was refused `operation_unregistered` and the executors below were
+    // unreachable: the lane was open on the doing side and closed on the
+    // declaring one. Code-shipped, never data-driven (§3.4).
+    registerCommerceHostOperations(extensionRegistry);
     installPluginHostRuntime(
       createPluginHostRuntime({ db: inputs.databaseAdapter, registry: extensionRegistry }),
     );
     setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(inputs.databaseAdapter));
+    // §9.13/§16.5 (WS-3.7) — the update-rebind coordinator, wired here for the
+    // same reason the server wires it in its own root: the composition root is
+    // the only place that knows the Tier-0 runner and the listing store. The
+    // coordinator resolves its repositories PER USE, so the order of the two
+    // lines above and this one cannot leave it holding a null.
+    // Captured once: the closures below run LATER, and a deferred read of
+    // `inputs.databaseAdapter` loses the narrowing this block already proved.
+    const rebindDb = inputs.databaseAdapter;
+    setUpdateRebindCoordinator(
+      new UpdateRebindCoordinator({
+        installs: () => getPluginInstallRepository(),
+        drains: () => getDrainAuthorizationRepository(),
+        rebindListings: (rebindArgs) =>
+          rebindListingsForUpdate(rebindDb, rebindArgs),
+        // §9.13 — a prior manifest's lifecycle lane stays open while it still
+        // serves an order. Absent commerce reads as zero.
+        countOpenOrders: (cid) =>
+          // §9.11 — a delivered order stops being work once its dispute window
+          // passes, and the count needs a clock to know that. Without one every
+          // delivered order blocked continuity release and uninstall for ever.
+          getCommerceRuntime()?.orders.countUnfinishedByServingManifest(cid, Date.now()) ?? 0,
+        tx: tier0TxRunner(rebindDb),
+        now: () => Date.now(),
+      }),
+    );
     // One atomic commit for each owner command's mutation + its receipt (§5/§12.5).
     const cmdReceiptDb = inputs.databaseAdapter;
     setCommandTxRunner((fn) => cmdReceiptDb.transaction(fn));
+    // §16.2 + §9.9 step 3 — the commerce background plane. The phone had
+    // neither tick: the shared workflow plane that starts the admission sweep
+    // is server-only, and nothing here had ever constructed the epoch service,
+    // so `currentEpoch()` threw on every commerce operation. Awaited because a
+    // half-established epoch is not a state requests should arrive into.
+    await startMobileCommercePlane({
+      adapter: cmdReceiptDb,
+      pds: inputs.pdsPublisher,
+      businessDid: inputs.did,
+      tx: (fn) => cmdReceiptDb.transaction(fn),
+      log,
+    });
   } else {
     workflowRepository = new InMemoryWorkflowRepository();
     serviceConfigRepository = new InMemoryServiceConfigRepository();

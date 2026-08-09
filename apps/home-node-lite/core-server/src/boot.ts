@@ -42,6 +42,8 @@ import {
   publishAttestationToPDS,
 } from '@dina/brain';
 import {
+  getUpdateRebindCoordinator,
+  getDrainAuthorizationRepository,
   configureRateLimiter,
   CoreReasoningBroker,
   createReasoningCommitBridge,
@@ -59,6 +61,13 @@ import {
   HEALTHZ_PATH,
   getWorkflowRepository,
   getCommerceRuntime,
+  getCommerceEpochService,
+  getCommerceServiceQueryDispatch,
+  makeServiceQueryReconcileSend,
+  installCatalogRecordReader,
+  installCatalogRecordWriter,
+  startCommerceSweepers,
+  type CommerceSweepers,
   getWorkflowService,
   registerService,
   tier0TxRunner,
@@ -79,7 +88,7 @@ import {
   type MsgBoxBootConfig,
   type WSFactory,
 } from '@dina/core/runtime';
-import { makeResolveSender } from '@dina/home-node';
+import { makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
 import { makeNodeWebSocketFactory } from '@dina/net-node';
 
 import { createAgentFacades } from './agent/facades';
@@ -492,6 +501,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let localReasoningBroker: CoreReasoningBroker | undefined;
   let reasoningCommitSupervisor: ReasoningCommitSupervisor | null = null;
   let localTaskExpiry: TaskExpirySweeper | undefined;
+  let commerceSweepers: CommerceSweepers | undefined;
   let phoneApprovalManager: PhoneApprovalManager | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
 
@@ -544,6 +554,26 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
         wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
+        // §10.2/WS-5.1 — how a catalog reaches this node's own repo. Core owns
+        // the ORDER (snapshot before pointer, and no pointer if the snapshot
+        // did not land); this half only writes. Installed alongside the profile
+        // publisher because they share one repo session and one identity.
+        // Captured, not re-read from the mutable `wiredPublisher` on every
+        // write: the closure outlives this block, and reaching back through a
+        // `let` would let a later reassignment silently redirect where this
+        // node's catalog is published.
+        const catalogPds = wiredPublisher.pdsPublisher;
+        const catalogDid = pdsIdentity.did;
+        // ONE pair, shared with the phone. The rules are identical and the
+        // identity re-check is the load-bearing part, so it lives in one place
+        // rather than in each root.
+        const catalogRepo = makeCatalogRepoAccess({
+          pds: catalogPds,
+          ownerDid: catalogDid,
+          authenticate: () => catalogPds.authenticate(),
+        });
+        installCatalogRecordWriter(catalogRepo.writer);
+        installCatalogRecordReader(catalogRepo.reader);
         // §16.2 — the commerce restore fence. The epoch record lives in this
         // node's OWN repo, outside every backup, and nothing may be signed
         // until it is published. A node with no PDS has no repo to publish
@@ -561,6 +591,75 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
             receipts: commerceRuntime.receipts,
             logger,
           }).establish();
+          // The commerce background ticks (§9.9 step 3, §16.2, §12.7). Started
+          // AFTER `establish()` so the first epoch re-read cannot race the
+          // publication, and through the one helper both composition roots
+          // call — a tick each root starts separately is a tick one root
+          // eventually forgets, which is how both of these came to be built
+          // and never run.
+          commerceSweepers = startCommerceSweepers({
+            admission: {
+              engine: () => getCommerceRuntime()?.admission ?? null,
+              onTimedOut: (purchaseOrderId) =>
+                logger.info({ purchaseOrderId }, 'commerce admission timed out; capacity refunded'),
+              onStuck: (skip) => logger.warn(skip, 'commerce admission reservation stuck'),
+              onError: (err) =>
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  'commerce admission sweep failed',
+                ),
+            },
+            epoch: {
+              service: () => getCommerceEpochService(),
+              onOutcome: (outcome) => {
+                if (outcome.kind === 'current') return;
+                // Anything else means this node's right to sign is in
+                // question, and a quiet log line is the only place an
+                // operator can learn it before a buyer tells them.
+                logger.warn({ ...outcome }, 'commerce epoch revalidation');
+              },
+              onError: (err) =>
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  'commerce epoch revalidation failed',
+                ),
+            },
+            // §9.13 — retire a prior manifest's lifecycle lane once its last order
+            // is finished. Continuity authorizations carry no expiry, so without
+            // this every update leaves another one behind holding authority for
+            // ever. `releaseContinuity` re-reads the count and refuses while work
+            // remains, so this sweep can only ever be LATE, never early.
+            continuity: {
+              intervalMs: 15 * 60 * 1000,
+              releasable: () =>
+                getDrainAuthorizationRepository()?.listLiveContinuity(Date.now()) ?? [],
+              release: (installId, previousCid, capabilityId) =>
+                getUpdateRebindCoordinator()?.releaseContinuity(
+                  installId,
+                  previousCid,
+                  capabilityId,
+                ) ?? {
+                  released: false,
+                  openOrders: 0,
+                },
+            },
+            reconcile: {
+              // §12.7 — ask a supplier again about an order whose outcome this
+              // node does not know. Resolved per tick, never captured: the
+              // outbound lane is installed with storage and a tick holding a
+              // stale sender would ask the wrong node's suppliers.
+              send: () => {
+                const dispatch = getCommerceServiceQueryDispatch();
+                return dispatch === null ? null : makeServiceQueryReconcileSend({ dispatch });
+              },
+              onSweep: (result) => logger.info(result, 'commerce reconcile sweep'),
+              onError: (err) =>
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  'commerce reconcile sweep failed',
+                ),
+            },
+          });
         }
         const reviewRepo = getReviewPublishRepository();
         if (reviewRepo !== null) {
@@ -828,6 +927,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         setWorkflowRepository(null);
       }
       await reviewPublishSupervisor?.stop();
+      commerceSweepers?.stop();
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }

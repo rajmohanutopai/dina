@@ -40,6 +40,10 @@ import {
   WatchPollSweeper,
   WatchService,
   WorkflowService,
+  defaultPluginCompletionHandler,
+  getWorkflowService,
+  getPluginHostRuntime,
+  getPluginInstallRepository,
   buildWatchPollHandler,
   makeServiceResponseBridgeSender,
   setD2DSender,
@@ -48,6 +52,7 @@ import {
   setWatchService,
   setWorkflowRepository,
   setWorkflowService,
+  transformInboundOrderResult,
   type ServiceQueryBody,
   type ServiceResponseBody,
   type WorkflowRepository,
@@ -55,6 +60,7 @@ import {
 
 import {
   buildHomeNodeServiceRuntime,
+  toServiceResponseBody,
   type BuildHomeNodeServiceRuntimeOptions,
   type HomeNodeServiceRuntime,
 } from './service_runtime';
@@ -83,11 +89,11 @@ export interface WireWorkflowPlaneOptions {
    * Service runtime configuration. The caller supplies the
    * `CoreClient`, AppView client, config reader, plus the chat- or
    * log-bound `deliver` / `approvalNotifier` / `inboundNotifier`
-   * callbacks. `rejectResponder` is optional — when omitted we
+   * callbacks. `directResponder` is optional — when omitted we
    * synthesize one over the same `sendD2D` egress path.
    */
-  runtime: Omit<BuildHomeNodeServiceRuntimeOptions, 'rejectResponder'> & {
-    rejectResponder?: BuildHomeNodeServiceRuntimeOptions['rejectResponder'];
+  runtime: Omit<BuildHomeNodeServiceRuntimeOptions, 'directResponder'> & {
+    directResponder?: BuildHomeNodeServiceRuntimeOptions['directResponder'];
   };
   /**
    * Optional hook fired AFTER the Response Bridge ships a successful
@@ -195,6 +201,42 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   const workflowService = new WorkflowService({
     repository: opts.workflowRepository,
     responseBridgeSender,
+    // §9.9 — a completed `submit_order` is answered with the acknowledgement
+    // Core signed, not the runner's JSON. Passed here rather than at each boot
+    // so neither can forget it; the transform answers `passthrough` for every
+    // capability it does not own, and `withhold` when it owns the answer and
+    // cannot record one.
+    ingressResultTransformer: transformInboundOrderResult,
+    // A withheld answer is the one bridge outcome with no other trace: no
+    // stash, no send, nothing for the sweeper. Without this line an operator
+    // sees orders lapse and nothing says why.
+    onIngressResultWithheld: (args) =>
+      log({
+        event: 'response_bridge.result_withheld',
+        task_id: args.taskId,
+        capability: args.capability,
+        reason: args.reason,
+      }),
+    // §3.4 — a plugin runner asks for a host operation by COMPLETING its claim
+    // with a typed proposal. Composed through the ONE factory both roots call,
+    // for the reason the admission sweep taught: a handler assembled separately
+    // at each root drifts, and the half that drifts is the one nobody tests.
+    pluginCompletionHandler: defaultPluginCompletionHandler({
+      hostRuntime: () => getPluginHostRuntime(),
+      installs: () => getPluginInstallRepository(),
+      // Resolved per call through the global the plane registers a few lines
+      // below: the service is still being constructed on this line, and the
+      // REPOSITORY's `create` is a different shape (a whole row) from the
+      // service's (a request Core completes).
+      workflow: () => getWorkflowService(),
+      onError: (err: unknown) =>
+        log({
+          event: 'plugin.host_operation_error',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      onOutcome: (outcome: { kind: string }) =>
+        log({ event: 'plugin.host_operation', kind: outcome.kind }),
+    }),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
   });
 
@@ -219,23 +261,17 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
 
   // (E) Service runtime — handler / dispatcher / orchestrator / events
   //     / approvals. Caller-supplied `deliver` + notifiers carry the
-  //     mobile / lite delta. `rejectResponder` defaults to a passthrough
+  //     mobile / lite delta. `directResponder` defaults to a passthrough
   //     over the same `sendD2D`.
-  const rejectResponder: BuildHomeNodeServiceRuntimeOptions['rejectResponder'] =
-    opts.runtime.rejectResponder ??
+  const directResponder: BuildHomeNodeServiceRuntimeOptions['directResponder'] =
+    opts.runtime.directResponder ??
     (async (to, body) => {
-      await opts.sendD2D(to, 'service.response', {
-        query_id: body.query_id,
-        capability: body.capability,
-        status: body.status,
-        ...(body.error !== undefined ? { error: body.error } : {}),
-        ...(body.ttl_seconds !== undefined ? { ttl_seconds: body.ttl_seconds } : {}),
-      });
+      await opts.sendD2D(to, 'service.response', toServiceResponseBody(body));
     });
 
   const runtime = buildHomeNodeServiceRuntime({
     ...opts.runtime,
-    rejectResponder,
+    directResponder,
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
     ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
@@ -303,6 +339,18 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
     ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),
   });
   watchPoll.start();
+
+  // (H) The commerce background ticks are NOT wired here.
+  //
+  // Admission recovery (§9.9 step 3) used to be, with a comment claiming both
+  // boots got it from one place. They did not: the phone composes its own
+  // background work and never calls this plane, so no reservation on a phone
+  // ever timed out and no quote capacity was ever refunded there. The comment
+  // described the intent and the wiring did something else.
+  //
+  // Both commerce ticks now live in `startCommerceSweepers` (@dina/core),
+  // called once by each composition root — see `boundary.test.ts`, which
+  // fails if either root stops calling it.
 
   log({ event: 'workflow_plane.wired' });
 

@@ -42,13 +42,7 @@ import { tier0TxRunner } from '../../src/run/tx';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import {
-  BUYER_DID,
-  SUPPLIER_DID,
-  makeOrder,
-  makeQuoteRequest,
-  makeSignedQuote,
-} from './helpers';
+import { BUYER_DID, SUPPLIER_DID, makeOrder, makeQuoteRequest, makeSignedQuote } from './helpers';
 
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
@@ -265,10 +259,13 @@ describe('commerce composition root', () => {
     expect(runtime.admission.admitOrder(order, BUYER_DID)).toEqual({ kind: 'reserved' });
 
     clock.now = T_ADMIT + DEFAULT_DECISION_TIMEOUT_MS - 1;
-    expect(runtime.admission.recoverAdmissions()).toEqual([]);
+    expect(runtime.admission.recoverAdmissions()).toEqual({ timedOut: [], stuck: [] });
 
     clock.now = T_ADMIT + DEFAULT_DECISION_TIMEOUT_MS + 1;
-    expect(runtime.admission.recoverAdmissions()).toEqual([order.purchase_order_id]);
+    expect(runtime.admission.recoverAdmissions()).toEqual({
+      timedOut: [order.purchase_order_id],
+      stuck: [],
+    });
 
     // The timeout refunds the hold, so the capacity comes back. The quote
     // allows a single use, so a second order admitting is the observable
@@ -364,6 +361,37 @@ describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
     expect(runtime.inFlightCount()).toBe(0);
   });
 
+  it('counts obligations PER INSTALL, so one pack does not block another', () => {
+    // The whole point of WS-4.5. The count was node-wide, because an order
+    // recorded the serving manifest CID and not the install — so on a node
+    // running two commerce plugins, removing one made an operator resolve the
+    // OTHER's orders first. Safe, and wrong.
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID, { servingInstallId: 'pli_supplier' });
+
+    expect(runtime.inFlightCount('pli_supplier')).toBe(1);
+    expect(runtime.inFlightCount('pli_somebody_else')).toBe(0);
+    // Unscoped is unchanged: a caller that asks about the whole node still
+    // gets the whole node.
+    expect(runtime.inFlightCount()).toBe(1);
+  });
+
+  it('an order attributed to NO install blocks nobody', () => {
+    // Orders admitted before the column existed carry ''. Counting them
+    // against every install would make every teardown refuse for ever with
+    // nothing an operator could do about it, so they belong to no install —
+    // and the unscoped count still sees them.
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+
+    expect(runtime.inFlightCount('pli_supplier')).toBe(0);
+    expect(runtime.inFlightCount()).toBe(1);
+  });
+
   it('UNINSTALL is refused while an obligation is open, and allowed once it closes', async () => {
     // The guard the count exists for. Without it the plugin is removed, the
     // records stay in their tables, and every order_status / cancel_order /
@@ -372,7 +400,6 @@ describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
     installCommerceRuntime(runtime);
     const quote = seedQuote(runtime);
     const order = makeOrder(quote, request.delivery.projection);
-    runtime.admission.admitOrder(order, BUYER_DID);
 
     const installs = new SQLitePluginInstallRepository(fixture.adapter);
     setPluginInstallRepository(installs);
@@ -411,6 +438,10 @@ describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
         nowMs: clock.now,
       });
       installs.activate(installId, 'did:plc:plugindevice', clock.now);
+      // Admitted UNDER this install (WS-4.5), which is what makes the refusal
+      // its business: the count is scoped, so an order the install never
+      // served would not block its teardown.
+      runtime.admission.admitOrder(order, BUYER_DID, { servingInstallId: installId });
 
       await expect(uninstall(installId, clock.now)).rejects.toThrow(
         /commerce order\(s\) are still open/,

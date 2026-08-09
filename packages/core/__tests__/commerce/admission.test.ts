@@ -13,7 +13,6 @@ import { validateOrderAcknowledgement, commerceRecordDigest } from '@dina/commer
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
-  CommerceAdmissionEngine,
   InMemoryCommerceOrderRefRepository,
   InMemoryCommerceQuoteLedgerRepository,
   InMemoryCommerceReceiptRepository,
@@ -24,6 +23,7 @@ import {
   type CommerceQuoteLedgerRepository,
   type CommerceReceiptRepository,
 } from '../../src/commerce';
+import { readEvidence } from '../../src/commerce/receipt_evidence';
 import { makeReentrantTxRunner } from '../../src/run/tx';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -31,16 +31,16 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   BUYER_DID,
   SUPPLIER_DID,
-  makeOrder,
-  makeProjection,
+  hash,
+  makeAdmission,
   makeFamilies,
+  makeOrder,
   makeOrders,
+  makeProjection,
   makeQuoteRequest,
   makeRevision,
   makeSignedQuote,
- hash } from './helpers';
-
-
+} from './helpers';
 
 import type { OrderAcknowledgement } from '@dina/commerce-protocol';
 
@@ -49,15 +49,52 @@ interface Harness {
   quotes: CommerceQuoteLedgerRepository;
   receipts: CommerceReceiptRepository;
   tx: (fn: () => void) => void;
+  /**
+   * Edit a stored record's body AFTER it was written, leaving its digest
+   * untouched — the corruption a shape check cannot see.
+   *
+   * TEST-SIDE ONLY. `put` is first-writer-wins for the body on purpose
+   * (WS-2.8), so there is no production affordance for this and there must
+   * not be: each harness reaches past its own repository the way disk
+   * corruption or a half-finished migration would.
+   */
+  tamperReceiptBody: (recordDigest: string, recordJson: string) => void;
+  /**
+   * Corrupt a decided order's stored acknowledgement. Also test-side only:
+   * `decide` is a CAS on `state = 'reserved'`, so a second call is refused —
+   * correctly — and there is no production path that rewrites this column.
+   */
+  tamperAcknowledgement: (purchaseOrderId: string, acknowledgementJson: string) => void;
   cleanup: () => void;
 }
 
 function inMemoryHarness(): Harness {
+  const receipts = new InMemoryCommerceReceiptRepository();
+  const orderRefs = new InMemoryCommerceOrderRefRepository();
   return {
-    orderRefs: new InMemoryCommerceOrderRefRepository(),
+    orderRefs,
     quotes: new InMemoryCommerceQuoteLedgerRepository(),
-    receipts: new InMemoryCommerceReceiptRepository(),
+    receipts,
     tx: (fn) => fn(),
+    tamperReceiptBody: (recordDigest, recordJson) => {
+      const map = (receipts as unknown as { byDigest: Map<string, { recordJson: string }> })
+        .byDigest;
+      const stored = map.get(recordDigest);
+      if (stored === undefined) throw new Error(`no receipt for ${recordDigest}`);
+      map.set(recordDigest, { ...stored, recordJson });
+    },
+    tamperAcknowledgement: (purchaseOrderId, acknowledgementJson) => {
+      const map = (
+        orderRefs as unknown as {
+          byOrderId: Map<string, { purchaseOrderId: string; acknowledgementJson: string }>;
+        }
+      ).byOrderId;
+      for (const [key, ref] of map) {
+        if (ref.purchaseOrderId === purchaseOrderId) {
+          map.set(key, { ...ref, acknowledgementJson });
+        }
+      }
+    },
     cleanup: () => undefined,
   };
 }
@@ -76,6 +113,18 @@ function sqliteHarness(): Harness {
     quotes: new SQLiteCommerceQuoteLedgerRepository(adapter),
     receipts: new SQLiteCommerceReceiptRepository(adapter),
     tx: makeReentrantTxRunner(adapter),
+    tamperReceiptBody: (recordDigest, recordJson) => {
+      adapter.run('UPDATE commerce_receipts SET record_json = ? WHERE record_digest = ?', [
+        recordJson,
+        recordDigest,
+      ]);
+    },
+    tamperAcknowledgement: (purchaseOrderId, acknowledgementJson) => {
+      adapter.run(
+        'UPDATE commerce_order_refs SET acknowledgement_json = ? WHERE purchase_order_id = ?',
+        [acknowledgementJson, purchaseOrderId],
+      );
+    },
     cleanup: () => {
       adapter.close();
       fs.rmSync(dir, { recursive: true, force: true });
@@ -93,7 +142,7 @@ describe.each([
 ])('admission engine (%s)', (_label, makeHarness) => {
   let h: Harness;
   let clock: { now: number };
-  let engine: CommerceAdmissionEngine;
+  let engine: ReturnType<typeof makeAdmission>;
 
   const request = makeQuoteRequest();
   const pricedProjection = request.delivery.projection;
@@ -101,7 +150,7 @@ describe.each([
   beforeEach(() => {
     h = makeHarness();
     clock = { now: T_ADMIT };
-    engine = new CommerceAdmissionEngine({
+    engine = makeAdmission({
       tx: h.tx,
       orders: makeOrders(h.orderRefs, clock),
       families: makeFamilies(h.quotes, clock),
@@ -158,6 +207,247 @@ describe.each([
     }
   });
 
+  /**
+   * WS-2.8 (§9.12) — the order proposal ARRIVED, and the receipt says so.
+   *
+   * The evidence column existed since CMC-1 with every caller writing `'{}'`.
+   * What a dispute turns on is not "we agree this is the document" but "you
+   * sent it to me" — so the arrival, and who was authenticated when it
+   * arrived, is the fact worth keeping.
+   */
+  it('records ARRIVAL evidence naming the authenticated sender', () => {
+    const quote = seedQuote();
+    const order = makeOrder(quote, pricedProjection);
+    engine.admitOrder(order, BUYER_DID);
+
+    const stored = h.receipts.get(order.order_digest);
+    expect(stored).not.toBeNull();
+    expect(readEvidence(stored?.evidenceJson ?? '').observations).toEqual([
+      expect.objectContaining({ kind: 'received', fromDid: BUYER_DID }),
+    ]);
+  });
+
+  /**
+   * The refusal a counterparty hears is deliberately non-disclosing:
+   * `quote_unknown` covers an expired quote, a quote this node never held, and
+   * a retained record it could not read back. Telling a stranger which one
+   * would let them probe the supplier's ledger.
+   *
+   * That is right for the counterparty and wrong for the node's OWN operator,
+   * who otherwise debugs a live refusal with exactly as much information as an
+   * attacker has. Writing the disaster-recovery scenario cost an hour to this:
+   * a clock on the quote's `valid_until` answered `quote_unknown`, which reads
+   * as "no such quote" and sends you looking in the wrong place.
+   */
+  describe('the operator is told more than the counterparty', () => {
+    it('distinguishes an EXPIRED quote from one that was never held', () => {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+      clock.now = Date.parse('2026-08-09T00:00:00.000Z'); // past valid_until
+
+      const expired = engine.admitOrder(order, BUYER_DID);
+      expect(expired.kind).toBe('rejected');
+      if (expired.kind !== 'rejected') throw new Error('expected a rejection');
+      // The WIRE answer stays flat...
+      expect(
+        expired.acknowledgement.kind === 'rejected' && expired.acknowledgement.reason_code,
+      ).toBe('quote_expired');
+      // ...and the operator hears which refusal the family actually made.
+      expect(expired.detail).toContain('quote_expired');
+    });
+
+    it('does not call a missing quote family "quote_unknown" and stop there', () => {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection, { quote_id: 'q-never-existed' });
+      const unknown = engine.admitOrder(order, BUYER_DID);
+      expect(unknown.kind).toBe('rejected');
+      if (unknown.kind !== 'rejected') throw new Error('expected a rejection');
+      expect(
+        unknown.acknowledgement.kind === 'rejected' && unknown.acknowledgement.reason_code,
+      ).toBe('quote_unknown');
+      // Names the id, so an operator knows WHICH family was looked for.
+      expect(unknown.detail).toContain('q-never-existed');
+    });
+
+    it('never leaks the detail into the acknowledgement the buyer receives', () => {
+      // The whole point of the split. If the detail rode on the wire the
+      // non-disclosing reason code would be decoration.
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection, { quote_id: 'q-never-existed' });
+      const rejected = engine.admitOrder(order, BUYER_DID);
+      if (rejected.kind !== 'rejected') throw new Error('expected a rejection');
+      expect(JSON.stringify(rejected.acknowledgement)).not.toContain('q-never-existed');
+    });
+  });
+
+  /**
+   * WS-2.2 — the retained request is the YARDSTICK, so it is read through the
+   * ingress validator rather than cast.
+   *
+   * Admission checks the order's delivery against the PRICED PROJECTION this
+   * record carries. Read as `JSON.parse(…) as {delivery: …}`, a projection
+   * edited in the store after writing became the standard the order had to
+   * match — so a mismatched order would pass, and the corruption would show up
+   * as a wrong commercial outcome rather than an error.
+   */
+  describe('the retained request is validated on the way out', () => {
+    it('refuses an order when the retained request no longer matches its digest', () => {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+
+      // Edit the stored request AFTER writing, leaving its digest untouched.
+      // A shape check passes this; re-deriving the digest does not.
+      const stored = h.receipts.get(quote.request_digest);
+      if (stored === null) throw new Error('the fixture did not retain the request');
+      const tampered = JSON.parse(stored.recordJson) as {
+        delivery: { projection: { destination_region?: string } };
+      };
+      tampered.delivery.projection.destination_region = 'XX-elsewhere';
+      h.tamperReceiptBody(quote.request_digest, JSON.stringify(tampered));
+
+      const outcome = engine.admitOrder(order, BUYER_DID);
+      expect(outcome.kind).toBe('rejected');
+      if (outcome.kind !== 'rejected') throw new Error('expected a rejection');
+      expect(outcome.detail).toContain('unreadable');
+    });
+
+    it('FREEZES the refusal — repairing the store does not retroactively accept', () => {
+      // §9.9's strongest sentence: "An admission answer, once given, is
+      // frozen — a replay of the rejected proposal still returns the recorded
+      // acknowledgement, never a retroactive acceptance."
+      //
+      // The integrity path is where that is easiest to get wrong, because the
+      // condition genuinely HEALS: an operator restores the receipt from a
+      // backup and the order would now bind perfectly. A node that re-evaluated
+      // would hand the buyer an acceptance for a proposal it has already told
+      // them was refused — and the buyer has moved on, possibly by ordering
+      // elsewhere. Two tests above prove the refusal; this one proves it stays
+      // refused, which is the half the previous version left as a comment.
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+      const good = h.receipts.get(quote.request_digest);
+      if (good === null) throw new Error('the fixture did not retain the request');
+
+      h.tamperReceiptBody(quote.request_digest, 'not json at all');
+      const first = engine.admitOrder(order, BUYER_DID);
+      expect(first.kind).toBe('rejected');
+
+      // The store is repaired, byte for byte.
+      h.tamperReceiptBody(quote.request_digest, good.recordJson);
+
+      const replay = engine.admitOrder(order, BUYER_DID);
+      expect(replay.kind).toBe('replay');
+      if (replay.kind !== 'replay') throw new Error('expected the recorded answer');
+      expect(replay.acknowledgement.kind).toBe('rejected');
+      expect(replay.acknowledgement.order_digest).toBe(order.order_digest);
+      // And it is a REAL acknowledgement, not a shape: the same validator the
+      // wire uses accepts it, because this is what the buyer receives.
+      expect(validateOrderAcknowledgement(replay.acknowledgement, hash)).toBeNull();
+    });
+
+    it('refunds the hold when it freezes, so the quote is usable again', () => {
+      // The refusal is durable; the CAPACITY is not consumed by it. §9.9:
+      // "every rejected outcome REFUNDS it". A buyer whose order died on a
+      // local corruption must be able to submit a fresh one against the same
+      // quote, or the supplier's own disk fault silently spends the offer.
+      const quote = seedQuote();
+      const good = h.receipts.get(quote.request_digest);
+      if (good === null) throw new Error('the fixture did not retain the request');
+      const first = makeOrder(quote, pricedProjection);
+
+      h.tamperReceiptBody(quote.request_digest, 'not json at all');
+      expect(engine.admitOrder(first, BUYER_DID).kind).toBe('rejected');
+      h.tamperReceiptBody(quote.request_digest, good.recordJson);
+
+      // A DIFFERENT order against the SAME quote. If the frozen rejection had
+      // spent the family's single use, this would die `quote_consumed` and the
+      // supplier's own disk fault would have cost them the sale.
+      const second = makeOrder(quote, pricedProjection, {
+        purchase_order_id: 'po-after-repair',
+        idempotency_key: 'idem-after-repair',
+      });
+      expect(engine.admitOrder(second, BUYER_DID).kind).toBe('reserved');
+    });
+
+    it('does not THROW on a corrupt retained request', () => {
+      // It used to: `JSON.parse` inside `admitInTx`, inside a transaction, on
+      // the inbound path, where everything else returns a typed refusal.
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+      h.tamperReceiptBody(quote.request_digest, 'not json at all');
+
+      // ONE call: a second would be a replay of the first refusal, which is
+      // correct behaviour and would assert nothing about the throw.
+      let outcome: ReturnType<typeof engine.admitOrder> | undefined;
+      expect(() => {
+        outcome = engine.admitOrder(order, BUYER_DID);
+      }).not.toThrow();
+      expect(outcome?.kind).toBe('rejected');
+    });
+  });
+
+  /**
+   * WS-2.2 — the stored acknowledgement is the supplier's COMMITMENT, and a
+   * replayed submission receives it verbatim. Two failures were reachable
+   * through the cast this replaces: a corrupt column threw out of admission,
+   * and `JSON.parse('null') as OrderAcknowledgement` produced a null typed as
+   * a commitment, which would reach a buyer as "here is what we agreed".
+   */
+  describe('a stored acknowledgement that cannot be read is not an answer', () => {
+    function decideThenCorrupt(corrupt: string): ReturnType<typeof engine.admitOrder> {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+      engine.admitOrder(order, BUYER_DID);
+      engine.decideOrder(BUYER_DID, order.purchase_order_id, {
+        kind: 'accepted',
+        supplierOrderId: 'so-1',
+      });
+      h.tamperAcknowledgement(order.purchase_order_id, corrupt);
+      // The replay path reads it back.
+      return engine.admitOrder(order, BUYER_DID);
+    }
+
+    it('refuses rather than replaying an unreadable acknowledgement', () => {
+      const outcome = decideThenCorrupt('not json');
+      expect(outcome.kind).toBe('conflict');
+      if (outcome.kind !== 'conflict') throw new Error('expected a conflict');
+      expect(outcome.error).toContain('store integrity');
+    });
+
+    it('calls an EMPTY column absent, not unparseable', () => {
+      // Behaviourally the same refusal — `JSON.parse('')` throws either way —
+      // so this pins the MESSAGE, which is the only thing the branch adds.
+      // An operator reading "is not JSON" about an empty column goes looking
+      // for corruption; "is absent" says the write never happened.
+      const outcome = decideThenCorrupt('');
+      expect(outcome.kind).toBe('conflict');
+      if (outcome.kind !== 'conflict') throw new Error('expected a conflict');
+      expect(outcome.error).toContain('absent');
+    });
+
+    it('refuses a stored NULL rather than handing a buyer a null commitment', () => {
+      // `JSON.parse('null')` succeeds. Only validation catches this one, and
+      // it is the shape a missing column produced.
+      expect(decideThenCorrupt('null').kind).toBe('conflict');
+    });
+
+    it('refuses an acknowledgement whose digest no longer matches its content', () => {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection);
+      engine.admitOrder(order, BUYER_DID);
+      const decided = engine.decideOrder(BUYER_DID, order.purchase_order_id, {
+        kind: 'accepted',
+        supplierOrderId: 'so-1',
+      });
+      if (!('acknowledgement' in decided)) throw new Error('expected an acknowledgement');
+      // Edit the body, leave the digest. A shape check passes; re-deriving
+      // the digest does not.
+      const tampered = { ...decided.acknowledgement, supplier_order_id: 'so-SOMEONE-ELSE' };
+      h.tamperAcknowledgement(order.purchase_order_id, JSON.stringify(tampered));
+      expect(engine.admitOrder(order, BUYER_DID).kind).toBe('conflict');
+    });
+  });
+
   it('typed conflicts fire BEFORE any use-count effect', () => {
     const quote = seedQuote();
     const order = makeOrder(quote, pricedProjection);
@@ -173,7 +463,8 @@ describe.each([
     const swapped = makeOrder(quote, pricedProjection, { buyer_reference: 'PO/77' });
     const swapOutcome = engine.admitOrder(swapped, BUYER_DID);
     expect(swapOutcome.kind).toBe('conflict');
-    if (swapOutcome.kind === 'conflict') expect(swapOutcome.error).toMatch(/DIFFERENT order_digest/);
+    if (swapOutcome.kind === 'conflict')
+      expect(swapOutcome.error).toMatch(/DIFFERENT order_digest/);
 
     // Neither consumed capacity beyond the original hold.
     expect(h.quotes.activeUseCount(quote.quote_id)).toBe(1);
@@ -283,6 +574,69 @@ describe.each([
     }
   });
 
+  /**
+   * WS-2.2 — a timed-out reservation is resolved from the ORDER REFERENCE.
+   *
+   * The sweeper used to load and re-validate the order proposal first and
+   * `continue` if either step failed. That looked like prudence and was a
+   * leak with no floor: the row stays in the expired set for ever, so it is
+   * reconsidered and skipped on every future sweep, the quote capacity it
+   * holds never comes back, and the buyer's `order_reconcile` answers
+   * `received_processing` indefinitely. Silently — the sweep reported only
+   * its successes, so an operator saw "0 timed out" either way.
+   *
+   * A `rejected(decision_timeout)` needs none of the proposal. Its three
+   * fields are on the reference, the order digest got there from admission,
+   * and the outcome commits to nothing.
+   */
+  it('times out an expired reservation even when its order receipt is gone', () => {
+    const quote = seedQuote();
+    const order = makeOrder(quote, pricedProjection);
+    expect(engine.admitOrder(order, BUYER_DID).kind).toBe('reserved');
+
+    // The receipt store came back from a restore without this record, or it
+    // was corrupted in place. Both reduce to "the proposal is unreadable".
+    h.receipts.put({
+      recordDigest: order.order_digest,
+      domain: 'order',
+      buyerDid: BUYER_DID,
+      quoteId: quote.quote_id,
+      purchaseOrderId: order.purchase_order_id,
+      recordJson: '{ truncated',
+      evidenceJson: '{}',
+      createdAt: clock.now,
+    });
+
+    clock.now = T_ADMIT + DECISION_TIMEOUT_MS + 1;
+    const sweep = engine.recoverAdmissions();
+    expect(sweep.timedOut).toEqual([order.purchase_order_id]);
+    expect(sweep.stuck).toEqual([]);
+    // The capacity came back — the observable half of the leak.
+    expect(h.quotes.getUse(quote.quote_id, order.purchase_order_id)).toBe('refunded');
+    // And the buyer gets a real answer instead of `received_processing` for
+    // ever. The acknowledgement is still bound to the right order, because
+    // the digest on the reference came from admission.
+    const replay = engine.admitOrder(order, BUYER_DID);
+    expect(replay.kind).toBe('replay');
+    if (replay.kind === 'replay') {
+      expect(replay.acknowledgement.kind).toBe('rejected');
+      expect(replay.acknowledgement.order_digest).toBe(order.order_digest);
+      if (replay.acknowledgement.kind === 'rejected') {
+        expect(replay.acknowledgement.reason_code).toBe('decision_timeout');
+      }
+    }
+  });
+
+  it('a second sweep finds nothing left to do', () => {
+    // The leak's signature was a row that came back every sweep for ever.
+    const quote = seedQuote();
+    const order = makeOrder(quote, pricedProjection);
+    expect(engine.admitOrder(order, BUYER_DID).kind).toBe('reserved');
+    clock.now = T_ADMIT + DECISION_TIMEOUT_MS + 1;
+    expect(engine.recoverAdmissions().timedOut).toEqual([order.purchase_order_id]);
+    expect(engine.recoverAdmissions()).toEqual({ timedOut: [], stuck: [] });
+  });
+
   it('pre_effect deadline recovery refunds; effect_started is untouchable', () => {
     const quote = seedQuote({ max_uses: '2' });
     const first = makeOrder(quote, pricedProjection);
@@ -297,8 +651,12 @@ describe.each([
     expect(engine.markEffectStarted(BUYER_DID, 'po-2')).toBe(true);
 
     clock.now = T_ADMIT + DECISION_TIMEOUT_MS + 1;
-    const timedOut = engine.recoverAdmissions();
-    expect(timedOut).toEqual(['po-1']);
+    const sweep = engine.recoverAdmissions();
+    expect(sweep.timedOut).toEqual(['po-1']);
+    // Nothing unresolvable. A sweep that answers "0 timed out" must not read
+    // the same as one where every expired row is stuck, so the two are
+    // separate fields and both are asserted.
+    expect(sweep.stuck).toEqual([]);
 
     // po-1: decided rejected(decision_timeout), hold refunded.
     const replay = engine.admitOrder(first, BUYER_DID);
@@ -334,9 +692,9 @@ describe.each([
 
     // Corrupt the ledger behind the engine's back: the hold is already
     // settled, so the decision's CAS cannot succeed.
-    expect(h.quotes.settleUse(quote.quote_id, order.purchase_order_id, 'committed', clock.now)).toBe(
-      true,
-    );
+    expect(
+      h.quotes.settleUse(quote.quote_id, order.purchase_order_id, 'committed', clock.now),
+    ).toBe(true);
 
     expect(() =>
       engine.decideOrder(BUYER_DID, order.purchase_order_id, {
@@ -425,7 +783,7 @@ describe.each([
 
       // The supplier issues a genuinely new family from its own records.
       const replacement = makeSignedQuote(request, { quote_id: 'q-reoffer' });
-      const withSeam = new CommerceAdmissionEngine({
+      const withSeam = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
@@ -491,7 +849,7 @@ describe.each([
         quote_id: 'q-reoffer-other',
         buyer_did: 'did:plc:someoneelse9',
       });
-      const withSeam = new CommerceAdmissionEngine({
+      const withSeam = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
@@ -521,7 +879,7 @@ describe.each([
 
       // A re-offer that reuses the VOIDED family id cannot register.
       const bad = makeSignedQuote(request, { quote_id: quote.quote_id, quote_revision: '2' });
-      const withBadSeam = new CommerceAdmissionEngine({
+      const withBadSeam = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock),
@@ -553,7 +911,7 @@ describe.each([
       const order = makeOrder(quote, pricedProjection);
 
       // Restore: epoch moves to 2. Nothing voids this head.
-      const restored = new CommerceAdmissionEngine({
+      const restored = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '2'),
@@ -754,7 +1112,7 @@ describe('no nested transactions (mobile op-sqlite safety)', () => {
     const receipts = new InMemoryCommerceReceiptRepository();
     const quotes = new InMemoryCommerceQuoteLedgerRepository();
     const clock = { now: T_ADMIT };
-    const engine = new CommerceAdmissionEngine({
+    const engine = makeAdmission({
       tx: strictTx,
       orders: makeOrders(new InMemoryCommerceOrderRefRepository(), clock),
       families: makeFamilies(quotes, clock),

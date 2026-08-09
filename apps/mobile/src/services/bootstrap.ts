@@ -35,6 +35,10 @@ import {
   WatchPollSweeper,
   WatchService,
   WorkflowService,
+  defaultPluginCompletionHandler,
+  getPluginHostRuntime,
+  getPluginInstallRepository,
+  transformInboundOrderResult,
   bootstrapMsgBox,
   buildWatchPollHandler,
   getWatchService,
@@ -183,7 +187,10 @@ import {
   stagingGetItem,
 } from '@dina/core';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
-import { buildHomeNodeServiceRuntime } from '@dina/home-node/service-runtime';
+import {
+  buildHomeNodeServiceRuntime,
+  toServiceResponseBody,
+} from '@dina/home-node/service-runtime';
 import { resolveSearchableCapability } from '@dina/protocol';
 
 import { peekActiveProvider } from '../ai/active_provider';
@@ -702,6 +709,38 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     repository: options.workflowRepository,
     nowMsFn,
     responseBridgeSender,
+    // §9.9 — a completed `submit_order` is answered with the acknowledgement
+    // Core signed, not the runner's JSON. The server plane has passed this
+    // since WS-3.8; the phone did NOT, so a supplier running on a phone
+    // returned the runner's own answer to a buyer. Same divergence class as
+    // the missing commerce ticks: the shared plane is server-only and the
+    // phone composes its own service.
+    ingressResultTransformer: transformInboundOrderResult,
+    // Wired on the phone too, and for the reason recorded just above: the
+    // divergence between the two boots is the recurring defect here, not the
+    // feature itself. A withheld answer leaves no stash, no send and nothing
+    // for a sweeper, so without this line an operator watching a phone-hosted
+    // supplier sees orders lapse and nothing says why.
+    onIngressResultWithheld: (args) =>
+      log({
+        event: 'bridge.result_withheld',
+        task_id: args.taskId,
+        capability: args.capability,
+        reason: args.reason,
+      }),
+    // §3.4 — a plugin runner asks for a host operation by COMPLETING its claim
+    // with a typed proposal. Composed through the ONE factory both roots call.
+    pluginCompletionHandler: defaultPluginCompletionHandler({
+      hostRuntime: () => getPluginHostRuntime(),
+      installs: () => getPluginInstallRepository(),
+      workflow: () => getWorkflowService(),
+      onError: (err) =>
+        log({
+          event: 'plugin.host_operation_error',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      onOutcome: (outcome) => log({ event: 'plugin.host_operation', kind: outcome.kind }),
+    }),
   });
   const reasoningBackendRepository = getReasoningBackendRepository();
   const reasoningContextRepository = getReasoningContextRepository();
@@ -864,19 +903,16 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // service.query registered) + orchestrator + workflow-event consumer
   // + approval reconciler. The mobile-specific bits feed in through
   // the option surface (custom `deliver`, `inboundNotifier`,
-  // `rejectResponder` that wraps `options.sendD2D`).
+  // `directResponder` that wraps `options.sendD2D`).
   const serviceRuntime = buildHomeNodeServiceRuntime({
     core: options.coreClient,
     appView: options.appViewClient as OrchestratorAppView,
     readConfig,
-    rejectResponder: async (to, body) => {
-      await options.sendD2D(to, 'service.response', {
-        query_id: body.query_id,
-        capability: body.capability,
-        status: body.status,
-        error: body.error,
-        ttl_seconds: body.ttl_seconds,
-      });
+    directResponder: async (to, body) => {
+      // Shared with the lite default (WS-4.6). Two hand-built copies had
+      // already drifted, and a field added to one but not the other drops an
+      // answer silently — the responder's type is still satisfied.
+      await options.sendD2D(to, 'service.response', toServiceResponseBody(body));
     },
     deliver,
     approvalNotifier: options.approvalNotifier ?? defaultApprovalNotifier(threadId),

@@ -25,6 +25,7 @@ import {
   type AskRouteOptions,
 } from './routes/ask';
 import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
+import { registerCommerceRoutes } from './routes/commerce';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
@@ -36,23 +37,24 @@ import { registerPairRoutes } from './routes/pair';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
 import { registerPIIRoutes } from './routes/pii';
+import { registerPluginUpdateRoutes } from './routes/plugin_updates';
 import { registerPolicyRoutes } from './routes/policy';
 import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
 import { registerReminderRoutes } from './routes/reminders';
 import { registerRemoteApprovalRoutes } from './routes/remote_approval';
 import { registerRunRoutes } from './routes/run';
+import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerServiceConfigRoutes } from './routes/service_config';
-import { registerStagingRoutes } from './routes/staging';
-import { registerVaultRoutes } from './routes/vault';
-import { registerWatchRoutes } from './routes/watch';
-import { registerWorkflowRoutes } from './routes/workflow';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
 import {
   registerServiceRespondRoutes,
   type ServiceRespondRouteOptions,
 } from './routes/service_respond';
-import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerSessionRoutes } from './routes/session';
+import { registerStagingRoutes } from './routes/staging';
+import { registerVaultRoutes } from './routes/vault';
+import { registerWatchRoutes } from './routes/watch';
+import { registerWorkflowRoutes } from './routes/workflow';
 
 export { setAskRouteHandler, type AskRouteHandler };
 import { setDeviceRoleResolver, setDeviceScopeResolver } from '../auth/caller_type';
@@ -119,6 +121,11 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // owner guard; reads the module-global RunService wired at bootstrap.
   registerRunRoutes(router, options.ownerCapability);
   registerWatchRoutes(router, options.ownerCapability);
+  // §16.2 (WS-4.3) — the post-restore reconciliation census. Owner-private:
+  // a list of which orders this node cannot answer for is a map of where the
+  // supplier is vulnerable.
+  registerCommerceRoutes(router, options.ownerCapability);
+  registerPluginUpdateRoutes(router, options.ownerCapability);
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

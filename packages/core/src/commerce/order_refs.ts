@@ -31,6 +31,28 @@ export interface CommerceOrderRef {
    */
   pinnedVersion: string;
   /**
+   * §9.13 — the plugin manifest CID that was serving this supplier when the
+   * order was admitted, or `''` when no plugin served it.
+   *
+   * A lifecycle request for this order must be parsed under the contract the
+   * order was opened against, and after a plugin update the install's CURRENT
+   * manifest is no longer that contract. `pinnedVersion` says which protocol
+   * major; this says which manifest actually implements it, which is the key
+   * the drain-authorization table is already keyed on. Storing the CID rather
+   * than re-deriving a major from the manifest keeps the two from disagreeing
+   * — and a manifest declares no protocol major today, so there is nothing to
+   * re-derive from.
+   */
+  servingManifestCid: string;
+  /**
+   * §16.4 — the install that served this order, or '' when no plugin did.
+   *
+   * Distinct from `servingManifestCid` because they diverge exactly when it
+   * matters: a plugin update moves the CID and keeps the install, so "is this
+   * INSTALL still on the hook" is a question the CID cannot answer.
+   */
+  servingInstallId: string;
+  /**
    * §16.2 — the commerce epoch in force when this order was admitted.
    *
    * Chain ADVANCEMENT can ask the status head whether it predates a
@@ -94,17 +116,55 @@ export interface CommerceOrderRefRepository {
    * "succeed", because the second would re-stamp `admitted_epoch` to a later
    * epoch and could un-fence an order a restore had deliberately fenced.
    */
-  reconcile(
-    buyerDid: string,
-    purchaseOrderId: string,
-    options: { atEpoch: string },
-  ): boolean;
+  reconcile(buyerDid: string, purchaseOrderId: string, options: { atEpoch: string }): boolean;
   /** Reserved rows for the restart sweeper (§9.9 step 3). */
   listReserved(): CommerceOrderRef[];
+  /**
+   * §12.7 (WS-9.5) — orders whose external effect produced a reference.
+   *
+   * These are the ones a fulfilment sweep can ask about: an order with no
+   * external reference has nothing to look up out there, and asking anyway
+   * would turn a reconciliation into a fishing expedition across a supplier's
+   * whole order history.
+   */
+  listWithExternalRef(): CommerceOrderRef[];
+  /**
+   * §16.2 (WS-4.3) — orders re-adopted from a counterparty's held evidence
+   * and not yet reconciled. They cannot open a chain or be cancelled, so they
+   * are frozen until the buyer presents the proposal it holds.
+   *
+   * Read by the CENSUS, not by a repair job: there is no local state to
+   * reconcile against, so nothing here can clear the flag on its own.
+   * Includes decided orders — a decided one that is frozen is the worse case,
+   * because the buyer holds an acknowledgement this node can no longer
+   * describe.
+   */
+  listAwaitingReconciliation(): CommerceOrderRef[];
   /** Reserved pre_effect rows whose decision deadline passed. */
   listExpiredPreEffect(nowMs: number): CommerceOrderRef[];
   /** Non-terminal (reserved) count for a pinned major (§9.13 drain release). */
   countReservedByMajor(major: string): number;
+  /**
+   * Non-terminal count for orders admitted under one plugin manifest (§9.13).
+   *
+   * Drives lifecycle-continuity RELEASE: the lane for a prior manifest may be
+   * closed only once no order it served is still open. Keyed on the manifest
+   * rather than the protocol major because that is what the continuity
+   * authorization is keyed on, and a manifest declares no major to count by.
+   */
+  countReservedByServingManifest(servingManifestCid: string): number;
+  /** §9.13 — orders this manifest still has WORK for; see the SQLite impl. */
+  countUnfinishedByServingManifest(servingManifestCid: string, nowMs: number): number;
+  /**
+   * Non-terminal count for orders served by ONE install (§16.4).
+   *
+   * Drives the uninstall obligation refusal. Keyed on the install rather than
+   * the manifest because a plugin update moves the CID: an install that has
+   * updated once would otherwise stop counting the orders it opened under its
+   * previous manifest, and those are exactly the orders it still owes an
+   * answer for.
+   */
+  countReservedByServingInstall(installId: string): number;
 }
 
 function rowToOrderRef(row: DBRow): CommerceOrderRef {
@@ -116,6 +176,13 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
     quoteId: String(row.quote_id),
     quoteDigest: String(row.quote_digest),
     pinnedVersion: String(row.pinned_version),
+    servingManifestCid: row.serving_manifest_cid === null ? '' : String(row.serving_manifest_cid),
+    // `?? ''` rather than `=== null ? '' :`, because a column MISSING from the
+    // SELECT list reads as `undefined`, and `String(undefined)` is the text
+    // "undefined" — a value that compares equal to nothing and looks like
+    // data. That is exactly how this field silently arrived as a five-letter
+    // install id the first time it was added.
+    servingInstallId: String(row.serving_install_id ?? ''),
     admittedEpoch: String(row.admitted_epoch),
     reconciliationRequired: Number(row.reconciliation_required) === 1,
     state: String(row.state) as CommerceOrderRefState,
@@ -131,7 +198,9 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
 
 const SELECT = `
   SELECT buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-         quote_digest, pinned_version, admitted_epoch, reconciliation_required, state, effect_phase, acknowledgement_json,
+         quote_digest, pinned_version, serving_manifest_cid, serving_install_id,
+         admitted_epoch, reconciliation_required,
+         state, effect_phase, acknowledgement_json,
          external_ref, decision_deadline_at, created_at, decided_at
   FROM commerce_order_refs
 `;
@@ -165,8 +234,10 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
       const affected = this.db.run(
         `INSERT INTO commerce_order_refs (
            buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
-           quote_digest, pinned_version, admitted_epoch, reconciliation_required, state, effect_phase, decision_deadline_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
+           quote_digest, pinned_version, serving_manifest_cid, serving_install_id,
+           admitted_epoch, reconciliation_required,
+           state, effect_phase, decision_deadline_at, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
          ON CONFLICT DO NOTHING`,
         [
           ref.buyerDid,
@@ -176,6 +247,8 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
           ref.quoteId,
           ref.quoteDigest,
           ref.pinnedVersion,
+          ref.servingManifestCid,
+          ref.servingInstallId,
           ref.admittedEpoch,
           ref.reconciliationRequired ? 1 : 0,
           ref.decisionDeadlineAt,
@@ -217,11 +290,7 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
     return affected > 0;
   }
 
-  reconcile(
-    buyerDid: string,
-    purchaseOrderId: string,
-    options: { atEpoch: string },
-  ): boolean {
+  reconcile(buyerDid: string, purchaseOrderId: string, options: { atEpoch: string }): boolean {
     const affected = this.db.run(
       `UPDATE commerce_order_refs
        SET admitted_epoch = ?, reconciliation_required = 0
@@ -234,6 +303,25 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
   listReserved(): CommerceOrderRef[] {
     return this.db
       .query(`${SELECT} WHERE state = 'reserved' ORDER BY created_at`)
+      .map(rowToOrderRef);
+  }
+
+  listWithExternalRef(): CommerceOrderRef[] {
+    // `!= ''` as well as NOT NULL: the effect executor records the empty
+    // string when an external system answers without a reference, and an
+    // empty reference cannot be looked up any more than a missing one.
+    return this.db
+      .query(`${SELECT} WHERE external_ref IS NOT NULL AND external_ref != '' ORDER BY created_at`)
+      .map(rowToOrderRef);
+  }
+
+  listAwaitingReconciliation(): CommerceOrderRef[] {
+    // No state filter. A DECIDED order can be frozen too, and it is the worse
+    // case — the buyer holds an acknowledgement this node can no longer
+    // describe — so filtering to `reserved` would hide exactly the rows an
+    // owner most needs to see.
+    return this.db
+      .query(`${SELECT} WHERE reconciliation_required = 1 ORDER BY created_at`)
       .map(rowToOrderRef);
   }
 
@@ -253,6 +341,79 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
       `SELECT COUNT(*) AS n FROM commerce_order_refs
        WHERE state = 'reserved' AND substr(pinned_version, 1, instr(pinned_version, '.') - 1) = ?`,
       [major],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  countReservedByServingManifest(servingManifestCid: string): number {
+    const rows = this.db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM commerce_order_refs
+        WHERE state = 'reserved' AND serving_manifest_cid = ?`,
+      [servingManifestCid],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /**
+   * §9.13 — orders this manifest still has WORK for, not just reserved ones.
+   *
+   * The reserved count answers "is anything waiting to be decided", which is
+   * the wrong question for releasing lifecycle continuity. An ACCEPTED order
+   * is `decided` the moment the supplier answers, and its status chain runs on
+   * for days: dispatched, delivered, a dispute window, possibly a
+   * cancellation. Releasing on the reserved count would revoke a prior
+   * manifest's authority while every one of those still needs it — and the
+   * buyer would meet `lifecycle_continuity_unavailable` on an order this
+   * supplier accepted.
+   *
+   * NONTERMINAL is defined by the STATUS CHAIN, which is where the answer
+   * lives. `rejected` / `cancelled` / `disputed` end it, and `delivered` ends
+   * it once its dispute window has passed.
+   *
+   * THE WINDOW IS EVALUATED HERE NOW, and the note this replaces said the
+   * query "cannot evaluate" it "so a delivered head counts as UNFINISHED and
+   * the caller applies the window". Neither caller applied one — both boots
+   * returned this count straight to continuity release and uninstall — so a
+   * delivered order was unfinished FOR EVER. The safe direction had no floor:
+   * every prior manifest CID stayed alive indefinitely and a supplier could
+   * never uninstall a pack whose orders had all completed normally.
+   *
+   * `dispute_window_ends_at` is denormalised onto the head precisely so this
+   * question can be asked without loading a receipt, and `nowMs` is a
+   * parameter rather than a clock read so the boundary is testable to the
+   * millisecond. A delivered head with NO recorded deadline stays unfinished:
+   * absent is not expired.
+   *
+   * An order with NO status head at all is unfinished too — accepted, and the
+   * chain not yet started.
+   */
+  countUnfinishedByServingManifest(servingManifestCid: string, nowMs: number): number {
+    const rows = this.db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM commerce_order_refs r
+        LEFT JOIN commerce_status_heads h
+          ON h.buyer_did = r.buyer_did AND h.purchase_order_id = r.purchase_order_id
+        WHERE r.serving_manifest_cid = ?
+          AND (
+            r.state = 'reserved'
+            OR h.state IS NULL
+            OR (
+              h.state NOT IN ('rejected', 'cancelled', 'disputed', 'delivered')
+            )
+            OR (
+              h.state = 'delivered'
+              AND (h.dispute_window_ends_at IS NULL OR h.dispute_window_ends_at > ?)
+            )
+          )`,
+      [servingManifestCid, nowMs],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  countReservedByServingInstall(installId: string): number {
+    const rows = this.db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM commerce_order_refs
+         WHERE state = 'reserved' AND serving_install_id = ?`,
+      [installId],
     );
     return Number(rows[0]?.n ?? 0);
   }
@@ -314,11 +475,7 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
     return true;
   }
 
-  reconcile(
-    buyerDid: string,
-    purchaseOrderId: string,
-    options: { atEpoch: string },
-  ): boolean {
+  reconcile(buyerDid: string, purchaseOrderId: string, options: { atEpoch: string }): boolean {
     const ref = this.byOrderId.get(this.orderKey(buyerDid, purchaseOrderId));
     if (!ref || !ref.reconciliationRequired) return false;
     ref.admittedEpoch = options.atEpoch;
@@ -329,6 +486,23 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   listReserved(): CommerceOrderRef[] {
     return [...this.byOrderId.values()]
       .filter((r) => r.state === 'reserved')
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((r) => ({ ...r }));
+  }
+
+  listWithExternalRef(): CommerceOrderRef[] {
+    return [...this.byOrderId.values()]
+      .filter((r) => r.externalRef !== null && r.externalRef !== '')
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((r) => ({ ...r }));
+  }
+
+  listAwaitingReconciliation(): CommerceOrderRef[] {
+    // Matches the SQLite ordering and the absence of a state filter — a
+    // decided order can be frozen too. The two implementations disagreeing
+    // here would make the census depend on which one a test happened to use.
+    return [...this.byOrderId.values()]
+      .filter((r) => r.reconciliationRequired)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((r) => ({ ...r }));
   }
@@ -345,5 +519,28 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   countReservedByMajor(major: string): number {
     return this.listReserved().filter((r) => r.pinnedVersion.split('.')[0] === major).length;
   }
-}
 
+  countReservedByServingManifest(servingManifestCid: string): number {
+    return this.listReserved().filter((r) => r.servingManifestCid === servingManifestCid).length;
+  }
+
+  /**
+   * The double has NO STATUS CHAIN to join against, so it counts every order
+   * this manifest served that is not `decided` — plus every decided one,
+   * because without a chain it cannot know one has finished.
+   *
+   * Deliberately the CONSERVATIVE reading, matching the SQL's own bias: a lane
+   * kept open too long costs a stale CID, while releasing early locks a buyer
+   * out of an order this supplier accepted. A double that answered zero where
+   * the real store answers one would make the release path untestable in
+   * exactly the direction that matters.
+   */
+  countUnfinishedByServingManifest(servingManifestCid: string): number {
+    return [...this.byOrderId.values()].filter((r) => r.servingManifestCid === servingManifestCid)
+      .length;
+  }
+
+  countReservedByServingInstall(installId: string): number {
+    return this.listReserved().filter((r) => r.servingInstallId === installId).length;
+  }
+}

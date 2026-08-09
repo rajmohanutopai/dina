@@ -28,8 +28,19 @@ import {
   SQLiteClassificationJobRepository,
   SQLiteCommandReceiptRepository,
   ExtensionOperationRegistry,
+  registerCommerceHostOperations,
   SQLiteDrainAuthorizationRepository,
   createCommerceRuntime,
+  installHeldEvidenceReader,
+  makeHeldEvidenceVerifier,
+  makeHeldEvidenceReader,
+  endpointsFromSupplierSettings,
+  getCommerceRuntime,
+  makeConnectorExecutors,
+  installBuyerOrderSender,
+  installCommerceServiceQueryDispatch,
+  installCatalogFeedTransport,
+  makeServiceQueryBuyerSender,
   installCommerceRuntime,
   getCommerceEpochService,
   SQLiteCompletionReceiptRepository,
@@ -61,8 +72,21 @@ import {
   setClassificationJobRepository,
   setCommandReceiptRepository,
   setDrainAuthorizationRepository,
+  setUpdateRebindCoordinator,
+  tier0TxRunner,
+  UpdateRebindCoordinator,
+  getDrainAuthorizationRepository,
+  rebindListingsForUpdate,
   createPluginHostRuntime,
+  gateCatalogForPublication,
+  getPluginGrantRepository,
+  getPluginInstallRepository,
   installPluginHostRuntime,
+  makeConnectorBrokerOperation,
+  makeD2DSendOperation,
+  makePublicationCandidateOperation,
+  permittedD2DRecipients,
+  SUPPLIER_REFERENCE_MANIFEST,
   setExtensionOperationRegistry,
   setCommandTxRunner,
   setCompletionReceiptRepository,
@@ -82,6 +106,7 @@ import {
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
+import { getD2DSender } from '@dina/core/d2d';
 import { getDeviceByDID, listActiveDevices } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
@@ -133,7 +158,10 @@ import {
 } from '@dina/core/storage';
 import { NodeDBProvider } from '@dina/storage-node';
 
+import { nodeAuthedTransport } from '../commerce/connector_transport';
+
 import type { Logger } from '../logger';
+import type { ServiceQueryBody } from '@dina/protocol';
 
 /**
  * Default personas seeded on first boot. Mirrors
@@ -389,6 +417,10 @@ export async function initializeStorage(
         }
         return did;
       },
+      // §12.7/§16.2 — the supplier half of held evidence. Built in Core so
+      // both boots run the same check; unwired, EVERY presented receipt fails
+      // to verify and `never_received` stays legal against real proof.
+      verifyHeldEvidence: makeHeldEvidenceVerifier(),
       currentEpoch: () => {
         const service = getCommerceEpochService();
         if (service === null) {
@@ -396,8 +428,85 @@ export async function initializeStorage(
         }
         return service.currentEpoch();
       },
+      // §8.3/WS-9.1 — what the credential broker may actually do. The table is
+      // derived from the OWNER's connector settings on every call, so adding a
+      // connector works without a restart and removing one stops working at
+      // once. The transport is `node:https` because §10.3 re-checks the
+      // address actually connected to, and `fetch` cannot report it.
+      credentialExecutors: makeConnectorExecutors({
+        endpoints: endpointsFromSupplierSettings(() => {
+          const runtime = getCommerceRuntime();
+          // Read through the INSTALLED runtime rather than a second settings
+          // repository over the same table: two readers is two chances for one
+          // of them to skip the validation the other runs.
+          return runtime === null ? { ok: false } : runtime.settings.readSupplier();
+        }),
+        transport: nodeAuthedTransport,
+      }),
     }),
   );
+
+  // §12.7/§16.2 (WS-X-11) — WHAT THIS BUYER HOLDS, so a supplier that lost
+  // state must re-adopt rather than deny.
+  //
+  // Installed AFTER the runtime, because the reader reads the runtime's own
+  // stores. Before this, `installHeldEvidenceReader` was called from tests
+  // and nowhere else: a real buyer presented no evidence, which made a
+  // supplier's `never_received` legal — and that is the one answer
+  // authorising a resubmission, i.e. a duplicate order.
+  //
+  // Read through the INSTALLED runtime for the same reason the connector
+  // settings are: a second set of repositories over the same tables is a
+  // second chance for one of them to disagree with the other.
+  installHeldEvidenceReader(
+    makeHeldEvidenceReader({
+      orders: {
+        get: (supplierDid, purchaseOrderId) =>
+          getCommerceRuntime()?.buyerOrders.get(supplierDid, purchaseOrderId) ?? null,
+      },
+      statuses: {
+        evidenceChain: (supplierDid, purchaseOrderId) =>
+          getCommerceRuntime()?.buyerStatus.evidenceChain(supplierDid, purchaseOrderId) ?? [],
+      },
+    }),
+  );
+
+  // §10.2/WS-5.1 — how this node FETCHES a supplier's catalog feed.
+  //
+  // The same transport the connectors use, with NO headers, and the empty
+  // object is the decision rather than an oversight: a catalog is a public
+  // publication, so there is nothing to authenticate with and a credential
+  // sent to a supplier's feed URL would simply be a credential given away.
+  //
+  // Core still owns every decision about what comes back — pointer advance,
+  // snapshot digest, per-page proof, the §10.3 connected-address re-check.
+  // This half only speaks HTTPS and reports what it reached.
+  installCatalogFeedTransport((url) => nodeAuthedTransport(url, {}));
+
+  // §12.7/WS-3.7 — the buyer order sender. Built over the SAME `service.query`
+  // egress every other outbound capability uses, so the four gates, signing and
+  // MsgBox apply without a second path to keep in step. A throw is reported as
+  // AMBIGUOUS rather than "not sent": the wrapper cannot prove nothing left,
+  // and claiming it would authorize a duplicate order.
+  const serviceQueryDispatch = async ({
+    toDid,
+    body,
+  }: {
+    toDid: string;
+    body: ServiceQueryBody;
+  }): Promise<{ sent: boolean; deniedAt?: string }> => {
+    const send = getD2DSender();
+    if (send === null) {
+      // No transport at all is the one case we CAN prove: nothing left.
+      return { sent: false, deniedAt: 'no_d2d_sender' };
+    }
+    await send(toDid, 'service.query', { ...body });
+    return { sent: true };
+  };
+  // Installed as well as used here, because §12.7's re-poll runs on a tick
+  // started in `boot.ts` and must reach a supplier the SAME way an order does.
+  installCommerceServiceQueryDispatch(serviceQueryDispatch);
+  installBuyerOrderSender(makeServiceQueryBuyerSender({ dispatch: serviceQueryDispatch }));
   // Extension-operation registry (§3.4): code-shipped adapter
   // registrations land here at boot; empty until a pack ships — the
   // gate then denies every declared-but-unshipped operation.
@@ -407,11 +516,107 @@ export async function initializeStorage(
   // is an option one of them forgets.
   const extensionRegistry = new ExtensionOperationRegistry();
   setExtensionOperationRegistry(extensionRegistry);
-  installPluginHostRuntime(
-    createPluginHostRuntime({ db: identityDB, registry: extensionRegistry }),
+  // §3.4 — the operations a capability may DECLARE. The registry was built
+  // empty and only the DISPATCHER was populated, so every declared operation
+  // was refused `operation_unregistered` and the executors below were
+  // unreachable: the lane was open on the doing side and closed on the
+  // declaring one. Code-shipped, never data-driven (§3.4).
+  registerCommerceHostOperations(extensionRegistry);
+  const hostRuntime = createPluginHostRuntime({ db: identityDB, registry: extensionRegistry });
+  installPluginHostRuntime(hostRuntime);
+  // §3.4 / WS-3.5 — the typed host operations a runner may ask Core to
+  // perform. REGISTERED HERE because each needs a boundary Core does not own:
+  // the credential broker for the connector lane, the leakage gate for a
+  // publication candidate. A dispatcher with no executor answers
+  // `no_executor`, which is the honest failure for an operation this build
+  // cannot do — but it is the WRONG answer for one it can, and until this
+  // block existed every operation but the AppView search got it.
+  hostRuntime.dispatcher.register(
+    'connector_broker',
+    makeConnectorBrokerOperation({ broker: () => getCommerceRuntime()?.broker ?? null }),
+  );
+  hostRuntime.dispatcher.register(
+    'd2d_send',
+    makeD2DSendOperation({
+      send: async ({ toDid, body }) => {
+        const sender = getD2DSender();
+        if (sender === null) {
+          // A throw, not a silent success: the dispatcher settles it
+          // `outcome_unknown`, and a node with no transport that reported
+          // `completed` would tell a runner its message left.
+          throw new Error('d2d_send: this node has no D2D sender');
+        }
+        // The installed sender's own signature: (recipient, type, body).
+        // Going through it rather than `sendD2D` directly is what keeps the
+        // four egress gates, the signing identity and the outbox on this
+        // path — a second call site would be a second thing to keep in step.
+        await sender(toDid, 'plugin.message', body as Record<string, unknown>);
+      },
+      // §8's grant constraints, not a second allowlist. A D2D recipient IS a
+      // resource the grant names, and inventing a parallel policy would drift
+      // from the one the owner sees on the consent screen.
+      permittedRecipients: permittedD2DRecipients({
+        listGrants: (installId) => getPluginGrantRepository()?.listByInstall(installId) ?? [],
+        capability: 'com.dinakernel.plugin.d2d_send',
+        nowSec: () => Math.floor(Date.now() / 1000),
+      }),
+    }),
+  );
+  hostRuntime.dispatcher.register(
+    'publication_candidate',
+    makePublicationCandidateOperation({
+      supplierDid: () => getNodeDID(),
+      // §12.1 step 10: the SUPPLIER install may offer a candidate. Any
+      // install is refused rather than trusted, so a buyer-side runner cannot
+      // propose a catalog under this business's name.
+      mayPublish: (installId) =>
+        getPluginInstallRepository()?.getById(installId)?.pluginId ===
+        SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+      validateCandidate: ({ candidate }) => {
+        const items = Array.isArray(candidate)
+          ? candidate
+          : ((candidate as { items?: unknown }).items ?? null);
+        if (!Array.isArray(items)) {
+          return [{ refusal: 'not_a_catalog', detail: 'the candidate carries no item list' }];
+        }
+        const verdict = gateCatalogForPublication(items);
+        // The leakage gate's own findings, verbatim. Restating them here
+        // would be a second vocabulary for one rule.
+        return verdict.clean
+          ? []
+          : verdict.findings.map((f) => ({ refusal: f.refusal, detail: f.detail }));
+      },
+    }),
   );
   // §9.13 drain authorizations: rebind drain + lifecycle continuity.
   setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(identityDB));
+  // §9.13/§16.5 (WS-3.7) — the update-rebind coordinator, and the owner-facing
+  // flow that is its only caller. Built here because the composition root is the
+  // only place that knows the Tier-0 runner and the listing store; the
+  // coordinator itself resolves its repositories PER USE, so wiring order
+  // between this and the stores above cannot leave it holding a null.
+  setUpdateRebindCoordinator(
+    new UpdateRebindCoordinator({
+      installs: () => getPluginInstallRepository(),
+      drains: () => getDrainAuthorizationRepository(),
+      rebindListings: (rebindArgs) => rebindListingsForUpdate(identityDB, rebindArgs),
+      // §9.13 — a prior manifest's lifecycle lane stays open while it still
+      // serves an order. Absent commerce reads as zero, so a node that never
+      // traded can still release a lane it could never have used.
+      //
+      // UNFINISHED, not merely RESERVED: an accepted order is decided the
+      // moment the supplier answers, and its status chain runs on for days.
+      // Counting only reservations would release the lane while every one of
+      // those still needs it.
+      countOpenOrders: (cid) =>
+        // §9.11 — a delivered order stops being work once its dispute window
+        // passes, and the count needs a clock to know that. Without one every
+        // delivered order blocked continuity release and uninstall for ever.
+        getCommerceRuntime()?.orders.countUnfinishedByServingManifest(cid, Date.now()) ?? 0,
+      tx: tier0TxRunner(identityDB),
+      now: () => Date.now(),
+    }),
+  );
   // Push subscription store — the default-deny authorization gate + rate/cry-wolf
   // counters (PUSH_SERVICES_ARCHITECTURE.md §6/§15).
   setPushSubscriptionRepository(new SQLitePushSubscriptionRepository(identityDB));

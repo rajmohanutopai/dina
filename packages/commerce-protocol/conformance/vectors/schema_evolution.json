@@ -1,0 +1,146 @@
+{
+  "_note": "§9.13 version admission and the forward-compatibility law for unknown fields. Regenerated only with a MAJOR bump.",
+  "version_admission": [
+    {
+      "name": "same_major_same_minor_is_parseable",
+      "version": "1.0",
+      "error": null
+    },
+    {
+      "name": "same_major_higher_minor_is_parseable_because_minor_is_additive",
+      "version": "1.7",
+      "error": null
+    },
+    {
+      "name": "same_major_large_minor_is_parseable",
+      "version": "1.999",
+      "error": null
+    },
+    {
+      "name": "higher_major_is_refused",
+      "version": "2.0",
+      "error": {
+        "code": "unsupported_version",
+        "requested_version": "2.0",
+        "supported_versions": ["1.0"]
+      }
+    },
+    {
+      "name": "lower_major_is_refused",
+      "version": "0.9",
+      "error": {
+        "code": "unsupported_version",
+        "requested_version": "0.9",
+        "supported_versions": ["1.0"]
+      }
+    }
+  ],
+  "version_shape": [
+    {
+      "name": "canonical_major_minor",
+      "value": "1.0",
+      "error": null
+    },
+    {
+      "name": "three_parts_is_not_a_protocol_version",
+      "value": "1.0.0",
+      "error": "protocol_version: must be \"MAJOR.MINOR\" with canonical integers"
+    },
+    {
+      "name": "leading_zero_is_not_canonical",
+      "value": "01.0",
+      "error": "protocol_version: must be \"MAJOR.MINOR\" with canonical integers"
+    },
+    {
+      "name": "minor_leading_zero_is_not_canonical",
+      "value": "1.01",
+      "error": "protocol_version: must be \"MAJOR.MINOR\" with canonical integers"
+    },
+    {
+      "name": "major_alone_is_not_a_protocol_version",
+      "value": "1",
+      "error": "protocol_version: must be \"MAJOR.MINOR\" with canonical integers"
+    },
+    {
+      "name": "not_a_string",
+      "value": 1,
+      "error": "protocol_version: must be \"MAJOR.MINOR\" with canonical integers"
+    }
+  ],
+  "unknown_fields": [
+    {
+      "name": "an_unknown_field_CHANGES_the_canonical_bytes",
+      "known": {
+        "a": "1",
+        "protocol_version": "1.0"
+      },
+      "with_unknown": {
+        "a": "1",
+        "protocol_version": "1.0",
+        "future_field": "x"
+      },
+      "known_canonical": "{\"a\":\"1\",\"protocol_version\":\"1.0\"}",
+      "with_unknown_canonical": "{\"a\":\"1\",\"future_field\":\"x\",\"protocol_version\":\"1.0\"}",
+      "same_bytes": false
+    },
+    {
+      "name": "key_order_does_NOT_change_the_canonical_bytes",
+      "known": {
+        "protocol_version": "1.0",
+        "a": "1"
+      },
+      "with_unknown": {
+        "a": "1",
+        "protocol_version": "1.0"
+      },
+      "known_canonical": "{\"a\":\"1\",\"protocol_version\":\"1.0\"}",
+      "with_unknown_canonical": "{\"a\":\"1\",\"protocol_version\":\"1.0\"}",
+      "same_bytes": true
+    },
+    {
+      "name": "an_explicitly_undefined_field_is_dropped_entirely",
+      "known": {
+        "a": "1"
+      },
+      "with_unknown": {
+        "a": "1"
+      },
+      "known_canonical": "{\"a\":\"1\"}",
+      "with_unknown_canonical": "{\"a\":\"1\"}",
+      "same_bytes": true
+    },
+    {
+      "name": "an_explicit_null_is_a_VALUE_and_survives",
+      "known": {
+        "a": "1"
+      },
+      "with_unknown": {
+        "a": "1",
+        "future_field": null
+      },
+      "known_canonical": "{\"a\":\"1\"}",
+      "with_unknown_canonical": "{\"a\":\"1\",\"future_field\":null}",
+      "same_bytes": false
+    }
+  ],
+  "unknown_field_tolerance": [
+    {
+      "name": "a_product_carrying_an_unknown_field_still_validates",
+      "product": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "future_field": "x"
+      },
+      "error": null
+    },
+    {
+      "name": "an_unknown_field_cannot_rescue_an_invalid_one",
+      "product": {
+        "scheme": "gtin",
+        "value": "",
+        "future_field": "x"
+      },
+      "error": "product: value must be a non-empty string"
+    }
+  ]
+}

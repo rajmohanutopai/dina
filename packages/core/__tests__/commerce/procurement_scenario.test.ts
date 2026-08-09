@@ -43,6 +43,8 @@ import {
   type CommerceReceiptRepository,
   type CommerceStatusHeadRepository,
 } from '../../src/commerce';
+import { InMemoryDrainAuthorizationRepository } from '../../src/plugins/drain_authorizations';
+import { UpdateRebindCoordinator } from '../../src/plugins/update_rebind';
 import { makeReentrantTxRunner } from '../../src/run/tx';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -51,14 +53,16 @@ import {
   BUYER_DID,
   SUPPLIER_DID,
   hash,
+  makeAdmission,
   makeChains,
   makeFamilies,
+  makeLifecycle,
   makeOrder,
   makeOrders,
   makeQuoteRequest,
   makeSignedQuote,
+  makeHeldEvidence,
 } from './helpers';
-
 
 import type { CommerceOrderStatus, OrderAcknowledgement } from '@dina/commerce-protocol';
 
@@ -122,7 +126,7 @@ describe.each([
 
   /** Build the manufacturer's engines at the current epoch. */
   function engines() {
-    const lifecycle = new CommerceLifecycleEngine({
+    const lifecycle = makeLifecycle({
       tx: node.tx,
       orders: makeOrders(node.orderRefs, clock),
       chains: makeChains(node.statusHeads, clock, () => epoch.value),
@@ -135,7 +139,7 @@ describe.each([
     });
     // Acceptance and its status genesis commit together (§12.8) — the same
     // tie the composition root makes in production.
-    const admission = new CommerceAdmissionEngine({
+    const admission = makeAdmission({
       tx: node.tx,
       orders: makeOrders(node.orderRefs, clock),
       families: makeFamilies(node.quotes, clock, () => epoch.value),
@@ -143,7 +147,7 @@ describe.each([
       supplierDid: () => MANUFACTURER,
       now: () => clock.now,
       decisionTimeoutMs: 60_000,
-      createAcceptedGenesisInTx: (b, po) => lifecycle.createAcceptedGenesisInTx(b, po),
+      createAcceptedGenesisInTx: (b, po) => lifecycle.engine.createAcceptedGenesisInTx(b, po),
     });
     return { admission, lifecycle };
   }
@@ -166,6 +170,126 @@ describe.each([
   });
 
   afterEach(() => node.cleanup());
+
+  /**
+   * §9.13 — ChairMaker updates its Supplier plugin while Sancho's order is
+   * still open, and Sancho keeps being served.
+   *
+   * This is the story WS-3.7 and WS-3.8 exist for, told end to end: the order
+   * is admitted under one manifest, the manufacturer ships a new one, and the
+   * retailer's next lifecycle question must still be answered under the
+   * contract the order was opened against — then the lane closes once the
+   * order is done, and not one moment sooner.
+   */
+  it('keeps Sancho answerable across a mid-order plugin update, then closes the lane', () => {
+    const PRIOR_MANIFEST = 'bafyreichairmaker1';
+    const NEXT_MANIFEST = 'bafyreichairmaker2';
+    const { admission } = engines();
+
+    const quote = makeSignedQuote(request, { quote_id: 'q-chairs-9' });
+    expect(admission.registerSignedQuote(quote)).toBeNull();
+
+    // Sancho orders while ChairMaker runs the PRIOR manifest, and the order
+    // records which manifest served it.
+    const order = makeOrder(quote, pricedProjection);
+    expect(admission.admitOrder(order, RETAILER, { servingManifestCid: PRIOR_MANIFEST })).toEqual({
+      kind: 'reserved',
+    });
+    expect(node.orderRefs.getByOrderId(RETAILER, order.purchase_order_id)?.servingManifestCid).toBe(
+      PRIOR_MANIFEST,
+    );
+
+    // ChairMaker accepts, so the obligation is real and open.
+    const decided = admission.decideOrder(RETAILER, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'CM-9001',
+    });
+    expect('acknowledgement' in decided).toBe(true);
+
+    // ChairMaker ships a new plugin version. One open order was served by the
+    // prior manifest, so its lane must stay open.
+    expect(node.orderRefs.countReservedByServingManifest(PRIOR_MANIFEST)).toBe(0);
+    // `decided` is terminal for admission purposes; an order still in
+    // PRODUCTION is the case that matters, so use a second, undecided order.
+    const quote2 = makeSignedQuote(request, { quote_id: 'q-chairs-10' });
+    expect(admission.registerSignedQuote(quote2)).toBeNull();
+    const openOrder = makeOrder(quote2, pricedProjection, {
+      purchase_order_id: 'po-open-1',
+      // A distinct idempotency key too — §15.5 forbids keys aliasing orders.
+      idempotency_key: 'idem-po-open-1',
+    });
+    expect(
+      admission.admitOrder(openOrder, RETAILER, { servingManifestCid: PRIOR_MANIFEST }),
+    ).toEqual({ kind: 'reserved' });
+
+    // Now the prior manifest has work outstanding.
+    expect(node.orderRefs.countReservedByServingManifest(PRIOR_MANIFEST)).toBe(1);
+    expect(node.orderRefs.countReservedByServingManifest(NEXT_MANIFEST)).toBe(0);
+
+    // The release gate refuses while that order is open — this is the check
+    // that stops an update from stranding a buyer mid-order.
+    const drains = new InMemoryDrainAuthorizationRepository();
+    const coordinator = new UpdateRebindCoordinator({
+      installs: () => null, // apply() is exercised in its own suite
+      drains: () => drains,
+      countOpenOrders: (cid) => node.orderRefs.countReservedByServingManifest(cid),
+      rebindListings: () => ({ rebound: [], commit: () => undefined }),
+      tx: (fn) => fn(),
+      now: () => clock.now,
+    });
+    drains.put({
+      installId: 'inst-chairmaker',
+      previousCid: PRIOR_MANIFEST,
+      capabilityId: 'com.dinakernel.commerce.order_status',
+      kind: 'lifecycle_continuity',
+      approvedScopeHash: 'a'.repeat(64),
+      configRevision: 1,
+      actionClass: 'read',
+      effectsIdempotency: 'supported',
+      resultSchemaJson: 'null',
+      paramsSchemaJson: 'null',
+      maxContextItems: null,
+      expiresAt: null,
+      // §9.13 — which CONTRACT this row speaks, not just which CID.
+      priorVersion: '0.1.0',
+      createdAt: clock.now,
+    });
+
+    expect(
+      coordinator.releaseContinuity(
+        'inst-chairmaker',
+        PRIOR_MANIFEST,
+        'com.dinakernel.commerce.order_status',
+      ),
+    ).toEqual({ released: false, openOrders: 1 });
+
+    // ChairMaker finishes the outstanding order.
+    expect(
+      'acknowledgement' in
+        admission.decideOrder(RETAILER, openOrder.purchase_order_id, {
+          kind: 'accepted',
+          supplierOrderId: 'CM-9002',
+        }),
+    ).toBe(true);
+    expect(node.orderRefs.countReservedByServingManifest(PRIOR_MANIFEST)).toBe(0);
+
+    // Only now does the prior manifest's lane close.
+    expect(
+      coordinator.releaseContinuity(
+        'inst-chairmaker',
+        PRIOR_MANIFEST,
+        'com.dinakernel.commerce.order_status',
+      ),
+    ).toEqual({ released: true, openOrders: 0 });
+    expect(
+      drains.listLive(
+        'inst-chairmaker',
+        PRIOR_MANIFEST,
+        'com.dinakernel.commerce.order_status',
+        clock.now + 1,
+      ),
+    ).toEqual([]);
+  });
 
   it('walks the whole journey: quote, order, accept, fulfil, deliver', () => {
     const { admission, lifecycle } = engines();
@@ -251,8 +375,10 @@ describe.each([
     expect(replay.kind).toBe('replay');
     if (replay.kind !== 'replay') throw new Error('expected replay');
     expect(replay.acknowledgement.kind).toBe('accepted');
-    expect((replay.acknowledgement as OrderAcknowledgement & { supplier_order_id?: string })
-      .supplier_order_id).toBe('CM-1001');
+    expect(
+      (replay.acknowledgement as OrderAcknowledgement & { supplier_order_id?: string })
+        .supplier_order_id,
+    ).toBe('CM-1001');
 
     // And the chain the retailer holds is still the chain the manufacturer has.
     const head = node.statusHeads.get(RETAILER, order.purchase_order_id);
@@ -281,7 +407,7 @@ describe.each([
     expect(outcome.acknowledgement.reason_code).toBe('quote_consumed');
   });
 
-  it('a competitor cannot order against Sancho\'s quote', () => {
+  it("a competitor cannot order against Sancho's quote", () => {
     // §9.8 audience binding, from the buyer's side of the fence. The refusal
     // is non-disclosing: a stranger learns nothing about whether the quote
     // exists.
@@ -336,7 +462,7 @@ describe.each([
 
     // The fence, presented with Sancho's retained receipt, takes over.
     const fence = after.lifecycle.signRestoreFence(RETAILER, order.purchase_order_id, [
-      { record: genesis, signature: 'cd'.repeat(32) },
+      makeHeldEvidence(genesis, { from: MANUFACTURER, to: [RETAILER] }),
     ]);
     expect('status_digest' in fence).toBe(true);
 
@@ -385,11 +511,20 @@ describe.each([
           supplier_did: MANUFACTURER,
           order_digest: order.order_digest,
           idempotency_key: order.idempotency_key,
-          held_acknowledgement: { record: heldAck, signature: 'cd'.repeat(32) },
+          held_acknowledgement: makeHeldEvidence(heldAck, {
+            from: MANUFACTURER,
+            to: [RETAILER],
+          }),
         },
         RETAILER,
       );
-      expect('outcome' in answer && answer.outcome).toBe('received_accepted');
+      // `received_unresolved`, and the next paragraph is why (WS-2.3).
+      // ChairMaker knows the decision — it is holding its own signature —
+      // but it cannot ACT on it, and telling Sancho `accepted` would invite
+      // him to wait for status updates that cannot come. This assertion used
+      // to read `received_accepted`, directly contradicting the comment
+      // below it.
+      expect('outcome' in answer && answer.outcome).toBe('received_unresolved');
 
       // The order is back, but ChairMaker cannot describe it: re-adoption
       // recovered the DECISION, not the order's lines. So it is frozen — it
@@ -423,6 +558,22 @@ describe.each([
       // ChairMaker's own acknowledgement, so ChairMaker can accept it as the
       // order it agreed to — and is describable again.
       expect(after.lifecycle.reconcileRestoredOrder(order, RETAILER)).toEqual({ ok: true });
+
+      // And the unresolved answer was TEMPORARY, which is the other half of
+      // the claim: once the ceremony makes the order describable again,
+      // Sancho asking the same question gets the decision.
+      const afterCeremony = after.lifecycle.reconcile(
+        {
+          protocol_version: '1.0',
+          purchase_order_id: order.purchase_order_id,
+          buyer_did: RETAILER,
+          supplier_did: MANUFACTURER,
+          order_digest: order.order_digest,
+          idempotency_key: order.idempotency_key,
+        },
+        RETAILER,
+      );
+      expect('outcome' in afterCeremony && afterCeremony.outcome).toBe('received_accepted');
 
       // Trading resumes: the chain opens and moves.
       const genesis = after.lifecycle.signGenesis(RETAILER, order.purchase_order_id);

@@ -32,6 +32,7 @@ import {
   effectiveListingStatus,
   LOCAL_RUNNER_NAME,
   buildServiceQueryExecutionPayload,
+  type ServiceResponseStatus,
 } from '@dina/protocol';
 
 import { getCapability, getTTL } from './capabilities/registry';
@@ -163,22 +164,51 @@ export type ServiceInboundNotifier = (notice: {
 }) => void | Promise<void>;
 
 /**
- * Callback that sends an ad-hoc `service.response` D2D envelope. Used by
- * `ServiceHandler.sendError` when a query fails BEFORE any workflow
- * task exists (unknown capability, schema mismatch, bad params). Issue
- * #9 — without this, requesters sit waiting until their TTL expires.
+ * Callback that sends an ad-hoc `service.response` D2D envelope, for answers
+ * that exist BEFORE any workflow task does.
  *
- * The callback is expected to sign + seal + relay to `recipientDID`.
- * In production it wraps Core's `sendD2D` with the service.response
- * type bound. Tests pass a spy.
+ * Two cases reach it. A query that fails early (unknown capability, schema
+ * mismatch, bad params) — issue #9, without which requesters sit waiting out
+ * their TTL. And, since WS-4.6, a query COMPILED CORE ANSWERED ITSELF: a
+ * §12.7 reconcile is answered from Core's own records with no runner asked,
+ * so there is no task to carry the result and the answer must go out here.
+ *
+ * `status: 'success'` carries `result`; the failure statuses carry `error`.
+ * The value is `success` and not `ok` because the WIRE says so — the union is
+ * `success | unavailable | error` (`@dina/protocol` `ServiceResponseStatus`)
+ * and `validateServiceResponse` refuses anything else. This said `ok` for as
+ * long as nothing validated it, which meant the one lane that answers from
+ * Core's own records — the §12.7 reconcile below — emitted a response a
+ * conforming buyer must reject. The
+ * union is not split into two callbacks because both are the same act — one
+ * envelope, sent now, outside the delegation lifecycle — and a second
+ * callback would be a second thing every composition root has to remember to
+ * wire.
+ *
+ * The callback is expected to sign + seal + relay to `recipientDID`. In
+ * production it wraps Core's `sendD2D` with the service.response type bound.
+ * Tests pass a spy.
  */
-export type ServiceRejectResponder = (
+export type ServiceDirectResponder = (
   recipientDID: string,
   body: {
     query_id: string;
     capability: string;
-    status: 'unavailable' | 'error';
-    error: string;
+    /**
+     * THE PROTOCOL'S OWN TYPE, not a hand-written copy of it.
+     *
+     * This was `'unavailable' | 'error' | 'ok'`, and `ok` is not on the wire:
+     * `ServiceResponseStatus` is `success | unavailable | error` and
+     * `validateServiceResponse` refuses the rest. A local union that merely
+     * resembles the contract cannot notice when it stops matching, and this
+     * one had drifted far enough that the §12.7 Core-answer path emitted a
+     * response every conforming buyer must reject.
+     */
+    status: ServiceResponseStatus;
+    /** Present on failure statuses. */
+    error?: string;
+    /** Present on `success` — the answer Core produced. */
+    result?: unknown;
     ttl_seconds: number;
   },
 ) => Promise<void>;
@@ -217,7 +247,7 @@ export interface ServiceHandlerOptions {
    * handler only logs the rejection; the requester waits out its TTL.
    * Supplying this closes the loop with an immediate error notification.
    */
-  rejectResponder?: ServiceRejectResponder;
+  directResponder?: ServiceDirectResponder;
   /**
    * Optional Core-owned reasoning executor. The handler offers it only
    * instruction-backed official read/quote capabilities. `null` means the
@@ -247,7 +277,7 @@ export class ServiceHandler {
   private readonly readConfig: (rkey?: string) => ServiceConfig | null;
   private readonly notifier: ApprovalNotifier | null;
   private readonly inboundNotifier: ServiceInboundNotifier | null;
-  private readonly rejectResponder: ServiceRejectResponder | null;
+  private readonly directResponder: ServiceDirectResponder | null;
   private readonly reasoningSubmitter: ServiceReasoningSubmitter | null;
   private readonly providerIngressSubmitter: ProviderIngressSubmitter | null;
   private readonly log: (entry: Record<string, unknown>) => void;
@@ -261,7 +291,7 @@ export class ServiceHandler {
     this.readConfig = options.readConfig;
     this.notifier = options.notifier ?? null;
     this.inboundNotifier = options.inboundNotifier ?? null;
-    this.rejectResponder = options.rejectResponder ?? null;
+    this.directResponder = options.directResponder ?? null;
     this.reasoningSubmitter = options.reasoningSubmitter ?? null;
     this.providerIngressSubmitter = options.providerIngressSubmitter ?? null;
     this.log =
@@ -421,6 +451,28 @@ export class ServiceHandler {
       // not, because Core's messages are written for an operator reading
       // logs and an order-scoped denial must stay non-disclosing.
       await this.sendError(fromDID, query, 'unavailable', outcome.code);
+      return;
+    }
+
+    if ('coreAnswerJson' in outcome) {
+      // WS-4.6 — compiled Core answered (§12.7 reconcile). There is no task,
+      // so nothing downstream will ever emit this response; it goes out here
+      // or not at all. The JSON came from Core, so it parses — but a throw on
+      // this path would break `handleQuery`'s no-throw contract and lose the
+      // answer silently, so it is guarded and reported like any other failure.
+      this.log({
+        event: 'service.query.answered_by_core',
+        from: fromDID,
+        capability: query.capability,
+      });
+      let result: unknown;
+      try {
+        result = JSON.parse(outcome.coreAnswerJson);
+      } catch {
+        await this.sendError(fromDID, query, 'error', 'core_answer_unreadable');
+        return;
+      }
+      await this.sendAnswer(fromDID, query, result);
       return;
     }
 
@@ -948,6 +1000,40 @@ export class ServiceHandler {
     }
   }
 
+  /**
+   * Send an answer compiled Core produced, with no task behind it (WS-4.6).
+   *
+   * Shares `sendError`'s delivery path because it is the same act — one
+   * `service.response` envelope, sent now, outside the delegation lifecycle.
+   * Best-effort and non-throwing for the same reason: `handleQuery` promises
+   * the inbound dispatch path never throws.
+   */
+  private async sendAnswer(
+    fromDID: string,
+    query: ServiceQueryBody,
+    result: unknown,
+  ): Promise<void> {
+    if (this.directResponder === null) return;
+    try {
+      await this.directResponder(fromDID, {
+        query_id: query.query_id,
+        capability: query.capability,
+        // `success`, per `ServiceResponseStatus`. See the note in this class's
+        // header: `ok` is not on the wire and never was.
+        status: 'success',
+        result,
+        ttl_seconds: query.ttl_seconds,
+      });
+    } catch (err) {
+      this.log({
+        event: 'service.query.core_answer_send_failed',
+        from: fromDID,
+        query_id: query.query_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   private async sendError(
     fromDID: string,
     query: ServiceQueryBody,
@@ -957,7 +1043,7 @@ export class ServiceHandler {
     // No workflow task exists yet (handleQuery rejected pre-create), so
     // we can't use `sendServiceRespond` which routes through the
     // delegation-lifecycle endpoint. Instead, send a task-less D2D
-    // envelope via the injected `rejectResponder`. Issue #9.
+    // envelope via the injected `directResponder`. Issue #9.
     this.log({
       event: 'service.query.rejected',
       from: fromDID,
@@ -966,9 +1052,9 @@ export class ServiceHandler {
       status,
       message,
     });
-    if (this.rejectResponder === null) return;
+    if (this.directResponder === null) return;
     try {
-      await this.rejectResponder(fromDID, {
+      await this.directResponder(fromDID, {
         query_id: query.query_id,
         capability: query.capability,
         status,

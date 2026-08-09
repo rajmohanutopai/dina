@@ -86,6 +86,15 @@ export const PENDING_INSTALL_TTL_SEC = 15 * 60;
 let repoProofVerifier: RepoProofVerifier | null = null;
 
 /** Wired at boot with the network CAR/MST adapter; tests inject fakes. */
+/**
+ * Read the wired verifier. Exported so the UPDATE path authenticates a
+ * candidate release through the SAME verifier an install goes through — a
+ * second one would be a second thing to wire and a second thing to forget.
+ */
+export function getRepoProofVerifier(): RepoProofVerifier | null {
+  return repoProofVerifier;
+}
+
 export function setRepoProofVerifier(v: RepoProofVerifier | null): void {
   repoProofVerifier = v;
 }
@@ -532,91 +541,14 @@ function finishBegin(
     };
   }
 
-  // P2-6: totality guard — normalize dereferences every capability/execution
-  // field and would throw on a malformed shape (`capabilities: [null]`).
-  // beginInstall checks this before calling us, but beginInstallVerified does
-  // not, so guard here too: fail CLOSED, never crash.
-  if (!isManifestShaped(rawManifest)) {
-    return {
-      ok: false,
-      code: 'validation_failed',
-      message: 'record is not structurally a plugin manifest',
-      transient: false,
-      errors: [],
-    };
-  }
-  // Normalize FIRST — the normalized form is the stored form (§8.1):
-  // what validates, what hashes, what runs.
-  //
-  // Round-5 #2: normalization iterates nested set-like fields
-  // (`data_scope.categories`, `kinds`, …). `isManifestShaped` only proves the
-  // OUTER capability/execution objects — a remote manifest with
-  // `data_scope.categories: 7` reaches `new Set(7)` and THROWS. That is a
-  // malformed input, not a Dina bug: catch it and fail CLOSED as a validation
-  // error, never crash the install path.
-  let manifest: PluginManifest;
-  try {
-    manifest = normalizePluginManifest(rawManifest);
-  } catch (err) {
-    return {
-      ok: false,
-      code: 'validation_failed',
-      message: `manifest could not be normalized (malformed nested field): ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      transient: false,
-      errors: [],
-    };
-  }
-  const validation = validatePluginManifest(manifest);
-  if (!validation.ok) {
-    return {
-      ok: false,
-      code: 'validation_failed',
-      message: 'manifest failed the ingest-identical validation gate (§5 rule 3)',
-      transient: false,
-      errors: validation.errors,
-    };
-  }
+  // Every gate a release must pass, run through the ONE function the update
+  // path also calls. A second copy of this list is a second thing to keep in
+  // step, and the copy that fell behind would be the one letting a manifest
+  // this build cannot serve past the door.
+  const vetted = vetReleaseManifest(rawManifest);
+  if (!vetted.ok) return vetted;
+  const { manifest, digests } = vetted;
 
-  // P2-9: P0 ships ONLY the runner tool lane — there is no interpreter.
-  // The feature gate catches session capabilities (they derive `session`),
-  // but an interpreted-mode capability that derives nothing would otherwise
-  // activate a lane no runtime can serve. Reject the mode explicitly.
-  if (manifest.execution.mode !== 'runner') {
-    return {
-      ok: false,
-      code: 'needs_newer_dina',
-      message: `interpreted-mode plugins need an interpreter this Dina hasn't shipped (P0 is runner-only)`,
-      transient: false,
-      missing: [`execution_mode:${manifest.execution.mode}`],
-    };
-  }
-
-  // §14 compatibility gate: derived (∪ declared) ⊆ supported — fail
-  // closed on anything this node doesn't recognize.
-  const missing = validation.derivedFeatures.filter((f) => !NODE_SUPPORTED_FEATURES.has(f));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      code: 'needs_newer_dina',
-      message: `this plugin needs features this Dina hasn't shipped: ${missing.join(', ')}`,
-      transient: false,
-      missing,
-    };
-  }
-  const minProtocol = manifest.min_plugin_protocol ?? 1;
-  if (minProtocol > 1) {
-    return {
-      ok: false,
-      code: 'needs_newer_dina',
-      message: `this plugin needs plugin protocol ${minProtocol}; this Dina speaks 1`,
-      transient: false,
-      missing: [`min_plugin_protocol:${minProtocol}`],
-    };
-  }
-
-  const digests = computePluginDigests(manifest, sha256);
   // PLG-30 #15: `createPending` is the one persistence I/O step in finishBegin,
   // and it was the only step outside the typed-result boundary — a disk-full /
   // closed-DB / unexpected-constraint throw here would escape the documented
@@ -961,15 +893,19 @@ export async function uninstall(
   // those orders first — deliver, cancel, or reconcile them — which is the
   // accountability the rule exists to protect.
   //
-  // Conservative on purpose: the count is node-wide, because an order
-  // reference does not record WHICH install served it. On a node running one
-  // Supplier plugin — the only shipped shape — that is exact. On a
-  // multi-plugin node it can refuse an uninstall that would have been safe,
-  // and refusing costs an operator a conversation while permitting costs a
-  // buyer their recourse.
+  // SCOPED TO THIS INSTALL (WS-4.5). The order reference records which
+  // install served it, so a node running two commerce plugins can remove one
+  // while the other has work open. It was node-wide until that column
+  // existed — safe, but it made an operator resolve somebody else's orders to
+  // remove this pack.
+  //
+  // Orders admitted before the column existed carry '' and therefore belong
+  // to no install, so they no longer block any uninstall. That is the right
+  // trade for a pre-release schema: the alternative is every legacy row
+  // blocking every teardown for ever, which is a refusal nobody can clear.
   const commerce = getCommerceRuntime();
   if (commerce !== null) {
-    const open = commerce.inFlightCount();
+    const open = commerce.inFlightCount(installId);
     if (open > 0) {
       throw new PluginCommerceObligationError(open);
     }
@@ -1112,4 +1048,110 @@ export async function sweepAbandonedInstalls(
     }
   }
   return swept;
+}
+
+/**
+ * The PURE gates every release passes, install or update (§5, §8.1, §14).
+ *
+ * EXTRACTED so the update path runs exactly these and not a copy. The list is
+ * long and each entry is load-bearing — normalize before anything, because the
+ * normalized form is the stored form; validate with the ingest-identical gate;
+ * refuse an execution mode no runtime here can serve; refuse features and a
+ * protocol this build does not speak. An update that skipped any one of them
+ * would swap an install onto a manifest that could never have been installed.
+ *
+ * No I/O and no persistence: it takes bytes and returns either the normalized
+ * manifest with its digests, or the same typed failure an install would give.
+ */
+export function vetReleaseManifest(
+  rawManifest: PluginManifest,
+):
+  | { ok: true; manifest: PluginManifest; digests: ReturnType<typeof computePluginDigests> }
+  | InstallFailure {
+  // P2-6: totality guard — normalize dereferences every capability/execution
+  // field and would throw on a malformed shape (`capabilities: [null]`).
+  // beginInstall checks this before calling us, but beginInstallVerified does
+  // not, so guard here too: fail CLOSED, never crash.
+  if (!isManifestShaped(rawManifest)) {
+    return {
+      ok: false,
+      code: 'validation_failed',
+      message: 'record is not structurally a plugin manifest',
+      transient: false,
+      errors: [],
+    };
+  }
+  // Normalize FIRST — the normalized form is the stored form (§8.1):
+  // what validates, what hashes, what runs.
+  //
+  // Round-5 #2: normalization iterates nested set-like fields
+  // (`data_scope.categories`, `kinds`, …). `isManifestShaped` only proves the
+  // OUTER capability/execution objects — a remote manifest with
+  // `data_scope.categories: 7` reaches `new Set(7)` and THROWS. That is a
+  // malformed input, not a Dina bug: catch it and fail CLOSED as a validation
+  // error, never crash the install path.
+  let manifest: PluginManifest;
+  try {
+    manifest = normalizePluginManifest(rawManifest);
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'validation_failed',
+      message: `manifest could not be normalized (malformed nested field): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      transient: false,
+      errors: [],
+    };
+  }
+  const validation = validatePluginManifest(manifest);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      code: 'validation_failed',
+      message: 'manifest failed the ingest-identical validation gate (§5 rule 3)',
+      transient: false,
+      errors: validation.errors,
+    };
+  }
+
+  // P2-9: P0 ships ONLY the runner tool lane — there is no interpreter.
+  // The feature gate catches session capabilities (they derive `session`),
+  // but an interpreted-mode capability that derives nothing would otherwise
+  // activate a lane no runtime can serve. Reject the mode explicitly.
+  if (manifest.execution.mode !== 'runner') {
+    return {
+      ok: false,
+      code: 'needs_newer_dina',
+      message: `interpreted-mode plugins need an interpreter this Dina hasn't shipped (P0 is runner-only)`,
+      transient: false,
+      missing: [`execution_mode:${manifest.execution.mode}`],
+    };
+  }
+
+  // §14 compatibility gate: derived (∪ declared) ⊆ supported — fail
+  // closed on anything this node doesn't recognize.
+  const missing = validation.derivedFeatures.filter((f) => !NODE_SUPPORTED_FEATURES.has(f));
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      code: 'needs_newer_dina',
+      message: `this plugin needs features this Dina hasn't shipped: ${missing.join(', ')}`,
+      transient: false,
+      missing,
+    };
+  }
+  const minProtocol = manifest.min_plugin_protocol ?? 1;
+  if (minProtocol > 1) {
+    return {
+      ok: false,
+      code: 'needs_newer_dina',
+      message: `this plugin needs plugin protocol ${minProtocol}; this Dina speaks 1`,
+      transient: false,
+      missing: [`min_plugin_protocol:${minProtocol}`],
+    };
+  }
+
+  const digests = computePluginDigests(manifest, sha256);
+  return { ok: true, manifest, digests };
 }

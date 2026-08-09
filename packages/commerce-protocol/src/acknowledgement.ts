@@ -12,6 +12,7 @@
  */
 
 import {
+  verifyConversationVersion,
   isRecord,
   validateDid,
   validateHex64,
@@ -144,14 +145,47 @@ export function validateOrderAcknowledgement(ack: unknown, sha256: Sha256Fn): st
  *   countered quote, under a FRESH quote_id (consumption state never
  *   carries across families, §9.9).
  */
+/**
+ * The order fields an acknowledgement is bound AGAINST.
+ *
+ * A `Pick` rather than the whole proposal, because a node checking an answer
+ * that arrives LATER does not still hold the order — it holds a record of what
+ * it sent. Demanding the full proposal is why this function shipped with no
+ * production caller: the one place that needed it could not satisfy the type,
+ * so the check was skipped rather than written. These six fields are exactly
+ * what the check reads.
+ */
+export type AcknowledgementOrderBinding = Pick<
+  PurchaseOrderProposal,
+  'purchase_order_id' | 'order_digest' | 'buyer_did' | 'supplier_did' | 'quote_digest' | 'quote_id'
+> &
+  // §9.13's conversation version, when the caller has it. Optional because a
+  // node checking a LATE answer holds a RECORD rather than the proposal; a
+  // record carrying it gets the check, one that does not is no worse off than
+  // before — and demanding it would put this function back out of reach of the
+  // one place that most needs it, which is how it shipped with no caller.
+  Partial<Pick<PurchaseOrderProposal, 'protocol_version'>>;
+
 export function verifyAcknowledgementForOrder(
   ack: OrderAcknowledgement,
-  order: PurchaseOrderProposal,
+  order: AcknowledgementOrderBinding,
 ): string | null {
   if (ack.purchase_order_id !== order.purchase_order_id) return 'ack: purchase_order_id mismatch';
   if (ack.order_digest !== order.order_digest) return 'ack: order_digest mismatch';
   if (ack.buyer_did !== order.buyer_did || ack.supplier_did !== order.supplier_did) {
     return 'ack: buyer/supplier identity mismatch';
+  }
+  // §9.13 — the answer speaks the conversation's dialect. Checked only when
+  // the binding carries the order's version: a caller holding a record rather
+  // than the proposal may not have it, and demanding it would put this
+  // function back out of reach of the one place that needs it most.
+  if (order.protocol_version !== undefined) {
+    const versioned = verifyConversationVersion(
+      order.protocol_version,
+      ack.protocol_version,
+      'ack',
+    );
+    if (versioned !== null) return versioned;
   }
   if (ack.kind === 'accepted' && ack.accepted_quote_digest !== order.quote_digest) {
     return 'ack: accepted_quote_digest does not match the order quote digest';
@@ -162,6 +196,24 @@ export function verifyAcknowledgementForOrder(
     }
     if (ack.replacement_quote.quote_id === order.quote_id) {
       return 'ack: replacement quote must start a fresh quote_id';
+    }
+    // §9.13 — "a counterproposal cannot silently upgrade the conversation".
+    // The acknowledgement's OWN version is checked above, and that is not the
+    // same statement: the counterproposal carries a whole replacement quote,
+    // and it is the quote's version an order gets built against. Checking only
+    // the envelope would let a 1.0 exchange be answered in 1.0 while the terms
+    // inside it moved to 1.5.
+    //
+    // A counterproposal starts a fresh quote FAMILY, so the intra-family
+    // revision rule cannot see this — it compares revisions of one quote_id,
+    // and this is a different one by construction.
+    if (order.protocol_version !== undefined) {
+      const countered = verifyConversationVersion(
+        order.protocol_version,
+        ack.replacement_quote.protocol_version,
+        'ack.replacement_quote',
+      );
+      if (countered !== null) return countered;
     }
   }
   return null;

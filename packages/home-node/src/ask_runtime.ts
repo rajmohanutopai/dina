@@ -22,9 +22,7 @@ import {
   type RunPreFlightOptions,
   type ProviderName,
 } from '@dina/brain';
-import {
-  type CoreClient,
-} from '@dina/core';
+import { type CoreClient } from '@dina/core';
 
 export interface HomeNodeAskRuntimeOptions {
   llm: LLMProvider;
@@ -186,12 +184,8 @@ export function buildHomeNodeAskRuntime(
   // coordinator's `buildAgenticExecuteFn` receive the same
   // `preFlight` callable below.
   const plannerEnabled =
-    options.installedPersonas !== undefined &&
-    options.retrievalFetchers !== undefined;
-  if (
-    (options.installedPersonas !== undefined) !==
-    (options.retrievalFetchers !== undefined)
-  ) {
+    options.installedPersonas !== undefined && options.retrievalFetchers !== undefined;
+  if ((options.installedPersonas !== undefined) !== (options.retrievalFetchers !== undefined)) {
     throw new Error(
       'buildHomeNodeAskRuntime: installedPersonas and retrievalFetchers must be provided together',
     );
@@ -204,9 +198,7 @@ export function buildHomeNodeAskRuntime(
     orchestratorHandle,
     coreClient: options.core,
     cloudConsentGranted: options.cloudConsentGranted ?? true,
-    ...(options.workflowClient !== undefined
-      ? { workflowClient: options.workflowClient }
-      : {}),
+    ...(options.workflowClient !== undefined ? { workflowClient: options.workflowClient } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.sensitivePersonas !== undefined
       ? { sensitivePersonas: options.sensitivePersonas }

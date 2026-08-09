@@ -380,7 +380,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
       },
     })
 
-    // Verify: 3 separate trust_edges rows
+    // Verify: 3 separate peerlens_edges rows
     const edges = await db.select().from(schema.peerlensEdges).where(
       and(
         eq(schema.peerlensEdges.fromDid, AUTHOR_DID),
@@ -452,7 +452,7 @@ describe('§3.1 Trust Edge Creation + Removal', () => {
     // Delete the flag — should not error even though there's no trust edge
     await handler.handleDelete(ctx, { uri, did: AUTHOR_DID, collection, rkey })
 
-    // Verify no error, trust_edges unaffected (still empty for this URI)
+    // Verify no error, peerlens_edges unaffected (still empty for this URI)
     const edgesAfter = await db.select().from(schema.peerlensEdges).where(eq(schema.peerlensEdges.sourceUri, uri))
     expect(edgesAfter).toHaveLength(0)
 

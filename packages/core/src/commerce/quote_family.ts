@@ -353,6 +353,24 @@ export class QuoteFamilyStore {
     return QuoteFamily.load(this.deps, quoteId);
   }
 
+  /**
+   * Every family this supplier has issued, with the capacity each has spent
+   * (FR-P10, WS-7.8).
+   *
+   * A READ, and it reaches the ledger through the aggregate store rather than
+   * letting a route hold a repository — ARCH-0's rule, and it costs nothing
+   * here because a read is not something the aggregate was protecting.
+   *
+   * The JOIN happens here because it is one question: a head alone cannot say
+   * whether a quote is still orderable, and a caller doing the join itself is
+   * a caller that can get the precedence wrong.
+   */
+  listForOwner(): { head: CommerceQuoteHead; usesSpent: number }[] {
+    return this.deps.ledger
+      .listHeads()
+      .map((head) => ({ head, usesSpent: this.deps.ledger.activeUseCount(head.quoteId) }));
+  }
+
   register(quote: SignedQuote, expectedBuyerDid: string): QuoteOutcome<QuoteFamily> {
     return QuoteFamily.register(this.deps, quote, expectedBuyerDid);
   }

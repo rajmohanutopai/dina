@@ -412,6 +412,7 @@ export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './run/plane_node';
 // wiring take the runner for a db from `tier0TxRunner`, so every writer over
 // that db shares one depth counter (op-sqlite rejects a nested BEGIN).
 export { tier0TxRunner, makeReentrantTxRunner } from './run/tx';
+export { rebindListingsForUpdate } from './service/listing_rebind';
 export type { TxRunner, TxCapableDb } from './run/tx';
 // Push services (PUSH_SERVICES_ARCHITECTURE.md §6/§8/§9)
 export {

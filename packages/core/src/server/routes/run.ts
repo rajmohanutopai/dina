@@ -43,6 +43,8 @@ import {
   type RunService,
 } from '../../run/service';
 
+import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
+
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 function j(status: number, body: unknown): CoreResponse {
@@ -59,22 +61,6 @@ function j(status: number, body: unknown): CoreResponse {
  *  SECURITY.md). FAIL CLOSED: a router registered without a capability (Brain's own
  *  router, or a server split with no in-process owner surface) rejects every owner
  *  call. A caller must BOTH be owner-marked AND present the exact capability. */
-type OwnerGuard = (req: CoreRequest) => CoreResponse | null;
-function makeOwnerGuard(expectedCapability: string | undefined): OwnerGuard {
-  return (req) => {
-    if (expectedCapability === undefined || expectedCapability === '') {
-      return j(403, { error: 'access_denied', reason: 'owner control plane not configured' });
-    }
-    if (req.callerType !== 'owner' || req.ownerCapability !== expectedCapability) {
-      return j(403, {
-        error: 'access_denied',
-        reason: 'only the owner may create or steer an interactive run',
-      });
-    }
-    return null;
-  };
-}
-
 function requireService(): RunService | CoreResponse {
   const svc = getRunService();
   if (svc === null) {
@@ -108,7 +94,10 @@ const CEILING_RANK: Record<PriorityCeiling, number> = {
 };
 
 export function registerRunRoutes(router: CoreRouter, ownerCapability?: string): void {
-  const ownerOnlyGuard = makeOwnerGuard(ownerCapability);
+  const ownerOnlyGuard = makeOwnerGuard(
+    ownerCapability,
+    'only the owner may create or steer an interactive run',
+  );
   // POST /v1/run/start — create a run.
   router.post('/v1/run/start', async (req) => {
     const denied = ownerOnlyGuard(req);

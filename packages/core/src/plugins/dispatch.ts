@@ -599,6 +599,97 @@ export function buildPluginEnvelope(args: {
   };
 }
 
+/**
+ * Build an envelope pinned to a PRIOR manifest, under a lifecycle-continuity
+ * authorization (§9.13, WS-3.8).
+ *
+ * A buyer whose order was opened against an earlier manifest must keep being
+ * answered under THAT contract until the order is terminal. The current
+ * manifest cannot vouch for it — the capability may have changed shape, or
+ * left the manifest entirely — so every authority field here comes from the
+ * authorization, which recorded the prior manifest's own values at rebind
+ * time. `install` supplies identity only.
+ *
+ * The claim guard performs the mirror check: it admits a prior-CID envelope
+ * only through a live entry for the same triple, and re-derives these same
+ * fields from it. Both sides read one record, so neither can drift.
+ */
+export function buildContinuityEnvelope(args: {
+  install: PluginInstall;
+  authorization: {
+    previousCid: string;
+    capabilityId: string;
+    approvedScopeHash: string;
+    configRevision: number;
+    actionClass: string;
+    effectsIdempotency: 'supported' | 'unsupported';
+    paramsSchemaJson: string;
+    resultSchemaJson: string;
+    maxContextItems: number | null;
+    /** §9.13 — the version the prior manifest declared. '' when unknown. */
+    priorVersion?: string;
+  };
+  params: unknown;
+  context: unknown;
+  executionId: string;
+  idempotencyKey: string;
+  serviceIngress?: PluginTaskEnvelope['service_ingress'];
+}): PluginTaskEnvelope {
+  const auth = args.authorization;
+  let paramsSchema: unknown;
+  let resultSchema: unknown;
+  try {
+    paramsSchema = JSON.parse(auth.paramsSchemaJson);
+    resultSchema = JSON.parse(auth.resultSchemaJson);
+  } catch (error) {
+    // The rows were written from values that had already been validated, so
+    // unreadable schemas mean storage corruption. Refuse rather than dispatch
+    // against no contract at all.
+    throw new Error(
+      `continuity authorization holds unreadable schemas: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (paramsSchema !== null && paramsSchema !== undefined) {
+    const check = validateAgainstSchema(args.params, paramsSchema);
+    if (!check.ok) {
+      throw new Error(
+        `params violate the PRIOR params_schema this order was opened under: ${check.error ?? 'unknown'}`,
+      );
+    }
+  }
+  const paramsLimit = paramsExceedInspectableLimits(args.params);
+  if (paramsLimit !== '') {
+    throw new Error(`params cannot be fully rendered for approval: ${paramsLimit}`);
+  }
+  const ctxViolation = contextScopeViolation(args.context, auth.maxContextItems ?? undefined);
+  if (ctxViolation !== null) {
+    throw new Error(`context violates the prior data_scope: ${ctxViolation}`);
+  }
+  return {
+    type: PLUGIN_INVOCATION_PAYLOAD_TYPE,
+    install_id: args.install.installId,
+    capability_id: auth.capabilityId,
+    params: args.params,
+    context: args.context,
+    // The PRIOR CID, which is what makes the claim guard take the drain lane.
+    manifest_cid: auth.previousCid,
+    // §9.13 — WHICH CONTRACT this continuation speaks. Only present when the
+    // authorization recorded one, so a row written before the column existed
+    // stays silent rather than claiming a version it does not know.
+    ...(auth.priorVersion !== undefined && auth.priorVersion !== ''
+      ? { prior_version: auth.priorVersion }
+      : {}),
+    approved_scope_hash: auth.approvedScopeHash,
+    schema_snapshot: resultSchema ?? null,
+    config_revision: auth.configRevision,
+    execution_id: args.executionId,
+    idempotency_key: args.idempotencyKey,
+    action_class: auth.actionClass,
+    effects_idempotency: auth.effectsIdempotency,
+    ...(args.serviceIngress !== undefined ? { service_ingress: args.serviceIngress } : {}),
+  };
+}
+
 export interface PluginResultValidation {
   ok: boolean;
   parsed?: unknown;

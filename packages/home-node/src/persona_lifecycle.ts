@@ -31,10 +31,7 @@
  */
 
 import { setAccessiblePersonas } from '@dina/brain';
-import {
-  listPersonas,
-  openPersona as openPersonaInRegistry,
-} from '@dina/core';
+import { listPersonas, openPersona as openPersonaInRegistry } from '@dina/core';
 
 export interface OpenAllPersonasOptions {
   /**

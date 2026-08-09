@@ -7,13 +7,13 @@ import {
   type ApprovalNotifier,
   type OrchestratorAppView,
   type ServiceInboundNotifier,
-  type ServiceRejectResponder,
+  type ServiceDirectResponder,
   type WorkflowEventDeliverer,
 } from '@dina/brain';
 import { createProviderIngressSubmitter, getWorkflowService } from '@dina/core';
 
 import type { CoreClient, ProviderIngressSubmitter, ServiceReasoningSubmitter } from '@dina/core';
-import type { ServiceConfig } from '@dina/protocol';
+import type { ServiceConfig, ServiceResponseStatus } from '@dina/protocol';
 
 export interface HomeNodeServiceRuntimeOptions {
   /**
@@ -23,7 +23,7 @@ export interface HomeNodeServiceRuntimeOptions {
    * ServiceHandler so a query for `…/route-7` executes against route-7.
    */
   readConfig: (rkey?: string) => ServiceConfig | null;
-  rejectResponder: ServiceRejectResponder;
+  directResponder: ServiceDirectResponder;
   deliver: WorkflowEventDeliverer;
   approvalNotifier?: ApprovalNotifier;
   /**
@@ -94,7 +94,7 @@ export function buildHomeNodeServiceRuntime(
   const handler = new ServiceHandler({
     coreClient: options.core,
     readConfig: options.readConfig,
-    rejectResponder: options.rejectResponder,
+    directResponder: options.directResponder,
     ...(options.approvalNotifier !== undefined ? { notifier: options.approvalNotifier } : {}),
     ...(options.inboundNotifier !== undefined ? { inboundNotifier: options.inboundNotifier } : {}),
     ...(options.reasoningSubmitter !== undefined
@@ -187,10 +187,49 @@ function validateServiceRuntimeOptions(options: BuildHomeNodeServiceRuntimeOptio
   if (options.readConfig === undefined) {
     throw new Error('buildHomeNodeServiceRuntime: readConfig is required');
   }
-  if (options.rejectResponder === undefined) {
-    throw new Error('buildHomeNodeServiceRuntime: rejectResponder is required');
+  if (options.directResponder === undefined) {
+    throw new Error('buildHomeNodeServiceRuntime: directResponder is required');
   }
   if (options.deliver === undefined) {
     throw new Error('buildHomeNodeServiceRuntime: deliver is required');
   }
+}
+
+/**
+ * Build the `service.response` D2D body a `ServiceDirectResponder` sends.
+ *
+ * ONE builder, because there were two and they had already drifted: the lite
+ * default spread its optional fields, mobile passed them through as
+ * `undefined`. Harmless while both carried the same fields — and precisely
+ * the shape in which a field added to one gets missed by the other. When
+ * WS-4.6 added `result` (a §12.7 answer compiled Core produced with no task
+ * behind it), forgetting it in either place would drop the answer silently:
+ * the responder's TYPE would still be satisfied, so nothing would complain,
+ * and the buyer would wait out its TTL for a reply that was already computed.
+ *
+ * Every root calls this, so a new field is added here once.
+ */
+export function toServiceResponseBody(body: {
+  query_id: string;
+  capability: string;
+  /**
+   * THE PROTOCOL'S TYPE. This was the THIRD hand-written copy of the same
+   * union, and all three said `ok` — a value `ServiceResponseStatus` has never
+   * contained and `validateServiceResponseBody` refuses. Copies of a contract
+   * cannot notice when they stop matching it; the one place that decides is
+   * `@dina/protocol`.
+   */
+  status: ServiceResponseStatus;
+  error?: string;
+  result?: unknown;
+  ttl_seconds: number;
+}): Record<string, unknown> {
+  return {
+    query_id: body.query_id,
+    capability: body.capability,
+    status: body.status,
+    ...(body.error === undefined ? {} : { error: body.error }),
+    ...(body.result === undefined ? {} : { result: body.result }),
+    ...(body.ttl_seconds === undefined ? {} : { ttl_seconds: body.ttl_seconds }),
+  };
 }

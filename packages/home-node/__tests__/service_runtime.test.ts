@@ -1,6 +1,6 @@
 import { InMemoryWorkflowRepository, WorkflowService, setWorkflowService } from '@dina/core';
 
-import { buildHomeNodeServiceRuntime } from '../service-runtime';
+import { buildHomeNodeServiceRuntime, toServiceResponseBody } from '../service-runtime';
 
 import type { CoreClient } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
@@ -68,7 +68,7 @@ describe('@dina/home-node/service-runtime', () => {
       core: core.client,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
-      rejectResponder: jest.fn(),
+      directResponder: jest.fn(),
       deliver: jest.fn(),
       nowSecFn: () => 1_000,
       generateUUID: () => 'uuid-1',
@@ -104,14 +104,68 @@ describe('@dina/home-node/service-runtime', () => {
     });
   });
 
+  /**
+   * WS-4.6 — one builder, because there were two hand-built copies and they
+   * had already drifted. A field added to one but not the other drops an
+   * answer silently: the responder's TYPE is still satisfied, nothing
+   * complains, and the buyer waits out its TTL for a reply already computed.
+   */
+  describe('toServiceResponseBody', () => {
+    it('carries the result of an answer compiled Core produced', () => {
+      expect(
+        toServiceResponseBody({
+          query_id: 'q-1',
+          capability: 'order_reconcile',
+          status: 'success',
+          result: { outcome: 'never_received' },
+          ttl_seconds: 60,
+        }),
+      ).toEqual({
+        query_id: 'q-1',
+        capability: 'order_reconcile',
+        status: 'success',
+        result: { outcome: 'never_received' },
+        ttl_seconds: 60,
+      });
+    });
+
+    it('omits absent optional fields rather than sending them as null', () => {
+      // A `result: undefined` on the wire reads as "answered with nothing",
+      // which is a different claim from "this is a refusal".
+      const body = toServiceResponseBody({
+        query_id: 'q-2',
+        capability: 'order_status',
+        status: 'unavailable',
+        error: 'capability_not_configured',
+        ttl_seconds: 60,
+      });
+      expect('result' in body).toBe(false);
+      expect(body.error).toBe('capability_not_configured');
+    });
+
+    it('carries a FALSY result, which is still an answer', () => {
+      // The bug an `if (body.result)` guard would introduce. `false`, `0`,
+      // and `''` are answers a capability may legitimately return.
+      expect(
+        toServiceResponseBody({
+          query_id: 'q-3',
+          capability: 'availability',
+          status: 'success',
+          result: false,
+          ttl_seconds: 60,
+        }).result,
+      ).toBe(false);
+    });
+  });
+
   it('sends task-less rejection responses for pre-workflow service.query failures', async () => {
     const core = stubCore();
-    const rejectResponder = jest.fn(async () => undefined);
+    const directResponder = jest.fn(async () => undefined);
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
-      rejectResponder,
+      directResponder,
       deliver: jest.fn(),
     });
 
@@ -126,7 +180,7 @@ describe('@dina/home-node/service-runtime', () => {
     );
 
     expect(core.createWorkflowTask).not.toHaveBeenCalled();
-    expect(rejectResponder).toHaveBeenCalledWith(REQUESTER, {
+    expect(directResponder).toHaveBeenCalledWith(REQUESTER, {
       query_id: 'q-1',
       capability: 'unknown_capability',
       status: 'unavailable',
@@ -144,7 +198,7 @@ describe('@dina/home-node/service-runtime', () => {
       core: core.client,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
-      rejectResponder: jest.fn(),
+      directResponder: jest.fn(),
       deliver: jest.fn(),
       workflowEventIntervalMs: 25,
       approvalReconcileIntervalMs: 50,
@@ -184,7 +238,7 @@ describe('@dina/home-node/service-runtime', () => {
       core: core.client,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
-      rejectResponder: jest.fn(),
+      directResponder: jest.fn(),
       deliver: jest.fn(),
       inboundNotifier,
       nowSecFn: () => 2_000,
@@ -222,7 +276,7 @@ describe('@dina/home-node/service-runtime', () => {
       core: core.client,
       appView: stubAppView(),
       readConfig: () => INSTRUCTION_CONFIG,
-      rejectResponder: jest.fn(),
+      directResponder: jest.fn(),
       deliver: jest.fn(),
       reasoningSubmitter,
     });
@@ -256,13 +310,13 @@ describe('@dina/home-node/service-runtime', () => {
       core: stubCore().client,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
-      rejectResponder: jest.fn(),
+      directResponder: jest.fn(),
       deliver: jest.fn(),
     };
 
     expect(() =>
-      buildHomeNodeServiceRuntime({ ...base, rejectResponder: undefined as never }),
-    ).toThrow(/rejectResponder is required/);
+      buildHomeNodeServiceRuntime({ ...base, directResponder: undefined as never }),
+    ).toThrow(/directResponder is required/);
     expect(() => buildHomeNodeServiceRuntime({ ...base, deliver: undefined as never })).toThrow(
       /deliver is required/,
     );
@@ -342,7 +396,7 @@ describe('@dina/home-node/service-runtime — plugin plane default (§11.2a)', (
       core: core.client,
       appView: stubAppView(),
       readConfig: () => PLUGIN_CONFIG,
-      rejectResponder: async (_did, body) => {
+      directResponder: async (_did, body) => {
         rejections.push(body as unknown as { status: string; error: string });
       },
       deliver: jest.fn(),

@@ -30,11 +30,7 @@
  * `fetch` implementation drives the HTTPS call.
  */
 
-import {
-  cidForOperation,
-  publicKeyToMultibase,
-  updateDIDPLC,
-} from '@dina/core';
+import { cidForOperation, publicKeyToMultibase, updateDIDPLC } from '@dina/core';
 
 const DEFAULT_PLC_URL = 'https://plc.directory';
 
@@ -69,9 +65,7 @@ export interface ApplyDinaPlcUpdateOptions {
  * audit-log fetch / signing / PLC POST failure — callers decide
  * whether to retry or mark the operation as durably applied.
  */
-export async function applyDinaPlcUpdate(
-  opts: ApplyDinaPlcUpdateOptions,
-): Promise<void> {
+export async function applyDinaPlcUpdate(opts: ApplyDinaPlcUpdateOptions): Promise<void> {
   const plcURL = (opts.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
   const fetchFn = opts.fetch ?? globalThis.fetch;
   if (typeof fetchFn !== 'function') {
@@ -117,8 +111,7 @@ export async function applyDinaPlcUpdate(
       endpoint: opts.msgboxEndpoint,
     },
   };
-  const alsoKnownAs =
-    priorAlsoKnownAs.length > 0 ? priorAlsoKnownAs : [`at://${opts.handle}`];
+  const alsoKnownAs = priorAlsoKnownAs.length > 0 ? priorAlsoKnownAs : [`at://${opts.handle}`];
 
   await updateDIDPLC(
     {
@@ -168,9 +161,7 @@ function readStringMap(v: unknown): Record<string, string> {
   return out;
 }
 
-function readServicesMap(
-  v: unknown,
-): Record<string, { type: string; endpoint: string }> {
+function readServicesMap(v: unknown): Record<string, { type: string; endpoint: string }> {
   if (v === null || typeof v !== 'object') return {};
   const out: Record<string, { type: string; endpoint: string }> = {};
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {

@@ -40,6 +40,14 @@ export type QuoteUseState = 'held' | 'committed' | 'refunded';
 
 export interface CommerceQuoteLedgerRepository {
   getHead(quoteId: string): CommerceQuoteHead | null;
+  /**
+   * Every family this supplier has issued, newest first.
+   *
+   * OWNER-FACING ONLY. Nothing on the wire enumerates a supplier's quotes:
+   * the list names every buyer this business has priced for and what it
+   * offered them, which is its whole commercial position.
+   */
+  listHeads(): CommerceQuoteHead[];
   /** Register a fresh family at revision "1". False when it exists. */
   registerHead(head: Omit<CommerceQuoteHead, 'voided' | 'updatedAt'>): boolean;
   /** CAS the head forward (revision N -> N+1 signing gate). */
@@ -97,6 +105,17 @@ export class SQLiteCommerceQuoteLedgerRepository implements CommerceQuoteLedgerR
   getHead(quoteId: string): CommerceQuoteHead | null {
     const rows = this.db.query(`SELECT * FROM commerce_quote_heads WHERE quote_id = ?`, [quoteId]);
     return rows[0] ? rowToHead(rows[0]) : null;
+  }
+
+  listHeads(): CommerceQuoteHead[] {
+    // Newest first, then by id so two families created in the same millisecond
+    // do not shuffle between reads — an owner list that reorders itself on
+    // refresh reads as if something changed.
+    const rows = this.db.query(
+      `SELECT * FROM commerce_quote_heads ORDER BY created_at DESC, quote_id ASC`,
+      [],
+    );
+    return rows.map(rowToHead);
   }
 
   registerHead(head: Omit<CommerceQuoteHead, 'voided' | 'updatedAt'>): boolean {
@@ -218,6 +237,12 @@ export class InMemoryCommerceQuoteLedgerRepository implements CommerceQuoteLedge
     return head ? { ...head } : null;
   }
 
+  listHeads(): CommerceQuoteHead[] {
+    return [...this.heads.values()]
+      .map((head) => ({ ...head }))
+      .sort((a, b) => b.createdAt - a.createdAt || a.quoteId.localeCompare(b.quoteId));
+  }
+
   registerHead(head: Omit<CommerceQuoteHead, 'voided' | 'updatedAt'>): boolean {
     if (this.heads.has(head.quoteId)) return false;
     this.heads.set(head.quoteId, { ...head, voided: false, updatedAt: head.createdAt });
@@ -289,4 +314,3 @@ export class InMemoryCommerceQuoteLedgerRepository implements CommerceQuoteLedge
     return true;
   }
 }
-

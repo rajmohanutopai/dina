@@ -1,0 +1,149 @@
+{
+  "pages": [
+    {
+      "catalog_id": "chairmaker-main",
+      "snapshot_sequence": 1,
+      "page_index": 0,
+      "items": [
+        {
+          "sku": "CHAIR-1",
+          "name": "Oak dining chair"
+        }
+      ],
+      "page_digest": "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b"
+    },
+    {
+      "catalog_id": "chairmaker-main",
+      "snapshot_sequence": 1,
+      "page_index": 1,
+      "items": [
+        {
+          "sku": "CHAIR-2",
+          "name": "Beech stool"
+        }
+      ],
+      "page_digest": "f32bd5649fff2078afe2a567e41b69cdeeed0ff1a90f0257ea888733bb259272"
+    }
+  ],
+  "snapshot": {
+    "supplier_did": "did:plc:supplier5678",
+    "catalog_id": "chairmaker-main",
+    "snapshot_sequence": 1,
+    "protocol_version": "1.0",
+    "published_at": "2026-01-01T00:00:00.000Z",
+    "page_digests": [
+      "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b",
+      "f32bd5649fff2078afe2a567e41b69cdeeed0ff1a90f0257ea888733bb259272"
+    ],
+    "item_count": 2,
+    "payload_root": "21c9b77719ef542420e98d0b41dbd182d5e8384f237f99ecf4c0a38e39590437",
+    "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+  },
+  "genesis_pointer": {
+    "supplier_did": "did:plc:supplier5678",
+    "catalog_id": "chairmaker-main",
+    "snapshot_sequence": 1,
+    "protocol_version": "1.0",
+    "published_at": "2026-01-01T00:00:00.000Z",
+    "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+    "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+  },
+  "chain_cases": [
+    {
+      "name": "genesis_at_one",
+      "previous": null,
+      "next": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "expect": null
+    },
+    {
+      "name": "genesis_must_start_at_one",
+      "previous": null,
+      "next": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 2,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "expect": "pointer chain: a genesis pointer must start at sequence 1"
+    },
+    {
+      "name": "gap_is_a_publication_fault",
+      "previous": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "next": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 3,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "previous_snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "expect": "pointer chain: sequence gap — a missing snapshot is a publication fault"
+    },
+    {
+      "name": "rollback_refused",
+      "previous": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 4,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "next": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "expect": "pointer chain: sequence must advance (rollback or fork refused)"
+    },
+    {
+      "name": "nothing_follows_a_withdrawal",
+      "previous": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 2,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-02T00:00:00.000Z",
+        "previous_snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "withdrawn": true
+      },
+      "next": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 3,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "previous_snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65"
+      },
+      "expect": "pointer chain: this catalog was withdrawn; publish under a new catalog_id"
+    }
+  ]
+}

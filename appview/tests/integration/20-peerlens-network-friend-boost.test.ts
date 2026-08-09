@@ -131,7 +131,7 @@ async function publishAttestation(opts: {
 }
 
 /**
- * Vouch from `authorDid` for `subjectDid`. Creates a `trust_edges` row
+ * Vouch from `authorDid` for `subjectDid`. Creates a `peerlens_edges` row
  * with edgeType='vouch' which `computeGraphContext(viewer, depth=1)`
  * surfaces as a 1-hop friend.
  */

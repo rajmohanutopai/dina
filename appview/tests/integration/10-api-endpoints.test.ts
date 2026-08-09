@@ -19,6 +19,22 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getTestDb, cleanAllTables, closeTestDb, type TestDB } from '../test-db'
 import * as schema from '@/db/schema/index'
+import { generateDeterministicId } from '@/db/queries/subjects'
+import { decodeCursor } from '@/util/cursor'
+import { z } from 'zod'
+
+/**
+ * The search cursor payload, as `search.ts` defines it.
+ *
+ * Declared here rather than imported because the endpoint keeps its schema
+ * private — which is right: the cursor is opaque TO CALLERS. A test is not a
+ * caller in that sense; it is checking the endpoint's own invariant, so it
+ * decodes with the same rules rather than inventing a parse.
+ */
+// The envelope carries `{v, ...payload}` and `decodeCursor` strips `v`
+// before parsing, so the schema describes the PAYLOAD alone.
+const TestSearchCursor = z.object({ ts: z.string(), uri: z.string() })
+import type { SubjectRef } from '@/shared/types/lexicon-types'
 import { resolve, ResolveParams } from '@/api/xrpc/resolve'
 import { search, SearchParams } from '@/api/xrpc/search'
 import { getProfile } from '@/api/xrpc/get-profile'
@@ -194,12 +210,22 @@ async function insertEdge(fromDid: string, toDid: string, opts: { domain?: strin
   })
 }
 
-// Generate a deterministic subject ID matching the resolveSubject function
+/**
+ * The subject id, FROM THE RESOLVER that makes them.
+ *
+ * This used to recompute the formula by hand — `sha256('did:' + did)` — and
+ * the resolver moved to `v3`, which prefixes `RESOLVER_VERSION` into the hash.
+ * The copy stayed on v2, so every seeded row landed under an id `resolve`
+ * would never look up: scores came back null and seven API tests failed on
+ * `Cannot read properties of null`, none of them for a reason in the endpoint.
+ *
+ * The module's own doc calls this formula "a frozen wire format" with the
+ * version prefix as its escape hatch. A test that re-implements a frozen
+ * format is a second implementation of it, and only one of the two gets
+ * bumped.
+ */
 function makeSubjectId(did: string): string {
-  const { createHash } = require('crypto')
-  const hash = createHash('sha256')
-  hash.update(`did:${did}`)
-  return `sub_${hash.digest('hex').slice(0, 32)}`
+  return generateDeterministicId({ type: 'did', did } as SubjectRef).id
 }
 
 // ---------------------------------------------------------------------------
@@ -1267,8 +1293,16 @@ describe('10.3 Search Endpoint', () => {
 
     // Verify continuation works: page 2 should contain results that are
     // chronologically at or before the cursor.
-    // MEDIUM-04: cursor is now composite format `timestamp::uri`, extract timestamp part
-    const cursorTs = page1.cursor!.split('::')[0]
+    // DECODED, not split. The cursor was a `timestamp::uri` string and became
+    // an OPAQUE base64url `{v, ts, uri}` payload; splitting on `::` returned
+    // the whole blob, `new Date(blob)` produced NaN, and the assertion
+    // compared every row against NaN — which is never `<=` anything, so the
+    // test failed for a reason unrelated to pagination.
+    //
+    // A test that re-parses an opaque format is asserting against a shape the
+    // endpoint has stopped promising. Using the endpoint's own decoder means
+    // the next format change moves both together or fails loudly.
+    const cursorTs = decodeCursor(page1.cursor!, TestSearchCursor).ts
     for (const r of page2.results) {
       const ts = new Date((r as any).recordCreatedAt).getTime()
       expect(ts).toBeLessThanOrEqual(new Date(cursorTs).getTime())
@@ -2030,9 +2064,22 @@ describe('§10+ API Endpoint Fixes (AppView Issues)', () => {
     const page1 = await search(db, { q: undefined, limit: 2, sort: 'recent' } as any)
     expect(page1.results.length).toBe(2)
     expect(page1.cursor).toBeDefined()
-    // MEDIUM-04: Cursor should be composite format (timestamp::uri)
+    // MEDIUM-04/HIGH-08's claim is that the cursor is COMPOSITE — a timestamp
+    // AND a tiebreaking uri — so two rows sharing a timestamp cannot repeat or
+    // vanish across pages. This asserted `contains('::')`, which tested the
+    // ENCODING rather than the claim, and broke when the cursor became an
+    // opaque base64url envelope for exactly the reason `cursor.ts` records:
+    // a plaintext format cannot reject a mid-pagination strategy change.
+    //
+    // Decoding and asserting BOTH components is the same guarantee stated
+    // against what the fix was actually for.
     if (page1.cursor) {
-      expect(page1.cursor).toContain('::')
+      const payload = decodeCursor(page1.cursor, TestSearchCursor)
+      expect(payload.ts).toBeTruthy()
+      expect(payload.uri).toBeTruthy()
+      // The tiebreaker names the LAST row of the page — that is what makes
+      // the next page resume after it rather than beside it.
+      expect(payload.uri).toBe((page1.results[1] as { uri: string }).uri)
     }
   })
 

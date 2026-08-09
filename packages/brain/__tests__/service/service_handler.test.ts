@@ -9,10 +9,12 @@ import {
   type ServiceReasoningSubmitter,
 } from '@dina/core';
 
+import { validateServiceResponseBody } from '@dina/protocol';
+
 import {
   ServiceHandler,
   type ServiceHandlerCoreClient,
-  type ServiceRejectResponder,
+  type ServiceDirectResponder,
 } from '../../src/service/service_handler';
 import { canonicalCapabilitySchemaHash } from '../../src/service/service_publisher';
 
@@ -144,7 +146,7 @@ function makeHandler(opts: {
   uuid?: string;
   reasoningSubmitter?: ServiceReasoningSubmitter;
   providerIngressSubmitter?: ProviderIngressSubmitter;
-  rejectResponder?: ServiceRejectResponder;
+  directResponder?: ServiceDirectResponder;
   notifier?: Parameters<typeof ServiceHandler.prototype.handleQuery>[0] extends infer _
     ? never
     : never;
@@ -159,7 +161,7 @@ function makeHandler(opts: {
     ...(opts.reasoningSubmitter === undefined
       ? {}
       : { reasoningSubmitter: opts.reasoningSubmitter }),
-    ...(opts.rejectResponder === undefined ? {} : { rejectResponder: opts.rejectResponder }),
+    ...(opts.directResponder === undefined ? {} : { directResponder: opts.directResponder }),
     ...(opts.providerIngressSubmitter === undefined
       ? {}
       : { providerIngressSubmitter: opts.providerIngressSubmitter }),
@@ -1500,7 +1502,7 @@ describe('ServiceHandler connected-Brain execution strategy', () => {
           code: 'conflict',
         });
       },
-      rejectResponder: rejected,
+      directResponder: rejected,
     });
 
     await handler.handleQuery(REQUESTER, {
@@ -1532,7 +1534,7 @@ describe('ServiceHandler connected-Brain execution strategy', () => {
           code: 'authority_unavailable',
         });
       },
-      rejectResponder: rejected,
+      directResponder: rejected,
     });
 
     await handler.handleQuery(REQUESTER, {
@@ -1563,7 +1565,7 @@ describe('ServiceHandler connected-Brain execution strategy', () => {
       reasoningSubmitter: async () => {
         throw new Error('database path and requester content must stay private');
       },
-      rejectResponder: rejected,
+      directResponder: rejected,
       logger: (event) => {
         logs.push(event);
       },
@@ -1736,14 +1738,14 @@ function recordingSubmitter(
  * indexed — the assertions have to reach the arguments, not just the count.
  */
 function rejectRecorder(): {
-  fn: ServiceRejectResponder;
-  sent: { status: string; error: string }[];
+  fn: ServiceDirectResponder;
+  sent: { status: string; error?: string; result?: unknown }[];
 } {
-  const sent: { status: string; error: string }[] = [];
+  const sent: { status: string; error?: string; result?: unknown }[] = [];
   return {
     sent,
     fn: async (_fromDID, body) => {
-      sent.push(body as unknown as { status: string; error: string });
+      sent.push(body as unknown as { status: string; error?: string; result?: unknown });
     },
   };
 }
@@ -1775,6 +1777,66 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
     // No generic delegation task: this capability is answered by the install
     // or not at all.
     expect(core.createCalls).toHaveLength(0);
+  });
+
+  /**
+   * WS-4.6 — compiled Core answered a §12.7 reconcile itself. There is no
+   * task, so nothing downstream will ever emit this response: it goes out
+   * here or the buyer waits out its TTL for an answer that already exists.
+   */
+  it('sends a Core-produced answer straight back, with no task behind it', async () => {
+    const core = stubCore();
+    const responder = rejectRecorder();
+    const handler = makeHandler({
+      core,
+      config: PLUGIN_CONFIG,
+      directResponder: responder.fn,
+      providerIngressSubmitter: recordingSubmitter({
+        ok: true,
+        coreAnswerJson: JSON.stringify({ outcome: 'never_received' }),
+      }).fn,
+    });
+
+    await handler.handleQuery(REQUESTER, pluginQuery);
+
+    expect(responder.sent).toEqual([
+      expect.objectContaining({
+        // `success`, not `ok`. This test asserted `ok` for as long as the code
+        // emitted it, which is what a test written from the implementation
+        // does: `ServiceResponseStatus` is `success | unavailable | error`, so
+        // the §12.7 Core-answer path was emitting a response every conforming
+        // buyer must reject, and the assertion agreed with it.
+        status: 'success',
+        result: { outcome: 'never_received' },
+        capability: 'order_status',
+        query_id: 'q-plugin-1',
+      }),
+    ]);
+    // AND IT PASSES THE REAL VALIDATOR. Checking the literal alone would just
+    // be the same mistake with a different string in it; this asks the wire
+    // contract itself, so the next drift is caught by the thing that decides.
+    const sent = responder.sent[0] as Record<string, unknown>;
+    expect(validateServiceResponseBody(sent)).toBeNull();
+    // No delegation task either: Core already answered.
+    expect(core.createCalls).toHaveLength(0);
+  });
+
+  it('reports rather than throws when a Core answer will not parse', async () => {
+    // `handleQuery` promises the inbound dispatch path never throws. A throw
+    // here would lose the answer silently and take the D2D handler with it.
+    const responder = rejectRecorder();
+    const handler = makeHandler({
+      core: stubCore(),
+      config: PLUGIN_CONFIG,
+      directResponder: responder.fn,
+      providerIngressSubmitter: recordingSubmitter({
+        ok: true,
+        coreAnswerJson: 'not json',
+      }).fn,
+    });
+
+    await expect(handler.handleQuery(REQUESTER, pluginQuery)).resolves.toBeUndefined();
+    expect(responder.sent[0]?.status).toBe('error');
   });
 
   it('does NOT fall through to the generic delegation path', async () => {
@@ -1810,7 +1872,7 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
     // TTL for an answer that was never coming.
     const core = stubCore();
     const rejected = rejectRecorder();
-    const handler = makeHandler({ core, config: PLUGIN_CONFIG, rejectResponder: rejected.fn });
+    const handler = makeHandler({ core, config: PLUGIN_CONFIG, directResponder: rejected.fn });
 
     await handler.handleQuery(REQUESTER, pluginQuery);
 
@@ -1834,7 +1896,7 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
       core,
       config: PLUGIN_CONFIG,
       providerIngressSubmitter: submitter.fn,
-      rejectResponder: rejected.fn,
+      directResponder: rejected.fn,
     });
 
     await handler.handleQuery(REQUESTER, pluginQuery);
@@ -1896,7 +1958,7 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
         capabilities: { order_status: { responsePolicy: 'auto' } },
       },
       providerIngressSubmitter: recordingSubmitter().fn,
-      rejectResponder: rejected.fn,
+      directResponder: rejected.fn,
     });
 
     await handler.handleQuery(REQUESTER, pluginQuery);
@@ -1920,7 +1982,7 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
         capabilities: { order_status: { pluginInstallId: 'inst-1', responsePolicy: 'auto' } },
       },
       providerIngressSubmitter: submitter.fn,
-      rejectResponder: rejected.fn,
+      directResponder: rejected.fn,
     });
 
     await handler.handleQuery(REQUESTER, pluginQuery);
@@ -1957,7 +2019,7 @@ describe('ServiceHandler — plugin execution plane (§11.2a)', () => {
           },
         },
         providerIngressSubmitter: submitter.fn,
-        rejectResponder: rejected.fn,
+        directResponder: rejected.fn,
       });
 
       await handler.handleQuery(REQUESTER, pluginQuery);

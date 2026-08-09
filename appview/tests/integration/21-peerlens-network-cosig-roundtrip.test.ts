@@ -58,7 +58,7 @@
  *   §3 Endorsement creates a trust_edge.
  *      Failure mode: B's endorsement publishes but doesn't
  *      contribute to A's reviewer profile (the `endorsementHandler`
- *      regresses on the trust-edge add). Pin via direct trust_edges
+ *      regresses on the trust-edge add). Pin via direct peerlens_edges
  *      row check: edge_type='endorsement', from=B, to=A,
  *      domain=skill, sourceUri=endorsement.uri.
  *
@@ -318,7 +318,7 @@ describe('TN-TEST-041 §2: acceptance closes request with endorsement_uri', () =
     // The endorsement record at that URI is independently indexed
     // and visible — the URI is real, not just a stored string.
     // (Endorsements live on the author's profile, not the subject's
-    // attestation list, so we query trust_edges by sourceUri to
+    // attestation list, so we query peerlens_edges by sourceUri to
     // confirm the row landed.)
     const edge = await db
       .select()
@@ -511,7 +511,7 @@ describe('TN-TEST-041 §6: recipient decline closes request without endorsement_
     expect(rejected.requests[0].endorsementUri).toBeNull()
 
     // And: NO endorsement record exists (the wire artifact never
-    // published) — pinned via trust_edges absence at the would-be URI.
+    // published) — pinned via peerlens_edges absence at the would-be URI.
     const edges = await db
       .select()
       .from(peerlensEdges)

@@ -174,17 +174,20 @@ describe('§4.2 Constants', () => {
 // ---------------------------------------------------------------------------
 describe('§4.3 Lexicons', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0219", "section": "01", "sectionName": "General", "title": "UT-LEX-001: TRUST_COLLECTIONS has 20 entries"}
-  it('UT-LEX-001: TRUST_COLLECTIONS has 20 entries', () => {
-    // 19 trust.* records + 1 service.profile (the WS2 discovery record).
-    expect(TRUST_COLLECTIONS).toHaveLength(20)
+  it('UT-LEX-001: TRUST_COLLECTIONS has 23 entries', () => {
+    // 19 peerlens.* records + service.profile (WS2 discovery) + the two
+    // commerce catalog records (§10.2: the mutable pointer and the immutable
+    // snapshot) + the §10.7 relationship claim.
+    expect(TRUST_COLLECTIONS).toHaveLength(23)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0220", "section": "01", "sectionName": "General", "title": "UT-LEX-002: entries live under com.dinakernel.*"}
   it('UT-LEX-002: entries live under com.dinakernel.*', () => {
     // Most are com.dinakernel.peerlens.*; com.dinakernel.service.profile is the
-    // service-discovery record published alongside trust records.
+    // service-discovery record, and com.dinakernel.commerce.* are the catalog
+    // pointer and snapshot.
     for (const collection of TRUST_COLLECTIONS) {
-      expect(collection).toMatch(/^com\.dinakernel\.(peerlens|service)\./)
+      expect(collection).toMatch(/^com\.dinakernel\.(peerlens|service|commerce)\./)
     }
   })
 
@@ -232,6 +235,6 @@ describe('§4.3 Lexicons', () => {
     // Also verify that the type is a union of string literals, not just `string`
     // by checking that every element satisfies the type
     const allTyped: readonly TrustCollection[] = TRUST_COLLECTIONS
-    expect(allTyped.length).toBe(20)
+    expect(allTyped.length).toBe(23)
   })
 })

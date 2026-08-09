@@ -100,6 +100,30 @@ export function validateProtocolVersionShape(value: unknown, field: string): str
   return null;
 }
 
+/**
+ * §9.13 — ONE CONVERSATION PINS ONE VERSION.
+ *
+ * "the quote chain and any order built on it use the version of the
+ * originating request; a counterproposal cannot silently upgrade the
+ * conversation". Distinct from `checkProtocolVersion`, which answers a
+ * different question — may I parse this document at all — and which every
+ * validator already applies. Admission is about the RECEIVER's capability;
+ * this is about the CONVERSATION's identity.
+ *
+ * Both are needed and neither implies the other: a `1.0` participant can
+ * parse a `1.7` document (minor is additive), and must still refuse to treat
+ * it as a continuation of a `1.0` exchange, because the terms either side
+ * believes it agreed were written under different field sets.
+ */
+export function verifyConversationVersion(
+  expected: string,
+  actual: string,
+  what: string,
+): string | null {
+  if (expected === actual) return null;
+  return `${what}: protocol_version ${actual} does not match the conversation's ${expected} (§9.13)`;
+}
+
 export function protocolMajor(version: string): string {
   return version.split('.')[0] as string;
 }

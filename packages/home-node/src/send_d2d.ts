@@ -26,7 +26,6 @@ import type {
   SendResult,
 } from '@dina/core';
 
-
 export interface MakeSendD2DOptions {
   /** Our own DID — signed as sender on every outbound envelope. */
   senderDID: string;
@@ -72,9 +71,7 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
     const resolved = await resolver.resolve(to);
     const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
     if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
-      throw new Error(
-        `sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`,
-      );
+      throw new Error(`sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`);
     }
     const recipientPublicKey = multibaseToPublicKey(vm.publicKeyMultibase);
     const endpoint = resolved.messagingService?.endpoint ?? opts.defaultMsgboxEndpoint;
@@ -87,9 +84,7 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
       senderPrivateKey: opts.senderPrivateKey,
       recipientPublicKey,
       endpoint,
-      ...(options?.dataCategories !== undefined
-        ? { dataCategories: options.dataCategories }
-        : {}),
+      ...(options?.dataCategories !== undefined ? { dataCategories: options.dataCategories } : {}),
       ...(options?.messageId !== undefined ? { messageId: options.messageId } : {}),
       ...(opts.providerServiceResolver !== undefined
         ? { providerServiceResolver: opts.providerServiceResolver }

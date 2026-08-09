@@ -21,7 +21,7 @@ beforeAll(async () => {
   db = getTestDb()
   // Clean tables used by constraint tests once before all tests in this file
   await db.execute(sql`
-    TRUNCATE TABLE attestations, trust_edges, tombstones, subject_scores, did_profiles, subjects, ingest_rejections, cosig_requests, trust_v1_params, appview_config CASCADE
+    TRUNCATE TABLE attestations, peerlens_edges, tombstones, subject_scores, did_profiles, subjects, ingest_rejections, cosig_requests, peerlens_v1_params, appview_config CASCADE
   `)
 })
 
@@ -45,7 +45,7 @@ describe('11.1 Schema Correctness', () => {
   it('IT-DB-002: all 34 tables exist', async () => {
     // Description: Query information_schema for all expected tables
     // Expected: 27 baseline + ingest_rejections (TN-DB-005) + cosig_requests
-    //           (TN-DB-003) + trust_v1_params (TN-DB-004) + appview_config
+    //           (TN-DB-003) + peerlens_v1_params (TN-DB-004) + appview_config
     //           (TN-FLAG-001) + reviewer_namespace_scores (TN-DB-012 / Plan
     //           §3.5 — per-(did, namespace) reviewer trust) + services
     //           (TN-V2 service catalog) + suspended_pds_hosts (HIGH-13
@@ -54,11 +54,18 @@ describe('11.1 Schema Correctness', () => {
       'attestations', 'vouches', 'endorsements', 'flags', 'replies',
       'reactions', 'report_records', 'revocations', 'delegations', 'collections',
       'media', 'subjects', 'amendments', 'verifications', 'review_requests',
-      'comparisons', 'subject_claims', 'trust_policies', 'notification_prefs',
-      'mention_edges', 'tombstones', 'trust_edges', 'anomaly_events',
+      'comparisons', 'subject_claims', 'peerlens_policies', 'notification_prefs',
+      'mention_edges', 'tombstones', 'peerlens_edges', 'anomaly_events',
       'ingester_cursor', 'did_profiles', 'subject_scores', 'domain_scores',
-      'ingest_rejections', 'cosig_requests', 'trust_v1_params', 'appview_config',
+      'ingest_rejections', 'cosig_requests', 'peerlens_v1_params', 'appview_config',
       'reviewer_namespace_scores', 'services', 'suspended_pds_hosts',
+      // §10 commerce catalog (WS-5.4): pointer + immutable snapshot, the
+      // projected products, and the relationship claims an AppView may show.
+      'commerce_catalog_pointers', 'commerce_catalog_products',
+      'commerce_catalog_snapshots', 'commerce_product_relationships',
+      'commerce_relationship_claims', 'catalog_snapshots',
+      // Moderation + redaction bookkeeping.
+      'admin_audit_log', 'did_redactions',
     ]
 
     const result = await db.execute(sql`
@@ -71,7 +78,16 @@ describe('11.1 Schema Correctness', () => {
     for (const expected of expectedTables) {
       expect(tableNames).toContain(expected)
     }
-    expect(tableNames.length).toBe(34)
+    // NAMES, NOT A COUNT. This asserted `length === 34`, which broke the
+    // moment the commerce catalog tables landed and whose only possible fix
+    // is to bump the number — a ritual that teaches a reader to bump it
+    // again without looking. Reporting WHICH table is unaccounted for keeps
+    // the same protection (nothing appears in this schema unnoticed) and
+    // makes the fix an act of description rather than arithmetic.
+    const unexpected = tableNames
+      .filter((t: string) => !expectedTables.includes(t))
+      .filter((t: string) => !t.startsWith('__drizzle'))
+    expect(unexpected).toEqual([])
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0540", "section": "01", "sectionName": "General", "title": "IT-DB-003: attestations -- primary key on uri"}
@@ -93,20 +109,20 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0541", "section": "01", "sectionName": "General", "title": "IT-DB-004: trust_edges -- unique on sourceUri"}
-  it('IT-DB-004: trust_edges -- unique on sourceUri', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0541", "section": "01", "sectionName": "General", "title": "IT-DB-004: peerlens_edges -- unique on sourceUri"}
+  it('IT-DB-004: peerlens_edges -- unique on sourceUri', async () => {
     // Description: Duplicate sourceUri insert
     // Expected: Constraint violation
     const testSourceUri = `at://did:plc:te/trust/db004-${Date.now()}`
 
     await db.execute(sql.raw(`
-      INSERT INTO trust_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
+      INSERT INTO peerlens_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
       VALUES ('te-db004a-${Date.now()}', 'did:plc:from1', 'did:plc:to1', 'vouch', 1.0, '${testSourceUri}', NOW())
     `))
 
     await expect(
       db.execute(sql.raw(`
-        INSERT INTO trust_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
+        INSERT INTO peerlens_edges (id, from_did, to_did, edge_type, weight, source_uri, created_at)
         VALUES ('te-db004b-${Date.now()}', 'did:plc:from2', 'did:plc:to2', 'vouch', 0.5, '${testSourceUri}', NOW())
       `))
     ).rejects.toThrow()
@@ -434,17 +450,17 @@ describe('11.1 Schema Correctness', () => {
     ).rejects.toThrow()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0596", "section": "01", "sectionName": "General", "title": "IT-DB-041: trust_v1_params -- key PK + numeric round-trip (TN-DB-004)"}
-  it('IT-DB-041: trust_v1_params -- key PK + numeric round-trip (TN-DB-004)', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0596", "section": "01", "sectionName": "General", "title": "IT-DB-041: peerlens_v1_params -- key PK + numeric round-trip (TN-DB-004)"}
+  it('IT-DB-041: peerlens_v1_params -- key PK + numeric round-trip (TN-DB-004)', async () => {
     // Description: Plan §4.1 hot-reloadable parameter store. NUMERIC stores values exactly
     // (no float drift). Postgres returns NUMERIC as a string from pg's default deserializer to
     // preserve precision — the scorer parses with parseFloat at read time.
     await db.execute(sql.raw(`
-      INSERT INTO trust_v1_params (key, value, description)
+      INSERT INTO peerlens_v1_params (key, value, description)
       VALUES ('TEST_PARAM_DB041', 0.1234567890, 'Test param for IT-DB-041 round-trip')
     `))
     const result = await db.execute(sql.raw(`
-      SELECT key, value::text AS value_text, description FROM trust_v1_params WHERE key = 'TEST_PARAM_DB041'
+      SELECT key, value::text AS value_text, description FROM peerlens_v1_params WHERE key = 'TEST_PARAM_DB041'
     `))
     expect(result.rows[0].key).toBe('TEST_PARAM_DB041')
     // value comes back as exact-precision text; parse for the assertion.
@@ -452,18 +468,18 @@ describe('11.1 Schema Correctness', () => {
     expect(result.rows[0].description).toBe('Test param for IT-DB-041 round-trip')
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0597", "section": "01", "sectionName": "General", "title": "IT-DB-042: trust_v1_params -- duplicate key rejected (TN-DB-004)"}
-  it('IT-DB-042: trust_v1_params -- duplicate key rejected (TN-DB-004)', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0597", "section": "01", "sectionName": "General", "title": "IT-DB-042: peerlens_v1_params -- duplicate key rejected (TN-DB-004)"}
+  it('IT-DB-042: peerlens_v1_params -- duplicate key rejected (TN-DB-004)', async () => {
     // Description: `key` is the PK — a misspelled `dina-admin trust set-param` that re-inserts
     // would silently shadow the canonical row if PK weren't enforced. Hot-reload semantics
     // require UPDATE for revisions, not INSERT-shadowing.
     await db.execute(sql.raw(`
-      INSERT INTO trust_v1_params (key, value, description)
+      INSERT INTO peerlens_v1_params (key, value, description)
       VALUES ('TEST_PARAM_DB042', 1.0, 'first')
     `))
     await expect(
       db.execute(sql.raw(`
-        INSERT INTO trust_v1_params (key, value, description)
+        INSERT INTO peerlens_v1_params (key, value, description)
         VALUES ('TEST_PARAM_DB042', 2.0, 'second')
       `))
     ).rejects.toThrow()
@@ -491,7 +507,7 @@ describe('11.1 Schema Correctness', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0600", "section": "01", "sectionName": "General", "title": "IT-DB-045: appview_config -- duplicate key rejected (TN-FLAG-001)"}
   it('IT-DB-045: appview_config -- duplicate key rejected (TN-FLAG-001)', async () => {
-    // Description: Like trust_v1_params, the key is the PK. Hot-reload semantics require UPDATE
+    // Description: Like peerlens_v1_params, the key is the PK. Hot-reload semantics require UPDATE
     // for value flips, not duplicate INSERTs (which would silently shadow if PK weren't enforced).
     await db.execute(sql.raw(`
       INSERT INTO appview_config (key, bool_value, description)
@@ -573,20 +589,20 @@ describe('11.2 Index Verification', () => {
     }
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0548", "section": "01", "sectionName": "General", "title": "IT-DB-011: trust_edges indexes exist"}
-  it('IT-DB-011: trust_edges indexes exist', async () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0548", "section": "01", "sectionName": "General", "title": "IT-DB-011: peerlens_edges indexes exist"}
+  it('IT-DB-011: peerlens_edges indexes exist', async () => {
     // Description: Query pg_indexes
-    // Expected: trust_edges indexes present
+    // Expected: peerlens_edges indexes present
     const result = await db.execute(sql`
-      SELECT indexname FROM pg_indexes WHERE tablename = 'trust_edges'
+      SELECT indexname FROM pg_indexes WHERE tablename = 'peerlens_edges'
     `)
     const indexNames = result.rows.map((r: any) => r.indexname)
 
     const expectedIndexes = [
-      'trust_edges_from_idx',
-      'trust_edges_to_idx',
-      'trust_edges_from_to_idx',
-      'trust_edges_type_idx',
+      'peerlens_edges_from_idx',
+      'peerlens_edges_to_idx',
+      'peerlens_edges_from_to_idx',
+      'peerlens_edges_type_idx',
     ]
 
     for (const idx of expectedIndexes) {
@@ -819,7 +835,7 @@ describe('11.3 Query Performance', () => {
     // Description: EXPLAIN on from_did lookup
     // Expected: Index scan
     const result = await db.execute(sql`
-      EXPLAIN (FORMAT JSON) SELECT * FROM trust_edges WHERE from_did = 'did:plc:test'
+      EXPLAIN (FORMAT JSON) SELECT * FROM peerlens_edges WHERE from_did = 'did:plc:test'
     `)
     const plan = JSON.stringify(result.rows)
     expect(plan).toContain('Index')

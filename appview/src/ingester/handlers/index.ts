@@ -72,6 +72,11 @@ import { subjectClaimHandler } from './subject-claim.js'
 import { peerlensPolicyHandler } from './peerlens-policy.js'
 import { notificationPrefsHandler } from './notification-prefs.js'
 import { serviceProfileHandler } from './service-profile.js'
+import {
+  commerceCatalogPointerHandler,
+  commerceCatalogSnapshotHandler,
+} from './commerce-catalog.js'
+import { commerceRelationshipClaimHandler } from './commerce-relationship.js'
 
 const handlers: Record<string, RecordHandler> = {
   'com.dinakernel.peerlens.attestation': attestationHandler,
@@ -94,6 +99,9 @@ const handlers: Record<string, RecordHandler> = {
   'com.dinakernel.peerlens.trustPolicy': peerlensPolicyHandler,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsHandler,
   'com.dinakernel.service.profile': serviceProfileHandler,
+  'com.dinakernel.commerce.catalog': commerceCatalogPointerHandler,
+  'com.dinakernel.commerce.catalogSnapshot': commerceCatalogSnapshotHandler,
+  'com.dinakernel.commerce.relationshipClaim': commerceRelationshipClaimHandler,
 }
 
 /**

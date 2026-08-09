@@ -1,0 +1,162 @@
+{
+  "claims": [
+    {
+      "name": "variant_of_product_object",
+      "claim": {
+        "claim_id": "rc-1",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "variant_of",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker"
+      },
+      "error": null
+    },
+    {
+      "name": "manufactured_by_did_object",
+      "claim": {
+        "claim_id": "rc-2",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "manufactured_by",
+        "object": {
+          "did": "did:plc:chairmaker"
+        },
+        "issuer_did": "did:plc:chairmaker"
+      },
+      "error": null
+    },
+    {
+      "name": "temporal_window_ordered",
+      "claim": {
+        "claim_id": "rc-3",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "replaces",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker",
+        "effective_from": "2026-01-01T00:00:00.000Z",
+        "effective_until": "2027-01-01T00:00:00.000Z"
+      },
+      "error": null
+    },
+    {
+      "name": "did_relationship_with_product_object",
+      "claim": {
+        "claim_id": "rc-4",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "manufactured_by",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker"
+      },
+      "error": "relationshipClaim: \"manufactured_by\" relates a product to an OPERATOR — object must carry a did"
+    },
+    {
+      "name": "product_relationship_with_did_object",
+      "claim": {
+        "claim_id": "rc-5",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "variant_of",
+        "object": {
+          "did": "did:plc:chairmaker"
+        },
+        "issuer_did": "did:plc:chairmaker"
+      },
+      "error": "relationshipClaim: \"variant_of\" relates products — object must be a ProductRef"
+    },
+    {
+      "name": "unknown_relationship",
+      "claim": {
+        "claim_id": "rc-6",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "vaguely_related_to",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker"
+      },
+      "error": "relationshipClaim.relationship: unknown relationship"
+    },
+    {
+      "name": "temporal_window_inverted",
+      "claim": {
+        "claim_id": "rc-7",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "replaces",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker",
+        "effective_from": "2027-01-01T00:00:00.000Z",
+        "effective_until": "2026-01-01T00:00:00.000Z"
+      },
+      "error": "relationshipClaim: effective_until must be after effective_from"
+    },
+    {
+      "name": "temporal_window_zero_length",
+      "claim": {
+        "claim_id": "rc-8",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "replaces",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker",
+        "effective_from": "2026-01-01T00:00:00.000Z",
+        "effective_until": "2026-01-01T00:00:00.000Z"
+      },
+      "error": "relationshipClaim: effective_until must be after effective_from"
+    },
+    {
+      "name": "non_utc_timestamp",
+      "claim": {
+        "claim_id": "rc-9",
+        "subject": {
+          "scheme": "gtin",
+          "value": "05012345678900"
+        },
+        "relationship": "replaces",
+        "object": {
+          "scheme": "gtin",
+          "value": "05012345678917"
+        },
+        "issuer_did": "did:plc:chairmaker",
+        "effective_from": "2026-01-01T00:00:00+05:30"
+      },
+      "error": "relationshipClaim.effective_from: must be a canonical ISO 8601 UTC timestamp (Z suffix, optional .mmm)"
+    }
+  ]
+}

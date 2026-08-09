@@ -18,6 +18,9 @@ export interface CommerceStatusHead {
   state: string;
   supplierEpoch: string;
   updatedAt: number;
+  /** §9.11 — when a `delivered` head stops counting as work. Null when the
+   *  state carries no dispute window. */
+  disputeWindowEndsAt: number | null;
 }
 
 export interface CommerceStatusHeadRepository {
@@ -29,6 +32,15 @@ export interface CommerceStatusHeadRepository {
    * order this supplier committed to.
    */
   countNonTerminal(terminalStates: readonly string[]): number;
+  /**
+   * The non-terminal chains themselves, so a caller can scope them by
+   * something this store does not know about (§16.4: which install served
+   * the order). Returns identities only — the head's own fields are the
+   * chain's business, and a caller filtering by order has no use for them.
+   */
+  listNonTerminal(
+    terminalStates: readonly string[],
+  ): { buyerDid: string; purchaseOrderId: string }[];
   /** Insert the genesis head (sequence "0"). False when one exists. */
   initGenesis(head: CommerceStatusHead): boolean;
   /** CAS the head forward against the expected digest. */
@@ -42,6 +54,7 @@ export interface CommerceStatusHeadRepository {
       state: string;
       supplierEpoch: string;
       updatedAt: number;
+      disputeWindowEndsAt: number | null;
     },
   ): boolean;
   /**
@@ -74,6 +87,10 @@ function rowToHead(row: DBRow): CommerceStatusHead {
     state: String(row.state),
     supplierEpoch: String(row.supplier_epoch),
     updatedAt: Number(row.updated_at),
+    disputeWindowEndsAt:
+      row.dispute_window_ends_at === null || row.dispute_window_ends_at === undefined
+        ? null
+        : Number(row.dispute_window_ends_at),
   };
 }
 
@@ -102,12 +119,28 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
     return Number(rows[0]?.c ?? 0);
   }
 
+  listNonTerminal(
+    terminalStates: readonly string[],
+  ): { buyerDid: string; purchaseOrderId: string }[] {
+    const placeholders = terminalStates.map(() => '?').join(', ');
+    return this.db
+      .query<{ buyer_did: string; purchase_order_id: string }>(
+        `SELECT buyer_did, purchase_order_id FROM commerce_status_heads
+           WHERE state NOT IN (${placeholders})`,
+        [...terminalStates],
+      )
+      .map((r) => ({
+        buyerDid: String(r.buyer_did),
+        purchaseOrderId: String(r.purchase_order_id),
+      }));
+  }
+
   initGenesis(head: CommerceStatusHead): boolean {
     const affected = this.db.run(
       `INSERT INTO commerce_status_heads (
          buyer_did, purchase_order_id, head_digest, head_sequence, state,
-         supplier_epoch, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         supplier_epoch, updated_at, dispute_window_ends_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(buyer_did, purchase_order_id) DO NOTHING`,
       [
         head.buyerDid,
@@ -117,6 +150,7 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
         head.state,
         head.supplierEpoch,
         head.updatedAt,
+        head.disputeWindowEndsAt,
       ],
     );
     return affected > 0;
@@ -132,11 +166,13 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
       state: string;
       supplierEpoch: string;
       updatedAt: number;
+      disputeWindowEndsAt: number | null;
     },
   ): boolean {
     const affected = this.db.run(
       `UPDATE commerce_status_heads
-       SET head_digest = ?, head_sequence = ?, state = ?, supplier_epoch = ?, updated_at = ?
+       SET head_digest = ?, head_sequence = ?, state = ?, supplier_epoch = ?, updated_at = ?,
+           dispute_window_ends_at = ?
        WHERE buyer_did = ? AND purchase_order_id = ? AND head_digest = ?`,
       [
         next.headDigest,
@@ -144,6 +180,7 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
         next.state,
         next.supplierEpoch,
         next.updatedAt,
+        next.disputeWindowEndsAt,
         buyerDid,
         purchaseOrderId,
         expectedDigest,
@@ -207,6 +244,15 @@ export class InMemoryCommerceStatusHeadRepository implements CommerceStatusHeadR
     return count;
   }
 
+  listNonTerminal(
+    terminalStates: readonly string[],
+  ): { buyerDid: string; purchaseOrderId: string }[] {
+    const terminal = new Set(terminalStates);
+    return [...this.heads.values()]
+      .filter((h) => !terminal.has(h.state))
+      .map((h) => ({ buyerDid: h.buyerDid, purchaseOrderId: h.purchaseOrderId }));
+  }
+
   initGenesis(head: CommerceStatusHead): boolean {
     const key = this.key(head.buyerDid, head.purchaseOrderId);
     if (this.heads.has(key)) return false;
@@ -249,4 +295,3 @@ export class InMemoryCommerceStatusHeadRepository implements CommerceStatusHeadR
     return true;
   }
 }
-

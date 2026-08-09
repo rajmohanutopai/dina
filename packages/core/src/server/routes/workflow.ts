@@ -29,6 +29,11 @@ import {
   parseCodingGateApprovalPayload,
 } from '../../agent/coding_permit';
 import { getAgentGrantRepository } from '../../agent/grant_repository';
+import { getCommerceRuntime } from '../../commerce/runtime';
+import {
+  admitSupplierRecords,
+  WATERMARK_REFUSAL,
+} from '../../commerce/watermark_gate';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
 import { getPluginInstallRepository } from '../../plugins/registry';
@@ -181,6 +186,26 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
               return s.failEffectfulUnknown(id, msg, result, agentDID, claimId);
             }
             return s.fail(id, msg, agentDID, claimId);
+          }
+          // §16.2 (WS-2.9) — the BUYER's half of the restore fence, and the
+          // last point before a supplier's record becomes the owner's answer.
+          //
+          // The supplier's own fence cannot cover this: a record signed BEFORE
+          // its restore, sitting in a relay queue or on a superseded node,
+          // arrives afterwards genuinely signed and verifying. Only the buyer,
+          // holding the highest epoch it has ever seen from that supplier, can
+          // tell. The watermark table has existed since CMC-1 with nothing
+          // reading it.
+          const stale = refuseStaleSupplierRecords(check.parsed);
+          if (stale !== null) {
+            // Same reading as a schema mismatch: an EFFECTFUL capability may
+            // have placed the order and then returned a stale acknowledgement,
+            // so `failed` would imply nothing happened. Park it as
+            // outcome_unknown with the rejected result retained as evidence.
+            if (isDeclaredEffectful(envelope)) {
+              return s.failEffectfulUnknown(id, stale, result, agentDID, claimId);
+            }
+            return s.fail(id, stale, agentDID, claimId);
           }
         }
         // Go-Core parity: `result_summary` is the human-readable display
@@ -1059,4 +1084,28 @@ function numField(v: unknown): number | undefined {
 
 function j(status: number, body: unknown): CoreResponse {
   return { status, body };
+}
+
+/**
+ * §16.2 (WS-2.9) — refuse a tool result carrying a record from a generation
+ * its supplier has abandoned. Returns the refusal message, or null.
+ *
+ * The supplier is read from EACH RECORD, not from the envelope: a buyer's
+ * outbound call carries no `service_ingress` (that field describes an inbound
+ * query this node answers), and `collect-quotes` returns records from several
+ * suppliers at once. The pair `(supplier_did, supplier_epoch)` travels
+ * together inside each signed record.
+ *
+ * A result carrying no such record passes untouched, which is the ordinary
+ * case for every non-commerce tool.
+ */
+function refuseStaleSupplierRecords(parsed: unknown): string | null {
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return null;
+  const verdict = admitSupplierRecords({
+    watermarks: runtime.watermarks,
+    result: parsed,
+    nowMs: Date.now(),
+  });
+  return verdict.accept ? null : WATERMARK_REFUSAL;
 }

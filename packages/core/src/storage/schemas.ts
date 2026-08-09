@@ -1570,6 +1570,187 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
     // table. TEXT epoch/sequence columns carry canonical integer STRINGS
     // (the wire form) — comparisons happen in JS via BigInt, never SQL.
     sql: `
+      -- commerce_buyer_orders — the BUYER's side of an ambiguous outcome
+      -- (§12.7). Separate from commerce_order_refs, which is the supplier's:
+      -- the two describe one trade from opposite ends and disagree on purpose
+      -- (a supplier's record says what it committed to, a buyer's says what it
+      -- has been able to learn), so one table holding both would have to pick
+      -- a winner. poll_count is persisted because §12.7 requires the
+      -- received_unresolved loop to survive a buyer restart — an in-memory
+      -- counter would reset on relaunch, which is exactly the crash that lost
+      -- the acknowledgement in the first place.
+      -- commerce_settings — buyer and supplier policy (§18.2, §18.3). ONE ROW
+      -- PER KIND: a node acts as one buyer and one supplier, and an id column
+      -- would invite a second profile nothing knows how to choose between.
+      -- Validated on READ as well as write, because these settings gate
+      -- refusals and the row is editable by anything with the database open.
+      -- Credentials never land here: §18.3 asks for credential STATUS.
+      CREATE TABLE IF NOT EXISTS commerce_settings (
+        kind TEXT PRIMARY KEY,
+        settings_json TEXT NOT NULL
+      );
+
+      -- commerce_credentials — connector material (8.3, WS-9.3). THE ONE
+      -- PLACE a connector secret is allowed to be. It lives here, in Tier 0,
+      -- because identity.sqlite is SQLCipher over a DEK derived from the
+      -- master seed: the same encryption at rest that protects the vault. The
+      -- material column is read by exactly one function (useSecret), which
+      -- hands it to a callback and never returns it; every other reader names
+      -- the status columns explicitly, so a SELECT * can never carry a secret
+      -- into a log. last_result is DERIVED from brokered calls rather than
+      -- typed by an owner, because a credential status somebody typed stopped
+      -- being true the moment the other end rotated theirs.
+      -- commerce_idempotency_evidence — 15.5, WS-9.4. What a connector has
+      -- PROVEN about the external system, keyed per (resource, operation):
+      -- proving an ERP deduplicates submit_purchase_order says nothing about
+      -- cancel_purchase_order, and a store keyed only by connector would let
+      -- one probe authorise retries on operations nobody tested. probe_json
+      -- is NULL when the connector merely declared idempotency, which 15.5
+      -- says is not evidence — automatic resubmission stays disabled and the
+      -- ambiguity resolves through 12.7. A row that will not parse reads as
+      -- absent, which fails toward that same default.
+      CREATE TABLE IF NOT EXISTS commerce_idempotency_evidence (
+        resource TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        declared_retention_ms INTEGER NOT NULL,
+        probe_json TEXT,
+        recorded_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (resource, operation)
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_credentials (
+        resource TEXT PRIMARY KEY,
+        install_id TEXT NOT NULL,
+        operations_json TEXT NOT NULL,
+        material TEXT NOT NULL,
+        rotated_at_ms INTEGER NOT NULL,
+        last_result TEXT NOT NULL DEFAULT 'never_used',
+        last_checked_at_ms INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_buyer_orders (
+        supplier_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        -- §12.7: what the QUESTION needs, stored with the order. poll_count is
+        -- a column because the spec requires the re-poll loop to survive a
+        -- restart, and the loop cannot ask anything without the order digest
+        -- and idempotency key. Storing the count and not these made the loop
+        -- durable in name only: after a restart the buyer knew it should ask
+        -- and could not say what about.
+        order_digest TEXT NOT NULL DEFAULT '',
+        idempotency_key TEXT NOT NULL DEFAULT '',
+        -- The protocol version the order was sent at; a reconcile request
+        -- must match it exactly (§9.13).
+        protocol_version TEXT NOT NULL DEFAULT '',
+        -- WHERE to ask. A supplier may offer commerce on a non-default
+        -- listing, and a service query with no service_uri is checked against
+        -- the default one — so without this the re-poll would be refused by
+        -- exactly the suppliers who run more than one listing.
+        service_rkey TEXT NOT NULL DEFAULT '',
+        -- The row's version, for compare-and-swap. Every write is load →
+        -- await → write, so without it the SLOWEST writer wins: a send
+        -- completing after a re-poll settled the order would overwrite a
+        -- terminal acknowledgement with an outcome_unknown.
+        revision INTEGER NOT NULL DEFAULT 0,
+        -- §9.12/§20.4: what an ANSWER about this order must match. Without
+        -- these the buyer validated an acknowledgement's shape and its own
+        -- digest and then believed it, so a supplier could answer the question
+        -- about one order with the acknowledgement for another and have it
+        -- stored as the settled commercial evidence.
+        quote_digest TEXT NOT NULL DEFAULT '',
+        quote_id TEXT NOT NULL DEFAULT '',
+        buyer_did TEXT NOT NULL DEFAULT '',
+        bound_supplier_did TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL,
+        acknowledgement_json TEXT,
+        next_poll_at_ms INTEGER,
+        poll_count INTEGER NOT NULL DEFAULT 0,
+        resubmission_authorized INTEGER NOT NULL DEFAULT 0,
+        protocol_fault TEXT,
+        -- §12.7/§16.2 — the VERIFIED envelope that carried the
+        -- acknowledgement, stored as JSON with envelopeId and signature. This
+        -- makes a later never_received ILLEGAL. Without it the buyer presents
+        -- nothing, the supplier's denial is legal, and never_received is the
+        -- one answer that authorises a resubmission -- a duplicate order.
+        --
+        -- Nullable: an order settled with no transport evidence (an
+        -- in-process double) stores none, and the honest consequence is that
+        -- its never_received stays legal.
+        ack_evidence_json TEXT,
+        -- The order lines AS SENT, kept because §9.11's cumulative-snapshot
+        -- rule is checked by the RECEIVER and cannot be checked without them.
+        -- This is the buyer's own document, not a counterparty claim, so
+        -- there is no trust question in storing it -- only a completeness
+        -- one: verifyStatusLines handed an empty list rejects every status
+        -- that carries lines, which would turn ordinary dispatch into a fork.
+        order_lines_json TEXT,
+        PRIMARY KEY (supplier_did, purchase_order_id)
+      );
+
+      -- commerce_buyer_status_records -- the BUYER's verified copy of the
+      -- supplier's signed status chain (§9.11 fork detection, §16.2 fences).
+      --
+      -- EVERY ACCEPTED RECORD, not just the head. A §16.2 restore fence may
+      -- name a strict ANCESTOR of the buyer's head, and verifyRestoreFence
+      -- takes the whole held chain to decide whether the named predecessor is
+      -- in it. A head-only store could not answer that, so it would have to
+      -- either refuse every fence or accept any of them.
+      --
+      -- THE PRIMARY KEY IS THE CAS. Two concurrent ingests of the same
+      -- sequence cannot both insert, so a supplier that emits two successors
+      -- of one head has exactly one of them recorded and the other detected
+      -- as the fork it is.
+      -- commerce_buyer_quotes -- the BUYER's verified copy of each supplier's
+      -- signed quote chain (§9.8 revisions, §25.3 buyer-side fork detection).
+      --
+      -- SEPARATE FROM commerce_quotes, which is the SUPPLIER's ledger and
+      -- carries use holds: capacity this node is SELLING. One table holding
+      -- both would show a buyer's received quotes on the owner's "quotes I
+      -- issued" screen, and would have to pick a winner between two records
+      -- that describe one negotiation from opposite ends.
+      --
+      -- EVERY REVISION, not just the head, for the same reason the buyer's
+      -- status chain keeps every record: succession is checked link by link,
+      -- so a buyer handed revision 5 while holding revision 2 can neither
+      -- verify it nor honestly call it a fork.
+      --
+      -- THE PRIMARY KEY IS THE CAS. Two concurrent ingests of one revision
+      -- cannot both insert, so a supplier emitting two successors of one head
+      -- has exactly one recorded and the other detected as the fork it is.
+      CREATE TABLE IF NOT EXISTS commerce_buyer_quotes (
+        supplier_did TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        -- Canonical string on the wire; the integer is what orders the chain.
+        -- Comparing '10' with '9' as text picks the wrong head.
+        quote_revision TEXT NOT NULL,
+        revision_num INTEGER NOT NULL,
+        quote_digest TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        accepted_at INTEGER NOT NULL,
+        PRIMARY KEY (supplier_did, quote_id, revision_num)
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_buyer_status_records (
+        supplier_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        -- Canonical string form on the wire; the integer is what orders the
+        -- chain. Both are stored so neither has to be re-derived: comparing
+        -- '10' with '9' as text picks the wrong head.
+        sequence TEXT NOT NULL,
+        sequence_num INTEGER NOT NULL,
+        status_digest TEXT NOT NULL,
+        state TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        -- The verified envelope that delivered this record, same shape and
+        -- same reason as commerce_buyer_orders.ack_evidence_json. §12.7's
+        -- reconcile presents held STATUS receipts alongside the
+        -- acknowledgement, and a record with no envelope is a record the
+        -- buyer cannot attribute.
+        evidence_json TEXT,
+        accepted_at INTEGER NOT NULL,
+        PRIMARY KEY (supplier_did, purchase_order_id, sequence_num)
+      );
+
       CREATE TABLE IF NOT EXISTS commerce_order_refs (
         buyer_did TEXT NOT NULL,
         purchase_order_id TEXT NOT NULL,
@@ -1585,6 +1766,23 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- interpretation could disagree inside one chain. The major is
         -- derived from this when drain counting needs it.
         pinned_version TEXT NOT NULL,
+        -- §9.13: the plugin manifest CID serving this supplier at admission,
+        -- or '' when no plugin served the order. A lifecycle request must be
+        -- parsed under the contract the order was opened against, and after a
+        -- plugin update the install's CURRENT manifest is no longer that
+        -- contract. pinned_version says which protocol major; this says
+        -- which manifest implements it, and it is the key the
+        -- drain-authorization table already uses.
+        serving_manifest_cid TEXT NOT NULL DEFAULT '',
+        -- §16.4: WHICH INSTALL served this order, alongside the manifest CID
+        -- above. The two answer different questions and only one of them
+        -- survives a plugin update: after an update the CID moves on while the
+        -- install id does not, so "does this install still owe anybody
+        -- anything" cannot be answered by the CID. Without it the uninstall
+        -- obligation count was node-wide, which over-refuses on a node running
+        -- more than one commerce plugin — safe, but it made an operator resolve
+        -- another pack's orders to remove this one.
+        serving_install_id TEXT NOT NULL DEFAULT '',
         -- §16.2: the commerce epoch this order was ADMITTED under. Chain
         -- creation needs it: at genesis there is no head to compare against,
         -- so "does this order predate the restore" can only be answered by
@@ -1616,6 +1814,29 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON commerce_order_refs(state, effect_phase, decision_deadline_at)
         WHERE state = 'reserved';
 
+      -- commerce_catalog_pointers — what THIS node has actually published
+      -- (§10.2, WS-7.8). One row per catalog, because the pointer IS the
+      -- mutable head and a second row would be a second head.
+      --
+      -- WHY THE NODE KEEPS ITS OWN COPY. The pointer lives in the repo, and
+      -- reading it back needs a network round trip on a surface an owner opens
+      -- to see what they sell. Worse, the CAS the next publication needs is the
+      -- CID of the row currently there — asking the CALLER to carry it means
+      -- the caller is the authority on this node's own publication history,
+      -- which is a fact this node should not have to be told.
+      CREATE TABLE IF NOT EXISTS commerce_catalog_pointers (
+        catalog_id TEXT PRIMARY KEY,
+        -- The pointer record as published, so the owner card can render what
+        -- was said rather than a summary of it.
+        pointer_json TEXT NOT NULL,
+        -- The repo CID of that row: the swap value the NEXT publication CASes
+        -- on. Empty only in the impossible case of a write that reported none.
+        pointer_cid TEXT NOT NULL,
+        snapshot_digest TEXT NOT NULL DEFAULT '',
+        withdrawn INTEGER NOT NULL DEFAULT 0,
+        published_at_ms INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS commerce_quote_heads (
         quote_id TEXT PRIMARY KEY,
         buyer_did TEXT NOT NULL,
@@ -1642,6 +1863,23 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         PRIMARY KEY (quote_id, purchase_order_id)
       );
 
+      -- §15.2b — decisions a supplier pack has made and a human has not yet
+      -- agreed to. Beside the other durable commercial memory rather than in
+      -- the workflow engine: losing this row strands a reserved order with a
+      -- buyer waiting, which is a different cost from losing a prompt.
+      CREATE TABLE IF NOT EXISTS commerce_pending_decisions (
+        buyer_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        -- The runner's answer VERBATIM. Settlement replays exactly these
+        -- bytes, so a pack that revises its proposal after the owner has been
+        -- shown one cannot have the new answer signed under the old consent.
+        runner_result_json TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (buyer_did, purchase_order_id)
+      );
+
       CREATE TABLE IF NOT EXISTS commerce_status_heads (
         buyer_did TEXT NOT NULL,
         purchase_order_id TEXT NOT NULL,
@@ -1650,6 +1888,15 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         state TEXT NOT NULL,
         supplier_epoch TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
+        -- Epoch ms at which a delivered head stops being work (§9.11), or
+        -- NULL when the state carries no window. DENORMALISED onto the head
+        -- because the terminality question is asked by callers that hold no
+        -- receipt: continuity release and uninstall both need "is this chain
+        -- finished", and without the deadline here they counted every
+        -- delivered order as unfinished FOR EVER -- pinning prior manifest
+        -- CIDs alive and blocking uninstall on orders that completed
+        -- normally.
+        dispute_window_ends_at INTEGER,
         PRIMARY KEY (buyer_did, purchase_order_id)
       );
 
@@ -1734,6 +1981,15 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         result_schema_json TEXT NOT NULL,
         params_schema_json TEXT NOT NULL DEFAULT 'null',
         max_context_items INTEGER,
+        -- §9.13 — the protocol version the PRIOR manifest declared.
+        --
+        -- A lifecycle continuation across a major must be answered by the code
+        -- that took the order, not by whatever is installed now. Without this
+        -- the row said which CID was authorized and nothing about which
+        -- CONTRACT it speaks, so a continuation dispatched to the current
+        -- adapter and a runner had no way to know it was answering for an
+        -- older major. Empty for rows written before the column existed.
+        prior_version TEXT NOT NULL DEFAULT '',
         expires_at INTEGER,
         created_at INTEGER NOT NULL,
         PRIMARY KEY (install_id, previous_cid, capability_id, kind)

@@ -7,11 +7,11 @@ import { commerceRecordDigest } from '@dina/commerce-protocol';
 
 import {
   CommerceEpochService,
+  CommerceTransaction,
   InMemoryCommerceQuoteLedgerRepository,
   QuoteFamilyStore,
   InMemoryCommerceReceiptRepository,
 } from '../../src/commerce';
-
 
 import { hash } from './helpers';
 
@@ -42,9 +42,15 @@ function makeService(repo: FakeRepo) {
   const quotes = new InMemoryCommerceQuoteLedgerRepository();
   const receipts = new InMemoryCommerceReceiptRepository();
   const service = new CommerceEpochService({
-    tx: (fn) => fn(),
-    families: new QuoteFamilyStore({ ledger: quotes, currentEpoch: () => '1',
-    supplierDid: () => SUPPLIER_DID, now: () => T0 }),
+    transaction: new CommerceTransaction((fn: () => void) => {
+      fn();
+    }),
+    families: new QuoteFamilyStore({
+      ledger: quotes,
+      currentEpoch: () => '1',
+      supplierDid: () => SUPPLIER_DID,
+      now: () => T0,
+    }),
     receipts,
     businessDid: SUPPLIER_DID,
     fetchLive: repo.fetchLive,
@@ -123,9 +129,15 @@ describe('CommerceEpochService', () => {
     const loserQuotes = new InMemoryCommerceQuoteLedgerRepository();
     const loserReceipts = new InMemoryCommerceReceiptRepository();
     const loser = new CommerceEpochService({
-      tx: (fn) => fn(),
-      families: new QuoteFamilyStore({ ledger: loserQuotes, currentEpoch: () => '1',
-    supplierDid: () => SUPPLIER_DID, now: () => T0 }),
+      transaction: new CommerceTransaction((fn: () => void) => {
+        fn();
+      }),
+      families: new QuoteFamilyStore({
+        ledger: loserQuotes,
+        currentEpoch: () => '1',
+        supplierDid: () => SUPPLIER_DID,
+        now: () => T0,
+      }),
       receipts: loserReceipts,
       businessDid: SUPPLIER_DID,
       fetchLive: async () => {
@@ -161,9 +173,10 @@ describe('CommerceEpochService', () => {
       ...theirs,
       epoch_digest: commerceRecordDigest(
         'epoch',
-        Object.fromEntries(
-          Object.entries(theirs).filter(([k]) => k !== 'epoch_digest'),
-        ) as Record<string, unknown>,
+        Object.fromEntries(Object.entries(theirs).filter(([k]) => k !== 'epoch_digest')) as Record<
+          string,
+          unknown
+        >,
         hash,
       ),
     } as CommerceEpochRecord;
@@ -185,11 +198,13 @@ describe('CommerceEpochService', () => {
     let publishes = 0;
     const makeProbe = (live: CommerceEpochRecord) =>
       new CommerceEpochService({
-        tx: (fn) => fn(),
+        transaction: new CommerceTransaction((fn: () => void) => {
+          fn();
+        }),
         families: new QuoteFamilyStore({
           ledger: new InMemoryCommerceQuoteLedgerRepository(),
           currentEpoch: () => '1',
-    supplierDid: () => SUPPLIER_DID,
+          supplierDid: () => SUPPLIER_DID,
           now: () => T0,
         }),
         receipts: new InMemoryCommerceReceiptRepository(),

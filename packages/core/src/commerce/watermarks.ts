@@ -66,4 +66,3 @@ export class InMemoryCommerceEpochWatermarkRepository implements CommerceEpochWa
     return current;
   }
 }
-

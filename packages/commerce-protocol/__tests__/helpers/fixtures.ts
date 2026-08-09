@@ -87,7 +87,11 @@ export function makeSignedQuote(options: QuoteFixtureOptions = {}): SignedQuote 
     unit_price: inr('500'),
     stock_status: 'available',
   };
-  const subtotal = computeLineSubtotal(lineBase.unit_price, lineBase.quantity, lineBase.price_basis);
+  const subtotal = computeLineSubtotal(
+    lineBase.unit_price,
+    lineBase.quantity,
+    lineBase.price_basis,
+  );
   if (subtotal.error || !subtotal.value) throw new Error(`fixture: ${String(subtotal.error)}`);
   const line: SignedQuoteLine = { ...lineBase, line_subtotal: subtotal.value };
 

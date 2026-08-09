@@ -1,0 +1,173 @@
+{
+  "note": "A \u00a710.5 search candidate as a catalog AppView emits it, frozen so a second implementation can be checked rather than trusted. The AppView side asserts its projection produces exactly `candidate`; the protocol side asserts its validator accepts that same object and refuses each `invalid` case with the stated reason.",
+  "candidate": {
+    "supplier_did": "did:plc:chairmaker99",
+    "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+    "service_rkey": "self",
+    "product": {
+      "scheme": "manufacturer_sku",
+      "value": "CHAIR-1",
+      "issuer_did": "did:plc:chairmaker99"
+    },
+    "catalog_snapshot_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "matched_fields": ["identifier", "category"],
+    "indicative_price": {
+      "currency": "INR",
+      "minor_units": "50000"
+    },
+    "fulfilment_regions": [
+      {
+        "scheme": "admin_area",
+        "value": "IN-KA"
+      }
+    ],
+    "generated_at": "2026-08-08T09:00:00.000Z",
+    "valid_until": "2026-09-08T09:00:00.000Z",
+    "retrieval_score_bp": 8000
+  },
+  "invalid": [
+    {
+      "name": "no_matched_fields",
+      "value": {
+        "supplier_did": "did:plc:chairmaker99",
+        "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+        "service_rkey": "self",
+        "product": {
+          "scheme": "manufacturer_sku",
+          "value": "CHAIR-1",
+          "issuer_did": "did:plc:chairmaker99"
+        },
+        "catalog_snapshot_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "matched_fields": [],
+        "indicative_price": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "fulfilment_regions": [
+          {
+            "scheme": "admin_area",
+            "value": "IN-KA"
+          }
+        ],
+        "generated_at": "2026-08-08T09:00:00.000Z",
+        "valid_until": "2026-09-08T09:00:00.000Z",
+        "retrieval_score_bp": 8000
+      },
+      "expect": "candidate.matched_fields: at least one field must be named"
+    },
+    {
+      "name": "unattributed_scoped_identifier",
+      "value": {
+        "supplier_did": "did:plc:chairmaker99",
+        "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+        "service_rkey": "self",
+        "product": {
+          "scheme": "manufacturer_sku",
+          "value": "CHAIR-1"
+        },
+        "catalog_snapshot_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "matched_fields": ["identifier", "category"],
+        "indicative_price": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "fulfilment_regions": [
+          {
+            "scheme": "admin_area",
+            "value": "IN-KA"
+          }
+        ],
+        "generated_at": "2026-08-08T09:00:00.000Z",
+        "valid_until": "2026-09-08T09:00:00.000Z",
+        "retrieval_score_bp": 8000
+      },
+      "expect": "candidate.product: product: scoped scheme \"manufacturer_sku\" requires issuer_did \u2014 product.issuer_did: must be a non-empty string"
+    },
+    {
+      "name": "score_out_of_range",
+      "value": {
+        "supplier_did": "did:plc:chairmaker99",
+        "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+        "service_rkey": "self",
+        "product": {
+          "scheme": "manufacturer_sku",
+          "value": "CHAIR-1",
+          "issuer_did": "did:plc:chairmaker99"
+        },
+        "catalog_snapshot_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "matched_fields": ["identifier", "category"],
+        "indicative_price": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "fulfilment_regions": [
+          {
+            "scheme": "admin_area",
+            "value": "IN-KA"
+          }
+        ],
+        "generated_at": "2026-08-08T09:00:00.000Z",
+        "valid_until": "2026-09-08T09:00:00.000Z",
+        "retrieval_score_bp": 10001
+      },
+      "expect": "candidate.retrieval_score_bp: must be an integer in [0, 10000]"
+    },
+    {
+      "name": "fractional_score",
+      "value": {
+        "supplier_did": "did:plc:chairmaker99",
+        "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+        "service_rkey": "self",
+        "product": {
+          "scheme": "manufacturer_sku",
+          "value": "CHAIR-1",
+          "issuer_did": "did:plc:chairmaker99"
+        },
+        "catalog_snapshot_ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "matched_fields": ["identifier", "category"],
+        "indicative_price": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "fulfilment_regions": [
+          {
+            "scheme": "admin_area",
+            "value": "IN-KA"
+          }
+        ],
+        "generated_at": "2026-08-08T09:00:00.000Z",
+        "valid_until": "2026-09-08T09:00:00.000Z",
+        "retrieval_score_bp": 0.5
+      },
+      "expect": "candidate.retrieval_score_bp: must be an integer in [0, 10000]"
+    },
+    {
+      "name": "missing_snapshot_ref",
+      "value": {
+        "supplier_did": "did:plc:chairmaker99",
+        "service_uri": "at://did:plc:chairmaker99/com.dinakernel.service.profile/self",
+        "service_rkey": "self",
+        "product": {
+          "scheme": "manufacturer_sku",
+          "value": "CHAIR-1",
+          "issuer_did": "did:plc:chairmaker99"
+        },
+        "matched_fields": ["identifier", "category"],
+        "indicative_price": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "fulfilment_regions": [
+          {
+            "scheme": "admin_area",
+            "value": "IN-KA"
+          }
+        ],
+        "generated_at": "2026-08-08T09:00:00.000Z",
+        "valid_until": "2026-09-08T09:00:00.000Z",
+        "retrieval_score_bp": 8000
+      },
+      "expect": "candidate.catalog_snapshot_ref: must be a non-empty string"
+    }
+  ]
+}

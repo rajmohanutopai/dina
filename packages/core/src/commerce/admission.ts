@@ -32,20 +32,31 @@ import {
   verifyQuoteRevisionExtends,
   checkProtocolVersion,
   commerceRecordDigest,
-  validatePurchaseOrderProposal,
   validateSignedQuote,
   verifyOrderAgainstQuote,
   type OrderAcknowledgement,
   type PurchaseOrderProposal,
   type Sha256Fn,
   type SignedQuote,
+  readPurchaseOrderProposal,
 } from '@dina/commerce-protocol';
 
 import { type CommerceOrderStore } from './commerce_order';
-import { CommerceIntegrityError, type QuoteFamily, type QuoteFamilyStore, type QuoteRefusal } from './quote_family';
+import {
+  CommerceIntegrityError,
+  type QuoteFamily,
+  type QuoteFamilyStore,
+  type QuoteRefusal,
+} from './quote_family';
+import { receivedFrom } from './receipt_evidence';
+import {
+  rehydrateAcknowledgement,
+  rehydratePurchaseOrder,
+  rehydrateQuoteRequest,
+  rehydrateSignedQuote,
+} from './rehydrate';
 
 import type { CommerceReceiptRepository } from './receipts';
-import type { TxRunner } from '../run/tx';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -53,8 +64,49 @@ export type AdmissionOutcome =
   | { kind: 'replay'; acknowledgement: OrderAcknowledgement }
   | { kind: 'processing'; retryAfterSeconds: number }
   | { kind: 'conflict'; error: string }
-  | { kind: 'rejected'; acknowledgement: OrderAcknowledgement }
+  | {
+      kind: 'rejected';
+      acknowledgement: OrderAcknowledgement;
+      /**
+       * OPERATOR-FACING, and never sent (§14.2).
+       *
+       * The wire `reason_code` is deliberately non-disclosing: `quote_unknown`
+       * covers an expired quote, a quote this node never held, and a retained
+       * record it could not read back, because telling a stranger which one
+       * would let them probe the supplier's ledger. That is right for the
+       * counterparty and wrong for the node's OWN operator, who otherwise
+       * debugs a live refusal with no more information than an attacker has.
+       *
+       * Writing the disaster-recovery scenario cost an hour to exactly this:
+       * a clock sitting on the quote's `valid_until` answered `quote_unknown`,
+       * which reads as "no such quote" and sends you looking in the wrong
+       * place. The bridge sends the CODE; this stays home.
+       */
+      detail: string;
+    }
   | { kind: 'reserved' };
+
+/**
+ * Why the recovery sweeper could not decide an expired reservation.
+ *
+ * Reported rather than skipped: a sweep that answers "0 timed out" must not
+ * read the same as one where every row is unreachable. A silent skip leaves
+ * the reservation in the expired set for ever, its capacity held and the
+ * buyer's reconcile answering `received_processing` with nobody watching.
+ */
+export type AdmissionRecoveryReason = 'reference_unloadable';
+
+export interface AdmissionRecoverySkip {
+  purchaseOrderId: string;
+  reason: AdmissionRecoveryReason;
+}
+
+export interface AdmissionRecoverySweep {
+  /** Orders decided `rejected(decision_timeout)` with their holds refunded. */
+  timedOut: string[];
+  /** Expired reservations this sweep could NOT resolve. Should be empty. */
+  stuck: AdmissionRecoverySkip[];
+}
 
 export type SupplierDecision =
   | { kind: 'accepted'; supplierOrderId: string; externalRef?: string }
@@ -62,7 +114,6 @@ export type SupplierDecision =
   | { kind: 'counterproposal'; replacementQuote: SignedQuote };
 
 export interface AdmissionEngineDeps {
-  tx: TxRunner;
   /**
    * Order state as an aggregate store. The raw reference repository is
    * deliberately not a dependency — `CommerceOrder.decide()` is worthless
@@ -119,7 +170,12 @@ export interface AdmissionEngineDeps {
    * Returning an error rolls the whole decision back: an accepted order
    * without a chain is exactly the state this closes.
    */
-  createAcceptedGenesisInTx?: (buyerDid: string, purchaseOrderId: string) => { error: string } | null;
+  createAcceptedGenesisInTx?: (
+    buyerDid: string,
+    purchaseOrderId: string,
+    /** The state the chain opens at — see the engine's own note. */
+    openAt: 'accepted' | 'rejected',
+  ) => { error: string } | null;
 }
 
 function isoNow(nowMs: number): string {
@@ -199,18 +255,14 @@ export class CommerceAdmissionEngine {
    * the head; revision N+1 must extend the stored head (the only
    * place a valid revision can be born). Persists the quote receipt.
    */
-  registerSignedQuote(quote: SignedQuote): string | null {
-    let error: string | null = null;
-    this.deps.tx(() => {
-      // The ordinary signing path has no third party to compare against —
-      // the supplier is signing a quote it composed for a buyer it chose.
-      // Stating `quote.buyer_did` is a no-op TODAY and is deliberate: it is
-      // the seam where the still-open request-receipt binding will supply a
-      // real expectation (the buyer named on the retained quote request),
-      // and it forces every future caller to answer the question.
-      error = this.registerSignedQuoteInTx(quote, quote.buyer_did);
-    });
-    return error;
+  registerSignedQuoteForOwnBuyer(quote: SignedQuote): string | null {
+    // The ordinary signing path has no third party to compare against — the
+    // supplier is signing a quote it composed for a buyer it chose. Stating
+    // `quote.buyer_did` is a no-op TODAY and is deliberate: it is the seam
+    // where the still-open request-receipt binding will supply a real
+    // expectation (the buyer named on the retained quote request), and it
+    // forces every future caller to answer the question.
+    return this.registerSignedQuoteInTx(quote, quote.buyer_did);
   }
 
   /**
@@ -272,10 +324,28 @@ export class CommerceAdmissionEngine {
    * buyer. `authenticatedBuyerDid` comes from the D2D envelope — the
    * body value is checked against it, never trusted (§9.7).
    */
-  admitOrder(proposal: unknown, authenticatedBuyerDid: string): AdmissionOutcome {
-    const structural = validatePurchaseOrderProposal(proposal, hash);
-    if (structural) return { kind: 'conflict', error: structural };
-    const order = proposal as unknown as PurchaseOrderProposal;
+  /**
+   * `context.servingManifestCid` is the plugin manifest CID serving this
+   * supplier at admission (§9.13). Optional because a supplier need not be
+   * plugin-backed at all; when absent the order records `''` and no
+   * prior-manifest lifecycle routing is possible for it — which is correct,
+   * since nothing served it under a contract that could later be superseded.
+   *
+   * Supplied by the CALLER rather than read from a node-wide setting: a node
+   * may run several supplier plugins, and stamping an order with the wrong
+   * one would route its lifecycle requests to another plugin's schemas.
+   */
+  admitOrderInTx(
+    proposal: unknown,
+    authenticatedBuyerDid: string,
+    context?: { servingManifestCid?: string; servingInstallId?: string },
+  ): AdmissionOutcome {
+    // Validate and TYPE in one step (WS-0.7): the reader returns the order
+    // itself, so there is no cast for a later reader to mistake for an
+    // unchecked one.
+    const read = readPurchaseOrderProposal(proposal, hash);
+    if (!read.ok) return { kind: 'conflict', error: read.error };
+    const order = read.order;
 
     if (order.buyer_did !== authenticatedBuyerDid) {
       return {
@@ -294,14 +364,36 @@ export class CommerceAdmissionEngine {
       };
     }
 
-    let outcome: AdmissionOutcome = { kind: 'reserved' };
-    this.deps.tx(() => {
-      outcome = this.admitInTx(order);
-    });
-    return outcome;
+    return this.admitInTx(
+      order,
+      {
+        manifestCid: context?.servingManifestCid ?? '',
+        installId: context?.servingInstallId ?? '',
+      },
+      authenticatedBuyerDid,
+    );
   }
 
-  private admitInTx(order: PurchaseOrderProposal): AdmissionOutcome {
+  admitInTx(
+    order: PurchaseOrderProposal,
+    /**
+     * WHO served this order, as ONE value rather than two positional strings.
+     * The manifest CID and the install id are both plain strings and mean
+     * opposite things to §9.13 (route under the contract the order opened
+     * against) and §16.4 (is this INSTALL still on the hook) — side by side
+     * they are a transposition waiting to happen, and the compiler would have
+     * had nothing to say about it.
+     */
+    serving: { manifestCid: string; installId: string },
+    /**
+     * §9.12 — who actually handed this node the document, for the arrival
+     * evidence. The gate above has already bound it to `order.buyer_did`, so
+     * reading the order's own field here would give the same answer today —
+     * and would be a second read that could drift if that gate ever changed.
+     * One value, passed down.
+     */
+    authenticatedBuyerDid: string,
+  ): AdmissionOutcome {
     const { orders } = this.deps;
 
     // STEP 1 — replay lookup by BOTH keys, conflicts before any use check.
@@ -323,12 +415,19 @@ export class CommerceAdmissionEngine {
         };
       }
       if (byOrderId.state === 'decided') {
-        return {
-          kind: 'replay',
-          acknowledgement: JSON.parse(
-            byOrderId.acknowledgementJson ?? 'null',
-          ) as OrderAcknowledgement,
-        };
+        // WS-2.2 — the stored answer is re-validated, not cast. A replayed
+        // submission receives this verbatim as the supplier's commitment, so
+        // an unreadable one must be a REFUSAL rather than a null handed back
+        // as "here is what we agreed". `JSON.parse('null') as
+        // OrderAcknowledgement` did exactly that, and a corrupt column threw.
+        const stored = rehydrateAcknowledgement(byOrderId.acknowledgementJson, hash);
+        if (!stored.ok) {
+          return {
+            kind: 'conflict',
+            error: `admission: stored acknowledgement unreadable — store integrity failure (${stored.error})`,
+          };
+        }
+        return { kind: 'replay', acknowledgement: stored.value };
       }
       return {
         kind: 'processing',
@@ -342,7 +441,13 @@ export class CommerceAdmissionEngine {
     // does, nor forget one.
     const family = this.deps.families.load(order.quote_id);
     if (family === null) {
-      return this.recordAdmissionRejection(order, 'quote_unknown');
+      return this.recordAdmissionRejection(
+        order,
+        serving,
+        'quote_unknown',
+        undefined,
+        `no quote family for quote_id "${order.quote_id}"`,
+      );
     }
     const verdict = family.admits(
       order,
@@ -354,12 +459,21 @@ export class CommerceAdmissionEngine {
       // Two refusals carry more than a reason code, so they are named
       // here rather than flattened through the table.
       if (verdict.refusal === 'quote_voided' || verdict.refusal === 'stale_epoch') {
-        return this.rejectVoidedFamily(order, family);
+        return this.rejectVoidedFamily(order, serving, family);
       }
       if (verdict.refusal === 'quote_superseded') {
-        return this.recordAdmissionRejection(order, 'quote_superseded', family.headDigest);
+        return this.recordAdmissionRejection(order, serving, 'quote_superseded', family.headDigest);
       }
-      return this.recordAdmissionRejection(order, ADMISSION_REASON[verdict.refusal]);
+      return this.recordAdmissionRejection(
+        order,
+        serving,
+        ADMISSION_REASON[verdict.refusal],
+        undefined,
+        // The family's OWN refusal, which the wire code flattens. `expired`
+        // and `unknown` both leave as `quote_unknown`, and only one of them
+        // means what an operator reads it to mean.
+        `quote family refused: ${verdict.refusal}`,
+      );
     }
     const quote = verdict.value;
 
@@ -368,12 +482,43 @@ export class CommerceAdmissionEngine {
     // requestDigest, and it carries the delivery projection).
     const requestReceipt = this.deps.receipts.get(quote.request_digest);
     if (!requestReceipt || requestReceipt.domain !== 'request') {
-      return this.recordAdmissionRejection(order, 'quote_unknown');
+      return this.recordAdmissionRejection(
+        order,
+        serving,
+        'quote_unknown',
+        undefined,
+        // NOT "no such quote". The quote is right there; what is missing is
+        // the retained REQUEST this node needs to check the order's delivery
+        // projection against the priced one. An operator told `quote_unknown`
+        // looks at the quote ledger and finds everything in order.
+        `retained request receipt missing for request_digest "${quote.request_digest}"`,
+      );
     }
-    const request = JSON.parse(requestReceipt.recordJson) as {
-      delivery: { projection: Record<string, unknown> };
-    };
-    const binding = verifyOrderAgainstQuote(order, quote, request.delivery.projection);
+    // WS-2.2 — through the ingress validator, not a cast.
+    //
+    // This record is the YARDSTICK: the order's delivery is checked against
+    // the priced projection it carries. `JSON.parse(…) as {delivery: …}` made
+    // a projection edited in the store after writing into the standard the
+    // order had to match, and a mismatched order would have passed.
+    // `validateQuoteRequest` re-derives the request digest, which is the one
+    // corruption a shape check cannot see. It also removes a throw from inside
+    // the transaction, on the inbound path, where everything else returns a
+    // typed refusal.
+    const rehydrated = rehydrateQuoteRequest(requestReceipt.recordJson, hash);
+    if (!rehydrated.ok) {
+      return this.recordAdmissionRejection(
+        order,
+        serving,
+        'quote_unknown',
+        undefined,
+        `retained request receipt unreadable: ${rehydrated.error}`,
+      );
+    }
+    const binding = verifyOrderAgainstQuote(
+      order,
+      quote,
+      rehydrated.value.delivery.projection as unknown as Record<string, unknown>,
+    );
     if (binding) {
       // §9.9 reserves projection_mismatch for projection changes; other
       // quote-binding violations (total, terms, all-or-none lines) get
@@ -382,14 +527,14 @@ export class CommerceAdmissionEngine {
       const reason = binding.includes('projection')
         ? 'projection_mismatch'
         : 'order_binding_mismatch';
-      return this.recordAdmissionRejection(order, reason);
+      return this.recordAdmissionRejection(order, serving, reason);
     }
 
     // Capacity check-and-hold — one call, so the count and the hold
     // cannot drift apart (atomic within the surrounding tx).
     const held = family.hold(order.purchase_order_id);
     if (!held.ok) {
-      return this.recordAdmissionRejection(order, ADMISSION_REASON[held.refusal]);
+      return this.recordAdmissionRejection(order, serving, ADMISSION_REASON[held.refusal]);
     }
     const nowMs = this.deps.now();
     const created = this.deps.orders.createReserved({
@@ -403,6 +548,9 @@ export class CommerceAdmissionEngine {
       // continuation record for this order is emitted at it. A major alone
       // let a 1.1 order receive 1.0 records.
       pinnedVersion: order.protocol_version,
+      // §9.13 — which manifest's contract this order was opened against.
+      servingManifestCid: serving.manifestCid,
+      servingInstallId: serving.installId,
       // §16.2 — stamped at admission so chain CREATION can later ask
       // whether this order predates a restore. At genesis there is no head
       // to ask, so the order reference is the only thing that knows.
@@ -422,7 +570,10 @@ export class CommerceAdmissionEngine {
       quoteId: order.quote_id,
       purchaseOrderId: order.purchase_order_id,
       recordJson: JSON.stringify(order),
-      evidenceJson: '{}',
+      // §9.12 (WS-2.8) — the proposal ARRIVED. The buyer is the authenticated
+      // sender, never a field the proposal chose, so this records who actually
+      // handed this node the document rather than who the document says.
+      evidenceJson: receivedFrom({ fromDid: authenticatedBuyerDid, observedAt: nowMs }),
       createdAt: nowMs,
     });
     return { kind: 'reserved' };
@@ -435,8 +586,15 @@ export class CommerceAdmissionEngine {
    */
   private recordAdmissionRejection(
     order: PurchaseOrderProposal,
+    serving: { manifestCid: string; installId: string },
     reasonCode: string,
     currentQuoteDigest?: string,
+    /**
+     * What the OPERATOR is told, when the wire code hides it. Defaults to the
+     * wire code, so a refusal that has nothing extra to say does not have to
+     * invent something.
+     */
+    detail?: string,
   ): AdmissionOutcome {
     const nowMs = this.deps.now();
     const acknowledgement = this.buildAcknowledgement(
@@ -461,6 +619,9 @@ export class CommerceAdmissionEngine {
       // continuation record for this order is emitted at it. A major alone
       // let a 1.1 order receive 1.0 records.
       pinnedVersion: order.protocol_version,
+      // §9.13 — which manifest's contract this order was opened against.
+      servingManifestCid: serving.manifestCid,
+      servingInstallId: serving.installId,
       // §16.2 — stamped at admission so chain CREATION can later ask
       // whether this order predates a restore. At genesis there is no head
       // to ask, so the order reference is the only thing that knows.
@@ -485,8 +646,8 @@ export class CommerceAdmissionEngine {
     if (!recorded.ok) {
       throw new CommerceIntegrityError(`rejection could not be recorded: ${recorded.refusal}`);
     }
-    this.persistAcknowledgement(order, acknowledgement, nowMs);
-    return { kind: 'rejected', acknowledgement };
+    this.persistAcknowledgement(order, acknowledgement, nowMs, order.quote_id);
+    return { kind: 'rejected', acknowledgement, detail: detail ?? reasonCode };
   }
 
   // -------------------------------------------------------------------------
@@ -494,13 +655,9 @@ export class CommerceAdmissionEngine {
   // -------------------------------------------------------------------------
 
   /** Durably record that the external boundary is about to be touched. */
-  markEffectStarted(buyerDid: string, purchaseOrderId: string): boolean {
-    let marked = false;
-    this.deps.tx(() => {
-      const order = this.deps.orders.load(buyerDid, purchaseOrderId);
-      marked = order !== null && order.markEffectStarted().ok;
-    });
-    return marked;
+  markEffectStartedInTx(buyerDid: string, purchaseOrderId: string): boolean {
+    const order = this.deps.orders.load(buyerDid, purchaseOrderId);
+    return order !== null && order.markEffectStarted().ok;
   }
 
   /**
@@ -508,7 +665,7 @@ export class CommerceAdmissionEngine {
    * state, and hold settlement land in ONE transaction (a crash can
    * never separate the answer from its capacity effect).
    */
-  decideOrder(
+  decideOrderInTx(
     buyerDid: string,
     purchaseOrderId: string,
     decision: SupplierDecision,
@@ -516,7 +673,11 @@ export class CommerceAdmissionEngine {
     let result: { acknowledgement: OrderAcknowledgement } | { error: string } = {
       error: 'admission: unknown order',
     };
-    this.deps.tx(() => {
+    // The body is kept as an IIFE rather than flattened: it uses early
+    // `return` in a dozen places to mean "this is the answer", and rewriting
+    // those into assignments is where a refactor of decision code loses a
+    // branch. The shape is unchanged; only the transaction moved out.
+    ((): void => {
       const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
       if (refOrder === null) {
         result = { error: 'admission: unknown order' };
@@ -524,9 +685,14 @@ export class CommerceAdmissionEngine {
       }
       const ref = refOrder.ref;
       if (ref.state === 'decided') {
-        result = {
-          acknowledgement: JSON.parse(ref.acknowledgementJson ?? 'null') as OrderAcknowledgement,
-        };
+        // Same rule on the decision path: a decided order whose stored answer
+        // cannot be read is an integrity failure, not an answer.
+        const stored = rehydrateAcknowledgement(ref.acknowledgementJson, hash);
+        result = stored.ok
+          ? { acknowledgement: stored.value }
+          : {
+              error: `admission: stored acknowledgement unreadable — store integrity failure (${stored.error})`,
+            };
         return;
       }
       const orderReceipt = this.deps.receipts.get(ref.orderDigest);
@@ -534,7 +700,15 @@ export class CommerceAdmissionEngine {
         result = { error: 'admission: order receipt missing — store integrity failure' };
         return;
       }
-      const order = JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal;
+      // Rehydrate through the INGRESS validator, not a cast (WS-0.7). A
+      // receipt this engine cannot re-validate is store corruption, and the
+      // decision path was written assuming ingress already checked it.
+      const rehydrated = rehydratePurchaseOrder(orderReceipt.recordJson, hash);
+      if (!rehydrated.ok) {
+        result = { error: `admission: ${rehydrated.error}` };
+        return;
+      }
+      const order = rehydrated.value;
 
       if (decision.kind === 'counterproposal') {
         const replacement = decision.replacementQuote;
@@ -600,21 +774,39 @@ export class CommerceAdmissionEngine {
         purchaseOrderId,
         decision.kind === 'accepted' ? 'committed' : 'refunded',
       );
-      this.persistAcknowledgement(order, acknowledgement, nowMs);
+      this.persistAcknowledgement(order, acknowledgement, nowMs, order.quote_id);
 
-      // §12.8 — the genesis commits WITH the acceptance or not at all.
-      if (decision.kind === 'accepted' && this.deps.createAcceptedGenesisInTx) {
-        const genesisError = this.deps.createAcceptedGenesisInTx(buyerDid, purchaseOrderId);
+      // §12.8 — the genesis commits WITH THE DECISION or not at all.
+      //
+      // EVERY RESOLVING DECISION OPENS A CHAIN, not only an acceptance. This
+      // ran for `accepted` alone, so a rejected or countered order had no head
+      // — and a missing head reads as UNFINISHED to
+      // `countUnfinishedByServingManifest`, which meant every declined order
+      // held a prior manifest's lifecycle authority open and blocked plugin
+      // uninstall for ever. The buyer also had nothing to verify: §9.11's
+      // chain is where a rejection becomes a record rather than a claim
+      // carried inside an acknowledgement.
+      //
+      // `accepted` opens a chain that will run on. `rejected` opens and closes
+      // in one record — and a COUNTERPROPOSAL is a rejection of THIS order:
+      // the terms move to a fresh quote family, and the order that was
+      // countered is over.
+      if (this.deps.createAcceptedGenesisInTx) {
+        const genesisError = this.deps.createAcceptedGenesisInTx(
+          buyerDid,
+          purchaseOrderId,
+          decision.kind === 'accepted' ? 'accepted' : 'rejected',
+        );
         if (genesisError) {
-          // Roll the decision back rather than leave an accepted order whose
+          // Roll the decision back rather than leave a decided order whose
           // chain does not exist — the window a cancellation would misread.
           throw new CommerceIntegrityError(
-            `accepted order could not open its status chain: ${genesisError.error}`,
+            `decided order could not open its status chain: ${genesisError.error}`,
           );
         }
       }
       result = { acknowledgement };
-    });
+    })();
     return result;
   }
 
@@ -624,21 +816,46 @@ export class CommerceAdmissionEngine {
    * with the hold refunded in the same transaction; `effect_started`
    * rows are NEVER touched here.
    */
-  recoverAdmissions(): string[] {
+  recoverAdmissionsInTx(): AdmissionRecoverySweep {
     const timedOut: string[] = [];
-    this.deps.tx(() => {
+    const stuck: AdmissionRecoverySkip[] = [];
+    ((): void => {
       const nowMs = this.deps.now();
       for (const ref of this.deps.orders.listExpiredPreEffect(nowMs)) {
-        const orderReceipt = this.deps.receipts.get(ref.orderDigest);
-        if (!orderReceipt) continue;
-        const order = JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal;
+        // THE ACKNOWLEDGEMENT COMES FROM THE REFERENCE, NOT THE RECEIPT.
+        //
+        // This used to load and re-validate the order proposal first, and
+        // `continue` if either step failed. That looked like prudence and was
+        // a leak: the row stays in `listExpiredPreEffect` forever, so it is
+        // reconsidered and skipped on every future sweep, the quote capacity
+        // it holds is never refunded, and the buyer's `order_reconcile` keeps
+        // answering `received_processing` for an order nobody will ever
+        // decide. Silently, with no count and no signal.
+        //
+        // Nothing about a `rejected(decision_timeout)` needs the proposal.
+        // The three fields the record carries — order id, order digest, buyer
+        // — are all on the reference, and the digest got there from admission,
+        // so the acknowledgement is still bound to the right order. The
+        // outcome is also the most conservative one available: it commits to
+        // nothing, releases the hold, and replaces silence with an answer.
         const acknowledgement = this.buildAcknowledgement(
-          order,
+          {
+            purchase_order_id: ref.purchaseOrderId,
+            order_digest: ref.orderDigest,
+            buyer_did: ref.buyerDid,
+          },
           { kind: 'rejected', reason_code: 'decision_timeout' },
           ref.pinnedVersion,
         );
         const sweptOrder = this.deps.orders.load(ref.buyerDid, ref.purchaseOrderId);
-        if (sweptOrder === null) continue;
+        if (sweptOrder === null) {
+          // Listed a moment ago and unloadable now: the reference store
+          // disagrees with itself. Reported rather than skipped, because a
+          // sweep that returns "0 timed out" must not read the same as one
+          // where every row is unreachable.
+          stuck.push({ purchaseOrderId: ref.purchaseOrderId, reason: 'reference_unloadable' });
+          continue;
+        }
         // requirePreEffect: a decision_timeout may NEVER decide an
         // effect_started row — the external effect may have happened.
         const decided = sweptOrder.decide({
@@ -646,13 +863,21 @@ export class CommerceAdmissionEngine {
           decidedAt: nowMs,
           requirePreEffect: true,
         });
+        // NOT reported. A concurrent writer decided this order inside another
+        // transaction, which is the CAS working: the row leaves the expired
+        // set on its own and needs no attention.
         if (!decided.ok) continue;
         this.familyFor(ref.quoteId).settle(ref.purchaseOrderId, 'refunded');
-        this.persistAcknowledgement(order, acknowledgement, nowMs);
+        this.persistAcknowledgement(
+          { purchase_order_id: ref.purchaseOrderId, buyer_did: ref.buyerDid },
+          acknowledgement,
+          nowMs,
+          ref.quoteId,
+        );
         timedOut.push(ref.purchaseOrderId);
       }
-    });
-    return timedOut;
+    })();
+    return { timedOut, stuck };
   }
 
   // -------------------------------------------------------------------------
@@ -663,7 +888,11 @@ export class CommerceAdmissionEngine {
   private loadRetainedQuote(digest: string): SignedQuote | null {
     const receipt = this.deps.receipts.get(digest);
     if (!receipt || receipt.domain !== 'quote') return null;
-    return JSON.parse(receipt.recordJson) as SignedQuote;
+    const rehydrated = rehydrateSignedQuote(receipt.recordJson, hash);
+    // A retained quote that no longer validates is treated as NOT retained:
+    // this reader's contract is "the quote a digest names, or null", and
+    // handing back a record we cannot vouch for would be worse than absence.
+    return rehydrated.ok ? rehydrated.value : null;
   }
 
   /**
@@ -674,7 +903,9 @@ export class CommerceAdmissionEngine {
   private familyFor(quoteId: string): QuoteFamily {
     const family = this.deps.families.load(quoteId);
     if (family === null) {
-      throw new CommerceIntegrityError(`order reference points at a missing quote family ${quoteId}`);
+      throw new CommerceIntegrityError(
+        `order reference points at a missing quote family ${quoteId}`,
+      );
     }
     return family;
   }
@@ -695,7 +926,11 @@ export class CommerceAdmissionEngine {
    * wired, we register its quote and answer `quote_superseded` pointing at
    * a head that is genuinely live.
    */
-  private rejectVoidedFamily(order: PurchaseOrderProposal, family: QuoteFamily): AdmissionOutcome {
+  private rejectVoidedFamily(
+    order: PurchaseOrderProposal,
+    serving: { manifestCid: string; installId: string },
+    family: QuoteFamily,
+  ): AdmissionOutcome {
     const reoffer = this.deps.resignVoidedQuote?.(family.quoteId, order.buyer_did) ?? null;
     // The seam is ASKED for this buyer, but its answer is untrusted like
     // any other runner output. The expectation travels into register(),
@@ -703,7 +938,12 @@ export class CommerceAdmissionEngine {
     if (reoffer !== null) {
       const registerError = this.registerSignedQuoteInTx(reoffer, order.buyer_did);
       if (registerError === null) {
-        return this.recordAdmissionRejection(order, 'quote_superseded', reoffer.quote_digest);
+        return this.recordAdmissionRejection(
+          order,
+          serving,
+          'quote_superseded',
+          reoffer.quote_digest,
+        );
       }
       // A rejected re-offer must never be laundered into a live head;
       // fall through to the refusal below.
@@ -713,7 +953,7 @@ export class CommerceAdmissionEngine {
     // never become live again (the family refuses further revisions), so
     // they would re-approve against it forever. `quote_voided` says the
     // true thing — this family is gone, request a new quote.
-    return this.recordAdmissionRejection(order, 'quote_voided');
+    return this.recordAdmissionRejection(order, serving, 'quote_voided');
   }
 
   // -------------------------------------------------------------------------
@@ -721,7 +961,12 @@ export class CommerceAdmissionEngine {
   // -------------------------------------------------------------------------
 
   private buildAcknowledgement(
-    order: PurchaseOrderProposal,
+    // Narrowed from `PurchaseOrderProposal` to the three fields actually
+    // read. The wider type was what made the recovery sweeper believe it
+    // needed the whole proposal — and skip, leaking the hold, when it could
+    // not rehydrate one. A parameter type that overstates its needs teaches
+    // callers to fetch more than they must.
+    order: Pick<PurchaseOrderProposal, 'purchase_order_id' | 'order_digest' | 'buyer_did'>,
     variant:
       | {
           kind: 'accepted';
@@ -775,15 +1020,18 @@ export class CommerceAdmissionEngine {
   }
 
   private persistAcknowledgement(
-    order: PurchaseOrderProposal,
+    order: Pick<PurchaseOrderProposal, 'purchase_order_id' | 'buyer_did'>,
     acknowledgement: OrderAcknowledgement,
     nowMs: number,
+    // Explicit, because the recovery path has the quote id on the ORDER
+    // REFERENCE and no proposal to read it from.
+    quoteId: string,
   ): void {
     this.deps.receipts.put({
       recordDigest: acknowledgement.acknowledgement_digest,
       domain: 'acknowledgement',
       buyerDid: order.buyer_did,
-      quoteId: order.quote_id,
+      quoteId,
       purchaseOrderId: order.purchase_order_id,
       recordJson: JSON.stringify(acknowledgement),
       evidenceJson: '{}',

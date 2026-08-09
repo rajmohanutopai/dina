@@ -35,3 +35,10 @@ export { reviewerNamespaceScores } from './reviewer-namespace-scores'
 export { adminAuditLog } from './admin-audit-log'
 export { didRedactions } from './did-redactions'
 export { catalogSnapshots } from './catalog-snapshots'
+export {
+  commerceCatalogPointers,
+  commerceCatalogSnapshots,
+  commerceCatalogProducts,
+  commerceRelationshipClaims,
+  commerceProductRelationships,
+} from './commerce-catalog'

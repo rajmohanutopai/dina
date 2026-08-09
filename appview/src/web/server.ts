@@ -10,6 +10,10 @@ import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
 import { getProfile, GetProfileParams } from '@/api/xrpc/get-profile.js'
 import { getAttestations, GetAttestationsParams } from '@/api/xrpc/get-attestations.js'
 import { serviceSearch, ServiceSearchParams } from '@/api/xrpc/service-search.js'
+import {
+  searchCommerceCatalog,
+  CommerceCatalogSearchParams,
+} from '@/api/xrpc/commerce-catalog-search.js'
 import { searchCapabilities, SearchCapabilitiesParams } from '@/api/xrpc/search-capabilities.js'
 import { catalogCapabilities, CatalogCapabilitiesParams } from '@/api/xrpc/catalog-capabilities.js'
 import { serviceIsDiscoverable, ServiceIsDiscoverableParams } from '@/api/xrpc/service-is-discoverable.js'
@@ -75,6 +79,14 @@ const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => P
   'com.dinakernel.peerlens.subjectGet': { params: SubjectGetParams, handler: subjectGet },
   'com.dinakernel.peerlens.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
   'com.dinakernel.peerlens.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
+  // §10.5 catalog discovery. The evaluation instant is supplied here rather
+  // than read inside the query, so freshness is deterministic in tests and the
+  // whole page is scored against ONE clock reading — a query that re-read the
+  // clock per row could drop a candidate mid-page for a millisecond.
+  'com.dinakernel.commerce.searchCatalog': {
+    params: CommerceCatalogSearchParams,
+    handler: (db: any, params: any) => searchCommerceCatalog(db, params, new Date().toISOString()),
+  },
 }
 
 const server = http.createServer(async (req, res) => {

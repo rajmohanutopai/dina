@@ -20,6 +20,9 @@ export const TRUST_COLLECTIONS = [
   'com.dinakernel.peerlens.trustPolicy',
   'com.dinakernel.peerlens.notificationPrefs',
   'com.dinakernel.service.profile',
+  'com.dinakernel.commerce.catalog',
+  'com.dinakernel.commerce.catalogSnapshot',
+  'com.dinakernel.commerce.relationshipClaim',
 ] as const
 
 export type TrustCollection = typeof TRUST_COLLECTIONS[number]
@@ -46,4 +49,7 @@ export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {
   trustPolicy: 'com.dinakernel.peerlens.trustPolicy',
   notificationPrefs: 'com.dinakernel.peerlens.notificationPrefs',
   serviceProfile: 'com.dinakernel.service.profile',
+  commerceCatalog: 'com.dinakernel.commerce.catalog',
+  commerceCatalogSnapshot: 'com.dinakernel.commerce.catalogSnapshot',
+  commerceRelationshipClaim: 'com.dinakernel.commerce.relationshipClaim',
 }

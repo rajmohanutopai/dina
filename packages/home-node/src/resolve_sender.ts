@@ -52,7 +52,6 @@ export function makeResolveSender(
   const onError =
     opts.onResolveError ??
     ((did, err) => {
-       
       console.warn(`[resolveSender] ${did} failed:`, err.message);
     });
 

@@ -342,7 +342,7 @@ describe('TN-TEST-040 §2: cross-publisher search', () => {
 // Scenario 3 — Cross-node vouching → reviewer-trust propagation.
 // ---------------------------------------------------------------------------
 describe('TN-TEST-040 §3: cross-node vouching → reviewer-trust propagation', () => {
-  it('vouch from Alonso for Sancho lands in trust_edges + Sancho profile vouchCount', async () => {
+  it('vouch from Alonso for Sancho lands in peerlens_edges + Sancho profile vouchCount', async () => {
     // Both nodes publish — establishes profile rows.
     await publishAttestation({
       authorDid: NODE_ALONSO,
@@ -370,7 +370,7 @@ describe('TN-TEST-040 §3: cross-node vouching → reviewer-trust propagation', 
     // Verify the trust edge landed (handler-side write).
     const edgeResult = await db.execute(sql`
       SELECT from_did, to_did, edge_type, weight
-      FROM trust_edges
+      FROM peerlens_edges
       WHERE from_did = ${NODE_ALONSO} AND to_did = ${NODE_SANCHO}
     `)
     const edges = (edgeResult as any).rows
@@ -378,7 +378,7 @@ describe('TN-TEST-040 §3: cross-node vouching → reviewer-trust propagation', 
     expect(edges[0].edge_type).toBe('vouch')
 
     // Run profile refresh — Sancho's profile must now reflect the
-    // inbound vouch (the per-author scorer reads trust_edges).
+    // inbound vouch (the per-author scorer reads peerlens_edges).
     await refreshProfiles(db)
 
     const sanchoProfile = await getProfile(db, { did: NODE_SANCHO })

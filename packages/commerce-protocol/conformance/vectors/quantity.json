@@ -1,0 +1,154 @@
+{
+  "comparisons": [
+    {
+      "name": "kg_vs_g_equal",
+      "a": {
+        "unit_code": "kg",
+        "value": "1"
+      },
+      "b": {
+        "unit_code": "g",
+        "value": "1000"
+      },
+      "compare": 0
+    },
+    {
+      "name": "kg_vs_g_greater",
+      "a": {
+        "unit_code": "kg",
+        "value": "1.001"
+      },
+      "b": {
+        "unit_code": "g",
+        "value": "1000"
+      },
+      "compare": 1
+    },
+    {
+      "name": "l_vs_ml_equal",
+      "a": {
+        "unit_code": "l",
+        "value": "0.25"
+      },
+      "b": {
+        "unit_code": "ml",
+        "value": "250"
+      },
+      "compare": 0
+    },
+    {
+      "name": "each_vs_each",
+      "a": {
+        "unit_code": "each",
+        "value": "3"
+      },
+      "b": {
+        "unit_code": "each",
+        "value": "4"
+      },
+      "compare": -1
+    },
+    {
+      "name": "case_vs_each_needs_pack",
+      "a": {
+        "unit_code": "case",
+        "value": "1"
+      },
+      "b": {
+        "unit_code": "each",
+        "value": "12"
+      },
+      "error": "quantity: units \"case\" and \"each\" are not comparable without pack evidence"
+    },
+    {
+      "name": "pallet_vs_case_needs_pack",
+      "a": {
+        "unit_code": "pallet",
+        "value": "1"
+      },
+      "b": {
+        "unit_code": "case",
+        "value": "40"
+      },
+      "error": "quantity: units \"pallet\" and \"case\" are not comparable without pack evidence"
+    },
+    {
+      "name": "case_vs_case_comparable",
+      "a": {
+        "unit_code": "case",
+        "value": "2"
+      },
+      "b": {
+        "unit_code": "case",
+        "value": "3"
+      },
+      "compare": -1
+    },
+    {
+      "name": "kg_vs_l_cross_dimension",
+      "a": {
+        "unit_code": "kg",
+        "value": "1"
+      },
+      "b": {
+        "unit_code": "l",
+        "value": "1"
+      },
+      "error": "quantity: units \"kg\" and \"l\" are not comparable without pack evidence"
+    },
+    {
+      "name": "each_vs_g_cross_dimension",
+      "a": {
+        "unit_code": "each",
+        "value": "1"
+      },
+      "b": {
+        "unit_code": "g",
+        "value": "1"
+      },
+      "error": "quantity: units \"each\" and \"g\" are not comparable without pack evidence"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "unknown_unit",
+      "quantity": {
+        "unit_code": "furlong",
+        "value": "1"
+      },
+      "error": "quantity: unknown unit \"furlong\" (vocabulary v1 is closed; custom units are not valid in v1)"
+    },
+    {
+      "name": "scale_exceeded",
+      "quantity": {
+        "unit_code": "each",
+        "value": "1.5"
+      },
+      "error": "quantity: numeric: \"1.5\" exceeds the declared scale of 0"
+    },
+    {
+      "name": "negative",
+      "quantity": {
+        "unit_code": "kg",
+        "value": "-1"
+      },
+      "error": "quantity: numeric: \"-1\" is not a canonical decimal"
+    },
+    {
+      "name": "leading_zero",
+      "quantity": {
+        "unit_code": "kg",
+        "value": "01"
+      },
+      "error": "quantity: numeric: \"01\" is not a canonical decimal"
+    },
+    {
+      "name": "not_a_number",
+      "quantity": {
+        "unit_code": "kg",
+        "value": "one"
+      },
+      "error": "quantity: numeric: \"one\" is not a canonical decimal"
+    }
+  ]
+}

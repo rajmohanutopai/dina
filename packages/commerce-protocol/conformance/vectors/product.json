@@ -1,0 +1,245 @@
+{
+  "equality": [
+    {
+      "name": "identical_gtin",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "equal": true
+    },
+    {
+      "name": "different_value",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678917"
+      },
+      "equal": false
+    },
+    {
+      "name": "different_scheme_same_value",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "b": {
+        "scheme": "supplier_sku",
+        "value": "05012345678900"
+      },
+      "equal": false
+    },
+    {
+      "name": "same_sku_different_issuer_is_a_different_product",
+      "a": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1",
+        "issuer_did": "did:plc:chairmaker99"
+      },
+      "b": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1",
+        "issuer_did": "did:plc:someoneelse"
+      },
+      "equal": false
+    },
+    {
+      "name": "same_sku_same_issuer_is_the_same_product",
+      "a": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1",
+        "issuer_did": "did:plc:chairmaker99"
+      },
+      "b": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1",
+        "issuer_did": "did:plc:chairmaker99"
+      },
+      "equal": true
+    },
+    {
+      "name": "issuer_present_versus_absent_is_not_equal",
+      "a": {
+        "scheme": "dina_subject",
+        "value": "subject-1",
+        "issuer_did": "did:plc:chairmaker99"
+      },
+      "b": {
+        "scheme": "dina_subject",
+        "value": "subject-1"
+      },
+      "equal": false
+    }
+  ],
+  "rejected": [
+    {
+      "name": "empty_value",
+      "product": {
+        "scheme": "gtin",
+        "value": ""
+      },
+      "error": "product: value must be a non-empty string"
+    },
+    {
+      "name": "unknown_scheme",
+      "product": {
+        "scheme": "made_up",
+        "value": "x"
+      },
+      "error": "product: scheme must be gtin | manufacturer_sku | dina_subject | custom"
+    },
+    {
+      "name": "missing_scheme",
+      "product": {
+        "value": "x"
+      },
+      "error": "product: scheme must be gtin | manufacturer_sku | dina_subject | custom"
+    },
+    {
+      "name": "not_an_object",
+      "product": "gtin:05012345678900",
+      "error": "product: must be an object"
+    }
+  ],
+  "scoped": [
+    {
+      "name": "manufacturer_sku_without_issuer_is_refused",
+      "product": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1"
+      },
+      "error": "product: scoped scheme \"manufacturer_sku\" requires issuer_did — product.issuer_did: must be a non-empty string"
+    },
+    {
+      "name": "custom_without_issuer_is_refused",
+      "product": {
+        "scheme": "custom",
+        "value": "internal-42"
+      },
+      "error": "product: scoped scheme \"custom\" requires issuer_did — product.issuer_did: must be a non-empty string"
+    },
+    {
+      "name": "manufacturer_sku_with_issuer_is_accepted",
+      "product": {
+        "scheme": "manufacturer_sku",
+        "value": "OAK-CHAIR-1",
+        "issuer_did": "did:plc:chairmaker99"
+      },
+      "error": null
+    },
+    {
+      "name": "gtin_needs_no_issuer",
+      "product": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "error": null
+    },
+    {
+      "name": "gtin_value_must_be_8_to_14_digits",
+      "product": {
+        "scheme": "gtin",
+        "value": "5012345"
+      },
+      "error": "product: gtin value must be 8-14 digits"
+    },
+    {
+      "name": "gtin_value_must_be_digits_only",
+      "product": {
+        "scheme": "gtin",
+        "value": "0501234567890X"
+      },
+      "error": "product: gtin value must be 8-14 digits"
+    },
+    {
+      "name": "value_longer_than_128_is_refused",
+      "product": {
+        "scheme": "dina_subject",
+        "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "error": "product: value exceeds 128 characters"
+    }
+  ],
+  "variant": [
+    {
+      "name": "same_identifier_different_variant_is_NOT_a_substitute",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "equal": false
+    },
+    {
+      "name": "variant_present_versus_absent_is_NOT_equal",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "equal": false
+    },
+    {
+      "name": "identical_variant_is_the_same_line_item",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "equal": true
+    },
+    {
+      "name": "both_absent_is_the_same_line_item",
+      "a": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "b": {
+        "scheme": "gtin",
+        "value": "05012345678900"
+      },
+      "equal": true
+    }
+  ],
+  "variant_rejected": [
+    {
+      "name": "variant_digest_must_be_64_hex",
+      "product": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "not-hex"
+      },
+      "error": "product.variant_digest: must be a 64-char lowercase hex string"
+    },
+    {
+      "name": "variant_digest_must_be_lowercase",
+      "product": {
+        "scheme": "gtin",
+        "value": "05012345678900",
+        "variant_digest": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "error": "product.variant_digest: must be a 64-char lowercase hex string"
+    }
+  ]
+}

@@ -24,9 +24,11 @@
  */
 
 import { ExtensionOperationBroker } from './extension_broker';
+import { ExtensionExecutionSweeper } from './extension_sweeper';
 
 import type { ExtensionProposal } from './extension_broker';
 import type { ExtensionOperationRegistry } from './extension_ops';
+import type { ExtensionExecutionSweeperOptions } from './extension_sweeper';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
@@ -240,6 +242,12 @@ export interface PluginHostRuntime {
   broker: ExtensionOperationBroker;
   dispatcher: HostOperationDispatcher;
   registry: ExtensionOperationRegistry;
+  /**
+   * The §3.4 recovery sweep over rows stuck mid-effect. Part of the runtime
+   * rather than a thing each boot starts, for the reason recorded on
+   * `installPluginHostRuntime` below.
+   */
+  sweeper: ExtensionExecutionSweeper;
 }
 
 let hostRuntime: PluginHostRuntime | null = null;
@@ -250,6 +258,11 @@ export function createPluginHostRuntime(deps: {
   now?: () => number;
   /** Injected so Core carries no schema library (see the broker's deps). */
   validate?: (value: unknown, schema: unknown) => string | null;
+  /** Sweep tuning + injectable timers. Production passes nothing. */
+  sweeper?: Pick<
+    ExtensionExecutionSweeperOptions,
+    'intervalMs' | 'deadlineMs' | 'onAbandoned' | 'onError' | 'setInterval' | 'clearInterval'
+  >;
 }): PluginHostRuntime {
   const now = deps.now ?? (() => Date.now());
   const broker = new ExtensionOperationBroker({
@@ -264,12 +277,34 @@ export function createPluginHostRuntime(deps: {
     // registry that has since changed cannot retroactively widen a result.
     resultSchemaFor: (name) => deps.registry.get(name)?.resultSchema,
   });
-  return { broker, dispatcher, registry: deps.registry };
+  const sweeper = new ExtensionExecutionSweeper({
+    // Resolved per tick through the INSTALLED runtime rather than closing over
+    // `broker`, so a sweeper left running against a torn-down identity finds
+    // null and goes quiet instead of writing to a closed database.
+    broker: () => getPluginHostRuntime()?.broker ?? null,
+    now,
+    ...(deps.sweeper ?? {}),
+  });
+  return { broker, dispatcher, registry: deps.registry, sweeper };
 }
 
-/** Install at boot; pass null on shutdown. */
+/**
+ * Install at boot; pass null on shutdown.
+ *
+ * STARTING AND STOPPING THE SWEEP IS A SIDE EFFECT OF THIS CALL, deliberately.
+ * Both composition roots already call install and uninstall, and a background
+ * process each root must separately remember to start is one a root eventually
+ * forgets — which is exactly how the §9.9 admission sweep came to run on the
+ * server and never on the phone. `installCommerceRuntime` takes the same
+ * approach with the §20.10 probing ledger, for the same reason.
+ *
+ * Replacing a runtime stops the OUTGOING sweeper first: two sweeps over one
+ * table would race each other's CAS and report each other as `raced`.
+ */
 export function installPluginHostRuntime(value: PluginHostRuntime | null): void {
+  hostRuntime?.sweeper.stop();
   hostRuntime = value;
+  value?.sweeper.start();
 }
 
 /** Null until composed. Callers must fail closed — a node with no host-op

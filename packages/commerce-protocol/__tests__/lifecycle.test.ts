@@ -20,6 +20,8 @@ import {
   reconcileOutcomePermitsResubmission,
   validateOrderReconcileRequest,
   validateOrderReconcileResult,
+  MAX_RETAINED_ENVELOPE_BODY,
+  type RetainedEnvelope,
 } from '../src/reconcile';
 import {
   statusIsTerminal,
@@ -55,13 +57,33 @@ const order = makeOrder(quote, pricedProjection);
  * of the record, computable by anyone. These tests only exercise the
  * wire SHAPE; the signature itself is verified by compiled Core.
  */
-function signedEvidence<T>(record: T): { record: T; signature: string } {
-  return { record, signature: 'ab'.repeat(32) };
+function signedEvidence<T>(
+  record: T,
+): { record: T; envelope: RetainedEnvelope; signature: string } {
+  // A well-formed envelope, not a signed one. This package is zero-dependency
+  // and holds no crypto: it checks SHAPE, and compiled Core checks the
+  // signature against the supplier's key. The envelope is required here
+  // because a signature with no signed bytes is unverifiable by anyone.
+  return {
+    record,
+    envelope: {
+      id: 'msg-1',
+      type: 'service.response',
+      from: order.supplier_did,
+      to: [order.buyer_did],
+      created_time: 1_770_000_000,
+      body: '{}',
+    },
+    signature: 'ab'.repeat(32),
+  };
 }
 
 const ORDER_LINES = order.accepted_lines;
 const FIRST_LINE = ORDER_LINES[0];
 if (!FIRST_LINE) throw new Error('fixture has no order lines');
+
+/** Receiver clock for fence checks that are not about the dispute window. */
+const AT = '2026-08-07T13:00:00Z';
 
 describe('purchase-order proposal (§9.9)', () => {
   it('validates a canonical proposal', () => {
@@ -196,6 +218,38 @@ describe('order acknowledgement (§9.10)', () => {
       ),
     } as OrderAcknowledgement;
     expect(verifyAcknowledgementForOrder(sameFamilyAck, order)).toMatch(/fresh quote_id/);
+
+    // §9.13 — "a counterproposal cannot silently upgrade the conversation".
+    // The lineage and fresh-id rules above both pass here; the ONLY thing
+    // wrong is the version of the terms being offered back. Without this
+    // check a 1.0 exchange could be countered with 1.5 terms, and the order
+    // built on the replacement would pin the upgraded version — both sides
+    // believing they agreed under field sets that never matched.
+    //
+    // The envelope stays at 1.0 deliberately: the acknowledgement's own
+    // version check passes, so only the replacement-quote bind can catch it.
+    const upgraded = {
+      ...draft,
+      replacement_quote: makeSignedQuote({
+        request,
+        overrides: {
+          quote_id: 'q-3',
+          replaces_quote_digest: quote.quote_digest,
+          protocol_version: '1.5',
+        },
+      }),
+    };
+    const upgradedAck = {
+      ...upgraded,
+      acknowledgement_digest: commerceRecordDigest(
+        'acknowledgement',
+        upgraded as unknown as Record<string, unknown>,
+        hash,
+      ),
+    } as OrderAcknowledgement;
+    expect(verifyAcknowledgementForOrder(upgradedAck, order)).toMatch(
+      /ack\.replacement_quote: protocol_version 1\.5 does not match the conversation's 1\.0/,
+    );
   });
 });
 
@@ -428,7 +482,7 @@ describe('order status chain (§9.11)', () => {
             ? 'did:plc:otherbuyer1'
             : 'did:plc:othersupplier';
       const forged = makeStatus(order, { ...base, [field]: swapped });
-      expect(verifyRestoreFence(forged, chain, ORDER_LINES, hash)).toMatch(
+      expect(verifyRestoreFence(forged, chain, ORDER_LINES, hash, AT)).toMatch(
         new RegExp(`immutable field ${field} changed`),
       );
     }
@@ -447,7 +501,96 @@ describe('order status chain (§9.11)', () => {
         },
       ],
     });
-    expect(verifyRestoreFence(inflated, chain, ORDER_LINES, hash)).toMatch(/fence:/);
+    expect(verifyRestoreFence(inflated, chain, ORDER_LINES, hash, AT)).toMatch(/fence:/);
+  });
+
+  /**
+   * The fence path used to be a way AROUND the dispute deadline.
+   *
+   * `verifyStatusSuccession` refuses `delivered -> disputed` once the
+   * window closes. `verifyRestoreFence` allowed the same move — the graph
+   * says it is a legal edge — and never looked at the window, because it
+   * took no clock at all. So a supplier could dispute an order whose
+   * window shut months ago by marking the record `restore_fence: true`:
+   * a recovery mechanism used to escape a deadline.
+   */
+  it('restore fence: delivered -> disputed still obeys the dispute window (§9.11)', () => {
+    const dispatched = makeSuccessor(order, genesis, {
+      state: 'dispatched',
+      lines: [{ line_id: FIRST_LINE.line_id, fulfilled_quantity: FIRST_LINE.quantity }],
+    });
+    const delivered = makeSuccessor(order, dispatched, {
+      state: 'delivered',
+      dispute_window_ends_at: '2026-08-14T00:00:00Z',
+    });
+    const chain = [genesis, dispatched, delivered];
+    const disputeFence = makeStatus(order, {
+      sequence: '3',
+      state: 'disputed',
+      previous_status_digest: delivered.status_digest,
+      supplier_epoch: '2',
+      restore_fence: true,
+    });
+
+    // Inside the window the fence is a legitimate takeover.
+    expect(verifyRestoreFence(disputeFence, chain, ORDER_LINES, hash, '2026-08-10T00:00:00Z')).toBe(
+      'head',
+    );
+    // Outside it, the fence buys the supplier nothing the ordinary path
+    // would not already have refused.
+    expect(
+      verifyRestoreFence(disputeFence, chain, ORDER_LINES, hash, '2026-08-15T00:00:00Z'),
+    ).toMatch(/only before dispute_window_ends_at/);
+    // The clock is the RECEIVER's, so a supplier that backdates its own
+    // record gains nothing: `updated_at` is not consulted.
+    const backdated = makeStatus(order, {
+      sequence: '3',
+      state: 'disputed',
+      previous_status_digest: delivered.status_digest,
+      supplier_epoch: '2',
+      restore_fence: true,
+      updated_at: '2026-08-09T00:00:00Z',
+    });
+    expect(verifyRestoreFence(backdated, chain, ORDER_LINES, hash, '2026-08-15T00:00:00Z')).toMatch(
+      /only before dispute_window_ends_at/,
+    );
+    // A fence that merely RESTATES delivered is unaffected by the window —
+    // the rule is about the disputed edge, not about fencing after the
+    // window, which is exactly when a restore is most likely to happen.
+    const restateFence = makeStatus(order, {
+      sequence: '3',
+      state: 'delivered',
+      dispute_window_ends_at: '2026-08-14T00:00:00Z',
+      previous_status_digest: delivered.status_digest,
+      supplier_epoch: '2',
+      restore_fence: true,
+    });
+    expect(verifyRestoreFence(restateFence, chain, ORDER_LINES, hash, '2026-08-15T00:00:00Z')).toBe(
+      'head',
+    );
+
+    // THE BOUNDARY INSTANT. A mutation to `>=` survived every test above,
+    // which means nothing pinned whether the deadline is inclusive. It
+    // has to be pinned, because THREE places answer this question and a
+    // port that reads them separately can implement two of them one way
+    // and the third the other: an order would then be terminal on one
+    // side and still disputable on the other, over one millisecond.
+    const AT_DEADLINE = '2026-08-14T00:00:00Z';
+    const ONE_MS_LATER = '2026-08-14T00:00:00.001Z';
+    expect(verifyRestoreFence(disputeFence, chain, ORDER_LINES, hash, AT_DEADLINE)).toBe('head');
+    expect(verifyRestoreFence(disputeFence, chain, ORDER_LINES, hash, ONE_MS_LATER)).toMatch(
+      /only before dispute_window_ends_at/,
+    );
+    // Ordinary succession draws the line in the same place...
+    const disputed = makeSuccessor(order, delivered, { state: 'disputed' });
+    expect(verifyStatusSuccession(delivered, disputed, ORDER_LINES, AT_DEADLINE)).toBeNull();
+    expect(verifyStatusSuccession(delivered, disputed, ORDER_LINES, ONE_MS_LATER)).toMatch(
+      /only before dispute_window_ends_at/,
+    );
+    // ...and so does terminality, which is the same fact stated the other
+    // way round: while the order can still be disputed it is not final.
+    expect(statusIsTerminal(delivered, AT_DEADLINE)).toBe(false);
+    expect(statusIsTerminal(delivered, ONE_MS_LATER)).toBe(true);
   });
 
   it('restore fence: head, ancestor, fork, and epoch rules (§16.2)', () => {
@@ -461,7 +604,7 @@ describe('order status chain (§9.11)', () => {
       supplier_epoch: '2',
       restore_fence: true,
     });
-    expect(verifyRestoreFence(fenceAtHead, chain, ORDER_LINES, hash)).toBe('head');
+    expect(verifyRestoreFence(fenceAtHead, chain, ORDER_LINES, hash, AT)).toBe('head');
 
     const fenceAtAncestor = makeStatus(order, {
       sequence: '1',
@@ -470,7 +613,7 @@ describe('order status chain (§9.11)', () => {
       supplier_epoch: '2',
       restore_fence: true,
     });
-    expect(verifyRestoreFence(fenceAtAncestor, chain, ORDER_LINES, hash)).toBe('ancestor');
+    expect(verifyRestoreFence(fenceAtAncestor, chain, ORDER_LINES, hash, AT)).toBe('ancestor');
 
     const fenceFork = makeStatus(order, {
       sequence: '1',
@@ -479,7 +622,7 @@ describe('order status chain (§9.11)', () => {
       supplier_epoch: '2',
       restore_fence: true,
     });
-    expect(verifyRestoreFence(fenceFork, chain, ORDER_LINES, hash)).toMatch(/supplier fork/);
+    expect(verifyRestoreFence(fenceFork, chain, ORDER_LINES, hash, AT)).toMatch(/supplier fork/);
 
     const fenceSameEpoch = makeStatus(order, {
       sequence: '2',
@@ -488,7 +631,9 @@ describe('order status chain (§9.11)', () => {
       supplier_epoch: '1',
       restore_fence: true,
     });
-    expect(verifyRestoreFence(fenceSameEpoch, chain, ORDER_LINES, hash)).toMatch(/strictly higher/);
+    expect(verifyRestoreFence(fenceSameEpoch, chain, ORDER_LINES, hash, AT)).toMatch(
+      /strictly higher/,
+    );
 
     const fenceIllegalState = makeStatus(order, {
       sequence: '2',
@@ -498,7 +643,9 @@ describe('order status chain (§9.11)', () => {
       supplier_epoch: '2',
       restore_fence: true,
     });
-    expect(verifyRestoreFence(fenceIllegalState, chain, ORDER_LINES, hash)).toMatch(/illegal state/);
+    expect(verifyRestoreFence(fenceIllegalState, chain, ORDER_LINES, hash, AT)).toMatch(
+      /illegal state/,
+    );
   });
 
   it('ordinary succession refuses fence records — they go through verifyRestoreFence', () => {
@@ -568,6 +715,66 @@ describe('reconcile (§12.7)', () => {
     ).toBeNull();
   });
 
+  it('refuses held evidence with no retained envelope', () => {
+    // A signature over bytes nobody kept can never verify. Rejecting it HERE,
+    // as malformed, is the difference between telling a buyer its request was
+    // wrong and telling it — much later, through a fork or a `never_received`
+    // — that its evidence was somehow bad.
+    const bare = {
+      protocol_version: '1.0',
+      purchase_order_id: order.purchase_order_id,
+      order_digest: order.order_digest,
+      idempotency_key: order.idempotency_key,
+    };
+    const evidence = signedEvidence(makeAcceptedAck(order));
+    const { envelope: _dropped, ...noEnvelope } = evidence;
+    expect(
+      validateOrderReconcileRequest({ ...bare, held_acknowledgement: noEnvelope }, hash),
+    ).toMatch(/envelope: required/);
+
+    for (const [field, value] of [
+      ['id', ''],
+      ['type', 42],
+      ['from', null],
+      ['created_time', '1770000000'],
+      ['to', []],
+      ['to', ['']],
+      ['body', ''],
+    ] as [string, unknown][]) {
+      expect(
+        validateOrderReconcileRequest(
+          {
+            ...bare,
+            held_acknowledgement: { ...evidence, envelope: { ...evidence.envelope, [field]: value } },
+          },
+          hash,
+        ),
+      ).toMatch(new RegExp(`envelope\\.${field}`));
+    }
+  });
+
+  it('bounds the retained body so evidence cannot become an upload', () => {
+    const bare = {
+      protocol_version: '1.0',
+      purchase_order_id: order.purchase_order_id,
+      order_digest: order.order_digest,
+      idempotency_key: order.idempotency_key,
+    };
+    const evidence = signedEvidence(makeAcceptedAck(order));
+    expect(
+      validateOrderReconcileRequest(
+        {
+          ...bare,
+          held_acknowledgement: {
+            ...evidence,
+            envelope: { ...evidence.envelope, body: 'x'.repeat(MAX_RETAINED_ENVELOPE_BODY + 1) },
+          },
+        },
+        hash,
+      ),
+    ).toMatch(/exceeds/);
+  });
+
   it('kind-narrows decision outcomes — evidence payload required and matching', () => {
     const ack = makeAcceptedAck(order);
     expect(
@@ -583,10 +790,16 @@ describe('reconcile (§12.7)', () => {
 
   it('bounds retry_after_seconds on both loop outcomes', () => {
     expect(
-      validateOrderReconcileResult({ outcome: 'received_processing', retry_after_seconds: 30 }, hash),
+      validateOrderReconcileResult(
+        { outcome: 'received_processing', retry_after_seconds: 30 },
+        hash,
+      ),
     ).toBeNull();
     expect(
-      validateOrderReconcileResult({ outcome: 'received_unresolved', retry_after_seconds: 0 }, hash),
+      validateOrderReconcileResult(
+        { outcome: 'received_unresolved', retry_after_seconds: 0 },
+        hash,
+      ),
     ).toMatch(/integer in/);
   });
 

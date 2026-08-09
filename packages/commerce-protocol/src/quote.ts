@@ -24,6 +24,7 @@
 
 import { computeLineSubtotal, computeTotal, validateCharge, type Charge } from './arithmetic';
 import {
+  verifyConversationVersion,
   isRecord,
   isoUtcMillis,
   validateDid,
@@ -35,7 +36,7 @@ import {
 import { commerceRecordDigest, verifyCommerceRecordDigest, type Sha256Fn } from './digests';
 import { validateMoney, type Money } from './money';
 import { validateCanonicalPositiveInteger } from './numeric';
-import { validateProductRef, type ProductRef } from './product';
+import { productRefsEqual, validateProductRef, type ProductRef } from './product';
 import { validateQuantity, type Quantity } from './quantity';
 import { validateDeliveryProjection, type DeliveryProjection } from './region';
 
@@ -134,7 +135,8 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
   }
 
   if (request.requested_terms !== undefined) {
-    if (!isRecord(request.requested_terms)) return 'quoteRequest.requested_terms: must be an object';
+    if (!isRecord(request.requested_terms))
+      return 'quoteRequest.requested_terms: must be an object';
     const terms = request.requested_terms;
     if (
       terms.currency !== undefined &&
@@ -251,6 +253,15 @@ export function effectiveMaxUses(quote: Pick<SignedQuote, 'max_uses'>): bigint {
  * Does NOT check audience/request bindings — that is
  * `verifySignedQuoteForBuyer`, which needs buyer-held context.
  */
+/** A validated signed quote, or the reason it is not one. See
+ *  `readPurchaseOrderProposal` for why the typed read is the primary form. */
+export type ReadSignedQuote = { ok: true; quote: SignedQuote } | { ok: false; error: string };
+
+export function readSignedQuote(quote: unknown, sha256: Sha256Fn): ReadSignedQuote {
+  const error = validateSignedQuote(quote, sha256);
+  return error === null ? { ok: true, quote: quote as SignedQuote } : { ok: false, error };
+}
+
 export function validateSignedQuote(quote: unknown, sha256: Sha256Fn): string | null {
   if (!isRecord(quote)) return 'quote: must be an object';
   const checks: (string | null)[] = [
@@ -260,7 +271,10 @@ export function validateSignedQuote(quote: unknown, sha256: Sha256Fn): string | 
     validateHex64(quote.request_digest, 'quote.request_digest'),
     validateDid(quote.buyer_did, 'quote.buyer_did'),
     validateDid(quote.supplier_did, 'quote.supplier_did'),
-    validateHex64(quote.priced_delivery_projection_digest, 'quote.priced_delivery_projection_digest'),
+    validateHex64(
+      quote.priced_delivery_projection_digest,
+      'quote.priced_delivery_projection_digest',
+    ),
     validateIsoUtc(quote.issued_at, 'quote.issued_at'),
     validateIsoUtc(quote.valid_until, 'quote.valid_until'),
   ];
@@ -485,6 +499,14 @@ export function verifySignedQuoteForBuyer(
   if (q.request_digest !== context.retained_request_digest) {
     return 'quote: request_digest does not match the retained request — it answers a different question';
   }
+  // §9.13 — the conversation's version is the REQUEST's. A structurally valid
+  // quote at another version answers a question nobody asked in that dialect.
+  const versioned = verifyConversationVersion(
+    context.retained_request.protocol_version,
+    q.protocol_version,
+    'quote',
+  );
+  if (versioned !== null) return versioned;
   if (q.priced_delivery_projection_digest !== context.sent_projection_digest) {
     return 'quote: priced_delivery_projection_digest does not match the projection sent at quote stage';
   }
@@ -549,10 +571,22 @@ export function verifyQuoteLinesAnswerRequest(
   return null;
 }
 
-/** Exact product identity: scheme AND value, never name similarity. */
-function sameProduct(a: ProductRef, b: ProductRef): boolean {
-  return a.scheme === b.scheme && a.value === b.value;
-}
+/**
+ * Exact product identity — `productRefsEqual`, not a local copy.
+ *
+ * The local copy compared `scheme` and `value` only, and the two fields it
+ * omitted are the two that decide §9.4 EXACT-VARIANT authority: `issuer_did`
+ * (the same SKU under a different manufacturer is a different product) and
+ * `variant_digest` (a 12-pack is not a 6-pack). So a quote could offer another
+ * issuer's part, or another variant of the right part, and satisfy a request
+ * that said `acceptable_substitutions: "none"` — the exact bait-and-switch the
+ * clause below exists to refuse, arriving through the check meant to catch it.
+ *
+ * The frozen vectors pin `productRefsEqual`. A second, weaker notion of "the
+ * same product" living beside them is how a gate passes its own tests while
+ * disagreeing with the contract it enforces.
+ */
+const sameProduct = productRefsEqual;
 
 /**
  * Buyer-side fork DETECTION for a revision arriving on a held chain
@@ -562,7 +596,15 @@ function sameProduct(a: ProductRef, b: ProductRef): boolean {
  */
 export function verifyQuoteRevisionExtends(held: SignedQuote, next: SignedQuote): string | null {
   if (next.quote_id !== held.quote_id) return 'revision: quote_id changed';
-  for (const field of ['buyer_did', 'supplier_did', 'request_id', 'request_digest'] as const) {
+  // A REVISION cannot change the dialect either — the same rule the
+  // counterproposal clause of §9.13 names, applied where revisions are made.
+  for (const field of [
+    'buyer_did',
+    'supplier_did',
+    'request_id',
+    'request_digest',
+    'protocol_version',
+  ] as const) {
     if (next[field] !== held[field]) return `revision: immutable field ${field} changed`;
   }
   if (effectiveMaxUses(next) !== effectiveMaxUses(held)) {

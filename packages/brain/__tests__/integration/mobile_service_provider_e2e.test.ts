@@ -321,7 +321,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
     const handler = new ServiceHandler({
       coreClient: buildHandlerCoreClient(),
       readConfig: () => getServiceConfig(),
-      rejectResponder: async (recipientDID, body) => {
+      directResponder: async (recipientDID, body) => {
         handlerCalls.push({ to: recipientDID, body });
       },
     });
@@ -363,7 +363,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
     const handler = new ServiceHandler({
       coreClient: buildHandlerCoreClient(),
       readConfig: () => getServiceConfig(),
-      rejectResponder: async (recipientDID, body) => {
+      directResponder: async (recipientDID, body) => {
         handlerCalls.push({ to: recipientDID, body });
       },
     });

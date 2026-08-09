@@ -137,7 +137,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
         'reactions', 'report_records', 'revocations', 'delegations',
         'collections', 'media', 'amendments', 'verifications',
         'review_requests', 'comparisons', 'subject_claims',
-        'trust_policies', 'notification_prefs',
+        'peerlens_policies', 'notification_prefs',
       ]
       const tableResult = await db.execute(sql`
         SELECT table_name FROM information_schema.tables
@@ -202,7 +202,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       'tombstones',        // process-tombstones
       'attestations',      // source data for scoring (most jobs read this)
       'vouches',           // source data for trust edge computation
-      'trust_edges',       // output of PeerLens graph computation
+      'peerlens_edges',       // output of PeerLens graph computation
       'subjects',          // subject entity tracking
     ]
 
@@ -311,10 +311,10 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       'review_requests',
       'comparisons',
       'subject_claims',
-      'trust_policies',
+      'peerlens_policies',
       'notification_prefs',
       'mention_edges',
-      'trust_edges',
+      'peerlens_edges',
       'tombstones',
       'anomaly_events',
       'ingester_cursor',

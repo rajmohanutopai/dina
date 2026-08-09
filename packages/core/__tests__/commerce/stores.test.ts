@@ -84,8 +84,10 @@ const baseRef = {
   quoteId: 'q-1',
   quoteDigest: 'b'.repeat(64),
   pinnedVersion: '1.0',
-        admittedEpoch: '1',
-        reconciliationRequired: false,
+  servingManifestCid: '',
+  servingInstallId: '',
+  admittedEpoch: '1',
+  reconciliationRequired: false,
   decisionDeadlineAt: T0 + 60_000,
   createdAt: T0,
 };
@@ -102,6 +104,58 @@ describe.each([
 
   afterEach(() => {
     h.cleanup();
+  });
+
+  describe('orders a fulfilment sweep can ask about (§12.7, WS-9.5)', () => {
+    /** Decide the order so `decide` can record an external reference. */
+    const decideWith = (purchaseOrderId: string, externalRef: string | null): void => {
+      h.orderRefs.createReserved({ ...baseRef, purchaseOrderId, idempotencyKey: purchaseOrderId });
+      h.orderRefs.decide(BUYER, purchaseOrderId, {
+        acknowledgementJson: '{}',
+        decidedAt: T0 + 1,
+        ...(externalRef === null ? {} : { externalRef }),
+      });
+    };
+
+    it('lists only orders that recorded a reference', () => {
+      decideWith('po-with', 'SO-1');
+      decideWith('po-without', null);
+      expect(h.orderRefs.listWithExternalRef().map((r) => r.purchaseOrderId)).toEqual(['po-with']);
+    });
+
+    it('treats an EMPTY reference as no reference', () => {
+      // The effect executor records the empty string when an external system
+      // answers without one. An empty reference cannot be looked up any more
+      // than a missing one, so a sweep that included it would ask the ERP
+      // about nothing and report the order missing.
+      decideWith('po-empty', '');
+      decideWith('po-real', 'SO-2');
+      expect(h.orderRefs.listWithExternalRef().map((r) => r.purchaseOrderId)).toEqual(['po-real']);
+    });
+
+    it('is empty before any order crosses the boundary', () => {
+      h.orderRefs.createReserved(baseRef);
+      expect(h.orderRefs.listWithExternalRef()).toEqual([]);
+    });
+
+    it('orders by creation, oldest first', () => {
+      h.orderRefs.createReserved({
+        ...baseRef,
+        purchaseOrderId: 'po-late',
+        idempotencyKey: 'k-late',
+        createdAt: T0 + 5_000,
+      });
+      h.orderRefs.decide(BUYER, 'po-late', {
+        acknowledgementJson: '{}',
+        decidedAt: T0 + 5_001,
+        externalRef: 'SO-late',
+      });
+      decideWith('po-early', 'SO-early');
+      expect(h.orderRefs.listWithExternalRef().map((r) => r.purchaseOrderId)).toEqual([
+        'po-early',
+        'po-late',
+      ]);
+    });
   });
 
   describe('order refs (§15.5/§9.9)', () => {
@@ -247,6 +301,7 @@ describe.each([
       state: 'accepted',
       supplierEpoch: '1',
       updatedAt: T0,
+      disputeWindowEndsAt: null,
     };
 
     it('genesis inserts once; successors CAS against the digest', () => {
@@ -259,6 +314,7 @@ describe.each([
           state: 'preparing',
           supplierEpoch: '1',
           updatedAt: T0 + 1,
+          disputeWindowEndsAt: null,
         }),
       ).toBe(false);
       expect(
@@ -268,6 +324,7 @@ describe.each([
           state: 'preparing',
           supplierEpoch: '1',
           updatedAt: T0 + 1,
+          disputeWindowEndsAt: null,
         }),
       ).toBe(true);
     });
@@ -280,6 +337,7 @@ describe.each([
         state: 'accepted',
         supplierEpoch: '1',
         updatedAt: T0 + 2,
+        disputeWindowEndsAt: null,
       };
       expect(h.statusHeads.setFence(BUYER, 'po-1', fence)).toBe(false);
       expect(h.statusHeads.setFence(BUYER, 'po-1', { ...fence, supplierEpoch: '2' })).toBe(true);

@@ -61,6 +61,7 @@ async function insertAttestation(opts: {
     name: opts.subjectName ?? opts.subjectDid ?? 'Test Subject',
   }
   if (opts.subjectDid) subjectRef.did = opts.subjectDid
+  if (opts.subjectUri) subjectRef.uri = opts.subjectUri
 
   await handler.handleCreate(ctx, {
     uri: opts.uri,
@@ -201,7 +202,7 @@ describe('17.1 Ingest to Page', () => {
     // Verify via direct DB query that trust edge exists
     const edgeResult = await db.execute(sql`
       SELECT from_did, to_did, edge_type, weight
-      FROM trust_edges
+      FROM peerlens_edges
       WHERE from_did = ${voucher} AND to_did = ${vouchee}
     `)
     const edges = (edgeResult as any).rows
@@ -280,7 +281,11 @@ describe('17.1 Ingest to Page', () => {
       text: 'First review of Product Alpha',
     })
 
-    // Same product name, different author (Tier 2: author-scoped)
+    // Same product name, different author. Tier 2 is SHARED, not
+    // author-scoped — see the resolver's own doc: "PeerLens is a SHARED trust
+    // layer, so two reviewers of 'Aeron Chair' land on ONE subject row that
+    // aggregates both reviews."
+
     await insertAttestation({
       uri: `at://${author2}/com.dinakernel.peerlens.attestation/e2e004-2`,
       did: author2,
@@ -289,21 +294,33 @@ describe('17.1 Ingest to Page', () => {
       text: 'Second review of Product Alpha',
     })
 
-    // Verify subjects: since these use Tier 2 (name-based, no DID/URI/identifier),
-    // different authors create different subjects
+    // ONE subject, and that is the point of the layer. This asserted TWO,
+    // from a time when Tier 2 hashed the author into the id; the resolver
+    // dropped that so a shared trust layer could actually aggregate. A test
+    // asserting the old scoping was asserting that reviews stay siloed —
+    // the opposite of what PeerLens is for.
+    //
+    // Disambiguating two genuinely different things that share a name is done
+    // by supplying a Tier 1 identifier, which the rest of this test exercises.
     const subjectResult = await db.execute(sql`
       SELECT * FROM subjects WHERE name = 'Product Alpha'
     `)
     const subjects = (subjectResult as any).rows
-    // Two different authors with name-only subjects = two distinct subjects
-    expect(subjects.length).toBe(2)
+    expect(subjects.length).toBe(1)
 
-    // Now create attestations using a global identifier (Tier 1: URI)
-    // Both should resolve to the same subject
+    // Now the Tier 1 half — which this test CLAIMED to exercise and did not.
+    // Both attestations passed a name only, so they were Tier 2 like the pair
+    // above, and the assertion that followed ("different authors, name-only =
+    // different subjects") contradicted the comment directly over it. The
+    // fixture had no way to send a `uri` at all.
+    //
+    // Now they carry the same global identifier, which is what "two reviewers
+    // of one thing converge" is supposed to mean.
     await insertAttestation({
       uri: `at://${author1}/com.dinakernel.peerlens.attestation/e2e004-3`,
       did: author1,
       subjectName: 'Beta Product',
+      subjectUri,
       subjectType: 'content',
       text: 'First review of Beta by URI',
     })
@@ -311,19 +328,20 @@ describe('17.1 Ingest to Page', () => {
     await insertAttestation({
       uri: `at://${author2}/com.dinakernel.peerlens.attestation/e2e004-4`,
       did: author2,
-      subjectName: 'Beta Product',
+      // A DIFFERENT display name on purpose: a Tier 1 identifier outranks the
+      // name, so these must still converge. The same name would have proved
+      // nothing the Tier 2 case above did not already prove.
+      subjectName: 'Beta Product (EU edition)',
+      subjectUri,
       subjectType: 'content',
       text: 'Second review of Beta by URI',
     })
 
-    // Both resolve to same subject? Since they use name-only (Tier 2) and different authors,
-    // they create different subjects. This verifies the 3-tier resolution works correctly.
     const betaSubjects = await db.execute(sql`
       SELECT DISTINCT subject_id FROM attestations
       WHERE text LIKE '%Beta%'
     `)
-    // Different authors, name-only = different subjects
-    expect((betaSubjects as any).rows.length).toBe(2)
+    expect((betaSubjects as any).rows.length).toBe(1)
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0607", "section": "01", "sectionName": "General", "title": "IT-E2E-005: search flow"}

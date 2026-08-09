@@ -561,7 +561,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRuntime: { llm: makeStubLLM(), providerName: 'gemini' },
           serviceRuntime: {
             readConfig: () => null,
-            rejectResponder: jest.fn(),
+            directResponder: jest.fn(),
             deliver: jest.fn(),
             workflowEventIntervalMs: 25,
             approvalReconcileIntervalMs: 50,

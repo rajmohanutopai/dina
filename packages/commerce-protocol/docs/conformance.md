@@ -36,7 +36,9 @@ replaced by a real version policy.**
 Freeze happens when all of these hold:
 
 - [ ] canonicalization, digests and arithmetic settled (§9.1, §9.3) — **done**
-- [ ] catalog declaration/snapshot records and proof verification (§10.2) — open
+- [x] catalog declaration/snapshot records and proof verification (§10.2) —
+      wire contract, publisher, ingester and frozen vectors landed; the AppView
+      index that consumes them is separate and unbuilt
 - [ ] frozen vectors cover every §25.1 category — partial
 - [ ] product relationship claims, evidence thresholds, review dimensions — partial
 - [ ] legal order-state transitions and error codes (§9.11) — **done**
@@ -63,6 +65,13 @@ above is lifted, breaks do not bump the version.
   rejected, which made validity depend on charge order and broke the §9.1
   plain-integer-sum guarantee for any document where a discount precedes a
   surcharge.
+- **BREAKING** — `verifyRestoreFence` now requires an `at_iso` receiver clock
+  and applies the dispute deadline to a `delivered -> disputed` fence, the way
+  `verifyStatusSuccession` already did on the ordinary path. Previously the
+  fence path never looked at the window — it took no clock at all — so a
+  supplier could dispute an order whose window closed long ago by marking the
+  record `restore_fence: true`. The parameter is required rather than optional
+  because an omitted clock that skips the check reproduces exactly that bug.
 - **BREAKING** — `BuyerQuoteContext` now requires the retained `QuoteRequest`
   and an `at_iso` acceptance time. Verification binds quote lines to requested
   lines, exact product identity, substitution authority, and expiry. A digest
@@ -80,16 +89,57 @@ above is lifted, breaks do not bump the version.
 
 `conformance/vectors/`:
 
-| file | covers |
-|------|--------|
-| `arithmetic.json` | line subtotals, magnitude bounds (both sides), totals including charge-order permutation equivalence and an expected rejection |
-| `digests.json` | domain separation across the ten commerce record domains |
-| `malformed.json` | inputs every implementation must reject |
+| file                    | covers                                                                                                                                                                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arithmetic.json`       | line subtotals, magnitude bounds (both sides), totals including charge-order permutation equivalence and an expected rejection                                                                                                                |
+| `digests.json`          | domain separation across the ten commerce record domains                                                                                                                                                                                      |
+| `malformed.json`        | inputs every implementation must reject                                                                                                                                                                                                       |
+| `units.json`            | the CLOSED §9.2 vocabulary — exact membership, dimensions, base factors, comparability, and codes that must be unknown                                                                                                                        |
+| `product.json`          | §9.3/§9.4 product identity: equality across scheme, value and ISSUER; scoped-scheme normalization; exact-variant projection and substitution mismatch; the shapes that must be rejected                                                       |
+| `catalog.json`          | §10.2 publication: page digests, payload root, snapshot digest, and five pointer-chain cases                                                                                                                                                  |
+| `quantity.json`         | §9.1/§9.2 unit and PACK conversion: exact cross-scale comparison, and the refusal when a `case`/`pallet` needs pack evidence                                                                                                                  |
+| `relationship.json`     | §10.2 relationship claims: the DID/product discriminant in BOTH directions, and temporal-validity windows                                                                                                                                     |
+| `search_candidate.json` | §10.5 discovery result: a candidate as a catalog AppView emits it, plus five refusals with their exact strings                                                                                                                                |
+| `schema_evolution.json` | §9.13 forward compatibility: MAJOR/MINOR version admission with the typed refusal, version-string shape, and the unknown-field law — canonicalization INCLUDES them (so a receiver may not strip and re-sign) while validation TOLERATES them |
 
-**Known gaps** (§25.1 categories not yet frozen): unit/pack conversion,
-product normalization, relationship canonicalization and temporal validity,
-catalog snapshot roots, substitution/variant mismatch, exact-variant
-projection, schema-version and unknown-field behaviour.
+**Known gaps** (§25.1 categories not yet frozen): none. The last four —
+substitution/variant mismatch, exact-variant projection, product normalization
+beyond equality, and schema-version/unknown-field behaviour — landed in
+`product.json` and `schema_evolution.json`.
+
+`units.json` pins MEMBERSHIP, not just shape. The vocabulary being closed is
+the rule (owner decision, §27 Q4): an implementation that quietly accepted one
+more unit would price orders this one refuses, so a vector that only checked
+the units it knows about would miss the interoperability failure entirely.
+
+`quantity.json` pins PACK CONVERSION as a refusal. `case` and `pallet` carry
+no base factor, so converting them needs evidence this layer does not hold. An
+implementation that guessed "a case is twelve" would agree to a pallet order at
+a twelfth of its size and price it accordingly, so the refusal — and its exact
+wording — is the contract. The cross-dimension cases are separate on purpose:
+they refuse for a different reason (a category error, not missing evidence),
+and a vector set carrying only one would let a port collapse them.
+
+`relationship.json` pins the DID/product discriminant in BOTH directions. These
+edges compose manufacturer standing, so a port that accepted `manufactured_by`
+pointing at another PRODUCT would inherit reputation along an edge that means
+nothing. Temporal windows are pinned closed-before-open AND zero-length, since
+`<=` rather than `<` is the whole difference, and timestamps must be UTC rather
+than merely parseable — an offset canonicalizes differently, so two
+implementations would digest the same claim to different bytes.
+
+`catalog.json` pins the refusal STRING for each chain case, not merely the
+fact of refusal. Two implementations that both reject a rollback for
+differently-worded reasons diverge the first time an operator reads a log.
+
+`search_candidate.json` is the first vector written for a CONSUMER rather than
+a publisher. §10.5 is what a catalog AppView returns, and the AppView is a
+separate deployment that cannot import this package — so the vector is the only
+thing keeping its projection and this validator agreeing. The AppView side
+asserts its projection produces exactly `candidate`; this side asserts the
+validator accepts that object and refuses each `invalid` case with the stated
+string. A candidate with no `matched_fields` is refused on purpose: a result
+nobody can explain is indistinguishable from a paid placement.
 
 A vector case carries either `expected_*` (a result) or
 `expected_error_contains` (a rejection). Both matter: an implementation that

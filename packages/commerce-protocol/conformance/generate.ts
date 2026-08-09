@@ -34,9 +34,29 @@ import {
   makeStatus,
   makeSuccessor,
 } from '../__tests__/helpers/fixtures';
-import { computeLineSubtotal, computeTotal } from '../src/arithmetic';
+import { computeLineSubtotal, computeTotal, type Charge } from '../src/arithmetic';
+import { validateProductRelationshipClaim } from '../src/catalog';
+import {
+  catalogPageDigest,
+  catalogPayloadRoot,
+  catalogSnapshotDigest,
+  verifyCatalogPointerAdvance,
+  type CatalogPointer,
+  type CatalogSnapshot,
+  type CatalogSnapshotPage,
+} from '../src/catalog_publication';
+import { canonicalJson } from '../src/canonical';
+import { checkProtocolVersion, validateProtocolVersionShape } from '../src/common';
 import { COMMERCE_DIGEST_DOMAINS, commerceDigest } from '../src/digests';
+import { productRefsEqual, validateProductRef, type ProductRef } from '../src/product';
+import { compareQuantities, validateQuantity, type Quantity } from '../src/quantity';
 import { termsDigestInput } from '../src/quote';
+import {
+  UNIT_VOCABULARY_V1,
+  UNIT_VOCABULARY_VERSION,
+  unitDef,
+  unitsComparable,
+} from '../src/units';
 
 const VECTOR_DIR = join(__dirname, 'vectors');
 mkdirSync(VECTOR_DIR, { recursive: true });
@@ -160,6 +180,69 @@ const arithmeticVector = {
         expected_minor_units: result.value.minor_units,
       };
     })(),
+    /**
+     * §9.1 charge-order permutations. These were in the frozen JSON but NOT
+     * in this generator, so running the documented regenerate command deleted
+     * them — the drift the vectors exist to catch, pointing the other way.
+     * Computed here, never hard-coded, so the emitted value is whatever the
+     * implementation actually produces.
+     */
+    ...(() => {
+      const discount = {
+        kind: 'discount' as const,
+        label: 'big',
+        amount: inr('200'),
+        operation: 'subtract' as const,
+      };
+      const surcharge = {
+        kind: 'delivery' as const,
+        label: 'later add',
+        amount: inr('500'),
+        operation: 'add' as const,
+      };
+      const wire = (c: typeof discount | typeof surcharge) => ({
+        kind: c.kind,
+        label: c.label,
+        amount: { currency: 'INR', minor_units: c.amount.minor_units },
+        operation: c.operation,
+      });
+      const permute = (charges: (typeof discount | typeof surcharge)[]) => {
+        const result = computeTotal('INR', [inr('100')], charges as Charge[]);
+        if (result.error || !result.value) throw new Error(String(result.error));
+        return {
+          currency: 'INR',
+          line_subtotals: ['100'],
+          charges: charges.map(wire),
+          expected_minor_units: result.value.minor_units,
+        };
+      };
+      // Non-negativity is a property of the RESULT, not of the running value,
+      // so the discount-first case must succeed and this one must not.
+      const negative = computeTotal('INR', [inr('100')], [discount] as Charge[]);
+      if (!negative.error) throw new Error('a total below zero must be rejected');
+      return [
+        {
+          name: 'charge_order_discount_first',
+          note: '§9.1 is a plain integer sum, so a discount preceding a surcharge must give the same total as the reverse. An implementation that rejects intermediate negatives disagrees here.',
+          ...permute([discount, surcharge]),
+        },
+        {
+          name: 'charge_order_surcharge_first',
+          note: 'Permutation of the case above. Both MUST produce 400.',
+          ...permute([surcharge, discount]),
+        },
+        {
+          name: 'final_total_negative_is_invalid',
+          note: 'Non-negativity is a property of the RESULT, not of the running value.',
+          currency: 'INR',
+          line_subtotals: ['100'],
+          // A distinct label from the permutation cases: this discount is
+          // the one that drives the total below zero.
+          charges: [wire({ ...discount, label: 'too big' })],
+          expected_error_contains: 'negative',
+        },
+      ];
+    })(),
   ],
 };
 
@@ -263,7 +346,11 @@ const malformedVector = {
       input: { currency: 'INR', minor_units: '01' },
       error_includes: 'canonical',
     },
-    { name: 'negative', input: { currency: 'INR', minor_units: '-1' }, error_includes: 'canonical' },
+    {
+      name: 'negative',
+      input: { currency: 'INR', minor_units: '-1' },
+      error_includes: 'canonical',
+    },
     { name: 'float', input: { currency: 'INR', minor_units: '1.5' }, error_includes: 'canonical' },
     {
       name: 'lowercase_currency',
@@ -287,7 +374,11 @@ const malformedVector = {
       input: { value: '1.2345', unit_code: 'kg' },
       error_includes: 'declared scale',
     },
-    { name: 'missing_unit', input: { value: '100', unit_code: '' }, error_includes: 'unknown unit' },
+    {
+      name: 'missing_unit',
+      input: { value: '100', unit_code: '' },
+      error_includes: 'unknown unit',
+    },
     {
       name: 'custom_unit_v1',
       input: { value: '1', unit_code: 'custom:did:plc:x#sack' },
@@ -395,6 +486,579 @@ const malformedVector = {
   ],
 };
 
+/**
+ * §10.2 catalog publication. Frozen so a port can check it agrees on the
+ * three commitments AND on which pointer advances the chain — the digests
+ * alone would let an implementation compute identical bytes and still index
+ * a rolled-back catalog.
+ */
+const catalogPage = (index: number, items: unknown[]): CatalogSnapshotPage => {
+  const draft: CatalogSnapshotPage = {
+    catalog_id: 'chairmaker-main',
+    snapshot_sequence: 1,
+    page_index: index,
+    items,
+    page_digest: '',
+  };
+  return { ...draft, page_digest: catalogPageDigest(draft, hash) };
+};
+
+const catalogPages = [
+  catalogPage(0, [{ sku: 'CHAIR-1', name: 'Oak dining chair' }]),
+  catalogPage(1, [{ sku: 'CHAIR-2', name: 'Beech stool' }]),
+];
+const catalogPageDigests = catalogPages.map((p) => p.page_digest);
+const catalogSnapshotDraft: CatalogSnapshot = {
+  supplier_did: SUPPLIER_DID,
+  catalog_id: 'chairmaker-main',
+  snapshot_sequence: 1,
+  protocol_version: '1.0',
+  published_at: '2026-01-01T00:00:00.000Z',
+  page_digests: catalogPageDigests,
+  item_count: 2,
+  payload_root: catalogPayloadRoot(catalogPageDigests, hash),
+  snapshot_digest: '',
+};
+const catalogSnapshot: CatalogSnapshot = {
+  ...catalogSnapshotDraft,
+  snapshot_digest: catalogSnapshotDigest(catalogSnapshotDraft, hash),
+};
+const genesisPointer: CatalogPointer = {
+  supplier_did: SUPPLIER_DID,
+  catalog_id: 'chairmaker-main',
+  snapshot_sequence: 1,
+  protocol_version: '1.0',
+  published_at: '2026-01-01T00:00:00.000Z',
+  snapshot_rkey: catalogSnapshot.snapshot_digest,
+  snapshot_digest: catalogSnapshot.snapshot_digest,
+};
+
+const catalogVector = {
+  pages: catalogPages,
+  snapshot: catalogSnapshot,
+  genesis_pointer: genesisPointer,
+  /** Each case states the pointer and the exact refusal (null = accepted). */
+  chain_cases: [
+    { name: 'genesis_at_one', previous: null, next: genesisPointer, expect: null },
+    {
+      name: 'genesis_must_start_at_one',
+      previous: null,
+      next: { ...genesisPointer, snapshot_sequence: 2 },
+      expect: verifyCatalogPointerAdvance(null, { ...genesisPointer, snapshot_sequence: 2 }),
+    },
+    {
+      name: 'gap_is_a_publication_fault',
+      previous: genesisPointer,
+      next: {
+        ...genesisPointer,
+        snapshot_sequence: 3,
+        previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+      },
+      expect: verifyCatalogPointerAdvance(genesisPointer, {
+        ...genesisPointer,
+        snapshot_sequence: 3,
+        previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+      }),
+    },
+    {
+      name: 'rollback_refused',
+      previous: { ...genesisPointer, snapshot_sequence: 4 },
+      next: genesisPointer,
+      expect: verifyCatalogPointerAdvance(
+        { ...genesisPointer, snapshot_sequence: 4 },
+        genesisPointer,
+      ),
+    },
+    {
+      name: 'nothing_follows_a_withdrawal',
+      previous: {
+        supplier_did: SUPPLIER_DID,
+        catalog_id: 'chairmaker-main',
+        snapshot_sequence: 2,
+        protocol_version: '1.0',
+        published_at: '2026-01-02T00:00:00.000Z',
+        previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+        withdrawn: true,
+      } as CatalogPointer,
+      next: {
+        ...genesisPointer,
+        snapshot_sequence: 3,
+        previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+      },
+      expect: verifyCatalogPointerAdvance(
+        {
+          supplier_did: SUPPLIER_DID,
+          catalog_id: 'chairmaker-main',
+          snapshot_sequence: 2,
+          protocol_version: '1.0',
+          published_at: '2026-01-02T00:00:00.000Z',
+          previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+          withdrawn: true,
+        } as CatalogPointer,
+        {
+          ...genesisPointer,
+          snapshot_sequence: 3,
+          previous_snapshot_digest: catalogSnapshot.snapshot_digest,
+        },
+      ),
+    },
+  ],
+};
+
+/**
+ * §9.2 unit vocabulary. A CLOSED list (owner decision, §27 Q4): a port that
+ * silently accepted `oz` would price orders this one refuses, so the exact
+ * membership, dimensions and base factors are frozen — not just the shape.
+ */
+/** Look a unit up or fail loudly — the generator must not silently emit a
+ *  vector describing a unit the vocabulary no longer has. */
+function requireUnit(code: string): NonNullable<ReturnType<typeof unitDef>> {
+  const def = unitDef(code);
+  if (def === undefined) throw new Error(`generator names a missing unit: ${code}`);
+  return def;
+}
+
+const unitsVector = {
+  vocabulary_version: UNIT_VOCABULARY_VERSION,
+  units: UNIT_VOCABULARY_V1.map((u) => ({
+    code: u.code,
+    dimension: u.dimension,
+    scale: u.scale,
+    // BigInt is not JSON; the string is what a port compares against.
+    base_factor: u.baseFactor === null ? null : u.baseFactor.toString(),
+  })),
+  /** Outside the vocabulary — every one of these MUST be unknown. */
+  rejected_codes: ['oz', 'lb', 'dozen', 'EACH', 'kilogram', '', 'each '],
+  comparability: [
+    { a: 'g', b: 'kg', expect: unitsComparable(requireUnit('g'), requireUnit('kg')) },
+    { a: 'ml', b: 'l', expect: unitsComparable(requireUnit('ml'), requireUnit('l')) },
+    // Different dimensions never compare, however sensible a conversion looks.
+    { a: 'g', b: 'ml', expect: unitsComparable(requireUnit('g'), requireUnit('ml')) },
+    { a: 'each', b: 'g', expect: unitsComparable(requireUnit('each'), requireUnit('g')) },
+    // `case`/`pallet` carry no base factor: their size is per-product, so two
+    // cases are NOT comparable without the pack context.
+    { a: 'case', b: 'each', expect: unitsComparable(requireUnit('case'), requireUnit('each')) },
+  ],
+};
+
+/**
+ * §9.3/§9.4 product identity. Equality decides whether an order line matches
+ * the quote line it claims, so a port that normalised differently would accept
+ * substitutions this one refuses.
+ */
+const productCases: { name: string; a: ProductRef; b: ProductRef }[] = [
+  {
+    name: 'identical_gtin',
+    a: { scheme: 'gtin', value: '05012345678900' },
+    b: { scheme: 'gtin', value: '05012345678900' },
+  },
+  {
+    name: 'different_value',
+    a: { scheme: 'gtin', value: '05012345678900' },
+    b: { scheme: 'gtin', value: '05012345678917' },
+  },
+  {
+    name: 'different_scheme_same_value',
+    a: { scheme: 'gtin', value: '05012345678900' },
+    b: { scheme: 'supplier_sku', value: '05012345678900' } as unknown as ProductRef,
+  },
+  // §9.3 — an identifier is a signed assertion BY ITS ISSUER. Two
+  // manufacturers using the same internal SKU is ordinary, so the issuer is
+  // part of identity and not decoration.
+  {
+    name: 'same_sku_different_issuer_is_a_different_product',
+    a: { scheme: 'manufacturer_sku', value: 'OAK-CHAIR-1', issuer_did: 'did:plc:chairmaker99' },
+    b: { scheme: 'manufacturer_sku', value: 'OAK-CHAIR-1', issuer_did: 'did:plc:someoneelse' },
+  },
+  {
+    name: 'same_sku_same_issuer_is_the_same_product',
+    a: { scheme: 'manufacturer_sku', value: 'OAK-CHAIR-1', issuer_did: 'did:plc:chairmaker99' },
+    b: { scheme: 'manufacturer_sku', value: 'OAK-CHAIR-1', issuer_did: 'did:plc:chairmaker99' },
+  },
+  {
+    name: 'issuer_present_versus_absent_is_not_equal',
+    a: { scheme: 'dina_subject', value: 'subject-1', issuer_did: 'did:plc:chairmaker99' },
+    b: { scheme: 'dina_subject', value: 'subject-1' },
+  },
+];
+
+/**
+ * §9.4 EXACT-VARIANT AUTHORITY. The same identifier at a different variant is
+ * a different line item — this is what stops a 12-pack shipping against a
+ * quote for a 6-pack because the GTIN matched. The asymmetric case is pinned
+ * too: "unspecified" is not a wildcard.
+ */
+const VARIANT_A = 'a'.repeat(64);
+const VARIANT_B = 'b'.repeat(64);
+const variantCases: { name: string; a: ProductRef; b: ProductRef }[] = [
+  {
+    name: 'same_identifier_different_variant_is_NOT_a_substitute',
+    a: { scheme: 'gtin', value: '05012345678900', variant_digest: VARIANT_A },
+    b: { scheme: 'gtin', value: '05012345678900', variant_digest: VARIANT_B },
+  },
+  {
+    name: 'variant_present_versus_absent_is_NOT_equal',
+    a: { scheme: 'gtin', value: '05012345678900', variant_digest: VARIANT_A },
+    b: { scheme: 'gtin', value: '05012345678900' },
+  },
+  {
+    name: 'identical_variant_is_the_same_line_item',
+    a: { scheme: 'gtin', value: '05012345678900', variant_digest: VARIANT_A },
+    b: { scheme: 'gtin', value: '05012345678900', variant_digest: VARIANT_A },
+  },
+  {
+    name: 'both_absent_is_the_same_line_item',
+    a: { scheme: 'gtin', value: '05012345678900' },
+    b: { scheme: 'gtin', value: '05012345678900' },
+  },
+];
+
+/**
+ * §9.13 SCHEMA EVOLUTION — the two halves of forward compatibility.
+ *
+ * VERSION ADMISSION decides whether this build may parse a document at all.
+ * UNKNOWN FIELDS is the half that is easy to get backwards, so both directions
+ * are generated together: canonicalization INCLUDES an unknown field (a
+ * receiver may not strip what it does not recognise and still expect the
+ * signature to verify), while validation TOLERATES it (a record from a newer
+ * minor is not invalid merely because it says more than this build reads).
+ */
+const schemaEvolutionVector = {
+  _note:
+    '§9.13 version admission and the forward-compatibility law for unknown fields. Regenerated only with a MAJOR bump.',
+  version_admission: [
+    'same_major_same_minor_is_parseable:1.0',
+    'same_major_higher_minor_is_parseable_because_minor_is_additive:1.7',
+    'same_major_large_minor_is_parseable:1.999',
+    'higher_major_is_refused:2.0',
+    'lower_major_is_refused:0.9',
+  ].map((spec) => {
+    const at = spec.lastIndexOf(':');
+    const version = spec.slice(at + 1);
+    return { name: spec.slice(0, at), version, error: checkProtocolVersion(version) };
+  }),
+  version_shape: [
+    { name: 'canonical_major_minor', value: '1.0' },
+    { name: 'three_parts_is_not_a_protocol_version', value: '1.0.0' },
+    { name: 'leading_zero_is_not_canonical', value: '01.0' },
+    { name: 'minor_leading_zero_is_not_canonical', value: '1.01' },
+    { name: 'major_alone_is_not_a_protocol_version', value: '1' },
+    { name: 'not_a_string', value: 1 },
+  ].map((c) => ({ ...c, error: validateProtocolVersionShape(c.value, 'protocol_version') })),
+  unknown_fields: [
+    {
+      name: 'an_unknown_field_CHANGES_the_canonical_bytes',
+      known: { a: '1', protocol_version: '1.0' },
+      with_unknown: { a: '1', protocol_version: '1.0', future_field: 'x' },
+    },
+    {
+      name: 'key_order_does_NOT_change_the_canonical_bytes',
+      known: { protocol_version: '1.0', a: '1' },
+      with_unknown: { a: '1', protocol_version: '1.0' },
+    },
+    {
+      // An explicitly-undefined property is DROPPED — it canonicalizes as if
+      // the key were never there. Distinct from `null`, which is a value and
+      // survives; the pair below pins both, because a port that conflated them
+      // would compute a different digest for the same record.
+      name: 'an_explicitly_undefined_field_is_dropped_entirely',
+      known: { a: '1' },
+      with_unknown: { a: '1', future_field: undefined },
+    },
+    {
+      name: 'an_explicit_null_is_a_VALUE_and_survives',
+      known: { a: '1' },
+      with_unknown: { a: '1', future_field: null },
+    },
+  ].map((c) => ({
+    ...c,
+    known_canonical: canonicalJson(c.known),
+    with_unknown_canonical: canonicalJson(c.with_unknown),
+    same_bytes: canonicalJson(c.known) === canonicalJson(c.with_unknown),
+  })),
+  unknown_field_tolerance: [
+    {
+      name: 'a_product_carrying_an_unknown_field_still_validates',
+      product: { scheme: 'gtin', value: '05012345678900', future_field: 'x' },
+    },
+    {
+      name: 'an_unknown_field_cannot_rescue_an_invalid_one',
+      product: { scheme: 'gtin', value: '', future_field: 'x' },
+    },
+  ].map((c) => ({ ...c, error: validateProductRef(c.product) })),
+};
+
+const productVector = {
+  equality: productCases.map((c) => ({
+    name: c.name,
+    a: c.a,
+    b: c.b,
+    equal: productRefsEqual(c.a, c.b),
+  })),
+  rejected: [
+    { name: 'empty_value', product: { scheme: 'gtin', value: '' } },
+    { name: 'unknown_scheme', product: { scheme: 'made_up', value: 'x' } },
+    { name: 'missing_scheme', product: { value: 'x' } },
+    { name: 'not_an_object', product: 'gtin:05012345678900' },
+  ].map((c) => ({ ...c, error: validateProductRef(c.product) })),
+  // NORMALIZATION, including the ACCEPTED cases: a port that refused
+  // everything would pass a refusal-only vector.
+  scoped: [
+    {
+      name: 'manufacturer_sku_without_issuer_is_refused',
+      product: { scheme: 'manufacturer_sku', value: 'OAK-CHAIR-1' },
+    },
+    {
+      name: 'custom_without_issuer_is_refused',
+      product: { scheme: 'custom', value: 'internal-42' },
+    },
+    {
+      name: 'manufacturer_sku_with_issuer_is_accepted',
+      product: {
+        scheme: 'manufacturer_sku',
+        value: 'OAK-CHAIR-1',
+        issuer_did: 'did:plc:chairmaker99',
+      },
+    },
+    { name: 'gtin_needs_no_issuer', product: { scheme: 'gtin', value: '05012345678900' } },
+    {
+      name: 'gtin_value_must_be_8_to_14_digits',
+      product: { scheme: 'gtin', value: '5012345' },
+    },
+    {
+      name: 'gtin_value_must_be_digits_only',
+      product: { scheme: 'gtin', value: '0501234567890X' },
+    },
+    {
+      name: 'value_longer_than_128_is_refused',
+      product: { scheme: 'dina_subject', value: 'x'.repeat(129) },
+    },
+  ].map((c) => ({ ...c, error: validateProductRef(c.product) })),
+  variant: variantCases.map((c) => ({
+    name: c.name,
+    a: c.a,
+    b: c.b,
+    equal: productRefsEqual(c.a, c.b),
+  })),
+  variant_rejected: [
+    {
+      name: 'variant_digest_must_be_64_hex',
+      product: { scheme: 'gtin', value: '05012345678900', variant_digest: 'not-hex' },
+    },
+    {
+      name: 'variant_digest_must_be_lowercase',
+      product: { scheme: 'gtin', value: '05012345678900', variant_digest: 'A'.repeat(64) },
+    },
+  ].map((c) => ({ ...c, error: validateProductRef(c.product) })),
+};
+
+/**
+ * §25.1 (WS-1.9) — the five categories the vector set was missing.
+ *
+ * Each pins a rule whose DISAGREEMENT between implementations is commercial,
+ * not cosmetic: a port that converts packs differently prices an order
+ * differently, and one that projects a variant differently ships the wrong
+ * thing. Refusal STRINGS are frozen, not merely the fact of refusal — two
+ * implementations rejecting the same input for differently-worded reasons
+ * diverge the first time an operator reads a log.
+ */
+const quantityCases: { name: string; a: Quantity; b: Quantity }[] = [
+  // Same dimension, different scale: the conversion that must be exact.
+  {
+    name: 'kg_vs_g_equal',
+    a: { unit_code: 'kg', value: '1' },
+    b: { unit_code: 'g', value: '1000' },
+  },
+  {
+    name: 'kg_vs_g_greater',
+    a: { unit_code: 'kg', value: '1.001' },
+    b: { unit_code: 'g', value: '1000' },
+  },
+  {
+    name: 'l_vs_ml_equal',
+    a: { unit_code: 'l', value: '0.25' },
+    b: { unit_code: 'ml', value: '250' },
+  },
+  {
+    name: 'each_vs_each',
+    a: { unit_code: 'each', value: '3' },
+    b: { unit_code: 'each', value: '4' },
+  },
+  // PACK EVIDENCE. `case` and `pallet` have no base factor, so converting
+  // them needs evidence this layer does not carry. Refusing is the rule; a
+  // port that guessed "a case is 12" would price a pallet order wrongly.
+  {
+    name: 'case_vs_each_needs_pack',
+    a: { unit_code: 'case', value: '1' },
+    b: { unit_code: 'each', value: '12' },
+  },
+  {
+    name: 'pallet_vs_case_needs_pack',
+    a: { unit_code: 'pallet', value: '1' },
+    b: { unit_code: 'case', value: '40' },
+  },
+  {
+    name: 'case_vs_case_comparable',
+    a: { unit_code: 'case', value: '2' },
+    b: { unit_code: 'case', value: '3' },
+  },
+  // Cross-dimension: never comparable, whatever the numbers say.
+  {
+    name: 'kg_vs_l_cross_dimension',
+    a: { unit_code: 'kg', value: '1' },
+    b: { unit_code: 'l', value: '1' },
+  },
+  {
+    name: 'each_vs_g_cross_dimension',
+    a: { unit_code: 'each', value: '1' },
+    b: { unit_code: 'g', value: '1' },
+  },
+];
+
+const quantityVector = {
+  comparisons: quantityCases.map((c) => {
+    const result = compareQuantities(c.a, c.b);
+    return {
+      name: c.name,
+      a: c.a,
+      b: c.b,
+      // A number is an ordering; a string is a refusal, and its exact text is
+      // what a port must reproduce.
+      ...(typeof result === 'number' ? { compare: result } : { error: result }),
+    };
+  }),
+  rejected: [
+    { name: 'unknown_unit', quantity: { unit_code: 'furlong', value: '1' } },
+    { name: 'scale_exceeded', quantity: { unit_code: 'each', value: '1.5' } },
+    { name: 'negative', quantity: { unit_code: 'kg', value: '-1' } },
+    { name: 'leading_zero', quantity: { unit_code: 'kg', value: '01' } },
+    { name: 'not_a_number', quantity: { unit_code: 'kg', value: 'one' } },
+  ].map((c) => ({ ...c, error: validateQuantity(c.quantity) })),
+};
+
+const RELATIONSHIP_SUBJECT: ProductRef = { scheme: 'gtin', value: '05012345678900' };
+const RELATIONSHIP_OBJECT: ProductRef = { scheme: 'gtin', value: '05012345678917' };
+
+const relationshipCases: { name: string; claim: unknown }[] = [
+  {
+    name: 'variant_of_product_object',
+    claim: {
+      claim_id: 'rc-1',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'variant_of',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+    },
+  },
+  {
+    name: 'manufactured_by_did_object',
+    claim: {
+      claim_id: 'rc-2',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'manufactured_by',
+      object: { did: 'did:plc:chairmaker' },
+      issuer_did: 'did:plc:chairmaker',
+    },
+  },
+  {
+    name: 'temporal_window_ordered',
+    claim: {
+      claim_id: 'rc-3',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'replaces',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+      effective_from: '2026-01-01T00:00:00.000Z',
+      effective_until: '2027-01-01T00:00:00.000Z',
+    },
+  },
+  // The discriminant, in BOTH directions. A product "manufactured by" another
+  // PRODUCT is an edge that means nothing, and it would compose manufacturer
+  // standing along it.
+  {
+    name: 'did_relationship_with_product_object',
+    claim: {
+      claim_id: 'rc-4',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'manufactured_by',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+    },
+  },
+  {
+    name: 'product_relationship_with_did_object',
+    claim: {
+      claim_id: 'rc-5',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'variant_of',
+      object: { did: 'did:plc:chairmaker' },
+      issuer_did: 'did:plc:chairmaker',
+    },
+  },
+  {
+    name: 'unknown_relationship',
+    claim: {
+      claim_id: 'rc-6',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'vaguely_related_to',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+    },
+  },
+  // Temporal validity: a window that closes before it opens is not a window.
+  {
+    name: 'temporal_window_inverted',
+    claim: {
+      claim_id: 'rc-7',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'replaces',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+      effective_from: '2027-01-01T00:00:00.000Z',
+      effective_until: '2026-01-01T00:00:00.000Z',
+    },
+  },
+  {
+    name: 'temporal_window_zero_length',
+    claim: {
+      claim_id: 'rc-8',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'replaces',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+      effective_from: '2026-01-01T00:00:00.000Z',
+      effective_until: '2026-01-01T00:00:00.000Z',
+    },
+  },
+  {
+    name: 'non_utc_timestamp',
+    claim: {
+      claim_id: 'rc-9',
+      subject: RELATIONSHIP_SUBJECT,
+      relationship: 'replaces',
+      object: RELATIONSHIP_OBJECT,
+      issuer_did: 'did:plc:chairmaker',
+      effective_from: '2026-01-01T00:00:00+05:30',
+    },
+  },
+];
+
+const relationshipVector = {
+  claims: relationshipCases.map((c) => ({
+    name: c.name,
+    claim: c.claim,
+    // null = accepted. A string is the exact refusal a port must reproduce.
+    error: validateProductRelationshipClaim(c.claim),
+  })),
+};
+
+write('quantity.json', quantityVector);
+write('relationship.json', relationshipVector);
+
+write('units.json', unitsVector);
+write('product.json', productVector);
+write('schema_evolution.json', schemaEvolutionVector);
+write('catalog.json', catalogVector);
 write('arithmetic.json', arithmeticVector);
 write('digests.json', digestsVector);
 write('malformed.json', malformedVector);

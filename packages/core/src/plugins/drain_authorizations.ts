@@ -44,6 +44,16 @@ export interface DrainAuthorization {
   paramsSchemaJson: string;
   /** Prior data_scope.max_context_items (null = unbounded default). */
   maxContextItems: number | null;
+  /**
+   * §9.13 — the protocol version the PRIOR manifest declared.
+   *
+   * A row said WHICH CID was authorized and nothing about which CONTRACT it
+   * speaks, so a lifecycle continuation across a major dispatched to the
+   * current adapter and the runner could not tell it was answering for an
+   * older major. Empty string for rows written before this existed, which
+   * reads as "unknown" rather than as any particular version.
+   */
+  priorVersion: string;
   /** Epoch ms; null = until explicitly released (lifecycle continuity). */
   expiresAt: number | null;
   createdAt: number;
@@ -66,6 +76,18 @@ export interface DrainAuthorizationRepository {
     capabilityId: string,
     nowMs: number,
   ): DrainAuthorization[];
+  /**
+   * Every live LIFECYCLE-CONTINUITY lane, across installs (§9.13).
+   *
+   * Continuity entries carry no expiry — no clock knows when an order ends —
+   * so nothing retires them but an explicit release, and until now nothing
+   * could even enumerate the candidates. The lanes accumulated: one per
+   * capability per update, held by CIDs that stopped serving anything long
+   * ago.
+   */
+  listLiveContinuity(
+    nowMs: number,
+  ): { installId: string; previousCid: string; capabilityId: string }[];
   /** Release lifecycle-continuity entries once orders are terminal. */
   release(
     installId: string,
@@ -90,6 +112,7 @@ function rowToAuthorization(row: DBRow): DrainAuthorization {
     resultSchemaJson: String(row.result_schema_json),
     paramsSchemaJson: String(row.params_schema_json),
     maxContextItems: row.max_context_items === null ? null : Number(row.max_context_items),
+    priorVersion: String(row.prior_version ?? ''),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     createdAt: Number(row.created_at),
   };
@@ -103,8 +126,8 @@ export class SQLiteDrainAuthorizationRepository implements DrainAuthorizationRep
       `INSERT INTO plugin_drain_authorizations (
          install_id, previous_cid, capability_id, kind, approved_scope_hash,
          config_revision, action_class, effects_idempotency, result_schema_json,
-         params_schema_json, max_context_items, expires_at, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         params_schema_json, max_context_items, prior_version, expires_at, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(install_id, previous_cid, capability_id, kind) DO NOTHING`,
       [
         authorization.installId,
@@ -118,6 +141,7 @@ export class SQLiteDrainAuthorizationRepository implements DrainAuthorizationRep
         authorization.resultSchemaJson,
         authorization.paramsSchemaJson,
         authorization.maxContextItems,
+        authorization.priorVersion,
         authorization.expiresAt,
         authorization.createdAt,
       ],
@@ -142,6 +166,24 @@ export class SQLiteDrainAuthorizationRepository implements DrainAuthorizationRep
       .map(rowToAuthorization);
   }
 
+  listLiveContinuity(
+    nowMs: number,
+  ): { installId: string; previousCid: string; capabilityId: string }[] {
+    return this.db
+      .query(
+        `SELECT DISTINCT install_id, previous_cid, capability_id
+           FROM plugin_drain_authorizations
+          WHERE kind = 'lifecycle_continuity'
+            AND (expires_at IS NULL OR expires_at > ?)
+          ORDER BY install_id, previous_cid, capability_id`,
+        [nowMs],
+      )
+      .map((row) => ({
+        installId: String(row.install_id),
+        previousCid: String(row.previous_cid),
+        capabilityId: String(row.capability_id),
+      }));
+  }
   release(
     installId: string,
     previousCid: string,
@@ -194,6 +236,29 @@ export class InMemoryDrainAuthorizationRepository implements DrainAuthorizationR
     return live;
   }
 
+  listLiveContinuity(
+    nowMs: number,
+  ): { installId: string; previousCid: string; capabilityId: string }[] {
+    const seen = new Set<string>();
+    const out: { installId: string; previousCid: string; capabilityId: string }[] = [];
+    for (const e of this.rows.values()) {
+      if (e.kind !== 'lifecycle_continuity') continue;
+      if (e.expiresAt !== null && e.expiresAt <= nowMs) continue;
+      const key = `${e.installId}\u0000${e.previousCid}\u0000${e.capabilityId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        installId: e.installId,
+        previousCid: e.previousCid,
+        capabilityId: e.capabilityId,
+      });
+    }
+    return out.sort((a, b) =>
+      `${a.installId}${a.previousCid}${a.capabilityId}`.localeCompare(
+        `${b.installId}${b.previousCid}${b.capabilityId}`,
+      ),
+    );
+  }
   release(
     installId: string,
     previousCid: string,

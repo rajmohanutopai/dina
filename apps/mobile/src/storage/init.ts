@@ -17,7 +17,17 @@ import { registerEngagementProvider, collectNotificationBriefingItems } from '@d
 import { resetThreads } from '@dina/brain/chat';
 import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/notifications';
 import {
+  createCommerceRuntime,
+  installBuyerOrderSender,
+  installCommerceServiceQueryDispatch,
+  makeServiceQueryBuyerSender,
+  getCommerceEpochService,
+  setCommerceEpochService,
+  getNodeDID,
   installCommerceRuntime,
+  installHeldEvidenceReader,
+  makeHeldEvidenceVerifier,
+  makeHeldEvidenceReader,
   hydrateContactDirectory,
   resetContactDirectory,
   rebuildContactProjections,
@@ -59,6 +69,19 @@ import {
   setCommandReceiptRepository,
   setDrainAuthorizationRepository,
   setExtensionOperationRegistry,
+  ExtensionOperationRegistry,
+  registerCommerceHostOperations,
+  createPluginHostRuntime,
+  installPluginHostRuntime,
+  makeConnectorBrokerOperation,
+  makeD2DSendOperation,
+  makePublicationCandidateOperation,
+  permittedD2DRecipients,
+  gateCatalogForPublication,
+  getCommerceRuntime,
+  getPluginInstallRepository,
+  getPluginGrantRepository,
+  SUPPLIER_REFERENCE_MANIFEST,
   setCommandTxRunner,
   setErasureKeyStore,
   setRunDispatchService,
@@ -69,6 +92,7 @@ import {
   type ArchivePersonaSource,
   type PersonaTier,
 } from '@dina/core';
+import { getD2DSender } from '@dina/core/d2d';
 import { resetDeviceRegistry } from '@dina/core/devices';
 // Chat thread cache lives in the Brain module (in-memory Map, authoritative
 // for rendering). `resetThreads()` clears it on teardown so a previous
@@ -133,6 +157,7 @@ import {
   type DatabaseAdapter,
 } from '@dina/core/storage';
 
+import { stopMobileCommercePlane } from '../services/commerce_plane';
 import { setOwnerRunClient } from '../services/owner_run_client';
 
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
@@ -140,6 +165,8 @@ import { setOwnerRunClient } from '../services/owner_run_client';
 // raw string directory URI, so we read the path from that object directly.
 
 import { ProductionDBProvider } from './provider';
+
+import type { ServiceQueryBody } from '@dina/protocol';
 
 /** Tiers a restored persona may legitimately carry. */
 const RESTORE_VALID_TIERS: ReadonlySet<string> = new Set([
@@ -250,6 +277,67 @@ export async function initializePersistence(
   setPluginInstallRepository(new SQLitePluginInstallRepository(identityDB));
   setPluginGrantRepository(new SQLitePluginGrantRepository(identityDB));
   setPluginDecisionRepository(new SQLitePluginDecisionRepository(identityDB));
+  // §3.4 / WS-3.5 — the host-operation plane. THIS WAS MISSING ENTIRELY on
+  // mobile: the server composed it and the phone did not, so a permitted
+  // extension proposal here had nothing to execute it and the whole §3.4 lane
+  // was silently absent on the platform that IS the product. Found by wiring
+  // the executors on the server and asking what the other boot does.
+  const extensionRegistry = new ExtensionOperationRegistry();
+  setExtensionOperationRegistry(extensionRegistry);
+  // §3.4 — the operations a capability may DECLARE. The registry was built
+  // empty and only the DISPATCHER was populated, so every declared operation
+  // was refused `operation_unregistered` and the executors below were
+  // unreachable: the lane was open on the doing side and closed on the
+  // declaring one. Code-shipped, never data-driven (§3.4).
+  registerCommerceHostOperations(extensionRegistry);
+  const hostRuntime = createPluginHostRuntime({ db: identityDB, registry: extensionRegistry });
+  installPluginHostRuntime(hostRuntime);
+  hostRuntime.dispatcher.register(
+    'connector_broker',
+    makeConnectorBrokerOperation({ broker: () => getCommerceRuntime()?.broker ?? null }),
+  );
+  hostRuntime.dispatcher.register(
+    'd2d_send',
+    makeD2DSendOperation({
+      send: async ({ toDid, body }) => {
+        const sender = getD2DSender();
+        // A throw, not a silent success: the dispatcher settles it
+        // `outcome_unknown`, and reporting `completed` with no transport
+        // would tell a runner its message left.
+        if (sender === null) throw new Error('d2d_send: this node has no D2D sender');
+        await sender(toDid, 'plugin.message', body as Record<string, unknown>);
+      },
+      // §8's grant constraints, the same source the server reads. Two boots
+      // deriving the recipient set differently is how one of them ends up
+      // permissive.
+      permittedRecipients: permittedD2DRecipients({
+        listGrants: (installId: string) => getPluginGrantRepository()?.listByInstall(installId) ?? [],
+        capability: 'com.dinakernel.plugin.d2d_send',
+        nowSec: () => Math.floor(Date.now() / 1000),
+      }),
+    }),
+  );
+  hostRuntime.dispatcher.register(
+    'publication_candidate',
+    makePublicationCandidateOperation({
+      supplierDid: () => getNodeDID(),
+      mayPublish: (installId: string) =>
+        getPluginInstallRepository()?.getById(installId)?.pluginId ===
+        SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+      validateCandidate: ({ candidate }) => {
+        const items = Array.isArray(candidate)
+          ? candidate
+          : ((candidate as { items?: unknown }).items ?? null);
+        if (!Array.isArray(items)) {
+          return [{ refusal: 'not_a_catalog', detail: 'the candidate carries no item list' }];
+        }
+        const verdict = gateCatalogForPublication(items);
+        return verdict.clean
+          ? []
+          : verdict.findings.map((f) => ({ refusal: f.refusal, detail: f.detail }));
+      },
+    }),
+  );
   setReminderRepository(new SQLiteReminderRepository(identityDB));
   // R4-03 — the DURABLE notification inbox. Wiring this makes Brain's inbox
   // dual-write survive restart (hydrated below) and carries `data_scope` so a
@@ -279,6 +367,108 @@ export async function initializePersistence(
   // Sancho-specific context, even though the user had stored
   // notes about him.
   setPeopleRepository(new SQLitePeopleRepository(identityDB));
+
+  // Commerce Pack stores (COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md
+  // §15.5/§16.2/§23). Composed ONCE, here, exactly as the server root does —
+  // production code receives aggregate stores and cannot reach the raw
+  // mutators (ARCH-0).
+  //
+  // WHY THIS WAS MISSING AND WHY IT MATTERS. Teardown has always called
+  // `installCommerceRuntime(null)`, so the code READ as if mobile had a
+  // commerce runtime; nothing ever created one. Every commerce path on the
+  // product surface therefore found null and failed closed — invisibly,
+  // because failing closed is what a correctly-refusing node also looks like.
+  // The mobile app IS the product, so "commerce is server-only" was a real
+  // gap rather than a staging decision.
+  //
+  // Identity and epoch are read through THUNKS because both boot after
+  // storage, and both THROW rather than defaulting: §16.2 makes signing
+  // fail-closed, and a node that signed under a guessed identity or a missing
+  // epoch would produce commitments it cannot stand behind.
+  installCommerceRuntime(
+    createCommerceRuntime({
+      adapter: identityDB,
+      supplierDid: () => {
+        const did = getNodeDID();
+        if (did === null) {
+          throw new Error('commerce: business identity not established — signing is fail-closed');
+        }
+        return did;
+      },
+      // §12.7/§16.2 — the supplier half of held evidence. Built in Core so
+      // both boots run the same check; unwired, EVERY presented receipt fails
+      // to verify and `never_received` stays legal against real proof.
+      verifyHeldEvidence: makeHeldEvidenceVerifier(),
+      currentEpoch: () => {
+        const service = getCommerceEpochService();
+        if (service === null) {
+          throw new Error('commerce: epoch service not installed — signing is fail-closed (§16.2)');
+        }
+        return service.currentEpoch();
+      },
+      // NO `credentialExecutors` ON MOBILE, and the omission is a decision
+      // (§8.3, §10.3 — WS-9.1). A networked connector must report the address
+      // it actually connected to, so the policy can re-check a hostname that
+      // resolved to a private address after passing the URL check. React
+      // Native's `fetch` cannot report it, and a transport that answered the
+      // question with a separate DNS lookup would read as if the check had
+      // happened when it had not.
+      //
+      // So every networked brokered call on a phone refuses `no_executor`.
+      // §6.5's base no-code supplier — a CSV the owner uploads — needs no
+      // network at all and works here in full.
+    }),
+  );
+
+  // §12.7/§16.2 (WS-X-11) — WHAT THIS BUYER HOLDS, so a supplier that lost
+  // state must re-adopt rather than deny.
+  //
+  // Installed AFTER the runtime, because the reader reads the runtime's own
+  // stores. Before this, `installHeldEvidenceReader` was called from tests
+  // and nowhere else: a real buyer presented no evidence, which made a
+  // supplier's `never_received` legal — and that is the one answer
+  // authorising a resubmission, i.e. a duplicate order.
+  //
+  // Read through the INSTALLED runtime for the same reason everything else
+  // here does: a second set of repositories over the same tables is a second
+  // chance for one of them to disagree with the other.
+  installHeldEvidenceReader(
+    makeHeldEvidenceReader({
+      orders: {
+        get: (supplierDid, purchaseOrderId) =>
+          getCommerceRuntime()?.buyerOrders.get(supplierDid, purchaseOrderId) ?? null,
+      },
+      statuses: {
+        evidenceChain: (supplierDid, purchaseOrderId) =>
+          getCommerceRuntime()?.buyerStatus.evidenceChain(supplierDid, purchaseOrderId) ?? [],
+      },
+    }),
+  );
+
+  // §12.7/WS-3.7 — the buyer order sender. Built over the SAME `service.query`
+  // egress every other outbound capability uses, so the four gates, signing and
+  // MsgBox apply without a second path to keep in step. A throw is reported as
+  // AMBIGUOUS rather than "not sent": the wrapper cannot prove nothing left,
+  // and claiming it would authorize a duplicate order.
+  const serviceQueryDispatch = async ({
+    toDid,
+    body,
+  }: {
+    toDid: string;
+    body: ServiceQueryBody;
+  }): Promise<{ sent: boolean; deniedAt?: string }> => {
+    const send = getD2DSender();
+    if (send === null) {
+      // No transport at all is the one case we CAN prove: nothing left.
+      return { sent: false, deniedAt: 'no_d2d_sender' };
+    }
+    await send(toDid, 'service.query', { ...body });
+    return { sent: true };
+  };
+  // Installed as well as used here, because §12.7's re-poll runs on the
+  // commerce plane's tick and must reach a supplier the SAME way an order does.
+  installCommerceServiceQueryDispatch(serviceQueryDispatch);
+  installBuyerOrderSender(makeServiceQueryBuyerSender({ dispatch: serviceQueryDispatch }));
 
   // Durable persona registry — user-created vaults persist here so a
   // restart restores them (hydratePersonas below). Without it, boot only
@@ -602,9 +792,29 @@ export async function shutdownAllPersistence(): Promise<void> {
     setCompletionReceiptRepository(null);
     setCommandReceiptRepository(null);
     // Commerce stores must not leak across identities (cross-identity
-    // teardown, same as every Tier-0 store above).
+    // teardown, same as every Tier-0 store above). The two commerce ticks stop
+    // FIRST: a sweep that fired between the runtime being nulled and its timer
+    // being cleared would resolve null and do nothing, but the epoch tick would
+    // keep re-reading the PREVIOUS identity's repo on a phone whose user has
+    // already switched away. And the epoch service itself is a global holding
+    // the old identity's signing epoch — left installed, the next identity's
+    // first commerce call would sign at it.
+    stopMobileCommercePlane();
+    setCommerceEpochService(null);
     installCommerceRuntime(null);
+    // NOT torn down: the held-evidence reader. Unlike everything around it, it
+    // closes over no identity — it resolves `getCommerceRuntime()` on each
+    // call, so after this line it reports "nothing held" and after the next
+    // identity's init it reports THAT identity's evidence. Clearing it would
+    // only add a way for a re-inited runtime to end up without a reader, which
+    // is the silent `never_received` this reader exists to prevent.
+    // The outbound lane belongs to THIS identity's transport. Left installed,
+    // the next identity's first order would be dispatched through a closure
+    // over the previous one's sender.
+    installCommerceServiceQueryDispatch(null);
+    installBuyerOrderSender(null);
     setExtensionOperationRegistry(null);
+    installPluginHostRuntime(null);
     setDrainAuthorizationRepository(null);
     setCommandTxRunner(null);
     setErasureKeyStore(null);

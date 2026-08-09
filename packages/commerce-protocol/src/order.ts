@@ -12,6 +12,7 @@
  */
 
 import {
+  verifyConversationVersion,
   isRecord,
   isoUtcMillis,
   validateDid,
@@ -33,6 +34,38 @@ export interface PurchaseOrderLine {
   quantity: Quantity;
 }
 
+/**
+ * The line-list rule, in ONE place.
+ *
+ * Extracted from the order validator because a receiver needs the identical
+ * rule: a buyer re-reading its own stored line snapshot before running §9.11's
+ * cumulative-fulfilment check is asking the same question the order asked, and
+ * two copies of "what is a valid line list" are two chances to disagree about
+ * which status is a fork.
+ */
+export function validatePurchaseOrderLines(lines: unknown, path: string): string | null {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return `${path}: must be a non-empty array`;
+  }
+  if (lines.length > MAX_QUOTE_LINES) {
+    return `${path}: exceeds ${MAX_QUOTE_LINES} lines`;
+  }
+  const seen = new Set<string>();
+  for (const line of lines) {
+    if (!isRecord(line)) return `${path}[]: must be objects`;
+    const err =
+      validateId(line.line_id, `${path}[].line_id`) ??
+      validateProductRef(line.product) ??
+      validateQuantity(line.quantity, { require_positive: true });
+    if (err) return err;
+    if (seen.has(line.line_id as string)) {
+      return `${path}: duplicate line_id "${String(line.line_id)}"`;
+    }
+    seen.add(line.line_id as string);
+  }
+  return null;
+}
+
 export interface PurchaseOrderProposal {
   protocol_version: string;
   purchase_order_id: string;
@@ -52,6 +85,29 @@ export interface PurchaseOrderProposal {
 
 export const MAX_BUYER_REFERENCE_LENGTH = 200;
 
+/**
+ * A validated proposal, or the reason it is not one.
+ *
+ * The TYPED read is the primary form. `validate…` below is the same check with
+ * its result thrown away, kept because plenty of callers only want the error —
+ * but there is ONE implementation, so the two can never disagree about what a
+ * valid proposal is.
+ *
+ * Why this exists at all: a caller that has just validated still had to write
+ * `value as PurchaseOrderProposal` to use it, which is a cast the compiler
+ * cannot check and a reader cannot distinguish from an unchecked one.
+ */
+export type ReadPurchaseOrder =
+  | { ok: true; order: PurchaseOrderProposal }
+  | { ok: false; error: string };
+
+export function readPurchaseOrderProposal(order: unknown, sha256: Sha256Fn): ReadPurchaseOrder {
+  const error = validatePurchaseOrderProposal(order, sha256);
+  return error === null
+    ? { ok: true, order: order as PurchaseOrderProposal }
+    : { ok: false, error };
+}
+
 /** Structural validation of a proposal, including `order_digest`. */
 export function validatePurchaseOrderProposal(order: unknown, sha256: Sha256Fn): string | null {
   if (!isRecord(order)) return 'order: must be an object';
@@ -69,25 +125,8 @@ export function validatePurchaseOrderProposal(order: unknown, sha256: Sha256Fn):
   ];
   for (const err of checks) if (err) return err;
 
-  if (!Array.isArray(order.accepted_lines) || order.accepted_lines.length === 0) {
-    return 'order.accepted_lines: must be a non-empty array';
-  }
-  if (order.accepted_lines.length > MAX_QUOTE_LINES) {
-    return `order.accepted_lines: exceeds ${MAX_QUOTE_LINES} lines`;
-  }
-  const seen = new Set<string>();
-  for (const line of order.accepted_lines) {
-    if (!isRecord(line)) return 'order.accepted_lines[]: must be objects';
-    const err =
-      validateId(line.line_id, 'order.accepted_lines[].line_id') ??
-      validateProductRef(line.product) ??
-      validateQuantity(line.quantity, { require_positive: true });
-    if (err) return err;
-    if (seen.has(line.line_id as string)) {
-      return `order.accepted_lines: duplicate line_id "${String(line.line_id)}"`;
-    }
-    seen.add(line.line_id as string);
-  }
+  const linesError = validatePurchaseOrderLines(order.accepted_lines, 'order.accepted_lines');
+  if (linesError !== null) return linesError;
 
   if (order.buyer_reference !== undefined) {
     if (
@@ -134,6 +173,13 @@ export function verifyOrderAgainstQuote(
   if (order.buyer_did !== quote.buyer_did || order.supplier_did !== quote.supplier_did) {
     return 'order: buyer/supplier identity does not match the quote';
   }
+  // §9.13 — an order built on a quote inherits that quote's version.
+  const versioned = verifyConversationVersion(
+    quote.protocol_version,
+    order.protocol_version,
+    'order',
+  );
+  if (versioned !== null) return versioned;
 
   // All-or-none (§9.9): exactly the quote's line set, quoted
   // quantities, offered products.

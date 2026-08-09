@@ -83,7 +83,9 @@ describe('projectionExtends (§9.9 order rule)', () => {
 
 describe('validateProductRef', () => {
   it('enforces issuer binding for scoped schemes', () => {
-    expect(validateProductRef({ scheme: 'manufacturer_sku', value: 'SKU-9' })).toMatch(/issuer_did/);
+    expect(validateProductRef({ scheme: 'manufacturer_sku', value: 'SKU-9' })).toMatch(
+      /issuer_did/,
+    );
     expect(
       validateProductRef({ scheme: 'manufacturer_sku', value: 'SKU-9', issuer_did: 'did:plc:mfr' }),
     ).toBeNull();

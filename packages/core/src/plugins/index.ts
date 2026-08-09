@@ -117,6 +117,23 @@ export type {
   DrainAuthorizationRepository,
 } from './drain_authorizations';
 
+// §9.13 update-rebind coordinator: install CID, listings, and prior-contract
+// authorizations move in one transaction.
+export { UpdateRebindCoordinator, DEFAULT_DRAIN_MS } from './update_rebind';
+export {
+  clearPreparedUpdates,
+  confirmUpdate,
+  getUpdateRebindCoordinator,
+  prepareUpdate,
+  PREPARED_UPDATE_TTL_MS,
+  setUpdateRebindCoordinator,
+  type ConfirmUpdateResult,
+  type PrepareUpdateResult,
+  type UpdateRefusal,
+  type UpdateReview,
+} from './update_service';
+export type { RebindOutcome, RebindRefusal, UpdateRebindDeps } from './update_rebind';
+
 // §11.2a provider-ingress bridge.
 export {
   HostOperationDispatcher,
@@ -126,6 +143,12 @@ export {
   getPluginHostRuntime,
 } from './host_operations';
 export type { PluginHostRuntime } from './host_operations';
+export {
+  makeD2DSendOperation,
+  makePublicationCandidateOperation,
+  makeConnectorBrokerOperation,
+  permittedD2DRecipients,
+} from './host_operation_executors';
 export type {
   HostOperationContext,
   HostOperationExecutor,
@@ -133,6 +156,41 @@ export type {
   DispatchResult,
   DispatchRefusal,
 } from './host_operations';
+export {
+  buildHostOperationFollowUp,
+  defaultPluginCompletionHandler,
+  enqueueFollowUp,
+  makePluginCompletionHandler,
+  settleOwnerDecision,
+} from './host_operation_completion';
+export type {
+  FollowUpTaskCreator,
+  PluginCompletion,
+  PluginCompletionHandler,
+  PluginCompletionHandlerDeps,
+} from './host_operation_completion';
+export {
+  HOST_OPERATION_CONNECTOR_BROKER,
+  HOST_OPERATION_D2D_SEND,
+  HOST_OPERATION_PUBLICATION_CANDIDATE,
+  registerCommerceHostOperations,
+} from './commerce_host_operations';
+export { ExtensionExecutionSweeper, EXECUTION_DEADLINE_MS } from './extension_sweeper';
+export type { ExtensionExecutionSweeperOptions, ExtensionSweepResult } from './extension_sweeper';
+export {
+  applyOwnerDecision,
+  brokerHostOperation,
+  consentedCapability,
+  decideExtensionProposal,
+  HOST_OPERATION_PROPOSAL_KIND,
+  parseHostOperationRequest,
+} from './host_operation_lane';
+export type {
+  HostOperationLaneResult,
+  HostOperationRequest,
+  LaneRefusal,
+  ProposalDecision,
+} from './host_operation_lane';
 export { ExtensionOperationBroker } from './extension_broker';
 export type {
   ExtensionProposal,
@@ -147,3 +205,7 @@ export type {
   ProviderIngressQuery,
   ProviderIngressSubmitter,
 } from './provider_ingress';
+export { PluginRunner } from './runner_sdk';
+export type { RunnerJob, RunnerClaim, RunnerAnswer, RunnerSdkOptions } from './runner_sdk';
+export { projectContextForCapability } from './context_projection';
+export type { ContextProjection, ProjectableItem, ProjectionRefusal } from './context_projection';

@@ -24,14 +24,40 @@
 import { tier0TxRunner } from '../run/tx';
 
 import { CommerceAdmissionEngine } from './admission';
+import { CommerceAdmissionService } from './admission_service';
+import { SQLiteBuyerOrderRepository, type BuyerOrderRepository } from './buyer_orders';
+import { SQLiteBuyerQuoteRepository, type BuyerQuoteRepository } from './buyer_quotes';
+import { SQLiteBuyerStatusRepository, type BuyerStatusRepository } from './buyer_status';
+import {
+  SQLiteCatalogPointerRepository,
+  type CatalogPointerRepository,
+} from './catalog_pointer_store';
 import { CommerceOrderStore } from './commerce_order';
+import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
+import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
+import {
+  SQLiteIdempotencyEvidenceRepository,
+  type IdempotencyEvidenceRepository,
+} from './idempotency_store';
 import { CommerceLifecycleEngine } from './lifecycle_engine';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
+import { installQuoteAttemptLedger, QuoteAttemptLedger } from './probing_ledger';
+import { DEFAULT_PROBING_POLICY } from './probing_resistance';
 import { QuoteFamilyStore } from './quote_family';
 import { SQLiteCommerceQuoteLedgerRepository } from './quote_ledger';
 import { SQLiteCommerceReceiptRepository } from './receipts';
+import {
+  SQLitePendingSupplierDecisionRepository,
+  type PendingSupplierDecisionRepository,
+} from './pending_decisions';
+import { CommerceReconciliationService } from './reconciliation_service';
+import {
+  SQLiteCommerceSettingsRepository,
+  type CommerceSettingsRepository,
+} from './settings_store';
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
+import { CommerceTransaction } from './transaction';
 import { SQLiteCommerceEpochWatermarkRepository } from './watermarks';
 
 import type { LifecycleEngineDeps } from './lifecycle_engine';
@@ -76,6 +102,16 @@ export interface CommerceRuntimeInputs {
    * re-offer exists and admission refuses rather than inventing terms.
    */
   resignVoidedQuote?: (voidedQuoteId: string, buyerDid: string) => SignedQuote | null;
+  /**
+   * §8.3 — what the credential broker may actually DO, keyed
+   * `${resource}:${operation}`.
+   *
+   * Supplied by the composition root because performing an operation means
+   * making an outbound request, and Core owns no transport. An empty map is
+   * the honest default for a node with no connectors: every brokered call then
+   * refuses with `no_executor` rather than doing something unauthenticated.
+   */
+  credentialExecutors?: () => Record<string, BrokeredExecutor>;
 }
 
 /**
@@ -93,17 +129,98 @@ export interface CommerceRuntime {
   chains: StatusChainStore;
   orders: CommerceOrderStore;
   receipts: CommerceReceiptRepository;
+  /**
+   * §10.2 — what this node has PUBLISHED. Its own writes, cached so the
+   * ordinary path (publish, look, publish again) needs no repo round trip and
+   * no caller carrying the CAS.
+   */
+  catalogPointers: CatalogPointerRepository;
   watermarks: CommerceEpochWatermarkRepository;
-  admission: CommerceAdmissionEngine;
-  lifecycle: CommerceLifecycleEngine;
+  /**
+   * §12.7 — the BUYER's durable view of orders it has sent. Separate from
+   * `orders`, which is the supplier's side: the two describe one trade from
+   * opposite ends and are allowed to disagree.
+   */
+  buyerOrders: BuyerOrderRepository;
+  /**
+   * §9.11 — the buyer's VERIFIED copy of each supplier's signed status chain.
+   *
+   * Separate from `chains`, which is the supplier's signing head: one is what
+   * this node committed to, the other is what a counterparty has proved to it,
+   * and a single store would have to decide which of the two a fork belongs to.
+   */
+  buyerStatus: BuyerStatusRepository;
+  /**
+   * §9.8/§25.3 — the buyer's VERIFIED copy of each supplier's quote chain.
+   *
+   * Separate from `families`, which is the supplier ledger and carries the
+   * use holds for capacity this node SELLS. These are offers it received.
+   */
+  buyerQuotes: BuyerQuoteRepository;
+  /**
+   * THIS NODE's DID.
+   *
+   * One identity, two roles. The inputs call it `supplierDid` because the
+   * supplier engines needed it first; the buyer side needs the same value to
+   * check §9.8 audience binding on an arriving quote, and a second thunk
+   * returning the same fact is a second thing that can drift. Named for what
+   * it IS rather than for whichever role is asking.
+   */
+  nodeDid: () => string;
+  /** §18.2/§18.3 owner policy, validated on every read. */
+  settings: CommerceSettingsRepository;
+  /**
+   * §8.3 — connector material, and the only door out of it.
+   *
+   * `credentials` is the WRITE side (the owner's rotation screen); `broker` is
+   * the read side, and it does not have one: it performs operations. Both are
+   * exposed because they have different callers, and neither hands a secret to
+   * anybody.
+   */
+  credentials: RotatableCredentialStore;
+  broker: CredentialBroker;
+  /**
+   * §15.5 — what each connector has PROVEN about the external system's
+   * deduplication. Read before any ambiguous effect may be retried; absent
+   * means automatic resubmission stays off, which is §15.5's default.
+   */
+  idempotencyEvidence: IdempotencyEvidenceRepository;
+  /**
+   * §9.9 admission, through the service that owns its transaction boundary.
+   *
+   * The ENGINE is not exposed: its methods are all `…InTx` and calling one
+   * outside a transaction would write without atomicity. Handing out the
+   * service is what makes that impossible rather than merely discouraged.
+   */
+  admission: CommerceAdmissionService;
+  /**
+   * §9.11/§12.7 lifecycle, through the service that owns its transaction
+   * boundaries. The engine is reachable as `lifecycle.engine` for the ONE
+   * caller that needs it: §12.8's genesis seam, which must run inside
+   * admission's transaction rather than open its own.
+   */
+  lifecycle: CommerceReconciliationService;
+  /**
+   * §15.2b — decisions the pack has made and a human has not yet agreed to.
+   *
+   * A STORE, not the workflow engine: losing this row strands a reserved order
+   * with a buyer waiting, which is a different cost from losing a prompt, and
+   * handing commerce a task handle would put the execution plane inside the
+   * domain this module exists to keep out of it.
+   */
+  pendingDecisions: PendingSupplierDecisionRepository;
   /** Why commerce cannot act right now, if it cannot. See below. */
   availability: () => CommerceAvailability;
   /**
-   * §16.4 — how many commercial obligations are still open. A cross-store
-   * question (undecided orders live in one store, unfinished chains in
-   * another), so it belongs to the root rather than to either aggregate.
+   * §16.4 — how many commercial obligations are still open.
+   *
+   * A cross-store question (undecided orders live in one store, unfinished
+   * chains in another), so it belongs to the root rather than to either
+   * aggregate. Pass an install id to ask only about the orders THAT install
+   * served: without it the count is node-wide, which is safe but refuses an
+   * uninstall on a multi-plugin node because a DIFFERENT pack has work open.
    */
-  inFlightCount: () => number;
+  inFlightCount: (installId?: string) => number;
 }
 
 /**
@@ -166,8 +283,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
   const orders = new CommerceOrderStore({ refs, now });
   const receipts = new SQLiteCommerceReceiptRepository(inputs.adapter);
 
-  const lifecycle = new CommerceLifecycleEngine({
-    tx,
+  const lifecycleEngine = new CommerceLifecycleEngine({
     orders,
     chains,
     receipts,
@@ -180,8 +296,12 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     verifyHeldEvidence: inputs.verifyHeldEvidence,
   });
 
-  const admission = new CommerceAdmissionEngine({
-    tx,
+  // ONE coordinator for this database, shared by every service below. Two
+  // would each believe no transaction was open while the other held one, which
+  // is the nesting bug wearing a second object.
+  const transaction = new CommerceTransaction(tx);
+
+  const admissionEngine = new CommerceAdmissionEngine({
     orders,
     families,
     receipts,
@@ -197,24 +317,54 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     // lifecycle engine must not learn about admission. A production wiring
     // that omitted it would reopen the race where a cancellation's answer
     // depended on which of two transactions had landed.
-    createAcceptedGenesisInTx: (buyerDid, purchaseOrderId) =>
-      lifecycle.createAcceptedGenesisInTx(buyerDid, purchaseOrderId),
+    createAcceptedGenesisInTx: (buyerDid, purchaseOrderId, openAt) =>
+      lifecycleEngine.createAcceptedGenesisInTx(buyerDid, purchaseOrderId, openAt),
   });
+  const admission = new CommerceAdmissionService({ transaction, engine: admissionEngine });
+  const lifecycle = new CommerceReconciliationService({ transaction, engine: lifecycleEngine });
+
+  const pendingDecisions = new SQLitePendingSupplierDecisionRepository(inputs.adapter);
+
+  const credentials = new SQLiteCredentialStore(inputs.adapter);
 
   return {
     families,
     chains,
     orders,
     receipts,
+    catalogPointers: new SQLiteCatalogPointerRepository(inputs.adapter),
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
+    buyerOrders: new SQLiteBuyerOrderRepository(inputs.adapter),
+    buyerStatus: new SQLiteBuyerStatusRepository(inputs.adapter),
+    buyerQuotes: new SQLiteBuyerQuoteRepository(inputs.adapter),
+    nodeDid: inputs.supplierDid,
+    settings: new SQLiteCommerceSettingsRepository(inputs.adapter),
+    credentials,
+    idempotencyEvidence: new SQLiteIdempotencyEvidenceRepository(inputs.adapter),
+    broker: new CredentialBroker({
+      store: credentials,
+      executors: inputs.credentialExecutors ?? ((): Record<string, BrokeredExecutor> => ({})),
+      now,
+    }),
     admission,
     lifecycle,
-    inFlightCount: () => {
+    pendingDecisions,
+    inFlightCount: (installId?: string) => {
       // Undecided orders: the supplier owes an answer it has not given.
       // Unfinished chains: the supplier owes an outcome it has not reached.
-      return (
-        orders.countReserved() + heads.countNonTerminal(TERMINAL_CHAIN_STATES)
-      );
+      if (installId === undefined) {
+        return orders.countReserved() + heads.countNonTerminal(TERMINAL_CHAIN_STATES);
+      }
+      // Scoped. The chain store does not know which install served an order,
+      // so the join happens HERE rather than inside either aggregate — the
+      // same reason this method lives on the root at all. A chain whose order
+      // reference is gone counts as OPEN: an obligation whose provenance we
+      // cannot establish is not one to dismiss on an uninstall.
+      const chains = heads.listNonTerminal(TERMINAL_CHAIN_STATES).filter((c) => {
+        const ref = orders.load(c.buyerDid, c.purchaseOrderId)?.ref;
+        return ref === undefined || ref === null || ref.servingInstallId === installId;
+      }).length;
+      return orders.countReservedByServingInstall(installId) + chains;
     },
     availability: () => {
       try {
@@ -237,6 +387,14 @@ let runtime: CommerceRuntime | null = null;
 /** Install at boot; pass null on shutdown/lock. */
 export function installCommerceRuntime(value: CommerceRuntime | null): void {
   runtime = value;
+  // §20.10 — the probing window lives and dies with the runtime. Composed
+  // HERE rather than at each boot because there are two boots and the defence
+  // is worthless on the one that forgets: an unwired ledger fails closed, so
+  // forgetting it would take commerce offline rather than silently permit —
+  // loud, but still an outage nobody chose.
+  installQuoteAttemptLedger(
+    value === null ? null : new QuoteAttemptLedger(DEFAULT_PROBING_POLICY.windowMs),
+  );
 }
 
 /** Null until commerce storage is initialised. Callers must fail closed. */

@@ -1,0 +1,75 @@
+{
+  "vocabulary_version": "v1",
+  "units": [
+    {
+      "code": "each",
+      "dimension": "count",
+      "scale": 0,
+      "base_factor": "1"
+    },
+    {
+      "code": "case",
+      "dimension": "count",
+      "scale": 0,
+      "base_factor": null
+    },
+    {
+      "code": "pallet",
+      "dimension": "count",
+      "scale": 0,
+      "base_factor": null
+    },
+    {
+      "code": "g",
+      "dimension": "mass",
+      "scale": 0,
+      "base_factor": "1"
+    },
+    {
+      "code": "kg",
+      "dimension": "mass",
+      "scale": 3,
+      "base_factor": "1000"
+    },
+    {
+      "code": "ml",
+      "dimension": "volume",
+      "scale": 0,
+      "base_factor": "1"
+    },
+    {
+      "code": "l",
+      "dimension": "volume",
+      "scale": 3,
+      "base_factor": "1000"
+    }
+  ],
+  "rejected_codes": ["oz", "lb", "dozen", "EACH", "kilogram", "", "each "],
+  "comparability": [
+    {
+      "a": "g",
+      "b": "kg",
+      "expect": true
+    },
+    {
+      "a": "ml",
+      "b": "l",
+      "expect": true
+    },
+    {
+      "a": "g",
+      "b": "ml",
+      "expect": false
+    },
+    {
+      "a": "each",
+      "b": "g",
+      "expect": false
+    },
+    {
+      "a": "case",
+      "b": "each",
+      "expect": false
+    }
+  ]
+}

@@ -16,6 +16,8 @@ import { classifyWatchFilter, parseWatchFilter } from '../../watch/filter';
 import { watchTaskToListItem, type WatchListItem } from '../../watch/list';
 import { getWatchService, type WatchService } from '../../watch/service';
 
+import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
+
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
 export type { WatchListItem } from '../../watch/list';
@@ -28,21 +30,6 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-/** Owner guard bound to the boot-minted capability (§12.5, F15) — closure-held,
- *  fail-closed when unconfigured. See run.ts `makeOwnerGuard`. */
-type OwnerGuard = (req: CoreRequest) => CoreResponse | null;
-function makeOwnerGuard(expectedCapability: string | undefined): OwnerGuard {
-  return (req) => {
-    if (expectedCapability === undefined || expectedCapability === '') {
-      return j(403, { error: 'access_denied', reason: 'owner control plane not configured' });
-    }
-    if (req.callerType !== 'owner' || req.ownerCapability !== expectedCapability) {
-      return j(403, { error: 'access_denied', reason: 'only the owner may list or steer a watch' });
-    }
-    return null;
-  };
-}
-
 function requireService(): WatchService | CoreResponse {
   const svc = getWatchService();
   if (svc === null) return j(503, { error: 'unavailable', reason: 'watch service not wired' });
@@ -50,7 +37,10 @@ function requireService(): WatchService | CoreResponse {
 }
 
 export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string): void {
-  const ownerOnlyGuard = makeOwnerGuard(ownerCapability);
+  const ownerOnlyGuard = makeOwnerGuard(
+    ownerCapability,
+    'only the owner may list or steer a watch',
+  );
 
   // POST /v1/watch/create — the owner creates a poll-mode standing watch (#7).
   // Owner-only, same boundary as list/steer. Idempotent on `subscription_id`

@@ -207,10 +207,18 @@ describe('verifySignedQuoteForBuyer', () => {
 
   it('rejects request and projection binding mismatches', () => {
     expect(
-      verifySignedQuoteForBuyer(quote, { ...context, retained_request_digest: 'a'.repeat(64) }, hash),
+      verifySignedQuoteForBuyer(
+        quote,
+        { ...context, retained_request_digest: 'a'.repeat(64) },
+        hash,
+      ),
     ).toMatch(/different question/);
     expect(
-      verifySignedQuoteForBuyer(quote, { ...context, sent_projection_digest: 'b'.repeat(64) }, hash),
+      verifySignedQuoteForBuyer(
+        quote,
+        { ...context, sent_projection_digest: 'b'.repeat(64) },
+        hash,
+      ),
     ).toMatch(/projection sent at quote stage/);
   });
 
@@ -252,6 +260,19 @@ describe('verifySignedQuoteForBuyer', () => {
     expect(verifySignedQuoteForBuyer(renamed, context, hash)).toMatch(/does not match the product/);
   });
 
+  it('rejects a quote that silently UPGRADES the conversation version (§9.13)', () => {
+    // "one conversation pins one version: the quote chain and any order built
+    // on it use the version of the originating request". A `1.7` quote is
+    // parseable by a `1.0` participant — minor is additive — and must still be
+    // refused as a continuation, because the terms each side believes it
+    // agreed were written under different field sets.
+    const upgraded = makeSignedQuote({
+      request: retainedRequest,
+      overrides: { protocol_version: '1.7' },
+    });
+    expect(verifySignedQuoteForBuyer(upgraded, context, hash)).toMatch(/protocol_version/);
+  });
+
   it('rejects a SUBSTITUTE where the buyer allowed none (§20.4 bait-and-switch)', () => {
     // acceptable_substitutions defaults to `none`. A supplier offering
     // something else must not rely on the buyer noticing by eye.
@@ -269,6 +290,61 @@ describe('verifySignedQuoteForBuyer', () => {
     expect(verifySignedQuoteForBuyer(substituted, context, hash)).toMatch(/allowed none/);
   });
 
+  /**
+   * §9.4 EXACT-VARIANT AUTHORITY, at the GATE rather than at the helper.
+   *
+   * `productRefsEqual` compares scheme, value, ISSUER and VARIANT, and the
+   * frozen vectors pin all four. This gate carried its own `sameProduct` that
+   * compared only scheme and value — so a supplier could answer with another
+   * issuer's part, or another variant of the right part, and the quote passed
+   * as an exact match against a request that allowed no substitution at all.
+   *
+   * Each case varies exactly ONE field from a quote that verifies.
+   */
+  it.each([
+    [
+      'a different ISSUER of the same SKU',
+      {
+        scheme: 'manufacturer_sku' as const,
+        value: 'OAK-CHAIR-1',
+        issuer_did: 'did:plc:chairmaker99',
+      },
+      {
+        scheme: 'manufacturer_sku' as const,
+        value: 'OAK-CHAIR-1',
+        issuer_did: 'did:plc:someoneelse',
+      },
+    ],
+    [
+      'a different VARIANT of the same identifier',
+      { scheme: 'gtin' as const, value: '09506000134352', variant_digest: 'a'.repeat(64) },
+      { scheme: 'gtin' as const, value: '09506000134352', variant_digest: 'b'.repeat(64) },
+    ],
+    [
+      'a variant where the request named none',
+      { scheme: 'gtin' as const, value: '09506000134352' },
+      { scheme: 'gtin' as const, value: '09506000134352', variant_digest: 'b'.repeat(64) },
+    ],
+  ])('refuses %s as an unpermitted substitute', (_name, asked, offered) => {
+    const request = makeQuoteRequest({
+      lines: [{ ...baseRequestLine, product: asked }],
+    });
+    const base = makeSignedQuote({ request });
+    const [line] = base.lines;
+    if (line === undefined) throw new Error('fixture: expected one line');
+    const quote = makeSignedQuote({
+      request,
+      overrides: { lines: [{ ...line, requested_product: asked, offered_product: offered }] },
+    });
+    const ctx: BuyerQuoteContext = {
+      ...context,
+      retained_request: request,
+      retained_request_digest: base.request_digest,
+      sent_projection_digest: base.priced_delivery_projection_digest,
+    };
+    expect(verifySignedQuoteForBuyer(quote, ctx, hash)).toMatch(/allowed none/);
+  });
+
   it('accepts a permitted substitution that carries evidence, and refuses one that does not', () => {
     const permissive = makeQuoteRequest({
       lines: [{ ...baseRequestLine, acceptable_substitutions: 'equivalent' }],
@@ -279,7 +355,9 @@ describe('verifySignedQuoteForBuyer', () => {
     const withoutEvidence = makeSignedQuote({
       request: permissive,
       overrides: {
-        lines: [{ ...permissiveLine, offered_product: { scheme: 'gtin', value: '09506000134369' } }],
+        lines: [
+          { ...permissiveLine, offered_product: { scheme: 'gtin', value: '09506000134369' } },
+        ],
       },
     });
     const permissiveContext: BuyerQuoteContext = {
@@ -330,6 +408,15 @@ describe('verifyQuoteRevisionExtends', () => {
     expect(verifyQuoteRevisionExtends(held, makeRevision(held, { quote_revision: '3' }))).toMatch(
       /expected revision 2/,
     );
+  });
+
+  it('rejects a revision that changes the conversation VERSION (§9.13)', () => {
+    // "a counterproposal cannot silently upgrade the conversation". A revision
+    // is the same conversation by definition — it keeps the quote_id — so the
+    // version is as immutable as the buyer and the request it answers.
+    expect(
+      verifyQuoteRevisionExtends(held, makeRevision(held, { protocol_version: '1.7' })),
+    ).toMatch(/immutable field protocol_version/);
   });
 
   it('rejects a changed max_uses — immutable within a quote_id', () => {

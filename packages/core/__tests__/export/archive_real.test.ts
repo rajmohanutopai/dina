@@ -29,6 +29,7 @@ import {
   importArchive,
   readManifest,
   setArchiveDataSource,
+  verifyArchive,
   type ArchiveDataSource,
   type ArchivePersonaSource,
 } from '../../src/export/archive';
@@ -1167,6 +1168,148 @@ describe('commerce restore fence marker (§16.2)', () => {
       // Set unconditionally: no attempt to detect whether THIS archive
       // carried commerce rows. An empty commerce set costs one wasted epoch
       // increment; a missed one lets capacity be spent twice.
+      expect(isCommerceRestorePending(dest.id)).toBe(true);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  /**
+   * WS-4.2 preflight, driven through the REAL import rather than against the
+   * pure checker. The checker's own suite proves what it refuses; this proves
+   * the refusal is reachable from an archive that a node actually produced,
+   * and that the refusal happens before the target is touched.
+   */
+  it('refuses an archive whose order references a quote it does not carry', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      // A real order reference against a quote head that is not there. The
+      // schema has no foreign key, so this is exactly what a torn archive
+      // looks like from the inside — nothing at write time objects.
+      src.id.execute(
+        `INSERT INTO commerce_order_refs
+           (buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
+            quote_digest, pinned_version, created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [
+          'did:plc:buyer',
+          'po-orphan',
+          'idem-1',
+          'a'.repeat(64),
+          'q-missing',
+          'b'.repeat(64),
+          '1.0',
+          1,
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    // Round-13 #24's invariant, extended: `verifyArchive` answers "could I
+    // restore this?" before an operator commits. A `true` the import then
+    // refuses is worse than no check, because it is the answer they acted on.
+    await expect(verifyArchive(archive, PASS)).resolves.toBe(false);
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await expect(importArchive(archive, PASS)).rejects.toThrow(/dangling_quote_reference/);
+
+      // Nothing was written, and — the part that matters — the fence was NOT
+      // armed. Arming it on a refused import would burn an epoch for a restore
+      // that never happened, voiding live quotes for nothing.
+      const rows = dest.id.query<{ n: number }>('SELECT COUNT(*) AS n FROM reminders');
+      expect(rows[0]?.n).toBe(0);
+      expect(isCommerceRestorePending(dest.id)).toBe(false);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  /**
+   * The test that would have caught a real bug, and now does.
+   *
+   * The preflight originally read `counterparty_did` on the watermark table —
+   * the word the SPEC uses for the concept — while the column is
+   * `supplier_did`. Every real archive carrying a watermark would have been
+   * refused. Neither the preflight's own suite nor the wiring test above
+   * caught it: the unit fixtures were hand-built and agreed with the module on
+   * the wrong name, and nothing here seeded a watermark row.
+   *
+   * So this drives a FULL commerce set through a genuine export and import.
+   * A column name can only drift from the schema if this test is deleted.
+   */
+  it('round-trips a full, coherent commerce set through export and import', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      src.id.execute(
+        `INSERT INTO commerce_quote_heads
+           (quote_id, buyer_did, head_digest, head_revision, max_uses, valid_until, supplier_epoch, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        ['q-1', 'did:plc:buyer', 'b'.repeat(64), '0', '3', 9_999_999, '1', 1, 1],
+      );
+      src.id.execute(
+        `INSERT INTO commerce_order_refs
+           (buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
+            quote_digest, pinned_version, created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [
+          'did:plc:buyer',
+          'po-1',
+          'idem-1',
+          'a'.repeat(64),
+          'q-1',
+          'b'.repeat(64),
+          '1.0',
+          1,
+        ],
+      );
+      src.id.execute(
+        `INSERT INTO commerce_quote_uses (quote_id, purchase_order_id, created_at) VALUES (?,?,?)`,
+        ['q-1', 'po-1', 1],
+      );
+      src.id.execute(
+        `INSERT INTO commerce_receipts (record_digest, domain, buyer_did, quote_id, purchase_order_id, record_json, evidence_json, created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        ['c'.repeat(64), 'status', 'did:plc:buyer', 'q-1', 'po-1', '{}', '{}', 1],
+      );
+      src.id.execute(
+        `INSERT INTO commerce_status_heads (buyer_did, purchase_order_id, head_digest, head_sequence, state, supplier_epoch, updated_at)
+         VALUES (?,?,?,?,?,?,?)`,
+        ['did:plc:buyer', 'po-1', 'c'.repeat(64), '0', 'accepted', '1', 1],
+      );
+      // The row whose column name the preflight got wrong.
+      src.id.execute(
+        `INSERT INTO commerce_epoch_watermarks (supplier_did, epoch, updated_at) VALUES (?,?,?)`,
+        ['did:plc:supplier', '4', 1],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    // Coherent, so it must both verify and import.
+    await expect(verifyArchive(archive, PASS)).resolves.toBe(true);
+
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS);
+      const rows = dest.id.query<{ epoch: string }>(
+        'SELECT epoch FROM commerce_epoch_watermarks WHERE supplier_did = ?',
+        ['did:plc:supplier'],
+      );
+      expect(rows[0]?.epoch).toBe('4');
       expect(isCommerceRestorePending(dest.id)).toBe(true);
     } finally {
       closeBundle(dest);

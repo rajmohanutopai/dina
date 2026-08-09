@@ -66,6 +66,12 @@ const AUTHZ_RULES: {
   // standing work — same boundary as /v1/run: every signed caller is denied
   // here, and the in-process owner path is enforced by the in-handler guard.
   { prefix: '/v1/watch', allowed: new Set(['owner']) },
+  // OWNER-ONLY (§16.2, WS-4.3). The reconciliation census lists counterparties
+  // and the orders this node cannot answer for — a map of exactly where the
+  // supplier is vulnerable, and the last thing to expose to a plugin or a
+  // paired agent. Same boundary as /v1/run and /v1/watch: no signed caller
+  // resolves to `owner`, so every signed caller is denied here.
+  { prefix: '/v1/commerce', allowed: new Set(['owner']) },
   // Connected-agent policy is owner-only in-handler. Signed access is limited
   // to the node's own admin/device DID; the handler verifies the exact DID.
   { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },

@@ -30,8 +30,10 @@
   },
   "dependencies": {
     "@dina/brain": "*",
+    "@dina/commerce-protocol": "*",
     "@dina/core": "*",
-    "@dina/protocol": "*"
+    "@dina/protocol": "*",
+    "@noble/hashes": "^2.0.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

@@ -197,9 +197,43 @@ export class CommerceOrderStore {
     return this.deps.refs.createReserved(ref);
   }
 
+  /**
+   * §12.7 (WS-9.5) — orders a fulfilment sweep can ask the external system
+   * about. A set-level question, so it belongs here rather than on the
+   * aggregate: no single order knows which others are outstanding.
+   */
+  listWithExternalRef(): CommerceOrderRef[] {
+    return this.deps.refs.listWithExternalRef();
+  }
+
   /** §9.9 step 3 — pre_effect reservations past their decision deadline. */
   listExpiredPreEffect(nowMs: number): CommerceOrderRef[] {
     return this.deps.refs.listExpiredPreEffect(nowMs);
+  }
+
+  /**
+   * §16.2 (WS-4.3) — orders frozen pending the reconciliation ceremony.
+   *
+   * A READ, and only a read. There is deliberately no bulk `reconcileAll`
+   * beside it: the ceremony checks the buyer's held proposal against the
+   * digest this supplier signed, and a re-adopted order has nothing local to
+   * check against. A sweep would have to invent the terms.
+   */
+  listAwaitingReconciliation(): CommerceOrderRef[] {
+    return this.deps.refs.listAwaitingReconciliation();
+  }
+
+  /**
+   * §18.6 — the undecided orders themselves, for the supplier inbox.
+   *
+   * A READ on the aggregate rather than a reach into the repository, which is
+   * the whole point of ARCH-0: the inbox genuinely needs the list, and the
+   * alternative was a caller going around the aggregate to `refs`, which the
+   * boundary guard forbids for good reason. Exposing a read costs nothing the
+   * aggregate was protecting — the state-changing mutators stay hidden.
+   */
+  listReserved(): CommerceOrderRef[] {
+    return this.deps.refs.listReserved();
   }
 
   /** §9.13 drain release — non-terminal count for a pinned major. */
@@ -210,5 +244,42 @@ export class CommerceOrderStore {
 
   countReservedByMajor(major: string): number {
     return this.deps.refs.countReservedByMajor(major);
+  }
+
+  /**
+   * §16.4 — undecided orders served by ONE install.
+   *
+   * Keyed on the install rather than the serving manifest CID because a
+   * plugin update moves the CID and keeps the install: counting by CID would
+   * stop counting the orders an updated install opened under its previous
+   * manifest, which are exactly the ones it still owes an answer for.
+   */
+  countReservedByServingInstall(installId: string): number {
+    return this.deps.refs.countReservedByServingInstall(installId);
+  }
+
+  /**
+   * §9.13 — undecided orders served by one MANIFEST CID.
+   *
+   * The counterpart of the one above, and the two are not interchangeable. That
+   * one asks "does this INSTALL still owe an answer", which survives an update.
+   * This one asks "is this MANIFEST's prior-major lifecycle lane still needed",
+   * which is a question about the CID precisely because the lane is pinned to
+   * the CID — releasing it while an order it served is open would strand that
+   * buyer mid-order.
+   */
+  /**
+   * §9.13 — orders this manifest still has WORK for.
+   *
+   * `countReserved…` answers "is anything waiting to be DECIDED", which is a
+   * different question and the wrong one for releasing continuity: an accepted
+   * order is decided immediately and its status chain runs on for days.
+   */
+  countUnfinishedByServingManifest(servingManifestCid: string, nowMs: number): number {
+    return this.deps.refs.countUnfinishedByServingManifest(servingManifestCid, nowMs);
+  }
+
+  countReservedByServingManifest(servingManifestCid: string): number {
+    return this.deps.refs.countReservedByServingManifest(servingManifestCid);
   }
 }

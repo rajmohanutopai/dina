@@ -70,6 +70,18 @@ let rateLimiter = new PerDIDRateLimiter();
 /** Injectable public key resolver (DID → Ed25519 public key). */
 let publicKeyResolver: ((did: string) => Uint8Array | null) | null = null;
 
+/**
+ * Read the registered resolver — for callers that need a DID's key OUTSIDE
+ * request authentication (§12.7's held-evidence check verifies this node's
+ * own past signature).
+ *
+ * Returns null when no resolver is installed, so a caller cannot mistake
+ * "not wired yet" for "no such key".
+ */
+export function resolveRegisteredPublicKey(did: string): Uint8Array | null {
+  return publicKeyResolver === null ? null : publicKeyResolver(did);
+}
+
 /** Register a public key resolver. */
 export function registerPublicKeyResolver(resolver: (did: string) => Uint8Array | null): void {
   publicKeyResolver = resolver;

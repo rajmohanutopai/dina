@@ -103,6 +103,17 @@ export interface PluginTaskEnvelope {
   /** Scrubbed, projected context (§11.3). */
   readonly context: unknown;
   readonly manifest_cid: string;
+  /**
+   * §9.13 — the protocol version the manifest at `manifest_cid` declared.
+   *
+   * OPTIONAL, and only set on a lifecycle CONTINUATION across a major. The
+   * envelope already carried which CID authorized the work and said nothing
+   * about which CONTRACT it speaks, so a runner answering a prior major's
+   * order could not tell it was doing so — it saw the current lane and the
+   * current adapter. A runner that understands one major can now refuse work
+   * addressed to another rather than answering it wrongly.
+   */
+  readonly prior_version?: string;
   readonly approved_scope_hash: string;
   /** Pinned result schema — completion validates against THIS. */
   readonly schema_snapshot: unknown;
@@ -172,6 +183,31 @@ export interface PluginTaskEnvelope {
       readonly schema_hash: string;
     };
   };
+  /**
+   * §3.4 — the VERIFIED result of a host operation this runner proposed.
+   *
+   * "the next claim for that workflow delivers the validated result ... a
+   * runner cannot fabricate a result it was never handed". This block is how
+   * that delivery happens, and it is a distinct field from `params` for two
+   * reasons. It is not owner data, so it must not ride the field the egress
+   * gate and the consented `params_schema` govern; and its provenance is
+   * Core's own broker, so a runner reading it is reading something it could
+   * not have written.
+   *
+   * `state` is the proposal's terminal state, carried verbatim: a runner that
+   * saw only `result` could not tell a refusal from a failure from an effect
+   * whose outcome nobody knows, and those three lead it to opposite next
+   * steps.
+   */
+  readonly host_operation?: {
+    readonly proposal_id: string;
+    readonly operation_name: string;
+    readonly state: 'completed' | 'failed' | 'refused' | 'outcome_unknown';
+    /** Present only on `completed` — the schema-verified result. */
+    readonly result?: unknown;
+    /** Present on every non-completed state. */
+    readonly detail?: string;
+  };
 }
 
 /** Round-15 #7: the EXACT top-level key set a plugin envelope may carry. Any
@@ -183,6 +219,10 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   'params',
   'context',
   'manifest_cid',
+  // §9.13 — optional, and only on a lifecycle continuation across a major.
+  // The key set is EXACT and fails closed, so a field added to the interface
+  // and not to this list quarantines every envelope carrying it.
+  'prior_version',
   'approved_scope_hash',
   'schema_snapshot',
   'config_revision',
@@ -198,6 +238,8 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   'value',
   // §11.2a provider-ingress correlation block.
   'service_ingress',
+  // §3.4 verified host-operation result, delivered to the next claim.
+  'host_operation',
 ]);
 
 /**

@@ -70,6 +70,8 @@ describe('drain authorization store (dual harness)', () => {
       paramsSchemaJson: 'null',
       maxContextItems: null,
       expiresAt: null,
+      // §9.13 — which CONTRACT this row speaks, not just which CID.
+      priorVersion: '0.1.0',
       createdAt: T0,
     };
     try {
@@ -234,6 +236,8 @@ describe('claim guard drain lane (§9.13)', () => {
       paramsSchemaJson: 'null',
       maxContextItems: null,
       expiresAt: null,
+      // §9.13 — which CONTRACT this row speaks, not just which CID.
+      priorVersion: '0.1.0',
       createdAt: T0 + 2000,
       ...overrides,
     };

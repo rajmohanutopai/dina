@@ -197,6 +197,20 @@ export type {
   DrainAuthorizationKind,
   DrainAuthorizationRepository,
 } from './src/plugins/drain_authorizations';
+// §9.13/§16.5 update-rebind: the coordinator and the owner-facing flow that is
+// its only caller. Both composition roots build the coordinator, so both need
+// these here (mobile reaches Core through this runtime barrel).
+export { UpdateRebindCoordinator, DEFAULT_DRAIN_MS } from './src/plugins/update_rebind';
+export {
+  clearPreparedUpdates,
+  confirmUpdate,
+  getUpdateRebindCoordinator,
+  prepareUpdate,
+  PREPARED_UPDATE_TTL_MS,
+  setUpdateRebindCoordinator,
+} from './src/plugins/update_service';
+export { rebindListingsForUpdate } from './src/service/listing_rebind';
+export { tier0TxRunner } from './src/run/tx';
 
 // Extension-operation registry (§3.4 commerce host-operations gate)
 export {
@@ -229,6 +243,45 @@ export {
   installPluginHostRuntime,
   getPluginHostRuntime,
 } from './src/plugins/host_operations';
+// §3.4 — the completion seam that turns a runner's typed proposal into a
+// brokered operation, plus the recovery sweep over rows stuck mid-effect.
+export {
+  buildHostOperationFollowUp,
+  defaultPluginCompletionHandler,
+  enqueueFollowUp,
+  makePluginCompletionHandler,
+  settleOwnerDecision,
+} from './src/plugins/host_operation_completion';
+export type {
+  FollowUpTaskCreator,
+  PluginCompletion,
+  PluginCompletionHandler,
+} from './src/plugins/host_operation_completion';
+export {
+  applyOwnerDecision,
+  brokerHostOperation,
+  consentedCapability,
+  decideExtensionProposal,
+  HOST_OPERATION_PROPOSAL_KIND,
+  parseHostOperationRequest,
+} from './src/plugins/host_operation_lane';
+export {
+  HOST_OPERATION_CONNECTOR_BROKER,
+  HOST_OPERATION_D2D_SEND,
+  HOST_OPERATION_PUBLICATION_CANDIDATE,
+  registerCommerceHostOperations,
+} from './src/plugins/commerce_host_operations';
+export {
+  applyReconcileAnswer,
+  askReconcilePolls,
+} from './src/commerce/reconcile_poller';
+export {
+  makeServiceQueryReconcileSend,
+  ORDER_RECONCILE_CAPABILITY,
+  ReconcilePollSweeper,
+} from './src/commerce/reconcile_sweeper';
+export { ExtensionExecutionSweeper, EXECUTION_DEADLINE_MS } from './src/plugins/extension_sweeper';
+export { getPluginInstallRepository } from './src/plugins/registry';
 export type {
   PluginHostRuntime,
   HostOperationContext,

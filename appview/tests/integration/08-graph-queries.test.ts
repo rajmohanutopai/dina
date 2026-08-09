@@ -120,8 +120,8 @@ describe('§8.1 One-Hop Queries', () => {
 
   // TRACE: {"suite": "APPVIEW", "case": "0430", "section": "01", "sectionName": "General", "title": "IT-GR-005: trusted attestors \u2014 only non-revoked edges counted"}
   it('IT-GR-005: trusted attestors — only non-revoked edges counted', async () => {
-    // A trusts B and C, but this tests edge existence (trust_edges don't have revoked)
-    // We verify that only the edges that exist in trust_edges are returned
+    // A trusts B and C, but this tests edge existence (peerlens_edges don't have revoked)
+    // We verify that only the edges that exist in peerlens_edges are returned
     await insertProfile('did:plc:a', 0.5)
     await insertProfile('did:plc:b', 0.7)
     await insertEdge('did:plc:a', 'did:plc:b')

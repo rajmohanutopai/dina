@@ -502,6 +502,108 @@ const serviceProfileSchema = z.object({
   { message: 'capabilitySchemas may only contain declared capabilities' },
 )
 
+
+// ── Commerce catalog (§10.2) ────────────────────────────────────────
+//
+// SHAPE ONLY. The trust chain — digests, payload root, pointer advance — is
+// verified in `shared/commerce/catalog-verify.ts`, which is pinned by the
+// frozen conformance vectors. Shape rules live here with every other
+// collection because divergence in a shape rule is fail-closed and harmless:
+// AppView refusing a record the protocol would accept means it is not
+// indexed. Divergence in the DIGEST math would mean AppView indexing what no
+// other implementation considers valid, and that is why the two are split.
+
+const hex64 = z.string().regex(/^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters')
+
+/** §10.2 bounds, duplicated as validation so an over-large record never
+ *  reaches a handler that would have to bound it again. */
+const CATALOG_MAX_PAGES = 1000
+const CATALOG_MAX_PAGE_ITEMS = 500
+
+const catalogPointerSchema = z
+  .object({
+    supplier_did: didString,
+    catalog_id: z.string().min(1).max(128),
+    snapshot_sequence: z.number().int().min(1),
+    protocol_version: z.string().min(1).max(16),
+    published_at: z.string().datetime(),
+    snapshot_rkey: z.string().min(1).max(512).optional(),
+    snapshot_digest: hex64.optional(),
+    previous_snapshot_digest: hex64.optional(),
+    withdrawn: z.boolean().optional(),
+  })
+  .refine(
+    (p) => (p.withdrawn === true ? p.snapshot_digest === undefined : p.snapshot_digest !== undefined),
+    {
+      message:
+        'a withdrawal must name no snapshot, and a live pointer must name one',
+    },
+  )
+
+const catalogSnapshotPageSchema = z.object({
+  catalog_id: z.string().min(1).max(128),
+  snapshot_sequence: z.number().int().min(1),
+  page_index: z.number().int().min(0),
+  items: z.array(z.unknown()).max(CATALOG_MAX_PAGE_ITEMS),
+  page_digest: hex64,
+})
+
+const catalogSnapshotRecordSchema = z.object({
+  snapshot: z.object({
+    supplier_did: didString,
+    catalog_id: z.string().min(1).max(128),
+    snapshot_sequence: z.number().int().min(1),
+    protocol_version: z.string().min(1).max(16),
+    published_at: z.string().datetime(),
+    page_digests: z.array(hex64).max(CATALOG_MAX_PAGES),
+    item_count: z.number().int().min(0),
+    payload_root: hex64,
+    snapshot_digest: hex64,
+  }),
+  // §10.3 v1: pages travel INLINE. An HTTPS-served feed is a later,
+  // additive variant; a record that omits `pages` is refused rather than
+  // half-indexed, because a full-state snapshot missing pages omits
+  // products with nothing in the record to say so.
+  pages: z.array(catalogSnapshotPageSchema).max(CATALOG_MAX_PAGES),
+})
+
+
+const productRefSchema = z.object({
+  scheme: z.enum(['gtin', 'manufacturer_sku', 'dina_subject', 'custom']),
+  value: z.string().min(1).max(128),
+  issuer_did: didString.optional(),
+  variant_digest: hex64.optional(),
+})
+
+/**
+ * §10.7 relationship claim. The DISCRIMINANT — which relationships take an
+ * operator DID and which take a product — is checked in the projection rather
+ * than here, because the projection is where standing composes along the edge
+ * and a rule enforced only at the wire would be missing on any other path in.
+ */
+const relationshipClaimSchema = z.object({
+  claim_id: z.string().min(1).max(128),
+  subject: productRefSchema,
+  relationship: z.enum([
+    'manufactured_by',
+    'marketed_under',
+    'variant_of',
+    'packaging_variant_of',
+    'same_formulation_as',
+    'replaces',
+    'sold_by',
+  ]),
+  object: z.union([productRefSchema, z.object({ did: didString })]),
+  issuer_did: didString,
+  effective_from: z.string().datetime().optional(),
+  effective_until: z.string().datetime().optional(),
+  evidence_refs: z.array(z.string().min(1).max(512)).max(20).optional(),
+  asserted_at: z.string().datetime().optional(),
+  confidence_bp: z.number().int().min(0).max(10000).optional(),
+  /** Present ONLY on a model-suggested edge; §10.7 wants it versioned. */
+  inference_version: z.string().min(1).max(64).optional(),
+})
+
 // ── Schema map ──────────────────────────────────────────────────────
 
 const SCHEMA_MAP: Record<string, z.ZodSchema> = {
@@ -525,6 +627,9 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   'com.dinakernel.peerlens.trustPolicy': trustPolicySchema,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsSchema,
   'com.dinakernel.service.profile': serviceProfileSchema,
+  'com.dinakernel.commerce.catalog': catalogPointerSchema,
+  'com.dinakernel.commerce.catalogSnapshot': catalogSnapshotRecordSchema,
+  'com.dinakernel.commerce.relationshipClaim': relationshipClaimSchema,
 }
 
 // ── Public API ──────────────────────────────────────────────────────

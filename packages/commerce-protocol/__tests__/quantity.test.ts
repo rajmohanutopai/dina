@@ -105,7 +105,10 @@ describe('compareQuantities', () => {
   });
 
   it('refuses cross-dimension comparison', () => {
-    const result = compareQuantities({ value: '1', unit_code: 'kg' }, { value: '1', unit_code: 'l' });
+    const result = compareQuantities(
+      { value: '1', unit_code: 'kg' },
+      { value: '1', unit_code: 'l' },
+    );
     expect(typeof result).toBe('string');
   });
 });

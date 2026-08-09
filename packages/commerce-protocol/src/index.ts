@@ -27,3 +27,4 @@ export * from './cancellation';
 export * from './reconcile';
 export * from './epoch';
 export * from './catalog';
+export * from './catalog_publication';

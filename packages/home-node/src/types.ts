@@ -1,7 +1,13 @@
 import type { HostedDinaEndpoints } from './endpoints';
 
 export type HomeNodeFormFactor = 'mobile' | 'server';
-export type HomeNodeRunState = 'created' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
+export type HomeNodeRunState =
+  | 'created'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'failed';
 export type HomeNodeFeature = 'remember' | 'ask' | 'trust_publish' | 'service_query';
 
 export interface HomeNodeLifecycle {
@@ -91,10 +97,7 @@ export interface HomeNodeRuntimeContext {
   endpoints: HostedDinaEndpoints;
 }
 
-export type HomeNodeHandler<I, O> = (
-  input: I,
-  context: HomeNodeRuntimeContext,
-) => Promise<O> | O;
+export type HomeNodeHandler<I, O> = (input: I, context: HomeNodeRuntimeContext) => Promise<O> | O;
 
 export interface HomeNodeRuntimeHandlers {
   remember?: HomeNodeHandler<RememberInput, RememberResult>;
@@ -106,9 +109,9 @@ export interface HomeNodeRuntimeHandlers {
 export interface HomeNodeRuntimeLifecycleHooks {
   start?: (context: HomeNodeRuntimeContext) => Promise<void> | void;
   stop?: (context: HomeNodeRuntimeContext) => Promise<void> | void;
-  dependencies?: (context: HomeNodeRuntimeContext) =>
-    | Promise<Record<string, HomeNodeDependencyStatus>>
-    | Record<string, HomeNodeDependencyStatus>;
+  dependencies?: (
+    context: HomeNodeRuntimeContext,
+  ) => Promise<Record<string, HomeNodeDependencyStatus>> | Record<string, HomeNodeDependencyStatus>;
 }
 
 export interface CreateHomeNodeRuntimeOptions {

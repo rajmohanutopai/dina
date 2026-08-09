@@ -5,6 +5,15 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { base64 } from '@scure/base';
+
+import { buildMessageJSON } from '@dina/protocol';
+
+import { getPublicKey, sign } from '../../src/crypto/ed25519';
+import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
+
+import type { RetainedEnvelope } from '@dina/commerce-protocol';
 
 import {
   commerceRecordDigest,
@@ -20,7 +29,14 @@ import {
 } from '@dina/commerce-protocol';
 
 import {
+  CommerceAdmissionEngine,
+  CommerceAdmissionService,
+  CommerceTransaction,
+  CommerceLifecycleEngine,
+  CommerceReconciliationService,
   CommerceOrderStore,
+  type AdmissionEngineDeps,
+  type LifecycleEngineDeps,
   QuoteFamilyStore,
   StatusChainStore,
   type CommerceOrderRefRepository,
@@ -120,7 +136,11 @@ export function makeSignedQuote(
     unit_price: { currency: 'INR', minor_units: '500' },
     stock_status: 'available' as const,
   };
-  const subtotal = computeLineSubtotal(lineBase.unit_price, lineBase.quantity, lineBase.price_basis);
+  const subtotal = computeLineSubtotal(
+    lineBase.unit_price,
+    lineBase.quantity,
+    lineBase.price_basis,
+  );
   if (subtotal.error || !subtotal.value) throw new Error(String(subtotal.error));
   const line: SignedQuoteLine = { ...lineBase, line_subtotal: subtotal.value };
   const draft = {
@@ -195,4 +215,122 @@ export function makeOrder(
     ...draft,
     order_digest: commerceRecordDigest('order', draft as Record<string, unknown>, hash),
   } as PurchaseOrderProposal;
+}
+
+/**
+ * The admission surface as PRODUCTION sees it: the service, not the engine.
+ *
+ * After ARCH-0b the engine holds no transaction runner and exposes only
+ * `…InTx` methods, so a test that constructed one directly would be driving a
+ * shape no caller has. This helper takes the same deps the engine always took
+ * — `tx` included — and returns the service composed over it, which is what
+ * the runtime hands out.
+ *
+ * The engine comes back too, for the two tests that need to reach an `…InTx`
+ * method from inside a transaction they opened themselves.
+ */
+export function makeAdmission(
+  deps: { tx: (fn: () => void) => void } & AdmissionEngineDeps,
+): CommerceAdmissionService & { engine: CommerceAdmissionEngine } {
+  const { tx, ...engineDeps } = deps;
+  const engine = new CommerceAdmissionEngine(engineDeps as AdmissionEngineDeps);
+  const service = new CommerceAdmissionService({
+    transaction: new CommerceTransaction(tx),
+    engine,
+  });
+  return Object.assign(service, { engine });
+}
+
+/**
+ * The lifecycle surface as PRODUCTION sees it: the reconciliation service.
+ *
+ * The twin of `makeAdmission`, and for the same reason — after ARCH-0c the
+ * engine holds no transaction runner. The engine is returned alongside for the
+ * §12.8 genesis seam, which admission calls from inside its own transaction.
+ */
+export function makeLifecycle(
+  deps: { tx: (fn: () => void) => void } & LifecycleEngineDeps,
+): CommerceReconciliationService {
+  const { tx, ...engineDeps } = deps;
+  // No `Object.assign` here, unlike `makeAdmission`: the service already
+  // exposes `engine` as a GETTER for the §12.8 seam, and assigning over a
+  // getter-only property throws at runtime rather than at compile time.
+  return new CommerceReconciliationService({
+    transaction: new CommerceTransaction(tx),
+    engine: new CommerceLifecycleEngine(engineDeps as LifecycleEngineDeps),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// §12.7/§16.2 held evidence — real envelopes, real signatures
+// ---------------------------------------------------------------------------
+
+/**
+ * The supplier's signing key for tests.
+ *
+ * A REAL keypair, and the evidence below carries a REAL signature over a
+ * REAL message, because the thing under test is whether a supplier can
+ * tell its own past signature from a buyer's claim. Hand-built evidence
+ * beside a `() => true` verifier tests the plumbing and nothing else —
+ * and the whole defect this fixture exists for was a check that could not
+ * fail.
+ */
+export const SUPPLIER_SIGNING_KEY = new Uint8Array(32).fill(7);
+export const SUPPLIER_PUBLIC_KEY = getPublicKey(SUPPLIER_SIGNING_KEY);
+
+/** Resolves ONLY the supplier's DID, like a node that knows its own key. */
+export const supplierKeyResolver = (did: string): Uint8Array | null =>
+  did === SUPPLIER_DID ? SUPPLIER_PUBLIC_KEY : null;
+
+/** The production verifier, over the test key. Not a stub. */
+export const realHeldEvidenceVerifier = makeHeldEvidenceVerifier(supplierKeyResolver);
+
+/**
+ * Build held evidence the way a buyer really acquires it: wrap the record
+ * in a `service.response` body, build the message, sign it, and keep all
+ * three.
+ *
+ * `overrides` exists so a test can corrupt exactly one thing — send it
+ * from the wrong DID, address it to another buyer, or leave the record
+ * out of the signed body — and watch that single change be rejected.
+ */
+export function makeHeldEvidence<T extends object>(
+  record: T,
+  overrides: {
+    from?: string;
+    to?: string[];
+    /** Replaces the body wholesale, for "signature over other bytes" cases. */
+    body?: string;
+    /** Signs with a different key, for "not my signature" cases. */
+    signingKey?: Uint8Array;
+  } = {},
+): { record: T; envelope: RetainedEnvelope; signature: string } {
+  const body =
+    overrides.body ??
+    JSON.stringify({
+      capability: 'com.dinakernel.commerce.order_status',
+      query_id: 'q-held-1',
+      status: 'ok',
+      result: record,
+    });
+  const envelope: RetainedEnvelope = {
+    id: 'msg-held-1',
+    type: 'service.response',
+    from: overrides.from ?? SUPPLIER_DID,
+    to: overrides.to ?? [BUYER_DID],
+    created_time: 1_770_000_000,
+    body,
+  };
+  const signed = buildMessageJSON({
+    id: envelope.id,
+    type: envelope.type,
+    from: envelope.from,
+    to: envelope.to,
+    created_time: envelope.created_time,
+    bodyBase64: base64.encode(new TextEncoder().encode(envelope.body)),
+  });
+  const signature = bytesToHex(
+    sign(overrides.signingKey ?? SUPPLIER_SIGNING_KEY, new TextEncoder().encode(signed)),
+  );
+  return { record, envelope, signature };
 }

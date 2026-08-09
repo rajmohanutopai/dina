@@ -129,3 +129,97 @@ export function validateProductSearchRequirements(requirements: unknown): string
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Search results (§10.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a catalog AppView returns: a bounded CANDIDATE REFERENCE.
+ *
+ * Every field here is discovery evidence. None of it is a commitment: the
+ * price is indicative (§10.4), the snapshot reference is what the supplier
+ * published rather than what they will honour today, and `retrieval_score` is
+ * how the index ranked its own recall — NOT permission and NOT the buyer's
+ * ranking, which happens in the buyer's own node against signed quotes.
+ *
+ * The type is deliberately narrow. §10.6 permits multiple AppViews, so a
+ * candidate must carry enough source evidence for a buyer to identify where it
+ * came from and verify the supplier live before committing; it must NOT carry
+ * anything that could be mistaken for a current contractual offer (FR-A7),
+ * which is why there is no stock field and no authorization field to populate.
+ */
+export interface CommerceSearchCandidate {
+  supplier_did: string;
+  service_uri: string;
+  service_rkey: string;
+  product: ProductRef;
+  /** The snapshot digest this candidate was projected from (FR-A5). */
+  catalog_snapshot_ref: string;
+  /** Evidence supporting a projected relationship, when one was used (§10.7). */
+  relationship_evidence_refs?: string[];
+  /** Which fields matched, so a buyer can see WHY this was returned. */
+  matched_fields: string[];
+  indicative_price?: Money;
+  fulfilment_regions: RegionRef[];
+  generated_at: string;
+  valid_until?: string;
+  /**
+   * Recall confidence in basis points, 0–10000. Basis points rather than a
+   * float because the whole commerce surface carries exact integers and a
+   * float here would be the one place a value drifts between languages.
+   */
+  retrieval_score_bp: number;
+}
+
+/** A page of candidates. Bounded, because discovery must not be a firehose. */
+export const MAX_SEARCH_CANDIDATES = 50;
+
+export function validateCommerceSearchCandidate(value: unknown): string | null {
+  if (!isRecord(value)) return 'candidate: must be an object';
+  for (const field of [
+    'supplier_did',
+    'service_uri',
+    'service_rkey',
+    'catalog_snapshot_ref',
+  ] as const) {
+    if (typeof value[field] !== 'string' || value[field].length === 0) {
+      return `candidate.${field}: must be a non-empty string`;
+    }
+  }
+  const product = validateProductRef(value.product);
+  if (product !== null) return `candidate.product: ${product}`;
+
+  if (!Array.isArray(value.matched_fields) || value.matched_fields.length === 0) {
+    // A candidate with no matched field is a result nobody can explain, and an
+    // unexplainable result is indistinguishable from a paid placement — which
+    // is the thing this whole index exists not to be.
+    return 'candidate.matched_fields: at least one field must be named';
+  }
+  if (!Array.isArray(value.fulfilment_regions)) {
+    return 'candidate.fulfilment_regions: must be an array';
+  }
+  for (const region of value.fulfilment_regions) {
+    const err = validateRegionRef(region);
+    if (err) return `candidate.fulfilment_regions[]: ${err}`;
+  }
+  if (value.indicative_price !== undefined) {
+    const err = validateMoney(value.indicative_price);
+    if (err) return `candidate.indicative_price: ${err}`;
+  }
+  const generated = validateIsoUtc(value.generated_at, 'candidate.generated_at');
+  if (generated !== null) return generated;
+  if (value.valid_until !== undefined) {
+    const err = validateIsoUtc(value.valid_until, 'candidate.valid_until');
+    if (err) return err;
+  }
+  if (
+    typeof value.retrieval_score_bp !== 'number' ||
+    !Number.isInteger(value.retrieval_score_bp) ||
+    value.retrieval_score_bp < 0 ||
+    value.retrieval_score_bp > 10000
+  ) {
+    return 'candidate.retrieval_score_bp: must be an integer in [0, 10000]';
+  }
+  return null;
+}

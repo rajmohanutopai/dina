@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import {
   COMMERCE_PROTOCOL_VERSION,
   commerceRecordDigest,
+  validateCancellationResult,
   verifyRestoreFence,
   type CancellationRequest,
   type CommerceOrderStatus,
@@ -44,13 +45,18 @@ import {
   BUYER_DID,
   SUPPLIER_DID,
   hash,
-  makeOrder,
-  makeQuoteRequest,
-  makeSignedQuote,
+  makeAdmission,
   makeChains,
   makeFamilies,
+  makeLifecycle,
+  makeOrder,
+  makeHeldEvidence,
   makeOrders,
+  makeQuoteRequest,
+  makeSignedQuote,
 } from './helpers';
+
+import type { RetainedEnvelope } from '@dina/commerce-protocol';
 
 interface Harness {
   orderRefs: CommerceOrderRefRepository;
@@ -102,10 +108,15 @@ const T0 = Date.parse('2026-08-07T12:30:00.000Z');
  * record, so anyone holding or inventing it can compute it. These tests
  * stub the signature; compiled Core verifies it via verifyHeldEvidence.
  */
-function evid<T>(record: T): { record: T; signature: string } {
-  return { record, signature: 'cd'.repeat(32) };
+function evid<T extends object>(
+  record: T,
+): { record: T; envelope: RetainedEnvelope; signature: string } {
+  // A REAL message with a REAL signature over it. The placeholder this
+  // replaced (`'cd'.repeat(32)`) was a signature over nothing, which meant
+  // every test here proved only that a well-shaped object reached the
+  // verifier — never that the verifier could reject a badly-shaped one.
+  return makeHeldEvidence(record);
 }
-
 
 describe.each([
   ['in-memory', inMemoryHarness],
@@ -113,8 +124,8 @@ describe.each([
 ])('lifecycle engine (%s)', (_label, makeHarness) => {
   let h: Harness;
   let clock: { now: number };
-  let admission: CommerceAdmissionEngine;
-  let engine: CommerceLifecycleEngine;
+  let admission: ReturnType<typeof makeAdmission>;
+  let engine: ReturnType<typeof makeLifecycle>;
 
   const request = makeQuoteRequest();
   const priced_projection = request.delivery.projection;
@@ -122,7 +133,7 @@ describe.each([
   beforeEach(() => {
     h = makeHarness();
     clock = { now: T0 };
-    admission = new CommerceAdmissionEngine({
+    admission = makeAdmission({
       tx: h.tx,
       orders: makeOrders(h.orderRefs, clock),
       families: makeFamilies(h.quotes, clock, () => '1'),
@@ -131,7 +142,7 @@ describe.each([
       now: () => clock.now,
       decisionTimeoutMs: 60_000,
     });
-    engine = new CommerceLifecycleEngine({
+    engine = makeLifecycle({
       tx: h.tx,
       orders: makeOrders(h.orderRefs, clock),
       chains: makeChains(h.statusHeads, clock, () => '1'),
@@ -167,7 +178,14 @@ describe.each([
 
   /** Seed an admitted order whose conversation version is `version`. */
   function seedAdmittedOrderAtVersion(version: string) {
-    const quote = makeSignedQuote(request, { quote_id: `q-${version}` });
+    // THE WHOLE CONVERSATION AT THAT VERSION, not just the order. §9.13 says
+    // one conversation pins one version, and admission now enforces it — a
+    // fixture that put a 1.7 order on a 1.0 quote was describing a state the
+    // protocol forbids, and only passed while nothing checked.
+    const quote = makeSignedQuote(request, {
+      quote_id: `q-${version}`,
+      protocol_version: version,
+    });
     h.receipts.put({
       recordDigest: request.request_digest,
       domain: 'request',
@@ -205,13 +223,17 @@ describe.each([
     // construction produces an invalid record and every branch errors for
     // the same uninformative reason. Build at the right version instead.
     protocolVersion = '1.0',
+    // One order can carry more than one cancellation, and §12.5's listing has
+    // to answer per cancellation rather than per order — so the id has to be
+    // variable for that to be testable at all.
+    cancellationId = 'cx-1',
   ): CancellationRequest {
     const draft = {
       protocol_version: protocolVersion,
-      cancellation_id: 'cx-1',
+      cancellation_id: cancellationId,
       purchase_order_id: order.purchase_order_id,
       order_digest: order.order_digest,
-      idempotency_key: 'idem-cx-1',
+      idempotency_key: `idem-${cancellationId}`,
       issued_at: '2026-08-07T12:40:00.000Z',
     };
     return {
@@ -249,7 +271,7 @@ describe.each([
       const headBefore = h.statusHeads.get(BUYER_DID, order.purchase_order_id);
       if (headBefore === null) throw new Error('expected a status head');
 
-      const restored = new CommerceLifecycleEngine({
+      const restored = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -261,7 +283,11 @@ describe.each([
       });
 
       const receiptsBefore = h.receipts.listByOrder(BUYER_DID, order.purchase_order_id).length;
-      const result = restored.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'cancelled');
+      const result = restored.resolveCancellation(
+        makeCancellation(order),
+        BUYER_DID,
+        () => 'cancelled',
+      );
       // WS-4.4 moved this refusal EARLIER — the order-level pre-restore check
       // now fires before the chain-level one, so the message names the order
       // rather than the fence. The stronger property is that it refuses
@@ -289,7 +315,7 @@ describe.each([
       // No genesis signed yet, and the local head row is absent exactly as it
       // would be after restoring a backup taken before the genesis.
 
-      const restored = new CommerceLifecycleEngine({
+      const restored = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -313,7 +339,7 @@ describe.each([
       // have accepted and the buyer can prove with a signed acknowledgement.
       const { order } = seedAdmittedOrder();
 
-      const restored = new CommerceLifecycleEngine({
+      const restored = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -324,7 +350,11 @@ describe.each([
         currentEpoch: () => '2',
       });
 
-      const result = restored.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'cancelled');
+      const result = restored.resolveCancellation(
+        makeCancellation(order),
+        BUYER_DID,
+        () => 'cancelled',
+      );
       expect('error' in result && result.error).toMatch(/order predates a restore/);
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
     });
@@ -342,7 +372,7 @@ describe.each([
 
       const fresh = makeHarness();
       try {
-        const engineB = new CommerceLifecycleEngine({
+        const engineB = makeLifecycle({
           tx: fresh.tx,
           orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '1'),
@@ -400,7 +430,7 @@ describe.each([
 
       const fresh = makeHarness();
       try {
-        const engineB = new CommerceLifecycleEngine({
+        const engineB = makeLifecycle({
           tx: fresh.tx,
           orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '1'),
@@ -469,7 +499,7 @@ describe.each([
 
       const fresh = makeHarness();
       try {
-        const engineB = new CommerceLifecycleEngine({
+        const engineB = makeLifecycle({
           tx: fresh.tx,
           orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '1'),
@@ -534,7 +564,7 @@ describe.each([
       // A fresh node (nothing local) re-adopts from the buyer's evidence.
       const fresh = makeHarness();
       try {
-        const engineB = new CommerceLifecycleEngine({
+        const engineB = makeLifecycle({
           tx: fresh.tx,
           orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '1'),
@@ -577,7 +607,7 @@ describe.each([
       // could cancel. The reason code depended on timing, not on the order.
       const { order } = seedAdmittedOrder();
 
-      const atomicAdmission = new CommerceAdmissionEngine({
+      const atomicAdmission = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '1'),
@@ -585,7 +615,7 @@ describe.each([
         supplierDid: () => SUPPLIER_DID,
         now: () => clock.now,
         decisionTimeoutMs: 60_000,
-        createAcceptedGenesisInTx: (b, po) => engine.createAcceptedGenesisInTx(b, po),
+        createAcceptedGenesisInTx: (b, po) => engine.engine.createAcceptedGenesisInTx(b, po),
       });
 
       const decided = atomicAdmission.decideOrder(BUYER_DID, order.purchase_order_id, {
@@ -608,7 +638,7 @@ describe.each([
       // reachable — the decision rolls back and the buyer may retry.
       const { order } = seedAdmittedOrder();
 
-      const brokenAdmission = new CommerceAdmissionEngine({
+      const brokenAdmission = makeAdmission({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         families: makeFamilies(h.quotes, clock, () => '1'),
@@ -628,12 +658,14 @@ describe.each([
 
       // SQLite has real transactions; the in-memory runner is a pass-through.
       if (_label === 'sqlite') {
-        expect(h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.state).toBe('reserved');
+        expect(h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)?.state).toBe(
+          'reserved',
+        );
         expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
       }
     });
 
-    it('emits continuation records at the ORDER\'s version, not the build\'s (§9.13)', () => {
+    it("emits continuation records at the ORDER's version, not the build's (§9.13)", () => {
       // The fixture order must differ from COMMERCE_PROTOCOL_VERSION, or
       // "emits the pin" and "emits the build version" are indistinguishable
       // and the test proves nothing. 1.1 is admissible: checkProtocolVersion
@@ -642,8 +674,10 @@ describe.each([
       expect(order.protocol_version).not.toBe(COMMERCE_PROTOCOL_VERSION);
       acceptOrder(order.purchase_order_id);
 
-      const ackJson = h.orderRefs.getByOrderId(BUYER_DID, order.purchase_order_id)
-        ?.acknowledgementJson;
+      const ackJson = h.orderRefs.getByOrderId(
+        BUYER_DID,
+        order.purchase_order_id,
+      )?.acknowledgementJson;
       expect(JSON.parse(ackJson ?? '{}').protocol_version).toBe('1.1');
 
       const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
@@ -693,7 +727,7 @@ describe.each([
       engine.signGenesis(BUYER_DID, order.purchase_order_id);
 
       // Restore: the live epoch moves to 2, the chain head stays at 1.
-      const restored = new CommerceLifecycleEngine({
+      const restored = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -744,7 +778,7 @@ describe.each([
         get: (digest: string) => (digest === partial.status_digest ? null : h.receipts.get(digest)),
         put: (row) => h.receipts.put(row),
       };
-      const withLoss = new CommerceLifecycleEngine({
+      const withLoss = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
@@ -795,7 +829,7 @@ describe.each([
         },
         put: (row) => h.receipts.put(row),
       };
-      const withTamper = new CommerceLifecycleEngine({
+      const withTamper = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
@@ -841,7 +875,7 @@ describe.each([
           digest === partial.status_digest ? genesisRow : h.receipts.get(digest),
         put: (row) => h.receipts.put(row),
       };
-      const withSwap = new CommerceLifecycleEngine({
+      const withSwap = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
@@ -1047,6 +1081,197 @@ describe.each([
       );
       expect('result' in second && second.result).toBe('refused_already_dispatched');
     });
+
+    /**
+     * §12.5 — an operator can FIND the review that is waiting on them.
+     *
+     * The finalization above was reachable only by a caller that already knew
+     * the cancellation id. Nothing listed them, so on a real node the review
+     * was invisible: the inbox showed an unresolved order with no actions and
+     * the one command that could settle it needed an id nobody had.
+     *
+     * Driven against the real receipt store rather than a double, because the
+     * whole question is whether the scan finds what `recordResult` actually
+     * wrote — two records for one cancellation, the parking one and later the
+     * terminal one.
+     */
+    it('lists a parked cancellation, and stops listing it once decided', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      const cancellation = makeCancellation(order);
+      engine.resolveCancellation(cancellation, BUYER_DID, () => 'pending_review');
+
+      const waiting = engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id);
+      expect(waiting.map((entry) => entry.cancellation_id)).toEqual([
+        cancellation.cancellation_id,
+      ]);
+
+      engine.finalizePendingCancellation(
+        BUYER_DID,
+        order.purchase_order_id,
+        cancellation.cancellation_id,
+        'refused_policy',
+      );
+      // The parking record still EXISTS — nothing overwrites it — so a scan
+      // that read for `pending_review` alone would keep offering a decision
+      // already made. Asking what the cancellation's current result is, is
+      // what makes that impossible.
+      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual(
+        [],
+      );
+    });
+
+    it('answers per CANCELLATION when one order carries two', () => {
+      // The strengthening that mattered. With a single cancellation the
+      // assertion above passed even when the check was removed, because the
+      // scan's own dedup happened to see the terminal receipt first — so the
+      // test was resting on receipt ordering rather than on the rule.
+      //
+      // Two cancellations, one parked and one decided, cannot be answered by
+      // ordering at all: getting it right requires resolving EACH id to its
+      // current result.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+
+      const decided = makeCancellation(order, '1.0', 'cx-decided');
+      engine.resolveCancellation(decided, BUYER_DID, () => 'pending_review');
+      engine.finalizePendingCancellation(
+        BUYER_DID,
+        order.purchase_order_id,
+        decided.cancellation_id,
+        'refused_policy',
+      );
+
+      const parked = makeCancellation(order, '1.0', 'cx-parked');
+      engine.resolveCancellation(parked, BUYER_DID, () => 'pending_review');
+
+      expect(
+        engine
+          .listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)
+          .map((entry) => entry.cancellation_id),
+      ).toEqual(['cx-parked']);
+    });
+
+    it('lists nothing for an order whose cancellation was decided outright', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      engine.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'refused_policy');
+      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual(
+        [],
+      );
+    });
+
+    /**
+     * WS-2.3 — a WINNING finalization has to do the work the live path does.
+     *
+     * The test above only ever finalizes to `refused_already_dispatched`,
+     * which decides nothing, and that is exactly why this went unnoticed:
+     * finalizing to `cancelled` recorded a terminal result and moved nothing
+     * at all. No decision, no refund, no chain. The digest that §12.8
+     * REQUIRES a `cancelled` result to carry arrived as an optional caller
+     * parameter, so omitting it produced a record the buyer must reject —
+     * durable, terminal, replayed by idempotency forever, and unreopenable
+     * because finalization refuses anything that is no longer pending.
+     *
+     * A review can be parked in two places, so there are two winning shapes.
+     */
+    it('finalizing to cancelled AFTER genesis moves the chain to cancelled (§12.8)', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if ('error' in genesis) throw new Error(genesis.error);
+      const cancellation = makeCancellation(order);
+
+      expect(
+        'result' in engine.resolveCancellation(cancellation, BUYER_DID, () => 'pending_review'),
+      ).toBe(true);
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.state).toBe('accepted');
+
+      const finalized = engine.finalizePendingCancellation(
+        BUYER_DID,
+        order.purchase_order_id,
+        cancellation.cancellation_id,
+        'cancelled',
+      );
+      if (!('result' in finalized)) throw new Error(JSON.stringify(finalized));
+      expect(finalized.result).toBe('cancelled');
+      // Bound to the head it ruled on, and the head actually moved. Without
+      // both, Core has told the buyer the order is cancelled while its own
+      // chain is still live and can go on to sign `dispatched`.
+      expect(finalized.status_digest_at_resolution).toBe(genesis.status_digest);
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.state).toBe('cancelled');
+      // And the record is one a conforming buyer can actually accept.
+      expect(validateCancellationResult(finalized, hash)).toBeNull();
+    });
+
+    it('finalizing to cancelled BEFORE genesis decides, refunds and signs (§12.8)', () => {
+      const { quote, order } = seedAdmittedOrder();
+      // Parked by the race arm: still reserved, external effect in flight.
+      admission.markEffectStarted(BUYER_DID, order.purchase_order_id);
+      const cancellation = makeCancellation(order);
+      expect(
+        'result' in engine.resolveCancellation(cancellation, BUYER_DID, () => 'cancelled'),
+      ).toBe(true);
+      expect(h.quotes.getUse(quote.quote_id, order.purchase_order_id)).toBe('held');
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)).toBeNull();
+
+      const finalized = engine.finalizePendingCancellation(
+        BUYER_DID,
+        order.purchase_order_id,
+        cancellation.cancellation_id,
+        'cancelled',
+      );
+      if (!('result' in finalized)) throw new Error(JSON.stringify(finalized));
+      expect(finalized.result).toBe('cancelled');
+      // The capacity is released — it used to stay held for good, because
+      // nothing on this path ever settled the quote family.
+      expect(h.quotes.getUse(quote.quote_id, order.purchase_order_id)).toBe('refunded');
+      // And a genesis exists for the buyer to verify against, at the state
+      // §9.11 gives a won cancellation.
+      const head = h.statusHeads.get(BUYER_DID, order.purchase_order_id);
+      expect(head?.state).toBe('cancelled');
+      expect(finalized.status_digest_at_resolution).toBe(head?.headDigest);
+      expect(validateCancellationResult(finalized, hash)).toBeNull();
+    });
+
+    /**
+     * The general guard behind both: `recordResult` writes durable, terminal
+     * evidence, so it must refuse a record the counterparty would reject
+     * rather than commit one. Refusing leaves the review parked, which is
+     * recoverable; recording ends the conversation.
+     */
+    it('never records a cancellation result that fails its own validator', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if ('error' in genesis) throw new Error(genesis.error);
+      const cancellation = makeCancellation(order);
+      const results = [
+        engine.resolveCancellation(cancellation, BUYER_DID, () => 'cancelled'),
+        engine.finalizePendingCancellation(
+          BUYER_DID,
+          order.purchase_order_id,
+          cancellation.cancellation_id,
+          'cancelled',
+        ),
+      ];
+      for (const result of results) {
+        if ('result' in result) expect(validateCancellationResult(result, hash)).toBeNull();
+      }
+      // Every `result` receipt this engine wrote, not merely the ones handed
+      // back — a durable record nobody looked at is still one the buyer will
+      // read on its next reconcile.
+      const stored = h.receipts
+        .listByOrder(BUYER_DID, order.purchase_order_id)
+        .filter((r) => r.domain === 'result');
+      expect(stored.length).toBeGreaterThan(0);
+      for (const receipt of stored) {
+        expect(validateCancellationResult(JSON.parse(receipt.recordJson), hash)).toBeNull();
+      }
+    });
   });
 
   describe('reconcile (§12.7)', () => {
@@ -1074,7 +1299,12 @@ describe.each([
 
       // never_received only for a genuinely unknown order without evidence.
       const unknown = engine.reconcile(
-        { ...base, purchase_order_id: 'po-x', order_digest: 'b'.repeat(64), idempotency_key: 'idem-x' },
+        {
+          ...base,
+          purchase_order_id: 'po-x',
+          order_digest: 'b'.repeat(64),
+          idempotency_key: 'idem-x',
+        },
         BUYER_DID,
       );
       expect('outcome' in unknown && unknown.outcome).toBe('never_received');
@@ -1101,7 +1331,7 @@ describe.each([
       const restored = makeHarness();
       // The app-level verifier checks the retained envelope signature;
       // tests stub it as "authentic for records this supplier signed".
-      const restoredEngine = new CommerceLifecycleEngine({
+      const restoredEngine = makeLifecycle({
         tx: restored.tx,
         orders: makeOrders(restored.orderRefs, clock),
         chains: makeChains(restored.statusHeads, clock, () => '2'),
@@ -1123,9 +1353,19 @@ describe.each([
           },
           BUYER_DID,
         );
-        expect('outcome' in readopted && readopted.outcome).toBe('received_accepted');
+        // `received_unresolved`, NOT `received_accepted` (WS-2.3). The
+        // decision is known — it came from the buyer's own signed evidence —
+        // but re-adoption rebuilds a REFERENCE, not the order's lines, quote
+        // context or external state, and chain creation stays barred until
+        // the owner runs the §16.2 ceremony. Answering `accepted` would be
+        // true and useless: it hands the buyer back the document they just
+        // presented and invites them to wait for status updates that cannot
+        // come.
+        expect('outcome' in readopted && readopted.outcome).toBe('received_unresolved');
 
-        // The re-adopted record now answers WITHOUT evidence.
+        // The re-adopted record now answers WITHOUT evidence — and answers
+        // the SAME thing, which is the property that matters: one order does
+        // not report `accepted` once and `unresolved` for ever after.
         const followUp = restoredEngine.reconcile(
           {
             protocol_version: '1.0',
@@ -1135,7 +1375,7 @@ describe.each([
           },
           BUYER_DID,
         );
-        expect('outcome' in followUp && followUp.outcome).toBe('received_accepted');
+        expect('outcome' in followUp && followUp.outcome).toBe('received_unresolved');
 
         // Tampered/foreign evidence is refused non-disclosingly.
         const tampered = restoredEngine.reconcile(
@@ -1155,7 +1395,7 @@ describe.each([
         // is a hash anyone can compute, never authenticity (§9.12).
         const unverified = makeHarness();
         try {
-          const noVerifier = new CommerceLifecycleEngine({
+          const noVerifier = makeLifecycle({
             tx: unverified.tx,
             orders: makeOrders(unverified.orderRefs, clock),
             chains: makeChains(unverified.statusHeads, clock, () => '2'),
@@ -1192,7 +1432,7 @@ describe.each([
 
       const restored = makeHarness();
       try {
-        const restoredEngine = new CommerceLifecycleEngine({
+        const restoredEngine = makeLifecycle({
           tx: restored.tx,
           orders: makeOrders(restored.orderRefs, clock),
           chains: makeChains(restored.statusHeads, clock, () => '2'),
@@ -1251,7 +1491,7 @@ describe.each([
       // Restored supplier: fresh stores, and the order's idempotency key
       // is ALREADY held by a different purchase order.
       const restored = makeHarness();
-      const restoredEngine = new CommerceLifecycleEngine({
+      const restoredEngine = makeLifecycle({
         tx: restored.tx,
         orders: makeOrders(restored.orderRefs, clock),
         chains: makeChains(restored.statusHeads, clock, () => '2'),
@@ -1271,8 +1511,10 @@ describe.each([
           quoteId: 'q-other',
           quoteDigest: 'c'.repeat(64),
           pinnedVersion: '1.0',
-        admittedEpoch: '1',
-        reconciliationRequired: false,
+          servingManifestCid: '',
+          servingInstallId: '',
+          admittedEpoch: '1',
+          reconciliationRequired: false,
           decisionDeadlineAt: null,
           createdAt: clock.now,
         });
@@ -1331,9 +1573,7 @@ describe.each([
           held_status_receipts: [{ junk: true }],
         },
       ]) {
-        expect(() =>
-          engine.reconcile(malformed as never, BUYER_DID),
-        ).not.toThrow();
+        expect(() => engine.reconcile(malformed as never, BUYER_DID)).not.toThrow();
         const answer = engine.reconcile(malformed as never, BUYER_DID);
         expect('error' in answer).toBe(true);
       }
@@ -1386,7 +1626,7 @@ describe.each([
       };
 
       const build = (verify?: () => boolean) =>
-        new CommerceLifecycleEngine({
+        makeLifecycle({
           tx: fresh.tx,
           orders: makeOrders(fresh.orderRefs, clock),
           chains: makeChains(fresh.statusHeads, clock, () => '2'),
@@ -1413,7 +1653,11 @@ describe.each([
         delete (foreignDraft as { status_digest?: string }).status_digest;
         const foreign = {
           ...foreignDraft,
-          status_digest: commerceRecordDigest('status', foreignDraft as Record<string, unknown>, hash),
+          status_digest: commerceRecordDigest(
+            'status',
+            foreignDraft as Record<string, unknown>,
+            hash,
+          ),
         } as CommerceOrderStatus;
         const identity = build(() => true).reconcile(
           { ...request, held_status_receipts: [evid(foreign)] },
@@ -1440,7 +1684,7 @@ describe.each([
       // The buyer holds BOTH; the restored supplier is behind (its head
       // is genesis). Epoch has been raised by establishAfterRestore.
       let epoch = '1';
-      const restoredEngine = new CommerceLifecycleEngine({
+      const restoredEngine = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => epoch),
@@ -1475,9 +1719,15 @@ describe.each([
       expect(fence.state).toBe('preparing');
 
       // The buyer's verifier accepts it against its held chain.
-      expect(verifyRestoreFence(fence, [genesis, preparing], order.accepted_lines, hash)).toBe(
-        'head',
-      );
+      expect(
+        verifyRestoreFence(
+          fence,
+          [genesis, preparing],
+          order.accepted_lines,
+          hash,
+          new Date(clock.now).toISOString(),
+        ),
+      ).toBe('head');
       // And the local head really moved.
       expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.headDigest).toBe(
         fence.status_digest,
@@ -1490,7 +1740,7 @@ describe.each([
       const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
       if ('error' in genesis) throw new Error(genesis.error);
 
-      const noVerifier = new CommerceLifecycleEngine({
+      const noVerifier = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -1500,8 +1750,263 @@ describe.each([
         now: () => clock.now,
         currentEpoch: () => '2',
       });
-      const result = noVerifier.signRestoreFence(BUYER_DID, order.purchase_order_id, [evid(genesis)]);
+      const result = noVerifier.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(genesis),
+      ]);
       expect('error' in result && result.error).toMatch(/no verifiable held status receipts/);
+    });
+
+    /**
+     * WS-2.6 — the fence RE-DERIVES against the order rather than restating
+     * the predecessor on faith.
+     *
+     * A restore is the one moment the order reference and the status
+     * receipts can disagree: they are separate tables and can come back from
+     * different backup vintages. The predecessor carries our own signature,
+     * which proves we signed it ONCE against whatever order we held THEN —
+     * not that it still describes the order we hold NOW.
+     *
+     * The consequence of skipping the check is not a bad record sitting
+     * harmlessly in a store. `verifyRestoreFence` runs the same line rules
+     * buyer-side, so Core would sign a fence the buyer must reject, and the
+     * order strands — the exact outcome the fence exists to prevent.
+     */
+    it('refuses to fence onto fulfilment the order does not support (§9.11)', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if ('error' in genesis) throw new Error(genesis.error);
+
+      const line = order.accepted_lines[0];
+      if (!line) throw new Error('fixture has no order lines');
+      // A record this supplier signed before the restore, digest-correct and
+      // on this exact order — but claiming MORE fulfilment than the order we
+      // now hold says was ever accepted.
+      const inflatedDraft = {
+        protocol_version: COMMERCE_PROTOCOL_VERSION,
+        purchase_order_id: order.purchase_order_id,
+        buyer_did: BUYER_DID,
+        supplier_did: SUPPLIER_DID,
+        sequence: '1',
+        previous_status_digest: genesis.status_digest,
+        state: 'dispatched' as const,
+        lines: [
+          {
+            line_id: line.line_id,
+            fulfilled_quantity: {
+              value: String(Number(line.quantity.value) + 1),
+              unit_code: line.quantity.unit_code,
+            },
+          },
+        ],
+        supplier_epoch: '1',
+        updated_at: new Date(clock.now).toISOString(),
+      };
+      const inflated = {
+        ...inflatedDraft,
+        status_digest: commerceRecordDigest('status', inflatedDraft, hash),
+      } as unknown as CommerceOrderStatus;
+
+      const restored = makeLifecycle({
+        tx: h.tx,
+        orders: makeOrders(h.orderRefs, clock),
+        chains: makeChains(h.statusHeads, clock, () => '2'),
+        receipts: h.receipts,
+        families: makeFamilies(h.quotes, clock, () => '2'),
+        supplierDid: () => SUPPLIER_DID,
+        now: () => clock.now,
+        currentEpoch: () => '2',
+        verifyHeldEvidence: () => true,
+      });
+
+      const fenced = restored.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(genesis),
+        evid(inflated),
+      ]);
+      expect('error' in fenced && fenced.error).toMatch(/exceeds the ordered quantity/);
+      // Nothing moved: the chain is still at genesis, so a later fence
+      // against evidence that DOES add up remains available.
+      expect(h.statusHeads.get(BUYER_DID, order.purchase_order_id)?.headDigest).toBe(
+        genesis.status_digest,
+      );
+    });
+
+    /**
+     * WS-2.6 — the epoch bar is the BUYER's head, not only ours.
+     *
+     * Both sides check the fence raises the epoch, but against different
+     * heads. After a restore the buyer's head sits above ours, on records we
+     * lost, and its epoch comes with it. Clearing our own bar therefore says
+     * nothing about clearing theirs — Core signs, the buyer refuses for
+     * "requires a strictly higher supplier_epoch", and the order strands.
+     */
+    it('refuses a fence the buyer would reject as not raising the epoch (§16.2)', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if ('error' in genesis) throw new Error(genesis.error);
+
+      // The buyer holds a successor we signed at epoch 3 and then lost.
+      const aheadDraft = {
+        protocol_version: COMMERCE_PROTOCOL_VERSION,
+        purchase_order_id: order.purchase_order_id,
+        buyer_did: BUYER_DID,
+        supplier_did: SUPPLIER_DID,
+        sequence: '1',
+        previous_status_digest: genesis.status_digest,
+        state: 'preparing' as const,
+        supplier_epoch: '3',
+        updated_at: new Date(clock.now).toISOString(),
+      };
+      const ahead = {
+        ...aheadDraft,
+        status_digest: commerceRecordDigest('status', aheadDraft, hash),
+      } as unknown as CommerceOrderStatus;
+
+      let epoch = '2';
+      const restored = makeLifecycle({
+        tx: h.tx,
+        orders: makeOrders(h.orderRefs, clock),
+        chains: makeChains(h.statusHeads, clock, () => epoch),
+        receipts: h.receipts,
+        families: makeFamilies(h.quotes, clock, () => epoch),
+        supplierDid: () => SUPPLIER_DID,
+        now: () => clock.now,
+        currentEpoch: () => epoch,
+        verifyHeldEvidence: () => true,
+      });
+
+      // Epoch 2 clears OUR head (epoch 1) but not the buyer's (epoch 3).
+      const premature = restored.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(genesis),
+        evid(ahead),
+      ]);
+      expect('error' in premature && premature.error).toMatch(/strictly higher epoch/);
+
+      // Raise past the buyer's head and the same evidence fences cleanly.
+      epoch = '4';
+      const fence = restored.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(genesis),
+        evid(ahead),
+      ]);
+      if ('error' in fence) throw new Error(fence.error);
+      expect(fence.supplier_epoch).toBe('4');
+      expect(
+        verifyRestoreFence(
+          fence,
+          [genesis, ahead],
+          order.accepted_lines,
+          hash,
+          new Date(clock.now).toISOString(),
+        ),
+      ).toBe('head');
+    });
+  });
+
+  /**
+   * WS-2.5 — the head digest names a record; it does not prove that record
+   * belongs to this chain.
+   *
+   * The receipt store is keyed by digest across every order this node has
+   * ever handled, so a head row pointing at another order's status loads
+   * clean under a digest check alone. That record then drives transition
+   * legality and becomes the cumulative-lines floor for a successor we sign
+   * on a DIFFERENT order.
+   */
+  describe('head-status loading is bound to its own chain (§9.11)', () => {
+    it('refuses a head row that points at another order’s status', () => {
+      const first = seedAdmittedOrder();
+      acceptOrder(first.order.purchase_order_id);
+      const firstGenesis = engine.signGenesis(BUYER_DID, first.order.purchase_order_id);
+      if ('error' in firstGenesis) throw new Error(firstGenesis.error);
+
+      const second = seedAdmittedOrderAtVersion(COMMERCE_PROTOCOL_VERSION);
+      acceptOrder(second.order.purchase_order_id);
+      const secondGenesis = engine.signGenesis(BUYER_DID, second.order.purchase_order_id);
+      if ('error' in secondGenesis) throw new Error(secondGenesis.error);
+      expect(secondGenesis.status_digest).not.toBe(firstGenesis.status_digest);
+
+      // Corrupt the first order's head so it names the SECOND order's
+      // genesis. Both records are real, both are ours, both validate, and
+      // the digest the head carries recomputes — the only thing wrong is
+      // that they belong to different chains.
+      expect(
+        h.statusHeads.casAdvance(
+          BUYER_DID,
+          first.order.purchase_order_id,
+          firstGenesis.status_digest,
+          {
+            headDigest: secondGenesis.status_digest,
+            headSequence: secondGenesis.sequence,
+            state: secondGenesis.state,
+            supplierEpoch: secondGenesis.supplier_epoch,
+            updatedAt: clock.now,
+            disputeWindowEndsAt: null,
+          },
+        ),
+      ).toBe(true);
+
+      const moved = engine.signStatusUpdate(BUYER_DID, first.order.purchase_order_id, {
+        state: 'preparing',
+      });
+      expect('error' in moved && moved.error).toMatch(/belongs to a different chain/);
+    });
+
+    /**
+     * The check binds THREE fields, and the test above only exercises one of
+     * them: mutations that deleted the `buyer_did` and `supplier_did`
+     * comparisons both survived it. Each is a distinct escape.
+     *
+     * `purchase_order_id` alone is not enough, because it is buyer-chosen
+     * and the stores are keyed by (buyer, order) — two buyers can use the
+     * same id, and then only `buyer_did` separates their chains.
+     * `supplier_did` guards the other direction: a record signed by someone
+     * else can enter the receipt store through evidence re-adoption or an
+     * archive import, and it must never become the state we extend.
+     */
+    it.each([
+      ['purchase_order_id', { purchase_order_id: 'po-somewhere-else' }],
+      ['buyer_did', { buyer_did: 'did:plc:otherbuyer12345' }],
+      ['supplier_did', { supplier_did: 'did:plc:othersupplier1' }],
+    ])('refuses a head whose record carries a foreign %s', (_field, override) => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      const genesis = engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      if ('error' in genesis) throw new Error(genesis.error);
+
+      // Digest-correct and structurally valid — it recomputes, so a digest
+      // check alone accepts it. Only the identity fields are wrong.
+      const draft = { ...genesis, ...override } as Record<string, unknown>;
+      delete draft.status_digest;
+      const foreign = {
+        ...draft,
+        status_digest: commerceRecordDigest('status', draft, hash),
+      } as unknown as CommerceOrderStatus;
+      h.receipts.put({
+        recordDigest: foreign.status_digest,
+        domain: 'status',
+        buyerDid: BUYER_DID,
+        quoteId: 'q-1',
+        purchaseOrderId: order.purchase_order_id,
+        recordJson: JSON.stringify(foreign),
+        evidenceJson: '{}',
+        createdAt: clock.now,
+      });
+      expect(
+        h.statusHeads.casAdvance(BUYER_DID, order.purchase_order_id, genesis.status_digest, {
+          headDigest: foreign.status_digest,
+          headSequence: foreign.sequence,
+          state: foreign.state,
+          supplierEpoch: foreign.supplier_epoch,
+          updatedAt: clock.now,
+          disputeWindowEndsAt: null,
+        }),
+      ).toBe(true);
+
+      const moved = engine.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+        state: 'preparing',
+      });
+      expect('error' in moved && moved.error).toMatch(/belongs to a different chain/);
     });
   });
 
@@ -1557,7 +2062,7 @@ describe.each([
       if (!('status_digest' in preparing)) throw new Error('preparing failed');
       // Local head is now at sequence 1 (preparing).
 
-      const fencing = new CommerceLifecycleEngine({
+      const fencing = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -1570,7 +2075,9 @@ describe.each([
       });
 
       // Present ONLY the older genesis (sequence 0) as evidence.
-      const backward = fencing.signRestoreFence(BUYER_DID, order.purchase_order_id, [evid(genesis)]);
+      const backward = fencing.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(genesis),
+      ]);
       expect('error' in backward).toBe(true);
       expect('error' in backward && backward.error).toMatch(/roll back|behind the local head/);
 
@@ -1580,7 +2087,9 @@ describe.each([
       );
 
       // Fencing at the head itself is still allowed.
-      const atHead = fencing.signRestoreFence(BUYER_DID, order.purchase_order_id, [evid(preparing)]);
+      const atHead = fencing.signRestoreFence(BUYER_DID, order.purchase_order_id, [
+        evid(preparing),
+      ]);
       expect('status_digest' in atHead).toBe(true);
     });
 
@@ -1601,7 +2110,7 @@ describe.each([
       });
       if (!('status_digest' in preparing)) throw new Error('preparing failed');
 
-      const fencing = new CommerceLifecycleEngine({
+      const fencing = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -1656,7 +2165,7 @@ describe.each([
       // A fencing engine over the SAME stores: signRestoreFence needs a
       // verifier, otherwise it refuses before reaching the builder and
       // this test would pass for the wrong reason.
-      const fencingEngine = new CommerceLifecycleEngine({
+      const fencingEngine = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '2'),
@@ -1678,9 +2187,7 @@ describe.each([
       // The wire field must survive onto the fence, or no conforming
       // buyer can validate the record.
       expect(fence.dispute_window_ends_at).toBe('2026-08-14T00:00:00.000Z');
-      expect(
-        (fence as unknown as Record<string, unknown>).disputeWindowEndsAt,
-      ).toBeUndefined();
+      expect((fence as unknown as Record<string, unknown>).disputeWindowEndsAt).toBeUndefined();
     });
 
     /**
@@ -1727,7 +2234,7 @@ describe.each([
         put: (r: Parameters<typeof h.receipts.put>[0]) => h.receipts.put(r),
       } as typeof h.receipts;
 
-      const corruptEngine = new CommerceLifecycleEngine({
+      const corruptEngine = makeLifecycle({
         tx: h.tx,
         orders: makeOrders(h.orderRefs, clock),
         chains: makeChains(h.statusHeads, clock, () => '1'),
@@ -1745,7 +2252,9 @@ describe.each([
       // Even inside the window, an unreadable head must refuse rather
       // than sign on an unknown deadline.
       expect('error' in attempted).toBe(true);
-      expect('error' in attempted && attempted.error).toMatch(/integrity|does not match|dispute window/);
+      expect('error' in attempted && attempted.error).toMatch(
+        /integrity|does not match|dispute window/,
+      );
     });
 
     it('delivered -> disputed cannot be SIGNED after the dispute window (§9.11)', () => {

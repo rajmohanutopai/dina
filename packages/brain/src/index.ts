@@ -37,7 +37,7 @@ export type {
   ServiceHandlerCoreClient,
   ApprovalNotifier,
   ServiceInboundNotifier,
-  ServiceRejectResponder,
+  ServiceDirectResponder,
   SchemaSnapshot,
 } from './service/service_handler';
 // Tier 1 prompt-provider execution plane (docs/SERVICE_PROVIDER_TIERS.md).

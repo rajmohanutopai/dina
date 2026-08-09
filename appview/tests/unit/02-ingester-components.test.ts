@@ -197,6 +197,47 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       isDiscoverable: true,
       updatedAt: new Date(Date.now() - 60_000).toISOString(),
     },
+    // §10.2 catalog records. The digests here are shape-valid placeholders:
+    // this helper tests the VALIDATOR, and the trust chain is verified
+    // elsewhere (`commerce_catalog_verify`) against the frozen vectors.
+    'com.dinakernel.commerce.catalog': {
+      supplier_did: 'did:plc:chairmaker99',
+      catalog_id: 'chairmaker-main',
+      snapshot_sequence: 1,
+      protocol_version: '1.0',
+      published_at: now,
+      snapshot_rkey: 'a'.repeat(64),
+      snapshot_digest: 'a'.repeat(64),
+    },
+    'com.dinakernel.commerce.catalogSnapshot': {
+      snapshot: {
+        supplier_did: 'did:plc:chairmaker99',
+        catalog_id: 'chairmaker-main',
+        snapshot_sequence: 1,
+        protocol_version: '1.0',
+        published_at: now,
+        page_digests: ['b'.repeat(64)],
+        item_count: 0,
+        payload_root: 'c'.repeat(64),
+        snapshot_digest: 'a'.repeat(64),
+      },
+      pages: [
+        {
+          catalog_id: 'chairmaker-main',
+          snapshot_sequence: 1,
+          page_index: 0,
+          items: [],
+          page_digest: 'b'.repeat(64),
+        },
+      ],
+    },
+    'com.dinakernel.commerce.relationshipClaim': {
+      claim_id: 'claim-1',
+      subject: { scheme: 'gtin', value: '05012345678900' },
+      relationship: 'same_formulation_as',
+      object: { scheme: 'gtin', value: '05012345678917' },
+      issuer_did: 'did:plc:chairmaker99',
+    },
   }
   return map[collection] ?? {}
 }
@@ -618,9 +659,9 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 20 collection types \u2014 valid minimal records"}
-  it('UT-RV-034: all 20 collection types — valid minimal records', () => {
-    // Input: Minimal valid record for each of the 20 collections
+  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 23 collection types \u2014 valid minimal records"}
+  it('UT-RV-034: all 23 collection types — valid minimal records', () => {
+    // Input: Minimal valid record for each of the 23 collections
     // Expected: All return success = true
     for (const collection of TRUST_COLLECTIONS) {
       const record = minimalRecordForCollection(collection)
@@ -1723,12 +1764,13 @@ describe('§2.4 Handler Router', () => {
     expect(handler).not.toBeNull()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 20 collections registered"}
-  it('UT-HR-003: routeHandler — all 20 collections registered', () => {
-    // Input: Iterate TRUST_COLLECTIONS (19 trust records + com.dinakernel.service.profile)
+  // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 23 collections registered"}
+  it('UT-HR-003: routeHandler — all 23 collections registered', () => {
+    // Input: Iterate TRUST_COLLECTIONS (19 peerlens records + service.profile +
+    // the two §10.2 commerce catalog records)
     // Expected: All return non-null handler
     const registered = getRegisteredCollections()
-    expect(registered).toHaveLength(20)
+    expect(registered).toHaveLength(23)
 
     for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)

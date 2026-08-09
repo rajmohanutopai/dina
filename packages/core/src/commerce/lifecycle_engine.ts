@@ -24,9 +24,9 @@ import {
   GENESIS_STATE_BY_EVENT,
   commerceRecordDigest,
   validateCancellationRequest,
+  validateCancellationResult,
   validateCommerceOrderStatus,
   validateOrderReconcileRequest,
-  validatePurchaseOrderProposal,
   statusIsTerminal,
   validateOrderAcknowledgement,
   verifyStatusLines,
@@ -40,17 +40,21 @@ import {
   type OrderReconcileResult,
   type OrderState,
   type PurchaseOrderProposal,
+  type RetainedEnvelope,
   type Sha256Fn,
- HeldEvidence } from '@dina/commerce-protocol';
+  HeldEvidence,
+  readPurchaseOrderProposal,
+} from '@dina/commerce-protocol';
 import { canonicalJson } from '@dina/commerce-protocol';
 
 import { ackIdSuffix } from './admission';
 import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
+import { signedHere } from './receipt_evidence';
+import { rehydrateAcknowledgement, rehydratePurchaseOrder } from './rehydrate';
 import { type ChainRefusal, type StatusChainStore } from './status_chain';
 
 import type { CommerceReceiptRepository } from './receipts';
-import type { TxRunner } from '../run/tx';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -65,8 +69,7 @@ const CHAIN_ERROR: Record<ChainRefusal, string> = {
     'status: order was re-adopted and is not reconciled — cannot sign a first status (§16.2)',
   order_predates_restore:
     'status: order predates a restore — reconcile it before signing a first status (§16.2)',
-  chain_predates_restore:
-    'status: chain predates a restore — sign the restore fence first (§16.2)',
+  chain_predates_restore: 'status: chain predates a restore — sign the restore fence first (§16.2)',
   illegal_transition: 'status: illegal transition (§9.11)',
   lines_violation: 'status: cumulative line snapshot violation (§9.11)',
   fence_needs_higher_epoch: 'fence: requires a strictly higher epoch — restore first (§16.2)',
@@ -84,7 +87,6 @@ function chainError(outcome: { refusal: ChainRefusal; detail?: string }): string
 export const NON_DISCLOSING_ERROR = 'commerce: unknown order or unauthorized caller';
 
 export interface LifecycleEngineDeps {
-  tx: TxRunner;
   /**
    * Order state as an aggregate store. The raw reference repository is
    * deliberately not a dependency — `CommerceOrder.decide()` is worthless
@@ -114,29 +116,26 @@ export interface LifecycleEngineDeps {
   processingRetryAfterSeconds?: number;
   unresolvedRetryAfterSeconds?: number;
   /**
-   * §9.12/§16.2: verify that a held record's retained envelope
-   * evidence proves THIS supplier authenticated it — a content digest
-   * alone is forgeable by anyone (it is a hash of the payload, not a
-   * signature). The app wires the real verifier (Ed25519 over the
-   * retained D2D envelope). FAIL CLOSED: when absent, held-evidence
-   * re-adoption is refused non-disclosingly.
-   */
-  /**
-   * §12.7/§16.2 authenticity check for buyer-held evidence.
+   * §12.7/§16.2 — did THIS supplier's key sign these bytes?
    *
-   * The callback now receives the SUPPLIER'S SIGNATURE over the record's
-   * exact bytes, plus the DID whose key must have produced it. The old
-   * shape passed only {recordJson, recordDigest} — a record and a hash of
-   * that record, both computable by anyone holding or inventing the
-   * record — so no implementation of this callback could actually
-   * establish authenticity. Held evidence decides whether an order is
-   * re-adopted or answered `never_received`, so it must be unforgeable.
+   * ONLY the cryptography. The callback gets the retained message and a
+   * signature, and answers whether the supplier's key produced one over
+   * the other. Everything else — that the message came FROM this
+   * supplier, went TO this buyer, and actually carries the record being
+   * presented — is checked in `verifyHeldRecord` below, in compiled code
+   * that no composition root can decline to implement.
    *
-   * Fail closed: Core treats a missing verifier as "cannot verify".
+   * That split is the point. The earlier shape passed
+   * `{recordJson, recordDigest}`: a record and a hash of that record,
+   * both computable by anyone holding or inventing the record. No
+   * implementation could establish authenticity from it, so every boot
+   * that wired something was wiring a check that proved nothing.
+   *
+   * Fail closed: Core treats a missing verifier as "cannot verify", and
+   * held-evidence re-adoption is refused non-disclosingly.
    */
   verifyHeldEvidence?: (evidence: {
-    recordJson: string;
-    recordDigest: string;
+    envelope: RetainedEnvelope;
     signature: string;
     signerKeyId?: string;
     supplierDid: string;
@@ -172,6 +171,48 @@ function isoNow(nowMs: number): string {
 type StatusFields = Partial<CommerceOrderStatus> &
   Pick<CommerceOrderStatus, 'sequence' | 'state' | 'supplier_epoch' | 'updated_at'>;
 
+/**
+ * Does the signed body actually commit to this record?
+ *
+ * The digest is a collision-resistant hash of the record's canonical form,
+ * and the record's own validator recomputes it before this runs — so a
+ * digest appearing among the signed body's strings means the supplier put
+ * its name to a message carrying exactly that record.
+ *
+ * WALKS THE PARSED JSON rather than searching the raw text. A substring hit
+ * inside an unrelated blob (a base64 attachment, a free-text note) would be
+ * a match that means nothing; a string VALUE at some path is a field the
+ * sender wrote.
+ *
+ * Unparseable body => false. A supplier's own message is JSON; anything
+ * else is not evidence this code should reason about.
+ */
+function signedBodyCommitsTo(body: string, digest: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  const stack: unknown[] = [parsed];
+  // Bounded so a deeply nested or wide body cannot spin here. The cap is far
+  // above any real service response and far below anything expensive.
+  let visited = 0;
+  while (stack.length > 0 && visited < MAX_SIGNED_BODY_NODES) {
+    visited += 1;
+    const node = stack.pop();
+    if (typeof node === 'string') {
+      if (node === digest) return true;
+      continue;
+    }
+    if (node === null || typeof node !== 'object') continue;
+    stack.push(...Object.values(node as Record<string, unknown>));
+  }
+  return false;
+}
+
+const MAX_SIGNED_BODY_NODES = 10_000;
+
 export class CommerceLifecycleEngine {
   constructor(private readonly deps: LifecycleEngineDeps) {}
 
@@ -188,22 +229,31 @@ export class CommerceLifecycleEngine {
    * family). The cancellation-won genesis is signed internally by
    * resolveCancellation.
    */
-  signGenesis(buyerDid: string, purchaseOrderId: string): CommerceOrderStatus | { error: string } {
+  signGenesisInTx(
+    buyerDid: string,
+    purchaseOrderId: string,
+  ): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
       const ref = refOrder?.ref ?? null;
       if (!ref || ref.state !== 'decided') {
         outcome = { error: 'status: genesis requires a decided order (§9.11)' };
         return;
       }
-      const acknowledgement = JSON.parse(
-        ref.acknowledgementJson ?? 'null',
-      ) as OrderAcknowledgement | null;
-      if (!acknowledgement) {
-        outcome = { error: 'status: decided order has no recorded acknowledgement' };
+      // REHYDRATED, not cast. This acknowledgement decides what genesis
+      // status this node SIGNS, and the row is editable by anything with the
+      // database open — a cast made a store-editable blob into the content of
+      // a signature. `rehydrateAcknowledgement` re-derives the digest, so a
+      // tampered or truncated row is refused rather than signed over.
+      const read = rehydrateAcknowledgement(ref.acknowledgementJson, hash);
+      if (!read.ok) {
+        outcome = {
+          error: `status: decided order has no usable acknowledgement — ${read.error}`,
+        };
         return;
       }
+      const acknowledgement: OrderAcknowledgement = read.value;
       const event: GenesisEvent =
         acknowledgement.kind === 'accepted'
           ? 'accepted'
@@ -231,16 +281,14 @@ export class CommerceLifecycleEngine {
       // question the old code could not ask, because answering it needs the
       // epoch the ORDER was admitted under rather than a head that does not
       // exist yet.
-      const created = this.deps.chains
-        .load(buyerDid, purchaseOrderId)
-        .createGenesis(status, ref);
+      const created = this.deps.chains.load(buyerDid, purchaseOrderId).createGenesis(status, ref);
       if (!created.ok) {
         outcome = { error: chainError(created) };
         return;
       }
       this.persistStatus(status, ref.quoteId, nowMs);
       outcome = status;
-    });
+    })();
     return outcome;
   }
 
@@ -249,13 +297,13 @@ export class CommerceLifecycleEngine {
    * transition graph and the cumulative complete-snapshot line rules
    * are enforced BEFORE the head advances.
    */
-  signStatusUpdate(
+  signStatusUpdateInTx(
     buyerDid: string,
     purchaseOrderId: string,
     fields: StatusUpdateFields,
   ): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
       const ref = refOrder?.ref ?? null;
       const chain = this.deps.chains.load(buyerDid, purchaseOrderId);
@@ -279,7 +327,12 @@ export class CommerceLifecycleEngine {
         // dispute the deadline forbids. The deadline is digest-bound to
         // the delivered head, so if we cannot read that head we cannot
         // know the deadline and must not sign.
-        const loaded = this.loadHeadStatus(head.headDigest, 'delivered head');
+        const loaded = this.loadHeadStatus(
+          buyerDid,
+          purchaseOrderId,
+          head.headDigest,
+          'delivered head',
+        );
         if ('error' in loaded) {
           outcome = loaded;
           return;
@@ -287,49 +340,56 @@ export class CommerceLifecycleEngine {
         const delivered = loaded;
         if (delivered.dispute_window_ends_at === undefined) {
           outcome = {
-            error: 'status: delivered head carries no dispute window — cannot sign disputed (§9.11)',
+            error:
+              'status: delivered head carries no dispute window — cannot sign disputed (§9.11)',
           };
           return;
         }
         if (nowMs > Date.parse(delivered.dispute_window_ends_at)) {
           outcome = {
-            error: 'status: delivered -> disputed is legal only before dispute_window_ends_at (§9.11)',
+            error:
+              'status: delivered -> disputed is legal only before dispute_window_ends_at (§9.11)',
           };
           return;
         }
       }
-      const status = this.buildStatus(buyerDid, purchaseOrderId, {
-        sequence: (BigInt(head.headSequence) + 1n).toString(10),
-        previous_status_digest: head.headDigest,
-        state: fields.state,
-        // `satisfies` on each conditional spread: a spread is NOT
-        // excess-property checked, so without it a misspelt wire key
-        // compiles and is silently hashed into status_digest.
-        ...(fields.lines !== undefined
-          ? ({
-              lines: fields.lines.map((line) => ({
-                line_id: line.lineId,
-                fulfilled_quantity: {
-                  value: line.fulfilledQuantity.value,
-                  unit_code: line.fulfilledQuantity.unitCode,
-                },
-              })),
-            } satisfies Partial<CommerceOrderStatus>)
-          : {}),
-        ...(fields.disputeWindowEndsAt !== undefined
-          ? ({
-              dispute_window_ends_at: fields.disputeWindowEndsAt,
-            } satisfies Partial<CommerceOrderStatus>)
-          : {}),
-        ...(fields.evidenceRefs !== undefined
-          ? ({ evidence_refs: fields.evidenceRefs } satisfies Partial<CommerceOrderStatus>)
-          : {}),
-        ...(fields.supplierOrderId !== undefined
-          ? ({ supplier_order_id: fields.supplierOrderId } satisfies Partial<CommerceOrderStatus>)
-          : {}),
-        supplier_epoch: this.deps.currentEpoch(),
-        updated_at: isoNow(nowMs),
-      }, ref.pinnedVersion);
+      const status = this.buildStatus(
+        buyerDid,
+        purchaseOrderId,
+        {
+          sequence: (BigInt(head.headSequence) + 1n).toString(10),
+          previous_status_digest: head.headDigest,
+          state: fields.state,
+          // `satisfies` on each conditional spread: a spread is NOT
+          // excess-property checked, so without it a misspelt wire key
+          // compiles and is silently hashed into status_digest.
+          ...(fields.lines !== undefined
+            ? ({
+                lines: fields.lines.map((line) => ({
+                  line_id: line.lineId,
+                  fulfilled_quantity: {
+                    value: line.fulfilledQuantity.value,
+                    unit_code: line.fulfilledQuantity.unitCode,
+                  },
+                })),
+              } satisfies Partial<CommerceOrderStatus>)
+            : {}),
+          ...(fields.disputeWindowEndsAt !== undefined
+            ? ({
+                dispute_window_ends_at: fields.disputeWindowEndsAt,
+              } satisfies Partial<CommerceOrderStatus>)
+            : {}),
+          ...(fields.evidenceRefs !== undefined
+            ? ({ evidence_refs: fields.evidenceRefs } satisfies Partial<CommerceOrderStatus>)
+            : {}),
+          ...(fields.supplierOrderId !== undefined
+            ? ({ supplier_order_id: fields.supplierOrderId } satisfies Partial<CommerceOrderStatus>)
+            : {}),
+          supplier_epoch: this.deps.currentEpoch(),
+          updated_at: isoNow(nowMs),
+        },
+        ref.pinnedVersion,
+      );
       const structural = validateCommerceOrderStatus(status, hash);
       if (structural) {
         outcome = { error: structural };
@@ -342,13 +402,23 @@ export class CommerceLifecycleEngine {
         outcome = { error: 'status: order receipt missing — store integrity failure' };
         return;
       }
-      const order = JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal;
+      const rehydratedOrder = rehydratePurchaseOrder(orderReceipt.recordJson, hash);
+      if (!rehydratedOrder.ok) {
+        outcome = { error: `status: ${rehydratedOrder.error}` };
+        return;
+      }
+      const order = rehydratedOrder.value;
       // FAIL CLOSED, same as the dispute deadline above. Passing
       // `undefined` here made verifyStatusLines skip the cumulative
       // comparison entirely, so a lost receipt let Core sign a REGRESSING
       // fulfilled_quantity and advance the head — §9.11 says a decrease is
       // an illegal update, rejected like any other graph violation.
-      const loadedPrevious = this.loadHeadStatus(head.headDigest, 'previous head');
+      const loadedPrevious = this.loadHeadStatus(
+        buyerDid,
+        purchaseOrderId,
+        head.headDigest,
+        'previous head',
+      );
       if ('error' in loadedPrevious) {
         outcome = loadedPrevious;
         return;
@@ -362,7 +432,7 @@ export class CommerceLifecycleEngine {
       }
       this.persistStatus(status, ref.quoteId, nowMs);
       outcome = status;
-    });
+    })();
     return outcome;
   }
 
@@ -384,13 +454,13 @@ export class CommerceLifecycleEngine {
    * The buyer accepts it when the named predecessor is its head or a
    * strict ancestor of it (`verifyRestoreFence`).
    */
-  signRestoreFence(
+  signRestoreFenceInTx(
     buyerDid: string,
     purchaseOrderId: string,
     heldStatusReceipts: readonly HeldEvidence<CommerceOrderStatus>[],
   ): CommerceOrderStatus | { error: string } {
     let outcome: CommerceOrderStatus | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
       const ref = refOrder?.ref ?? null;
       if (!ref) {
@@ -407,21 +477,11 @@ export class CommerceLifecycleEngine {
             receipt.supplier_did === this.deps.supplierDid() &&
             receipt.buyer_did === buyerDid &&
             receipt.purchase_order_id === purchaseOrderId &&
-            this.deps.verifyHeldEvidence?.({
-              // CANONICAL bytes, not JSON.stringify: the supplier signed
-              // the record's canonical serialization, and stringify is
-              // insertion-order dependent. A key-reordered but
-              // digest-identical record would otherwise fail to verify —
-              // and worse, "same record => same verifiable bytes" would
-              // not hold across implementations.
-              recordJson: canonicalJson(receipt),
+            this.verifyHeldRecord({
+              evidence,
               recordDigest: receipt.status_digest,
-              signature: evidence.signature,
-              ...(evidence.signer_key_id !== undefined
-                ? { signerKeyId: evidence.signer_key_id }
-                : {}),
-              supplierDid: this.deps.supplierDid(),
-            }) === true
+              buyerDid,
+            })
           );
         })
         .map((evidence) => evidence.record);
@@ -453,7 +513,8 @@ export class CommerceLifecycleEngine {
       const headSeq = BigInt(head.headSequence);
       if (predecessorSeq < headSeq) {
         outcome = {
-          error: 'fence: presented evidence is behind the local head — refusing to roll back (§16.2)',
+          error:
+            'fence: presented evidence is behind the local head — refusing to roll back (§16.2)',
         };
         return;
       }
@@ -466,7 +527,30 @@ export class CommerceLifecycleEngine {
         return;
       }
       const epoch = this.deps.currentEpoch();
-      if (BigInt(epoch) <= BigInt(head.supplierEpoch)) {
+      // Two epoch bars, because the buyer applies a different one than we do.
+      //
+      // Ours is the LOCAL head: a fence at our own epoch would be a no-op or
+      // a fork. The buyer's (`verifyRestoreFence`) is ITS head — and after a
+      // restore the buyer's head can sit above ours, on records we lost.
+      // Checking only the local head therefore lets Core sign a fence the
+      // buyer must refuse for "requires a strictly higher supplier_epoch",
+      // stranding the order that the fence exists to rescue.
+      //
+      // A conforming buyer presents its chain including its head, so the
+      // highest epoch among the VERIFIED receipts is the buyer's head epoch.
+      // Anything it withholds only lowers this bar, and a lower bar cannot
+      // make us sign something the buyer accepts — it just leaves us
+      // refusing later, on the buyer's rule, instead of here.
+      const highestPresentedEpoch = verified.reduce(
+        (highest, candidate) =>
+          BigInt(candidate.supplier_epoch) > highest ? BigInt(candidate.supplier_epoch) : highest,
+        0n,
+      );
+      const bar =
+        BigInt(head.supplierEpoch) > highestPresentedEpoch
+          ? BigInt(head.supplierEpoch)
+          : highestPresentedEpoch;
+      if (BigInt(epoch) <= bar) {
         outcome = { error: 'fence: requires a strictly higher epoch — restore first (§16.2)' };
         return;
       }
@@ -500,6 +584,52 @@ export class CommerceLifecycleEngine {
         outcome = { error: structural };
         return;
       }
+      // RE-DERIVE against the order, do not restate on faith (§9.11).
+      //
+      // The fence copies the predecessor's fulfilment forward, and the
+      // predecessor carries our own signature — so it is tempting to treat it
+      // as already proven. It is not. What that signature proves is that we
+      // signed the record ONCE, against whatever order state we held THEN. A
+      // restore is exactly the moment those two halves can disagree: the
+      // order reference and the status receipts are separate tables and can
+      // come back from different backup vintages.
+      //
+      // The buyer runs `verifyStatusLines(fence, order_lines, predecessor)`
+      // before accepting. Running it here is not belt-and-braces — it is the
+      // difference between refusing to sign and signing a record the buyer
+      // must reject, which strands the order the fence was rescuing.
+      //
+      // ONE ARM OF THIS IS INERT TODAY, deliberately. `verifyStatusLines`
+      // checks two things: the candidate against the ORDER (complete
+      // snapshot, ordered unit, within the ordered quantity) and the
+      // candidate against the PREVIOUS record (no cumulative regression).
+      // Only the first can fail here, because the fence copies the
+      // predecessor's lines verbatim, so the second compares them with
+      // themselves. Passing `predecessor` anyway keeps this call byte-for-byte
+      // the buyer's call: §16.2 permits a fence to legally ADVANCE from its
+      // predecessor rather than restate it, and on the day this engine takes
+      // that option the cumulative arm goes live with no edit here. A test
+      // cannot cover an inert branch, so it is named here instead of being
+      // left to look like a guard that is doing work.
+      const orderReceipt = this.deps.receipts.get(ref.orderDigest);
+      if (!orderReceipt) {
+        outcome = { error: 'fence: order receipt missing — store integrity failure (§16.2)' };
+        return;
+      }
+      const rehydratedOrder = rehydratePurchaseOrder(orderReceipt.recordJson, hash);
+      if (!rehydratedOrder.ok) {
+        outcome = { error: `fence: ${rehydratedOrder.error}` };
+        return;
+      }
+      const lineError = verifyStatusLines(
+        status,
+        rehydratedOrder.value.accepted_lines,
+        predecessor,
+      );
+      if (lineError !== null) {
+        outcome = { error: `fence: ${lineError}` };
+        return;
+      }
       // The chain owns "a fence needs a strictly higher epoch" and performs
       // the write, so the fence path cannot drift from the other two.
       const fencedOutcome = chain.fence(status);
@@ -509,7 +639,7 @@ export class CommerceLifecycleEngine {
       }
       this.persistStatus(status, ref.quoteId, nowMs);
       outcome = status;
-    });
+    })();
     return outcome;
   }
 
@@ -517,7 +647,7 @@ export class CommerceLifecycleEngine {
   // Cancellation (§12.8)
   // -------------------------------------------------------------------------
 
-  resolveCancellation(
+  resolveCancellationInTx(
     request: unknown,
     authenticatedBuyerDid: string,
     policy: CancellationPolicy,
@@ -527,11 +657,8 @@ export class CommerceLifecycleEngine {
     const cancellation = request as unknown as CancellationRequest;
 
     let outcome: CancellationResult | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
-      const refOrder = this.deps.orders.load(
-        authenticatedBuyerDid,
-        cancellation.purchase_order_id,
-      );
+    ((): void => {
+      const refOrder = this.deps.orders.load(authenticatedBuyerDid, cancellation.purchase_order_id);
       const ref = refOrder?.ref ?? null;
       // Non-disclosing: unknown order, foreign order, and digest
       // mismatch are indistinguishable (§12.8).
@@ -584,15 +711,13 @@ export class CommerceLifecycleEngine {
       // decide the very order we cannot decide.
       if (ref.reconciliationRequired) {
         outcome = {
-          error:
-            'commerce: order is awaiting reconciliation — it cannot be cancelled yet (§16.2)',
+          error: 'commerce: order is awaiting reconciliation — it cannot be cancelled yet (§16.2)',
         };
         return;
       }
       if (BigInt(ref.admittedEpoch) < BigInt(this.deps.currentEpoch())) {
         outcome = {
-          error:
-            'commerce: order predates a restore — reconcile it before cancelling (§16.2)',
+          error: 'commerce: order predates a restore — reconcile it before cancelling (§16.2)',
         };
         return;
       }
@@ -605,43 +730,22 @@ export class CommerceLifecycleEngine {
         quoteId: ref.quoteId,
         purchaseOrderId: cancellation.purchase_order_id,
         recordJson: JSON.stringify(cancellation),
-        evidenceJson: '{}',
+        // §9.12 (WS-2.8) — signed here, no counterparty envelope.
+        evidenceJson: signedHere(nowMs),
         createdAt: nowMs,
       });
 
       // RACE ARM 1: order still reserved — cancellation wins over
       // acceptance atomically (§12.8/§9.11 cancellation_won genesis).
       if (ref.state === 'reserved') {
-        const ackDraft = {
-          protocol_version: ref.pinnedVersion,
-          // SAME bounded helper as the admission path. This second
-          // construction site kept `ack:${purchase_order_id}` after the
-          // first was fixed: a legal 128-character order id produced a
-          // 132-character acknowledgement id that validateId rejects —
-          // and this path has ALREADY refunded the hold and signed the
-          // cancellation_won genesis by the time it answers, so the
-          // buyer is left holding a record it must refuse against an
-          // order Core considers closed.
-          acknowledgement_id: `ack:${ackIdSuffix(cancellation.purchase_order_id)}`,
-          purchase_order_id: cancellation.purchase_order_id,
-          order_digest: ref.orderDigest,
-          buyer_did: authenticatedBuyerDid,
-          supplier_did: this.deps.supplierDid(),
-          issued_at: isoNow(nowMs),
-          kind: 'rejected' as const,
-          reason_code: 'cancelled_by_buyer',
-        };
-        const acknowledgement = {
-          ...ackDraft,
-          acknowledgement_digest: commerceRecordDigest(
-            'acknowledgement',
-            ackDraft as unknown as Record<string, unknown>,
-            hash,
-          ),
-        } as OrderAcknowledgement;
-        // Validate before ANY state mutation on this path.
-        const ackInvalid = validateOrderAcknowledgement(acknowledgement, hash);
-        if (ackInvalid !== null) {
+        // Built and validated before ANY state mutation on this path.
+        const acknowledgement = this.buildCancellationAcknowledgement(
+          authenticatedBuyerDid,
+          cancellation.purchase_order_id,
+          ref,
+          nowMs,
+        );
+        if (acknowledgement === null) {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
         }
@@ -664,59 +768,22 @@ export class CommerceLifecycleEngine {
         }
         // requirePreEffect: a cancellation may not decide an order whose
         // external effect has already started.
-        const cancelOrder = this.deps.orders.load(
+        const won = this.settleCancellationWin(
           authenticatedBuyerDid,
           cancellation.purchase_order_id,
-        );
-        const decided =
-          cancelOrder !== null &&
-          cancelOrder.decide({
-            acknowledgementJson: JSON.stringify(acknowledgement),
-            decidedAt: nowMs,
-            requirePreEffect: true,
-          }).ok;
-        if (!decided) {
-          // Lost the race to a concurrent decision inside another tx.
-          outcome = { error: 'cancellation: decision race lost — retry reconcile' };
-          return;
-        }
-        // Throws on a failed CAS: the cancellation has already won the
-        // decision race above, so a hold that will not refund means the
-        // order refs and the quote ledger disagree. Rolling back beats
-        // committing a cancellation whose capacity stays held.
-        const family = this.deps.families.load(ref.quoteId);
-        if (family === null) {
-          throw new CommerceIntegrityError(
-            `cancelled order references a missing quote family ${ref.quoteId}`,
-          );
-        }
-        family.settle(cancellation.purchase_order_id, 'refunded');
-        this.deps.receipts.put({
-          recordDigest: acknowledgement.acknowledgement_digest,
-          domain: 'acknowledgement',
-          buyerDid: authenticatedBuyerDid,
-          quoteId: ref.quoteId,
-          purchaseOrderId: cancellation.purchase_order_id,
-          recordJson: JSON.stringify(acknowledgement),
-          evidenceJson: '{}',
-          createdAt: nowMs,
-        });
-        const genesis = this.signGenesisInTx(
-          authenticatedBuyerDid,
-          cancellation.purchase_order_id,
-          'cancellation_won',
-          ref.quoteId,
           ref,
+          acknowledgement,
           nowMs,
+          true,
         );
-        if ('error' in genesis) {
-          outcome = genesis;
+        if ('error' in won) {
+          outcome = won;
           return;
         }
         outcome = this.recordResult(
           cancellation,
           'cancelled',
-          genesis.status_digest,
+          won.genesisDigest,
           authenticatedBuyerDid,
           ref.quoteId,
           nowMs,
@@ -789,9 +856,12 @@ export class CommerceLifecycleEngine {
 
       // A real choice exists: supplier policy decides.
       const orderReceipt = this.deps.receipts.get(ref.orderDigest);
-      const order = orderReceipt
-        ? (JSON.parse(orderReceipt.recordJson) as PurchaseOrderProposal)
-        : null;
+      // A missing receipt and one that fails re-validation are the same thing
+      // here: this path cannot decide a cancellation without the order it is
+      // cancelling, and a record we cannot vouch for is not that order.
+      const rehydratedOrder =
+        orderReceipt === null ? null : rehydratePurchaseOrder(orderReceipt.recordJson, hash);
+      const order = rehydratedOrder !== null && rehydratedOrder.ok ? rehydratedOrder.value : null;
       if (!order) {
         outcome = { error: 'cancellation: order receipt missing — store integrity failure' };
         return;
@@ -802,7 +872,7 @@ export class CommerceLifecycleEngine {
         // resolution time; the chain then transitions head -> cancelled
         // in this SAME transaction.
         const ruledOn = head.headDigest;
-        const transition = this.signStatusUpdateInTx(
+        const transition = this.signStatusUpdateRecord(
           authenticatedBuyerDid,
           cancellation.purchase_order_id,
           ref,
@@ -833,7 +903,7 @@ export class CommerceLifecycleEngine {
         nowMs,
         ref.pinnedVersion,
       );
-    });
+    })();
     return outcome;
   }
 
@@ -841,7 +911,7 @@ export class CommerceLifecycleEngine {
   // Reconcile (§12.7)
   // -------------------------------------------------------------------------
 
-  reconcile(
+  reconcileInTx(
     input: unknown,
     authenticatedBuyerDid: string,
   ): OrderReconcileResult | { error: string } {
@@ -854,7 +924,7 @@ export class CommerceLifecycleEngine {
     const request = input as OrderReconcileRequest;
 
     let outcome: OrderReconcileResult | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const refOrder = this.deps.orders.load(authenticatedBuyerDid, request.purchase_order_id);
       const ref = refOrder?.ref ?? null;
       // §9.13 typed negotiation: route by the order's PINNED major. A
@@ -875,7 +945,13 @@ export class CommerceLifecycleEngine {
         }
         if (ref.state === 'reserved') {
           outcome =
-            ref.effectPhase === 'effect_started'
+            // `reconciliationRequired` joins `effect_started` here for the
+            // same reason: both mean this node cannot say what happens next,
+            // and `received_processing` ("we are working on it") would be a
+            // claim nobody is backing. A re-adopted order normally reaches
+            // the DECIDED branch below, so this arm covers the narrow window
+            // where re-adoption created the reference and did not decide.
+            ref.effectPhase === 'effect_started' || ref.reconciliationRequired
               ? {
                   outcome: 'received_unresolved',
                   retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
@@ -886,10 +962,43 @@ export class CommerceLifecycleEngine {
                 };
           return;
         }
-        const acknowledgement = JSON.parse(
-          ref.acknowledgementJson ?? 'null',
-        ) as OrderAcknowledgement;
-        outcome = this.decisionOutcome(acknowledgement);
+        if (ref.reconciliationRequired) {
+          // THE RE-ADOPTED ORDER (WS-2.3). This node holds the decision —
+          // it came from the buyer's own signed evidence — but it cannot
+          // ACT on it: re-adoption rebuilds a reference, not the order's
+          // lines, its quote context, or its external state, and chain
+          // creation stays barred until the owner runs the §16.2 ceremony.
+          //
+          // Answering `received_accepted` here is true and useless. It hands
+          // the buyer back the document they just presented, and it says
+          // "accepted" to a party who will then wait for status updates that
+          // cannot come. `received_unresolved` is the vocabulary's own word
+          // for "this supplier holds the order but cannot report where it
+          // is", and its retry gives a human the time this needs.
+          //
+          // NOT a new outcome: §12.7's set is frozen with vectors, and a
+          // fourth value would be a wire-major change to say something the
+          // existing one already says.
+          outcome = {
+            outcome: 'received_unresolved',
+            retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
+          };
+          return;
+        }
+        // Same discipline on the reconcile answer: this is the evidence a
+        // buyer receives back as "here is what we agreed", and a cast would
+        // let a corrupt row become that answer. An unreadable row is an
+        // UNRESOLVED outcome, never a fabricated decision — the buyer asks
+        // again rather than being told something this node cannot stand behind.
+        const read = rehydrateAcknowledgement(ref.acknowledgementJson, hash);
+        if (!read.ok) {
+          outcome = {
+            outcome: 'received_unresolved',
+            retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
+          };
+          return;
+        }
+        outcome = this.decisionOutcome(read.value);
         return;
       }
 
@@ -909,14 +1018,11 @@ export class CommerceLifecycleEngine {
           heldRecord.buyer_did !== authenticatedBuyerDid ||
           heldRecord.purchase_order_id !== request.purchase_order_id ||
           heldRecord.order_digest !== request.order_digest ||
-          this.deps.verifyHeldEvidence?.({
-            // Canonical bytes — see the status path above.
-            recordJson: canonicalJson(heldRecord),
+          !this.verifyHeldRecord({
+            evidence: held,
             recordDigest: heldRecord.acknowledgement_digest,
-            signature: held.signature,
-            ...(held.signer_key_id !== undefined ? { signerKeyId: held.signer_key_id } : {}),
-            supplierDid: this.deps.supplierDid(),
-          }) !== true
+            buyerDid: authenticatedBuyerDid,
+          })
         ) {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
@@ -938,7 +1044,16 @@ export class CommerceLifecycleEngine {
             outcome = { error: NON_DISCLOSING_ERROR };
             return;
           }
-          outcome = this.decisionOutcome(heldRecord);
+          // A re-adopted order that is still frozen answers the same thing
+          // its next poll will (see the reserved branch above); echoing the
+          // buyer's OWN held acknowledgement back at them would assert a
+          // state this node cannot yet act on.
+          outcome = byOrderId.reconciliationRequired
+            ? {
+                outcome: 'received_unresolved',
+                retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
+              }
+            : this.decisionOutcome(heldRecord);
           return;
         }
         const byKey = this.deps.orders.byIdempotencyKey(
@@ -962,6 +1077,13 @@ export class CommerceLifecycleEngine {
           quoteId: '',
           quoteDigest: heldRecord.kind === 'accepted' ? heldRecord.accepted_quote_digest : '',
           pinnedVersion: heldRecord.protocol_version,
+          // §9.13 — EMPTY on purpose: held evidence records the protocol
+          // version but not which manifest served the order, and guessing the
+          // current one would claim a contract this node cannot vouch for. A
+          // re-adopted order is barred from chain creation until reconciled
+          // anyway, so it never needs prior-manifest routing.
+          servingManifestCid: '',
+          servingInstallId: '',
           // §16.2 — a re-adopted order is stamped PRE-restore on purpose.
           //
           // Re-adoption rebuilds an order reference from a buyer's held
@@ -987,10 +1109,7 @@ export class CommerceLifecycleEngine {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
         }
-        const adopted = this.deps.orders.load(
-          authenticatedBuyerDid,
-          request.purchase_order_id,
-        );
+        const adopted = this.deps.orders.load(authenticatedBuyerDid, request.purchase_order_id);
         const decided =
           adopted !== null &&
           adopted.decide({
@@ -1029,7 +1148,16 @@ export class CommerceLifecycleEngine {
           outcome = { error: NON_DISCLOSING_ERROR };
           return;
         }
-        outcome = this.decisionOutcome(heldRecord);
+        // Re-adoption SUCCEEDED and the answer is still `received_unresolved`
+        // (WS-2.3). The decision is known — it is the buyer's own signed
+        // evidence — but this node cannot act on it, and the same order must
+        // not say `accepted` on the poll that re-adopted it and
+        // `unresolved` on every poll after. One order, one answer, until the
+        // owner's §16.2 ceremony makes it describable again.
+        outcome = {
+          outcome: 'received_unresolved',
+          retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
+        };
         return;
       }
 
@@ -1054,21 +1182,11 @@ export class CommerceLifecycleEngine {
             receipt.supplier_did === this.deps.supplierDid() &&
             receipt.buyer_did === authenticatedBuyerDid &&
             receipt.purchase_order_id === request.purchase_order_id &&
-            this.deps.verifyHeldEvidence?.({
-              // CANONICAL bytes, not JSON.stringify: the supplier signed
-              // the record's canonical serialization, and stringify is
-              // insertion-order dependent. A key-reordered but
-              // digest-identical record would otherwise fail to verify —
-              // and worse, "same record => same verifiable bytes" would
-              // not hold across implementations.
-              recordJson: canonicalJson(receipt),
+            this.verifyHeldRecord({
+              evidence,
               recordDigest: receipt.status_digest,
-              signature: evidence.signature,
-              ...(evidence.signer_key_id !== undefined
-                ? { signerKeyId: evidence.signer_key_id }
-                : {}),
-              supplierDid: this.deps.supplierDid(),
-            }) === true
+              buyerDid: authenticatedBuyerDid,
+            })
           );
         });
         outcome = provenStatus
@@ -1080,13 +1198,78 @@ export class CommerceLifecycleEngine {
         return;
       }
       outcome = { outcome: 'never_received' };
-    });
+    })();
     return outcome;
   }
 
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
+
+  /**
+   * Map an acknowledgement to the reconcile outcome it reports (WS-0.7).
+   *
+   * WHAT THE DEFAULT ARM IS AND IS NOT FOR. It is NOT reachable today: every
+   * caller either builds the acknowledgement here or runs
+   * `validateOrderAcknowledgement` first, which rejects an unknown `kind`
+   * before the switch sees it. Stating that plainly because the tempting
+   * justification — "held evidence comes from a counterparty" — is wrong, and
+   * a comment that oversells a guard is worse than no comment.
+   *
+   * It earns its place against a DIFFERENT failure: the protocol adding a
+   * fourth acknowledgement kind. The validator would accept it immediately;
+   * this switch would not, and without a default it would fall off the end and
+   * return `undefined` typed as a result. That is a silent wrong answer to a
+   * buyer, produced by a change in another package that compiles cleanly here.
+   * `received_unresolved` is the vocabulary's own word for "this supplier
+   * holds the order but cannot report a decision", so the buyer keeps polling
+   * rather than acting on a decision this node never made.
+   */
+  /**
+   * §12.7/§16.2 — is this held record really something I signed for THIS
+   * buyer?
+   *
+   * Four checks, all of them compiled and none of them delegated:
+   *
+   *  1. the retained message came FROM this supplier;
+   *  2. it went TO the buyer now presenting it, so one buyer cannot replay
+   *     another's evidence;
+   *  3. the record's content digest appears among the signed body's own
+   *     strings — WITHOUT this, `{record, signature}` is an unbound pair
+   *     and a buyer could present a genuine signature from one message
+   *     beside a record from another, or an invented one;
+   *  4. the signature verifies under this supplier's key.
+   *
+   * Only (4) is the injected callback's business. The binding checks stay
+   * here because a composition root that implemented the callback loosely
+   * would otherwise silently drop them, and the failure mode is a supplier
+   * re-adopting an order it never accepted.
+   *
+   * Fail closed everywhere: no verifier, no supplier DID, or an
+   * unparseable body all mean NOT verified.
+   */
+  private verifyHeldRecord(args: {
+    evidence: { envelope: RetainedEnvelope; signature: string; signer_key_id?: string };
+    recordDigest: string;
+    buyerDid: string;
+  }): boolean {
+    const supplierDid = this.deps.supplierDid();
+    if (supplierDid === '') return false;
+    const { envelope } = args.evidence;
+    if (envelope.from !== supplierDid) return false;
+    if (!envelope.to.includes(args.buyerDid)) return false;
+    if (!signedBodyCommitsTo(envelope.body, args.recordDigest)) return false;
+    return (
+      this.deps.verifyHeldEvidence?.({
+        envelope,
+        signature: args.evidence.signature,
+        ...(args.evidence.signer_key_id !== undefined
+          ? { signerKeyId: args.evidence.signer_key_id }
+          : {}),
+        supplierDid,
+      }) === true
+    );
+  }
 
   private decisionOutcome(acknowledgement: OrderAcknowledgement): OrderReconcileResult {
     switch (acknowledgement.kind) {
@@ -1096,20 +1279,42 @@ export class CommerceLifecycleEngine {
         return { outcome: 'received_rejected', acknowledgement };
       case 'counterproposal':
         return { outcome: 'received_countered', acknowledgement };
+      default:
+        return {
+          outcome: 'received_unresolved',
+          retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
+        };
     }
   }
 
   /**
    * Load the status record a head digest names, FAIL CLOSED.
    *
-   * Present, parseable, structurally valid, and digest-bound to the head
-   * — anything less and we do not know the state we are about to extend,
-   * so we must not sign. This exists once because it was written once
-   * inline (for the dispute deadline) and omitted at the very next use
-   * (the cumulative-lines predecessor), which silently disabled the
+   * Present, parseable, structurally valid, digest-bound to the head, and
+   * BELONGING TO THIS CHAIN — anything less and we do not know the state we
+   * are about to extend, so we must not sign. This exists once because it was
+   * written once inline (for the dispute deadline) and omitted at the very
+   * next use (the cumulative-lines predecessor), which silently disabled the
    * §9.11 monotonicity check whenever a receipt was lost.
+   *
+   * WHY THE IDENTITY CHECK IS SEPARATE FROM THE DIGEST CHECK. They answer two
+   * different questions and it is easy to think the first answers both. The
+   * digest proves the record is the one the head NAMES; it says nothing about
+   * whether that record belongs HERE. The receipt store is keyed by digest
+   * across every order this node has ever handled, so a head row pointing at
+   * another order's status — a corrupted row, a restore that recombined
+   * tables, a future writer with a swapped argument — loads clean and is then
+   * used as the predecessor: its state drives transition legality, its lines
+   * become the cumulative floor, and the successor we sign extends a stranger's
+   * chain. Binding the three identity fields costs one comparison and closes
+   * the whole class.
    */
-  private loadHeadStatus(headDigest: string, why: string): CommerceOrderStatus | { error: string } {
+  private loadHeadStatus(
+    buyerDid: string,
+    purchaseOrderId: string,
+    headDigest: string,
+    why: string,
+  ): CommerceOrderStatus | { error: string } {
     const receipt = this.deps.receipts.get(headDigest);
     if (!receipt) {
       return { error: `status: ${why} receipt missing — store integrity failure (§9.11)` };
@@ -1122,6 +1327,15 @@ export class CommerceLifecycleEngine {
     }
     if (validateCommerceOrderStatus(record, hash) !== null || record.status_digest !== headDigest) {
       return { error: `status: ${why} receipt does not match the head (§9.11)` };
+    }
+    if (
+      record.purchase_order_id !== purchaseOrderId ||
+      record.buyer_did !== buyerDid ||
+      record.supplier_did !== this.deps.supplierDid()
+    ) {
+      return {
+        error: `status: ${why} receipt belongs to a different chain — store integrity failure (§9.11)`,
+      };
     }
     return record;
   }
@@ -1160,13 +1374,22 @@ export class CommerceLifecycleEngine {
       quoteId,
       purchaseOrderId: status.purchase_order_id,
       recordJson: JSON.stringify(status),
-      evidenceJson: '{}',
+      // §9.12 (WS-2.8) — this supplier signed the status; the chain is its
+      // own claim, so the evidence says where it came from.
+      evidenceJson: signedHere(nowMs),
       createdAt: nowMs,
     });
   }
 
-  /** Genesis signing already inside the cancellation transaction. */
-  private signGenesisInTx(
+  /**
+   * Sign a genesis from an ALREADY-RESOLVED order reference.
+   *
+   * Named `…Record` rather than `…InTx` since ARCH-0c: every method on this
+   * class now runs inside a transaction its service opened, so the suffix
+   * stopped distinguishing anything. What distinguishes this one is that it
+   * takes the resolved reference instead of loading it.
+   */
+  private signGenesisRecord(
     buyerDid: string,
     purchaseOrderId: string,
     event: GenesisEvent,
@@ -1185,9 +1408,7 @@ export class CommerceLifecycleEngine {
       },
       order.pinnedVersion,
     );
-    const created = this.deps.chains
-      .load(buyerDid, purchaseOrderId)
-      .createGenesis(status, order);
+    const created = this.deps.chains.load(buyerDid, purchaseOrderId).createGenesis(status, order);
     if (!created.ok) return { error: chainError(created) };
     this.persistStatus(status, quoteId, nowMs);
     return status;
@@ -1211,13 +1432,13 @@ export class CommerceLifecycleEngine {
    * order that was never re-adopted, and a mismatched proposal are one
    * answer.
    */
-  reconcileRestoredOrder(
+  reconcileRestoredOrderInTx(
     proposal: unknown,
     authenticatedBuyerDid: string,
   ): { ok: true } | { error: string } {
-    const structural = validatePurchaseOrderProposal(proposal, hash);
-    if (structural !== null) return { error: structural };
-    const order = proposal as unknown as PurchaseOrderProposal;
+    const read = readPurchaseOrderProposal(proposal, hash);
+    if (!read.ok) return { error: read.error };
+    const order = read.order;
     // No separate buyer check: `orders.load` is keyed on (buyerDid,
     // purchaseOrderId), so looking the order up under the AUTHENTICATED
     // caller IS the ownership test — the same entitlement-by-possession the
@@ -1226,7 +1447,7 @@ export class CommerceLifecycleEngine {
     // the proposal is attacker-supplied, the key is not.
 
     let outcome: { ok: true } | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const loaded = this.deps.orders.load(authenticatedBuyerDid, order.purchase_order_id);
       if (loaded === null) return;
       const done = loaded.reconcile({
@@ -1256,7 +1477,7 @@ export class CommerceLifecycleEngine {
         createdAt: this.deps.now(),
       });
       outcome = { ok: true };
-    });
+    })();
     return outcome;
   }
 
@@ -1269,16 +1490,33 @@ export class CommerceLifecycleEngine {
   createAcceptedGenesisInTx(
     buyerDid: string,
     purchaseOrderId: string,
+    /**
+     * The state the chain OPENS at. `accepted` is a live chain that will run
+     * on; `rejected` opens and closes in the same record.
+     *
+     * IT USED TO BE HARD-CODED to `accepted`, and admission only called this
+     * for an acceptance — so a rejected or countered order got no chain at
+     * all. That is not a cosmetic gap: `countUnfinishedByServingManifest`
+     * reads a MISSING head as unfinished, so every rejected order counted as
+     * open work for ever, holding a prior manifest's lifecycle authority and
+     * blocking plugin uninstall. It is the same failure the delivered-order
+     * dispute-window fix addressed, arriving by a different route.
+     *
+     * A buyer also has nothing to verify without it. §9.11's chain is where a
+     * rejection becomes a record they can show, rather than a claim that
+     * exists only inside an acknowledgement they were handed.
+     */
+    openAt: 'accepted' | 'rejected' = 'accepted',
   ): { error: string } | null {
     const refOrder = this.deps.orders.load(buyerDid, purchaseOrderId);
     const ref = refOrder?.ref ?? null;
     if (!ref || ref.state !== 'decided') {
       return { error: 'status: genesis requires a decided order (§9.11)' };
     }
-    const signed = this.signGenesisInTx(
+    const signed = this.signGenesisRecord(
       buyerDid,
       purchaseOrderId,
-      'accepted',
+      openAt,
       ref.quoteId,
       ref,
       this.deps.now(),
@@ -1286,8 +1524,8 @@ export class CommerceLifecycleEngine {
     return 'error' in signed ? signed : null;
   }
 
-  /** Successor signing already inside the cancellation transaction. */
-  private signStatusUpdateInTx(
+  /** Sign a successor from an ALREADY-RESOLVED reference and head. */
+  private signStatusUpdateRecord(
     buyerDid: string,
     purchaseOrderId: string,
     ref: { orderDigest: string; quoteId: string; pinnedVersion: string },
@@ -1295,17 +1533,27 @@ export class CommerceLifecycleEngine {
     fields: StatusUpdateFields,
   ): CommerceOrderStatus | { error: string } {
     const nowMs = this.deps.now();
-    const status = this.buildStatus(buyerDid, purchaseOrderId, {
-      sequence: (BigInt(head.headSequence) + 1n).toString(10),
-      previous_status_digest: head.headDigest,
-      state: fields.state,
-      supplier_epoch: this.deps.currentEpoch(),
-      updated_at: isoNow(nowMs),
-    }, ref.pinnedVersion);
+    const status = this.buildStatus(
+      buyerDid,
+      purchaseOrderId,
+      {
+        sequence: (BigInt(head.headSequence) + 1n).toString(10),
+        previous_status_digest: head.headDigest,
+        state: fields.state,
+        supplier_epoch: this.deps.currentEpoch(),
+        updated_at: isoNow(nowMs),
+      },
+      ref.pinnedVersion,
+    );
     // Fail-closed predecessor load, same contract as the public path: the
     // chain refuses to advance against a record it cannot verify. Cancellation
     // transitions carry no line snapshot, so line verification is a no-op.
-    const loadedPrevious = this.loadHeadStatus(head.headDigest, 'previous head');
+    const loadedPrevious = this.loadHeadStatus(
+      buyerDid,
+      purchaseOrderId,
+      head.headDigest,
+      'previous head',
+    );
     if ('error' in loadedPrevious) return loadedPrevious;
     const moved = this.deps.chains
       .load(buyerDid, purchaseOrderId)
@@ -1325,15 +1573,14 @@ export class CommerceLifecycleEngine {
    * cannot both win, and a replay after finalization returns the
    * already-terminal result.
    */
-  finalizePendingCancellation(
+  finalizePendingCancellationInTx(
     authenticatedBuyerDid: string,
     purchaseOrderId: string,
     cancellationId: string,
     result: Exclude<CancellationResultKind, 'pending_review'>,
-    statusDigestAtResolution?: string,
   ): CancellationResult | { error: string } {
     let outcome: CancellationResult | { error: string } = { error: NON_DISCLOSING_ERROR };
-    this.deps.tx(() => {
+    ((): void => {
       const refOrder = this.deps.orders.load(authenticatedBuyerDid, purchaseOrderId);
       const ref = refOrder?.ref ?? null;
       if (!ref) {
@@ -1356,21 +1603,112 @@ export class CommerceLifecycleEngine {
         return;
       }
       const nowMs = this.deps.now();
+      const request = {
+        protocol_version: recorded.protocol_version,
+        cancellation_id: cancellationId,
+        purchase_order_id: purchaseOrderId,
+        order_digest: ref.orderDigest,
+      } as unknown as CancellationRequest;
+
+      // A LOSING finalization decides nothing. The external effect happened,
+      // so the order is still live and still owed a real decision through the
+      // ordinary path; all this records is that the cancellation did not win.
+      if (result !== 'cancelled') {
+        outcome = this.recordResult(
+          request,
+          result,
+          undefined,
+          authenticatedBuyerDid,
+          ref.quoteId,
+          nowMs,
+          ref.pinnedVersion,
+        );
+        return;
+      }
+
+      // A WINNING finalization must do the work the live path does, and a
+      // review can be parked in TWO different places, so there are two.
+      //
+      // It used to do neither: it recorded a terminal `cancelled` and stopped.
+      // Nothing was decided, no capacity was refunded, no chain moved, and
+      // the digest the protocol REQUIRES `cancelled` to carry arrived as an
+      // optional caller parameter — so an omitted one produced a record the
+      // buyer must reject, and a wrong one bound the ruling to a head this
+      // engine never ruled on. Either way it was durable and terminal, so
+      // idempotency replayed it forever and the review could not reopen. A
+      // caller cannot supply a fact it does not own; the parameter is gone.
+      const finalizeChain = this.deps.chains.load(authenticatedBuyerDid, purchaseOrderId);
+
+      // PARKED BEFORE GENESIS — `reserved` with an external effect in flight
+      // (§12.8 race arm 1). Winning means what winning meant there: decide
+      // the order, refund the hold, sign the `cancellation_won` genesis.
+      if (!finalizeChain.exists) {
+        const acknowledgement = this.buildCancellationAcknowledgement(
+          authenticatedBuyerDid,
+          purchaseOrderId,
+          ref,
+          nowMs,
+        );
+        if (acknowledgement === null) {
+          outcome = { error: NON_DISCLOSING_ERROR };
+          return;
+        }
+        // `requirePreEffect: false`, unlike the race arm. That guard stops an
+        // AUTOMATIC path deciding an order whose external effect may have
+        // happened; here it demonstrably did, and the review closed because
+        // someone established what it did. Keeping the guard would make a
+        // parked review impossible to close in the one direction it was
+        // parked to allow.
+        const won = this.settleCancellationWin(
+          authenticatedBuyerDid,
+          purchaseOrderId,
+          ref,
+          acknowledgement,
+          nowMs,
+          false,
+        );
+        if ('error' in won) {
+          outcome = won;
+          return;
+        }
+        outcome = this.recordResult(
+          request,
+          'cancelled',
+          won.genesisDigest,
+          authenticatedBuyerDid,
+          ref.quoteId,
+          nowMs,
+          ref.pinnedVersion,
+        );
+        return;
+      }
+
+      // PARKED AFTER GENESIS — the order was accepted and supplier policy
+      // asked for a review. Winning means the chain transitions to
+      // `cancelled`, exactly as the policy verdict does on the live path, and
+      // the result is bound to the head it ruled on.
+      const ruledOn = finalizeChain.head;
+      const transition = this.signStatusUpdateRecord(
+        authenticatedBuyerDid,
+        purchaseOrderId,
+        ref,
+        ruledOn,
+        { state: 'cancelled' },
+      );
+      if ('error' in transition) {
+        outcome = transition;
+        return;
+      }
       outcome = this.recordResult(
-        {
-          protocol_version: recorded.protocol_version,
-          cancellation_id: cancellationId,
-          purchase_order_id: purchaseOrderId,
-          order_digest: ref.orderDigest,
-        } as unknown as CancellationRequest,
-        result,
-        statusDigestAtResolution,
+        request,
+        'cancelled',
+        ruledOn.headDigest,
         authenticatedBuyerDid,
         ref.quoteId,
         nowMs,
         ref.pinnedVersion,
       );
-    });
+    })();
     return outcome;
   }
 
@@ -1386,8 +1724,61 @@ export class CommerceLifecycleEngine {
    * to prevent.
    */
   private versionMatches(protocolVersion: string, pinnedVersion: string): boolean {
-    if (pinnedVersion === '') return true; // legacy rows carry no pin
+    // There used to be a `pinnedVersion === '' -> true` escape hatch here for
+    // "legacy rows carry no pin". Two things were wrong with it. Such a row
+    // cannot exist — `pinned_version` is NOT NULL with no default, and the
+    // only writer stores the order's own validated `protocol_version`, so
+    // nothing in the schema or the code can produce an empty pin. And if one
+    // ever did appear, the hatch opened the WRONG way: it disabled §9.13
+    // version pinning for exactly the row whose version nobody knows, and
+    // sent an empty `protocol_version` into every record built from it.
+    // Comparing unconditionally means an unknown pin refuses instead.
     return protocolVersion === pinnedVersion;
+  }
+
+  /**
+   * §12.5 — which cancellations on this order are waiting on a person.
+   *
+   * WHY A SCAN AND NOT AN INDEX. A `pending_review` result is written into
+   * the receipt store, which is the record of what this node signed; a second
+   * table listing them would be a projection that can disagree with the
+   * evidence. The scan is bounded to ONE order and its callers already hold
+   * the short list of unresolved orders, so the cost is a handful of rows on
+   * a screen an operator opened deliberately.
+   *
+   * EXCLUDES ANY CANCELLATION THAT HAS SINCE BEEN DECIDED, by asking
+   * `findRecordedCancellation` rather than by reading the parking record
+   * alone. Both records survive — the parking one is never overwritten — so
+   * reading only for `pending_review` would keep offering a decision that has
+   * already been made.
+   */
+  listPendingReviewCancellationsInTx(
+    buyerDid: string,
+    purchaseOrderId: string,
+  ): CancellationResult[] {
+    const seen = new Set<string>();
+    const pending: CancellationResult[] = [];
+    for (const receipt of this.deps.receipts.listByOrder(buyerDid, purchaseOrderId)) {
+      if (receipt.domain !== 'result') continue;
+      let result: CancellationResult;
+      try {
+        result = JSON.parse(receipt.recordJson) as CancellationResult;
+      } catch {
+        // An unreadable row is a row that matches nothing, exactly as the
+        // lookup below treats it. One corrupt receipt must not hide every
+        // other cancellation on this order.
+        continue;
+      }
+      if (seen.has(result.cancellation_id)) continue;
+      seen.add(result.cancellation_id);
+      const current = this.findRecordedCancellation(
+        buyerDid,
+        purchaseOrderId,
+        result.cancellation_id,
+      );
+      if (current !== null && current.result === 'pending_review') pending.push(current);
+    }
+    return pending;
   }
 
   private findRecordedCancellation(
@@ -1406,12 +1797,139 @@ export class CommerceLifecycleEngine {
     let pending: CancellationResult | null = null;
     for (const receipt of receipts) {
       if (receipt.domain !== 'result') continue;
-      const result = JSON.parse(receipt.recordJson) as CancellationResult;
+      // WS-2.2 — a corrupt result receipt used to THROW out of the
+      // cancellation path. One unreadable row must not make every OTHER
+      // cancellation for this order unanswerable, so it is skipped: the scan
+      // is looking for a specific `cancellation_id` and a row it cannot read
+      // is a row it cannot match.
+      let result: CancellationResult;
+      try {
+        result = JSON.parse(receipt.recordJson) as CancellationResult;
+      } catch {
+        continue;
+      }
       if (result.cancellation_id !== cancellationId) continue;
       if (result.result !== 'pending_review') return result;
       pending = result;
     }
     return pending;
+  }
+
+  /**
+   * The acknowledgement a won cancellation produces (§9.9 `rejected` with
+   * `cancelled_by_buyer`). Built in one place because two paths need the
+   * identical record — the race arm and the finalization of a parked review.
+   */
+  private buildCancellationAcknowledgement(
+    buyerDid: string,
+    purchaseOrderId: string,
+    ref: { orderDigest: string; pinnedVersion: string },
+    nowMs: number,
+  ): OrderAcknowledgement | null {
+    const draft = {
+      protocol_version: ref.pinnedVersion,
+      // SAME bounded helper as the admission path. This construction site
+      // kept `ack:${purchase_order_id}` after the first was fixed: a legal
+      // 128-character order id produced a 132-character acknowledgement id
+      // that validateId rejects — and the path has ALREADY refunded the hold
+      // and signed the cancellation_won genesis by the time it answers, so
+      // the buyer is left holding a record it must refuse against an order
+      // Core considers closed.
+      acknowledgement_id: `ack:${ackIdSuffix(purchaseOrderId)}`,
+      purchase_order_id: purchaseOrderId,
+      order_digest: ref.orderDigest,
+      buyer_did: buyerDid,
+      supplier_did: this.deps.supplierDid(),
+      issued_at: isoNow(nowMs),
+      kind: 'rejected' as const,
+      reason_code: 'cancelled_by_buyer',
+    };
+    const acknowledgement = {
+      ...draft,
+      acknowledgement_digest: commerceRecordDigest(
+        'acknowledgement',
+        draft as unknown as Record<string, unknown>,
+        hash,
+      ),
+    } as OrderAcknowledgement;
+    return validateOrderAcknowledgement(acknowledgement, hash) === null ? acknowledgement : null;
+  }
+
+  /**
+   * Everything a WON cancellation must do, in one place: decide the order,
+   * refund the hold, retain the acknowledgement, and sign the
+   * `cancellation_won` genesis (§9.11, §12.8).
+   *
+   * WHY THIS IS EXTRACTED. Two paths reach the same outcome — the race arm,
+   * where the cancellation beats a pre-effect reservation, and the
+   * finalization of a review that was parked because the effect had started.
+   * The second used to record a terminal `cancelled` and do NONE of this: the
+   * order stayed `reserved` for good, the quote capacity stayed held for
+   * good, no genesis was ever signed, and the buyer was told the order was
+   * cancelled. Duplicating sixty lines to fix that would have set up the next
+   * divergence, so there is now one implementation and two callers.
+   *
+   * `requirePreEffect` is the ONLY difference between them, and it is a real
+   * one: the race arm must refuse to decide an order whose external effect
+   * may already have happened, while finalization exists precisely because a
+   * human established what that effect did.
+   */
+  private settleCancellationWin(
+    buyerDid: string,
+    purchaseOrderId: string,
+    ref: {
+      orderDigest: string;
+      quoteId: string;
+      pinnedVersion: string;
+      admittedEpoch: string;
+      reconciliationRequired: boolean;
+    },
+    acknowledgement: OrderAcknowledgement,
+    nowMs: number,
+    requirePreEffect: boolean,
+  ): { genesisDigest: string } | { error: string } {
+    const order = this.deps.orders.load(buyerDid, purchaseOrderId);
+    const decided =
+      order !== null &&
+      order.decide({
+        acknowledgementJson: JSON.stringify(acknowledgement),
+        decidedAt: nowMs,
+        requirePreEffect,
+      }).ok;
+    if (!decided) {
+      // Lost the race to a concurrent decision inside another tx.
+      return { error: 'cancellation: decision race lost — retry reconcile' };
+    }
+    // Throws on a failed CAS: the cancellation has already won the decision
+    // race above, so a hold that will not refund means the order refs and the
+    // quote ledger disagree. Rolling back beats committing a cancellation
+    // whose capacity stays held.
+    const family = this.deps.families.load(ref.quoteId);
+    if (family === null) {
+      throw new CommerceIntegrityError(
+        `cancelled order references a missing quote family ${ref.quoteId}`,
+      );
+    }
+    family.settle(purchaseOrderId, 'refunded');
+    this.deps.receipts.put({
+      recordDigest: acknowledgement.acknowledgement_digest,
+      domain: 'acknowledgement',
+      buyerDid,
+      quoteId: ref.quoteId,
+      purchaseOrderId,
+      recordJson: JSON.stringify(acknowledgement),
+      evidenceJson: '{}',
+      createdAt: nowMs,
+    });
+    const genesis = this.signGenesisRecord(
+      buyerDid,
+      purchaseOrderId,
+      'cancellation_won',
+      ref.quoteId,
+      ref,
+      nowMs,
+    );
+    return 'error' in genesis ? genesis : { genesisDigest: genesis.status_digest };
   }
 
   private recordResult(
@@ -1422,7 +1940,7 @@ export class CommerceLifecycleEngine {
     quoteId: string,
     nowMs: number,
     pinnedVersion: string,
-  ): CancellationResult {
+  ): CancellationResult | { error: string } {
     const draft = {
       protocol_version: pinnedVersion,
       cancellation_id: cancellation.cancellation_id,
@@ -1443,6 +1961,33 @@ export class CommerceLifecycleEngine {
         hash,
       ),
     } as CancellationResult;
+    // VALIDATE BEFORE THE WRITE, and refuse rather than record.
+    //
+    // This function used to write whatever it was handed. That mattered
+    // because `cancelled` is the one kind the protocol requires to carry the
+    // head it ruled on, and a caller could reach here without one: the
+    // resulting record fails the buyer's `validateCancellationResult`, so the
+    // buyer must reject it — and because it is now the RECORDED terminal
+    // result, idempotency replays it forever and finalization refuses to
+    // reopen a review that is no longer `pending_review`. One missing field
+    // ended the conversation permanently.
+    //
+    // Refusing leaves the review parked, which is recoverable. That asymmetry
+    // is the whole argument for checking here rather than trusting callers.
+    //
+    // NO CURRENT INPUT REACHES THE REFUSAL, and deleting this check kills no
+    // test — a mutation confirmed that. Said plainly rather than left to look
+    // like an active guard: now that both `cancelled` paths derive the digest
+    // from a head they just wrote, every field is constructed rather than
+    // passed in, so there is nothing left to be wrong. It stays because the
+    // bug it answers was a CALLER supplying a field it did not own, and the
+    // next kind added to `CancellationResultKind` with its own field
+    // requirement is the same mistake waiting to be made in a function that
+    // writes durable, terminal, unreopenable evidence.
+    const invalid = validateCancellationResult(result, hash);
+    if (invalid !== null) {
+      return { error: `cancellation: refusing to record an invalid result — ${invalid}` };
+    }
     this.deps.receipts.put({
       recordDigest: result.result_digest,
       domain: 'result',

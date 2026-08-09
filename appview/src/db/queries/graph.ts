@@ -58,14 +58,36 @@ export async function withGraphTimeout<T>(
       )
       return await fn(tx as unknown as DrizzleDB)
     })
-  } catch (err: any) {
-    // PostgreSQL error code 57014 = query_canceled (statement timeout)
-    if (err?.code === '57014') {
+  } catch (err: unknown) {
+    // PostgreSQL error code 57014 = query_canceled (statement timeout).
+    //
+    // WALKED THROUGH `cause`, NOT READ OFF THE TOP. Drizzle wraps a driver
+    // error in a `DrizzleQueryError` whose message is the failed SQL and
+    // whose `code` is undefined; the pg error carrying `57014` sits on
+    // `cause`. Reading `err.code` therefore matched NOTHING, so this
+    // fallback never fired and a timed-out graph query threw all the way out
+    // — the precise failure the timeout exists to convert into a degraded
+    // answer. A `resolve` response lost its whole body because one optional
+    // graph panel was slow.
+    if (isQueryCanceled(err)) {
       logger.warn('[Graph] Query timed out, returning fallback')
       return fallback
     }
     throw err
   }
+}
+
+/** Postgres `query_canceled`, however many wrappers deep. */
+function isQueryCanceled(err: unknown): boolean {
+  // Bounded rather than `while (true)`: a cause cycle would otherwise hang
+  // the error path, which is the worst place to introduce a loop.
+  let current = err;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (current === null || typeof current !== 'object') return false;
+    if ((current as { code?: unknown }).code === '57014') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /**

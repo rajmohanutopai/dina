@@ -19,9 +19,11 @@ import {
   validateTalkMessageBody,
   type ServiceOfferBody,
   type ServiceGrantRequestBody,
+  type ServiceResponseBody,
 } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
+import { applyInboundBuyerResponse } from '../commerce/buyer_response';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
 import {
   evaluateServiceIngressBypass,
@@ -364,7 +366,7 @@ export function receiveD2D(
           nowSec: Math.floor(Date.now() / 1000),
         }) ?? false,
     });
-    return applyServiceIngressDecision(message.type, message, bypass);
+    return applyServiceIngressDecision(message.type, message, bypass, signatureHex);
   }
 
   // Determine if sender is an explicit contact with a positive trust level.
@@ -667,8 +669,18 @@ export function receiveD2D(
  */
 function applyServiceIngressDecision(
   messageType: string,
-  message: { id: string; from: string; to: string; body: string },
+  message: { id: string; type: string; from: string; to: string; created_time: number; body: string },
   bypass: ServiceBypassDecision,
+  /**
+   * The sender's signature over this envelope, ALREADY VERIFIED by the caller
+   * against their registered keys.
+   *
+   * Passed down rather than re-derived: this function has the message but not
+   * the key set, and a second verification here would be a second place the
+   * rule could drift from the first. §12.7's buyer seam retains it as the
+   * evidence that a supplier authenticated a record it may later deny.
+   */
+  envelopeSignature: string,
 ): ReceivePipelineResult {
   if (bypass.kind === 'deny') {
     appendAudit(
@@ -789,6 +801,69 @@ function applyServiceIngressDecision(
     // been delivered in the ingress sense, and Brain will still observe it
     // via the dispatcher. Logging lets operators diagnose stuck tasks.
     completeMatchingServiceQueryTask(message, body);
+
+    // §12.7 — the BUYER's inbound seam. The buyer lane sends its orders and
+    // reconcile questions on this same lane and had nowhere for the answers to
+    // land: a supplier could accept an order, sign the acknowledgement, answer
+    // the reconcile, and the buyer would keep asking for ever.
+    //
+    // CALLED DIRECTLY rather than through an injectable the roots install,
+    // and deliberately. The injectable version of this exact seam on the
+    // SUPPLIER side (`ingressResultTransformer`) shipped wired on the server
+    // and unwired on the phone, and the phone is the product — a defence each
+    // composition root must remember to pass is one a root eventually forgets.
+    // The function is inert without a commerce runtime, so a node that does no
+    // commerce pays a capability-name comparison.
+    //
+    // The SUPPLIER is `message.from`, which the pipeline has already bound to
+    // the transport-authenticated sender above; the body's own fields are
+    // never an authority here.
+    try {
+      applyInboundBuyerResponse({
+        supplierDid: message.from,
+        // §12.7/§16.2 — the evidence that makes a `never_received` answer
+        // ILLEGAL later. The signature was verified above against the
+        // sender's registered keys; passing it on is what lets the buyer
+        // retain proof this supplier authenticated the record, rather than a
+        // record plus a hash of itself that anyone could have produced.
+        envelope: {
+          envelopeId: message.id,
+          signature: envelopeSignature,
+          // The WHOLE message, in the six fields the signature covered. A
+          // signature alone is checkable against nothing: the supplier
+          // verifying it later has to rebuild the exact bytes it signed, and
+          // only the message it sent contains them.
+          envelope: {
+            id: message.id,
+            type: message.type,
+            from: message.from,
+            // `[to]`, not `to`: the wire builder wraps a single recipient in
+            // an array before signing, so the array is what the signature
+            // covers. Storing the bare string would rebuild different bytes.
+            to: [message.to],
+            created_time: message.created_time,
+            body: message.body,
+          },
+        },
+        // The body the bypass already parsed AND validated against
+        // `validateServiceResponseBody`. The cast reflects a check that has
+        // run, not an assumption; re-reading the raw string here would be a
+        // second reading of the same bytes.
+        response: bypass.body as ServiceResponseBody,
+        nowMs: Date.now(),
+      });
+    } catch (err) {
+      // NON-FATAL, like the workflow completion above: the response was
+      // delivered in the ingress sense and the order simply stays parked for
+      // the re-poll. Losing the whole bypass over a buyer-side settle would
+      // deny a response that was legitimately authorized.
+      appendAudit(
+        message.from,
+        'd2d_recv_service_buyer_settle_failed',
+        message.to,
+        `query_id=${body.query_id} error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     appendAudit(
       message.from,

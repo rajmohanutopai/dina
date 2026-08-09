@@ -38,7 +38,11 @@
  * CommerceIntegrityError so the surrounding transaction rolls back.
  */
 
-import { LEGAL_TRANSITIONS, type CommerceOrderStatus, type OrderState } from '@dina/commerce-protocol';
+import {
+  LEGAL_TRANSITIONS,
+  type CommerceOrderStatus,
+  type OrderState,
+} from '@dina/commerce-protocol';
 
 import { CommerceIntegrityError } from './quote_family';
 
@@ -83,11 +87,7 @@ export class StatusChain {
     private readonly deps: StatusChainDeps,
   ) {}
 
-  static load(
-    deps: StatusChainDeps,
-    buyerDid: string,
-    purchaseOrderId: string,
-  ): StatusChain {
+  static load(deps: StatusChainDeps, buyerDid: string, purchaseOrderId: string): StatusChain {
     return new StatusChain(
       deps.heads.get(buyerDid, purchaseOrderId),
       buyerDid,
@@ -138,6 +138,7 @@ export class StatusChain {
       state: candidate.state,
       supplierEpoch: candidate.supplier_epoch,
       updatedAt: this.deps.now(),
+      disputeWindowEndsAt: windowEndsAt(candidate),
     });
     // Lost to a concurrent genesis inside another transaction. An ordinary
     // outcome, not corruption: the other writer's genesis stands.
@@ -184,6 +185,7 @@ export class StatusChain {
         state: candidate.state,
         supplierEpoch: candidate.supplier_epoch,
         updatedAt: this.deps.now(),
+        disputeWindowEndsAt: windowEndsAt(candidate),
       },
     );
     return advanced ? allow(candidate) : refuse('cas_lost');
@@ -226,4 +228,20 @@ export class StatusChainStore {
   load(buyerDid: string, purchaseOrderId: string): StatusChain {
     return StatusChain.load(this.deps, buyerDid, purchaseOrderId);
   }
+}
+
+/**
+ * The candidate's dispute deadline as epoch ms, or null.
+ *
+ * DENORMALISED onto the head so terminality can be answered without loading a
+ * receipt. `delivered` is the only state §9.11 gives a window, and a head that
+ * did not record it was one every caller had to treat as unfinished for ever —
+ * which pinned prior manifest CIDs alive and blocked plugin uninstall on
+ * orders that had completed perfectly normally.
+ */
+function windowEndsAt(candidate: CommerceOrderStatus): number | null {
+  const iso = candidate.dispute_window_ends_at;
+  if (typeof iso !== 'string' || iso === '') return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : ms;
 }

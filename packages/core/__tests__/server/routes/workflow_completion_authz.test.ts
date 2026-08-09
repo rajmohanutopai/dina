@@ -7,6 +7,11 @@
  * the recorded completer is the authenticated `callerDID`, never the body.
  */
 
+import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import {
+  InMemoryCommerceEpochWatermarkRepository,
+  type CommerceEpochWatermarkRepository,
+} from '../../../src/commerce/watermarks';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerWorkflowRoutes, sanitizeStatusText } from '../../../src/server/routes/workflow';
 import { PLUGIN_INVOCATION_PAYLOAD_TYPE } from '../../../src/workflow/plugin_envelope';
@@ -337,5 +342,132 @@ describe('round-10 #2: workflow reads are own-task-only for agent/plugin callers
     expect(task?.status).toBe('outcome_unknown'); // NOT 'failed'
     // Round-13 #10: attribution recorded on the parked task.
     expect(task?.agent_did).toBe('did:key:plugin');
+  });
+});
+
+/**
+ * WS-2.9 — the buyer-side restore fence, driven through the REAL completion
+ * route. The gate's own suite proves what it refuses; this proves the refusal
+ * is reachable from a runner completing a task, which is the only way a
+ * supplier's record becomes the owner's answer.
+ */
+describe('§16.2 counterparty epoch watermark on a buyer tool result', () => {
+  const SUPPLIER = 'did:plc:chairmaker';
+
+  function seedBuyerTask(id: string, actionClass: string): string {
+    const envelope = {
+      type: PLUGIN_INVOCATION_PAYLOAD_TYPE,
+      install_id: 'pli_buyer',
+      capability_id: 'com.dinakernel.commerce.track-order',
+      params: {},
+      context: [],
+      manifest_cid: 'bafyreicid',
+      approved_scope_hash: 'a'.repeat(64),
+      schema_snapshot: null,
+      config_revision: 1,
+      execution_id: `exec-${id}`,
+      idempotency_key: `idem-${id}`,
+      action_class: actionClass,
+      effects_idempotency: 'unsupported',
+    };
+    repo.create({
+      id,
+      kind: 'delegation',
+      status: 'queued',
+      priority: 'normal',
+      description: 'buyer tool',
+      payload: JSON.stringify(envelope),
+      result_summary: '',
+      policy: '',
+      idempotency_key: `idem-${id}`,
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    const claimed = repo.claimDelegationTask('did:key:plugin', NOW, 30_000);
+    if (claimed === null || claimed.id !== id) throw new Error('test seed: claim failed');
+    return String(repo.getById(id)?.claim_id ?? '');
+  }
+
+  beforeEach(() => {
+    repo = new InMemoryWorkflowRepository();
+    setWorkflowService(new WorkflowService({ repository: repo }));
+    const watermarks: CommerceEpochWatermarkRepository =
+      new InMemoryCommerceEpochWatermarkRepository();
+    // This buyer has already seen epoch 7 from that supplier — the supplier
+    // restored, and everything before is a superseded generation.
+    watermarks.raiseTo(SUPPLIER, '7', NOW);
+    installCommerceRuntime({ watermarks } as unknown as CommerceRuntime);
+  });
+
+  afterEach(() => {
+    installCommerceRuntime(null);
+    setWorkflowService(null);
+  });
+
+  it('accepts a record from the CURRENT generation', async () => {
+    const router = build();
+    const claimId = seedBuyerTask('wm-ok', 'read');
+    const resp = await router.handle(
+      actionReq(
+        'wm-ok',
+        'complete',
+        { result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '7' } }), claim_id: claimId },
+        { type: 'plugin', did: 'did:key:plugin' },
+      ),
+    );
+    expect(resp.status).toBe(200);
+    expect(repo.getById('wm-ok')?.status).toBe('completed');
+  });
+
+  /**
+   * §25.3 delayed-pre-restore-write. The record is genuinely signed and its
+   * digest verifies; nothing on the supplier's side could have stopped it,
+   * because the supplier is not the one delivering it.
+   */
+  it('refuses a record from a generation the supplier has abandoned', async () => {
+    const router = build();
+    const claimId = seedBuyerTask('wm-stale', 'read');
+    const resp = await router.handle(
+      actionReq(
+        'wm-stale',
+        'complete',
+        { result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '4' } }), claim_id: claimId },
+        { type: 'plugin', did: 'did:key:plugin' },
+      ),
+    );
+    expect(resp.status).toBe(200);
+    const task = repo.getById('wm-stale');
+    expect(task?.status).toBe('failed');
+    expect(task?.error).toContain('§16.2');
+  });
+
+  it('parks an EFFECTFUL stale completion as outcome_unknown', async () => {
+    // A place-order runner may have placed the order and THEN returned a
+    // stale acknowledgement. Plain `failed` would imply nothing happened.
+    const router = build();
+    const claimId = seedBuyerTask('wm-effect', 'payment');
+    await router.handle(
+      actionReq(
+        'wm-effect',
+        'complete',
+        { result: JSON.stringify({ ack: { supplier_did: SUPPLIER, supplier_epoch: '2' } }), claim_id: claimId },
+        { type: 'plugin', did: 'did:key:plugin' },
+      ),
+    );
+    expect(repo.getById('wm-effect')?.status).toBe('outcome_unknown');
+  });
+
+  it('leaves a result carrying no signed record alone', async () => {
+    const router = build();
+    const claimId = seedBuyerTask('wm-none', 'read');
+    await router.handle(
+      actionReq(
+        'wm-none',
+        'complete',
+        { result: JSON.stringify({ message: 'nothing signed here' }), claim_id: claimId },
+        { type: 'plugin', did: 'did:key:plugin' },
+      ),
+    );
+    expect(repo.getById('wm-none')?.status).toBe('completed');
   });
 });

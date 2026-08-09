@@ -35,6 +35,10 @@ import {
 } from '@dina/protocol';
 
 import {
+  describePreflightRefusal,
+  preflightCommerceArchive,
+} from '../commerce/archive_preflight';
+import {
   COMMERCE_RESTORE_PENDING_KEY,
   markCommerceRestorePending,
 } from '../commerce/restore_marker';
@@ -503,6 +507,21 @@ export async function importArchive(
     return;
   }
 
+  // §16.2 (WS-4.2) — prove the commerce set BEFORE the target is touched.
+  //
+  // The restore fence below answers the COUNTER question; it says nothing
+  // about structure. An archive whose orders point at quotes it does not carry
+  // imports cleanly today and produces a node that cannot answer for its own
+  // orders — surfacing later as a counterparty's reconcile that no local
+  // record can satisfy. Fail-closed reconstruction means refusing here, whole,
+  // rather than importing the coherent part: a dropped order reference does
+  // not merely omit information, it makes this node deny an order the
+  // counterparty holds signed evidence for.
+  const preflight = preflightCommerceArchive(payload.identity.tables);
+  if (!preflight.ok) {
+    throw new Error(`archive: ${describePreflightRefusal(preflight)}`);
+  }
+
   const ds = getArchiveDataSource();
   if (ds === null) {
     if (importHandler) {
@@ -789,6 +808,11 @@ export async function verifyArchive(archive: Uint8Array, passphrase: string): Pr
     // path runs `validateChecksums`, so a checksum mismatch/gap that import
     // rejects must not be reported "valid" here.
     validateChecksums(payload);
+    // WS-4.2: and the same for the commerce preflight, for the same reason.
+    // This function's whole job is answering "could I restore this?" before an
+    // operator commits to it; a `true` that the import then refuses is worse
+    // than no check at all, because it is the answer they acted on.
+    if (!preflightCommerceArchive(payload.identity.tables).ok) return false;
     return true;
   } catch {
     return false;
@@ -866,6 +890,13 @@ export function checkCompatibility(archive: Uint8Array): {
   return { compatible: true, version };
 }
 
+/**
+ * WS-4.2: this deliberately does NOT run the commerce preflight, and the
+ * asymmetry with `verifyArchive` is the point. `verifyArchive` makes a claim —
+ * "this can be restored" — so it must agree with the import. Listing makes no
+ * claim; it shows what is inside. Refusing to list a torn archive would take
+ * away the one tool an operator has for working out what went wrong with it.
+ */
 export async function listArchiveContents(
   archive: Uint8Array,
   passphrase: string,

@@ -53,6 +53,37 @@ describe('conformance documentation', () => {
     expect(text).toMatch(/- \[ \]/); // at least one criterion still open
   });
 
+  /**
+   * The doc's vector TABLE is an inventory, and an inventory that nobody
+   * checks goes stale silently — this one did: three vectors were added and
+   * the table still listed the original three, so the document understated
+   * coverage until someone happened to read both.
+   *
+   * Comparing against the directory is the only version of this check that
+   * cannot itself drift.
+   */
+  it('lists every frozen vector file that actually exists', () => {
+    const vectorDir = path.join(__dirname, '..', 'conformance', 'vectors');
+    const onDisk = fs
+      .readdirSync(vectorDir)
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+    expect(onDisk.length).toBeGreaterThan(0);
+
+    // Scoped to the TABLE, not the whole document. A first attempt searched
+    // the file and passed while the table was wrong, because the same
+    // filename appeared in prose below it — the check has to look where the
+    // inventory actually lives.
+    const listed = new Set(
+      text
+        .split('\n')
+        .filter((line) => line.startsWith('| `'))
+        .flatMap((row) => [...row.matchAll(/`([a-z_]+\.json)`/g)].map((m) => m[1])),
+    );
+
+    expect([...listed].sort()).toEqual(onDisk);
+  });
+
   it('declares the frozen-vector gaps rather than implying full coverage', () => {
     // §25.1 is not fully covered. Saying so in the file a port reads is the
     // difference between an honest partial kit and a misleading one.
