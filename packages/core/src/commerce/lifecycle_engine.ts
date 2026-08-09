@@ -52,7 +52,11 @@ import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
 import { signedHere } from './receipt_evidence';
 import { rehydrateAcknowledgement, rehydratePurchaseOrder } from './rehydrate';
-import { type ChainRefusal, type StatusChainStore } from './status_chain';
+import {
+  selectFencePredecessor,
+  type ChainRefusal,
+  type StatusChainStore,
+} from './status_chain';
 
 import type { CommerceReceiptRepository } from './receipts';
 
@@ -73,6 +77,9 @@ const CHAIN_ERROR: Record<ChainRefusal, string> = {
   illegal_transition: 'status: illegal transition (§9.11)',
   lines_violation: 'status: cumulative line snapshot violation (§9.11)',
   fence_needs_higher_epoch: 'fence: requires a strictly higher epoch — restore first (§16.2)',
+  evidence_forks: 'fence: presented receipts disagree at one sequence (§9.11)',
+  evidence_not_contiguous:
+    'fence: presented receipts do not form one unbroken chain from the head (§16.2)',
   cas_lost: 'status: CAS at signing — concurrent successor won (§9.11)',
 };
 
@@ -490,19 +497,30 @@ export class CommerceLifecycleEngine {
         outcome = { error: 'fence: no verifiable held status receipts to fence against (§16.2)' };
         return;
       }
-      const predecessor = verified.reduce((newest, candidate) =>
-        BigInt(candidate.sequence) > BigInt(newest.sequence) ? candidate : newest,
-      );
-      if (statusIsTerminal(predecessor, isoNow(this.deps.now()))) {
-        outcome = { error: 'fence: the order is already terminal — nothing to resume' };
-        return;
-      }
       const chain = this.deps.chains.load(buyerDid, purchaseOrderId);
       if (!chain.exists) {
         outcome = { error: 'fence: no local chain for this order' };
         return;
       }
       const head = chain.head;
+      // CHOSEN BY THE CHAIN RULE, not by `reduce` over sequences. Picking the
+      // tallest receipt says nothing about whether the ones below it line up:
+      // a gap fast-forwards this supplier past records nobody showed it, and
+      // two receipts at one height mean it signed twice there — with `reduce`
+      // the buyer picked the winner by array order.
+      //
+      // The chain is loaded FIRST now, because the rule needs the local head
+      // to root the walk.
+      const chosen = selectFencePredecessor(head, verified);
+      if (!chosen.ok) {
+        outcome = { error: chainError(chosen) };
+        return;
+      }
+      const predecessor = chosen.value;
+      if (statusIsTerminal(predecessor, isoNow(this.deps.now()))) {
+        outcome = { error: 'fence: the order is already terminal — nothing to resume' };
+        return;
+      }
       // NO ROLLBACK. The fence exists to fast-forward a restored
       // supplier to what the buyer can prove — never to move it
       // BACKWARD. Choosing the highest presented receipt is not enough:

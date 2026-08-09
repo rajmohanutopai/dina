@@ -7049,6 +7049,85 @@
       itself is untouched. Not done, and not counted as done.
     </p>
 
+    <h2>ARCH-0b/0c — two things a restore could stand on that it should not</h2>
+
+    <h3>0b: the post-restore re-offer ran inside the write transaction</h3>
+    <p>
+      A live defect I introduced. <code>rejectVoidedFamily</code> asked the injected
+      <code>resignVoidedQuote</code> seam for a replacement quote from INSIDE the
+      <code>admitOrder</code> transaction. A seam backed by a supplier plugin or an ERP connector
+      would then have done plugin dispatch or a network round trip while SQLite held the write
+      lock — on mobile that is the single connection, for as long as the counterparty took to
+      answer. Nothing in production wired it, so the cost was latent rather than observed; the
+      shape was wrong either way.
+    </p>
+    <p>
+      Three steps that cannot overlap now: admission refuses <code>quote_voided</code> in a short
+      transaction that performs no I/O; the supplier composes a replacement with NO transaction
+      open; <code>CommerceAdmissionService.registerReplacementQuote</code> validates and registers
+      it in a second short transaction. The engine loses the seam entirely, which is the point —
+      an I/O hook has no business on a domain engine whose methods all run inside someone else's
+      transaction.
+    </p>
+    <p>
+      <strong>Behaviour change worth your attention.</strong> Admission no longer answers
+      <code>quote_superseded</code> with a fresh head inline; it answers <code>quote_voided</code>
+      and the buyer requests a new quote. That is what the fall-through already said and what
+      CMR-1 settled (Core refuses, never invents terms), but it is one fewer round trip saved for
+      the buyer. Say so if you want the inline answer back — it would mean an async admission path,
+      which is a larger change than this one.
+    </p>
+    <p>
+      Also checked and already correct, contrary to the row's description:
+      <code>settleUse</code>'s boolean is not ignored. All three settlement call sites go through
+      <code>QuoteFamily.settle()</code>, which throws <code>CommerceIntegrityError</code> on a
+      failed CAS, so a decided order with an unsettled hold rolls back rather than leaking capacity.
+    </p>
+
+    <h3>0c: fence selection took the tallest receipt and asked nothing else</h3>
+    <p>
+      A restored supplier fast-forwards to what the buyer can prove, so which receipt it lands on
+      decides the chain's whole future. The selection was <code>reduce</code> to the highest
+      sequence plus two checks against the local head. Two things got through:
+    </p>
+    <ul>
+      <li>
+        <strong>A gap.</strong> Present the head's successor and then a receipt six sequences
+        later, and the supplier jumps past records nobody showed it. Every status names its
+        predecessor precisely so the chain has no gaps; skipping one discards that at the moment
+        it matters most.
+      </li>
+      <li>
+        <strong>A fork in the evidence itself.</strong> Two authentic receipts at the same top
+        sequence with different digests mean the supplier signed twice at one height.
+        <code>reduce</code> kept whichever came first in the array — the buyer chose the winner by
+        ordering its own request. The existing same-height check only compared against the LOCAL
+        head, so two receipts both above it never triggered it.
+      </li>
+    </ul>
+    <p>
+      <code>selectFencePredecessor</code> now walks head+1 upward: every sequence present, every
+      record naming the one before it, one record per height. Rooted by DIGEST rather than by
+      requiring the head record itself — a buyer presenting only what is above our head is being
+      economical, and what matters is that its lowest record names our head.
+    </p>
+    <p>
+      Both are refusals rather than repairs, because which branch is real is exactly what a
+      restored node lost and cannot re-derive. The rule lives in <code>status_chain.ts</code>
+      because it is a chain rule; signature verification stays with the caller, and the function
+      assumes every receipt it is handed is already proven authentic.
+    </p>
+    <p>
+      Ten cases, mutation-checked. Neutering the link comparison outright crashed the suite
+      (<code>Tests: 0 total</code> is a crash, not a pass); chaining the walk to the wrong field
+      failed the contiguous case, which is the assertion that matters.
+    </p>
+    <p>
+      Also verified as already fixed, contrary to the row: <code>signStatusUpdate</code> no longer
+      treats the previous head receipt as optional — it fails closed when the record cannot be
+      read, so a lost receipt can no longer let Core sign a regressing fulfilled quantity.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner

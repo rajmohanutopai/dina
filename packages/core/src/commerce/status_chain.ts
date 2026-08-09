@@ -58,6 +58,10 @@ export type ChainRefusal =
   | 'illegal_transition'
   | 'lines_violation'
   | 'fence_needs_higher_epoch'
+  /** Two presented receipts sit at the same sequence with different digests. */
+  | 'evidence_forks'
+  /** The presented receipts do not form one unbroken chain from the head. */
+  | 'evidence_not_contiguous'
   | 'cas_lost';
 
 export type ChainOutcome<T = void> =
@@ -67,6 +71,92 @@ export type ChainOutcome<T = void> =
 const refuse = (refusal: ChainRefusal, detail?: string): ChainOutcome<never> =>
   detail === undefined ? { ok: false, refusal } : { ok: false, refusal, detail };
 const allow = <T>(value: T): ChainOutcome<T> => ({ ok: true, value });
+
+/**
+ * Choose the fence predecessor from buyer-presented receipts, and prove the
+ * choice is one the local chain can actually stand on (§16.2, §9.11).
+ *
+ * WHAT WAS MISSING. The selection was `reduce` to the highest sequence, plus
+ * two checks against the local head (no rollback, no same-height fork). That
+ * leaves two ways to fence onto evidence the chain cannot support:
+ *
+ *   1. A GAP. A buyer presenting the head's successor and then a receipt six
+ *      sequences later fast-forwards the supplier past records nobody showed
+ *      it. Each status names its predecessor precisely so the chain has no
+ *      gaps; jumping one throws that away at the moment it matters most.
+ *   2. A FORK AMONG THE EVIDENCE ITSELF. Two authentic receipts at the same
+ *      top sequence with different digests mean the supplier signed twice at
+ *      one height. `reduce` silently kept whichever came first in the array —
+ *      the buyer chose, by ordering.
+ *
+ * Both are refusals, not repairs: which branch is real is exactly what this
+ * node lost and cannot rederive.
+ *
+ * ROOTED BY DIGEST, not by requiring the head record itself. A buyer that
+ * presents only the records ABOVE our head is being economical, not
+ * dishonest; what matters is that the lowest presented successor names our
+ * head as its predecessor.
+ *
+ * PURE, and here rather than in the engine, because it is a chain rule.
+ * Signature verification stays with the caller — this function assumes every
+ * receipt it is given has already been proven authentic, and its own job is
+ * only whether they line up.
+ */
+export function selectFencePredecessor(
+  head: { headSequence: string; headDigest: string },
+  verified: readonly CommerceOrderStatus[],
+): ChainOutcome<CommerceOrderStatus> {
+  const headSeq = BigInt(head.headSequence);
+  // One record per sequence, and a disagreement at any height is a fork.
+  // Checked across the WHOLE presented set rather than only the top, so a
+  // buyer cannot bury a contradiction under a taller receipt.
+  const bySequence = new Map<string, CommerceOrderStatus>();
+  for (const record of verified) {
+    const existing = bySequence.get(record.sequence);
+    if (existing !== undefined) {
+      if (existing.status_digest !== record.status_digest) {
+        return refuse(
+          'evidence_forks',
+          `two different records presented at sequence ${record.sequence}`,
+        );
+      }
+      continue;
+    }
+    bySequence.set(record.sequence, record);
+  }
+
+  const ascending = [...bySequence.values()].sort((a, b) =>
+    BigInt(a.sequence) < BigInt(b.sequence) ? -1 : BigInt(a.sequence) > BigInt(b.sequence) ? 1 : 0,
+  );
+  const predecessor = ascending.at(-1);
+  if (predecessor === undefined) {
+    return refuse('evidence_not_contiguous', 'no receipts presented');
+  }
+  // At or below the head: the caller's rollback and same-height rules own
+  // this, and re-deciding here would put the same rule in two places.
+  if (BigInt(predecessor.sequence) <= headSeq) return allow(predecessor);
+
+  // Walk head+1 .. predecessor. Every step must be present and must name the
+  // step before it.
+  let previousDigest = head.headDigest;
+  for (let seq = headSeq + 1n; seq <= BigInt(predecessor.sequence); seq += 1n) {
+    const record = bySequence.get(seq.toString(10));
+    if (record === undefined) {
+      return refuse(
+        'evidence_not_contiguous',
+        `no receipt presented for sequence ${seq.toString(10)}`,
+      );
+    }
+    if (record.previous_status_digest !== previousDigest) {
+      return refuse(
+        'evidence_not_contiguous',
+        `sequence ${record.sequence} does not name the record before it`,
+      );
+    }
+    previousDigest = record.status_digest;
+  }
+  return allow(predecessor);
+}
 
 export interface StatusChainDeps {
   heads: CommerceStatusHeadRepository;
