@@ -152,9 +152,16 @@ catch what they check:
 1. **Continuity claims are not bound to a specific non-terminal order.** The
    prior major is checked; the order is not, because the envelope names it only
    inside `params`. Needs a wire field.
-2. **Force-restore still clears a commerce table the archive did not supply.**
-   The preflight refuses a missing table outright so the reachable path is
-   narrow, but the clearing behaviour itself is untouched.
+2. ~~Force-restore clears a commerce table the archive did not supply.~~
+   **Fixed**, with a caveat about the evidence. Force now clears only a table
+   the archive actually SUPPLIES: an empty list is a statement ("this table had
+   no rows") and clears, while an absent key means the archive predates the
+   table and is left alone. The test added alongside it guards the reachable
+   half — it passes under the old behaviour too, which I verified rather than
+   assumed. The absent-key branch has no end-to-end test because this build
+   cannot produce an archive with a missing key: `dumpTable` returns `[]` for a
+   table it cannot read, and the exporter writes a key for every allowlisted
+   table. The only producer is an older build.
 3. **ARCH-3's three seam layers are an ordering, not an abstraction.**
    Structural validation, then signature/identity, then domain construction
    happens at each seam and is enforced by the boundary test and by the draft

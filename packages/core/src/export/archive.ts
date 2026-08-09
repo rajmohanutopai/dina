@@ -555,7 +555,25 @@ export async function importArchive(
         // exception: it holds secrets (API keys, PDS password) deliberately
         // kept OUT of the archive, so wiping it would destroy them — kv is
         // merged instead (backup prefs overwrite, target secrets survive).
-        if (opts.force && table !== KV_TABLE) clearTable(idAdapter, table);
+        //
+        // ONLY A TABLE THE ARCHIVE ACTUALLY SUPPLIES. Export writes every
+        // allowlisted table, empty arrays included — so a key that is ABSENT
+        // means the archive was written by a build whose allowlist did not
+        // have this table yet. Clearing it then destroys live data the backup
+        // never claimed to describe, which is data loss dressed as a faithful
+        // overwrite. A backup that genuinely held no rows still carries the
+        // key with `[]`, and that DOES clear.
+        //
+        // The commerce set is the case that made this concrete: an archive
+        // taken before commerce existed carries none of its tables, and the
+        // preflight already names that state `predatesCommerce`. Under the old
+        // rule a force-restore from such a backup wiped every order reference,
+        // quote head, use counter and status head on a live trading node.
+        const supplied = Object.prototype.hasOwnProperty.call(
+          payload.identity.tables,
+          table,
+        );
+        if (opts.force && supplied && table !== KV_TABLE) clearTable(idAdapter, table);
         const rows = payload.identity.tables[table];
         if (rows !== undefined) {
           // Round-9 #18: plugin authority never travels. Export bakes installs
@@ -746,8 +764,12 @@ export async function importArchive(
         // Force = true overwrite: clear each persona table first (all persona
         // tables are fully captured in the archive — no secret-exclusion
         // caveat like kv_store) so stale target-only vault rows don't survive.
-        if (opts.force) clearTable(adapter, table);
+        // Same rule as the identity side: a table the archive does not mention
+        // is one this backup cannot speak for, so it is left alone rather than
+        // emptied. Export writes every allowlisted persona table, empty arrays
+        // included, so an absent key means an older archive format.
         const rows = persona.tables[table];
+        if (opts.force && rows !== undefined) clearTable(adapter, table);
         if (rows !== undefined) restoreTable(adapter, table, rows);
       }
     });

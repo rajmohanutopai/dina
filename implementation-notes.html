@@ -7214,6 +7214,37 @@
       after a validator has run, which is the safe form, but I have not audited every one.
     </p>
 
+    <h2>Force-restore no longer empties a table the backup cannot speak for</h2>
+    <p>
+      <code>force</code> means "make the target look like the backup", and for a table the backup
+      DESCRIBES that is right — an empty list is a statement and clearing honours it. But the
+      import cleared every allowlisted table before checking whether the payload carried one, so a
+      key that was ABSENT — an archive written before that table existed — also cleared. That is
+      data loss dressed as a faithful overwrite.
+    </p>
+    <p>
+      The commerce set is exactly that shape. A backup taken before commerce existed carries none
+      of its tables — the preflight already names the state <code>predatesCommerce</code> — and a
+      force-restore from it wiped every order reference, quote head, use counter and status head
+      on a live trading node. Fixed on the identity and persona paths both.
+    </p>
+    <p>
+      <strong>The evidence is weaker than the fix, and I would rather say so than imply
+      otherwise.</strong> The test added alongside proves the reachable half: a table carried as
+      empty still clears. It passes under the OLD behaviour too — I reverted the guard and checked,
+      rather than assuming. The absent-key branch has no end-to-end test because this build cannot
+      produce an archive with a missing key: <code>dumpTable</code> returns <code>[]</code> for a
+      table it cannot read, and the exporter writes a key for every allowlisted table. The only
+      producer of that shape is an older build, and there is nothing in the current API to
+      construct one from. The guard is defensive and correct; the test beside it is a regression
+      guard on what I changed, not a proof of what I fixed.
+    </p>
+    <p>
+      Two mutation attempts on this one produced <code>Tests: 0 total</code> before I found one
+      that compiled — a crash is not a survival, and reading it as one is how a fix gets believed
+      without evidence.
+    </p>
+
     <h2>The consolidated test plan, and what it measured</h2>
     <p>
       <code>docs/COMMERCE_TEST_PLAN.md</code>. Built by reading the suites and the spec rather

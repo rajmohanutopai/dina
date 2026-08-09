@@ -1362,3 +1362,87 @@ describe('commerce restore fence marker (§16.2)', () => {
     expect(kv.map((r) => r.key)).not.toContain(COMMERCE_RESTORE_PENDING_KEY);
   });
 });
+
+describe('force-restore honours what the archive actually says (§16.2)', () => {
+  /**
+   * `force` means "make the target look like the backup", and the two cases
+   * below are the difference between a backup that SPEAKS about a table and
+   * one that cannot.
+   *
+   * An empty list is a statement — "this table had no rows" — and force
+   * honours it by clearing. That half is what this test drives, because it is
+   * the half this build can produce: `dumpTable` returns `[]` for a table it
+   * cannot read, and the exporter writes a key for every allowlisted table,
+   * so a CURRENT archive always carries all of them.
+   *
+   * The other half — a key that is ABSENT, meaning the archive predates that
+   * table entirely — now skips the clear, and THIS TEST DOES NOT PROVE IT.
+   * Reverting the guard to the old always-clear behaviour leaves this test
+   * green, which I checked rather than assumed. No archive this build can
+   * write omits a key (`dumpTable` returns `[]` for a table it cannot read,
+   * and the exporter writes a key for every allowlisted table), so the only
+   * producer of that shape is an older build and there is nothing here to
+   * construct one from.
+   *
+   * What this test is, then: a regression guard on the half I changed. The
+   * guard itself exists because the commerce set is exactly that shape — a
+   * backup taken before commerce existed carries none of its tables, and
+   * clearing on that basis wiped every order reference, quote head, use
+   * counter and status head on a live trading node.
+   */
+  it('clears a commerce table the archive carries as empty', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // The source needs SOME data, or `payloadHasData` short-circuits the
+      // import and nothing is cleared — which is correct for an empty archive
+      // and would have made this test pass for the wrong reason. What matters
+      // is that its commerce tables are empty while the payload is not.
+      src.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+        'theme',
+        'dark',
+        1,
+      ]);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+
+    const dest = freshBundle([]);
+    try {
+      dest.id.execute(
+        `INSERT INTO commerce_order_refs
+           (buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id, quote_digest,
+            pinned_version, state, serving_manifest_cid, serving_install_id, admitted_epoch,
+            reconciliation_required, decision_deadline_at, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          'did:plc:buyer',
+          'po-stale',
+          'idem-stale',
+          'c'.repeat(64),
+          'q-stale',
+          'd'.repeat(64),
+          '1.0',
+          'reserved',
+          '',
+          '',
+          '1',
+          0,
+          9_999_999_999_999,
+          1,
+        ],
+      );
+      expect(dest.id.query('SELECT purchase_order_id FROM commerce_order_refs', [])).toHaveLength(
+        1,
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      // The backup said "no orders", so the stale row goes.
+      expect(dest.id.query('SELECT purchase_order_id FROM commerce_order_refs', [])).toEqual([]);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+});
