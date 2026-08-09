@@ -114,6 +114,21 @@ export interface PluginTaskEnvelope {
    * addressed to another rather than answering it wrongly.
    */
   readonly prior_version?: string;
+  /**
+   * §9.13 — WHICH ORDER this continuation is for.
+   *
+   * A continuity lane is retained so a specific set of in-flight orders can
+   * finish under the contract they were opened in. Until this field existed
+   * the lane was checkable but not the claim: an authorized lane admitted ANY
+   * newly created task on the prior CID for that capability, including one for
+   * an order that had already gone terminal, or one for no order at all. The
+   * lane's purpose is per-order; the check now is too.
+   *
+   * Optional because only the lifecycle capabilities carry an order. A
+   * continuity task for a lifecycle capability that omits it is refused —
+   * see the claim guard — rather than treated as unscoped.
+   */
+  readonly continuity_order_id?: string;
   readonly approved_scope_hash: string;
   /** Pinned result schema — completion validates against THIS. */
   readonly schema_snapshot: unknown;
@@ -223,6 +238,9 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   // The key set is EXACT and fails closed, so a field added to the interface
   // and not to this list quarantines every envelope carrying it.
   'prior_version',
+  // §9.13 — optional, and only on a lifecycle continuation. Same exact-key
+  // discipline as `prior_version` above.
+  'continuity_order_id',
   'approved_scope_hash',
   'schema_snapshot',
   'config_revision',

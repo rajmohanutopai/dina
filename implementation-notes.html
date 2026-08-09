@@ -7214,6 +7214,47 @@
       after a validator has run, which is the safe form, but I have not audited every one.
     </p>
 
+    <h2>§9.13 — a continuity claim now names the order it continues</h2>
+    <p>
+      The last gap I had recorded rather than closed. A continuity lane is retained so a SPECIFIC
+      set of in-flight orders can finish under the contract they were opened in, but the claim
+      check was per-lane: an authorized lane admitted any newly created task on the prior CID for
+      that capability, including one for an order that had already gone terminal. A runner
+      answering for a closed order, under a manifest the install no longer runs.
+    </p>
+    <p>
+      <strong>It needed a wire field, so I added one.</strong>
+      <code>PluginTaskEnvelope.continuity_order_id</code>, stamped by
+      <code>buildContinuityEnvelope</code> from the value the INGRESS GATE authorized — the same
+      handover discipline as <code>authorizedBuyerDid</code>, for the same reason: a runner that
+      could name the order would be choosing which order its lane covered. The buyer comes from
+      the envelope's authenticated <code>service_ingress.from_did</code>, so the claim is bound to
+      buyer AND order, which is what §9.13 asks.
+    </p>
+    <p>
+      <strong>The predicate is shared, deliberately.</strong> "Unfinished" already had a definition
+      — the SQL behind <code>countUnfinishedByServingManifest</code>, which the continuity-release
+      sweep uses to decide when a lane may be retired. I narrowed that same query to one row rather
+      than writing a second reading of the word. Two spellings would eventually disagree, and the
+      pair that disagreed would be the release sweep and the claim guard: a lane released while a
+      claim still believes the order is live, or the reverse.
+    </p>
+    <p>
+      Fails closed on every uncertainty — no order named, no commerce runtime to ask, or a finished
+      order. Three new cases plus a mutation check; neutering the store lookup fails the
+      already-finished case, which is the one that carries the property.
+    </p>
+    <p>
+      <strong>One existing test changed meaning and I did not force it back.</strong> The
+      "tool-only lane" control used to assert that a tool envelope on a tool-authorized lane is
+      ADMITTED. It cannot be any more: <code>order_status</code> is a lifecycle capability, its
+      continuity lane is per-order, and a tool-shaped envelope carries no ingress and therefore no
+      order. Production never builds that shape — the rebind coordinator opens continuity lanes
+      only for the lifecycle capabilities, and those are answered on the ingress lane. The test now
+      asserts the refusal and says which check produced it; the "matching lane admits" control
+      lives in the provider case, where the shape is real.
+    </p>
+
     <h2>Force-restore no longer empties a table the backup cannot speak for</h2>
     <p>
       <code>force</code> means "make the target look like the backup", and for a table the backup

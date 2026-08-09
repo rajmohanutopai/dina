@@ -149,9 +149,14 @@ catch what they check:
 
 ## 6. Known gaps, stated plainly
 
-1. **Continuity claims are not bound to a specific non-terminal order.** The
-   prior major is checked; the order is not, because the envelope names it only
-   inside `params`. Needs a wire field.
+1. ~~Continuity claims are not bound to a specific non-terminal order.~~
+   **Fixed.** The envelope gained `continuity_order_id`, stamped by the ingress
+   gate (never read from the payload), and the claim guard now asks the order
+   store whether that order is still unfinished — using the SAME SQL predicate
+   the continuity-release sweep uses, narrowed to one row, so the two cannot
+   drift into disagreeing about what "finished" means. Fails closed on every
+   uncertainty: no order named, no commerce runtime, or a finished order all
+   refuse.
 2. ~~Force-restore clears a commerce table the archive did not supply.~~
    **Fixed**, with a caveat about the evidence. Force now clears only a table
    the archive actually SUPPLIES: an empty list is a statement ("this table had

@@ -436,7 +436,7 @@ class RebindRollback extends Error {
  * Quoting and ordering are deliberately absent. A superseded major that could
  * still take new business would not be draining, it would be running.
  */
-const LIFECYCLE_CAPABILITIES: ReadonlySet<string> = new Set([
+export const LIFECYCLE_CAPABILITIES: ReadonlySet<string> = new Set([
   'order_status',
   'order_reconcile',
   'cancel_order',
@@ -448,7 +448,7 @@ export function protocolMajorOf(version: string): string {
 }
 
 /** Bare capability name, tolerating the NSID prefix and manifest hyphens. */
-function bareCapabilityName(id: string): string {
+export function bareCapabilityName(id: string): string {
   const bare = id.includes('.') ? (id.split('.').pop() ?? id) : id;
   return bare.replace(/-/g, '_');
 }

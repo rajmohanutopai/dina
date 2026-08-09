@@ -211,6 +211,13 @@ type SubjectAuthorization =
        * chose. One value, produced where the authorization decision is made.
        */
       authorizedBuyerDid?: string;
+      /**
+       * §9.13 — the order this gate authorized, handed over for the same
+       * reason the buyer DID is: the continuity envelope must name the order
+       * it continues, and re-deriving it downstream from the payload would
+       * let a runner's own field decide which order its lane covers.
+       */
+      authorizedOrderId?: string;
     };
 
 /**
@@ -314,7 +321,11 @@ function authorizeOrderSubject(
   // §9.13 — the manifest this order was opened against. When it is not the
   // one the install runs now, the lifecycle request must be answered under
   // the OLD contract, not the current one.
-  return { denied: null, servingManifestCid: order.ref.servingManifestCid };
+  return {
+    denied: null,
+    servingManifestCid: order.ref.servingManifestCid,
+    authorizedOrderId: purchaseOrderId,
+  };
 }
 
 /**
@@ -672,6 +683,13 @@ export function createProviderIngressTask(args: {
             context: [],
             executionId: scopedId,
             idempotencyKey: scopedId,
+            // §9.13 — WHICH order this lane is being used for. From the gate,
+            // never from the payload: the claim guard checks the order is
+            // still live, and a runner that could name it would choose which
+            // order its continuity lane covered.
+            ...(subject.authorizedOrderId === undefined
+              ? {}
+              : { continuityOrderId: subject.authorizedOrderId }),
             serviceIngress,
           });
   } catch (error) {

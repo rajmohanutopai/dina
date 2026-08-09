@@ -279,6 +279,11 @@ export class CommerceOrderStore {
     return this.deps.refs.countUnfinishedByServingManifest(servingManifestCid, nowMs);
   }
 
+  /** §9.13 — is this one order still work the continuity lane must serve? */
+  isUnfinished(buyerDid: string, purchaseOrderId: string, nowMs: number): boolean {
+    return this.deps.refs.isUnfinished(buyerDid, purchaseOrderId, nowMs);
+  }
+
   countReservedByServingManifest(servingManifestCid: string): number {
     return this.deps.refs.countReservedByServingManifest(servingManifestCid);
   }

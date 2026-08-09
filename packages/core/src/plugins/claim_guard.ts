@@ -36,8 +36,13 @@ import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
 import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
 import { getDrainAuthorizationRepository } from './drain_authorizations';
+import { getCommerceRuntime } from '../commerce/runtime';
 import { getPluginGrantRepository, invocationDigest } from './grants';
-import { protocolMajorOf } from './update_rebind';
+import {
+  LIFECYCLE_CAPABILITIES,
+  bareCapabilityName,
+  protocolMajorOf,
+} from './update_rebind';
 import { validateAgainstSchema } from './schema_validate';
 
 import type { PluginInstall } from './registry';
@@ -62,6 +67,33 @@ export interface PluginClaimResult {
  * the claim's own claim_id CAS) and keep drawing until a valid task,
  * an empty lane, or the drain bound.
  */
+/**
+ * Is the order a continuity claim names still one this lane may serve?
+ *
+ * FAIL CLOSED on every uncertainty. No order named, no commerce runtime, no
+ * such order, or a terminal one — all refuse. The lane was retained to let
+ * live orders finish; none of those is a live order.
+ *
+ * Reads the order store rather than trusting the envelope beyond the id,
+ * which is the same shape as every other check here: the envelope says WHICH
+ * order, the store says whether it is still open.
+ */
+function continuedOrderIsLive(
+  orderId: string | undefined,
+  buyerDid: string | undefined,
+  nowMs: number,
+): boolean {
+  if (orderId === undefined || orderId === '') return false;
+  const orders = getCommerceRuntime()?.orders;
+  if (orders === undefined || orders === null) return false;
+  // The BUYER comes from the ingress envelope's authenticated sender, which
+  // the ingress gate bound before the task was created — never from params.
+  // A continuity task with no ingress has no buyer to check against and is
+  // refused, which is right: only the lifecycle lane has orders.
+  if (buyerDid === undefined || buyerDid === '') return false;
+  return orders.isUnfinished(buyerDid, orderId, nowMs);
+}
+
 /**
  * Does the envelope's declared prior major match the row's?
  *
@@ -203,6 +235,31 @@ export function claimPluginTask(args: {
       if (
         entry.kind === 'lifecycle_continuity' &&
         !majorsAgree(entry.priorVersion, envelope.prior_version)
+      ) {
+        return false;
+      }
+      // §9.13 — WHICH ORDER, and is it still live.
+      //
+      // A continuity lane is retained so a specific set of in-flight orders
+      // can finish under the contract they were opened in. Checking only that
+      // the lane exists admitted ANY newly created task on the prior CID for
+      // that capability — including one for an order that had already gone
+      // terminal, which is a runner answering for a closed order under a
+      // manifest the install no longer runs.
+      //
+      // Only for the LIFECYCLE capabilities: they are the ones an order
+      // belongs to, and they are exactly the set the rebind coordinator opens
+      // continuity lanes for. A continuity task for one of them that names no
+      // order is refused rather than treated as unscoped — the envelope
+      // builder always stamps it, so its absence is a fact about the envelope.
+      if (
+        entry.kind === 'lifecycle_continuity' &&
+        LIFECYCLE_CAPABILITIES.has(bareCapabilityName(entry.capabilityId)) &&
+        !continuedOrderIsLive(
+          envelope.continuity_order_id,
+          envelope.service_ingress?.from_did,
+          nowMs,
+        )
       ) {
         return false;
       }

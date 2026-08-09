@@ -28,11 +28,15 @@ import {
   type PluginInstall,
 } from '../../src/plugins/registry';
 import { applyMigrations } from '../../src/storage/migration';
+import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';
 
 const CAP = 'com.acme.commerce.order_status';
+const PO = 'po-continuity-1';
+/** Flipped per-case: whether the order the lane names is still open. */
+let orderIsOpen = true;
 const PLUGIN_DID = 'did:plc:plugindevice';
 const T0 = 1_700_000_000_000;
 
@@ -169,9 +173,20 @@ describe('claim guard drain lane (§9.13)', () => {
     const install = installs.getById(installId);
     if (!install) throw new Error('install missing');
     priorInstall = install;
+
+    // §9.13 — the claim guard asks the order store whether the order a
+    // continuity claim names is still unfinished. A lifecycle lane with no
+    // commerce runtime refuses, which is right in production and would make
+    // every case here a refusal, so the double answers for the one order
+    // these fixtures use.
+    orderIsOpen = true;
+    installCommerceRuntime({
+      orders: { isUnfinished: () => orderIsOpen },
+    } as unknown as CommerceRuntime);
   });
 
   afterEach(() => {
+    installCommerceRuntime(null);
     setPluginInstallRepository(null);
     setDrainAuthorizationRepository(null);
     try {
@@ -188,7 +203,12 @@ describe('claim guard drain lane (§9.13)', () => {
    * claim guard requires: present means the envelope needs a `provider`
    * consent, absent means `tool`.
    */
-  function enqueuePriorCidTask(taskId: string, asTool = false, priorVersion = '0.1.0'): void {
+  function enqueuePriorCidTask(
+    taskId: string,
+    asTool = false,
+    priorVersion = '0.1.0',
+    orderId: string | null = PO,
+  ): void {
     const built = buildPluginEnvelope({
       install: priorInstall,
       capabilityId: CAP,
@@ -212,7 +232,14 @@ describe('claim guard drain lane (§9.13)', () => {
     // does not carry the field — a continuity task in production is never
     // built by it — so a fixture using it alone would exercise the drain
     // lane's rules while claiming to test continuity.
-    const envelope = priorVersion === '' ? built : { ...built, prior_version: priorVersion };
+    // §9.13 — production stamps BOTH: which contract, and which order. The
+    // claim guard checks the order is still live, so a fixture that omitted it
+    // would exercise the refusal rather than the lane.
+    const envelope = {
+      ...built,
+      ...(priorVersion === '' ? {} : { prior_version: priorVersion }),
+      ...(orderId === null ? {} : { continuity_order_id: orderId }),
+    };
     workflow.create({
       id: taskId,
       kind: 'delegation',
@@ -298,12 +325,24 @@ describe('claim guard drain lane (§9.13)', () => {
     expect(refused.task).toBeNull();
     expect(refused.terminalized).toEqual(['t-kind-2']);
 
-    // And the matching lane admits, so the refusals above are the check
-    // working rather than the lane being shut.
+    // AND SO IS A TOOL ENVELOPE ON A TOOL LANE, for this capability — which
+    // is not the kind check failing but the ORDER check.
+    //
+    // `order_status` is a lifecycle capability, so its continuity lane is
+    // retained per-order (§9.13). A tool-shaped envelope carries no
+    // `service_ingress`, so it names no buyer and no order, and a lane that
+    // exists to let ONE order finish cannot serve it. Production never builds
+    // this shape: the rebind coordinator opens continuity lanes only for the
+    // lifecycle capabilities, and those are answered on the ingress lane.
+    //
+    // The "matching lane admits" control lives in the provider case above,
+    // where the shape is the real one.
     enqueuePriorCidTask('t-kind-3', true);
     drains.release(installId, 'bafyreiprior', CAP, 'lifecycle_continuity');
     drains.put(continuityEntry({ authorizedKinds: ['tool'] }));
-    expect(claim(rebound()).task?.id).toBe('t-kind-3');
+    const noOrder = claim(rebound());
+    expect(noOrder.task).toBeNull();
+    expect(noOrder.terminalized).toEqual(['t-kind-3']);
   });
 
   it('a row that records NO kinds refuses, rather than admitting anything', () => {
@@ -364,6 +403,42 @@ describe('claim guard drain lane (§9.13)', () => {
       }),
     );
     expect(claim(rebound()).task?.id).toBe('t-major-4');
+  });
+
+  it('refuses a continuity claim for an order that is already finished (§9.13)', () => {
+    // A lane is retained so a SPECIFIC set of in-flight orders can finish
+    // under the contract they were opened in. Checking only that the lane
+    // exists admitted any newly created task on the prior CID — including one
+    // for an order that had already gone terminal, which is a runner
+    // answering for a closed order under a manifest the install no longer
+    // runs.
+    orderIsOpen = false;
+    enqueuePriorCidTask('t-order-1');
+    drains.put(continuityEntry());
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-order-1']);
+  });
+
+  it('refuses a continuity claim that names no order at all', () => {
+    // The envelope builder always stamps it for a lifecycle capability, so an
+    // absent id is a fact about the envelope rather than about the lane.
+    enqueuePriorCidTask('t-order-2', false, '0.1.0', null);
+    drains.put(continuityEntry());
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-order-2']);
+  });
+
+  it('refuses when this node has no commerce runtime to ask', () => {
+    // Fail closed: a node that cannot tell whether the order is live must not
+    // assume it is.
+    installCommerceRuntime(null);
+    enqueuePriorCidTask('t-order-3');
+    drains.put(continuityEntry());
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-order-3']);
   });
 
   it('an expired drain entry no longer admits', () => {

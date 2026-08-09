@@ -633,6 +633,13 @@ export function buildContinuityEnvelope(args: {
   context: unknown;
   executionId: string;
   idempotencyKey: string;
+  /**
+   * §9.13 — the order this continuation is for. Required in practice for the
+   * lifecycle capabilities; the claim guard refuses a continuity claim that
+   * arrives without one, so omitting it here makes the task unclaimable
+   * rather than unscoped.
+   */
+  continuityOrderId?: string;
   serviceIngress?: PluginTaskEnvelope['service_ingress'];
 }): PluginTaskEnvelope {
   const auth = args.authorization;
@@ -678,6 +685,11 @@ export function buildContinuityEnvelope(args: {
     // stays silent rather than claiming a version it does not know.
     ...(auth.priorVersion !== undefined && auth.priorVersion !== ''
       ? { prior_version: auth.priorVersion }
+      : {}),
+    // §9.13 — the order this continuation belongs to, so the claim guard can
+    // check it is still live rather than trusting the lane alone.
+    ...(args.continuityOrderId !== undefined && args.continuityOrderId !== ''
+      ? { continuity_order_id: args.continuityOrderId }
       : {}),
     approved_scope_hash: auth.approvedScopeHash,
     schema_snapshot: resultSchema ?? null,

@@ -155,6 +155,8 @@ export interface CommerceOrderRefRepository {
   countReservedByServingManifest(servingManifestCid: string): number;
   /** §9.13 — orders this manifest still has WORK for; see the SQLite impl. */
   countUnfinishedByServingManifest(servingManifestCid: string, nowMs: number): number;
+  /** §9.13 — the same predicate for ONE order, for continuity claim binding. */
+  isUnfinished(buyerDid: string, purchaseOrderId: string, nowMs: number): boolean;
   /**
    * Non-terminal count for orders served by ONE install (§16.4).
    *
@@ -409,6 +411,37 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
     return Number(rows[0]?.n ?? 0);
   }
 
+  /**
+   * Is THIS ONE order still unfinished? (§9.13 continuity claim binding.)
+   *
+   * The same predicate as the count above, narrowed to one row. Deliberately
+   * the same SQL shape rather than a fresh reading of "unfinished": two
+   * spellings would eventually disagree, and the pair that disagreed would be
+   * the release sweep and the claim guard — a lane released while a claim
+   * still believes the order is live, or the reverse.
+   */
+  isUnfinished(buyerDid: string, purchaseOrderId: string, nowMs: number): boolean {
+    const rows = this.db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM commerce_order_refs r
+        LEFT JOIN commerce_status_heads h
+          ON h.buyer_did = r.buyer_did AND h.purchase_order_id = r.purchase_order_id
+        WHERE r.buyer_did = ? AND r.purchase_order_id = ?
+          AND (
+            r.state = 'reserved'
+            OR h.state IS NULL
+            OR (
+              h.state NOT IN ('rejected', 'cancelled', 'disputed', 'delivered')
+            )
+            OR (
+              h.state = 'delivered'
+              AND (h.dispute_window_ends_at IS NULL OR h.dispute_window_ends_at > ?)
+            )
+          )`,
+      [buyerDid, purchaseOrderId, nowMs],
+    );
+    return Number(rows[0]?.n ?? 0) > 0;
+  }
+
   countReservedByServingInstall(installId: string): number {
     const rows = this.db.query<{ n: number }>(
       `SELECT COUNT(*) AS n FROM commerce_order_refs
@@ -538,6 +571,16 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
   countUnfinishedByServingManifest(servingManifestCid: string): number {
     return [...this.byOrderId.values()].filter((r) => r.servingManifestCid === servingManifestCid)
       .length;
+  }
+
+  /**
+   * The double's over-count, narrowed to one order: a row that EXISTS is
+   * unfinished. Same direction as the count above — this double has no status
+   * heads to join, so it errs toward "still open", which refuses a claim
+   * rather than admitting one.
+   */
+  isUnfinished(buyerDid: string, purchaseOrderId: string): boolean {
+    return this.byOrderId.has(this.orderKey(buyerDid, purchaseOrderId));
   }
 
   countReservedByServingInstall(installId: string): number {
