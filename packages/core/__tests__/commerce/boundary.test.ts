@@ -115,6 +115,11 @@ describe('commerce aggregate boundary', () => {
     const ALLOWED = new Set([
       // The rehydration module IS the safe reader.
       'rehydrate.ts',
+      // And so is the archive preflight, for the same reason rather than as
+      // an exception to it: the rule forbids reading a stored record WITHOUT
+      // re-deriving its digest, and re-deriving every receipt's digest is
+      // the entire purpose of the function that parses there.
+      'archive_preflight.ts',
       // Evidence and census are metadata about records, not records: they
       // carry no digest to re-derive, and both read as empty on failure.
       'receipt_evidence.ts',

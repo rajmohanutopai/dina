@@ -19,14 +19,43 @@ import {
   type CommerceArchiveTables,
 } from '../../src/commerce/archive_preflight';
 
-const DIGEST_A = 'a'.repeat(64);
-const DIGEST_B = 'b'.repeat(64);
+import { commerceRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
+import { sha256 } from '@noble/hashes/sha2.js';
+
+const hash: Sha256Fn = (data) => sha256(data);
+
 const BUYER = 'did:plc:buyer';
+
+/**
+ * A REAL receipt: a record, and the digest that record actually produces.
+ *
+ * The fixture used to file an invented digest under the domain
+ * `order_status`, which is not in the vocabulary at all — so it described a
+ * receipt no node could ever have written, and the suite validated an archive
+ * shape production never emits. Receipts are what every cross-table check is
+ * measured against, so a fake one made every other assertion in this file
+ * agree with a lie.
+ */
+function receipt(domain: 'status' | 'order', record: Record<string, unknown>) {
+  const digestField = domain === 'status' ? 'status_digest' : 'order_digest';
+  const full = { ...record, [digestField]: '' };
+  const digest = commerceRecordDigest(domain, full, hash);
+  return {
+    record_digest: digest,
+    domain,
+    record_json: JSON.stringify({ ...record, [digestField]: digest }),
+  };
+}
+
+const STATUS_RECEIPT = receipt('status', { purchase_order_id: 'po-1', state: 'accepted' });
+const ORDER_RECEIPT = receipt('order', { purchase_order_id: 'po-1', buyer_did: BUYER });
+const DIGEST_A = STATUS_RECEIPT.record_digest;
+const DIGEST_B = ORDER_RECEIPT.record_digest;
 
 /** A small archive that is internally coherent — the baseline every case bends. */
 function coherent(): CommerceArchiveTables {
   return {
-    commerce_receipts: [{ record_digest: DIGEST_A, domain: 'order_status' }],
+    commerce_receipts: [STATUS_RECEIPT, ORDER_RECEIPT],
     commerce_order_refs: [
       {
         buyer_did: BUYER,
@@ -267,10 +296,110 @@ describe('row shapes', () => {
     // The check owns referential integrity, not the schema. An extra column is
     // caught by restoreTable, which fails closed on any non-schema name.
     const tables = coherent();
+    // An extra column on a receipt that is otherwise REAL. The old fixture
+    // used an invented digest under a domain outside the vocabulary, so it
+    // asserted "extra columns are ignored" against a row that would now be
+    // refused for a different and correct reason — the assertion would have
+    // gone on passing for the wrong one.
     tables.commerce_receipts = [
-      { record_digest: DIGEST_A, domain: 'order_status', something_else: 1 } as never,
+      { ...STATUS_RECEIPT, something_else: 1 } as never,
+      ORDER_RECEIPT,
     ];
     expect(preflightCommerceArchive(tables).ok).toBe(true);
+  });
+});
+
+describe('forged receipts (§16.2 — the archive is attacker-influenced)', () => {
+  // WHY THIS MATTERS MORE THAN THE STRUCTURAL CHECKS. Everything else here
+  // asks whether the archive agrees with ITSELF, and a self-authored archive
+  // agrees with itself perfectly. Receipts are the yardstick every other
+  // table is measured against, so a forged receipt is not one bad row — it
+  // is a corrupted measure that makes all the other checks pass.
+
+  it('refuses a record that does not hash to the digest it is filed under', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [
+      // The digest of a real status receipt, over a record claiming a
+      // DIFFERENT state. Structurally flawless; cryptographically a lie.
+      {
+        ...STATUS_RECEIPT,
+        record_json: JSON.stringify({
+          purchase_order_id: 'po-1',
+          state: 'delivered',
+          status_digest: STATUS_RECEIPT.record_digest,
+        }),
+      },
+      ORDER_RECEIPT,
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings).toContainEqual(
+      expect.objectContaining({ refusal: 'forged_receipt', table: 'commerce_receipts' }),
+    );
+  });
+
+  it('refuses a receipt filed under a domain with no digest rule', () => {
+    // Cannot-derive is a refusal. Admitting it would make "verified" mean
+    // "verified, or filed under a domain someone invented".
+    const tables = coherent();
+    tables.commerce_receipts = [
+      { ...STATUS_RECEIPT, domain: 'order_status' },
+      ORDER_RECEIPT,
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings).toContainEqual(
+      expect.objectContaining({ refusal: 'forged_receipt' }),
+    );
+  });
+
+  it('refuses a receipt carrying no record at all', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [
+      { record_digest: STATUS_RECEIPT.record_digest, domain: 'status' },
+      ORDER_RECEIPT,
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings).toContainEqual(
+      expect.objectContaining({ refusal: 'forged_receipt' }),
+    );
+  });
+
+  it('refuses a record_json that is not JSON', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [{ ...STATUS_RECEIPT, record_json: 'not json' }, ORDER_RECEIPT];
+    expect(preflightCommerceArchive(tables).ok).toBe(false);
+  });
+
+  it('a forged receipt stops counting as a receipt, so what named it now dangles', () => {
+    // The consequence worth pinning. A forged row is not merely reported —
+    // it is EXCLUDED from the set every cross-reference resolves against, so
+    // the status head that named it is reported dangling too.
+    //
+    // I first wrote this expecting the opposite: that the tampered receipt
+    // keeps its digest and therefore still satisfies its referrers, leaving
+    // the forgery as the only finding. The code is right and the expectation
+    // was wrong. Admitting a forged row as a valid reference target would
+    // make the structural checks pass against a record nobody signed, which
+    // is precisely the yardstick problem this check exists to remove.
+    const tables = coherent();
+    tables.commerce_receipts = [
+      {
+        ...STATUS_RECEIPT,
+        record_json: JSON.stringify({
+          purchase_order_id: 'po-1',
+          state: 'cancelled',
+          status_digest: STATUS_RECEIPT.record_digest,
+        }),
+      },
+      ORDER_RECEIPT,
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.findings.map((f) => f.refusal)).toEqual([
+      'forged_receipt',
+      'dangling_receipt_reference',
+    ]);
   });
 });
 

@@ -33,6 +33,8 @@ import {
   type ArchiveDataSource,
   type ArchivePersonaSource,
 } from '../../src/export/archive';
+import { commerceRecordDigest } from '@dina/commerce-protocol';
+
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -196,6 +198,20 @@ const MANIFEST_DIGESTS = computePluginDigests(
   sha256,
 );
 const VALID_CAP_HASHES_JSON = JSON.stringify(MANIFEST_DIGESTS.perCapability);
+
+/**
+ * A REAL status receipt: a record and the digest that record produces.
+ *
+ * The round-trip used to insert `'c'.repeat(64)` with `record_json: '{}'`,
+ * which the import preflight now refuses as forged — correctly, since no node
+ * could have written it. A round-trip fixture has to carry what a node would
+ * actually have stored, or it proves the pipe rather than the contents.
+ */
+const STATUS_RECEIPT = (() => {
+  const base = { purchase_order_id: 'po-1', state: 'accepted', status_digest: '' };
+  const digest = commerceRecordDigest('status', base, (data) => sha256(data));
+  return { digest, recordJson: JSON.stringify({ ...base, status_digest: digest }) };
+})();
 
 describe('real export → clean-install import', () => {
   it('restores identity + multi-persona rows, excluding secrets', async () => {
@@ -1280,12 +1296,21 @@ describe('commerce restore fence marker (§16.2)', () => {
       src.id.execute(
         `INSERT INTO commerce_receipts (record_digest, domain, buyer_did, quote_id, purchase_order_id, record_json, evidence_json, created_at)
          VALUES (?,?,?,?,?,?,?,?)`,
-        ['c'.repeat(64), 'status', 'did:plc:buyer', 'q-1', 'po-1', '{}', '{}', 1],
+        [
+          STATUS_RECEIPT.digest,
+          'status',
+          'did:plc:buyer',
+          'q-1',
+          'po-1',
+          STATUS_RECEIPT.recordJson,
+          '{}',
+          1,
+        ],
       );
       src.id.execute(
         `INSERT INTO commerce_status_heads (buyer_did, purchase_order_id, head_digest, head_sequence, state, supplier_epoch, updated_at)
          VALUES (?,?,?,?,?,?,?)`,
-        ['did:plc:buyer', 'po-1', 'c'.repeat(64), '0', 'accepted', '1', 1],
+        ['did:plc:buyer', 'po-1', STATUS_RECEIPT.digest, '0', 'accepted', '1', 1],
       );
       // The row whose column name the preflight got wrong.
       src.id.execute(

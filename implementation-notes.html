@@ -7005,6 +7005,50 @@
       not counted as done.
     </p>
 
+    <h2>X-08 — the archive preflight measured everything against an unverified yardstick</h2>
+    <p>
+      The structural half of §16.2's fail-closed reconstruction was already there and runs before
+      a single row is written: required tables present, row shapes sound, no dangling order/quote/
+      receipt references, no duplicate keys, and the whole import refused rather than partially
+      applied. What it did not do was ask whether the receipts were <em>real</em>.
+    </p>
+    <p>
+      <strong>Why that is the load-bearing gap.</strong> Every other check asks whether the archive
+      agrees with itself — and a self-authored archive agrees with itself perfectly.
+      <code>archive.ts</code> already states the payload is attacker-influenced. Receipts are what
+      the order refs, quote heads and status heads are all measured against, so a forged receipt is
+      not one bad row: it is a corrupted measure that makes every other check pass.
+    </p>
+    <p>
+      <strong>The fix.</strong> Each receipt's stored record is re-derived under its own domain and
+      must produce the digest it is filed under. <code>restore_fence_event</code> — the one domain
+      with no digest field of its own — is filed under the EPOCH record's digest and stores
+      <code>{record, voidedQuotes}</code>, so it is verified as an epoch record read out of that
+      envelope. Skipping it would have left the one receipt kind a restore itself writes as the
+      unchecked way in. A domain with no digest rule is refused: cannot-derive has to mean no,
+      or "verified" would mean "verified, or filed under a domain someone invented".
+    </p>
+    <p>
+      <strong>A forged row stops counting as a receipt.</strong> It is excluded from the set the
+      cross-references resolve against, so whatever named it is reported dangling too. I wrote the
+      test expecting the opposite and the code was right — admitting a forged row as a valid
+      reference target would let the structural checks pass against a record nobody signed, which
+      is the exact problem this removes.
+    </p>
+    <p>
+      <strong>Two fixtures were unrepresentative and are now real.</strong> The preflight suite
+      filed an invented digest under the domain <code>order_status</code>, which is not in the
+      vocabulary at all — so it validated an archive shape production cannot emit. The export
+      round-trip inserted <code>'c'.repeat(64)</code> with <code>record_json: '{}'</code>. Both now
+      carry a record and the digest that record actually produces.
+    </p>
+    <p>
+      <strong>Still open on this row.</strong> Force-restore CLEARS a commerce table the archive did
+      not supply, which is data loss on a partial archive rather than a forgery. The preflight
+      refuses a missing table outright, so the reachable case is narrow, but the clearing behaviour
+      itself is untouched. Not done, and not counted as done.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner
