@@ -7160,6 +7160,60 @@
       never saw the evidence.
     </p>
 
+    <h2>ARCH-3 — the cast was in the wrong place, and my first fix did nothing</h2>
+    <p>
+      Three wire bugs shipped through the record builders: a camelCase key in the draft, and an
+      <code>as CommerceOrderStatus</code> / <code>as OrderAcknowledgement</code> on the way out
+      telling tsc to accept the result anyway. The success criterion for this row is concrete —
+      reintroducing a camelCase key in any wire-record builder must fail tsc — so I checked it
+      rather than assumed it.
+    </p>
+    <p>
+      <strong>My first fix failed that check, and the failure is the useful part.</strong> I
+      removed the trailing cast and annotated the RESULT. Then I injected
+      <code>supplierOrderId</code> into the draft and tsc stayed silent. Two rules combine to
+      allow it: an object literal with no type annotation gets no excess-property check, and a
+      SPREAD is never excess-property checked. So the stray key rode through the unannotated draft
+      and then through the spread into the typed result, untouched. Annotating the result is
+      exactly the wrong end.
+    </p>
+    <p>
+      The fix is to annotate the DRAFT —
+      <code>Omit&lt;CommerceOrderStatus, 'status_digest'&gt;</code> and its two siblings — so the
+      key is checked on the line that writes it. Re-injected, all three builders now fail with the
+      right message: <em>"'supplierOrderId' does not exist … Did you mean to write
+      'supplier_order_id'?"</em>
+    </p>
+    <p>
+      <strong>One subtlety worth recording.</strong> <code>OrderAcknowledgement</code> is a
+      discriminated union, and <code>Omit</code> distributes across it by keeping only the fields
+      every member shares — so <code>reason_code</code> vanished and the literal was checked
+      against the wrong shape. The annotation extracts the variant the builder actually emits
+      (<code>Extract&lt;…, { kind: 'rejected' }&gt;</code>) instead.
+    </p>
+    <p>
+      Also in this row: <code>loadHeadStatus</code> now reads through <code>rehydrateOrderStatus</code>
+      rather than a local parse-and-cast. The checks were equivalent, but written twice — and a
+      second copy of a rule is a place for the two to drift.
+    </p>
+    <p>
+      <strong>And a defect that had already been fixed differently.</strong> The row says
+      <code>decisionOutcome</code> has no default arm. It has one, and every caller reaches it
+      through a validator that enforces the closed kind set — so the arm is unreachable. It was
+      answering <code>received_unresolved</code>, which tells a buyer to keep polling a record
+      that can never resolve: an impossible state dressed as a business outcome. It now delegates
+      to a <code>never</code>-typed helper, so the compiler proves the three cases cover the union
+      and adding a fourth kind without a case fails the build.
+    </p>
+    <p>
+      <strong>Not done, and not counted.</strong> The row asks for three explicit layers at the
+      seam (structural validation, signature/identity verification, domain construction) as a
+      named structure. What exists is those three things happening in that order at each seam,
+      enforced by the boundary test and now by the draft annotations, rather than a shared
+      abstraction. Eight <code>as</code>-casts remain outside the builders; each is a narrowing
+      after a validator has run, which is the safe form, but I have not audited every one.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner

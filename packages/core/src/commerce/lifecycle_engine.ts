@@ -51,7 +51,11 @@ import { ackIdSuffix } from './admission';
 import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
 import { signedHere } from './receipt_evidence';
-import { rehydrateAcknowledgement, rehydratePurchaseOrder } from './rehydrate';
+import {
+  rehydrateAcknowledgement,
+  rehydrateOrderStatus,
+  rehydratePurchaseOrder,
+} from './rehydrate';
 import {
   selectFencePredecessor,
   type ChainRefusal,
@@ -82,6 +86,16 @@ const CHAIN_ERROR: Record<ChainRefusal, string> = {
     'fence: presented receipts do not form one unbroken chain from the head (§16.2)',
   cas_lost: 'status: CAS at signing — concurrent successor won (§9.11)',
 };
+
+/**
+ * Compile-time proof that a switch covered its union, with a runtime throw
+ * for the corrupt-store case the type system cannot see.
+ */
+function exhaustiveDecision(value: never): never {
+  throw new CommerceIntegrityError(
+    `stored acknowledgement carries an unrecognised kind: ${JSON.stringify(value)}`,
+  );
+}
 
 /** Prefer the aggregate's precise detail; fall back to the refusal name. */
 function chainError(outcome: { refusal: ChainRefusal; detail?: string }): string {
@@ -1299,10 +1313,19 @@ export class CommerceLifecycleEngine {
       case 'counterproposal':
         return { outcome: 'received_countered', acknowledgement };
       default:
-        return {
-          outcome: 'received_unresolved',
-          retry_after_seconds: this.deps.unresolvedRetryAfterSeconds ?? 300,
-        };
+        // UNREACHABLE, and now provably so — `acknowledgement` narrows to
+        // `never` here, which is the compiler stating that the three arms
+        // above cover the union. Assigning it to a `never` binding keeps that
+        // true: adding a fourth acknowledgement kind without a case makes
+        // THIS LINE fail tsc rather than silently falling through.
+        //
+        // The arm used to answer `received_unresolved`, which tells a buyer
+        // to keep polling a record that can never resolve — an impossible
+        // state dressed as a business outcome. Every caller arrives through
+        // `rehydrateAcknowledgement`, which validates the closed kind set
+        // before returning, so a fourth value would mean a corrupt row rather
+        // than an unusual question.
+        return exhaustiveDecision(acknowledgement);
     }
   }
 
@@ -1338,15 +1361,17 @@ export class CommerceLifecycleEngine {
     if (!receipt) {
       return { error: `status: ${why} receipt missing — store integrity failure (§9.11)` };
     }
-    let record: CommerceOrderStatus;
-    try {
-      record = JSON.parse(receipt.recordJson) as CommerceOrderStatus;
-    } catch {
-      return { error: `status: ${why} receipt is unreadable — store integrity failure (§9.11)` };
-    }
-    if (validateCommerceOrderStatus(record, hash) !== null || record.status_digest !== headDigest) {
+    // Through the ONE safe reader, not a local parse-and-cast. The checks were
+    // equivalent — parse, validate, compare the digest — but written a second
+    // time, and a second copy of a rule is a place for the two to diverge.
+    // `rehydrateOrderStatus` also collapses "unreadable" and "does not match"
+    // into one refusal, which is right: both mean this node cannot know the
+    // state it is about to extend.
+    const read = rehydrateOrderStatus(receipt.recordJson, headDigest, hash);
+    if (!read.ok) {
       return { error: `status: ${why} receipt does not match the head (§9.11)` };
     }
+    const record = read.value;
     if (
       record.purchase_order_id !== purchaseOrderId ||
       record.buyer_did !== buyerDid ||
@@ -1365,7 +1390,13 @@ export class CommerceLifecycleEngine {
     fields: StatusFields,
     pinnedVersion: string,
   ): CommerceOrderStatus {
-    const draft = {
+    // ANNOTATED, and that is the whole point. An unannotated literal gets no
+    // excess-property check, and a spread never gets one — so with `draft`
+    // untyped a camelCase wire key rode through both this literal and the
+    // typed result below. Annotating the DRAFT is what makes a misspelt or
+    // wrong-cased key fail tsc on the line that writes it, which is the
+    // check the three shipped wire bugs went around.
+    const draft: Omit<CommerceOrderStatus, 'status_digest'> = {
       // §9.13 — the conversation's version, not this build's. A supplier
       // that has upgraded must still speak to an in-flight order in the
       // language it was opened in.
@@ -1375,14 +1406,18 @@ export class CommerceLifecycleEngine {
       supplier_did: this.deps.supplierDid(),
       ...fields,
     };
-    return {
+    // No `as CommerceOrderStatus` on the way out either. The cast that used
+    // to sit here told tsc to accept whatever the spread produced, so even a
+    // typed draft would not have been checked against the result.
+    const status: CommerceOrderStatus = {
       ...draft,
       status_digest: commerceRecordDigest(
         'status',
         draft as unknown as Record<string, unknown>,
         hash,
       ),
-    } as CommerceOrderStatus;
+    };
+    return status;
   }
 
   private persistStatus(status: CommerceOrderStatus, quoteId: string, nowMs: number): void {
@@ -1845,7 +1880,20 @@ export class CommerceLifecycleEngine {
     ref: { orderDigest: string; pinnedVersion: string },
     nowMs: number,
   ): OrderAcknowledgement | null {
-    const draft = {
+    // Annotated for the reason `buildStatus` is: an unannotated literal is
+    // not excess-property checked, and the `as OrderAcknowledgement` below
+    // used to accept whatever came out of it. Both acknowledgement builders
+    // shipped a camelCase key this way.
+    //
+    // EXTRACTED TO THE VARIANT, not `Omit` over the union. The type is
+    // discriminated, and `Omit` distributes across it by keeping only the
+    // fields every member shares — so `reason_code` would vanish and this
+    // literal would be checked against the wrong shape. This builder always
+    // emits a rejection, so it says so.
+    const draft: Omit<
+      Extract<OrderAcknowledgement, { kind: 'rejected' }>,
+      'acknowledgement_digest'
+    > = {
       protocol_version: ref.pinnedVersion,
       // SAME bounded helper as the admission path. This construction site
       // kept `ack:${purchase_order_id}` after the first was fixed: a legal
@@ -1863,14 +1911,14 @@ export class CommerceLifecycleEngine {
       kind: 'rejected' as const,
       reason_code: 'cancelled_by_buyer',
     };
-    const acknowledgement = {
+    const acknowledgement: OrderAcknowledgement = {
       ...draft,
       acknowledgement_digest: commerceRecordDigest(
         'acknowledgement',
         draft as unknown as Record<string, unknown>,
         hash,
       ),
-    } as OrderAcknowledgement;
+    };
     return validateOrderAcknowledgement(acknowledgement, hash) === null ? acknowledgement : null;
   }
 
@@ -1960,7 +2008,7 @@ export class CommerceLifecycleEngine {
     nowMs: number,
     pinnedVersion: string,
   ): CancellationResult | { error: string } {
-    const draft = {
+    const draft: Omit<CancellationResult, 'result_digest'> = {
       protocol_version: pinnedVersion,
       cancellation_id: cancellation.cancellation_id,
       purchase_order_id: cancellation.purchase_order_id,
@@ -1972,14 +2020,14 @@ export class CommerceLifecycleEngine {
           } satisfies Partial<CancellationResult>)
         : {}),
     };
-    const result = {
+    const result: CancellationResult = {
       ...draft,
       result_digest: commerceRecordDigest(
         'result',
         draft as unknown as Record<string, unknown>,
         hash,
       ),
-    } as CancellationResult;
+    };
     // VALIDATE BEFORE THE WRITE, and refuse rather than record.
     //
     // This function used to write whatever it was handed. That mattered
