@@ -69,6 +69,9 @@ import {
   startCommerceSweepers,
   type CommerceSweepers,
   getWorkflowService,
+  defaultPluginCompletionHandler,
+  getPluginHostRuntime,
+  getPluginInstallRepository,
   registerService,
   tier0TxRunner,
   SQLiteWorkflowRepository,
@@ -533,7 +536,34 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       identityDBForWorkflow = result.identityDB;
       const localWorkflowRepository = new SQLiteWorkflowRepository(result.identityDB);
       setWorkflowRepository(localWorkflowRepository);
-      localWorkflowService = new WorkflowService({ repository: localWorkflowRepository });
+      localWorkflowService = new WorkflowService({
+        // §3.4 — the host-operation lane, on the DEGRADED-mode service too.
+        //
+        // `wireWorkflowPlane` installs this handler and replaces the service
+        // below, so on a fully-booted node the omission here was invisible.
+        // But between this line and that one the service is live, and a
+        // completion carrying a host-operation proposal took the ordinary
+        // path: recorded as a successful result, no broker, no permit, no
+        // effect — and nothing in the record to distinguish it from a
+        // genuine answer. A runner that reached this window would have
+        // "asked" for an effect and been told it succeeded.
+        //
+        // Every dependency below is a GETTER, so this handler is correct in
+        // degraded mode without knowing it is in one: with no host-operation
+        // plane installed it reports loudly and brokers nothing, which is the
+        // honest answer rather than the silent one.
+        pluginCompletionHandler: defaultPluginCompletionHandler({
+          hostRuntime: () => getPluginHostRuntime(),
+          installs: () => getPluginInstallRepository(),
+          workflow: () => getWorkflowService(),
+          onError: (err: unknown) =>
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'plugin host-operation proposal could not be brokered',
+            ),
+        }),
+        repository: localWorkflowRepository,
+      });
       setWorkflowService(localWorkflowService);
       localTaskExpiry = new TaskExpirySweeper({
         repository: localWorkflowRepository,
