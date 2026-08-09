@@ -6976,13 +6976,33 @@
       The type change also flushed out every hand-seeded drain row in the suite, which is the
       point — each now has to state which kind it authorized.
     </p>
+    <h3>And the major check, which both sides already had the facts for</h3>
     <p>
-      <strong>Still open on this row.</strong> §9.13 also asks that a continuity claim be bound to
-      a specific non-terminal order at the authorized prior major. The prior major is already on
-      the row (<code>priorVersion</code>) and the envelope carries <code>prior_version</code>, so
-      that check is cheap; the order binding needs the envelope to name the order it continues,
-      which today it does only inside <code>params</code>. I have not done either yet and am not
-      counting them as done.
+      <code>buildContinuityEnvelope</code> stamps <code>prior_version</code> from the row; the row
+      records <code>priorVersion</code> from the manifest the install stopped running. Nothing
+      compared them. A lane retained to serve major 0 admitted an envelope declaring major 2, and
+      the runner would answer the buyer under a contract their order was never opened under.
+    </p>
+    <p>
+      <strong>The check applies to continuity entries only, and the asymmetry is the design.</strong>
+      A <code>drain</code> entry covers work that ALREADY EXISTED at the rebind: those envelopes
+      came from the ordinary builder, which does not stamp the field. Requiring one there would
+      terminalize exactly the in-flight tasks a drain exists to let finish. A continuity task is
+      created AFTER the rebind by a builder that always stamps it, so there the field's absence is
+      a fact about the envelope rather than about when it was made — and it is refused.
+      Compared by MAJOR, since §9.13 retains a lane per major and makes minors additive.
+    </p>
+    <p>
+      Writing this exposed that the existing fixture built continuity-lane tasks with
+      <code>buildPluginEnvelope</code>, which production never does for that lane — so the suite
+      had been exercising the drain lane's rules while claiming to test continuity. The fixture now
+      stamps the field the way the real builder does.
+    </p>
+    <p>
+      <strong>Still open on this row.</strong> Binding a continuity claim to a specific
+      NON-TERMINAL ORDER. The envelope does not name the order it continues except inside
+      <code>params</code>, so the check needs a field the wire does not carry yet. Not done, and
+      not counted as done.
     </p>
 
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>

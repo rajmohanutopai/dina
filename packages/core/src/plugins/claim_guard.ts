@@ -37,6 +37,7 @@ import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
 import { getDrainAuthorizationRepository } from './drain_authorizations';
 import { getPluginGrantRepository, invocationDigest } from './grants';
+import { protocolMajorOf } from './update_rebind';
 import { validateAgainstSchema } from './schema_validate';
 
 import type { PluginInstall } from './registry';
@@ -61,6 +62,23 @@ export interface PluginClaimResult {
  * the claim's own claim_id CAS) and keep drawing until a valid task,
  * an empty lane, or the drain bound.
  */
+/**
+ * Does the envelope's declared prior major match the row's?
+ *
+ * Both sides may be SILENT, and silence has to agree with silence. A row
+ * written before `prior_version` existed records an empty string, and
+ * `buildContinuityEnvelope` omits the field when the row has none — so
+ * "neither says" is a legitimate pairing and stays admissible, which keeps
+ * pre-existing lanes working. What is refused is a DISAGREEMENT, including
+ * one side claiming a version while the other cannot.
+ */
+function majorsAgree(rowVersion: string, envelopeVersion: string | undefined): boolean {
+  const rowMajor = rowVersion === '' ? '' : protocolMajorOf(rowVersion);
+  const envelopeMajor =
+    envelopeVersion === undefined || envelopeVersion === '' ? '' : protocolMajorOf(envelopeVersion);
+  return rowMajor === envelopeMajor;
+}
+
 export function claimPluginTask(args: {
   repo: WorkflowRepository;
   install: PluginInstall;
@@ -163,6 +181,31 @@ export function claimPluginTask(args: {
       // refusal: the alternative is admitting an envelope onto a consent no
       // row can show covered it.
       if (!entry.authorizedKinds.includes(requiredKind)) return false;
+      // §9.13 — WHICH MAJOR this continuation speaks must be the one the row
+      // authorized. Both sides already carried the fact and nothing compared
+      // them: `buildContinuityEnvelope` stamps `prior_version` from the row,
+      // and the row records `priorVersion` from the manifest the install
+      // stopped running. Unchecked, a lane retained for major 1 admitted an
+      // envelope claiming major 2, and the runner would answer the buyer
+      // under a contract their order was never opened under.
+      //
+      // CONTINUITY ONLY, and the asymmetry is the point. A `drain` entry
+      // covers work that ALREADY EXISTED at the rebind: those envelopes were
+      // built by the ordinary builder under the prior manifest and carry no
+      // `prior_version` at all, so requiring one would terminalize exactly
+      // the in-flight tasks a drain exists to let finish. A continuity task
+      // is created AFTER the rebind by a builder that always stamps it, so
+      // there the field's absence is a fact about the envelope rather than
+      // about when it was made.
+      //
+      // Compared by MAJOR, not by exact version: §9.13 retains a lane per
+      // major, and a minor is additive by the same section's own rule.
+      if (
+        entry.kind === 'lifecycle_continuity' &&
+        !majorsAgree(entry.priorVersion, envelope.prior_version)
+      ) {
+        return false;
+      }
       // 'drain' covers only tasks that existed at the rebind moment;
       // 'lifecycle_continuity' also admits newly created tasks.
       return entry.kind === 'lifecycle_continuity' || task.created_at < entry.createdAt;

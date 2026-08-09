@@ -443,7 +443,7 @@ const LIFECYCLE_CAPABILITIES: ReadonlySet<string> = new Set([
 ]);
 
 /** `MAJOR` of a `MAJOR.MINOR[.PATCH]` version string; the whole string if unparseable. */
-function protocolMajorOf(version: string): string {
+export function protocolMajorOf(version: string): string {
   return version.split('.')[0] ?? version;
 }
 

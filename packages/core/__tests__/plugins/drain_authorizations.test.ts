@@ -188,8 +188,8 @@ describe('claim guard drain lane (§9.13)', () => {
    * claim guard requires: present means the envelope needs a `provider`
    * consent, absent means `tool`.
    */
-  function enqueuePriorCidTask(taskId: string, asTool = false): void {
-    const envelope = buildPluginEnvelope({
+  function enqueuePriorCidTask(taskId: string, asTool = false, priorVersion = '0.1.0'): void {
+    const built = buildPluginEnvelope({
       install: priorInstall,
       capabilityId: CAP,
       params: { purchaseOrderId: 'po-1' },
@@ -207,6 +207,12 @@ describe('claim guard drain lane (§9.13)', () => {
             },
           }),
     });
+    // Stamped the way `buildContinuityEnvelope` stamps it in production, so
+    // the §9.13 major check has both sides to compare. `buildPluginEnvelope`
+    // does not carry the field — a continuity task in production is never
+    // built by it — so a fixture using it alone would exercise the drain
+    // lane's rules while claiming to test continuity.
+    const envelope = priorVersion === '' ? built : { ...built, prior_version: priorVersion };
     workflow.create({
       id: taskId,
       kind: 'delegation',
@@ -310,6 +316,54 @@ describe('claim guard drain lane (§9.13)', () => {
     const refused = claim(rebound());
     expect(refused.task).toBeNull();
     expect(refused.terminalized).toEqual(['t-kind-4']);
+  });
+
+  it('a continuity lane refuses an envelope claiming a DIFFERENT major (§9.13)', () => {
+    // Both sides already carried the fact and nothing compared them. A lane
+    // retained to serve major 0 admitted an envelope declaring major 2, and
+    // the runner would answer the buyer under a contract their order was
+    // never opened under.
+    enqueuePriorCidTask('t-major-1', false, '2.0.0');
+    drains.put(continuityEntry({ priorVersion: '0.1.0' }));
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-major-1']);
+  });
+
+  it('a continuity lane accepts a different MINOR of the authorized major', () => {
+    // §9.13 retains a lane per MAJOR and makes minors additive, so comparing
+    // exact versions would refuse work the spec says must flow.
+    enqueuePriorCidTask('t-major-2', false, '0.9.3');
+    drains.put(continuityEntry({ priorVersion: '0.1.0' }));
+    expect(claim(rebound()).task?.id).toBe('t-major-2');
+  });
+
+  it('a continuity lane refuses an envelope that declares no major at all', () => {
+    // Silence from an envelope a builder always stamps is a disagreement,
+    // not an absence.
+    enqueuePriorCidTask('t-major-3', false, '');
+    drains.put(continuityEntry({ priorVersion: '0.1.0' }));
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-major-3']);
+  });
+
+  it('a DRAIN lane still admits an in-flight envelope with no major (the asymmetry)', () => {
+    // The contrast that keeps the three above honest. A drain entry covers
+    // work that existed BEFORE the rebind: those envelopes came from the
+    // ordinary builder, which does not stamp `prior_version`. Requiring one
+    // would terminalize exactly the in-flight tasks a drain exists to let
+    // finish.
+    enqueuePriorCidTask('t-major-4', false, '');
+    drains.put(
+      continuityEntry({
+        kind: 'drain',
+        priorVersion: '0.1.0',
+        createdAt: T0 + 2000,
+        expiresAt: T0 + 60_000,
+      }),
+    );
+    expect(claim(rebound()).task?.id).toBe('t-major-4');
   });
 
   it('an expired drain entry no longer admits', () => {
