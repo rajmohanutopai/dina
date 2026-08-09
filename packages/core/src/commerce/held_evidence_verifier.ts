@@ -19,6 +19,7 @@
  * substituted without any chance of the binding checks going with it.
  */
 
+import { hexToBytes } from '@noble/hashes/utils.js';
 import { base64 } from '@scure/base';
 
 import { buildMessageJSON } from '@dina/protocol';
@@ -34,15 +35,6 @@ export interface HeldEvidenceCheck {
   signature: string;
   signerKeyId?: string;
   supplierDid: string;
-}
-
-function hexToBytes(hex: string): Uint8Array | null {
-  if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-f]+$/.test(hex)) return null;
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i += 1) {
-    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
 }
 
 /**
@@ -67,8 +59,11 @@ export function makeHeldEvidenceVerifier(
     try {
       const publicKey = resolvePublicKey(supplierDid);
       if (publicKey === null) return false;
+      // 128 hex chars checked BEFORE decoding, because `hexToBytes` throws on
+      // anything else and a throw here is indistinguishable from a real
+      // failure. Ed25519 signatures are exactly 64 bytes.
+      if (signature.length !== 128 || !/^[0-9a-f]+$/.test(signature)) return false;
       const signatureBytes = hexToBytes(signature);
-      if (signatureBytes === null || signatureBytes.length !== 64) return false;
       // Rebuilt through the SAME builder the send path signs with. A local
       // re-implementation of the field order would be a second copy of a
       // byte-exact rule, and the two would drift silently — the failure

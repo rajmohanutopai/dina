@@ -171,6 +171,9 @@ function isoNow(nowMs: number): string {
 type StatusFields = Partial<CommerceOrderStatus> &
   Pick<CommerceOrderStatus, 'sequence' | 'state' | 'supplier_epoch' | 'updated_at'>;
 
+/** Bound on the signed-body walk: far above any real response body. */
+const MAX_SIGNED_BODY_NODES = 10_000;
+
 /**
  * Does the signed body actually commit to this record?
  *
@@ -210,8 +213,6 @@ function signedBodyCommitsTo(body: string, digest: string): boolean {
   }
   return false;
 }
-
-const MAX_SIGNED_BODY_NODES = 10_000;
 
 export class CommerceLifecycleEngine {
   constructor(private readonly deps: LifecycleEngineDeps) {}

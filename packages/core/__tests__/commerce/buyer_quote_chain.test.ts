@@ -28,6 +28,11 @@ import {
   verifyInboundQuote,
   type BuyerQuoteIngest,
 } from '../../src/commerce/buyer_quotes';
+import {
+  applyInboundBuyerResponse,
+  REQUEST_QUOTE_CAPABILITY,
+} from '../../src/commerce/buyer_response';
+import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -70,6 +75,89 @@ function ingest(candidate: unknown, over: { supplierDid?: string; buyerDid?: str
     nowMs: NOW,
   });
 }
+
+describe('the production entry point (§9.8 wiring)', () => {
+  // EVERY OTHER CASE in this file calls `verifyInboundQuote` directly, which
+  // proves the rule and not the wiring. This one drives the seam a supplier's
+  // answer actually arrives through, because the dominant defect in this
+  // subsystem has been correct code that nothing calls: a fork check reachable
+  // only from its own tests would let a re-priced quote replace the one the
+  // buyer approved, silently, on every real node.
+  it('routes a request_quote response through the chain and detects a fork', () => {
+    installCommerceRuntime({
+      buyerQuotes: repository,
+      nodeDid: () => BUYER_DID,
+    } as unknown as CommerceRuntime);
+    try {
+      const response = (quoteBody: unknown) => ({
+        capability: REQUEST_QUOTE_CAPABILITY,
+        query_id: 'q-req-1',
+        status: 'success' as const,
+        result: { quote: quoteBody },
+      });
+
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: response(quote),
+          nowMs: NOW,
+        }),
+      ).toBe('applied');
+      expect(repository.chain(SUPPLIER_DID, quote.quote_id)).toHaveLength(1);
+
+      // The same revision again is not a fork — a supplier may resend.
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: response(quote),
+          nowMs: NOW,
+        }),
+      ).toBe('no_change');
+
+      // A DIFFERENT revision 1 for the same quote_id is the fork: two
+      // incompatible answers to one question, and the buyer must not silently
+      // adopt the second.
+      const rival = makeSignedQuote(makeQuoteRequest(), { valid_until: '2030-01-01T00:00:00Z' });
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: response({ ...rival, quote_id: quote.quote_id }),
+          nowMs: NOW,
+        }),
+      ).toBe('quote_fork');
+      expect(repository.chain(SUPPLIER_DID, quote.quote_id)).toHaveLength(1);
+    } finally {
+      installCommerceRuntime(null);
+    }
+  });
+
+  it('refuses a quote addressed to somebody else', () => {
+    // Audience binding, driven through the same seam. The node's OWN identity
+    // decides, never the quote's `buyer_did` field — that is the field the
+    // check exists to verify.
+    installCommerceRuntime({
+      buyerQuotes: repository,
+      nodeDid: () => 'did:plc:not-this-buyer',
+    } as unknown as CommerceRuntime);
+    try {
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: {
+            capability: REQUEST_QUOTE_CAPABILITY,
+            query_id: 'q-req-2',
+            status: 'success',
+            result: { quote },
+          },
+          nowMs: NOW,
+        }),
+      ).toBe('quote_fork');
+      expect(repository.chain(SUPPLIER_DID, quote.quote_id)).toHaveLength(0);
+    } finally {
+      installCommerceRuntime(null);
+    }
+  });
+});
 
 describe('opening a chain (§9.8)', () => {
   it('accepts revision 1 and records it', () => {

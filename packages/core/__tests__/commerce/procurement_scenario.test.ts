@@ -62,6 +62,7 @@ import {
   makeQuoteRequest,
   makeSignedQuote,
   makeHeldEvidence,
+  realHeldEvidenceVerifier,
 } from './helpers';
 
 import type { CommerceOrderStatus, OrderAcknowledgement } from '@dina/commerce-protocol';
@@ -135,7 +136,12 @@ describe.each([
       supplierDid: () => MANUFACTURER,
       now: () => clock.now,
       currentEpoch: () => epoch.value,
-      verifyHeldEvidence: () => true,
+      // The REAL verifier over the REAL test key, not `() => true`. This
+      // journey is the one place the whole §12.7 path runs end to end —
+      // ChairMaker loses the order, Sancho presents what he kept, ChairMaker
+      // re-adopts — and a stub here would let it pass with evidence no
+      // supplier could have checked.
+      verifyHeldEvidence: realHeldEvidenceVerifier,
     });
     // Acceptance and its status genesis commit together (§12.8) — the same
     // tie the composition root makes in production.
@@ -582,6 +588,112 @@ describe.each([
         state: 'preparing',
       });
       expect('status_digest' in preparing).toBe(true);
+    } finally {
+      restored.cleanup();
+      node = previous;
+    }
+  });
+
+  it('refuses a forged acknowledgement instead of re-adopting the order', () => {
+    // THE OTHER HALF of the journey above, and the reason that one means
+    // anything. Re-adoption must depend on the CRYPTOGRAPHY, not on the state
+    // machine being agreeable. So a dishonest buyer presents an
+    // acknowledgement ChairMaker never signed — right shape, right digests,
+    // wrong key — and must not be re-adopted.
+    //
+    // THE ANSWER IS AN ERROR, NOT `never_received`, and the difference
+    // matters. `never_received` is the one outcome that authorizes
+    // resubmitting the order, so answering it against evidence ChairMaker
+    // merely could not verify would invite the duplicate §16.2 exists to
+    // prevent. Once evidence is PRESENTED, the only safe answers are
+    // "verified, here is the decision" and "I cannot tell" — never
+    // "it never happened". If this test ever matches the one above, the
+    // verifier has stopped verifying.
+    const before = engines();
+    const quote = makeSignedQuote(request, { quote_id: 'q-chairs-forge' });
+    expect(before.admission.registerSignedQuote(quote)).toBeNull();
+    const order = makeOrder(quote, pricedProjection);
+    expect(before.admission.admitOrder(order, RETAILER)).toEqual({ kind: 'reserved' });
+    const decided = before.admission.decideOrder(RETAILER, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'CM-1002',
+    });
+    if (!('acknowledgement' in decided)) throw new Error('expected acceptance');
+    const heldAck = decided.acknowledgement;
+
+    const restored = makeNode();
+    const previous = node;
+    node = restored;
+    try {
+      const after = engines();
+      const request_ = {
+        protocol_version: '1.0',
+        purchase_order_id: order.purchase_order_id,
+        buyer_did: RETAILER,
+        supplier_did: MANUFACTURER,
+        order_digest: order.order_digest,
+        idempotency_key: order.idempotency_key,
+      };
+
+      // (a) signed by someone else.
+      const forged = after.lifecycle.reconcile(
+        {
+          ...request_,
+          held_acknowledgement: makeHeldEvidence(heldAck, {
+            from: MANUFACTURER,
+            to: [RETAILER],
+            signingKey: new Uint8Array(32).fill(3),
+          }),
+        },
+        RETAILER,
+      );
+      expect('error' in forged).toBe(true);
+      expect('outcome' in forged).toBe(false);
+
+      // (b) a real message, but addressed to a DIFFERENT buyer. One buyer
+      // must not be able to replay another's evidence.
+      const notYours = after.lifecycle.reconcile(
+        {
+          ...request_,
+          held_acknowledgement: makeHeldEvidence(heldAck, {
+            from: MANUFACTURER,
+            to: ['did:plc:someone-else'],
+          }),
+        },
+        RETAILER,
+      );
+      expect('error' in notYours).toBe(true);
+      expect('outcome' in notYours).toBe(false);
+
+      // (c) a real message from ChairMaker whose signed body says nothing
+      // about this acknowledgement. The signature verifies; the pairing is
+      // the lie, and the binding check is what catches it.
+      const unbound = after.lifecycle.reconcile(
+        {
+          ...request_,
+          held_acknowledgement: makeHeldEvidence(heldAck, {
+            from: MANUFACTURER,
+            to: [RETAILER],
+            body: '{"capability":"com.dinakernel.commerce.order_status","result":{}}',
+          }),
+        },
+        RETAILER,
+      );
+      expect('error' in unbound).toBe(true);
+      expect('outcome' in unbound).toBe(false);
+
+      // And the control: the SAME order, honestly evidenced, is re-adopted.
+      const honest = after.lifecycle.reconcile(
+        {
+          ...request_,
+          held_acknowledgement: makeHeldEvidence(heldAck, {
+            from: MANUFACTURER,
+            to: [RETAILER],
+          }),
+        },
+        RETAILER,
+      );
+      expect('outcome' in honest && honest.outcome).toBe('received_unresolved');
     } finally {
       restored.cleanup();
       node = previous;

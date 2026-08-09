@@ -6873,18 +6873,68 @@
       The signature is available where it is needed: <code>receive_pipeline.ts</code> verifies
       <code>signatureHex</code> before the buyer seam and just does not pass it on.
     </p>
+    <h3>Built. And the envelope reading needed one correction to be true.</h3>
     <p>
-      <strong>What that makes the fix:</strong> pass the verified envelope signature and id into
-      <code>applyInboundBuyerResponse</code>; persist it beside the acknowledgement and each status
-      record; build the real reader over those stores; wire a real verifier at both boots; and
-      correct the protocol comment so one field stops having two meanings. <strong>Not yet
-      done</strong> — I am recording it before building it because the contract choice is yours to
-      overrule, and building on the wrong reading would bake a wire assumption into two stores.
+      Building it exposed a hole in my own decision. An envelope signature is checkable only
+      against the envelope's <em>bytes</em>, and I had planned to retain
+      <code>{envelopeId, signature}</code> — an id and a signature, with the signed bytes thrown
+      away. No supplier could ever have verified that. It would have replaced one unverifiable
+      pair with another and looked wired the whole time.
     </p>
     <p>
-      <strong>Open question.</strong> Confirm the envelope reading, or say you want per-record
-      supplier signatures — the latter is more robust (evidence survives outside the transport that
-      carried it) and costs a protocol major.
+      <strong>So the buyer retains the message.</strong>
+      <code>HeldEvidence</code> now carries a <code>RetainedEnvelope</code> — the six fields the
+      D2D signature covers, in the shape the wire builder serialises: <code>id</code>,
+      <code>type</code>, <code>from</code>, <code>to</code> (array), <code>created_time</code>
+      (number), <code>body</code> (plaintext, pre-base64). The types are load-bearing: storing the
+      timestamp as a string emits <code>"created_time":"177…"</code> where the signature covers
+      <code>"created_time":177…</code>, and every verification fails for a reason no error message
+      would name.
+    </p>
+    <p>
+      <strong>The pairing is the new attack, so Core binds it.</strong>
+      <code>{record, envelope, signature}</code> invites presenting one message's genuine signature
+      beside another message's record. <code>verifyHeldRecord</code> checks, in compiled code:
+      the message came FROM this supplier; it went TO the buyer now presenting it; and the record's
+      content digest appears among the signed body's own string values (walked over the parsed
+      JSON, not substring-matched, so a digest inside an unrelated blob is not a match). The
+      record's own validator recomputes that digest from its content, so digest-in-signed-body means
+      the supplier put its name to a message carrying exactly this record. Only the cryptography is
+      delegated to the injected callback — a boot that implements it loosely cannot drop the
+      binding.
+    </p>
+    <p>
+      <strong>Both halves are built in Core</strong> (<code>makeHeldEvidenceReader</code>,
+      <code>makeHeldEvidenceVerifier</code>) and installed at both composition roots. The reader
+      being test-only for its whole existence is the argument: a defence each root must remember
+      to install is one a root eventually forgets, so there is now one implementation to be right
+      or wrong, phone and server alike.
+    </p>
+    <p>
+      <strong>Answer shape, worth knowing.</strong> Unverifiable evidence is refused
+      <em>non-disclosingly</em> — not answered <code>never_received</code>. That is stronger than
+      it first reads: <code>never_received</code> is the one outcome authorising a resubmission, so
+      once evidence is presented the only safe answers are "verified, here is the decision" and
+      "I cannot tell". "It never happened" is off the table.
+    </p>
+    <p>
+      <strong>What proves it.</strong> Seven unit cases drive the real verifier over a real keypair
+      (wrong key, genuine signature over other bytes, tampered body, unresolvable key, malformed
+      signature, and the honest control). The two-node journey — ChairMaker restores a backup from
+      before Sancho's order, Sancho presents what he kept, ChairMaker re-adopts — now runs the real
+      verifier rather than <code>() =&gt; true</code>. Its counterpart drives three forgeries
+      (wrong key, addressed to another buyer, signed body that does not carry the record) and
+      asserts none of them re-adopt. The commerce boundary test caught the stale
+      "not yet wired" annotation on its own.
+    </p>
+    <p>
+      <strong>Open question, narrowed.</strong> The envelope reading is now implemented, so this is
+      a question about what to do next rather than a blocker. Per-record supplier signatures remain
+      the more robust design — evidence would survive outside the transport that carried it, and a
+      buyer would not need to store message bodies — at the cost of a protocol major, a signing key
+      threaded into the commerce runtime (it has none today), and a signature field on three record
+      types plus their digest-exclusion rules. Say the word and I will do it; nothing built here
+      forecloses it.
     </p>
 
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
