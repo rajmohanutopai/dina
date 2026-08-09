@@ -354,3 +354,36 @@ describe('shape validation', () => {
     );
   });
 });
+
+describe('§9.13 forward compatibility: an additive field is tolerated AND committed', () => {
+  // The two halves have to hold together. Tolerating an unknown field
+  // without committing to it would let a supplier publish content the
+  // digest does not cover — a page that verifies while carrying whatever
+  // the producer chose to smuggle in. Committing without tolerating would
+  // break every consumer on the first additive minor.
+  it('accepts a page carrying a field this version does not know', () => {
+    const page = { ...makePage(), future_field: 'a later minor added this' };
+    expect(validateCatalogSnapshotPage(page)).toBeNull();
+  });
+
+  it('changes the page digest, so the unknown field is inside the commitment', () => {
+    const plain = makePage();
+    const extended = { ...plain, future_field: 'a later minor added this' };
+    const plainDigest = catalogPageDigest(plain, hash);
+    const extendedDigest = catalogPageDigest(extended as typeof plain, hash);
+    expect(extendedDigest).not.toEqual(plainDigest);
+
+    // And the digest is stable for the same content, so "different" above
+    // means the field, not nondeterminism.
+    expect(catalogPageDigest({ ...extended } as typeof plain, hash)).toEqual(extendedDigest);
+  });
+
+  it('does the same for a snapshot record', () => {
+    const plain = makeSnapshot([makePage()]);
+    const extended = { ...plain, future_field: 42 };
+    expect(validateCatalogSnapshot(extended)).toBeNull();
+    expect(catalogSnapshotDigest(extended as typeof plain, hash)).not.toEqual(
+      catalogSnapshotDigest(plain, hash),
+    );
+  });
+});

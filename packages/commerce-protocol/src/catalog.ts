@@ -2,9 +2,12 @@
  * Catalog item and product relationship claims (§9.4, §9.5).
  *
  * The catalog RECORD layer (pointer/snapshot publication, digest
- * root, CAS sequence — §10.2) is Phase 2 work and deliberately not
- * here; this module owns the ITEM and CLAIM canonical shapes the
- * §25.1 vectors pin. `attributes` is bounded so it cannot become an
+ * root, CAS sequence — §10.2) lives in `catalog_publication.ts`, not
+ * here. This module owns the ITEM and CLAIM canonical shapes the
+ * §25.1 vectors pin. (This note used to say the record layer was
+ * "Phase 2 work and deliberately not here", which stopped being true
+ * when WS-1.8 shipped it — a comment that would send its next reader
+ * off to build a second one.) `attributes` is bounded so it cannot become an
  * unbounded dump of supplier-controlled prompt text (§9.5); names
  * are labels, never identity; a relationship claim is a signed
  * ASSERTION, never an identity merge (§9.4).
