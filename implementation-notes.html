@@ -7214,6 +7214,43 @@
       after a validator has run, which is the safe form, but I have not audited every one.
     </p>
 
+    <h2>The consolidated test plan, and what it measured</h2>
+    <p>
+      <code>docs/COMMERCE_TEST_PLAN.md</code>. Built by reading the suites and the spec rather
+      than by recalling what was written, so the gaps in it are measured.
+    </p>
+    <p>
+      <strong>What the retailer/manufacturer coverage actually is:</strong> 47 journey cases
+      across five files, Sancho as retailer and ChairMaker as manufacturer throughout, all driving
+      the real engines. <code>procurement_scenario</code> runs the whole set twice — in-memory and
+      SQLite — so a rule that depends on storage semantics cannot pass in one and fail in the
+      other.
+    </p>
+    <p>
+      <strong>Threat-model coverage was measured by behaviour, not by section tags.</strong> A raw
+      §-reference diff claimed 53 uncovered sections, which is misleading: §4.x is vocabulary and
+      §3.x is ownership, neither testable. Checking §20 by what the tests actually do gives 14 of
+      16 threats covered.
+    </p>
+    <p>
+      <strong>The two that are not, and why that is scope rather than omission.</strong> §20.3
+      (reputation whitewashing by variant churn) and §20.14 (Sybil suppliers) name controls that
+      live in the AppView and PeerLens layers — quotas, retrieval diversity, reputation
+      inheritance, identity age. What Core owns for them is the signed primitive those controls
+      read: <code>ProductRelationshipClaim</code> lineage assertions and historical catalog
+      snapshots, both validated and vector-frozen and tested. The enforcement belongs to §25.4's
+      AppView tests. I am recording this rather than writing a Core test that would only assert
+      the primitive exists.
+    </p>
+    <p>
+      <strong>Four gaps are stated in the plan rather than closed:</strong> continuity claims are
+      not bound to a specific non-terminal order (needs a wire field); force-restore still clears
+      a commerce table the archive did not supply; ARCH-3's three seam layers are an enforced
+      ordering rather than a shared abstraction, with eight un-audited narrowing casts outside the
+      builders; and there is no live two-node commerce run over MsgBox — every cross-Dina journey
+      here is in-process.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner
