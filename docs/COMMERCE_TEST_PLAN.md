@@ -174,9 +174,17 @@ catch what they check:
    impossible. Eight `as`-casts remain outside the record builders; each is a
    narrowing after a validator has run, which is the safe form, but they have
    not been audited one by one.
-4. **No live two-node commerce run over MsgBox.** Every cross-Dina journey here
-   is in-process. The transport is exercised by the existing services harness,
-   not by a commerce order.
+4. **Partly closed.** A commerce order now crosses the real D2D transport —
+   `two_node_d2d_order.test.ts` seals and signs with Sancho's key, and
+   ChairMaker unseals, verifies the signature, binds the sender and admits
+   through `receiveD2D`. Four cases: the happy path, a forged signature
+   dropped, a sealed replay refused, and an unconfigured capability not
+   bypassing.
+
+   What is still open is the SOCKET: no MsgBox relay, no two machines. §25.6's
+   two-machine journey stays manual. The distinction matters — this proves an
+   order survives the crypto and the receive pipeline, not that two live nodes
+   find each other.
 
 ---
 

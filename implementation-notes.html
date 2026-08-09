@@ -7214,6 +7214,39 @@
       after a validator has run, which is the safe form, but I have not audited every one.
     </p>
 
+    <h2>A commerce order now crosses the real D2D transport</h2>
+    <p>
+      Counting properly, there were SEVEN in-process journeys, not the six I reported — I had
+      missed <code>procurement_journey.test.ts</code>, which walks discovery to purchase through
+      the real routes. Every one of them hands the supplier a body some test constructed. None had
+      an order cross the transport.
+    </p>
+    <p>
+      That is this subsystem's recurring defect one layer out. The transport is well tested and
+      commerce is well tested; the seam where a commerce order meets the transport's own rules was
+      not. A field the ingress needs but the envelope drops, or a sender binding that reads the
+      body instead of the authenticated envelope, would pass every existing suite.
+    </p>
+    <p>
+      <code>two_node_d2d_order.test.ts</code>: two keypairs, real <code>sealMessage</code>, real
+      <code>receiveD2D</code>. Sancho's order is sealed and signed; ChairMaker unseals, verifies
+      the signature against Sancho's registered key, binds the sender from the ENVELOPE rather than
+      the body, and admits. Four cases — the happy path, a forged signature dropped, a sealed
+      replay refused by the transport's own cache, and an unconfigured capability declining to
+      bypass.
+    </p>
+    <p>
+      <strong>The limit, stated because the claim is easy to overstate.</strong> Two Cores in ONE
+      PROCESS. No socket, no MsgBox relay, no two machines — §25.6's two-machine journey stays
+      manual. This proves an order survives the crypto and the receive pipeline, which is more than
+      "the engines agree" and less than "it works between two nodes".
+    </p>
+    <p>
+      I also deleted the SQLite scaffolding I had opened in this file's setup and never read. Dead
+      setup in a test is the same shape as an unwired engine in production, and I had just spent
+      the session removing those.
+    </p>
+
     <h2>§9.13 — a continuity claim now names the order it continues</h2>
     <p>
       The last gap I had recorded rather than closed. A continuity lane is retained so a SPECIFIC
