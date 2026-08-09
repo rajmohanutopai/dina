@@ -65,6 +65,45 @@ export class CommerceAdmissionService {
   }
 
   /**
+   * §16.2 — register a supplier's replacement for a quote family a restore
+   * voided. STEP THREE of three, and the steps must not overlap.
+   *
+   * THE RULE THIS EXISTS TO ENFORCE: no implementation may perform I/O
+   * synchronously inside one of Core's transactions. Admission used to ask a
+   * `resignVoidedQuote` seam for a replacement from INSIDE the `admitOrder`
+   * transaction, so a seam backed by a supplier plugin or an ERP connector
+   * would have held the SQLite write lock across a plugin dispatch or a
+   * network round trip — on mobile that is the single connection, for as long
+   * as the counterparty took to answer. Nothing in production wired it, so
+   * the cost was latent; the shape was wrong either way.
+   *
+   * The three steps are now:
+   *
+   *   1. `admitOrder` refuses `quote_voided` in a short transaction that
+   *      performs no I/O and asks nobody anything;
+   *   2. the supplier obtains a fresh quote from its own records, with NO
+   *      transaction open — this is where plugin dispatch or an ERP call
+   *      belongs, and it may take as long as it takes;
+   *   3. this method validates and registers that quote in a second short
+   *      transaction.
+   *
+   * `expectedBuyerDid` is required, not inferred from the quote. The
+   * replacement is untrusted output — a runner that could name its own
+   * audience could hand buyer A a quote priced for buyer B inside a
+   * Core-authenticated record. The expectation travels into the register
+   * path, which refuses a foreign audience; there is no inline comparison a
+   * future call site can forget.
+   *
+   * Returns null on success, or the refusal. A refused replacement writes
+   * nothing: a quote that could not register must never become a live head.
+   */
+  registerReplacementQuote(quote: SignedQuote, expectedBuyerDid: string): string | null {
+    return this.deps.transaction.atomically('registerReplacementQuote', () =>
+      this.deps.engine.registerSignedQuoteInTx(quote, expectedBuyerDid),
+    );
+  }
+
+  /**
    * §9.9 admission: quote binding, capacity hold and the reserved
    * order-reference record commit together, or none of them do.
    */

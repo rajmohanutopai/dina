@@ -776,34 +776,43 @@ describe.each([
       expect(h.quotes.getHead(quote.quote_id)?.voided).toBe(true);
     });
 
-    it('answers quote_superseded with the SUPPLIER re-offer when the seam is wired', () => {
+    it('registers a SUPPLIER replacement in its own transaction, after admission refused', () => {
+      // THE THREE STEPS, in order, as separate calls. Admission used to ask a
+      // `resignVoidedQuote` seam for the replacement from INSIDE its own write
+      // transaction, so a seam backed by a plugin or an ERP connector would
+      // have held the SQLite write lock across a network round trip. The steps
+      // are now: refuse (short tx, no I/O) -> obtain (no tx) -> register
+      // (short tx).
       const quote = seedQuote();
       h.quotes.voidUnexpired(clock.now, clock.now);
       const order = makeOrder(quote, pricedProjection);
 
-      // The supplier issues a genuinely new family from its own records.
-      const replacement = makeSignedQuote(request, { quote_id: 'q-reoffer' });
-      const withSeam = makeAdmission({
-        tx: h.tx,
-        orders: makeOrders(h.orderRefs, clock),
-        families: makeFamilies(h.quotes, clock),
-        receipts: h.receipts,
-        supplierDid: () => SUPPLIER_DID,
-        now: () => clock.now,
-        decisionTimeoutMs: DECISION_TIMEOUT_MS,
-        resignVoidedQuote: () => replacement,
-      });
-
-      const outcome = withSeam.admitOrder(order, BUYER_DID);
-      expect(outcome.kind).toBe('rejected');
-      if (outcome.kind !== 'rejected' || outcome.acknowledgement.kind !== 'rejected') {
+      // 1. Admission refuses, and asks nobody anything.
+      const refusal = engine.admitOrder(order, BUYER_DID);
+      if (refusal.kind !== 'rejected' || refusal.acknowledgement.kind !== 'rejected') {
         throw new Error('expected a rejected acknowledgement');
       }
-      expect(outcome.acknowledgement.reason_code).toBe('quote_superseded');
-      // The digest names the LIVE replacement, so re-approval can succeed.
-      expect(outcome.acknowledgement.current_quote_digest).toBe(replacement.quote_digest);
+      expect(refusal.acknowledgement.reason_code).toBe('quote_voided');
+
+      // 2. The supplier composes a replacement from its own records. In
+      //    production this is where a plugin dispatch or an ERP call happens,
+      //    with no transaction open and no bound on how long it takes.
+      const replacement = makeSignedQuote(request, { quote_id: 'q-reoffer' });
+
+      // 3. Registered in a second, short transaction.
+      expect(engine.registerReplacementQuote(replacement, BUYER_DID)).toBeNull();
       expect(h.quotes.getHead('q-reoffer')?.headDigest).toBe(replacement.quote_digest);
       expect(h.quotes.getHead('q-reoffer')?.voided).toBe(false);
+
+      // And the buyer's NEXT order — a new purchase order against the live
+      // family — is admitted. A distinct id, because the first order's
+      // identity is already durably refused and re-submitting it is a
+      // conflict by the dual-key rule, which is a different property.
+      const reordered = makeOrder(replacement, pricedProjection, {
+        purchase_order_id: 'po-after-reoffer',
+        idempotency_key: 'idem-after-reoffer',
+      });
+      expect(engine.admitOrder(reordered, BUYER_DID).kind).toBe('reserved');
     });
 
     it('refuses a counterproposal addressed to a DIFFERENT buyer (§9.8)', () => {
@@ -836,69 +845,39 @@ describe.each([
       expect(engine.admitOrder(order, BUYER_DID).kind).toBe('processing');
     });
 
-    it('discards a re-offer addressed to a DIFFERENT buyer', () => {
-      // The seam is ASKED for this buyer, but its answer is untrusted like
-      // any other runner output. Registration binds supplier and epoch;
-      // the buyer is a cross-aggregate fact only admission knows. This is
-      // the call site I missed when binding the counterproposal path.
+    it('refuses a replacement addressed to a DIFFERENT buyer', () => {
+      // The replacement is untrusted output. Unbound, a runner could hand
+      // buyer A a quote priced for buyer B — unit prices, subtotals, total,
+      // payment terms — inside a Core-authenticated record. The expectation is
+      // an ARGUMENT the register path enforces, not a comparison each call
+      // site has to remember.
       const quote = seedQuote();
       h.quotes.voidUnexpired(clock.now, clock.now);
-      const order = makeOrder(quote, pricedProjection);
 
       const forOtherBuyer = makeSignedQuote(request, {
         quote_id: 'q-reoffer-other',
         buyer_did: 'did:plc:someoneelse9',
       });
-      const withSeam = makeAdmission({
-        tx: h.tx,
-        orders: makeOrders(h.orderRefs, clock),
-        families: makeFamilies(h.quotes, clock),
-        receipts: h.receipts,
-        supplierDid: () => SUPPLIER_DID,
-        now: () => clock.now,
-        decisionTimeoutMs: DECISION_TIMEOUT_MS,
-        resignVoidedQuote: () => forOtherBuyer,
-      });
-
-      const outcome = withSeam.admitOrder(order, BUYER_DID);
-      expect(outcome.kind).toBe('rejected');
-      if (outcome.kind !== 'rejected' || outcome.acknowledgement.kind !== 'rejected') {
-        throw new Error('expected a rejected acknowledgement');
-      }
-      // Falls back to the honest refusal, and no cross-audience family
-      // was written into this supplier's ledger.
-      expect(outcome.acknowledgement.reason_code).toBe('quote_voided');
-      expect(outcome.acknowledgement.current_quote_digest).toBeUndefined();
+      expect(engine.registerReplacementQuote(forOtherBuyer, BUYER_DID)).toMatch(
+        /addressed to a different buyer/,
+      );
+      // Nothing written: a refused replacement must never become a live head.
       expect(h.quotes.getHead('q-reoffer-other')).toBeNull();
+      // And the voided family stays voided.
+      expect(h.quotes.getHead(quote.quote_id)?.voided).toBe(true);
     });
 
-    it('does NOT launder a rejected re-offer into a live head', () => {
+    it('refuses a replacement that reuses the VOIDED family id', () => {
       const quote = seedQuote();
       h.quotes.voidUnexpired(clock.now, clock.now);
-      const order = makeOrder(quote, pricedProjection);
 
-      // A re-offer that reuses the VOIDED family id cannot register.
+      // A voided family refuses further revisions, so a replacement cannot
+      // simply continue it — that is what "capacity is never resurrected from
+      // a backup" means at the registration seam.
       const bad = makeSignedQuote(request, { quote_id: quote.quote_id, quote_revision: '2' });
-      const withBadSeam = makeAdmission({
-        tx: h.tx,
-        orders: makeOrders(h.orderRefs, clock),
-        families: makeFamilies(h.quotes, clock),
-        receipts: h.receipts,
-        supplierDid: () => SUPPLIER_DID,
-        now: () => clock.now,
-        decisionTimeoutMs: DECISION_TIMEOUT_MS,
-        resignVoidedQuote: () => bad,
-      });
-
-      const outcome = withBadSeam.admitOrder(order, BUYER_DID);
-      expect(outcome.kind).toBe('rejected');
-      if (outcome.kind !== 'rejected' || outcome.acknowledgement.kind !== 'rejected') {
-        throw new Error('expected a rejected acknowledgement');
-      }
-      // Falls back to the honest refusal rather than pointing at a head
-      // that was never registered.
-      expect(outcome.acknowledgement.reason_code).toBe('quote_voided');
+      expect(engine.registerReplacementQuote(bad, BUYER_DID)).not.toBeNull();
       expect(h.quotes.getHead(quote.quote_id)?.voided).toBe(true);
+      expect(h.quotes.getHead(quote.quote_id)?.headDigest).toBe(quote.quote_digest);
     });
 
     it('refuses a family whose EPOCH predates the restore, even unvoided', () => {

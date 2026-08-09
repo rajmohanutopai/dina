@@ -101,7 +101,6 @@ export interface CommerceRuntimeInputs {
    * §16.2 post-restore re-offer, owned by the supplier side. Absent means no
    * re-offer exists and admission refuses rather than inventing terms.
    */
-  resignVoidedQuote?: (voidedQuoteId: string, buyerDid: string) => SignedQuote | null;
   /**
    * §8.3 — what the credential broker may actually DO, keyed
    * `${resource}:${operation}`.
@@ -310,7 +309,6 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     decisionTimeoutMs: inputs.decisionTimeoutMs ?? DEFAULT_DECISION_TIMEOUT_MS,
     honorSupersededRevisions: inputs.honorSupersededRevisions,
     processingRetryAfterSeconds: inputs.processingRetryAfterSeconds,
-    resignVoidedQuote: inputs.resignVoidedQuote,
     // §12.8 — acceptance and its status genesis commit together. This closure
     // is the ONLY thing that makes them one transaction, and it can only be
     // tied here: admission must not learn about status chains, and the

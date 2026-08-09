@@ -148,16 +148,6 @@ export interface AdmissionEngineDeps {
   /** Retry-after returned for reserved replays (seconds). */
   processingRetryAfterSeconds?: number;
   /**
-   * §16.2 post-restore re-offer, supplied by the SUPPLIER side (a runner
-   * plugin in a later phase), never by Core.
-   *
-   * After a restore voids a quote family, only the supplier's own records
-   * can say what a replacement should offer. Returning null — or leaving
-   * this unwired, as today — means no re-offer exists and admission
-   * refuses rather than inventing terms.
-   */
-  resignVoidedQuote?: (voidedQuoteId: string, buyerDid: string) => SignedQuote | null;
-  /**
    * §12.8 — create the accepted order's status genesis INSIDE the decision
    * transaction. Acceptance and its genesis were two transactions, so a
    * cancellation arriving between them saw a decided order with no chain and
@@ -268,12 +258,18 @@ export class CommerceAdmissionEngine {
   /**
    * The registration primitive, WITHOUT opening a transaction. Callers
    * that are already inside deps.tx (counterproposal decisions, §16.2
-   * re-signing) must use this: op-sqlite implements transactions with a
-   * raw BEGIN and cannot nest, so calling the public wrapper from inside
-   * a transaction fails on mobile even though the reentrant test runner
-   * hides it on the server.
+   * replacement registration) must use this: op-sqlite implements
+   * transactions with a raw BEGIN and cannot nest, so calling a wrapper that
+   * opens one from inside a transaction fails on mobile even though the
+   * reentrant test runner hides it on the server.
+   *
+   * PUBLIC because `CommerceAdmissionService` decides where transactions
+   * begin — that is the whole point of ARCH-0b. Every other `…InTx` method on
+   * this engine is public for the same reason; this one stayed private only
+   * because its callers were all internal until the §16.2 replacement path
+   * moved out to the service.
    */
-  private registerSignedQuoteInTx(quote: SignedQuote, expectedBuyerDid: string): string | null {
+  registerSignedQuoteInTx(quote: SignedQuote, expectedBuyerDid: string): string | null {
     const structural = validateSignedQuote(quote, hash);
     if (structural) return structural;
     const nowMs = this.deps.now();
@@ -459,7 +455,7 @@ export class CommerceAdmissionEngine {
       // Two refusals carry more than a reason code, so they are named
       // here rather than flattened through the table.
       if (verdict.refusal === 'quote_voided' || verdict.refusal === 'stale_epoch') {
-        return this.rejectVoidedFamily(order, serving, family);
+        return this.rejectVoidedFamily(order, serving);
       }
       if (verdict.refusal === 'quote_superseded') {
         return this.recordAdmissionRejection(order, serving, 'quote_superseded', family.headDigest);
@@ -922,37 +918,34 @@ export class CommerceAdmissionEngine {
    * fresh ledger would let a buyer spend capacity already spent, which is
    * what "capacity is never resurrected from a backup" exists to prevent.
    *
-   * So the supplier side owns the re-offer, through this seam. When it is
-   * wired, we register its quote and answer `quote_superseded` pointing at
-   * a head that is genuinely live.
+   * So the supplier side owns the re-offer — and it owns it OUTSIDE this
+   * call, which is the part that changed.
+   *
+   * THIS METHOD USED TO ASK FOR THE RE-OFFER INLINE, and that was a live
+   * defect I introduced. `admitOrder` runs inside a write transaction, so a
+   * seam implemented by a supplier plugin or an ERP connector would have done
+   * plugin dispatch or network I/O while SQLite held the write lock — on
+   * mobile, on one connection, for as long as the counterparty took to
+   * answer. Nothing in production wired it, so the cost was latent rather
+   * than observed; the shape was wrong either way.
+   *
+   * The re-offer is now three steps that cannot overlap: admission refuses
+   * here in a short transaction that performs no I/O; the supplier obtains a
+   * fresh quote with no transaction open; and
+   * `CommerceAdmissionService.registerReplacementQuote` validates and
+   * registers it in a second short transaction.
+   *
+   * The buyer is told `quote_voided` WITHOUT a currentQuoteDigest, which is
+   * what this method's fall-through already said and is now the only answer.
+   * Naming the voided head would point them at a digest that can never become
+   * live again (the family refuses further revisions), so they would
+   * re-approve against it for ever. `quote_voided` says the true thing: this
+   * family is gone, request a new quote.
    */
   private rejectVoidedFamily(
     order: PurchaseOrderProposal,
     serving: { manifestCid: string; installId: string },
-    family: QuoteFamily,
   ): AdmissionOutcome {
-    const reoffer = this.deps.resignVoidedQuote?.(family.quoteId, order.buyer_did) ?? null;
-    // The seam is ASKED for this buyer, but its answer is untrusted like
-    // any other runner output. The expectation travels into register(),
-    // which refuses a foreign audience — no inline comparison to forget.
-    if (reoffer !== null) {
-      const registerError = this.registerSignedQuoteInTx(reoffer, order.buyer_did);
-      if (registerError === null) {
-        return this.recordAdmissionRejection(
-          order,
-          serving,
-          'quote_superseded',
-          reoffer.quote_digest,
-        );
-      }
-      // A rejected re-offer must never be laundered into a live head;
-      // fall through to the refusal below.
-    }
-    // No supplier re-offer available. Refuse WITHOUT a currentQuoteDigest:
-    // naming the voided head would point the buyer at a digest that can
-    // never become live again (the family refuses further revisions), so
-    // they would re-approve against it forever. `quote_voided` says the
-    // true thing — this family is gone, request a new quote.
     return this.recordAdmissionRejection(order, serving, 'quote_voided');
   }
 
