@@ -7128,6 +7128,38 @@
       read, so a lost receipt can no longer let Core sign a regressing fulfilled quantity.
     </p>
 
+    <h2>ARCH-2 — the gate was already split; the case that proves it was not tested</h2>
+    <p>
+      The ingress gate already separates the two questions the row asks it to:
+      <code>order_status</code> and <code>cancel_order</code> require an owned reference (speaking
+      about someone else's order is the attack), while <code>order_reconcile</code> authorizes on
+      sender identity and delegates existence to the lifecycle engine. The comments there record
+      why, including that an earlier version of the gate silently disabled the recovery path it
+      was meant to protect.
+    </p>
+    <p>
+      <strong>What was missing was the test that joins it up.</strong> Every reconcile case in the
+      ingress suite answered from a STUB lifecycle, so the lane was proven to reach
+      <code>reconcile</code> and nothing more. Three things had been built and tested separately —
+      the gate that authorizes reconcile without requiring existence, the engine's §16.2
+      re-adoption path, and X-11's held evidence — and nothing exercised the lane between them.
+    </p>
+    <p>
+      There is now an end-to-end case: a supplier accepts an order on one node, a second node
+      stands up over empty stores (what a restore from a pre-order backup leaves), and the buyer's
+      reconcile arrives through the real ingress lane carrying evidence that is really signed and
+      verified by the production verifier. The answer is <code>received_unresolved</code> —
+      re-adoption — where a bare reconcile gets <code>never_received</code>.
+    </p>
+    <p>
+      <strong>The control taught me something.</strong> My first version reused one supplier for
+      both halves and the control failed: the bare reconcile also answered
+      <code>received_unresolved</code>. That is the feature working — the first reconcile RE-ADOPTED
+      the order, so the node genuinely held a record by the time the second arrived. It just makes
+      that supplier useless as a control, so the control now uses a second restored node that
+      never saw the evidence.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner

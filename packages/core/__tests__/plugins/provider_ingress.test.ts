@@ -19,6 +19,23 @@ import {
   type CommerceRuntime,
 } from '../../src/commerce';
 import { InMemoryCommerceOrderRefRepository } from '../../src/commerce/order_refs';
+import { InMemoryCommerceQuoteLedgerRepository } from '../../src/commerce/quote_ledger';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
+import { InMemoryCommerceStatusHeadRepository } from '../../src/commerce/status_heads';
+import {
+  BUYER_DID as COMMERCE_BUYER_DID,
+  SUPPLIER_DID as COMMERCE_SUPPLIER_DID,
+  makeAdmission,
+  makeChains,
+  makeFamilies,
+  makeHeldEvidence,
+  makeLifecycle,
+  makeOrder,
+  makeOrders,
+  makeQuoteRequest,
+  makeSignedQuote,
+  realHeldEvidenceVerifier,
+} from '../commerce/helpers';
 import { InMemoryCommerceSettingsRepository } from '../../src/commerce/settings_store';
 import { installQuoteAttemptLedger, QuoteAttemptLedger } from '../../src/commerce/probing_ledger';
 import { DEFAULT_PROBING_POLICY } from '../../src/commerce/probing_resistance';
@@ -62,7 +79,99 @@ let reconcileCalls: { params: unknown; buyerDid: string }[] = [];
 const CAP = 'com.acme.commerce.request_quote';
 const PLUGIN_DID = 'did:plc:plugindevice';
 const BUYER_DID = 'did:plc:buyer1234';
+const SUPPLIER_DID = COMMERCE_SUPPLIER_DID;
 const T0 = 1_700_000_000_000;
+
+/**
+ * A supplier that ACCEPTED an order and then lost every trace of it.
+ *
+ * Built by running the real admission engine to acceptance on one node, then
+ * standing up a SECOND engine over empty stores — which is what a restore
+ * from a backup taken before the order arrived actually leaves behind. The
+ * acknowledgement the first node signed is what the buyer kept.
+ *
+ * The evidence is real: a real message, really signed, verified by the
+ * production verifier over the test key. A hand-built pair would let this
+ * test pass against a supplier that could not check anything.
+ */
+function supplierWithNoRecordOf(purchaseOrderId: string): {
+  lifecycle: ReturnType<typeof makeLifecycle>;
+  order: ReturnType<typeof makeOrder>;
+  heldAcknowledgement: unknown;
+} {
+  const clock = { now: T0 };
+  const node = (): {
+    orderRefs: InMemoryCommerceOrderRefRepository;
+    quotes: InMemoryCommerceQuoteLedgerRepository;
+    statusHeads: InMemoryCommerceStatusHeadRepository;
+    receipts: InMemoryCommerceReceiptRepository;
+    tx: (fn: () => void) => void;
+  } => ({
+    orderRefs: new InMemoryCommerceOrderRefRepository(),
+    quotes: new InMemoryCommerceQuoteLedgerRepository(),
+    statusHeads: new InMemoryCommerceStatusHeadRepository(),
+    receipts: new InMemoryCommerceReceiptRepository(),
+    tx: (fn) => fn(),
+  });
+  const before = node();
+  const request = makeQuoteRequest();
+  const quote = makeSignedQuote(request, { quote_id: 'q-lost-order' });
+  const admission = makeAdmission({
+    tx: before.tx,
+    orders: makeOrders(before.orderRefs, clock),
+    families: makeFamilies(before.quotes, clock),
+    receipts: before.receipts,
+    supplierDid: () => SUPPLIER_DID,
+    now: () => clock.now,
+    decisionTimeoutMs: 60_000,
+  });
+  // The retained REQUEST receipt, before the quote. Admission re-reads it to
+  // check the order's delivery against the priced projection, so a quote
+  // registered without it is refused `quote_unknown`.
+  before.receipts.put({
+    recordDigest: request.request_digest,
+    domain: 'request',
+    buyerDid: request.buyer_did,
+    quoteId: quote.quote_id,
+    purchaseOrderId: '',
+    recordJson: JSON.stringify(request),
+    evidenceJson: '{}',
+    createdAt: clock.now,
+  });
+  expect(admission.registerSignedQuote(quote)).toBeNull();
+  const order = makeOrder(quote, request.delivery.projection, {
+    purchase_order_id: purchaseOrderId,
+  });
+  const admitted = admission.admitOrder(order, BUYER_DID);
+  if (admitted.kind !== 'reserved') throw new Error(JSON.stringify(admitted));
+  const decided = admission.decideOrder(BUYER_DID, purchaseOrderId, {
+    kind: 'accepted',
+    supplierOrderId: 'SUP-LOST-1',
+  });
+  if (!('acknowledgement' in decided)) throw new Error('expected an acceptance');
+
+  // The restored node: same identity, empty stores.
+  const after = node();
+  const lifecycle = makeLifecycle({
+    tx: after.tx,
+    orders: makeOrders(after.orderRefs, clock),
+    chains: makeChains(after.statusHeads, clock),
+    receipts: after.receipts,
+    families: makeFamilies(after.quotes, clock),
+    supplierDid: () => SUPPLIER_DID,
+    now: () => clock.now,
+    currentEpoch: () => '1',
+    verifyHeldEvidence: realHeldEvidenceVerifier,
+  });
+  return {
+    lifecycle,
+    order,
+    heldAcknowledgement: makeHeldEvidence(decided.acknowledgement, {
+      from: SUPPLIER_DID,
+      to: [BUYER_DID],
+    }),
+  };
+}
 
 const RESULT_SCHEMA = {
   type: 'object',
@@ -843,6 +952,93 @@ describe('provider ingress bridge (§11.2a)', () => {
       expect(result.ok && 'coreAnswerJson' in result).toBe(true);
       expect(reconcileCalls).toHaveLength(1);
       expect(workflow.store().getByCorrelationId('q-reconcile-core')).toEqual([]);
+    });
+
+    it('re-adopts a lost order from HELD EVIDENCE, through the ingress lane', () => {
+      // THE CASE ARCH-2 EXISTS FOR, end to end. Every other reconcile test
+      // here answers from a stub lifecycle, so the ingress lane was proven to
+      // reach `reconcile` and nothing more. This one puts a REAL engine
+      // behind it, on a supplier that holds no record of the order, and
+      // checks that the buyer's held evidence changes the answer.
+      //
+      // It is the join of three things that were built separately: the gate
+      // that authorizes reconcile on sender identity rather than existence
+      // (ARCH-2), the engine's §16.2 re-adoption path, and X-11's held
+      // evidence. Each was tested alone; the lane between them was not.
+      const supplier = supplierWithNoRecordOf(PO);
+      installCommerceRuntime({
+        settings: new InMemoryCommerceSettingsRepository(),
+        lifecycle: supplier.lifecycle,
+      } as unknown as CommerceRuntime);
+
+      const withEvidence = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('q-reconcile-readopt'),
+          capability: 'order_reconcile',
+          fromDid: BUYER_DID,
+          params: {
+            protocol_version: '1.0',
+            purchase_order_id: PO,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: supplier.order.order_digest,
+            idempotency_key: supplier.order.idempotency_key,
+            held_acknowledgement: supplier.heldAcknowledgement,
+          },
+        },
+        nowMs: T0,
+      });
+      if (!withEvidence.ok || !('coreAnswerJson' in withEvidence)) {
+        throw new Error(`expected a Core answer, got ${JSON.stringify(withEvidence)}`);
+      }
+      // `received_unresolved`, not `never_received`: the supplier is holding
+      // its own signature and must honour it. `never_received` is the one
+      // answer that authorizes a resubmission, so this is the difference
+      // between recovery and a duplicate order.
+      expect(JSON.parse(withEvidence.coreAnswerJson)).toMatchObject({
+        outcome: 'received_unresolved',
+      });
+
+      // THE CONTROL. The same lane, the same lost order, no evidence — and
+      // the answer flips. Without this, the assertion above would pass on an
+      // engine that answered `received_unresolved` for everything.
+      //
+      // A SECOND restored supplier, not the one above. Reused, it answers
+      // `received_unresolved` too — correctly, because the first reconcile
+      // RE-ADOPTED the order and it now holds a record. That is the feature
+      // working; it just makes the first supplier useless as a control. The
+      // control has to be a node that never saw the evidence.
+      const bare = supplierWithNoRecordOf(PO);
+      installCommerceRuntime({
+        settings: new InMemoryCommerceSettingsRepository(),
+        lifecycle: bare.lifecycle,
+      } as unknown as CommerceRuntime);
+      const withoutEvidence = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('q-reconcile-bare'),
+          capability: 'order_reconcile',
+          fromDid: BUYER_DID,
+          params: {
+            protocol_version: '1.0',
+            purchase_order_id: PO,
+            buyer_did: BUYER_DID,
+            supplier_did: SUPPLIER_DID,
+            order_digest: bare.order.order_digest,
+            idempotency_key: bare.order.idempotency_key,
+          },
+        },
+        nowMs: T0,
+      });
+      if (!withoutEvidence.ok || !('coreAnswerJson' in withoutEvidence)) {
+        throw new Error('expected a Core answer for the bare reconcile');
+      }
+      expect(JSON.parse(withoutEvidence.coreAnswerJson)).toMatchObject({
+        outcome: 'never_received',
+      });
     });
 
     it('answers under the buyer the GATE authorized', () => {
