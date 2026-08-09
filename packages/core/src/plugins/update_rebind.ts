@@ -362,6 +362,7 @@ export class UpdateRebindCoordinator {
     for (const capability of capabilities) {
       const cap = capability as unknown as {
         id: string;
+        kinds?: string[];
         action_class?: string;
         effects?: { idempotency?: string };
         params_schema?: unknown;
@@ -395,6 +396,12 @@ export class UpdateRebindCoordinator {
         // install, never from the update being applied: the whole point of a
         // drain row is that it describes the PRIOR contract.
         priorVersion: install.currentVersion,
+        // §11.2a — the kinds the owner consented this capability for, carried
+        // on the row because the claim guard's consent block (which holds the
+        // provider-vs-tool check) is skipped for a drained task. Read from the
+        // PRIOR capability for the same reason the schemas are: the current
+        // manifest cannot vouch for what was approved under the old CID.
+        authorizedKinds: [...(cap.kinds ?? [])],
         createdAt: now,
       };
       // ALWAYS: the bounded drain, so work created under the prior contract

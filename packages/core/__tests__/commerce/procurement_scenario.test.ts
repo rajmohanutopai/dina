@@ -248,6 +248,10 @@ describe.each([
       previousCid: PRIOR_MANIFEST,
       capabilityId: 'com.dinakernel.commerce.order_status',
       kind: 'lifecycle_continuity',
+      // The kinds the PRIOR capability was consented for. A status handler
+      // answers inbound service queries, so `provider` — and the claim guard
+      // now refuses a lane that cannot say.
+      authorizedKinds: ['provider'],
       approvedScopeHash: 'a'.repeat(64),
       configRevision: 1,
       actionClass: 'read',

@@ -1600,6 +1600,7 @@ describe('provider ingress bridge (§11.2a)', () => {
         previousCid: PRIOR_CID,
         capabilityId: LIFECYCLE_CAP,
         kind: 'lifecycle_continuity',
+        authorizedKinds: ['provider'],
         approvedScopeHash: 'h'.repeat(64),
         configRevision: 1,
         actionClass: 'read',

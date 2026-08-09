@@ -54,6 +54,17 @@ export interface DrainAuthorization {
    * reads as "unknown" rather than as any particular version.
    */
   priorVersion: string;
+  /**
+   * §11.2a — the kinds the PRIOR capability was consented for.
+   *
+   * The claim guard skips its consent block entirely for a drained task
+   * (the capability may be gone from the current manifest, so the entry IS
+   * the consent proof) — and the provider-vs-tool check lived inside that
+   * block. Without this the check had nothing to run against, so a lane
+   * opened for a provider capability admitted a tool envelope and the
+   * reverse. Empty means "this row cannot say", which the guard refuses.
+   */
+  authorizedKinds: readonly string[];
   /** Epoch ms; null = until explicitly released (lifecycle continuity). */
   expiresAt: number | null;
   createdAt: number;
@@ -99,6 +110,23 @@ export interface DrainAuthorizationRepository {
   removeByInstall(installId: string): number;
 }
 
+/**
+ * Kinds from a stored row. Anything unreadable reads as EMPTY, never as
+ * "all kinds": a row this code cannot parse must not be the thing that
+ * admits a provider envelope onto a tool consent.
+ */
+function readKinds(value: unknown): readonly string[] {
+  if (typeof value !== 'string' || value === '') return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((k): k is string => typeof k === 'string' && k !== '');
+}
+
 function rowToAuthorization(row: DBRow): DrainAuthorization {
   return {
     installId: String(row.install_id),
@@ -113,6 +141,7 @@ function rowToAuthorization(row: DBRow): DrainAuthorization {
     paramsSchemaJson: String(row.params_schema_json),
     maxContextItems: row.max_context_items === null ? null : Number(row.max_context_items),
     priorVersion: String(row.prior_version ?? ''),
+    authorizedKinds: readKinds(row.authorized_kinds_json),
     expiresAt: row.expires_at === null ? null : Number(row.expires_at),
     createdAt: Number(row.created_at),
   };
@@ -126,8 +155,9 @@ export class SQLiteDrainAuthorizationRepository implements DrainAuthorizationRep
       `INSERT INTO plugin_drain_authorizations (
          install_id, previous_cid, capability_id, kind, approved_scope_hash,
          config_revision, action_class, effects_idempotency, result_schema_json,
-         params_schema_json, max_context_items, prior_version, expires_at, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         params_schema_json, max_context_items, prior_version,
+         authorized_kinds_json, expires_at, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(install_id, previous_cid, capability_id, kind) DO NOTHING`,
       [
         authorization.installId,
@@ -142,6 +172,7 @@ export class SQLiteDrainAuthorizationRepository implements DrainAuthorizationRep
         authorization.paramsSchemaJson,
         authorization.maxContextItems,
         authorization.priorVersion,
+        JSON.stringify(authorization.authorizedKinds),
         authorization.expiresAt,
         authorization.createdAt,
       ],

@@ -1990,6 +1990,19 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- adapter and a runner had no way to know it was answering for an
         -- older major. Empty for rows written before the column existed.
         prior_version TEXT NOT NULL DEFAULT '',
+        -- Which KINDS the prior capability was consented for (JSON array).
+        --
+        -- The claim guard skips its whole consent block for a drained task,
+        -- because the capability may have left the current manifest entirely
+        -- and the drain entry is the consent proof. But the entry recorded no
+        -- kinds, so the one check inside that block with an authority meaning
+        -- went with it: an ingress task may dispatch only a capability
+        -- consented as provider, and every other plugin task requires
+        -- tool. A continuity lane opened for a provider capability admitted
+        -- a tool envelope, and the reverse. Empty array for rows written
+        -- before this column existed, which the guard reads as "cannot tell"
+        -- and refuses rather than waves through.
+        authorized_kinds_json TEXT NOT NULL DEFAULT '[]',
         expires_at INTEGER,
         created_at INTEGER NOT NULL,
         PRIMARY KEY (install_id, previous_cid, capability_id, kind)

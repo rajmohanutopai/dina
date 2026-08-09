@@ -62,6 +62,7 @@ describe('drain authorization store (dual harness)', () => {
       previousCid: 'bafyreiprior',
       capabilityId: CAP,
       kind: 'lifecycle_continuity',
+      authorizedKinds: ['provider'],
       approvedScopeHash: 'h'.repeat(64),
       configRevision: 3,
       actionClass: 'read',
@@ -180,8 +181,14 @@ describe('claim guard drain lane (§9.13)', () => {
     }
   });
 
-  /** Enqueue a task whose envelope was built under the PRIOR manifest. */
-  function enqueuePriorCidTask(taskId: string): void {
+  /**
+   * Enqueue a task whose envelope was built under the PRIOR manifest.
+   *
+   * `asTool` drops `service_ingress`, which is what decides the kind the
+   * claim guard requires: present means the envelope needs a `provider`
+   * consent, absent means `tool`.
+   */
+  function enqueuePriorCidTask(taskId: string, asTool = false): void {
     const envelope = buildPluginEnvelope({
       install: priorInstall,
       capabilityId: CAP,
@@ -189,12 +196,16 @@ describe('claim guard drain lane (§9.13)', () => {
       context: [],
       executionId: `exec:${taskId}`,
       idempotencyKey: `exec:${taskId}`,
-      serviceIngress: {
-        from_did: 'did:plc:buyer1234',
-        query_id: taskId,
-        capability: 'order_status',
-        service_rkey: 'self',
-      },
+      ...(asTool
+        ? {}
+        : {
+            serviceIngress: {
+              from_did: 'did:plc:buyer1234',
+              query_id: taskId,
+              capability: 'order_status',
+              service_rkey: 'self',
+            },
+          }),
     });
     workflow.create({
       id: taskId,
@@ -228,6 +239,7 @@ describe('claim guard drain lane (§9.13)', () => {
       previousCid: 'bafyreiprior',
       capabilityId: CAP,
       kind: 'lifecycle_continuity',
+      authorizedKinds: ['provider'],
       approvedScopeHash: 'h'.repeat(64),
       configRevision: priorInstall.configRevision,
       actionClass: 'read',
@@ -256,6 +268,48 @@ describe('claim guard drain lane (§9.13)', () => {
     const result = claim(rebound());
     expect(result.terminalized).toEqual([]);
     expect(result.task?.id).toBe('t-2');
+  });
+
+  it('a provider-only continuity lane does NOT admit a tool envelope (§11.2a)', () => {
+    // THE HOLE THIS CLOSES. The claim guard skips its whole consent block for
+    // a drained task, because the capability may have left the current
+    // manifest and the entry IS the consent proof. The provider-vs-tool check
+    // lived inside that block, so it was skipped too: a continuity lane
+    // opened for a provider capability admitted a tool envelope on the same
+    // capability id, and the reverse.
+    enqueuePriorCidTask('t-kind-1', true);
+    drains.put(continuityEntry({ authorizedKinds: ['provider'] }));
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-kind-1']);
+  });
+
+  it('a tool-only continuity lane does NOT admit a provider envelope', () => {
+    // The mirror, so the rule is a match and not a one-way filter.
+    enqueuePriorCidTask('t-kind-2');
+    drains.put(continuityEntry({ authorizedKinds: ['tool'] }));
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-kind-2']);
+
+    // And the matching lane admits, so the refusals above are the check
+    // working rather than the lane being shut.
+    enqueuePriorCidTask('t-kind-3', true);
+    drains.release(installId, 'bafyreiprior', CAP, 'lifecycle_continuity');
+    drains.put(continuityEntry({ authorizedKinds: ['tool'] }));
+    expect(claim(rebound()).task?.id).toBe('t-kind-3');
+  });
+
+  it('a row that records NO kinds refuses, rather than admitting anything', () => {
+    // Rows written before `authorized_kinds_json` existed default to empty.
+    // Empty means "this row cannot say which kinds were consented", and
+    // cannot-say is a refusal: the alternative is admitting an envelope onto
+    // a consent no row can show covered it.
+    enqueuePriorCidTask('t-kind-4');
+    drains.put(continuityEntry({ authorizedKinds: [] }));
+    const refused = claim(rebound());
+    expect(refused.task).toBeNull();
+    expect(refused.terminalized).toEqual(['t-kind-4']);
   });
 
   it('an expired drain entry no longer admits', () => {

@@ -150,17 +150,30 @@ export function claimPluginTask(args: {
             nowMs,
           ) ?? [])
         : [];
-    const admits = (entry: (typeof liveEntries)[number]): boolean =>
+    // §11.2a — the kind this envelope needs, computed once and applied on
+    // BOTH lanes. The ordinary lane checks it in check 3b below; the drained
+    // lane skips that whole block (the capability may be gone from the
+    // current manifest, so the entry is the consent proof) and therefore has
+    // to carry the check itself. Without it a continuity lane opened for a
+    // provider capability admitted a tool envelope, and the reverse.
+    const requiredKind = envelope.service_ingress !== undefined ? 'provider' : 'tool';
+    const admits = (entry: (typeof liveEntries)[number]): boolean => {
+      // A row written before `authorized_kinds_json` existed says nothing
+      // about kinds. That reads as "cannot tell", and cannot-tell is a
+      // refusal: the alternative is admitting an envelope onto a consent no
+      // row can show covered it.
+      if (!entry.authorizedKinds.includes(requiredKind)) return false;
       // 'drain' covers only tasks that existed at the rebind moment;
       // 'lifecycle_continuity' also admits newly created tasks.
-      entry.kind === 'lifecycle_continuity' || task.created_at < entry.createdAt;
+      return entry.kind === 'lifecycle_continuity' || task.created_at < entry.createdAt;
+    };
     const drained =
       envelope.manifest_cid !== install.currentCid ? (liveEntries.find(admits) ?? null) : null;
     if (envelope.manifest_cid !== install.currentCid && drained === null) {
       failStale(
         liveEntries.length === 0
           ? 'envelope manifest CID diverged from the install'
-          : 'drain entries admit only tasks created before the rebind',
+          : `no live drain entry admits this task as a ${requiredKind}`,
       );
       continue;
     }
@@ -189,7 +202,6 @@ export function claimPluginTask(args: {
       // owner consented as `provider`; every other plugin task requires
       // `tool`. A provider task can never ride a tool consent, nor the
       // reverse.
-      const requiredKind = envelope.service_ingress !== undefined ? 'provider' : 'tool';
       if (!(cap.kinds ?? []).includes(requiredKind)) {
         failStale(`capability not consented as a ${requiredKind}`);
         continue;

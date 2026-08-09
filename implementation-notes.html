@@ -6937,6 +6937,54 @@
       forecloses it.
     </p>
 
+    <h2>X-06/X-07 — a drained task skipped the one consent check that mattered</h2>
+    <p>
+      The update/rebind coordinator turned out to be built and wired at both boots: it snapshots
+      the prior capability's schemas, creates the bounded drain and the unexpiring
+      <code>lifecycle_continuity</code> entries, rebinds listings, and releases continuity only
+      when the relevant orders are terminal. What was wrong was on the claim side, and it was
+      an authority hole rather than a gap.
+    </p>
+    <p>
+      <strong>The shape of it.</strong> The claim guard deliberately skips its whole consent block
+      for a drained task, and that is correct: after an update the capability may have left the
+      current manifest entirely, so the drain entry <em>is</em> the consent proof. But one check
+      inside that block was not bookkeeping — §11.2a's rule that an ingress task may dispatch only
+      a capability consented as <code>provider</code>, and every other plugin task requires
+      <code>tool</code>. Skipping the block skipped that too, and the drain row recorded no kinds
+      to check against. So a continuity lane opened for a provider capability admitted a
+      <em>tool</em> envelope on the same capability id, and the reverse.
+    </p>
+    <p>
+      <strong>The fix is to make the row able to answer.</strong> <code>DrainAuthorization</code>
+      now carries <code>authorizedKinds</code>, taken from the PRIOR capability for the same reason
+      the schemas are — the current manifest cannot vouch for what was approved under the old CID.
+      The guard computes the required kind once and applies it on both lanes.
+    </p>
+    <p>
+      <strong>An empty list is a refusal, not a wildcard.</strong> Rows written before the column
+      existed default to <code>[]</code>, which reads as "this row cannot say which kinds were
+      consented". Cannot-say has to refuse: the alternative is admitting an envelope onto a consent
+      no row can show covered it. Same posture as the held-evidence verifier, and for the same
+      reason.
+    </p>
+    <p>
+      <strong>Tests.</strong> Three cases — provider lane refuses a tool envelope, tool lane
+      refuses a provider envelope (with a matching-lane control so the refusals are the check
+      working rather than the lane being shut), and a no-kinds row refuses. Mutation-checked:
+      stubbing the predicate to <code>false</code> fails exactly those three and nothing else.
+      The type change also flushed out every hand-seeded drain row in the suite, which is the
+      point — each now has to state which kind it authorized.
+    </p>
+    <p>
+      <strong>Still open on this row.</strong> §9.13 also asks that a continuity claim be bound to
+      a specific non-terminal order at the authorized prior major. The prior major is already on
+      the row (<code>priorVersion</code>) and the envelope carries <code>prior_version</code>, so
+      that check is cheap; the order binding needs the envelope to name the order it continues,
+      which today it does only inside <code>params</code>. I have not done either yet and am not
+      counting them as done.
+    </p>
+
     <h2>WS-8.1/8.2/8.3/8.5 — built, as <code>@dina/managed-runtime</code></h2>
     <p>
       I raised the concern that a hosting product does not belong in the commerce WBS; the owner
