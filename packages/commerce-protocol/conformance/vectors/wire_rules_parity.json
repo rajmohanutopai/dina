@@ -1,0 +1,566 @@
+{
+  "description": "Frozen accept/reject parity between the protocol validators and AppView's independent copy of the same wire rules (appview/src/shared/commerce/wire-rules.ts). Replayed by packages/commerce-protocol/__tests__/wire_rules_parity.test.ts and appview/tests/unit/commerce_wire_parity.test.ts. Both sides must agree on `valid` for every case.",
+  "why": "AppView declares no @dina dependency and reimplements these rules. A hand-written copy of the §10.3 relationship vocabulary shared only two of seven entries with the protocol and nothing failed, because every commerce test happened to use one of the two overlapping names. Parity is asserted on BEHAVIOUR rather than bytes: the two implementations legitimately differ in structure (Zod schema plus gate vs. protocol validators), so accept/reject is the property that has to match, not the error text.",
+  "scope_boundary": "`pack` internals are protocol-only. The unit vocabulary carries per-unit scales and canonical-decimal parsing, and AppView neither projects nor stores `pack` — search keys on identity, and orderability is settled by Core at quote and order time, which is the authority boundary. AppView checks that `pack.sell_unit` is present and an object so the record shape is sound, and these vectors carry no case that turns on a unit code or a decimal scale.",
+  "cases": [
+    {
+      "kind": "product_ref",
+      "name": "gtin/valid-13-digit",
+      "input": { "scheme": "gtin", "value": "0012345678905" },
+      "valid": true
+    },
+    {
+      "kind": "product_ref",
+      "name": "gtin/too-few-digits",
+      "input": { "scheme": "gtin", "value": "1234567" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "gtin/non-digit",
+      "input": { "scheme": "gtin", "value": "00123456789AB" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "manufacturer_sku/without-issuer-is-unscoped",
+      "input": { "scheme": "manufacturer_sku", "value": "A-1" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "manufacturer_sku/with-issuer",
+      "input": {
+        "scheme": "manufacturer_sku",
+        "value": "A-1",
+        "issuer_did": "did:plc:manufacturer123"
+      },
+      "valid": true
+    },
+    {
+      "kind": "product_ref",
+      "name": "custom/without-issuer-is-unscoped",
+      "input": { "scheme": "custom", "value": "internal-9" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "scheme/not-in-vocabulary",
+      "input": { "scheme": "ean", "value": "0012345678905" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "variant_digest/not-hex64",
+      "input": { "scheme": "gtin", "value": "0012345678905", "variant_digest": "abc" },
+      "valid": false
+    },
+    {
+      "kind": "product_ref",
+      "name": "not-an-object",
+      "input": "0012345678905",
+      "valid": false
+    },
+    {
+      "kind": "region_ref",
+      "name": "country/valid",
+      "input": { "scheme": "country", "value": "GB" },
+      "valid": true
+    },
+    {
+      "kind": "region_ref",
+      "name": "custom/without-issuer",
+      "input": { "scheme": "custom", "value": "zone-4" },
+      "valid": false
+    },
+    {
+      "kind": "region_ref",
+      "name": "scheme/not-in-vocabulary",
+      "input": { "scheme": "planet", "value": "earth" },
+      "valid": false
+    },
+    {
+      "kind": "region_ref",
+      "name": "issuer_did/not-a-did",
+      "input": { "scheme": "country", "value": "GB", "issuer_did": "not-a-did" },
+      "valid": false
+    },
+    {
+      "kind": "protocol_version",
+      "name": "same-major/exact",
+      "input": "1.0",
+      "valid": true
+    },
+    {
+      "kind": "protocol_version",
+      "name": "same-major/higher-minor-is-additive",
+      "input": "1.7",
+      "valid": true
+    },
+    {
+      "kind": "protocol_version",
+      "name": "unknown-major-fails-closed",
+      "input": "2.0",
+      "valid": false
+    },
+    {
+      "kind": "protocol_version",
+      "name": "not-a-version",
+      "input": "banana",
+      "valid": false
+    },
+    {
+      "kind": "protocol_version",
+      "name": "non-canonical-integer",
+      "input": "01.0",
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/manufactured_by",
+      "input": {
+        "claim_id": "c1",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "manufactured_by",
+        "object": { "did": "did:plc:maker1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/marketed_under",
+      "input": {
+        "claim_id": "c2",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "marketed_under",
+        "object": { "did": "did:plc:brand1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/sold_by",
+      "input": {
+        "claim_id": "c3",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "sold_by",
+        "object": { "did": "did:plc:seller1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/variant_of",
+      "input": {
+        "claim_id": "c4",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/packaging_variant_of",
+      "input": {
+        "claim_id": "c5",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "packaging_variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/same_formulation_as",
+      "input": {
+        "claim_id": "c6",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "same_formulation_as",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/replaces",
+      "input": {
+        "claim_id": "c7",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "replaces",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/successor_of-does-not-exist",
+      "input": {
+        "claim_id": "c8",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "successor_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/equivalent_to-does-not-exist",
+      "input": {
+        "claim_id": "c9",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "equivalent_to",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/distributed_by-does-not-exist",
+      "input": {
+        "claim_id": "c10",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "distributed_by",
+        "object": { "did": "did:plc:dist1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/branded_as-does-not-exist",
+      "input": {
+        "claim_id": "c11",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "branded_as",
+        "object": { "did": "did:plc:brand1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "vocabulary/sold_as-does-not-exist",
+      "input": {
+        "claim_id": "c12",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "sold_as",
+        "object": { "did": "did:plc:seller1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "discriminant/operator-relationship-with-product-object",
+      "input": {
+        "claim_id": "c13",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "manufactured_by",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "discriminant/product-relationship-with-did-object",
+      "input": {
+        "claim_id": "c14",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "did": "did:plc:maker1" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "subject/unscoped-manufacturer-sku",
+      "input": {
+        "claim_id": "c15",
+        "subject": { "scheme": "manufacturer_sku", "value": "A-1" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "temporal/inverted-validity-range",
+      "input": {
+        "claim_id": "c16",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1",
+        "effective_from": "2026-06-01T00:00:00Z",
+        "effective_until": "2026-01-01T00:00:00Z"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "temporal/ordered-validity-range",
+      "input": {
+        "claim_id": "c17",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1",
+        "effective_from": "2026-01-01T00:00:00Z",
+        "effective_until": "2026-06-01T00:00:00Z"
+      },
+      "valid": true
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "evidence_refs/non-string-element",
+      "input": {
+        "claim_id": "c18",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1",
+        "evidence_refs": [{ "nested": "object" }]
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "issuer_did/not-a-did",
+      "input": {
+        "claim_id": "c19",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "claim_id/oversized",
+      "input": {
+        "claim_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "subject": { "scheme": "gtin", "value": "0012345678905" },
+        "relationship": "variant_of",
+        "object": { "scheme": "gtin", "value": "0012345678912" },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "valid/minimal",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": true
+    },
+    {
+      "kind": "catalog_item",
+      "name": "product/arbitrary-scheme",
+      "input": {
+        "product": { "scheme": "whatever", "value": "x" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "category_ids/object-element",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": [{ "nested": "object" }],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "region/arbitrary-scheme",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "galaxy", "value": "milky-way" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "freshness/impossible-calendar-date",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-02-30T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "freshness/non-canonical-timestamp",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00+01:00" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "pack/absent",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "indicative_price/minor_units-as-number",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "indicative_price": { "currency": "GBP", "minor_units": 499 },
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "indicative_price/lowercase-currency",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "indicative_price": { "currency": "gbp", "minor_units": "499" },
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "indicative_price/valid",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "indicative_price": { "currency": "GBP", "minor_units": "499" },
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": true
+    },
+    {
+      "kind": "catalog_item",
+      "name": "identifiers/unscoped-custom",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "identifiers": [{ "scheme": "custom", "value": "internal-9" }],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "not-an-object",
+      "input": null,
+      "valid": false
+    },
+    {
+      "kind": "catalog_item",
+      "name": "attributes/nested-object-value",
+      "input": {
+        "product": { "scheme": "gtin", "value": "0012345678905" },
+        "supplier_did": "did:plc:supplier1",
+        "catalog_id": "cat-1",
+        "item_revision": "r1",
+        "name": "Cotton Twine 200m",
+        "category_ids": ["hardware.twine"],
+        "pack": { "sell_unit": { "unit_code": "each", "value": "1" } },
+        "fulfilment_regions": [{ "scheme": "country", "value": "GB" }],
+        "attributes": { "colour": { "nested": "object" } },
+        "freshness": { "generated_at": "2026-06-01T00:00:00Z" }
+      },
+      "valid": false
+    }
+  ]
+}

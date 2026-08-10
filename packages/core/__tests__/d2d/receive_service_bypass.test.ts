@@ -149,6 +149,46 @@ describe('receive_pipeline — service.query ingress', () => {
     expect(accept?.detail).toContain('capability=eta_query');
   });
 
+  it('bounds and single-lines a hostile capability before it reaches the audit chain', () => {
+    // §22 — on an inbound `service.query` the peer chooses `capability`
+    // freely, and the wire validator asks only for a non-empty string: no
+    // length bound, no charset limit, no newline exclusion. It is interpolated
+    // straight into the `d2d_recv_service_accepted` detail, so unbounded a
+    // peer can write as much as it likes into the owner's durable log — and
+    // embedded newlines make one entry render as several, dressing a forged
+    // line up as a real audit record.
+    //
+    // CAPABILITY, not `query_id`, and the difference is the whole test. On the
+    // RESPONSE path both fields must match a window the buyer itself opened
+    // (`requester.peek(fromDID, query_id, capability)`), so a peer cannot
+    // choose them there. On the QUERY path there is no window yet, and this is
+    // the field that reaches a log. A first version of this test drove
+    // `query_id` and passed with the guard removed, because that value never
+    // reaches an audit detail on this path — it was asserting nothing.
+    //
+    // Bounded at the SINK rather than per call site: three lines already
+    // interpolated peer strings this way and the next would have had to
+    // remember. `appendAudit` cannot be bypassed.
+    const hostile = `cap-${'A'.repeat(900)}\nd2d_recv_service_accepted forged=yes`;
+    const payload = buildSealed({
+      body: JSON.stringify({ ...queryBody, capability: hostile }),
+    });
+
+    receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'unknown', {
+      isCapabilityConfigured: () => true,
+    });
+
+    const entries = queryAudit({});
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      // No entry can be made to look like two.
+      expect(entry.detail).not.toContain('\n');
+      expect(entry.detail).not.toContain('\r');
+      // And none can be made unbounded.
+      expect((entry.detail ?? '').length).toBeLessThanOrEqual(512);
+    }
+  });
+
   it('emits structured audit for denied service.query', () => {
     const payload = buildSealed({ from: REQUESTER_DID });
     receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'unknown', {

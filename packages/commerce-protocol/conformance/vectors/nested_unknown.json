@@ -1,0 +1,115 @@
+{
+  "description": "A §9.13 additive field at EVERY digest-bound depth, on real records of a named kind. A parser that preserves top-level unknowns and strips nested ones fails here while the flat unknown-field family passes.",
+  "cases": [
+    {
+      "kind": "catalog_pointer",
+      "name": "top level",
+      "record": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "snapshot_rkey": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "future_field": "x"
+      },
+      "canonical": "{\"catalog_id\":\"chairmaker-main\",\"future_field\":\"x\",\"protocol_version\":\"1.0\",\"published_at\":\"2026-01-01T00:00:00.000Z\",\"snapshot_digest\":\"1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65\",\"snapshot_rkey\":\"1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65\",\"snapshot_sequence\":1,\"supplier_did\":\"did:plc:supplier5678\"}"
+    },
+    {
+      "kind": "catalog_snapshot",
+      "name": "top level",
+      "record": {
+        "supplier_did": "did:plc:supplier5678",
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "protocol_version": "1.0",
+        "published_at": "2026-01-01T00:00:00.000Z",
+        "page_digests": [
+          "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b",
+          "f32bd5649fff2078afe2a567e41b69cdeeed0ff1a90f0257ea888733bb259272"
+        ],
+        "item_count": 2,
+        "payload_root": "21c9b77719ef542420e98d0b41dbd182d5e8384f237f99ecf4c0a38e39590437",
+        "snapshot_digest": "1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65",
+        "future_field": "x"
+      },
+      "canonical": "{\"catalog_id\":\"chairmaker-main\",\"future_field\":\"x\",\"item_count\":2,\"page_digests\":[\"d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b\",\"f32bd5649fff2078afe2a567e41b69cdeeed0ff1a90f0257ea888733bb259272\"],\"payload_root\":\"21c9b77719ef542420e98d0b41dbd182d5e8384f237f99ecf4c0a38e39590437\",\"protocol_version\":\"1.0\",\"published_at\":\"2026-01-01T00:00:00.000Z\",\"snapshot_digest\":\"1aaca0bcdbec84332c7253ab1ee7cb5e1fd00a3e8779b01b26048ef41582eb65\",\"snapshot_sequence\":1,\"supplier_did\":\"did:plc:supplier5678\"}"
+    },
+    {
+      "kind": "catalog_page",
+      "name": "inside the page",
+      "record": {
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "page_index": 0,
+        "items": [
+          {
+            "sku": "CHAIR-1",
+            "name": "Oak dining chair"
+          }
+        ],
+        "page_digest": "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b",
+        "future_field": "x"
+      },
+      "canonical": "{\"catalog_id\":\"chairmaker-main\",\"future_field\":\"x\",\"items\":[{\"name\":\"Oak dining chair\",\"sku\":\"CHAIR-1\"}],\"page_digest\":\"d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b\",\"page_index\":0,\"snapshot_sequence\":1}"
+    },
+    {
+      "kind": "catalog_page",
+      "name": "inside an ITEM of the page",
+      "record": {
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "page_index": 0,
+        "items": [
+          {
+            "sku": "CHAIR-1",
+            "name": "Oak dining chair",
+            "future_field": "x"
+          }
+        ],
+        "page_digest": "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b"
+      },
+      "canonical": "{\"catalog_id\":\"chairmaker-main\",\"items\":[{\"future_field\":\"x\",\"name\":\"Oak dining chair\",\"sku\":\"CHAIR-1\"}],\"page_digest\":\"d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b\",\"page_index\":0,\"snapshot_sequence\":1}"
+    },
+    {
+      "kind": "catalog_page",
+      "name": "inside an item PRODUCT REF, two levels down",
+      "record": {
+        "catalog_id": "chairmaker-main",
+        "snapshot_sequence": 1,
+        "page_index": 0,
+        "items": [
+          {
+            "sku": "CHAIR-1",
+            "name": "Oak dining chair",
+            "product": {
+              "future_qualifier": "x"
+            }
+          }
+        ],
+        "page_digest": "d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b"
+      },
+      "canonical": "{\"catalog_id\":\"chairmaker-main\",\"items\":[{\"name\":\"Oak dining chair\",\"product\":{\"future_qualifier\":\"x\"},\"sku\":\"CHAIR-1\"}],\"page_digest\":\"d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b\",\"page_index\":0,\"snapshot_sequence\":1}"
+    },
+    {
+      "kind": "relationship_claim",
+      "name": "inside the claim SUBJECT",
+      "record": {
+        "claim_id": "rc-nested-1",
+        "subject": {
+          "scheme": "gtin",
+          "value": "0012345678905",
+          "future_qualifier": "x"
+        },
+        "relationship": "variant_of",
+        "object": {
+          "scheme": "gtin",
+          "value": "0012345678912"
+        },
+        "issuer_did": "did:plc:issuer1"
+      },
+      "canonical": "{\"claim_id\":\"rc-nested-1\",\"issuer_did\":\"did:plc:issuer1\",\"object\":{\"scheme\":\"gtin\",\"value\":\"0012345678912\"},\"relationship\":\"variant_of\",\"subject\":{\"future_qualifier\":\"x\",\"scheme\":\"gtin\",\"value\":\"0012345678905\"}}"
+    }
+  ]
+}

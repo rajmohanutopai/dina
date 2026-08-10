@@ -14,6 +14,7 @@
  * randomness) — generation-time only; the CI test reads the JSON.
  */
 
+import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -35,6 +36,7 @@ import {
   makeSuccessor,
 } from '../__tests__/helpers/fixtures';
 import { computeLineSubtotal, computeTotal, type Charge } from '../src/arithmetic';
+import { canonicalJson } from '../src/canonical';
 import { validateProductRelationshipClaim } from '../src/catalog';
 import {
   catalogPageDigest,
@@ -45,9 +47,8 @@ import {
   type CatalogSnapshot,
   type CatalogSnapshotPage,
 } from '../src/catalog_publication';
-import { canonicalJson } from '../src/canonical';
 import { checkProtocolVersion, validateProtocolVersionShape } from '../src/common';
-import { COMMERCE_DIGEST_DOMAINS, commerceDigest } from '../src/digests';
+import { COMMERCE_DIGEST_DOMAINS, commerceDigest, commerceRecordDigest } from '../src/digests';
 import { productRefsEqual, validateProductRef, type ProductRef } from '../src/product';
 import { compareQuantities, validateQuantity, type Quantity } from '../src/quantity';
 import { termsDigestInput } from '../src/quote';
@@ -415,7 +416,12 @@ const malformedVector = {
     {
       name: 'tampered_total',
       mutate: { path: 'total.minor_units', value: '1' },
-      error_includes: 'total',
+      // `quote.total:` and not `total`. The bare word is a SUBSTRING of
+      // `line_subtotal`, so a port that refused this for the line-level reason
+      // — or for any reason mentioning a subtotal — passed a case about the
+      // ORDER total. The vector pins which rule fired; a needle that cannot
+      // distinguish two rules pins nothing.
+      error_includes: 'quote.total:',
     },
     {
       name: 'tampered_terms_digest',
@@ -484,6 +490,75 @@ const malformedVector = {
       error_includes: 'forbidden for state',
     },
   ],
+  /**
+   * THE RECORDS THE MUTATION CASES ARE APPLIED TO.
+   *
+   * Without these the `quote`, `status` and `held_evidence` families are not
+   * executable by anyone but us: they say "set `total.minor_units` to 1 and
+   * expect a refusal", and a port in Go or Rust has nothing to set it ON. Our
+   * own suite built them from `makeSignedQuote()` and friends, which is to say
+   * the vector was only half frozen — the half a second implementation cannot
+   * reach was the half that decides whether a tampered quote is caught.
+   *
+   * Each is VALID as it stands, so a mutation is the only defect: a port that
+   * refuses one of these unmutated has failed the positive case, and a port
+   * that accepts a mutated one has failed the negative. Digest fields are real,
+   * so the recomputation checks have something to disagree with.
+   *
+   * `held_record` is separate from `reconcile_request` because the
+   * held_evidence cases vary the SIGNATURE beside the record: a port pairs
+   * this record with each bad signature and checks the refusal.
+   */
+  base: {
+    quote,
+    status: genesisStatus,
+    reconcile_request: {
+      protocol_version: '1.0',
+      purchase_order_id: order.purchase_order_id,
+      order_digest: order.order_digest,
+      idempotency_key: order.idempotency_key,
+    },
+    held_record: acceptedAck,
+    /**
+     * A well-formed signature, so the family can prove it ACCEPTS as well as
+     * refuses.
+     *
+     * Without an accept case, an implementation whose `validateReconcileRequest`
+     * refuses ALL held evidence — including a valid record — emits a message
+     * containing "signature" or "lowercase hex" and passes all five refusal
+     * cases. That is the §12.7/§16.2 family, the one whose failure makes a
+     * recovery path drivable by forged evidence, certified by a port that
+     * accepts nothing.
+     *
+     * Shape only, not a real Ed25519 signature over these bytes: the validator
+     * pins the WIRE SHAPE (§12.7 requires a signature alongside the record,
+     * because a record plus its content digest proves nothing), and verifying
+     * the signature itself needs the supplier's key, which is a different
+     * check in a different layer.
+     */
+    held_signature: 'ab'.repeat(32),
+    /**
+     * The retained D2D envelope, WITHOUT WHICH NO VALID EVIDENCE EXISTS.
+     *
+     * §12.7's reasoning: the only supplier signature a buyer can hold is the
+     * envelope's, and an envelope signature is checkable only against the
+     * envelope's own bytes — so `{record, signature}` with no envelope is
+     * unverifiable by construction and the validator refuses it.
+     *
+     * Emitting it is what makes the accept case CONSTRUCTIBLE by a port. The
+     * gap was invisible until an accept case was written: five refusal cases
+     * ran happily against a base from which no valid evidence could be built,
+     * which is the same shape of hole as the missing `base` itself.
+     */
+    held_envelope: {
+      id: 'msg-1',
+      type: 'service.response',
+      from: order.supplier_did,
+      to: [order.buyer_did],
+      created_time: 1_770_000_000,
+      body: '{}',
+    },
+  },
 };
 
 /**
@@ -1062,4 +1137,246 @@ write('catalog.json', catalogVector);
 write('arithmetic.json', arithmeticVector);
 write('digests.json', digestsVector);
 write('malformed.json', malformedVector);
+// NINE FILES, TEN REQUIRED FAMILIES. `search_candidate.json` is HAND-AUTHORED
+// and deliberately not emitted here: it is the one vector written for a
+// CONSUMER rather than a publisher, so its `expect` strings are what a buyer's
+// node must refuse an index for, not what this package happens to produce.
+// Deriving it from our own validator would make both sides ours — the exact
+// criticism levelled at the old discovery suite. It is pinned instead by
+// `__tests__/search_candidate.test.ts` (the validator accepts the candidate and
+// refuses each invalid case) and by AppView's projection test (the index
+// PRODUCES that candidate). Said out loud because a third party running this
+// generator gets nine of ten families and would otherwise see `ok: false` with
+// no explanation.
+// ---------------------------------------------------------------------------
+// held_signed.json — §12.7/§16.2 GENUINELY SIGNED held evidence
+// ---------------------------------------------------------------------------
+//
+// WHY THIS FILE EXISTS. The `malformed.held_evidence` family tested STRUCTURE
+// only: its cases pin "signature" or "lowercase hex", and its own valid base
+// carried a 64-character signature — half an Ed25519 signature — with an
+// envelope body of `"{}"` that bound no record at all. So the family certifying
+// the rule that stops a recovery path being driven by forged evidence could be
+// passed by an implementation that never verifies a signature and never checks
+// that the envelope names the record it is offered with.
+//
+// These vectors carry a REAL Ed25519 signature over the canonical envelope, and
+// the envelope commits to the record's digest. Verifying them needs actual
+// crypto, which is exactly the point: a port cannot satisfy this family by
+// pattern-matching hex.
+//
+// The keypair is derived from a FIXED seed so the vectors are frozen bytes
+// rather than a fresh signature per run — a vector that changes every
+// generation cannot be a conformance vector.
+const heldSeed = Buffer.alloc(32, 7);
+const heldPrivate = createPrivateKey({
+  key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), heldSeed]),
+  format: 'der',
+  type: 'pkcs8',
+});
+const heldPublic = createPublicKey(heldPrivate);
+const heldPublicHex = heldPublic
+  .export({ format: 'der', type: 'spki' })
+  .subarray(-32)
+  .toString('hex');
+
+/**
+ * A FULLY VALID `OrderAcknowledgement`, built by the codebase's OWN factory.
+ *
+ * The first version of this vector carried an ad-hoc record that
+ * `validateOrderAcknowledgement` refuses outright — no `acknowledgement_id`,
+ * no `issued_at`, no `kind`, none of the discriminant-specific fields. So the
+ * family signed arbitrary JSON and called it held evidence: a verifier that
+ * correctly composes SCHEMA VALIDATION with signature checking would reject the
+ * case the vector calls valid, and the implementation that passed was the one
+ * doing LESS work. A conformance vector only a lenient implementation can
+ * satisfy inverts the whole point of having one.
+ *
+ * Hand-writing a replacement was the second mistake available here — the
+ * digest has a canonical derivation, and restating it invites a third
+ * divergence. `makeAcceptedAck` is the same builder every order test uses.
+ */
+const heldRecord = makeAcceptedAck(order, {
+  acknowledgement_id: 'ack-held-1',
+}) as unknown as Record<string, unknown>;
+
+/** The envelope BINDS the record by naming its digest. */
+const heldEnvelope = {
+  envelope_id: 'env-held-1',
+  from_did: 'did:plc:supplier1',
+  to_did: 'did:plc:buyer1',
+  sent_at: '2026-06-01T00:00:01Z',
+  record_digest: heldRecord.acknowledgement_digest,
+};
+
+const signEnvelope = (envelope: unknown): string =>
+  sign(null, Buffer.from(canonicalJson(envelope), 'utf8'), heldPrivate).toString('hex');
+
+const heldSignature = signEnvelope(heldEnvelope);
+
+/** Flip one hex digit — a signature that is well-formed and simply wrong. */
+const flipHex = (hex: string): string =>
+  `${hex.slice(0, -1)}${hex.slice(-1) === '0' ? '1' : '0'}`;
+
+write('held_signed.json', {
+  description:
+    'Genuinely signed §12.7/§16.2 held evidence. The signature is Ed25519 over canonicalJson(envelope); the envelope commits to the record via record_digest. An implementation passes only by verifying BOTH the signature and the record binding.',
+  signer: { did: 'did:plc:supplier1', public_key_hex: heldPublicHex },
+  cases: [
+    {
+      name: 'valid/signature verifies and envelope binds the record',
+      accepted: true,
+      evidence: { record: heldRecord, envelope: heldEnvelope, signature: heldSignature },
+    },
+    {
+      name: 'signature/one hex digit flipped',
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: heldEnvelope,
+        signature: flipHex(heldSignature),
+      },
+    },
+    {
+      name: 'signature/64 hex characters is half an Ed25519 signature',
+      // The exact defect the old "valid" base carried.
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: heldEnvelope,
+        signature: heldSignature.slice(0, 64),
+      },
+    },
+    {
+      name: 'envelope/body altered after signing',
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: { ...heldEnvelope, to_did: 'did:plc:attacker1' },
+        signature: heldSignature,
+      },
+    },
+    {
+      name: 'record/a DIFFERENT valid acknowledgement, not the one bound',
+      // THE CASE THAT ISOLATES THE BINDING, and it took two attempts to get
+      // right. Mutating a field made the record fail its OWN digest, so a
+      // verifier checking only the schema refused it and the binding check was
+      // never exercised — the case passed for the wrong reason.
+      //
+      // This record is a fully valid acknowledgement with a correct digest of
+      // its own, and the signature over the envelope still verifies. Schema
+      // passes, cryptography passes, and the ONLY thing wrong is that the
+      // envelope commits to a different record. Nothing but a binding check
+      // can refuse it.
+      accepted: false,
+      evidence: {
+        record: makeAcceptedAck(order, {
+          acknowledgement_id: 'ack-held-2',
+          supplier_order_id: 'so-held-2',
+        }),
+        envelope: heldEnvelope,
+        signature: heldSignature,
+      },
+    },
+    {
+      name: 'envelope/signed by a different key',
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: heldEnvelope,
+        signature: sign(
+          null,
+          Buffer.from(canonicalJson(heldEnvelope), 'utf8'),
+          createPrivateKey({
+            key: Buffer.concat([
+              Buffer.from('302e020100300506032b657004220420', 'hex'),
+              Buffer.alloc(32, 9),
+            ]),
+            format: 'der',
+            type: 'pkcs8',
+          }),
+        ).toString('hex'),
+      },
+    },
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// nested_unknown.json — §9.13 stripping at EVERY digest-bound depth
+// ---------------------------------------------------------------------------
+//
+// WHY A SECOND FILE. `schema_evolution.unknown_fields` carries FLAT generic
+// objects, so the family built on it could only ever catch a parser that strips
+// at the top level. A schema that preserves top-level unknowns and drops them
+// inside a page, an item, a product reference or a relationship object passes
+// it — and that is the shape of the defect AppView actually shipped, where
+// `z.object()` stripped at every depth while the top level was `.passthrough()`.
+//
+// These cases are REAL records of a named kind, each carrying an unknown field
+// at a different depth, with the canonical bytes that must survive. The kind
+// travels with the case so a port can route it to the parser it really uses for
+// that collection rather than to a generic one.
+const nestedUnknownCases = [
+  {
+    kind: 'catalog_pointer',
+    name: 'top level',
+    record: { ...genesisPointer, future_field: 'x' },
+  },
+  {
+    kind: 'catalog_snapshot',
+    name: 'top level',
+    record: { ...catalogSnapshot, future_field: 'x' },
+  },
+  {
+    kind: 'catalog_page',
+    name: 'inside the page',
+    record: { ...catalogPages[0], future_field: 'x' },
+  },
+  {
+    kind: 'catalog_page',
+    name: 'inside an ITEM of the page',
+    record: {
+      ...catalogPages[0],
+      items: (catalogPages[0].items as Record<string, unknown>[]).map((item, i) =>
+        i === 0 ? { ...item, future_field: 'x' } : item,
+      ),
+    },
+  },
+  {
+    kind: 'catalog_page',
+    name: 'inside an item PRODUCT REF, two levels down',
+    record: {
+      ...catalogPages[0],
+      items: (catalogPages[0].items as Record<string, unknown>[]).map((item, i) =>
+        i === 0
+          ? {
+              ...item,
+              product: {
+                ...(item.product as Record<string, unknown>),
+                future_qualifier: 'x',
+              },
+            }
+          : item,
+      ),
+    },
+  },
+  {
+    kind: 'relationship_claim',
+    name: 'inside the claim SUBJECT',
+    record: {
+      claim_id: 'rc-nested-1',
+      subject: { scheme: 'gtin', value: '0012345678905', future_qualifier: 'x' },
+      relationship: 'variant_of',
+      object: { scheme: 'gtin', value: '0012345678912' },
+      issuer_did: 'did:plc:issuer1',
+    },
+  },
+].map((c) => ({ ...c, canonical: canonicalJson(c.record) }));
+
+write('nested_unknown.json', {
+  description:
+    'A §9.13 additive field at EVERY digest-bound depth, on real records of a named kind. A parser that preserves top-level unknowns and strips nested ones fails here while the flat unknown-field family passes.',
+  cases: nestedUnknownCases,
+});
+
 console.log('done');

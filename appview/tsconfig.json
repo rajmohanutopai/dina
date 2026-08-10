@@ -14,5 +14,13 @@
     "baseUrl": "."
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist"]
+  // `commerce_wire_divergence_sweep.test.ts` is excluded from the BUILD only.
+  // It is a drift gate: it imports `@dina/commerce-protocol` SOURCE by relative
+  // path to compare AppView's independent copy of the wire rules against the
+  // protocol's, and a gate that cannot see both sides cannot detect drift.
+  // That import sits outside this package's `rootDir`, which is correct —
+  // appview ships with no `@dina/*` dependency and production code must keep it
+  // that way. Vitest discovers tests independently of this list, so the gate
+  // still runs; only `tsc` skips it.
+  "exclude": ["node_modules", "dist", "tests/unit/commerce_wire_divergence_sweep.test.ts"]
 }

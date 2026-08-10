@@ -37,8 +37,10 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
+  readSignedQuote,
   validateOrderAcknowledgement,
   validateOrderReconcileResult,
+  verifySignedQuoteForBuyer,
   type GenesisEvent,
   type OrderAcknowledgement,
   type OrderReconcileResult,
@@ -46,13 +48,15 @@ import {
 } from '@dina/commerce-protocol';
 
 import { FIRST_REPOLL_SECONDS } from './buyer_executor';
+import { verifyInboundQuote } from './buyer_quotes';
 import { acknowledgementToResult } from './buyer_reconciliation';
 import { SUBMIT_ORDER_CAPABILITY } from './buyer_sender';
-import { verifyInboundQuote } from './buyer_quotes';
 import { verifyInboundStatus, type EnvelopeEvidence } from './buyer_status';
+import { isCommerceCapability } from './capability_names';
 import { applyReconcileAnswer } from './reconcile_poller';
 import { ORDER_RECONCILE_CAPABILITY } from './reconcile_sweeper';
 import { getCommerceRuntime } from './runtime';
+import { admitSupplierRecords } from './watermark_gate';
 
 import type { BuyerOrderRecord } from './buyer_reconciliation';
 import type { ServiceResponseBody } from '@dina/protocol';
@@ -68,6 +72,18 @@ const hash: Sha256Fn = (data) => sha256(data);
  */
 export const ORDER_STATUS_CAPABILITY = 'order_status';
 export const REQUEST_QUOTE_CAPABILITY = 'request_quote';
+export const CANCEL_ORDER_CAPABILITY = 'cancel_order';
+
+/**
+ * The five buyer-side lanes, each as a one-member set so
+ * `isCommerceCapability` can canonicalize the NSID and hyphenated spellings
+ * the way every other commerce gate does.
+ */
+const SUBMIT_ORDER_LANE: ReadonlySet<string> = new Set([SUBMIT_ORDER_CAPABILITY]);
+const ORDER_RECONCILE_LANE: ReadonlySet<string> = new Set([ORDER_RECONCILE_CAPABILITY]);
+const ORDER_STATUS_LANE: ReadonlySet<string> = new Set([ORDER_STATUS_CAPABILITY]);
+const REQUEST_QUOTE_LANE: ReadonlySet<string> = new Set([REQUEST_QUOTE_CAPABILITY]);
+const CANCEL_ORDER_LANE: ReadonlySet<string> = new Set([CANCEL_ORDER_CAPABILITY]);
 
 export type BuyerResponseOutcome =
   /** Not a commerce answer. The overwhelming majority of service responses. */
@@ -107,6 +123,52 @@ export type BuyerResponseOutcome =
    * cannot say it was actually offered.
    */
   | 'quote_fork'
+  /**
+   * §16.2/§25.3 — a record from a generation this supplier has abandoned, or
+   * one whose epoch cannot be read. Nothing is recorded.
+   *
+   * Distinct from `chain_fork` and NOT a protocol fault: most often the
+   * supplier did nothing wrong. A pre-restore record it signed honestly was
+   * delayed in flight and arrived after the restore that superseded it.
+   * Marking the counterparty for that would accuse it of a contradiction it
+   * never made.
+   */
+  | 'stale_epoch'
+  /**
+   * §16.2 — the answer carried a record attributed to a DIFFERENT supplier
+   * than the authenticated sender. Nothing is recorded.
+   *
+   * KEPT APART FROM `stale_epoch` because the two mean opposite things about
+   * the counterparty. A stale epoch is ordinary post-restore traffic; this one
+   * happens only when a peer writes a third party's DID into its own answer,
+   * which is the watermark-poisoning attempt the sender binding exists to
+   * stop. Collapsing them would file the single observable signal of that
+   * attack under "supplier restored recently", and §22's decision log would
+   * have no way to tell an operator which happened.
+   *
+   * The usual non-disclosure argument does not apply here: this lane sends the
+   * sender no reply at all, so separating the two costs nothing and only the
+   * owner ever sees it.
+   */
+  | 'foreign_supplier'
+  /**
+   * §12.8 — a supplier's signed cancellation result arrived and was RECOGNISED,
+   * but the buyer has no cancellation state machine to apply it to. Named so
+   * an operator sees it; see the branch comment.
+   */
+  | 'cancellation_not_applied'
+  /**
+   * §9.8 — a quote arrived for a `request_id` this node never sent. Nothing is
+   * recorded. Unsolicited quotes are not a lane this buyer has.
+   */
+  | 'unsolicited_quote'
+  /**
+   * §9.8/§20.4 — the quote is well formed and correctly addressed, and it does
+   * not answer the question this node asked: a different request digest, a
+   * different priced projection, lines that do not correspond, or a
+   * substitution the request forbade. Nothing is recorded.
+   */
+  | 'quote_not_our_question'
   | 'applied';
 
 /**
@@ -135,22 +197,102 @@ export function applyInboundBuyerResponse(args: {
   nowMs: number;
 }): BuyerResponseOutcome {
   const { response } = args;
-  const isSubmission = response.capability === SUBMIT_ORDER_CAPABILITY;
-  const isReconcile = response.capability === ORDER_RECONCILE_CAPABILITY;
-  const isStatus = response.capability === ORDER_STATUS_CAPABILITY;
-  const isQuote = response.capability === REQUEST_QUOTE_CAPABILITY;
-  if (!isSubmission && !isReconcile && !isStatus && !isQuote) return 'not_commerce';
+  // THE SAME QUESTION THE SUPPLIER SIDE ASKS, ASKED THE SAME WAY.
+  //
+  // These four used to be raw string equality against the bare wire names
+  // while every other commerce gate went through `isCommerceCapability`, which
+  // canonicalizes the NSID and the hyphenated manifest spellings. §6.6 permits
+  // suppliers that are not the reference plugin, so a conforming third party
+  // echoing `com.dinakernel.commerce.submit_order` had its acknowledgement
+  // silently dropped here as `not_commerce` — and the order then sat in
+  // `outcome_unknown` for ever, which is the exact failure §12.7 exists to
+  // prevent. `capability_names.ts` claims "every check on both sides now asks
+  // the same question of the same function"; this file was the exception.
+  const isSubmission = isCommerceCapability(SUBMIT_ORDER_LANE, response.capability);
+  const isReconcile = isCommerceCapability(ORDER_RECONCILE_LANE, response.capability);
+  const isStatus = isCommerceCapability(ORDER_STATUS_LANE, response.capability);
+  const isQuote = isCommerceCapability(REQUEST_QUOTE_LANE, response.capability);
+  const isCancellation = isCommerceCapability(CANCEL_ORDER_LANE, response.capability);
+  if (!isSubmission && !isReconcile && !isStatus && !isQuote && !isCancellation) {
+    return 'not_commerce';
+  }
   // Reported apart from `unknown_order`, because an operator watching every
   // answer come back "unknown order" on a node that simply has no commerce
   // runtime would go looking in the order store for a problem that is not
   // there.
-  if (getCommerceRuntime() === null) return 'no_runtime';
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return 'no_runtime';
   if (response.query_id === '') return 'unknown_order';
 
   // A supplier that answered `unavailable` or `error` has told us about ITSELF,
   // not about the order. Settling on that would turn "my runner is down" into a
   // commercial outcome; the order stays parked and the re-poll asks again.
   if (response.status !== 'success') return 'not_an_answer';
+
+  // §16.2/§25.3 — THE COUNTERPARTY WATERMARK, on the lane records arrive by.
+  //
+  // The gate itself has existed since CMC-1 and exactly one caller used it:
+  // the plugin TOOL-RESULT lane, where a buyer pack's answer comes back. This
+  // is the buyer's other arrival path — a supplier answering over D2D — and
+  // it is the one §25.3's delayed-pre-restore-write actually travels on. A
+  // record signed BEFORE the supplier's restore sits in a relay queue, or on
+  // a node that never learned it had been superseded, and lands afterwards.
+  // Its signature verifies and its digest verifies, because the supplier
+  // really did sign it. The epoch is the only thing that gives it away, and
+  // nothing here was reading it.
+  //
+  // Unchecked it was appended DURABLY, and the damage compounds: the stale
+  // record becomes the head that the next legitimate one is judged against,
+  // so a chain that was merely behind turns into a chain that reads as
+  // forked — and a fork is recorded as the supplier's fault.
+  //
+  // Placed here, at the one choke point all four commerce capabilities pass
+  // through, rather than inside `verifyInboundQuote` and `verifyInboundStatus`
+  // separately: two copies of a fence are two things to forget, and the
+  // acknowledgement and reconcile paths would still have had none.
+  //
+  // Records with no epoch to check pass untouched — an acknowledgement
+  // carries no `supplier_epoch`, and inventing a refusal for it would break
+  // ordinary submission traffic.
+  const admitted = admitSupplierRecords({
+    watermarks: runtime.watermarks,
+    result: response.result,
+    nowMs: args.nowMs,
+    // BOUND TO THE AUTHENTICATED SENDER, never to the body. Without this the
+    // fence inverts into a weapon: the record's `supplier_did` is a field the
+    // peer writes, and raising a watermark from it lets any supplier this
+    // buyer talks to permanently cut the buyer off from a THIRD party by
+    // naming them at a huge epoch. `raiseTo` only ever goes up.
+    expectedSupplierDid: args.supplierDid,
+  });
+  // The SENDER learns nothing either way — this lane sends no reply — so the
+  // two outcomes are kept apart for the OWNER's benefit, not blurred for the
+  // peer's. `foreign_supplier` is an attempt to poison a third party's fence;
+  // `stale_epoch` is a supplier that restored. An operator reading the
+  // decision log must be able to tell those apart.
+  if (!admitted.accept) {
+    return admitted.refusal.refusal === 'foreign_supplier' ? 'foreign_supplier' : 'stale_epoch';
+  }
+
+  if (isCancellation) {
+    // §12.8 — RECOGNISED, and deliberately not yet applied.
+    //
+    // This lane previously returned `not_commerce`, which said the supplier's
+    // signed `CancellationResult` was not a commerce document at all — so it
+    // vanished with no trace and the buyer's record kept whatever state it
+    // had. That is the wrong answer to the wrong question.
+    //
+    // Applying it needs a buyer-side cancellation applier that does not exist:
+    // the buyer's order record has no cancellation state machine, and inventing
+    // one here — flipping a record on a counterparty's say-so without the
+    // §12.8 race rules the supplier side runs — would be worse than not
+    // applying it. So the honest answer is a named outcome the caller audits,
+    // which the receive pipeline now writes to the decision log.
+    //
+    // OPEN, and recorded in implementation-notes.html rather than left to be
+    // discovered: the buyer learns of a cancellation only by polling status.
+    return 'cancellation_not_applied';
+  }
 
   if (isQuote) {
     return applyInboundQuote({
@@ -347,6 +489,54 @@ function applyInboundQuote(args: {
     args.result !== null && typeof args.result === 'object' && !Array.isArray(args.result)
       ? ((args.result as Record<string, unknown>).quote ?? args.result)
       : args.result;
+
+  // §9.8 BUYER-SIDE BINDINGS, against the request this node actually sent.
+  //
+  // `verifyInboundQuote` below checks the chain and the audience; it cannot
+  // check whether the quote answers the QUESTION, because that needs the
+  // retained request. `verifySignedQuoteForBuyer` does — `request_digest`
+  // against the request this node sent, `priced_delivery_projection_digest`
+  // against the projection it priced, line correspondence, substitution
+  // authority, and acceptance-time expiry. It had no caller because there was
+  // no store to read from, which left §20.4's bait-and-switch unguarded: a
+  // supplier could price a different projection, or answer a different
+  // request, and the buyer would record the quote as its own offer.
+  //
+  // A quote for a request this node never sent is REFUSED, not merely
+  // unverified. Unsolicited quotes are not a lane this buyer has: every quote
+  // it should ever see answers something it asked for, so an unmatched
+  // `request_id` is either a stray or an attempt.
+  const structural = readSignedQuote(candidate, hash);
+  if (!structural.ok) return 'unreadable';
+  // AUDIENCE BEFORE QUESTION, and the order carries meaning. A quote addressed
+  // to a different buyer, or claiming a supplier other than the authenticated
+  // sender, is `quote_fork` — the outcome that already covers "offered to
+  // somebody else". Letting the §9.8 binding check answer first would report
+  // every misaddressed quote as one that answers the wrong question, which is
+  // a different accusation about a different mistake.
+  if (
+    structural.quote.buyer_did !== nodeDid ||
+    structural.quote.supplier_did !== args.supplierDid
+  ) {
+    return 'quote_fork';
+  }
+  const retained = runtime.buyerQuoteRequests.get(structural.quote.request_id);
+  if (retained === null) return 'unsolicited_quote';
+  const bindingError = verifySignedQuoteForBuyer(
+    candidate,
+    {
+      buyer_did: nodeDid,
+      // The TRANSPORT-authenticated sender, not the quote's own field.
+      authenticated_supplier_did: args.supplierDid,
+      retained_request_digest: retained.request_digest,
+      sent_projection_digest: retained.delivery.projection.projection_digest,
+      epoch_watermark: runtime.watermarks.get(args.supplierDid),
+      retained_request: retained,
+      at_iso: new Date(args.nowMs).toISOString(),
+    },
+    hash,
+  );
+  if (bindingError !== null) return 'quote_not_our_question';
 
   const ingest = verifyInboundQuote({
     supplierDid: args.supplierDid,

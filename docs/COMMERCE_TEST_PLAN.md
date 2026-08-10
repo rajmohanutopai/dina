@@ -33,6 +33,17 @@ Sancho is the retailer (buyer), ChairMaker the manufacturer (supplier) —
 UTOPAI naming, used consistently across every scenario file. 47 journey cases
 in five files, all driving the real engines rather than doubles.
 
+> **Caveat on "end to end", added after a cold audit found it false.** Every
+> journey below registers its quote by calling
+> `admission.registerSignedQuote(quote)` with a quote a TEST HELPER built. For a
+> long time that hid the fact that production had no way to issue a quote at
+> all: nothing outside tests constructed a `SignedQuote`, nothing wrote the
+> `request`-domain receipt admission requires, and `request_quote` fell through
+> the workflow seam. These suites prove the engines agree with one another.
+> **`quote_issuance_journey.test.ts` is the one that proves a quote can be
+> issued** — it registers nothing by hand, so the only way a quote exists in it
+> is the production seam.
+
 ### `procurement_scenario.test.ts` — the trade itself, both storage backends
 
 Runs twice, in-memory and SQLite, so a rule that depends on storage semantics
@@ -40,7 +51,7 @@ cannot pass in one and fail in the other.
 
 | Scenario | What it pins |
 |---|---|
-| the whole journey: quote, order, accept, fulfil, deliver | the happy path exists end to end |
+| the whole journey: quote, order, accept, fulfil, deliver | the engines agree across the arc — see the caveat below |
 | survives a restart | both sides still agree after a cold start |
 | refuses a second order once quote capacity is spent | §9.9 capacity is not a suggestion |
 | the chain is fenced before it moves again after a restore | §16.2 — no silent resumption |
@@ -200,3 +211,62 @@ neutered and the suite re-run, and three of those checks caught something:
   exactly the cases that assert disagreement.
 - A camelCase key injected into a wire-record builder compiled cleanly after
   the first ARCH-3 fix, which is how that fix was found to be checking nothing.
+
+---
+
+## 8. Added 2026-08-10 — the discovery, conformance and leakage layers
+
+Written the same way as the rest: by reading the suites, not by recalling what
+was written. Counts at the time of writing: **core 437 suites / 8,180 ·
+commerce-protocol 408 · AppView 127 files / 2,582 against real Postgres**.
+
+AppView runs on Vitest against a live database, so it needs a DSN:
+
+```bash
+cd appview && DATABASE_URL=postgresql://<user>@localhost:5432/dina_commerce_test npm test
+```
+
+### 8.1 What each new suite PROVES
+
+| Suite | Proves |
+|---|---|
+| `appview/tests/integration/commerce_discovery_interop.test.ts` | A retailer finds a manufacturer they were never told about — by category, free text, a GTIN read off the product, and a scoped secondary SKU. Ingests **Core's own published bytes** via a regenerate-and-compare fixture, so the two independently deployed halves are joined by bytes rather than by a shared import. |
+| `packages/core/__tests__/commerce/catalog_interop_fixture.test.ts` | The producer half of that join. Regenerate with `DINA_WRITE_INTEROP_FIXTURE=1`; it byte-compares otherwise. |
+| `appview/tests/integration/commerce_xrpc_route_layer.test.ts` | The route TABLE and the ZOD PARSE — the two things a caller meets that every handler-level test skips. A bound is **refused, not clamped**: silently serving 50 to a caller who asked for 5000 makes a truncated page look complete. |
+| `appview/tests/integration/commerce_no_secrets.test.ts` | §25.2 as a property of AppView. Scans **every** text/jsonb column of every commerce table, with the column list read from `information_schema` so it covers columns nobody remembered. Found two real leaks (regions, indicative price), then a third (`category_ids`) and a fourth (relationship `evidence_refs`) under review. |
+| `appview/tests/integration/commerce_relationship_ingest.test.ts` | §10.7 against real Postgres: two claims naming different parents land on ONE edge marked disputed with BOTH kept, because deleting the loser is the silent merge the spec forbids. |
+| `appview/tests/integration/commerce_review_dimensions_route.test.ts` | §14.4 reached through an endpoint. The projection had been correct, tested, and had no consumer. |
+| `packages/commerce-protocol/__tests__/conformance_runner.test.ts` | All ten frozen vector families executable by a third party, plus **10 negative tests** proving the kit is not a rubber stamp. |
+| `packages/core/__tests__/commerce/vertical_constraints.test.ts` | §17.5 structurally: no LLM, no randomness, money as integer minor units, the clock read only as a composition default. |
+| `packages/core/__tests__/commerce/wbs_hygiene.test.ts` | The WBS itself: every PART row names a gap, every cited repo path exists. |
+| `scripts/commerce/live_pds_publication.mjs` | Catalog bytes over a **live** AT Protocol PDS, digests re-derived on read-back. Self-checks its digest arithmetic offline first, so a bug in the script can never be reported as a transport bug. Refuses any host but `test-*.dinakernel.com`. |
+
+### 8.2 What these do NOT cover
+
+- **Discovery across a real network.** The deployed AppView predates the
+  commerce methods (`Unknown method` for `searchCatalog`); needs a redeploy.
+- **A live PDS round trip.** The PDS is live and the identities resolve, but the
+  committed fixture password does not match the live ChairMaker account.
+- **A real ERP.** Odoo's demo provisioner answers 500; the local Docker
+  fallback needs the daemon running.
+
+Each is a named action, not missing infrastructure — see `implementation-notes.html`.
+
+### 8.3 Mutation discipline, continued
+
+Every gate above was neutered and re-run. The ones that earned their place:
+
+- Removing the variant-digest comparison fails
+  `same_identifier_different_variant_is_NOT_a_substitute` — the §9.4
+  substitute-for-the-ordered-thing failure.
+- Reverting the region rebuild re-leaks a nested secret into a searchable
+  column; reverting `categoryIds` does the same one level down.
+- Disabling the `malformed_item` guard reproduces
+  `TypeError: … reading 'generated_at'` escaping the ingest path — proving the
+  difference between a refusal and a throw.
+- Un-signing a tainted publication empties the index, which is how the
+  no-secrets positive control was found to be passing over an empty database.
+
+**A mutation that changes nothing is indistinguishable from a test that catches
+nothing.** One mutation this session silently failed to apply because the
+anchor text was wrong; it now asserts the anchor exists before mutating.

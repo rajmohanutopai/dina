@@ -26,6 +26,11 @@ function item(overrides: Partial<CatalogItemShape> = {}): CatalogItemShape {
     item_revision: '1',
     name: 'Oak dining chair',
     category_ids: ['furniture.seating'],
+    // `pack` is REQUIRED by §9.5 and this fixture omitted it, so every case in
+    // this file was projecting an item no conformant publisher could publish —
+    // and passing, because the projection checked a handful of shallow types
+    // rather than the protocol's rules.
+    pack: { sell_unit: { unit_code: 'each', value: '1' } },
     fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
     freshness: { generated_at: '2026-08-08T09:00:00.000Z' },
     ...overrides,
@@ -119,12 +124,22 @@ describe('what the projection refuses', () => {
     // `CHAIR-1` means nothing without knowing who issues it, and two suppliers
     // may both use it. A secondary identifier gets the same rule: it is a
     // lookup key, so an ambiguous one points at the wrong product.
+    // BOTH cases, because the title promised two and the test exercised one.
+    const primary = project([item({ product: { scheme: 'custom', value: 'CHAIR-1' } })])
+    expect(primary.ok).toBe(false)
+    if (primary.ok) throw new Error('expected a refusal')
+    expect(primary.findings[0]?.refusal).toBe('unattributed_identifier')
+    expect(primary.findings[0]?.detail).toContain('item.product.issuer_did')
+
     const secondary = project([
       item({ identifiers: [{ scheme: 'custom', value: 'INTERNAL-77' }] }),
     ])
     expect(secondary.ok).toBe(false)
     if (secondary.ok) throw new Error('expected a refusal')
-    expect(secondary.findings[0]?.detail).toContain('secondary')
+    expect(secondary.findings[0]?.refusal).toBe('unattributed_identifier')
+    // The PATH names which identifier, so primary and secondary stay
+    // distinguishable without the refusal detail restating it in prose.
+    expect(secondary.findings[0]?.detail).toContain('item.identifiers[0].issuer_did')
   })
 
   it('refuses an item that names a supplier other than the publishing repo', () => {

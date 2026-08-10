@@ -24,21 +24,39 @@ import {
 } from '../../src/commerce/buyer_executor';
 import { newBuyerOrder } from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
+import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 
-import { BUYER_DID, SUPPLIER_DID, makeOrder, makeQuoteRequest, makeSignedQuote } from './helpers';
+import {
+  BUYER_DID,
+  SUPPLIER_DID,
+  installActiveBuyerPack,
+  makeOrder,
+  makeQuoteRequest,
+  makeSignedQuote,
+  type InstalledBuyerPack,
+} from './helpers';
 
 import type { OrderAcknowledgement, PurchaseOrderProposal } from '@dina/commerce-protocol';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
+
+/** The owner this node acts for. §7.3: one grant, evaluated like any other. */
+const TEST_OWNER_DID = 'did:plc:testowner00000000';
 
 const NOW = 1_700_000_000_000;
 
-const INSTALL: ActingInstall = {
-  installId: 'install-buyer',
-  capabilityId: 'com.dinakernel.commerce.submit-order',
-  manifestCid: 'bafyreibuyer',
-  installScopeHash: 's'.repeat(64),
-  configRevision: '1',
-};
+/**
+ * A REAL install, minted per test (NEW-11).
+ *
+ * `submitApprovedOrder` now re-resolves the acting install against the
+ * registry immediately before sending — the guard moved in here from the
+ * routes so a third send path cannot be written without it. A hand-written
+ * `ActingInstall` constant no longer describes anything this node knows, so
+ * the harness stands in for the composition root the way the route suites do.
+ */
+let pack: InstalledBuyerPack;
+let INSTALL: ActingInstall;
 const PRINCIPAL: ApprovingPrincipal = {
   principalDid: 'did:plc:sanchoowner',
   authorityDomain: 'procurement',
@@ -114,12 +132,32 @@ let buyerOrders: InMemoryBuyerOrderRepository;
 let events: string[];
 
 beforeEach(() => {
+  pack = installActiveBuyerPack(NOW);
+  INSTALL = {
+    installId: pack.installId,
+    capabilityId: pack.capabilityId,
+    manifestCid: pack.manifestCid,
+    installScopeHash: pack.installScopeHash,
+    configRevision: pack.configRevision,
+  };
   buyerOrders = new InMemoryBuyerOrderRepository();
   events = [];
-  installCommerceRuntime({ buyerOrders } as unknown as CommerceRuntime);
+  installCommerceRuntime({
+    buyerOrders,
+    // §12.4 step 6 — the executor now revalidates the held quote before
+    // dispatch, so a runtime double without these is not a smaller runtime, it
+    // is one whose pre-dispatch check cannot run. Empty stores mean "no quote
+    // held", which is the documented skip: expiry and terms are checked only
+    // against a quote this node actually holds.
+    buyerQuotes: new InMemoryBuyerQuoteRepository(),
+    buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),
+  } as unknown as CommerceRuntime);
 });
 
-afterEach(() => installCommerceRuntime(null));
+afterEach(() => {
+  pack.dispose();
+  installCommerceRuntime(null);
+});
 
 /** A sender that records that it ran, so the ORDER of operations is visible. */
 function sender(outcome: BuyerSendOutcome) {
@@ -141,6 +179,15 @@ async function submit(
     serviceRkey: 'self',
     send: sender(outcome),
     nowMs: NOW,
+  
+    // DR-1: authority is REQUIRED now. The single-owner configuration is
+    // one grant evaluated like any other — not a branch that skips §7.3.
+    authority: singleOwnerAuthority({
+      ownerDid: TEST_OWNER_DID,
+      order: proposal,
+      context: overrides.context ?? context(),
+      serviceRkey: 'self',
+    }),
   });
 }
 
@@ -227,6 +274,15 @@ describe('two writers on one order', () => {
           return { kind: 'ambiguous', reason: 'slow' } as const;
         },
         nowMs: NOW,
+      
+        // DR-1: authority is REQUIRED now. The single-owner configuration is
+        // one grant evaluated like any other — not a branch that skips §7.3.
+        authority: singleOwnerAuthority({
+          ownerDid: TEST_OWNER_DID,
+          order: proposal,
+          context: context(),
+          serviceRkey: 'self',
+        }),
       }),
     );
     const results = await Promise.all(both);
@@ -262,6 +318,15 @@ describe('two writers on one order', () => {
         return { kind: 'ambiguous', reason: 'transport slow' } as const;
       },
       nowMs: NOW,
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order: proposal,
+        context: context(),
+        serviceRkey: 'self',
+      }),
     });
 
     expect(result.ok).toBe(true);
@@ -311,6 +376,15 @@ describe('two writers on one order', () => {
           return { kind: 'ambiguous', reason: 'slow' } as const;
         },
         nowMs: NOW,
+      
+        // DR-1: authority is REQUIRED now. The single-owner configuration is
+        // one grant evaluated like any other — not a branch that skips §7.3.
+        authority: singleOwnerAuthority({
+          ownerDid: TEST_OWNER_DID,
+          order: proposal,
+          context: context(),
+          serviceRkey: 'self',
+        }),
       });
     const results = (await Promise.all([resend(), resend()])) as {
       ok: boolean;
@@ -341,6 +415,15 @@ describe('the crash between recording and sending', () => {
         serviceRkey: 'self',
         send: () => Promise.reject(new Error('the process died mid-send')),
         nowMs: NOW,
+      
+        // DR-1: authority is REQUIRED now. The single-owner configuration is
+        // one grant evaluated like any other — not a branch that skips §7.3.
+        authority: singleOwnerAuthority({
+          ownerDid: TEST_OWNER_DID,
+          order: proposal,
+          context: context(),
+          serviceRkey: 'self',
+        }),
       }),
     ).rejects.toThrow('the process died mid-send');
   }
@@ -430,8 +513,27 @@ describe('settling from the send outcome', () => {
 });
 
 describe('the binding this executor enforces (§15.2 / FR-P5)', () => {
+  it('refuses a SWAPPED INSTALL at the registry re-check, not at the binding', async () => {
+    // NEW-11 made this explicit. The binding compares two derivations of one
+    // retained value and cannot fail; what refuses a swapped install is the
+    // live registry read. Asserting the refusal CODE is how the test says
+    // which layer did the work — it used to say `approval_binding_failed`,
+    // which named a check that was not the one refusing.
+    const proposal = order();
+    const result = await submit(
+      proposal,
+      { kind: 'acknowledged', acknowledgement: ack('accepted') },
+      {
+        approved: approvalFor(proposal),
+        context: context({ install: { ...INSTALL, installId: 'install-other' } }),
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false, refusal: 'install_changed_since_approval' });
+    expect(events).toEqual([]);
+  });
+
   it.each([
-    ['a swapped install', () => context({ install: { ...INSTALL, installId: 'install-other' } })],
     [
       'a different principal',
       () => context({ principal: { ...PRINCIPAL, principalDid: 'did:plc:someoneelse' } }),

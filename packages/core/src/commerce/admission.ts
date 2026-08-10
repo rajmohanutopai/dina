@@ -36,6 +36,7 @@ import {
   verifyOrderAgainstQuote,
   type OrderAcknowledgement,
   type PurchaseOrderProposal,
+  type QuoteRequest,
   type Sha256Fn,
   type SignedQuote,
   readPurchaseOrderProposal,
@@ -309,6 +310,44 @@ export class CommerceAdmissionEngine {
       createdAt: nowMs,
     });
     return null;
+  }
+
+  /**
+   * §9.8/§9.9 — retain the buyer's REQUEST, without which a later order
+   * cannot be checked.
+   *
+   * `admitInTx` looks this receipt up by `quote.request_digest` and uses the
+   * retained request's delivery projection as the yardstick for the §9.9
+   * projection-extends rule. Nothing wrote it: the domain existed, the reader
+   * existed, and the writer was only ever a test fixture — so on a real node
+   * every inbound order was refused `quote_unknown` with the operator detail
+   * "retained request receipt missing".
+   *
+   * WHY THE RECEIPT AND NOT A COPY INSIDE THE QUOTE. The request is the
+   * buyer's document, digested by the buyer; keeping the original bytes is
+   * what lets `verifyCommerceRecordDigest` re-derive `request_digest` later
+   * and prove the quote answers THIS question. A field copied into the quote
+   * would be the supplier's account of what was asked.
+   *
+   * First-writer-wins on the digest, so a replayed request is a no-op rather
+   * than a conflict — the same document has the same digest.
+   */
+  retainQuoteRequestInTx(request: QuoteRequest, authenticatedBuyerDid: string): void {
+    this.deps.receipts.put({
+      recordDigest: request.request_digest,
+      domain: 'request',
+      buyerDid: request.buyer_did,
+      quoteId: '',
+      purchaseOrderId: '',
+      recordJson: JSON.stringify(request),
+      // §9.12 — who actually handed this node the document, which is the
+      // authenticated sender and never a field the document chose.
+      evidenceJson: receivedFrom({
+        fromDid: authenticatedBuyerDid,
+        observedAt: this.deps.now(),
+      }),
+      createdAt: this.deps.now(),
+    });
   }
 
   // -------------------------------------------------------------------------

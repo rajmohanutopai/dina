@@ -477,7 +477,19 @@ describe('transformInboundOrderResult — the workflow seam', () => {
   // changed no order, no status head and no hold, and the buyer believed it.
   // The whole atomic cancellation engine was unreachable. Its own tests are
   // below.
-  it.each(['request_quote', 'availability'])(
+  //
+  // `request_quote` USED TO BE HERE TOO, and it was the same defect one lane
+  // larger. Passing it through meant the runner's unsigned terms went to the
+  // buyer as the answer: no Core signature, no quote id, no registered family,
+  // and so no capacity for any later order to spend — the supplier's own
+  // admission then refused every order against it with `quote_unknown`. This
+  // test asserted that behaviour, which is how it survived: it encoded what
+  // the code did rather than what §9.8 requires. Quote issuance is now a
+  // decided lane and is covered by `quote_issuance.test.ts`.
+  //
+  // What is LEFT in this list is a capability commerce genuinely does not own,
+  // which is the only thing the rule was ever about.
+  it.each(['availability'])(
     'leaves %s untouched',
     (capability) => {
       const seen: unknown[] = [];
@@ -719,8 +731,12 @@ describe('a reported status is corrected against Core’s own chain (§9.11)', (
   });
 
   it('does not touch capabilities it does not own', () => {
+    // `request_quote` was the example here and is no longer a valid one:
+    // commerce now owns that lane and signs its answer. `availability` is a
+    // capability the commerce seam genuinely has no view on, which is what
+    // this case is for.
     runtimeWithChain('accepted');
-    expect(report(JSON.stringify({ state: 'delivered' }), 'request_quote')).toBeNull();
+    expect(report(JSON.stringify({ state: 'delivered' }), 'availability')).toBeNull();
   });
 
   it('passes an unreadable answer through rather than swallowing it', () => {

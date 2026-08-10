@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { logger } from '@/shared/utils/logger.js'
 import type { TrustCollection } from '@/config/lexicons.js'
 import { CONSTANTS } from '@/config/constants.js'
+import {
+  admitsProtocolVersion,
+  validateId,
+  validateRelationshipClaim,
+} from '@/shared/commerce/wire-rules.js'
 
 /**
  * Zod validation schemas for all 19 trust record types.
@@ -520,23 +525,81 @@ const hex64 = z.string().regex(/^[0-9a-f]{64}$/, 'must be 64 lowercase hex chara
 const CATALOG_MAX_PAGES = 1000
 const CATALOG_MAX_PAGE_ITEMS = 500
 
+/**
+ * §9.13 FORWARD COMPATIBILITY: these schemas PASS THROUGH unknown keys.
+ *
+ * `z.object()` strips what it does not name, and the commerce records are
+ * DIGEST-BOUND: `catalogPageDigest` recomputes over the page it is handed, so a
+ * stripped field means the recomputed digest no longer equals the one the
+ * supplier committed to, and `verifyCatalogPage` refuses the whole publication.
+ * A supplier publishing on a newer MINOR — field present, digest committing to
+ * it — was therefore silently unindexable across their entire catalog.
+ *
+ * Reproduced before fixing: validation passed, the field did not survive, and
+ * the digest no longer verified. That is exactly the law
+ * `schema_evolution.json` freezes ("an unknown field CHANGES the canonical
+ * bytes") inverted in the consumer of it.
+ *
+ * Validation stays a GATE and stops being a TRANSFORM. `.passthrough()` rather
+ * than handing handlers the raw record, because the raw-record change would
+ * alter what EVERY collection's handler receives, and this defect is
+ * commerce's.
+ */
+/**
+ * §9.13 admission, not merely a shape.
+ *
+ * `protocol_version` was `z.string().min(1).max(16)`, so `"banana"` and `"2.0"`
+ * both passed and were best-effort indexed. §9.13 says a receiver never
+ * best-effort-parses across MAJORS: a same-major higher minor is additive and
+ * must be admitted, an unknown major must fail closed. A publisher who
+ * recomputes the commitments could otherwise have a catalog from a protocol
+ * this AppView does not implement indexed as if it understood it.
+ */
+const commerceProtocolVersion = z
+  .string()
+  .refine((v) => admitsProtocolVersion(v, 'protocol_version') === null, {
+    message: 'protocol_version must be MAJOR.MINOR of a supported major',
+  })
+
+/**
+ * A record key, to the rule the protocol states (`validateId`).
+ *
+ * `service_rkey` was a KNOWN protocol field that no schema named, so
+ * `.passthrough()` carried it through unvalidated: a 200-character rkey was
+ * stored and emitted inside `service_uri`, where every conformant reader
+ * refuses it at 128.
+ */
+const commerceRkey = z
+  .string()
+  .refine((v) => validateId(v, 'rkey') === null, { message: 'not a usable record key' })
+
 const catalogPointerSchema = z
   .object({
     supplier_did: didString,
     catalog_id: z.string().min(1).max(128),
     snapshot_sequence: z.number().int().min(1),
-    protocol_version: z.string().min(1).max(16),
+    protocol_version: commerceProtocolVersion,
     published_at: z.string().datetime(),
-    snapshot_rkey: z.string().min(1).max(512).optional(),
+    service_rkey: commerceRkey.optional(),
+    snapshot_rkey: commerceRkey.optional(),
     snapshot_digest: hex64.optional(),
     previous_snapshot_digest: hex64.optional(),
     withdrawn: z.boolean().optional(),
   })
+  .passthrough()
   .refine(
-    (p) => (p.withdrawn === true ? p.snapshot_digest === undefined : p.snapshot_digest !== undefined),
+    (p) =>
+      p.withdrawn === true
+        ? p.snapshot_digest === undefined && p.snapshot_rkey === undefined
+        : p.snapshot_digest !== undefined && p.snapshot_rkey !== undefined,
     {
+      // BOTH halves, on both sides. The rule checked only `snapshot_digest`,
+      // so a live pointer with a digest and no rkey passed — and the protocol
+      // requires the pair, because the rkey is what a reader FETCHES and the
+      // digest is what they then verify. One without the other is half a
+      // reference.
       message:
-        'a withdrawal must name no snapshot, and a live pointer must name one',
+        'a withdrawal must name no snapshot, and a live pointer must name both its rkey and its digest',
     },
   )
 
@@ -546,26 +609,26 @@ const catalogSnapshotPageSchema = z.object({
   page_index: z.number().int().min(0),
   items: z.array(z.unknown()).max(CATALOG_MAX_PAGE_ITEMS),
   page_digest: hex64,
-})
+}).passthrough()
 
 const catalogSnapshotRecordSchema = z.object({
   snapshot: z.object({
     supplier_did: didString,
     catalog_id: z.string().min(1).max(128),
     snapshot_sequence: z.number().int().min(1),
-    protocol_version: z.string().min(1).max(16),
+    protocol_version: commerceProtocolVersion,
     published_at: z.string().datetime(),
     page_digests: z.array(hex64).max(CATALOG_MAX_PAGES),
     item_count: z.number().int().min(0),
     payload_root: hex64,
     snapshot_digest: hex64,
-  }),
+  }).passthrough(),
   // §10.3 v1: pages travel INLINE. An HTTPS-served feed is a later,
   // additive variant; a record that omits `pages` is refused rather than
   // half-indexed, because a full-state snapshot missing pages omits
   // products with nothing in the record to say so.
   pages: z.array(catalogSnapshotPageSchema).max(CATALOG_MAX_PAGES),
-})
+}).passthrough()
 
 
 const productRefSchema = z.object({
@@ -583,17 +646,23 @@ const productRefSchema = z.object({
  */
 const relationshipClaimSchema = z.object({
   claim_id: z.string().min(1).max(128),
-  subject: productRefSchema,
-  relationship: z.enum([
-    'manufactured_by',
-    'marketed_under',
-    'variant_of',
-    'packaging_variant_of',
-    'same_formulation_as',
-    'replaces',
-    'sold_by',
-  ]),
-  object: z.union([productRefSchema, z.object({ did: didString })]),
+  /**
+   * STRUCTURE ONLY HERE; the rules live in `validateRelationshipClaim`.
+   *
+   * These three fields were `productRefSchema`, a 7-value enum, and a
+   * `z.union([productRefSchema, {did}])`. Zod PARSES a union by taking the
+   * first branch that fits and discarding the rest of the input, so
+   * `{scheme, value, did}` became a clean ProductRef with `did` removed — and
+   * the refinement below, which runs on Zod's OUTPUT, then had nothing left to
+   * object to. A rule cannot inspect evidence an earlier stage deleted.
+   *
+   * Leaving these loose means the refinement sees the bytes that arrived, and
+   * it means the §10.3 vocabulary is stated in exactly one place instead of
+   * two that already drifted apart once.
+   */
+  subject: z.record(z.unknown()),
+  relationship: z.string(),
+  object: z.record(z.unknown()),
   issuer_did: didString,
   effective_from: z.string().datetime().optional(),
   effective_until: z.string().datetime().optional(),
@@ -603,6 +672,50 @@ const relationshipClaimSchema = z.object({
   /** Present ONLY on a model-suggested edge; §10.7 wants it versioned. */
   inference_version: z.string().min(1).max(64).optional(),
 })
+  /**
+   * PASSTHROUGH, for a different reason than the catalog records.
+   *
+   * A claim is not digest-bound, so stripping breaks no verification. It
+   * breaks a PROMISE instead: `commerce_relationship_claims` stores
+   * `claimJson: claim`, and the schema says that table "holds what people SAID,
+   * verbatim and durably" — which was false in production, because the handler
+   * receives the parsed record and stored a claim with every unnamed field
+   * removed.
+   *
+   * That promise is load-bearing. `rebuildSubject` RE-DERIVES edges from
+   * `claim_json` on every later claim touching the subject, so a field stripped
+   * at insert is gone for good: a later version that understands it cannot
+   * recover what was never kept. "Verbatim" is what makes deriving-rather-than-
+   * mutating work at all.
+   */
+  .passthrough()
+  /**
+   * THE PROTOCOL'S OWN RULES, applied once rather than restated in Zod.
+   *
+   * What the schema above cannot express, and what each omission let through:
+   *
+   *   - The §10.3 DISCRIMINANT, in both directions. `object` is a union, and
+   *     Zod picks the first branch that fits — so `{scheme, value, did}` parsed
+   *     as a ProductRef and `variant_of` was accepted for what is really an
+   *     operator. The inverse was open too: `manufactured_by` with a ProductRef
+   *     object asserts a product is manufactured BY ANOTHER PRODUCT, an edge
+   *     that means nothing and still composes manufacturer standing.
+   *   - SCOPED PRODUCT IDENTITY. `issuer_did` was optional on every ref, so an
+   *     unqualified `manufacturer_sku` collided across issuers, and `gtin` was
+   *     any non-empty string rather than 8–14 digits.
+   *   - TEMPORAL ORDER. Two independent timestamps with no relation between
+   *     them accepted `effective_until` BEFORE `effective_from`.
+   *
+   * `validateRelationshipClaim` states all of it, and frozen parity vectors
+   * hold it to the protocol. Restating any of it here would be the second copy
+   * that started this.
+   */
+  .superRefine((claim, ctx) => {
+    const error = validateRelationshipClaim(claim)
+    if (error !== null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid claim', path: [error] })
+    }
+  })
 
 // ── Schema map ──────────────────────────────────────────────────────
 
@@ -630,7 +743,22 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   'com.dinakernel.commerce.catalog': catalogPointerSchema,
   'com.dinakernel.commerce.catalogSnapshot': catalogSnapshotRecordSchema,
   'com.dinakernel.commerce.relationshipClaim': relationshipClaimSchema,
+  // NOTE: every collection added here whose contents are covered by a digest
+  // must also be listed in DIGEST_BOUND_COLLECTIONS below.
 }
+
+/**
+ * Collections whose contents are covered by a digest the publisher signed.
+ *
+ * For these, `validateRecord` returns the record it was GIVEN rather than
+ * Zod's parse product, because any key Zod strips changes the canonical bytes
+ * a digest is recomputed over. See the explanation at the return site.
+ */
+const DIGEST_BOUND_COLLECTIONS: ReadonlySet<string> = new Set([
+  'com.dinakernel.commerce.catalog',
+  'com.dinakernel.commerce.catalogSnapshot',
+  'com.dinakernel.commerce.relationshipClaim',
+])
 
 // ── Public API ──────────────────────────────────────────────────────
 
@@ -659,10 +787,48 @@ export function validateRecord(
 
   if (!result.success) {
     logger.warn(
-      { collection, errors: result.error.issues },
+      {
+        collection,
+        // CODE AND PATH ONLY. Zod's issue objects carry `received` and a
+        // message quoting the raw value, so serialising the issue array put
+        // publisher-controlled plaintext into stdout — the one thing the
+        // logging rule forbids. The code and path say what is wrong without
+        // reprinting the bytes.
+        issues: result.error.issues.map((issue) => ({
+          code: issue.code,
+          path: issue.path.join('.'),
+        })),
+      },
       '[Validator] Record validation failed',
     )
     return { success: false, errors: result.error }
+  }
+
+  // DIGEST-BOUND COLLECTIONS GET THEIR OWN BYTES BACK.
+  //
+  // `result.data` is Zod's PARSE PRODUCT, and Zod strips keys no schema names
+  // — at every depth. For a record whose digest is recomputed downstream that
+  // is silent corruption twice over:
+  //
+  //   - §9.13 says a same-major additive field must survive to the digest. A
+  //     stripped field changes the canonical bytes, so `catalogPageDigest`
+  //     computes a different digest than the publisher signed and a valid
+  //     catalog becomes permanently unindexable.
+  //   - Stripping can change what a record MEANS. `{scheme, value, did}` in a
+  //     relationship object parses as a ProductRef with `did` removed, so a
+  //     claim the protocol refuses — `variant_of` cannot relate an operator —
+  //     arrives downstream looking valid.
+  //
+  // An earlier pass reached for `.passthrough()` instead, and noted that
+  // returning the raw record "would alter what EVERY collection's handler
+  // receives". That objection is answered by scoping rather than by weakening:
+  // only these three collections are digest-bound, so only these three opt out
+  // of the transform. `.passthrough()` also only ever fixed the TOP level —
+  // the nested objects kept stripping, which is the defect in a subtler place.
+  //
+  // Validation is a GATE here, never a TRANSFORM.
+  if (DIGEST_BOUND_COLLECTIONS.has(collection)) {
+    return { success: true, data: record as ValidationResult['data'] }
   }
 
   return { success: true, data: result.data }

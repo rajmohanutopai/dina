@@ -4,26 +4,6 @@ import { buildOAuthClientMetadata } from '@/web/oauth_metadata.js'
 import { createDb } from '@/db/connection.js'
 import { ensureFtsColumns } from '@/db/fts_columns.js'
 import { sql } from 'drizzle-orm'
-import { resolve, ResolveParams } from '@/api/xrpc/resolve.js'
-import { search, SearchParams } from '@/api/xrpc/search.js'
-import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
-import { getProfile, GetProfileParams } from '@/api/xrpc/get-profile.js'
-import { getAttestations, GetAttestationsParams } from '@/api/xrpc/get-attestations.js'
-import { serviceSearch, ServiceSearchParams } from '@/api/xrpc/service-search.js'
-import {
-  searchCommerceCatalog,
-  CommerceCatalogSearchParams,
-} from '@/api/xrpc/commerce-catalog-search.js'
-import { searchCapabilities, SearchCapabilitiesParams } from '@/api/xrpc/search-capabilities.js'
-import { catalogCapabilities, CatalogCapabilitiesParams } from '@/api/xrpc/catalog-capabilities.js'
-import { serviceIsDiscoverable, ServiceIsDiscoverableParams } from '@/api/xrpc/service-is-discoverable.js'
-import { serviceGetByUri, ServiceGetByUriParams } from '@/api/xrpc/service-get-by-uri.js'
-import { attestationStatus, AttestationStatusParams } from '@/api/xrpc/attestation-status.js'
-import { cosigList, CosigListParams } from '@/api/xrpc/cosig-list.js'
-import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed.js'
-import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get.js'
-import { getAlternatives, GetAlternativesParams } from '@/api/xrpc/get-alternatives.js'
-import { getNegativeSpace, GetNegativeSpaceParams } from '@/api/xrpc/get-negative-space.js'
 import {
   InjectAttestationBody,
   DeleteAttestationBody,
@@ -37,6 +17,8 @@ import {
   checkPerMethodRateLimit,
   createRateLimitCache,
 } from '@/api/middleware/rate-limit.js'
+import { dispatchXrpc } from '@/web/xrpc-dispatch.js'
+import { XRPC_ROUTES } from '@/web/xrpc-routes.js'
 import { extractClientIp } from '@/api/middleware/client-ip.js'
 import { logger } from '@/shared/utils/logger.js'
 import { aggregator } from '@/shared/utils/metrics.js'
@@ -62,32 +44,6 @@ const TRUST_PROXY = process.env.TRUST_PROXY === '1'
 const rateLimitEnvOverride = parseInt(process.env.RATE_LIMIT_RPM ?? '0', 10)
 const rateLimitCache = createRateLimitCache()
 
-const ROUTES: Record<string, { params: any; handler: (db: any, params: any) => Promise<any> }> = {
-  'com.dinakernel.peerlens.resolve': { params: ResolveParams, handler: resolve },
-  'com.dinakernel.peerlens.search': { params: SearchParams, handler: search },
-  'com.dinakernel.peerlens.getGraph': { params: GetGraphParams, handler: getGraph },
-  'com.dinakernel.peerlens.getProfile': { params: GetProfileParams, handler: getProfile },
-  'com.dinakernel.peerlens.getAttestations': { params: GetAttestationsParams, handler: getAttestations },
-  'com.dinakernel.service.search': { params: ServiceSearchParams, handler: serviceSearch },
-  'com.dinakernel.service.searchCapabilities': { params: SearchCapabilitiesParams, handler: searchCapabilities },
-  'com.dinakernel.catalog.capabilities': { params: CatalogCapabilitiesParams, handler: catalogCapabilities },
-  'com.dinakernel.service.isDiscoverable': { params: ServiceIsDiscoverableParams, handler: serviceIsDiscoverable },
-  'com.dinakernel.service.getByUri': { params: ServiceGetByUriParams, handler: serviceGetByUri },
-  'com.dinakernel.peerlens.attestationStatus': { params: AttestationStatusParams, handler: attestationStatus },
-  'com.dinakernel.peerlens.cosigList': { params: CosigListParams, handler: cosigList },
-  'com.dinakernel.peerlens.networkFeed': { params: NetworkFeedParams, handler: networkFeed },
-  'com.dinakernel.peerlens.subjectGet': { params: SubjectGetParams, handler: subjectGet },
-  'com.dinakernel.peerlens.getAlternatives': { params: GetAlternativesParams, handler: getAlternatives },
-  'com.dinakernel.peerlens.getNegativeSpace': { params: GetNegativeSpaceParams, handler: getNegativeSpace },
-  // §10.5 catalog discovery. The evaluation instant is supplied here rather
-  // than read inside the query, so freshness is deterministic in tests and the
-  // whole page is scored against ONE clock reading — a query that re-read the
-  // clock per row could drop a candidate mid-page for a millisecond.
-  'com.dinakernel.commerce.searchCatalog': {
-    params: CommerceCatalogSearchParams,
-    handler: (db: any, params: any) => searchCommerceCatalog(db, params, new Date().toISOString()),
-  },
-}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${port}`)
@@ -271,8 +227,7 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    const route = ROUTES[methodId]
-    if (!route) {
+    if (XRPC_ROUTES[methodId] === undefined) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'InvalidRequest', message: `Unknown method: ${methodId}` }))
       return
@@ -289,22 +244,17 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    try {
-      const queryParams = Object.fromEntries(url.searchParams.entries())
-      const parsed = route.params.parse(queryParams)
-      const result = await route.handler(db, parsed)
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(result))
-    } catch (err: any) {
-      if (err?.name === 'ZodError') {
-        res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'InvalidRequest', message: err.message }))
-      } else {
-        logger.error({ err, method: methodId }, 'XRPC handler error')
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'InternalServerError' }))
-      }
-    }
+    const outcome = await dispatchXrpc({
+      routes: XRPC_ROUTES,
+      db,
+      methodId,
+      searchParams: url.searchParams,
+      onError: (err, method) => {
+        logger.error({ err, method }, 'XRPC handler error')
+      },
+    })
+    res.writeHead(outcome.status, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(outcome.body))
     return
   }
 

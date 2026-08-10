@@ -1730,6 +1730,58 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         PRIMARY KEY (supplier_did, quote_id, revision_num)
       );
 
+      -- commerce_buyer_quote_requests -- what THIS node asked, retained so it
+      -- can check what comes back.
+      --
+      -- §9.8 gives the buyer two checks nobody else can make: that an arriving
+      -- quote's request_digest is the request this node actually sent, and
+      -- that its priced_delivery_projection_digest is the projection this node
+      -- priced against. Both compare a quote to something only the buyer
+      -- holds, and until this table there was nowhere to hold it — so
+      -- verifySignedQuoteForBuyer existed with no caller and the §20.4
+      -- bait-and-switch control was unreachable.
+      --
+      -- The whole request body is kept, not just its digest. The digest proves
+      -- the supplier SAW the request; only the body can show whether the
+      -- quote's lines correspond to it, which is what catches an invented line
+      -- id or a substitution the buyer forbade.
+      CREATE TABLE IF NOT EXISTS commerce_buyer_quote_requests (
+        request_id TEXT PRIMARY KEY,
+        supplier_did TEXT NOT NULL,
+        request_digest TEXT NOT NULL,
+        -- Denormalised so the §9.8 projection check needs no re-parse.
+        projection_digest TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        sent_at INTEGER NOT NULL
+      );
+
+      -- §15.2 — the approval material Core MINTED when the card was shown.
+      --
+      -- The binding is only worth having if the two sides of the comparison
+      -- come from different places. A submit that carried both the order and
+      -- the approval payload proved only that its caller was self-consistent:
+      -- a client that re-planned the order simply rebuilt both halves and the
+      -- check passed. So Core keeps the approved order here and the submit
+      -- names it by id.
+      --
+      -- The PAYLOAD is not stored, only its digest: the payload is a pure
+      -- function of (order, context), so keeping it as well would be a second
+      -- copy to disagree with the first. Reads rebuild it and compare, which
+      -- makes a row edited in the store read as absent.
+      CREATE TABLE IF NOT EXISTS commerce_order_approvals (
+        approval_id TEXT PRIMARY KEY,
+        supplier_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        approval_digest TEXT NOT NULL,
+        order_json TEXT NOT NULL,
+        context_json TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        -- Single use. Set by a CAS so two taps on one card cannot both send.
+        consumed_at INTEGER
+      );
+
       CREATE TABLE IF NOT EXISTS commerce_buyer_status_records (
         supplier_did TEXT NOT NULL,
         purchase_order_id TEXT NOT NULL,
@@ -1924,6 +1976,13 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- One proposal per (install, idempotency key): a runner that retries
         -- after a lost response must not produce a second effect.
         idempotency_key TEXT NOT NULL,
+        -- The envelope of the CLAIM that proposed this, retained when the
+        -- proposal parks for an owner. Resolving it later needs the source to
+        -- build the follow-up that carries the verified result back to the
+        -- runner, and a parked proposal outlives the process that made it --
+        -- so without this column an owner-facing decision had nothing to act
+        -- on and every carded proposal was unresolvable.
+        source_envelope_json TEXT,
         created_at INTEGER NOT NULL,
         decided_at INTEGER,
         settled_at INTEGER,

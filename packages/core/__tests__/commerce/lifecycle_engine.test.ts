@@ -1122,6 +1122,47 @@ describe.each([
       );
     });
 
+    it('skips a result receipt that parses to null instead of throwing', () => {
+      // `JSON.parse('null')` SUCCEEDS — it returns `null` — so a try/catch
+      // around the parse alone never fires, and the next line dereferences
+      // null OUTSIDE the guard. `rehydrate.ts` records finding exactly this
+      // defect on the acknowledgement path; both cancellation scans had
+      // reproduced it.
+      //
+      // It broke the very property the scans are written for. Each is
+      // documented as SKIPPING a row it cannot read, so that one corrupt
+      // receipt cannot make every other cancellation on the order
+      // unanswerable — and a single `null` row threw a TypeError straight out
+      // of the scan, which is that failure exactly. The commerce boundary test
+      // exempts `lifecycle_engine.ts` from the no-bare-`JSON.parse` rule on
+      // the strength of that written reason, so the reason has to be true.
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      const cancellation = makeCancellation(order);
+      engine.resolveCancellation(cancellation, BUYER_DID, () => 'pending_review');
+
+      h.receipts.put({
+        recordDigest: 'f'.repeat(64),
+        domain: 'result',
+        buyerDid: BUYER_DID,
+        quoteId: '',
+        purchaseOrderId: order.purchase_order_id,
+        // Valid JSON. Not a record.
+        recordJson: 'null',
+        evidenceJson: '{}',
+        createdAt: clock.now,
+      });
+
+      // The real cancellation is still found: the corrupt row is skipped, and
+      // it neither throws nor hides its neighbours.
+      expect(
+        engine
+          .listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)
+          .map((entry) => entry.cancellation_id),
+      ).toEqual([cancellation.cancellation_id]);
+    });
+
     it('answers per CANCELLATION when one order carries two', () => {
       // The strengthening that mattered. With a single cancellation the
       // assertion above passed even when the check was removed, because the

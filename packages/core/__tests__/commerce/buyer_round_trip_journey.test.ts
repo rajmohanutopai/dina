@@ -75,10 +75,15 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  registerBuyerPack,
 } from './helpers';
 
 import type { CommerceRuntime } from '../../src/commerce/runtime';
 import type { PurchaseOrderProposal } from '@dina/commerce-protocol';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
+
+/** The owner this node acts for. §7.3: one grant, evaluated like any other. */
+const TEST_OWNER_DID = 'did:plc:testowner00000000';
 
 // Matches the shared fixtures' quote validity window; a later T0 expires them
 // before admission ever sees the order.
@@ -143,6 +148,8 @@ async function asSanchoAsync<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+let buyerPack: ReturnType<typeof registerBuyerPack>;
+
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'round-trip-'));
   const open = (name: string): NodeSQLiteAdapter => {
@@ -176,6 +183,11 @@ beforeEach(() => {
 
   installs = new SQLitePluginInstallRepository(supplierDb);
   setPluginInstallRepository(installs);
+  // A REAL buyer install in the SAME registry (NEW-11). `submitApprovedOrder`
+  // re-resolves the acting install against the registry immediately before
+  // sending, so a journey that registers only the supplier pack and then
+  // submits a buyer order under a hand-written id is refused — correctly.
+  buyerPack = registerBuyerPack(installs, T0);
   expect(validatePluginManifest(SUPPLIER_REFERENCE_MANIFEST).ok).toBe(true);
   installId = installs.createPending({
     publisherDid: 'did:plc:chairmakerpub',
@@ -269,31 +281,31 @@ function chairmakerQuotes(): ReturnType<typeof makeSignedQuote> {
   });
 }
 
-const CONTEXT: BuyerApprovalContext = {
-  actingBusinessDid: BUYER_DID,
-  principal: {
-    principalDid: 'did:plc:sanchoowner',
-    authorityDomain: 'procurement',
-    policyRevision: null,
-  },
-  serviceUri: `at://${SUPPLIER_DID}/com.dinakernel.service.profile/${SERVICE_RKEY}`,
-  displayedLabels: { l1: 'Oak dining chair' },
-  productKeys: { l1: 'gtin:05012345678900' },
-  linePrices: { l1: { currency: 'INR', minor_units: '500' } },
-  charges: [],
-  quoteRevision: 1,
-  quoteExpiresAt: '2026-08-09T09:00:00.000Z',
-  install: {
-    installId: 'install-sancho-buyer',
-    capabilityId: 'com.dinakernel.commerce.submit-order',
-    manifestCid: 'bafyreisanchobuyer',
-    installScopeHash: 'q'.repeat(64),
-    configRevision: '1',
-  },
-};
+/**
+ * Built per test, because the acting install is minted per test (NEW-11).
+ * A module const would capture `buyerPack` before `beforeEach` assigns it.
+ */
+function buildContext(): BuyerApprovalContext {
+    return {
+    actingBusinessDid: BUYER_DID,
+    principal: {
+      principalDid: 'did:plc:sanchoowner',
+      authorityDomain: 'procurement',
+      policyRevision: null,
+    },
+    serviceUri: `at://${SUPPLIER_DID}/com.dinakernel.service.profile/${SERVICE_RKEY}`,
+    displayedLabels: { l1: 'Oak dining chair' },
+    productKeys: { l1: 'gtin:05012345678900' },
+    linePrices: { l1: { currency: 'INR', minor_units: '500' } },
+    charges: [],
+    quoteRevision: 1,
+    quoteExpiresAt: '2026-08-09T09:00:00.000Z',
+    install: buyerPack,
+  };
+}
 
 function approvalFor(order: PurchaseOrderProposal): ReturnType<typeof buildBuyerApprovalPayload> {
-  return buildBuyerApprovalPayload(order, CONTEXT);
+  return buildBuyerApprovalPayload(order, buildContext());
 }
 
 /**
@@ -389,7 +401,7 @@ async function sanchoOrders(
     submitApprovedOrder({
       order,
       approved: built.payload,
-      context: CONTEXT,
+      context: buildContext(),
       serviceRkey: SERVICE_RKEY,
       nowMs: T0,
       send: async () => {
@@ -398,6 +410,15 @@ async function sanchoOrders(
         // acknowledgement comes back separately, which is the whole point.
         return { kind: 'ambiguous', reason: 'sent; awaiting the supplier acknowledgement' };
       },
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order,
+        context: buildContext(),
+        serviceRkey: SERVICE_RKEY,
+      }),
     }),
   );
   expect(result.ok).toBe(true);

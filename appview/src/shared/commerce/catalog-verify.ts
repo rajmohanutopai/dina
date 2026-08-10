@@ -72,6 +72,13 @@ export interface CatalogPointer {
   snapshot_sequence: number
   protocol_version: string
   published_at: string
+  /**
+   * Which service listing serves this catalog (§10.5, DR-5). Mirrors
+   * `@dina/commerce-protocol`'s `CatalogPointer`, which AppView keeps a copy
+   * of rather than importing — so this field has to be added in both places
+   * or discovery silently keeps answering `self`.
+   */
+  service_rkey?: string
   snapshot_rkey?: string
   snapshot_digest?: string
   previous_snapshot_digest?: string
@@ -280,6 +287,34 @@ export function verifyPointerNamesSnapshot(
  * currently publishing — and because a caller that forgot one hop would still
  * look like it verified.
  */
+/**
+ * Every committed page present EXACTLY ONCE.
+ *
+ * Per-page verification asks "does this page belong to this snapshot, at the
+ * slot it claims?" — a question each page answers about itself. Nothing asked
+ * whether the pages TOGETHER cover the snapshot, so serving page 0 twice passed:
+ * the count matched, both pages verified at index 0, and when the duplicated
+ * page happened to carry the same number of items as the one it displaced, the
+ * total matched too. A committed page was simply never presented, and the
+ * catalog projected was not the catalog published.
+ *
+ * The set check is what makes the per-page check add up to a whole.
+ */
+export function verifyPageIndexCoverage(
+  pages: readonly CatalogSnapshotPage[],
+  snapshot: CatalogSnapshot,
+): string | null {
+  const seen = new Set<number>()
+  for (const page of pages) {
+    if (seen.has(page.page_index)) return 'pages: the same page index appears twice'
+    seen.add(page.page_index)
+  }
+  for (let i = 0; i < snapshot.page_digests.length; i += 1) {
+    if (!seen.has(i)) return 'pages: a committed page index was never presented'
+  }
+  return null
+}
+
 export function verifyCatalogPublication(args: {
   previous: CatalogPointer | null
   pointer: CatalogPointer
@@ -305,6 +340,8 @@ export function verifyCatalogPublication(args: {
     const bad = verifyCatalogPage(page, args.snapshot)
     if (bad !== null) return bad
   }
+  const coverage = verifyPageIndexCoverage(args.pages, args.snapshot)
+  if (coverage !== null) return coverage
 
   const items = args.pages.reduce((sum, page) => sum + page.items.length, 0)
   if (items !== args.snapshot.item_count) {

@@ -179,12 +179,6 @@ const SUBMIT_ORDER_RESULT = {
   },
 } as const;
 
-const ORDER_SCOPED_PARAMS = {
-  type: 'object',
-  required: ['purchase_order_id'],
-  properties: { purchase_order_id: { type: 'string' } },
-} as const;
-
 /**
  * §9.11 — the buyer says WHERE ITS CHAIN ENDS, and gets the records after it.
  *

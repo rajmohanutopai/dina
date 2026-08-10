@@ -215,3 +215,222 @@ describe('the publisher cannot be made to publish a leak', () => {
     expect(!result.ok && result.leakage?.findings[0]?.path).toBe('items[400].margin_pct');
   });
 });
+
+/**
+ * §12.1 step 10 — the structured-identifier half of the value scan (DR-4).
+ *
+ * The spec asks for BOTH halves: "the existing structured-identifier PII
+ * patterns (phone, email, account and ID number shapes) PLUS a
+ * secret-shaped-token detector". Only the token detector was built. The
+ * patterns were already in Core, running on the egress path, so nothing looked
+ * absent — the gap was one import.
+ */
+describe('structured-identifier scan (§12.1 step 10)', () => {
+  const dirty = (item: Record<string, unknown>) => gateCatalogForPublication([item]);
+
+  it.each([
+    ['email', 'questions to raj.mohan@example.com'],
+    ['phone', 'call 98765 43210 to order'],
+    ['card number', 'legacy ref 4111 1111 1111 1111'],
+    ['aadhaar', 'ref 2345 6789 0123'],
+    ['pan', 'billing under ABCDE1234F'],
+    ['ifsc', 'remit to HDFC0001234'],
+  ])('refuses a %s left in a free-text field', (_label, text) => {
+    const verdict = dirty({ sku: 'C-1', description: text });
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+    expect(verdict.findings[0]?.path).toBe('items[0].description');
+  });
+
+  it('NEVER echoes the identifier it found', () => {
+    // Same rule as the secret scan: the finding names the field and the shape.
+    // A refusal that quoted the phone number would copy it into the log.
+    const verdict = dirty({ sku: 'C-1', description: 'call 98765 43210' });
+
+    expect(JSON.stringify(verdict)).not.toContain('98765');
+    expect(JSON.stringify(verdict)).not.toContain('43210');
+  });
+
+  it('reports one finding per TYPE per field, not one per occurrence', () => {
+    // Three emails in a description is one problem to fix, and listing it
+    // three times pushes other findings past the reporting cap.
+    const verdict = dirty({
+      sku: 'C-1',
+      description: 'a@example.com then b@example.com then c@example.com',
+    });
+
+    expect(verdict.findings.filter((f) => f.refusal === 'personal_identifier_value')).toHaveLength(
+      1,
+    );
+  });
+
+  it('does not refuse an ordinary GTIN in the identity field', () => {
+    // The false positive that drove the identifier-field rule: the US phone
+    // pattern is not start-anchored, so it finds a ten-digit window inside any
+    // longer digit run, and a GTIN-14 is exactly that.
+    const verdict = gateCatalogForPublication([
+      { sku: 'C-1', product: { scheme: 'gtin', value: '09506000134352' } },
+    ]);
+
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('does not refuse a ten-digit MPN, which is the collision the rule exists for', () => {
+    // The unanchored US phone pattern reads any ten-digit run as a phone.
+    const verdict = gateCatalogForPublication([{ mpn: '9876543210' }]);
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('does not refuse a LUHN-VALID GTIN-13, which two of five real ones are', () => {
+    // The over-correction this case exists for. `CREDIT_CARD` accepts 13-19
+    // digits behind a Luhn check, a GTIN-13 is thirteen, and the two check
+    // digits are computed on independent weightings — so about one honest GTIN
+    // in ten passes Luhn. `5901234123457` is one of them. The module's own
+    // fixture happens to fail Luhn, which is exactly why the suite stayed
+    // green while a tenth of real catalogs would have been refused.
+    const verdict = gateCatalogForPublication([
+      { product: { scheme: 'gtin', value: '5901234123457' } },
+      { product: { scheme: 'gtin', value: '4901234567894' } },
+    ]);
+
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('does not refuse a valid UPC-A, which is twelve digits like an Aadhaar', () => {
+    // The third collision in this rule, found by assuming the list was still
+    // wrong rather than by trusting it. `712345678904` is a valid UPC-A
+    // (number-system digit 7); the AADHAAR pattern is twelve digits and
+    // rejects only leading 0 or 1, so every UPC-A from 2 to 9 was refused.
+    const verdict = gateCatalogForPublication([
+      { product: { scheme: 'gtin', value: '712345678904' } },
+      { sku: '234567890128' },
+    ]);
+
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('STILL refuses a SEPARATED Aadhaar in an identifier field', () => {
+    // The separator is the only signal that tells the two apart, so it has to
+    // be the thing the rule keys on — a product number is not written in
+    // four-digit groups.
+    const verdict = gateCatalogForPublication([{ sku: '2345 6789 0123' }]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('REFUSES a card number hidden in a SKU column', () => {
+    // This case asserted `clean` in my first attempt at the rule, which is the
+    // finding: the exclusion list had grown past the collision that justified
+    // it. A GTIN is 8, 12, 13 or 14 digits, so nothing honest reaches the
+    // sixteen-digit account shape or survives a Luhn check by design.
+    const verdict = gateCatalogForPublication([{ sku: '4111111111111111' }]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('REFUSES a sixteen-digit bank account in an identifier field', () => {
+    const verdict = gateCatalogForPublication([
+      { sku: 'C-1', product: { scheme: 'custom', value: '1234567890123456' } },
+    ]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('STILL refuses an email in an identifier field', () => {
+    // The narrowing is about digit runs. An `@` is not something a product
+    // number contains by accident, so the structured classes survive there.
+    const verdict = gateCatalogForPublication([{ sku: 'contact-raj@example.com' }]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('does not refuse ordinary product prose', () => {
+    const verdict = dirty({
+      sku: 'C-1',
+      name: 'Oak dining chair',
+      description: 'Solid oak, 45 cm seat height, ships in 3 days from Kochi.',
+    });
+
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('separates a credential from a personal identifier', () => {
+    // Two refusal codes because they send an operator to different places:
+    // one means rotate that key, the other means a person's details are in
+    // your catalog export.
+    const verdict = gateCatalogForPublication([
+      { sku: 'C-1', description: 'sk-live-01234567890123456789' },
+      { sku: 'C-2', description: 'reach us at raj@example.com' },
+    ]);
+
+    expect(verdict.findings.map((f) => f.refusal)).toEqual([
+      'secret_shaped_value',
+      'personal_identifier_value',
+    ]);
+  });
+});
+
+/**
+ * NEW-18 — the two classes that cannot be measured, pinned in both directions.
+ *
+ * `PAN` and `IFSC` are the only remaining patterns that fire on a purely
+ * alphanumeric uppercase product number, and unlike `PHONE`, `CREDIT_CARD` and
+ * `AADHAAR` there is no boundary to derive: what they compete with is a
+ * supplier-chosen `sku` or `mpn`, which has no length bound, no vocabulary and
+ * no check digit. So the behaviour is a CHOICE, and a choice with no test is a
+ * choice nobody can see. Both directions below, so a future reader who wants to
+ * reverse it has to say which case they are changing.
+ */
+describe('the classes with no derivable boundary', () => {
+  it('does not refuse an ordinary SKU that happens to be PAN-shaped', () => {
+    // Measured, not assumed: `CHAIR2024B` is five letters, four digits, one
+    // letter, which is the Indian tax-ID shape and also an unremarkable SKU.
+    const verdict = gateCatalogForPublication([
+      { sku: 'CHAIR2024B' },
+      { sku: 'CHAIR2024B-01' },
+    ]);
+
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('does not refuse an ordinary MPN that happens to be IFSC-shaped', () => {
+    // Four letters, a zero, six alphanumerics — a manufacturer prefix and a
+    // part number, and also a bank branch code.
+    const verdict = gateCatalogForPublication([{ mpn: 'ACME012345X' }]);
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('STILL refuses a real PAN in a free-text field', () => {
+    // The exclusion is scoped to product-number fields. Free text is where a
+    // leaked contact block actually arrives, and it scans at full strength.
+    const verdict = gateCatalogForPublication([
+      { sku: 'C-1', description: 'invoice under ABCDE1234F' },
+    ]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('STILL refuses a real IFSC in a free-text field', () => {
+    const verdict = gateCatalogForPublication([
+      { sku: 'C-1', description: 'remit to HDFC0001234' },
+    ]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+
+  it('keeps BANK_ACCT scanning in identifier fields, which has no such collision', () => {
+    // Sixteen bare digits, and no product-code standard is sixteen. The
+    // exclusion list is per-class, so this must not have drifted with them.
+    const verdict = gateCatalogForPublication([{ sku: '1234567890123456' }]);
+
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
+  });
+});

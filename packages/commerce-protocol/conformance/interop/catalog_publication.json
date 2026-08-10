@@ -1,0 +1,117 @@
+{
+  "pointer": {
+    "supplier_did": "did:plc:chairmaker99",
+    "catalog_id": "chairmaker-seating",
+    "snapshot_sequence": 1,
+    "protocol_version": "1.0",
+    "published_at": "2026-08-08T09:00:00.000Z",
+    "snapshot_rkey": "281adf3937b5390608e4d2caf8f1b14e6768f117129106ce11778962642e675d",
+    "snapshot_digest": "281adf3937b5390608e4d2caf8f1b14e6768f117129106ce11778962642e675d",
+    "service_rkey": "seating"
+  },
+  "snapshot": {
+    "supplier_did": "did:plc:chairmaker99",
+    "catalog_id": "chairmaker-seating",
+    "snapshot_sequence": 1,
+    "protocol_version": "1.0",
+    "published_at": "2026-08-08T09:00:00.000Z",
+    "page_digests": [
+      "44e814e823e5f29a9b36e3129359acfa5b88d8830ab2a934c76f6fdfdfc19b20"
+    ],
+    "item_count": 2,
+    "payload_root": "4659d0be146001c3fe48a089d80db0d1dc7745f8c6b49c3cfb568e5079a4659d",
+    "snapshot_digest": "281adf3937b5390608e4d2caf8f1b14e6768f117129106ce11778962642e675d"
+  },
+  "pages": [
+    {
+      "catalog_id": "chairmaker-seating",
+      "snapshot_sequence": 1,
+      "page_index": 0,
+      "items": [
+        {
+          "product": {
+            "scheme": "gtin",
+            "value": "5901234123457"
+          },
+          "supplier_did": "did:plc:chairmaker99",
+          "catalog_id": "chairmaker-seating",
+          "item_revision": "1",
+          "name": "Oak dining chair",
+          "brand": "ChairMaker",
+          "description": "Solid oak, four legs, 45 cm seat height.",
+          "category_ids": [
+            "furniture.seating"
+          ],
+          "pack": {
+            "sell_unit": {
+              "value": "1",
+              "unit_code": "each"
+            }
+          },
+          "identifiers": [
+            {
+              "scheme": "manufacturer_sku",
+              "value": "CHAIR2024B",
+              "issuer_did": "did:plc:chairmaker99"
+            }
+          ],
+          "fulfilment_regions": [
+            {
+              "scheme": "admin_area",
+              "value": "IN-KA"
+            }
+          ],
+          "indicative_price": {
+            "currency": "INR",
+            "minor_units": "450000"
+          },
+          "freshness": {
+            "generated_at": "2026-08-08T09:00:00.000Z"
+          }
+        },
+        {
+          "product": {
+            "scheme": "gtin",
+            "value": "712345678904"
+          },
+          "supplier_did": "did:plc:chairmaker99",
+          "catalog_id": "chairmaker-seating",
+          "item_revision": "1",
+          "name": "Teak bar stool",
+          "brand": "ChairMaker",
+          "description": "Teak, footrest, 75 cm.",
+          "category_ids": [
+            "furniture.seating"
+          ],
+          "pack": {
+            "sell_unit": {
+              "value": "1",
+              "unit_code": "each"
+            }
+          },
+          "identifiers": [
+            {
+              "scheme": "manufacturer_sku",
+              "value": "ACME012345X",
+              "issuer_did": "did:plc:chairmaker99"
+            }
+          ],
+          "fulfilment_regions": [
+            {
+              "scheme": "admin_area",
+              "value": "IN-KA"
+            },
+            {
+              "scheme": "admin_area",
+              "value": "IN-TN"
+            }
+          ],
+          "freshness": {
+            "generated_at": "2026-08-08T09:00:00.000Z"
+          }
+        }
+      ],
+      "page_digest": "44e814e823e5f29a9b36e3129359acfa5b88d8830ab2a934c76f6fdfdfc19b20"
+    }
+  ]
+}

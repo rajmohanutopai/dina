@@ -229,12 +229,27 @@ export function evaluateStaffAuthority(args: {
         candidate.principalDid === principal && covers(candidate, args.request, args.nowMs),
     );
     if (grant === undefined) {
+      // NEW-12 — "cannot evaluate" is not "does not hold". A `category_buyer`
+      // is the one grant this node cannot decide on: the order carries product
+      // references and mapping those to categories needs the supplier's
+      // catalog, which no verified copy of exists here at send time, so the
+      // request arrives with an empty category list and `covers` returns
+      // false. Reporting that as a missing grant sends an operator to their
+      // grant table to look for something that is already there. Same reason
+      // the message above names the principal at all.
+      const onlyCategory =
+        args.grants.some(
+          (candidate) =>
+            candidate.principalDid === principal && effective(candidate).kind === 'category_buyer',
+        ) && args.request.categoryIds.length === 0;
       return {
         permitted: false,
         needsAnotherPrincipal: false,
         // Named, because both sides are the owner's own data and an operator
         // told only "refused" cannot tell a missing grant from an expired one.
-        reason: `${principal} holds no live grant covering this order`,
+        reason: onlyCategory
+          ? `${principal} holds a category_buyer grant, and this node cannot yet derive an order's categories to evaluate it`
+          : `${principal} holds no live grant covering this order`,
       };
     }
     carrying.push(grant);

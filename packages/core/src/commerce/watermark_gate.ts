@@ -36,7 +36,14 @@ export type WatermarkVerdict =
   | { accept: true; /** The watermark after accepting, for the caller's log. */ watermark: string }
   | {
       accept: false;
-      refusal: 'stale_epoch' | 'unreadable_epoch';
+      refusal:
+        | 'stale_epoch'
+        | 'unreadable_epoch'
+        /**
+         * A record attributed to a DID other than the authenticated sender.
+         * Only reachable on a lane that names one.
+         */
+        | 'foreign_supplier';
       /** What the record claimed. */
       epoch: string;
       /** The highest this node has seen from that supplier. */
@@ -93,13 +100,26 @@ export function admitSupplierEpoch(args: {
 }
 
 /**
- * The refusal a counterparty is told. ONE string for both refusal kinds.
+ * The rejection reason returned on the TOOL-RESULT lane. One string for all
+ * three refusal kinds.
  *
- * A stale epoch and an unreadable one are different facts to an operator
- * reading a log, and the structured verdict carries both — but to the SENDER
- * they must be indistinguishable. Telling a stranger "your epoch 4 is below my
- * watermark 7" hands them this node's view of a third party's restore history,
- * which is nobody's business but the supplier's.
+ * WHO ACTUALLY READS THIS. Its only consumer is `refuseStaleSupplierRecords`
+ * in the workflow routes, which hands it back as the rejection reason for a
+ * completed buyer tool result — so the recipient is the owner's own RUNNER,
+ * running locally on this node. Not a remote counterparty, and not a stranger.
+ *
+ * An earlier version of this comment justified the uniformity by what a remote
+ * sender would learn from a detailed refusal. That audience does not exist
+ * here: the D2D lane never uses this constant at all, returning typed
+ * `BuyerResponseOutcome` values instead, where `foreign_supplier` and
+ * `stale_epoch` are deliberately kept apart for the owner's decision log.
+ *
+ * It stays uniform for a different reason. A runner is an untrusted tenant
+ * (§20.20), and a refusal that told it which supplier is at which generation
+ * would hand a plugin this node's private view of its counterparties'
+ * restore history — which is what the plugin is not allowed to accumulate.
+ * The structured `WatermarkVerdict` carries the real reason for anything
+ * local that wants it.
  */
 export const WATERMARK_REFUSAL = 'commerce: record rejected (§16.2)';
 
@@ -121,11 +141,18 @@ export const WATERMARK_REFUSAL = 'commerce: record rejected (§16.2)';
  * the buyer is the one asking. The wiring test is what caught it — a gate
  * reading a field that is never present is an orphan wearing a wire.
  *
- * And one envelope-level supplier could not have been right anyway:
- * `collect-quotes` fans out to MANY suppliers and returns records from several,
- * each belonging to a different generation. The pair `(supplier_did,
+ * And one envelope-level supplier could not have been right anyway ON THAT
+ * LANE: `collect-quotes` fans out to MANY suppliers and returns records from
+ * several, each belonging to a different generation. The pair `(supplier_did,
  * supplier_epoch)` travels together inside each signed record, so they are read
  * together.
+ *
+ * THAT REASONING IS LANE-SPECIFIC, and reading it as general was a mistake
+ * worth recording. On the D2D lane one authenticated peer supplies the whole
+ * body, so the `supplier_did` inside a record is a claim by that peer about
+ * somebody else — and believing it let a supplier raise a THIRD party's
+ * watermark and cut this buyer off from them for good. `expectedSupplierDid`
+ * below is the binding; see its comment.
  *
  * SHAPE-TOLERANT ON PURPOSE. A buyer pack publishes its own result schema, so
  * this cannot know the shape. It walks the parsed result for objects carrying
@@ -145,7 +172,39 @@ export function admitSupplierRecords(args: {
   /** The already-parsed tool result. */
   result: unknown;
   nowMs: number;
-}): { accept: true; checked: number } | { accept: false; refusal: WatermarkVerdict } {
+  /**
+   * The TRANSPORT-AUTHENTICATED sender, on a lane that has one.
+   *
+   * WITHOUT THIS, THE FENCE IS A WEAPON. `collectSignedRecords` attributes a
+   * record to the `supplier_did` written INSIDE the body; it verifies no
+   * signature and no identity, because at this point neither has been checked
+   * (the binding checks in `buyer_quotes` run later). On the D2D lane the body
+   * comes from a peer, so supplier X could embed
+   * `{"supplier_did":"<victim>","supplier_epoch":"99999999"}` anywhere in its
+   * answer and this function would raise the VICTIM's watermark. `raiseTo` is
+   * monotonic with no floor and no way back down, so every genuinely signed
+   * quote and status that victim ever sends afterwards is discarded as
+   * `stale_epoch` — a permanent, externally-triggered cut-off between the
+   * buyer and a supplier it has orders with, and no recovery path.
+   *
+   * This is the house rule stated generally: authorization binds to the
+   * relay-authenticated envelope, never to a sender-supplied inner body. The
+   * gate predates the D2D lane — it was reached only from the buyer's OWN
+   * runner result — and moving it to a lane where an untrusted party writes
+   * the bytes is what made the rule apply.
+   *
+   * OPTIONAL, because the tool-result lane genuinely carries many suppliers: a
+   * `collect-quotes` answer fans out and comes back with records from all of
+   * them, and there is no single sender to bind to. Passing it is therefore
+   * the caller's statement that ONE party is accountable for these bytes.
+   */
+  expectedSupplierDid?: string;
+}):
+  | { accept: true; checked: number }
+  // The REFUSING arm specifically. Typed as the whole `WatermarkVerdict` this
+  // said a refusal might carry an acceptance, so a caller that wanted to know
+  // WHICH refusal had to narrow a case that cannot occur.
+  | { accept: false; refusal: Extract<WatermarkVerdict, { accept: false }> } {
   const records = collectSignedRecords(args.result);
   // Decided across ALL records before any watermark is raised, so a stale
   // record later in the list cannot be admitted by a higher one earlier in it
@@ -156,6 +215,15 @@ export function admitSupplierRecords(args: {
       return {
         accept: false,
         refusal: { accept: false, refusal: 'unreadable_epoch', epoch: record.epoch, watermark },
+      };
+    }
+    // Refused, not skipped. A sender that names a third party in its own
+    // answer is either broken or probing, and either way this node must not
+    // record the rest of a message it cannot account for.
+    if (args.expectedSupplierDid !== undefined && record.supplierDid !== args.expectedSupplierDid) {
+      return {
+        accept: false,
+        refusal: { accept: false, refusal: 'foreign_supplier', epoch: record.epoch, watermark },
       };
     }
     if (BigInt(record.epoch) < BigInt(watermark)) {

@@ -44,7 +44,15 @@
       "base_factor": "1000"
     }
   ],
-  "rejected_codes": ["oz", "lb", "dozen", "EACH", "kilogram", "", "each "],
+  "rejected_codes": [
+    "oz",
+    "lb",
+    "dozen",
+    "EACH",
+    "kilogram",
+    "",
+    "each "
+  ],
   "comparability": [
     {
       "a": "g",

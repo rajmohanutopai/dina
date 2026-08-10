@@ -19,6 +19,8 @@ import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/noti
 import {
   createCommerceRuntime,
   installBuyerOrderSender,
+  installBuyerAuthorityProvider,
+  singleOwnerAuthority,
   installCommerceServiceQueryDispatch,
   makeServiceQueryBuyerSender,
   getCommerceEpochService,
@@ -469,6 +471,23 @@ export async function initializePersistence(
   // commerce plane's tick and must reach a supplier the SAME way an order does.
   installCommerceServiceQueryDispatch(serviceQueryDispatch);
   installBuyerOrderSender(makeServiceQueryBuyerSender({ dispatch: serviceQueryDispatch }));
+
+  // §7.2/§7.3 (DR-1) — WHO may commit this business. Without a provider the
+  // order routes fail closed, which is the intended posture: a node that
+  // cannot say who is allowed to spend its money does not spend it. The
+  // single-approver pilot is a CONFIGURATION with one grant in it, evaluated
+  // by the same code as a category buyer or a delegated signer — not a branch
+  // that skips §7.3, because that branch is exactly what left staff authority
+  // dead on the money path.
+  installBuyerAuthorityProvider(({ order, context, serviceRkey }) => {
+    // NULL IS A REFUSAL, not a default. A node with no identity cannot say who
+    // is committing its business, and the route turns this into a 403 rather
+    // than committing under an empty principal — an empty `principalDid` would
+    // pass the chain-completeness check while naming nobody.
+    const ownerDid = getNodeDID();
+    if (ownerDid === null || ownerDid === '') return null;
+    return singleOwnerAuthority({ ownerDid, order, context, serviceRkey });
+  });
 
   // Durable persona registry — user-created vaults persist here so a
   // restart restores them (hydratePersonas below). Without it, boot only

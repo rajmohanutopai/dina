@@ -1,4 +1,4 @@
-import { productKey, type ProductRef } from './catalog-projection.js'
+import { encodeParts, productKey, type ProductRef } from './catalog-projection.js'
 
 /**
  * The product relationship graph — a SECOND projection, never a merge
@@ -201,20 +201,60 @@ export function projectRelationships(
     // two claims naming different parents land on the same edge and become a
     // visible dispute rather than two confident, contradictory edges.
     const single = SINGLE_OBJECT_RELATIONSHIPS.has(claim.relationship)
-    const key = single
-      ? `${subjectKey} ${claim.relationship}`
-      : `${subjectKey} ${claim.relationship} ${objKey}`
+    // LENGTH-PREFIXED, like every other key in this index. The previous form
+    // joined the parts with a literal NUL: unambiguous in a JS Map and
+    // IMPOSSIBLE in Postgres, whose text type rejects 0x00 outright
+    // (`invalid byte sequence for encoding "UTF8"`). Every relationship claim
+    // failed to index, and the handler's stub test could not see it because a
+    // Map stores a NUL happily. The NUL also made the source file read as
+    // BINARY to grep, which is its own quiet cost.
+    // KEYED BY THE OBJECT, ALWAYS.
+    //
+    // Single-object relationships used to be keyed WITHOUT it, so two claims
+    // naming different parents collapsed onto one edge that kept whichever
+    // object happened to be read FIRST. §10.3 is explicit — "Conflicting edges
+    // coexist; an AppView does not rewrite the underlying exact product
+    // records to make its interpretation look authoritative" — and a first-one-
+    // wins edge is a silent merge, just a worse one than picking the strongest
+    // claim: the surviving object depended on row order, and the query that
+    // feeds this has no ORDER BY, so the same data could project differently
+    // on two rebuilds.
+    //
+    // Both alternatives now exist, and both are marked disputed by the pass
+    // below. Discovery shows the disagreement instead of one arbitrary side,
+    // and `mayInheritStanding` still refuses to inherit along either.
+    const key = encodeParts([subjectKey, claim.relationship, objKey])
+
+    // EVERY PUBLISHER-CONTROLLED VALUE, not just the array.
+    //
+    // The first pass of this fix hardened `evidenceRefs` alone and left the
+    // other four by reference — and `claimId` is the worst one to leave, since
+    // `commerce-catalog-search` reads it out of this column into the wire field
+    // `relationship_evidence_refs`, typed `string[]`. An object nested in
+    // `claim_id` was therefore stored in the DERIVED table and served to
+    // buyers, which is precisely the boundary the comment below draws.
+    //
+    // Hardening one field of a literal and declaring the literal safe is the
+    // same mistake as a shallow copy: the fix has to cover every level the
+    // publisher reaches, and "the one that was failing" is not that.
+    const asText = (value: unknown): string => String(value)
+    const asTextOrNull = (value: unknown): string | null =>
+      value === undefined || value === null ? null : String(value)
 
     const evidence: RelationshipEvidence = {
-      claimId: claim.claim_id,
-      issuerDid: claim.issuer_did,
+      claimId: asText(claim.claim_id),
+      issuerDid: asText(claim.issuer_did),
+      // `source` and `confidenceBp` are DERIVED here, not publisher-supplied —
+      // `claimConfidenceBp` clamps the second against §14.4's model cap.
       source: entry.source,
       confidenceBp: claimConfidenceBp(entry.source, entry.confidenceBp),
       inferenceVersion: entry.inferenceVersion ?? null,
-      assertedAt: entry.assertedAt,
-      effectiveFrom: claim.effective_from ?? null,
-      effectiveUntil: claim.effective_until ?? null,
-      evidenceRefs: [...(claim.evidence_refs ?? [])],
+      assertedAt: asText(entry.assertedAt),
+      effectiveFrom: asTextOrNull(claim.effective_from),
+      effectiveUntil: asTextOrNull(claim.effective_until),
+      // `evidence_json` is read by `commerce-catalog-search` and emitted on the
+      // wire, so nothing here may be a reference into a publisher's record.
+      evidenceRefs: (claim.evidence_refs ?? []).map((ref) => String(ref)),
     }
 
     const existing = byEdge.get(key)
@@ -222,6 +262,13 @@ export function projectRelationships(
       byEdge.set(key, {
         edgeKey: key,
         subjectKey,
+        // NOT coerced here, and the reason is the point of this round's fix:
+        // `checkRelationshipClaim` at the ingest boundary has already
+        // established this is a non-empty string, so the object a reviewer
+        // found reaching `commerce_product_relationships.relationship` can no
+        // longer arrive. Coercing again would be defence in the wrong place —
+        // the whole argument for one gate is that downstream may then trust
+        // its types, and a `String()` here would say it does not.
         relationship: claim.relationship,
         objectKey: objKey,
         evidence: [evidence],
@@ -236,15 +283,85 @@ export function projectRelationships(
     // weak inferences agreeing is still three weak inferences, and adding them
     // would let a model vote its way past a threshold it must never reach.
     existing.confidenceBp = Math.max(existing.confidenceBp, evidence.confidenceBp)
-    if (single && existing.objectKey !== objKey) {
-      existing.disputed = true
-      // The edge keeps the FIRST object it saw as its nominal one, and both
-      // claims stay in the evidence. Choosing the higher-confidence object
-      // here would be exactly the silent merge §10.7 forbids.
-    }
   }
 
-  return { edges: [...byEdge.values()], rejected }
+  /**
+   * DISPUTE IS A PROPERTY OF THE GROUP, not of whichever edge was built first.
+   * Computing it after the walk also makes the result independent of the order
+   * rows come back in. See `markDisputes` for what actually counts as one.
+   */
+  const edges = [...byEdge.values()]
+  markDisputes(edges)
+
+  return { edges, rejected }
+}
+
+/**
+ * Mark the edges two parties genuinely DISAGREE about.
+ *
+ * THE FIRST VERSION OF THIS WAS TOO BLUNT, and a reviewer was right about why.
+ * It marked every distinct object in a `(subject, relationship)` group as
+ * disputed, which asserts a cardinality §10.3 never states: that a product has
+ * exactly one manufacturer, ever. Two consequences, both wrong:
+ *
+ *   - A product MANUFACTURED IN SEQUENCE — one plant until March, another
+ *     after — became permanently disputed, though the two claims never
+ *     overlap and nothing about them contradicts.
+ *   - CO-MANUFACTURE declared by one issuer became a disagreement with itself.
+ *
+ * A disagreement needs two things a bare object comparison cannot see:
+ *
+ *   1. TIME THAT OVERLAPS. Claims about disjoint periods are history, not
+ *      conflict. An absent bound is open-ended, which is the reading that
+ *      keeps an unqualified claim in conflict with everything it touches
+ *      rather than quietly exempt from all of it.
+ *   2. TWO DIFFERENT PARTIES. One issuer naming several objects for the same
+ *      window has DECLARED something — co-manufacture, dual sourcing — and an
+ *      index that calls a supplier's own statement a dispute is editorialising.
+ *      A dispute is between people.
+ *
+ * A disputed edge still exists and is still shown; §10.3 requires conflicting
+ * edges to coexist. What `disputed` gates is standing inheritance, which is
+ * exactly the thing that must not flow along a contested lineage.
+ */
+function markDisputes(edges: RelationshipEdge[]): void {
+  const byGroup = new Map<string, RelationshipEdge[]>()
+  for (const edge of edges) {
+    if (!SINGLE_OBJECT_RELATIONSHIPS.has(edge.relationship)) continue
+    const key = encodeParts([edge.subjectKey, edge.relationship])
+    byGroup.set(key, [...(byGroup.get(key) ?? []), edge])
+  }
+  for (const group of byGroup.values()) {
+    for (const a of group) {
+      for (const b of group) {
+        if (a.objectKey === b.objectKey) continue
+        if (!edgesConflict(a, b)) continue
+        a.disputed = true
+        b.disputed = true
+      }
+    }
+  }
+}
+
+/** Do two edges for one subject name different objects for the same window,
+ *  according to different parties? */
+function edgesConflict(a: RelationshipEdge, b: RelationshipEdge): boolean {
+  for (const left of a.evidence) {
+    for (const right of b.evidence) {
+      if (left.issuerDid === right.issuerDid) continue
+      if (intervalsOverlap(left, right)) return true
+    }
+  }
+  return false
+}
+
+/** Half-open overlap, with an absent bound meaning unbounded. */
+function intervalsOverlap(a: RelationshipEvidence, b: RelationshipEvidence): boolean {
+  const startA = a.effectiveFrom === null ? -Infinity : Date.parse(a.effectiveFrom)
+  const endA = a.effectiveUntil === null ? Infinity : Date.parse(a.effectiveUntil)
+  const startB = b.effectiveFrom === null ? -Infinity : Date.parse(b.effectiveFrom)
+  const endB = b.effectiveUntil === null ? Infinity : Date.parse(b.effectiveUntil)
+  return startA < endB && startB < endA
 }
 
 /**

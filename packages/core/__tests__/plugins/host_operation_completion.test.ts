@@ -366,3 +366,47 @@ function findProposalId(ctx: ReturnType<typeof setup>): string {
   if (rows.length === 0) throw new Error('no parked proposal');
   return String((rows[0] as Record<string, unknown>).proposal_id);
 }
+
+describe('a parked proposal can actually be resolved (§3.4)', () => {
+  /**
+   * THE LANE WAS INERT, and the reason was one missing column.
+   *
+   * A proposal that cards as `awaiting_owner` is recorded durably — the broker
+   * has always been SQLite-backed. What was never kept is the ENVELOPE of the
+   * claim that proposed it, and `settleOwnerDecision` needs it to build the
+   * follow-up that carries the verified result back to the runner. A parked
+   * proposal outlives the process that made it, so nothing else could supply
+   * it later: every carded proposal was unresolvable by anyone, for ever.
+   *
+   * Nothing could see them either. `listAwaitingOwner` is the surface an owner
+   * decision has to start from.
+   */
+  it('retains the proposing envelope and lists the proposal for the owner', async () => {
+    const ctx = setup({ decide: { kind: 'approval', reason: 'unverified publisher' } });
+    const { id, claimId } = enqueueClaim(ctx);
+    ctx.service.complete(id, proposal(), 'proposing a host operation', RUNNER_DID, claimId);
+    await settle();
+
+    const parked = ctx.broker.listAwaitingOwner();
+    expect(parked).toHaveLength(1);
+    expect(parked[0].state).toBe('proposed');
+    // THE PART THAT WAS MISSING. Without this the owner's answer has nothing
+    // to act on, and the runner is never told either way.
+    expect(parked[0].sourceEnvelopeJson).not.toBeNull();
+    const envelope = JSON.parse(parked[0].sourceEnvelopeJson ?? 'null') as {
+      install_id: string;
+      capability_id: string;
+    };
+    expect(envelope.install_id).toBe(INSTALL);
+    expect(envelope.capability_id).toBe(CAP);
+  });
+
+  it('does not retain a source for a proposal that never parked', () => {
+    // An auto-permitted proposal settles inside the completion handler and
+    // owes the owner nothing, so it carries no envelope and must not appear on
+    // the owner's list. A surface that showed settled work as pending would
+    // ask for decisions nobody needs to make.
+    const ctx = setup({ decide: { kind: 'permit' } });
+    expect(ctx.broker.listAwaitingOwner()).toEqual([]);
+  });
+});

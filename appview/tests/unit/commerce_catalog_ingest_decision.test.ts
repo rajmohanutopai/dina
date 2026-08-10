@@ -36,6 +36,9 @@ function catalogItem(sku: string) {
     item_revision: '1',
     name: `Chair ${sku}`,
     category_ids: ['furniture.seating'],
+    // §9.5 requires `pack`; this fixture omitted it, so the cases here were
+    // driving items no conformant publisher could publish.
+    pack: { sell_unit: { unit_code: 'each', value: '1' } },
     fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
     freshness: { generated_at: '2026-08-08T09:00:00.000Z' },
   }

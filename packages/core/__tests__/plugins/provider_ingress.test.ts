@@ -1731,6 +1731,36 @@ describe('provider ingress bridge (§11.2a)', () => {
       expect(ledger.recent(BUYER_DID, T0)).toEqual([]);
     });
 
+    it('holds no quote capacity when the capability is not consented as a provider', () => {
+      // §9.9 — ADMISSION IS A COMMITMENT, NOT A LOOKUP. It holds a counted use
+      // against the buyer's quote and writes the `reserved` order reference,
+      // both inside one transaction.
+      //
+      // It used to run BEFORE the provider-kind consent check, so a request
+      // this node was always going to refuse still spent the buyer's capacity.
+      // On the default `max_uses: "1"` quote that is the entire quote, and the
+      // buyer could not simply resubmit: the dead reservation makes the §15.5
+      // replay branch answer `processing`, so a request that never reached a
+      // runner is indistinguishable from a live order until the reservation
+      // times out.
+      //
+      // The order of the two checks IS the fix, and this is what pins it.
+      installRuntime();
+      const toolOnly = seedInstall(['tool'], 'did:plc:plugin-tool-only');
+
+      const result = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding({ pluginInstallId: toolOnly }),
+        query: submitQuery(),
+        nowMs: T0,
+      });
+
+      expect(!result.ok && result.code).toBe('capability_not_provider');
+      // Admission was never asked — so no hold, and no reserved row.
+      expect(admitted).toEqual([]);
+      expect(workflow.store().getByCorrelationId('q-submit')).toEqual([]);
+    });
+
     it('leaves non-order capabilities out of admission entirely', () => {
       installRuntime();
 
@@ -1921,10 +1951,81 @@ describe('provider ingress bridge (§11.2a)', () => {
 
       expect(result.ok).toBe(false);
       expect(!result.ok && result.code).toBe('lifecycle_continuity_unavailable');
-      // Answering under the CURRENT manifest would parse the buyer's request
-      // against a contract their order was never opened under, so nothing
-      // reaches the runner.
+      // Refused because NEITHER manifest can honour it: no lane was retained,
+      // and the update dropped `order_status` from the manifest entirely (see
+      // the `beforeEach`). That second half is load-bearing — when the current
+      // manifest still declares the capability the request is served under it,
+      // which the next case pins.
       expect(workflow.store().getByCorrelationId('q-lifecycle')).toEqual([]);
+    });
+
+    it('serves a prior-manifest order under the CURRENT manifest after a same-major update', () => {
+      // §9.13's drain rule, from the other side. `update_rebind.retain()`
+      // writes a `lifecycle_continuity` row ONLY across a MAJOR change,
+      // because a same-major release is a compatible swap and "anything NEW
+      // belongs to the current runtime". A status query on an order opened
+      // before the update IS a new request.
+      //
+      // The gate used to key on the CID delta instead of on the retained lane,
+      // so it demanded a continuity row that a same-major update never writes.
+      // Every order already open when a supplier shipped 0.1.0 → 0.2.0 became
+      // permanently unanswerable: no status, no cancellation, on an order the
+      // supplier had already accepted, while §16.4 kept the manifest pinned
+      // open. This is the regression guard for that.
+      const SAME_MAJOR_RESULT_SCHEMA = {
+        type: 'object',
+        properties: { state: { type: 'string' }, eta: { type: 'string' } },
+        required: ['state'],
+      };
+      const kept = {
+        ...(makeManifest(['provider']) as unknown as Record<string, unknown>),
+        version: '0.3.0',
+        // The compatible release KEEPS serving the lifecycle capability.
+        capabilities: [
+          {
+            id: LIFECYCLE_CAP,
+            display_name: 'Order status',
+            interaction: 'query',
+            action_class: 'read',
+            privacy_class: 'personal',
+            kinds: ['provider'],
+            result_schema: SAME_MAJOR_RESULT_SCHEMA,
+          },
+        ],
+      } as unknown as PluginManifest;
+      installs.applyUpdate(
+        installId,
+        {
+          cid: NEXT_CID,
+          version: '0.3.0',
+          manifest: kept,
+          installScopeHash: 's'.repeat(64),
+          capabilityHashes: { [LIFECYCLE_CAP]: 'h'.repeat(64) },
+          behaviorHash: 'b3'.repeat(32),
+          presentationHash: 'p3'.repeat(32),
+        },
+        T0 + 20,
+      );
+      seedOrder(PRIOR_CID);
+      // Deliberately NO seedContinuity(): a same-major update writes none.
+
+      const result = createProviderIngressTask({
+        workflow,
+        capabilityConfig: lifecycleBinding(),
+        query: lifecycleQuery(),
+        nowMs: T0 + 100,
+      });
+
+      expect(result).toEqual({ ok: true, taskId: expect.any(String) });
+      const tasks = workflow.store().getByCorrelationId('q-lifecycle');
+      expect(tasks).toHaveLength(1);
+      const envelope = parsePluginEnvelope(tasks[0].payload ?? '');
+      // Pinned to the CURRENT manifest, and carrying the CURRENT schema — the
+      // compatible release is the contract now, so there is no prior lane to
+      // take and none is claimed.
+      expect(envelope?.manifest_cid).toBe(NEXT_CID);
+      expect(envelope?.schema_snapshot).toEqual(SAME_MAJOR_RESULT_SCHEMA);
+      expect(envelope?.capability_id).toBe(LIFECYCLE_CAP);
     });
 
     it('refuses once the continuity lane has been released', () => {

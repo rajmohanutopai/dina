@@ -62,7 +62,34 @@ export interface AuditDetail {
  * Matching Go's detail JSON packing.
  */
 export function buildAuditDetail(detail: AuditDetail): string {
-  return JSON.stringify(detail);
+  // Bounded here too, but this is NOT what makes the guarantee — `appendAudit`
+  // re-packs any over-long structured detail with the same caps, whatever
+  // built it. It has to: this function is reachable only through
+  // `appendAuditWithDetail`, which has no production caller, while the JSON
+  // details the codebase actually writes are `JSON.stringify(...)` handed
+  // straight to `appendAudit`. A bound that lives only here would apply to
+  // nothing that ships.
+  //
+  // Values only; the keys are this module's own. `metadata` strings are capped
+  // and non-strings left alone, since counts and hashes are what callers pack.
+  const capped: AuditDetail = {
+    ...(detail.query_type === undefined
+      ? {}
+      : { query_type: detail.query_type.slice(0, MAX_DETAIL_FIELD) }),
+    ...(detail.reason === undefined ? {} : { reason: detail.reason.slice(0, MAX_DETAIL_FIELD) }),
+    ...(detail.text === undefined ? {} : { text: detail.text.slice(0, MAX_DETAIL_FIELD) }),
+    ...(detail.metadata === undefined
+      ? {}
+      : {
+          metadata: Object.fromEntries(
+            Object.entries(detail.metadata).map(([key, value]) => [
+              key,
+              typeof value === 'string' ? value.slice(0, MAX_DETAIL_FIELD) : value,
+            ]),
+          ),
+        }),
+  };
+  return JSON.stringify(capped);
 }
 
 /**
@@ -136,6 +163,206 @@ export function hydrateAuditState(repository: AuditRepository | null = getAuditR
  * Automatically computes seq (monotonic), prev_hash, and entry_hash
  * using the hash_chain primitives. Returns the appended entry.
  */
+/**
+ * Longest `detail` that reaches the chained log. Generous for metadata and an
+ * error message tail, far below anything a peer could use to bloat the log.
+ */
+const MAX_AUDIT_DETAIL = 512;
+
+/**
+ * Bound ONE peer-controlled field before it is interpolated into a detail.
+ *
+ * A CALL-SITE helper, not the sink — `guardAuditDetail` below is what every
+ * detail passes through, and it cannot be bypassed. This exists for the
+ * narrower job the sink cannot do: when a line interpolates a variable field
+ * alongside a fixed one, capping the variable field here keeps the fixed part
+ * from being pushed past the overall cap. See the commerce line in
+ * `receive_pipeline.ts`, which caps `query_id` and `capability` and puts
+ * `outcome=` first so the ordering makes the guarantee twice.
+ *
+ * WHY PEER FIELDS NEED IT AT ALL. A `service.query`'s `capability` is checked
+ * only for "is a non-empty string" by the wire validator — no length bound, no
+ * charset restriction — and it flows straight into an audit detail.
+ *
+ * This mirrors `sanitizeStatusText`, which does the same job for runner-
+ * supplied status text: the identical hazard from a less hostile source.
+ */
+export function sanitizeAuditDetail(value: string, maxLen = MAX_AUDIT_DETAIL): string {
+  let out = '';
+  for (let i = 0; i < value.length && out.length < maxLen; i++) {
+    const c = value.charCodeAt(i);
+    out += c <= 0x1f || c === 0x7f ? ' ' : value[i];
+  }
+  return out.trim();
+}
+
+/**
+ * Replace control characters, and nothing else.
+ *
+ * The forgery vector is the newline — it makes one entry render as several —
+ * and that is worth removing from every detail unconditionally. Length is a
+ * separate question with a separate answer per shape, below.
+ *
+ * ONE THING IT CAN STILL TOUCH INSIDE PACKED JSON. `JSON.stringify` escapes
+ * U+0000–U+001F, so those never appear raw in a structured detail and this
+ * cannot reach them. It does NOT escape U+007F (DEL), which is emitted
+ * literally and is replaced here. That is intended — DEL in an audit reason is
+ * pathological rather than content — and the swap is length-preserving and
+ * leaves the JSON valid, but it is a value being altered, so it is written
+ * down rather than left as a surprise.
+ *
+ * NO WHITESPACE-RUN COLLAPSE. The first version of this collapsed `\s+` to a
+ * single space, which quietly rewrote stored values: a JSON-packed detail
+ * carrying `"reason": "a  b"` was stored as `"a b"`. Altering content inside a
+ * log whose entire purpose is to be tamper-evident is worse than the cosmetic
+ * tidiness it bought, and it applied to flat details too.
+ */
+function stripControlCharacters(value: string): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    out += c <= 0x1f || c === 0x7f ? ' ' : value[i];
+  }
+  return out;
+}
+
+/**
+ * Bound a detail on its way into the chain, WITHOUT breaking a structured one.
+ *
+ * The whole sequence, in order:
+ *   1. strip control characters from everything — the newline is the forgery
+ *      vector and no detail legitimately carries one;
+ *   2. a detail already within `MAX_AUDIT_DETAIL` is returned as it arrived;
+ *   3. an over-long detail that PARSES as an object or array is re-packed
+ *      through the shared caps by `repackBounded` and comes back shorter;
+ *   4. anything else is sliced.
+ *
+ * WHY STEP 3 EXISTS. Slicing a JSON-packed detail at 512 bytes lands
+ * mid-string, so it stops parsing — and `parseAuditDetail` answers a parse
+ * failure with `{ text: <broken JSON> }`, which makes the agent-audit route
+ * return a well-formed response with every field blank. Silent loss, invisible
+ * from outside. Re-packing bounds it and keeps it parseable.
+ *
+ * THE BOUND DOES NOT DEPEND ON WHO BUILT THE DETAIL, and an earlier version of
+ * this comment said the opposite — that structured details passed through
+ * unshortened because `buildAuditDetail` had already bounded them, and that
+ * this was safe because no peer content reaches the JSON path. Both claims
+ * were false: `buildAuditDetail` is reachable only via `appendAuditWithDetail`,
+ * which has no production caller, so the JSON details this codebase actually
+ * writes met no cap anywhere. That reasoning is written down here because it is
+ * what would invite someone to restore the exemption.
+ */
+function guardAuditDetail(detail: string): string {
+  const singleLine = stripControlCharacters(detail);
+  if (singleLine.length <= MAX_AUDIT_DETAIL) return singleLine;
+  const repacked = repackBounded(singleLine);
+  return repacked ?? singleLine.slice(0, MAX_AUDIT_DETAIL);
+}
+
+/** Hard ceiling for a structured detail after its fields have been bounded. */
+const MAX_STRUCTURED_DETAIL = 4_096;
+/** Most entries kept from one object or array. */
+const MAX_DETAIL_ENTRIES = 32;
+/** Deepest nesting kept. */
+const MAX_DETAIL_DEPTH = 6;
+
+/**
+ * Bound every string, entry count and depth inside a parsed value.
+ *
+ * Recursive because `metadata` is free-form: capping only the top level would
+ * bound `{"a": "..."}` and miss `{"a": {"b": "..."}}`.
+ */
+function boundJsonValue(value: unknown, dropped: { any: boolean }, depth = 0): unknown {
+  if (depth > MAX_DETAIL_DEPTH) {
+    dropped.any = true;
+    return null;
+  }
+  if (typeof value === 'string') {
+    if (value.length > MAX_DETAIL_FIELD) dropped.any = true;
+    return value.slice(0, MAX_DETAIL_FIELD);
+  }
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    if (value.length > MAX_DETAIL_ENTRIES) dropped.any = true;
+    return value
+      .slice(0, MAX_DETAIL_ENTRIES)
+      .map((entry) => boundJsonValue(entry, dropped, depth + 1));
+  }
+  const entries = Object.entries(value);
+  if (entries.length > MAX_DETAIL_ENTRIES) dropped.any = true;
+  return Object.fromEntries(
+    entries
+      .slice(0, MAX_DETAIL_ENTRIES)
+      .map(([key, entry]) => {
+        if (key.length > MAX_DETAIL_FIELD) dropped.any = true;
+        return [key.slice(0, MAX_DETAIL_FIELD), boundJsonValue(entry, dropped, depth + 1)];
+      }),
+  );
+}
+
+/**
+ * Re-pack an over-long structured detail so it is bounded AND still parses,
+ * or `null` when it is not structured at all.
+ *
+ * WHY RE-PACK RATHER THAN EXEMPT. The first version of this waved long JSON
+ * through on the stated grounds that `buildAuditDetail` had already bounded it
+ * at the producer. That premise was false: `buildAuditDetail` is reachable only
+ * via `appendAuditWithDetail`, which has NO production caller. Every JSON
+ * detail this codebase actually writes is `JSON.stringify(...)` passed straight
+ * to `appendAudit`, so those details met the producer cap nowhere and the
+ * exemption removed the sink cap from exactly them — the unbounded write the
+ * round-5 fix existed to close, re-opened behind a comment claiming it was
+ * closed.
+ *
+ * Bounding here instead makes the guarantee independent of how a detail was
+ * built. A writer that never heard of `buildAuditDetail` gets the same bound,
+ * which is the only version of this that survives the next new call site.
+ *
+ * Objects AND arrays: shape decided it before, so an array-shaped detail was
+ * capped mid-string while an object-shaped one was not.
+ *
+ * The last resort keeps the parse guarantee rather than the content: if a value
+ * is still over the ceiling once its fields are bounded, it becomes a small
+ * valid object that says so. A consumer that reads sub-fields gets a parseable
+ * object either way, never `{ text: <broken JSON> }`.
+ */
+function repackBounded(value: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object') return null;
+  const dropped = { any: false };
+  const bounded = boundJsonValue(parsed, dropped);
+  // SAY SO WHEN SOMETHING WAS DROPPED. A bounded-away sub-field reads back
+  // through `parseAuditDetail` as `''` or `undefined`, which is exactly what a
+  // field that was never set looks like — so an operator cannot tell a value
+  // this node declined to store from one the writer never recorded. Only the
+  // last-resort branch below used to admit it.
+  //
+  // Objects only: an array has nowhere to carry the marker without changing
+  // the shape a consumer is reading.
+  const marked =
+    dropped.any && bounded !== null && typeof bounded === 'object' && !Array.isArray(bounded)
+      ? { ...(bounded as Record<string, unknown>), truncated: true }
+      : bounded;
+  const serialized = JSON.stringify(marked);
+  if (serialized !== undefined && serialized.length <= MAX_STRUCTURED_DETAIL) return serialized;
+  return JSON.stringify({ text: value.slice(0, MAX_DETAIL_FIELD), truncated: true });
+}
+
+/**
+ * Longest free-text value inside a JSON-packed detail.
+ *
+ * Applied in BOTH places, which is what makes it a guarantee rather than a
+ * convention: `buildAuditDetail` caps its fields when a caller uses it, and
+ * `boundJsonValue` applies the same cap at the sink for every detail that
+ * reaches it, however it was built.
+ */
+const MAX_DETAIL_FIELD = 256;
+
 export function appendAudit(
   actor: string,
   action: string,
@@ -159,7 +386,15 @@ export function appendAudit(
       : retainedAnchorHash === 'genesis'
         ? ''
         : retainedAnchorHash;
-  const entry = buildAuditEntry(seq, actor, action, resource, detail ?? '', prevHash, tsOverride);
+  const entry = buildAuditEntry(
+    seq,
+    actor,
+    action,
+    resource,
+    guardAuditDetail(detail ?? ''),
+    prevHash,
+    tsOverride,
+  );
   const sqlRepo = getAuditRepository();
   if (sqlRepo) {
     try {

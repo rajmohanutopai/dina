@@ -23,6 +23,8 @@
  * contractual offer has no column here to live in.
  */
 
+import { validateCatalogItem } from './wire-rules.js'
+
 /** A product identity as the catalog publishes it (§9.3). */
 export interface ProductRef {
   scheme: 'gtin' | 'manufacturer_sku' | 'dina_subject' | 'custom'
@@ -60,6 +62,17 @@ export interface CatalogItemShape {
   description?: string
   category_ids: string[]
   identifiers?: ProductRef[]
+  /**
+   * §9.5 REQUIRES this, and the type omitted it.
+   *
+   * AppView neither projects nor searches on `pack` — orderability is settled
+   * by Core at quote and order time — but leaving it off the type meant every
+   * fixture in this repo built an item no conformant publisher could publish,
+   * and the projection indexed them. The unit vocabulary and its decimal
+   * scales stay protocol-side; what AppView owes is that the field is there
+   * and structurally sound.
+   */
+  pack: { sell_unit: unknown; units_per_pack?: string }
   fulfilment_regions: RegionRefShape[]
   indicative_price?: Money
   freshness: { generated_at: string; valid_until?: string }
@@ -75,6 +88,11 @@ export interface CatalogProductRow {
   catalogId: string
   snapshotSequence: number
   snapshotDigest: string
+  /**
+   * The listing that serves this catalog, as the supplier stated it on the
+   * pointer (§10.5, DR-5). NULL when they did not say.
+   */
+  serviceRkey: string | null
   itemRevision: string
   name: string
   brand: string | null
@@ -98,6 +116,18 @@ export type ProjectionRefusal =
   | 'supplier_mismatch'
   /** The item names a catalog other than the one being published. */
   | 'catalog_mismatch'
+  /**
+   * The item is missing a field the projection must read.
+   *
+   * ADDED after a reviewer noticed the module promised an all-or-nothing
+   * refusal but had no case for this, so an item without `product` or
+   * `freshness` threw a TypeError out of the firehose ingest path instead. A
+   * throw is not a refusal: the record is neither indexed NOR counted as
+   * refused, so a hostile-but-digest-valid page disappears from the metrics an
+   * operator would use to notice it. Nothing validates item shapes upstream —
+   * `verifyCatalogPage` checks digests, not fields, and the handler casts.
+   */
+  | 'malformed_item'
 
 export interface ProjectionFinding {
   refusal: ProjectionRefusal
@@ -150,7 +180,7 @@ export function productKey(product: ProductRef): string {
  * character and would have collided `{value: 'A|B'}` with
  * `{value: 'A', issuer_did: 'B'}`.
  */
-function encodeParts(parts: readonly string[]): string {
+export function encodeParts(parts: readonly string[]): string {
   return parts.map((part) => `${String(part.length)}:${part}`).join('')
 }
 
@@ -172,13 +202,87 @@ export function projectCatalogSnapshot(args: {
   catalogId: string
   snapshotSequence: number
   snapshotDigest: string
+  /** From the POINTER, never from an item: a listing is a repo-level fact. */
+  serviceRkey?: string | null
   items: readonly CatalogItemShape[]
 }): CatalogProjection {
   const findings: ProjectionFinding[] = []
   const rows: CatalogProductRow[] = []
   const seen = new Map<string, number>()
 
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v)
+
+  /**
+   * Every field this projection dereferences. Absent or mistyped means REFUSE,
+   * not throw.
+   *
+   * SECOND PASS. The first version of this guard covered the fields I noticed
+   * and a reviewer traced five more the projection reaches afterwards. Each is
+   * a different flavour of the same error — checking the level I was looking at
+   * rather than every level a publisher controls:
+   *
+   *   - `indicative_price: null` — `null` is the ONLY way JSON expresses "no
+   *     price", and the branch below tested `=== undefined`, so a null price
+   *     reached `.currency`.
+   *   - `product` was accepted as any object, but `productKey` → `encodeParts`
+   *     reads `.length` off `scheme` and `value`.
+   *   - `identifiers` was never checked, so a primitive element reached
+   *     `productKey`.
+   *   - `fulfilment_regions` was checked as an ARRAY but not its elements —
+   *     the exact depth mistake the comment further down describes.
+   *   - `brand`/`description` were passed through untyped into `text` columns
+   *     that catalog-search ILIKE-matches, so an object there becomes
+   *     searchable JSON: a leak, not just a crash.
+   */
+  const missingField = (typed: CatalogItemShape): string | null => {
+    // ONE STATEMENT OF THE RULES, delegated to `wire-rules.ts`, which frozen
+    // parity vectors hold to the protocol's own semantics.
+    //
+    // WHAT THE HAND-ROLLED VERSION HERE LET THROUGH. It checked a handful of
+    // shallow types, so an item with an arbitrary product scheme, an arbitrary
+    // region scheme, an object where a category id belongs, an invalid
+    // timestamp and no `pack` was INDEXED — and the object category reached a
+    // searchable column as the string "[object Object]". Its first act was
+    // also `item.product` on a value it had not established was an object, so
+    // a digest-valid snapshot carrying `items:[null]` threw out of the ingest
+    // handler instead of being refused and counted.
+    //
+    // READ AS UNKNOWN: the declared type describes an intention about bytes
+    // that came off the wire from a publisher we do not control. Trusting the
+    // annotation here is how the throw got in.
+    return validateCatalogItem(typed as unknown)
+  }
+
+  /**
+   * Which refusal a rejected field path is.
+   *
+   * §9.3's unattributed-scoped-identifier case has its own refusal because it
+   * is a DIFFERENT problem from a mistyped field: the item is well-formed and
+   * still ambiguous, since two suppliers' SKU "A-1" collide into one product
+   * key. Collapsing it into `malformed_item` would tell a supplier "something
+   * is wrong with your item" when the answer is "this identifier needs an
+   * issuer". Regions are excluded — `fulfilment_regions[…].issuer_did` is a
+   * §9.0 delivery scope, not product identity.
+   */
+  const classify = (path: string): ProjectionRefusal =>
+    path.endsWith('.issuer_did') &&
+    (path.startsWith('item.product') || path.startsWith('item.identifiers'))
+      ? 'unattributed_identifier'
+      : 'malformed_item'
+
   args.items.forEach((item, index) => {
+    const missing = missingField(item)
+    if (missing !== null) {
+      findings.push({
+        refusal: classify(missing),
+        index,
+        // The FIELD NAME, never its value: a refusal that quoted the payload
+        // would put a hostile publisher's bytes into an operator's log.
+        detail: `item is missing or mistyped: ${missing}`,
+      })
+      return
+    }
     if (item.supplier_did !== args.supplierDid) {
       findings.push({
         refusal: 'supplier_mismatch',
@@ -240,16 +344,55 @@ export function projectCatalogSnapshot(args: {
       catalogId: args.catalogId,
       snapshotSequence: args.snapshotSequence,
       snapshotDigest: args.snapshotDigest,
+      serviceRkey: args.serviceRkey ?? null,
       itemRevision: item.item_revision,
       name: item.name,
       brand: item.brand ?? null,
       description: item.description ?? null,
-      categoryIds: [...item.category_ids],
+      // STRINGS ONLY, and this one was MISSED by the first pass of the fix
+      // below — which is the finding worth keeping. I rebuilt the regions and
+      // the price, wrote the comment saying the rule is about DEPTH, and left a
+      // shallow spread three lines above it. `category_ids` elements are
+      // publisher-controlled and reach a queryable column: `catalog-search`
+      // reads them through `jsonb_array_elements_text`, so an object element
+      // would sit in the searchable surface exactly like the region did.
+      categoryIds: item.category_ids.map((id) => String(id)),
       identifierKeys,
-      fulfilmentRegions: [...item.fulfilment_regions],
+      // FIELD BY FIELD, never a spread of the inbound object.
+      //
+      // `[...item.fulfilment_regions]` copied the region OBJECTS verbatim, so
+      // anything a publisher nested inside one landed in a queryable column —
+      // the §25.2 "secrets never enter AppView" claim, broken one level below
+      // where the allow-list was obvious. `commerce_no_secrets.test.ts` found
+      // it by scanning every column rather than the ones anyone thought of.
+      //
+      // A shallow copy of an array of objects copies the REFERENCES; only the
+      // outer array was ever new. The rule is therefore about depth, not about
+      // spreading: every level a publisher controls has to be rebuilt from
+      // named fields, or the allow-list stops one level above the data.
+      fulfilmentRegions: item.fulfilment_regions.map((region) => ({
+        scheme: region.scheme,
+        value: region.value,
+        // `== null` catches BOTH undefined and null, and that second case is a
+        // regression I introduced: loosening `optionalText` to admit null let
+        // `{issuer_did: null}` through the gate, and this test was `=== undefined`,
+        // so null was written into the jsonb column and spread onto the wire.
+        // `validateRegionRef` — the frozen §10.5 validator a BUYER runs — then
+        // refuses it, so AppView would emit a candidate the protocol rejects,
+        // which is the one thing `search_candidate.json` exists to prevent.
+        ...(region.issuer_did == null ? {} : { issuer_did: region.issuer_did }),
+      })),
       // §10.4 permits an indicative price and forbids presenting it as a
-      // current contractual offer. The column name is the label.
-      indicativePrice: item.indicative_price ?? null,
+      // current contractual offer. The column name is the label — and the two
+      // fields below are the whole of Money, so a supplier cannot append a
+      // cost basis to the price a buyer sees.
+      indicativePrice:
+        item.indicative_price === undefined || item.indicative_price === null
+          ? null
+          : {
+              currency: item.indicative_price.currency,
+              minor_units: item.indicative_price.minor_units,
+            },
       generatedAt: item.freshness.generated_at,
       validUntil: item.freshness.valid_until ?? null,
     })

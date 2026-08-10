@@ -142,7 +142,10 @@
     {
       "name": "lines_plus_charges_integer_sum",
       "currency": "INR",
-      "line_subtotals": ["50000", "2250"],
+      "line_subtotals": [
+        "50000",
+        "2250"
+      ],
       "charges": [
         {
           "kind": "delivery",
@@ -169,7 +172,9 @@
       "name": "charge_order_discount_first",
       "note": "§9.1 is a plain integer sum, so a discount preceding a surcharge must give the same total as the reverse. An implementation that rejects intermediate negatives disagrees here.",
       "currency": "INR",
-      "line_subtotals": ["100"],
+      "line_subtotals": [
+        "100"
+      ],
       "charges": [
         {
           "kind": "discount",
@@ -196,7 +201,9 @@
       "name": "charge_order_surcharge_first",
       "note": "Permutation of the case above. Both MUST produce 400.",
       "currency": "INR",
-      "line_subtotals": ["100"],
+      "line_subtotals": [
+        "100"
+      ],
       "charges": [
         {
           "kind": "delivery",
@@ -223,7 +230,9 @@
       "name": "final_total_negative_is_invalid",
       "note": "Non-negativity is a property of the RESULT, not of the running value.",
       "currency": "INR",
-      "line_subtotals": ["100"],
+      "line_subtotals": [
+        "100"
+      ],
       "charges": [
         {
           "kind": "discount",

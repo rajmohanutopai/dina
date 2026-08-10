@@ -45,7 +45,6 @@ import {
   HeldEvidence,
   readPurchaseOrderProposal,
 } from '@dina/commerce-protocol';
-import { canonicalJson } from '@dina/commerce-protocol';
 
 import { ackIdSuffix } from './admission';
 import { type CommerceOrderStore } from './commerce_order';
@@ -233,6 +232,37 @@ function signedBodyCommitsTo(body: string, digest: string): boolean {
     stack.push(...Object.values(node as Record<string, unknown>));
   }
   return false;
+}
+
+/**
+ * A stored cancellation-result receipt as an object, or `null` when the row
+ * cannot be believed.
+ *
+ * `JSON.parse` in a try/catch is NOT enough, and the gap is narrow enough to
+ * have survived review twice. `JSON.parse('null')` SUCCEEDS — it returns
+ * `null` — so the catch never fires and the caller dereferences null one line
+ * later, OUTSIDE the guard. `rehydrate.ts` records finding exactly this on the
+ * acknowledgement path; both cancellation scans had reproduced it.
+ *
+ * It defeated the property those scans are written for. Each is documented as
+ * skipping a row it cannot read so that ONE corrupt receipt cannot make every
+ * other cancellation on the order unanswerable — and a single `null` row threw
+ * a TypeError straight out of the scan instead, which is that failure exactly.
+ * The commerce boundary test exempts this file on the strength of that
+ * documented reason, so the reason had better be true.
+ *
+ * Arrays are refused too: a list is not a record, and `[].cancellation_id` is
+ * a quiet `undefined` rather than a refusal.
+ */
+function parseResultReceipt(recordJson: string): CancellationResult | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(recordJson);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  return parsed as CancellationResult;
 }
 
 export class CommerceLifecycleEngine {
@@ -1117,19 +1147,30 @@ export class CommerceLifecycleEngine {
           // anyway, so it never needs prior-manifest routing.
           servingManifestCid: '',
           servingInstallId: '',
-          // §16.2 — a re-adopted order is stamped PRE-restore on purpose.
+          // §16.2 — the epoch this node ADOPTED the reference in, which is
+          // the current one. The order is older than that, but this node has
+          // no trustworthy value for when: held evidence carries the
+          // protocol version, not the supplier epoch the order was admitted
+          // under, and inventing a lower number would put a fabricated fact
+          // in the column the fence reads.
           //
-          // Re-adoption rebuilds an order reference from a buyer's held
+          // SO THE EPOCH IS NOT WHAT BARS THIS ORDER — `reconciliationRequired`
+          // below is, and it is the only barrier. An earlier version of this
+          // comment claimed a pre-restore stamp made chain CREATION refuse;
+          // the code has always stamped the current epoch, so that second
+          // barrier never existed and a reader was being told the guard was
+          // twice as strong as it is.
+          //
+          // What the flag buys is the same outcome by an honest route:
+          // re-adoption rebuilds an order reference from a buyer's held
           // acknowledgement but NOT the order's lines, quote context or
-          // external state (a recorded open finding). Until it does, this
-          // node must not be free to sign a first status for an order it
-          // cannot fully describe: the buyer may hold a chain this node knows
-          // nothing about, and a fresh genesis would fork against it.
-          //
-          // Stamping the previous epoch makes chain CREATION refuse until the
-          // per-order reconciliation ceremony runs. Failing closed costs a
-          // refusal; failing open costs a second, conflicting supplier
-          // signature that no fence can repair.
+          // external state (a recorded open finding), so this node must not
+          // sign a first status for an order it cannot fully describe — the
+          // buyer may hold a chain this node knows nothing about, and a fresh
+          // genesis would fork against it. `status_chain` refuses creation
+          // with `order_awaiting_reconciliation` until the per-order ceremony
+          // clears the flag, and `disaster_recovery_journey.test.ts` pins that
+          // refusal so the single barrier cannot be removed silently.
           admittedEpoch: this.deps.currentEpoch(),
           // The order is real but this node cannot yet describe it — bar
           // chain creation until reconciliation clears it.
@@ -1814,15 +1855,11 @@ export class CommerceLifecycleEngine {
     const pending: CancellationResult[] = [];
     for (const receipt of this.deps.receipts.listByOrder(buyerDid, purchaseOrderId)) {
       if (receipt.domain !== 'result') continue;
-      let result: CancellationResult;
-      try {
-        result = JSON.parse(receipt.recordJson) as CancellationResult;
-      } catch {
-        // An unreadable row is a row that matches nothing, exactly as the
-        // lookup below treats it. One corrupt receipt must not hide every
-        // other cancellation on this order.
-        continue;
-      }
+      // An unreadable row is a row that matches nothing, exactly as the
+      // lookup below treats it. One corrupt receipt must not hide every
+      // other cancellation on this order.
+      const result = parseResultReceipt(receipt.recordJson);
+      if (result === null) continue;
       if (seen.has(result.cancellation_id)) continue;
       seen.add(result.cancellation_id);
       const current = this.findRecordedCancellation(
@@ -1856,12 +1893,8 @@ export class CommerceLifecycleEngine {
       // cancellation for this order unanswerable, so it is skipped: the scan
       // is looking for a specific `cancellation_id` and a row it cannot read
       // is a row it cannot match.
-      let result: CancellationResult;
-      try {
-        result = JSON.parse(receipt.recordJson) as CancellationResult;
-      } catch {
-        continue;
-      }
+      const result = parseResultReceipt(receipt.recordJson);
+      if (result === null) continue;
       if (result.cancellation_id !== cancellationId) continue;
       if (result.result !== 'pending_review') return result;
       pending = result;

@@ -50,6 +50,12 @@ export const commerceCatalogPointers = pgTable(
      * queryable, which is the honest fallback.
      */
     awaitingSnapshot: boolean('awaiting_snapshot').notNull().default(false),
+    /**
+     * The service listing that serves this catalog (§10.5, DR-5). NULL when
+     * the supplier did not say, in which case discovery falls back to the
+     * `self` convention rather than pretending to know.
+     */
+    serviceRkey: text('service_rkey'),
     /** The AT-URI this pointer came from, for audit. */
     uri: text('uri').notNull(),
     indexedAt: timestamp('indexed_at').notNull().defaultNow(),
@@ -89,6 +95,12 @@ export const commerceCatalogProducts = pgTable(
     snapshotSequence: integer('snapshot_sequence').notNull(),
     /** Source evidence: which snapshot this row came from (FR-A5). */
     snapshotDigest: text('snapshot_digest').notNull(),
+    /**
+     * Denormalized from the pointer, the way `snapshotDigest` already is, so
+     * search does not join to answer "where do I send the quote request".
+     * NULL means the supplier never said; discovery then uses `self`.
+     */
+    serviceRkey: text('service_rkey'),
     itemRevision: text('item_revision').notNull(),
     name: text('name').notNull(),
     brand: text('brand'),

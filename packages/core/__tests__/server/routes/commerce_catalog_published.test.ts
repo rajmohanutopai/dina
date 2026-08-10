@@ -561,3 +561,72 @@ describe('the published-catalog surface', () => {
     expect(cards.find((c) => c.catalogId === 'desks')?.state).toBe('published');
   });
 });
+
+/**
+ * §10.5 (DR-5, NEW-10) — the listing is a published fact, not a per-request one.
+ *
+ * The producer half of DR-5 landed on the builders and then only half reached
+ * the routes: `service_rkey` was read from the request body and nowhere else,
+ * so a supplier who published seq 1 with `chairs` and then republished — a
+ * reprice, a stock change, anything — silently reverted every buyer to `self`
+ * with no error to look at. And `buildCatalogWithdrawal`'s new parameter had
+ * no caller that ever supplied it, which is the unreached-capability shape
+ * this whole field was added to fix.
+ *
+ * This route already refuses a MISSING `items` array on exactly this
+ * reasoning: a dropped field must not retire a published fact.
+ */
+describe('the listing survives a republication', () => {
+  it('carries a stated listing onto the pointer', async () => {
+    const resp = await publish({ service_rkey: 'chairs' });
+    expect(resp.status).toBe(200);
+    expect(pointerOf(resp).service_rkey).toBe('chairs');
+  });
+
+  it('INHERITS it when a later publication does not restate it', async () => {
+    await publish({ service_rkey: 'chairs' });
+
+    const second = await publish({
+      published_at: '2026-08-08T10:00:00.000Z',
+      items: [{ sku: 'CHAIR-1', name: 'Oak chair' }, { sku: 'CHAIR-2', name: 'Ash chair' }],
+    });
+
+    expect(second.status).toBe(200);
+    expect(pointerOf(second).service_rkey).toBe('chairs');
+  });
+
+  it('lets a supplier MOVE the catalog by restating it', async () => {
+    await publish({ service_rkey: 'chairs' });
+    const moved = await publish({
+      published_at: '2026-08-08T10:00:00.000Z',
+      service_rkey: 'seating',
+    });
+
+    expect(pointerOf(moved).service_rkey).toBe('seating');
+  });
+
+  it('stays absent when it was never stated', async () => {
+    const resp = await publish();
+    expect('service_rkey' in pointerOf(resp)).toBe(false);
+  });
+
+  it('refuses a listing rkey that would splice the AT-URI', async () => {
+    const resp = await publish({ service_rkey: 'a/b' });
+    expect(resp.status).toBe(400);
+    expect((resp.body as { error: string }).error).toBe('service_rkey is not a usable record key');
+  });
+
+  it('carries it onto the TOMBSTONE when the catalog is withdrawn', async () => {
+    await publish({ service_rkey: 'chairs' });
+
+    const withdrawn = await router.handle(
+      post('/v1/commerce/catalog/withdraw', {
+        catalog_id: 'chairs',
+        published_at: '2026-08-08T11:00:00.000Z',
+      }),
+    );
+
+    expect(withdrawn.status).toBe(200);
+    expect(pointerOf(withdrawn).service_rkey).toBe('chairs');
+  });
+});

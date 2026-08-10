@@ -153,6 +153,30 @@ const IDENTITY_TABLES = [
   'commerce_quote_uses',
   'commerce_status_heads',
   'commerce_epoch_watermarks',
+  // THE BUYER'S SIDE, which the list above did not carry. The comment above
+  // names only supplier concerns — receipts, quote heads, use counters — and
+  // that is exactly what shipped: every table the buyer writes was missing, so
+  // a restore onto a new device lost every tracked order and every
+  // supplier-signed acknowledgement and status record the buyer holds.
+  //
+  // That is not merely inconvenient. §12.7 and §16.2 require a buyer to
+  // PRESENT held evidence on reconcile — `held_acknowledgement`,
+  // `held_status_receipts` — and those live here, not in `commerce_receipts`,
+  // which only the supplier engines write. A restored buyer with none of it
+  // cannot prove an order it placed, so `never_received` becomes the honest
+  // answer to a trade that really happened. FR-B11/FR-B12 say the opposite.
+  //
+  // The retained quote REQUESTS travel too: they are the yardstick §9.8
+  // measures an arriving quote against, so a buyer that restored without them
+  // would refuse every answer to a question it had genuinely asked.
+  'commerce_buyer_orders',
+  'commerce_buyer_quotes',
+  'commerce_buyer_quote_requests',
+  'commerce_buyer_status_records',
+  // §18.2/§18.3 owner policy and §10.2 published pointers are the user's own
+  // configuration, portable in the same sense as `service_configs`.
+  'commerce_settings',
+  'commerce_catalog_pointers',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */

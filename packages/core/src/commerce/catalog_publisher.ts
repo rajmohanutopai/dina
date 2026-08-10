@@ -74,6 +74,16 @@ export interface BuildCatalogSnapshotArgs {
   previous: { pointer: CatalogPointer; snapshotDigest: string } | null;
   /** Items per page. Defaults to the v1 maximum. */
   pageSize?: number;
+  /**
+   * Which SERVICE LISTING serves this catalog (§10.5, DR-5).
+   *
+   * Omitted means "not stated", and a consumer then falls back to the `self`
+   * convention for a node's primary listing. Stating it is what a supplier
+   * with SEVERAL listings must do: without it every buyer is told to send the
+   * quote request to `self`, which is the primary listing whether or not it is
+   * the one that stocks this catalog.
+   */
+  serviceRkey?: string;
   sha256: Sha256Fn;
 }
 
@@ -183,6 +193,7 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
     published_at: args.publishedAt,
     snapshot_rkey: snapshot.snapshot_digest,
     snapshot_digest: snapshot.snapshot_digest,
+    ...(args.serviceRkey === undefined ? {} : { service_rkey: args.serviceRkey }),
     ...(args.previous === null ? {} : { previous_snapshot_digest: args.previous.snapshotDigest }),
   };
 
@@ -205,6 +216,8 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
  * position to advance from.
  */
 export function buildCatalogWithdrawal(args: {
+  /** Carried onto the tombstone so the record stays self-describing. */
+  serviceRkey?: string;
   supplierDid: string;
   catalogId: string;
   protocolVersion: string;
@@ -217,6 +230,7 @@ export function buildCatalogWithdrawal(args: {
     snapshot_sequence: args.previous.pointer.snapshot_sequence + 1,
     protocol_version: args.protocolVersion,
     published_at: args.publishedAt,
+    ...(args.serviceRkey === undefined ? {} : { service_rkey: args.serviceRkey }),
     previous_snapshot_digest: args.previous.snapshotDigest,
     withdrawn: true,
   };

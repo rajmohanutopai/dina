@@ -41,7 +41,7 @@ import { getPluginGrantRepository, invocationDigest } from './grants';
 import {
   LIFECYCLE_CAPABILITIES,
   bareCapabilityName,
-  protocolMajorOf,
+  releaseMajorOf,
 } from './update_rebind';
 import { validateAgainstSchema } from './schema_validate';
 
@@ -95,7 +95,26 @@ function continuedOrderIsLive(
 }
 
 /**
- * Does the envelope's declared prior major match the row's?
+ * Does the envelope's declared prior RELEASE major match the row's?
+ *
+ * THE PLUGIN RELEASE MAJOR, not the commerce protocol major. Both values come
+ * from `PluginInstall.currentVersion` — the manifest's own `version` — by way
+ * of the drain row's `priorVersion` and the envelope field
+ * `buildContinuityEnvelope` stamps from it. See `releaseMajorOf`.
+ *
+ * WHY COMPARE MAJORS AT ALL, then. Not because §9.13 says minors are additive
+ * — that is a rule about the commerce wire version and it does not reach plugin
+ * semver. The reason is narrower and is the plugin author's own declaration: a
+ * release that keeps its major is the author saying this capability's contract
+ * did not break, so a continuation built under 0.1.0 may be claimed on a lane
+ * retained for 0.1.x. A major bump is the author saying the opposite, and the
+ * two must not be interchangeable on one lane.
+ *
+ * WHAT THIS DOES NOT ENFORCE, stated because the previous comment implied it
+ * did: nothing on the claim path compares the commerce `protocol_version`. That
+ * is enforced where the record is built and read — `versionMatches` against
+ * `ref.pinnedVersion` in the lifecycle engine. Cross-major PROTOCOL continuity
+ * is a separate, currently unimplemented question; see implementation-notes.html.
  *
  * Both sides may be SILENT, and silence has to agree with silence. A row
  * written before `prior_version` existed records an empty string, and
@@ -104,10 +123,26 @@ function continuedOrderIsLive(
  * pre-existing lanes working. What is refused is a DISAGREEMENT, including
  * one side claiming a version while the other cannot.
  */
+/**
+ * A stored schema column, or `undefined` when the row cannot be believed.
+ *
+ * `null` is a LEGITIMATE stored value — `update_rebind` writes
+ * `JSON.stringify(cap.result_schema ?? null)` for a capability that declares
+ * none — so the unreadable case has to be distinguishable from it. Hence
+ * `undefined` for "could not parse" and `null` for "parsed, and it is null".
+ */
+function parseStoredSchema(json: string): unknown | undefined {
+  try {
+    return JSON.parse(json) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 function majorsAgree(rowVersion: string, envelopeVersion: string | undefined): boolean {
-  const rowMajor = rowVersion === '' ? '' : protocolMajorOf(rowVersion);
+  const rowMajor = rowVersion === '' ? '' : releaseMajorOf(rowVersion);
   const envelopeMajor =
-    envelopeVersion === undefined || envelopeVersion === '' ? '' : protocolMajorOf(envelopeVersion);
+    envelopeVersion === undefined || envelopeVersion === '' ? '' : releaseMajorOf(envelopeVersion);
   return rowMajor === envelopeMajor;
 }
 
@@ -213,13 +248,13 @@ export function claimPluginTask(args: {
       // refusal: the alternative is admitting an envelope onto a consent no
       // row can show covered it.
       if (!entry.authorizedKinds.includes(requiredKind)) return false;
-      // §9.13 — WHICH MAJOR this continuation speaks must be the one the row
-      // authorized. Both sides already carried the fact and nothing compared
-      // them: `buildContinuityEnvelope` stamps `prior_version` from the row,
-      // and the row records `priorVersion` from the manifest the install
-      // stopped running. Unchecked, a lane retained for major 1 admitted an
-      // envelope claiming major 2, and the runner would answer the buyer
-      // under a contract their order was never opened under.
+      // WHICH PLUGIN RELEASE this continuation speaks for must be the one the
+      // row authorized. Both sides already carried the fact and nothing
+      // compared them: `buildContinuityEnvelope` stamps `prior_version` from
+      // the row, and the row records `priorVersion` from the manifest the
+      // install stopped running. Unchecked, a lane retained for release 1
+      // admitted an envelope claiming release 2, and the runner would answer
+      // under a manifest contract the lane never covered.
       //
       // CONTINUITY ONLY, and the asymmetry is the point. A `drain` entry
       // covers work that ALREADY EXISTED at the rebind: those envelopes were
@@ -230,8 +265,12 @@ export function claimPluginTask(args: {
       // there the field's absence is a fact about the envelope rather than
       // about when it was made.
       //
-      // Compared by MAJOR, not by exact version: §9.13 retains a lane per
-      // major, and a minor is additive by the same section's own rule.
+      // Compared by MAJOR, not by exact version, and on the RELEASE version:
+      // a lane is retained per plugin release major, and a same-major release
+      // is the author's own declaration that the capability contract held.
+      // (An earlier version of this comment borrowed §9.13's additive-minor
+      // rule, which is about the commerce wire version and says nothing about
+      // plugin semver. See `majorsAgree`.)
       if (
         entry.kind === 'lifecycle_continuity' &&
         !majorsAgree(entry.priorVersion, envelope.prior_version)
@@ -330,9 +369,21 @@ export function claimPluginTask(args: {
       failStale('envelope effects idempotency diverged from the manifest');
       continue;
     }
+    // A DRAINED ROW THAT CANNOT BE READ TERMINALIZES THE TASK, it does not
+    // throw. `readKinds` a few files over already treats an unparseable
+    // authorization column as authorizing nothing, and this is the same
+    // discipline: a corrupt or half-written `plugin_drain_authorizations` row
+    // used to throw out of the claim loop, so the lane wedged and the drain
+    // never finished — exactly the "dead oldest row starves valid work"
+    // failure this guard's own comment says it exists to avoid.
+    const drainedResultSchema = drained === null ? undefined : parseStoredSchema(drained.resultSchemaJson);
+    if (drained !== null && drainedResultSchema === undefined) {
+      failStale('retained result schema is unreadable');
+      continue;
+    }
     const expectedSchemaJson =
       drained !== null
-        ? canonicalJson(JSON.parse(drained.resultSchemaJson) as unknown)
+        ? canonicalJson(drainedResultSchema ?? null)
         : canonicalJson(cap?.result_schema ?? null);
     if (canonicalJson(envelope.schema_snapshot ?? null) !== expectedSchemaJson) {
       failStale('envelope result schema diverged from the manifest');
@@ -346,8 +397,12 @@ export function claimPluginTask(args: {
     // tasks were validated against the PRIOR params_schema at enqueue;
     // the current schema cannot judge them (inspectability limits below
     // still apply).
-    const consentedParamsSchema =
-      drained !== null ? (JSON.parse(drained.paramsSchemaJson) as unknown) : cap?.params_schema;
+    const drainedParamsSchema = drained === null ? undefined : parseStoredSchema(drained.paramsSchemaJson);
+    if (drained !== null && drainedParamsSchema === undefined) {
+      failStale('retained params schema is unreadable');
+      continue;
+    }
+    const consentedParamsSchema = drained !== null ? drainedParamsSchema : cap?.params_schema;
     if (consentedParamsSchema !== undefined && consentedParamsSchema !== null) {
       const paramsCheck = validateAgainstSchema(envelope.params, consentedParamsSchema);
       if (!paramsCheck.ok) {

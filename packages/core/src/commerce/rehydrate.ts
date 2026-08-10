@@ -22,8 +22,6 @@
  * Returning the failure lets each caller say which it is.
  */
 
-import type { EnvelopeEvidence } from './buyer_status';
-
 import {
   readPurchaseOrderProposal,
   readSignedQuote,
@@ -42,6 +40,10 @@ import {
   type RetainedEnvelope,
   type SignedQuote,
 } from '@dina/commerce-protocol';
+
+import type { BuyerApprovalContext } from './approval_payload';
+import type { EnvelopeEvidence } from './buyer_status';
+
 
 export type Sha256Fn = Parameters<typeof validatePurchaseOrderProposal>[1];
 
@@ -208,6 +210,68 @@ export function rehydrateOrderLines(json: string): Rehydrated<PurchaseOrderLine[
   const error = validatePurchaseOrderLines(parsed.value, 'order_lines_json');
   if (error !== null) return { ok: false, error };
   return { ok: true, value: parsed.value as PurchaseOrderLine[] };
+}
+
+/**
+ * Read back the CONTEXT half of a retained order approval (§15.2).
+ *
+ * The odd one out among these, and worth saying why it is still here rather
+ * than in the store. An approval context is not a wire record and has no
+ * digest of its own — its integrity comes from the approval digest, which is
+ * taken over the payload BUILT from the order and this context, and which the
+ * approval store recomputes on every read. So a tampered context is already
+ * caught one layer up.
+ *
+ * What this adds is the shape guarantee that layer assumes. `buildBuyerApproval
+ * Payload` indexes three maps by line id and reads five install fields; a row
+ * holding an array where a map belongs, or `null` where the install belongs,
+ * would throw inside the builder rather than refuse. Checking here turns that
+ * into the same null the rest of this module returns.
+ */
+export function rehydrateApprovalContext(json: string): Rehydrated<BuyerApprovalContext> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const v = parsed.value;
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+    return { ok: false, error: 'stored approval context is not an object' };
+  }
+  const c = v as Record<string, unknown>;
+  for (const field of ['actingBusinessDid', 'serviceUri', 'quoteExpiresAt'] as const) {
+    if (typeof c[field] !== 'string') {
+      return { ok: false, error: `stored approval context: ${field} is not a string` };
+    }
+  }
+  if (typeof c.quoteRevision !== 'number' || !Number.isFinite(c.quoteRevision)) {
+    return { ok: false, error: 'stored approval context: quoteRevision is not a number' };
+  }
+  for (const field of ['displayedLabels', 'productKeys', 'linePrices', 'principal'] as const) {
+    if (!isPlainObject(c[field])) {
+      return { ok: false, error: `stored approval context: ${field} is not an object` };
+    }
+  }
+  if (!Array.isArray(c.charges)) {
+    return { ok: false, error: 'stored approval context: charges is not an array' };
+  }
+  if (!isPlainObject(c.install)) {
+    return { ok: false, error: 'stored approval context: install is not an object' };
+  }
+  const install = c.install as Record<string, unknown>;
+  for (const field of [
+    'installId',
+    'capabilityId',
+    'manifestCid',
+    'installScopeHash',
+    'configRevision',
+  ] as const) {
+    if (typeof install[field] !== 'string') {
+      return { ok: false, error: `stored approval context: install.${field} is not a string` };
+    }
+  }
+  return { ok: true, value: v as BuyerApprovalContext };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

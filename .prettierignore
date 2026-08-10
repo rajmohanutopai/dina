@@ -1,0 +1,13 @@
+# Generated artefacts whose bytes belong to their producer, not to a formatter.
+#
+# `conformance/vectors/` is written by `conformance/generate.ts` and
+# `conformance/interop/` by the test that regenerates it — and
+# `catalog_interop_fixture.test.ts` compares that file BYTE FOR BYTE, because
+# it is the only join between Core's publisher and an AppView that takes no
+# `@dina/*` dependency. A formatter rewriting either one puts two tools in
+# charge of the same bytes: the generator expands short arrays, prettier
+# collapses them, and whichever ran last wins. That makes "regenerate and
+# compare" — the check these files exist to support — report a difference
+# every time, so a real divergence would arrive as noise nobody reads.
+packages/commerce-protocol/conformance/vectors/
+packages/commerce-protocol/conformance/interop/

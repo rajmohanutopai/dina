@@ -330,3 +330,72 @@ describe('what cannot be routed around', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * NEW-12 — "cannot evaluate" is not "does not hold".
+ *
+ * A `category_buyer` is the one grant this node cannot decide on: an order
+ * carries product references, and mapping those to categories needs the
+ * supplier's catalog, which no verified copy of exists here at send time. So
+ * the request arrives with an empty category list and `covers` returns false.
+ * Reporting that as a missing grant sends an operator to their grant table to
+ * look for something already in it — on a money path, at the moment an order
+ * was refused.
+ */
+describe('a refusal says which of the two things went wrong', () => {
+  const CATEGORY_BUYER: StaffGrant = {
+    kind: 'category_buyer',
+    principalDid: 'did:plc:sanchobuyer',
+    categoryIds: ['furniture.seating'],
+  };
+
+  const evaluate = (grants: StaffGrant[], categoryIds: string[]) =>
+    evaluateStaffAuthority({
+      chain: {
+        principalDid: 'did:plc:sanchobuyer',
+        installId: 'install-buyer',
+        actingForBusinessDid: 'did:plc:sanchobiz',
+        authorityDomain: 'buyer.order_submission',
+        policyRevision: null,
+        supplierDid: 'did:plc:chairmaker',
+        serviceRkey: 'self',
+        quoteDigest: 'q'.repeat(64),
+        orderDigest: 'o'.repeat(64),
+      },
+      approvals: ['did:plc:sanchobuyer'],
+      grants,
+      quorum: { secondPersonAtOrAboveMinorUnits: null, currency: 'INR' },
+      request: {
+        total: { currency: 'INR', minor_units: '500' },
+        categoryIds,
+        regionValue: 'postal_area:682001',
+        side: 'buy',
+      },
+      nowMs: 1_700_000_000_000,
+    });
+
+  it('says the categories could not be derived, not that the grant is missing', () => {
+    const verdict = evaluate([CATEGORY_BUYER], []);
+
+    expect(verdict.permitted).toBe(false);
+    if (verdict.permitted) throw new Error('expected a refusal');
+    expect(verdict.reason).toContain('cannot yet derive');
+    expect(verdict.reason).not.toContain('holds no live grant');
+  });
+
+  it('STILL says "no live grant" when the principal genuinely holds none', () => {
+    // The distinction only helps if the ordinary case keeps its own wording.
+    const verdict = evaluate(
+      [{ kind: 'supplier_sales', principalDid: 'did:plc:sanchobuyer' }],
+      ['furniture.seating'],
+    );
+
+    expect(verdict.permitted).toBe(false);
+    if (verdict.permitted) throw new Error('expected a refusal');
+    expect(verdict.reason).toContain('holds no live grant');
+  });
+
+  it('permits when the categories ARE known and the grant covers them', () => {
+    expect(evaluate([CATEGORY_BUYER], ['furniture.seating']).permitted).toBe(true);
+  });
+});

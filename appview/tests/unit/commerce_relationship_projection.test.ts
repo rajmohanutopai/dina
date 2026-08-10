@@ -161,14 +161,48 @@ describe('disagreement is data, not a tiebreak (§10.7)', () => {
         'third_party_claim',
       ),
     ])
-    expect(result.edges).toHaveLength(1)
-    const edge = result.edges[0]!
-    expect(edge.disputed).toBe(true)
-    // BOTH survive. An edge in dispute is not an edge with the loser deleted,
-    // and choosing the higher-confidence parent here is the silent merge
-    // §10.7 forbids.
-    expect(edge.evidence).toHaveLength(2)
-    expect(edge.objectKey).toBe(productKey(CHAIR_2))
+    // BOTH EDGES COEXIST. §10.3: "Conflicting edges coexist; an AppView does
+    // not rewrite the underlying exact product records to make its
+    // interpretation look authoritative."
+    //
+    // This test used to assert ONE edge carrying the FIRST object seen, which
+    // encoded the deviation rather than the rule: the loser was hidden, and
+    // which one lost depended on the order rows came back in — from a query
+    // with no ORDER BY, so two rebuilds of the same data could disagree.
+    expect(result.edges).toHaveLength(2)
+    const objects = result.edges.map((e) => e.objectKey).sort()
+    expect(objects).toEqual([productKey(CHAIR_2), productKey(CHAIR_3)].sort())
+
+    // EVERY alternative is flagged, not just the later arrival — the dispute
+    // is a property of the group, so neither side may be shown as settled.
+    expect(result.edges.every((e) => e.disputed)).toBe(true)
+    // And neither may pass standing along a lineage two parties contest.
+    expect(result.edges.every((e) => !mayInheritStanding(e))).toBe(true)
+    // Each alternative keeps its own evidence rather than being merged.
+    expect(result.edges.flatMap((e) => e.evidence.map((v) => v.claimId)).sort()).toEqual([
+      'p1',
+      'p2',
+    ])
+  })
+
+  it('is independent of the order claims are read in', () => {
+    // The query feeding the rebuild has no ORDER BY, so the projection must
+    // not depend on which conflicting claim arrives first.
+    const a = claim({ relationship: 'variant_of', claim_id: 'p1', object: CHAIR_2 })
+    const b = claim({ relationship: 'variant_of', claim_id: 'p2', object: CHAIR_3, issuer_did: RIVAL })
+    const forward = projectRelationships([
+      entry(a, 'first_party_claim'),
+      entry(b, 'third_party_claim'),
+    ])
+    const reverse = projectRelationships([
+      entry(b, 'third_party_claim'),
+      entry(a, 'first_party_claim'),
+    ])
+    const shape = (r: typeof forward) =>
+      r.edges
+        .map((e) => `${e.objectKey}|${String(e.disputed)}|${String(e.confidenceBp)}`)
+        .sort()
+    expect(shape(forward)).toEqual(shape(reverse))
   })
 
   it('does not treat many-to-many relationships as conflicting', () => {
@@ -205,12 +239,60 @@ describe('what an edge permits', () => {
   it('refuses to inherit standing along a disputed edge at any confidence', () => {
     // The disagreement is precisely the signal that one product's reputation
     // should not land on another's page.
+    // TWO DIFFERENT PARTIES. A dispute is between people: one issuer naming
+    // two parents has DECLARED something, and an index that calls a supplier's
+    // own statement a disagreement is editorialising.
     const edge = edgeFrom([
       entry(claim({ relationship: 'variant_of', claim_id: 'p1', object: CHAIR_2 }), 'first_party_claim', 9900),
-      entry(claim({ relationship: 'variant_of', claim_id: 'p2', object: CHAIR_3 }), 'first_party_claim', 9900),
+      entry(
+        claim({ relationship: 'variant_of', claim_id: 'p2', object: CHAIR_3, issuer_did: RIVAL }),
+        'first_party_claim',
+        9900,
+      ),
     ])
     expect(edge.disputed).toBe(true)
     expect(mayInheritStanding(edge)).toBe(false)
+  })
+
+  it('does not dispute claims about periods that never overlap', () => {
+    // A product manufactured at one plant until March and another after is
+    // HISTORY, not disagreement. The first rule marked every distinct object
+    // disputed and made sequential manufacture a permanent conflict — a
+    // cardinality §10.3 never states.
+    const result = projectRelationships([
+      entry(
+        claim({
+          relationship: 'manufactured_by',
+          claim_id: 'm1',
+          object: { did: MAKER },
+          effective_from: '2026-01-01T00:00:00Z',
+          effective_until: '2026-03-01T00:00:00Z',
+        }),
+        'first_party_claim',
+      ),
+      entry(
+        claim({
+          relationship: 'manufactured_by',
+          claim_id: 'm2',
+          object: { did: RIVAL },
+          issuer_did: RIVAL,
+          effective_from: '2026-03-01T00:00:00Z',
+          effective_until: '2026-09-01T00:00:00Z',
+        }),
+        'first_party_claim',
+      ),
+    ])
+    expect(result.edges).toHaveLength(2)
+    expect(result.edges.every((e) => !e.disputed)).toBe(true)
+  })
+
+  it('does not dispute co-manufacture declared by ONE issuer', () => {
+    const result = projectRelationships([
+      entry(claim({ relationship: 'manufactured_by', claim_id: 'c1', object: { did: MAKER } }), 'first_party_claim'),
+      entry(claim({ relationship: 'manufactured_by', claim_id: 'c2', object: { did: RIVAL } }), 'first_party_claim'),
+    ])
+    expect(result.edges).toHaveLength(2)
+    expect(result.edges.every((e) => !e.disputed)).toBe(true)
   })
 
   it('inherits standing along an undisputed first-party edge', () => {

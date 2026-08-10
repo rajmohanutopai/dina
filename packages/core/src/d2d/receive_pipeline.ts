@@ -22,7 +22,7 @@ import {
   type ServiceResponseBody,
 } from '@dina/protocol';
 
-import { appendAudit } from '../audit/service';
+import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
 import {
@@ -819,7 +819,22 @@ function applyServiceIngressDecision(
     // the transport-authenticated sender above; the body's own fields are
     // never an authority here.
     try {
-      applyInboundBuyerResponse({
+      // BOUND, not discarded — and that was a real gap, not a tidy-up.
+      //
+      // Every refusal in here returns NORMALLY, so the `catch` below never
+      // sees one, and the unconditional `d2d_recv_service_accepted` a few
+      // lines down was the only trace left: a supplier's answer refused for a
+      // stale epoch, a forked chain or an unreadable payload was recorded as
+      // accepted, and a buyer whose commerce answers were being dropped had
+      // nothing to look at.
+      //
+      // It also made a distinction this lane had just gained worthless.
+      // Separating `foreign_supplier` (a peer naming a third party, which is
+      // the watermark-poisoning attempt) from `stale_epoch` (an honest
+      // supplier that restored) buys an operator exactly nothing while
+      // neither reaches a log. §22's decision log is the thing that gives the
+      // split a point.
+      const outcome = applyInboundBuyerResponse({
         supplierDid: message.from,
         // §12.7/§16.2 — the evidence that makes a `never_received` answer
         // ILLEGAL later. The signature was verified above against the
@@ -852,6 +867,35 @@ function applyServiceIngressDecision(
         response: bypass.body as ServiceResponseBody,
         nowMs: Date.now(),
       });
+      // The three quiet outcomes stay quiet. `not_commerce` is very nearly
+      // every service response that crosses this lane, and logging it would
+      // bury the ones that matter under itself; `applied` and `no_change` are
+      // successes the acceptance line already covers.
+      //
+      // METADATA ONLY — the outcome name, the capability and the query id.
+      // Never the payload: this is a counterparty's commercial content and it
+      // must not reach a log.
+      if (outcome !== 'applied' && outcome !== 'no_change' && outcome !== 'not_commerce') {
+        // OUTCOME FIRST, and the order is the guard rather than a style. Both
+        // other fields are variable-length, so putting the fixed one at the
+        // front means no value can push it past the sink's cap — which is
+        // what the per-field bounds were previously doing the job of, in the
+        // direction that discarded the identifier instead.
+        //
+        // `query_id` IS the purchase-order id on this lane, and a commerce id
+        // may be MAX_ID_LENGTH (128). Capping it at 64 halved exactly the
+        // value an operator needs to match the refusal back to a row in
+        // `commerce_order_refs` — the entry would say something was dropped
+        // but not which order. Capability names are short, so 64 is generous
+        // there. `appendAudit` bounds the whole detail regardless.
+        appendAudit(
+          message.from,
+          'd2d_recv_service_buyer_unsettled',
+          message.to,
+          `outcome=${outcome} query_id=${sanitizeAuditDetail(body.query_id, 128)} ` +
+            `capability=${sanitizeAuditDetail(body.capability, 64)}`,
+        );
+      }
     } catch (err) {
       // NON-FATAL, like the workflow completion above: the response was
       // delivered in the ingress sense and the order simply stays parked for

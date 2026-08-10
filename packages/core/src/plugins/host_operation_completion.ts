@@ -203,7 +203,19 @@ export function makePluginCompletionHandler(
 
       // Nothing has happened yet and nothing is owed to the runner until the
       // owner answers; `applyOwnerDecision` enqueues the follow-up then.
-      if (outcome.kind === 'awaiting_owner' || outcome.kind === 'not_a_proposal') return;
+      //
+      // RETAIN THE PROPOSING ENVELOPE FIRST, because parking without it is
+      // parking for ever. `settleOwnerDecision` needs this envelope to build
+      // the follow-up that carries the verified result back to the runner, and
+      // a parked proposal outlives the process that made it — so nothing else
+      // can supply it later. Before this, a proposal that carded could not be
+      // resolved by anyone: §3.4's brokered lane recorded the question
+      // durably and then had no way to act on the answer.
+      if (outcome.kind === 'awaiting_owner') {
+        broker.retainSource(outcome.proposal.proposalId, JSON.stringify(completion.envelope));
+        return;
+      }
+      if (outcome.kind === 'not_a_proposal') return;
       if (outcome.kind === 'refused') {
         // A refusal Core decided BEFORE a proposal existed (a paused install,
         // an unconsented capability). There is no proposal row to deliver, so

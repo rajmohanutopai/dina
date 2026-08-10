@@ -5,7 +5,7 @@ import type {
   SupplierDecision,
 } from './admission';
 import type { CommerceTransaction } from './transaction';
-import type { OrderAcknowledgement, SignedQuote } from '@dina/commerce-protocol';
+import type { OrderAcknowledgement, QuoteRequest, SignedQuote } from '@dina/commerce-protocol';
 
 /**
  * The admission application service (ARCH-0b — WS-0.2b).
@@ -101,6 +101,37 @@ export class CommerceAdmissionService {
     return this.deps.transaction.atomically('registerReplacementQuote', () =>
       this.deps.engine.registerSignedQuoteInTx(quote, expectedBuyerDid),
     );
+  }
+
+  /**
+   * §9.8/§9.12 — issue a quote in answer to a buyer's request: retain the
+   * request and register the family, together or not at all.
+   *
+   * THE TWO WRITES ARE ONE FACT. The retained request is the yardstick §9.9
+   * measures a later order's delivery projection against, and the family is
+   * the capacity that order will spend. A family without its request admits
+   * orders this node cannot check; a request without its family is a document
+   * retained for a quote that was never born. Splitting them across two
+   * transactions would make both states reachable after a crash.
+   *
+   * `expectedBuyerDid` is REQUIRED and is the transport-authenticated sender,
+   * not `quote.buyer_did`. This is the seam `registerSignedQuoteForOwnBuyer`'s
+   * comment anticipated — the place where a real expectation finally arrives
+   * from outside the record being registered, so the audience check stops
+   * comparing a document against itself.
+   *
+   * Returns null on success, or the ledger's refusal. A refused issuance
+   * writes nothing.
+   */
+  issueQuote(args: {
+    request: QuoteRequest;
+    quote: SignedQuote;
+    expectedBuyerDid: string;
+  }): string | null {
+    return this.deps.transaction.atomically('issueQuote', () => {
+      this.deps.engine.retainQuoteRequestInTx(args.request, args.expectedBuyerDid);
+      return this.deps.engine.registerSignedQuoteInTx(args.quote, args.expectedBuyerDid);
+    });
   }
 
   /**

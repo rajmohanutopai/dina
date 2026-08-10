@@ -27,11 +27,24 @@ import {
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
 import { SQLiteBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
+import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
+import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import { BUYER_DID, makeOrder, makeQuoteRequest, makeSignedQuote } from './helpers';
+import {
+  BUYER_DID,
+  installActiveBuyerPack,
+  makeOrder,
+  makeQuoteRequest,
+  makeSignedQuote,
+  type InstalledBuyerPack,
+} from './helpers';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
+
+/** The owner this node acts for. §7.3: one grant, evaluated like any other. */
+const TEST_OWNER_DID = 'did:plc:testowner00000000';
 
 const PASSHEX = randomBytes(32).toString('hex');
 const SUPPLIER = 'did:plc:chairmaker99';
@@ -226,7 +239,9 @@ describe('record-before-send, against real SQL', () => {
   const QUOTE = makeSignedQuote(REQUEST, { quote_id: 'q-sql' });
   const ORDER = makeOrder(QUOTE, REQUEST.delivery.projection);
 
-  const CONTEXT: BuyerApprovalContext = {
+  let buyerPack: InstalledBuyerPack;
+  /** Per test: the acting install is minted per test (NEW-11). */
+  const contextOf = (): BuyerApprovalContext => ({
     actingBusinessDid: BUYER_DID,
     principal: {
       principalDid: 'did:plc:sanchoowner',
@@ -240,25 +255,40 @@ describe('record-before-send, against real SQL', () => {
     charges: [],
     quoteRevision: 1,
     quoteExpiresAt: '2026-08-09T09:00:00.000Z',
+    // Named fields, not the helper object: it also carries a `dispose`
+    // function, and a function in the context reaches `canonicalJson`.
     install: {
-      installId: 'install-buyer',
-      capabilityId: 'com.dinakernel.commerce.submit-order',
-      manifestCid: 'bafyreibuyer',
-      installScopeHash: 's'.repeat(64),
-      configRevision: '1',
+      installId: buyerPack.installId,
+      capabilityId: buyerPack.capabilityId,
+      manifestCid: buyerPack.manifestCid,
+      installScopeHash: buyerPack.installScopeHash,
+      configRevision: buyerPack.configRevision,
     },
-  };
+  });
+
 
   function approval() {
-    const built = buildBuyerApprovalPayload(ORDER, CONTEXT);
+    const built = buildBuyerApprovalPayload(ORDER, contextOf());
     if (!built.ok) throw new Error(`fixture is missing ${built.missing.join(', ')}`);
     return built.payload;
   }
 
   beforeEach(() => {
-    installCommerceRuntime({ buyerOrders: repo } as unknown as CommerceRuntime);
+    buyerPack = installActiveBuyerPack(Date.now());
+    installCommerceRuntime({
+      buyerOrders: repo,
+      // §12.4 step 6 — the executor revalidates the held quote before
+      // dispatch. Empty stores mean "no quote held", which is the documented
+      // skip, so these cases keep testing the record-before-send discipline
+      // they were written for.
+      buyerQuotes: new InMemoryBuyerQuoteRepository(),
+      buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),
+    } as unknown as CommerceRuntime);
   });
-  afterEach(() => installCommerceRuntime(null));
+  afterEach(() => {
+    buyerPack.dispose();
+    installCommerceRuntime(null);
+  });
 
   it('leaves a DURABLE record of a first submission that never came back', async () => {
     // The order left, the supplier went quiet, the process could die here. The
@@ -267,10 +297,19 @@ describe('record-before-send, against real SQL', () => {
     const result = await submitApprovedOrder({
       order: ORDER,
       approved: approval(),
-      context: CONTEXT,
+      context: contextOf(),
       serviceRkey: 'self',
       send: async () => ({ kind: 'ambiguous', reason: 'sent' }),
       nowMs: 1_700_000_000_000,
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order: ORDER,
+        context: contextOf(),
+        serviceRkey: 'self',
+      }),
     });
     expect(result.ok).toBe(true);
     const stored = repo.get(ORDER.supplier_did, ORDER.purchase_order_id);
@@ -302,7 +341,7 @@ describe('record-before-send, against real SQL', () => {
     await submitApprovedOrder({
       order: ORDER,
       approved: approval(),
-      context: CONTEXT,
+      context: contextOf(),
       serviceRkey: 'self',
       send: async () => {
         const seen = repo.get(ORDER.supplier_did, ORDER.purchase_order_id);
@@ -311,6 +350,15 @@ describe('record-before-send, against real SQL', () => {
       },
       nowMs: 1_700_000_000_000,
       resend: true,
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order: ORDER,
+        context: contextOf(),
+        serviceRkey: 'self',
+      }),
     });
     // Written, and the authorization already spent — so a crash here cannot be
     // turned into a second resend.
@@ -323,22 +371,40 @@ describe('record-before-send, against real SQL', () => {
     await submitApprovedOrder({
       order: ORDER,
       approved: approval(),
-      context: CONTEXT,
+      context: contextOf(),
       serviceRkey: 'self',
       send: async () => ({ kind: 'ambiguous', reason: 'sent' }),
       nowMs: 1_700_000_000_000,
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order: ORDER,
+        context: contextOf(),
+        serviceRkey: 'self',
+      }),
     });
     let secondSend = 0;
     const again = await submitApprovedOrder({
       order: ORDER,
       approved: approval(),
-      context: CONTEXT,
+      context: contextOf(),
       serviceRkey: 'self',
       send: async () => {
         secondSend += 1;
         return { kind: 'ambiguous', reason: 'sent' };
       },
       nowMs: 1_700_000_000_001,
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order: ORDER,
+        context: contextOf(),
+        serviceRkey: 'self',
+      }),
     });
     expect(again.ok).toBe(false);
     expect(secondSend).toBe(0);

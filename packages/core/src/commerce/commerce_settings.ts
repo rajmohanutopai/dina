@@ -107,6 +107,31 @@ export interface ConnectorEndpointSetting {
   requestBody?: string;
   /** Required with `requestBody`, e.g. `application/json`. */
   requestContentType?: string;
+  /**
+   * §24 — the response field the catalog rows live under, when the answer is
+   * wrapped (Odoo's JSON-RPC answers `{jsonrpc, id, result: [...]}`).
+   *
+   * A single field NAME. Not a path: a dotted expression is a small query
+   * language, and a query language over a supplier's response is a second way
+   * to decide what a catalog is. Absent means the endpoint answers the rows
+   * directly, which is every REST collection.
+   */
+  rowsAt?: string;
+  /**
+   * §24 — target catalog column → this backend's field name.
+   *
+   * A rename only. The importer is strict about column names, so an ERP's own
+   * vocabulary has to be translated before it gets there.
+   */
+  fieldMap?: Record<string, string>;
+  /**
+   * §24 — the price field, its currency, and the currency's decimal places.
+   *
+   * ERPs answer a major-unit decimal; the catalog carries integer minor units
+   * (§9.1). The currency is configuration because a bare number has not said
+   * which currency it means.
+   */
+  price?: { field: string; currency: string; decimals: number };
 }
 
 export type SettingsRefusal =
@@ -292,6 +317,37 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
         field: `connectors.${connector.name}.endpoint.requestBody`,
         detail: 'an RPC endpoint needs BOTH a request body and its content type (§24)',
       });
+    }
+    // A FIELD NAME, checked as one. A dotted or bracketed value is someone
+    // reaching for a path expression; accepting it would quietly grow a query
+    // language, and rejecting it here is cheaper than deciding later which
+    // subset of one to support.
+    const rowsAt = endpoint.rowsAt ?? '';
+    if (rowsAt !== '' && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(rowsAt)) {
+      findings.push({
+        refusal: 'endpoint_request_incomplete',
+        field: `connectors.${connector.name}.endpoint.rowsAt`,
+        detail: 'rowsAt names ONE response field, not a path (§24)',
+      });
+    }
+    // A price declaration is ALL THREE or none. A field with no currency
+    // publishes a number nobody can price against; decimals outside a real
+    // currency's range turns a rounding rule into a multiplier.
+    if (endpoint.price !== undefined) {
+      const p = endpoint.price;
+      if (
+        p.field === '' ||
+        p.currency === '' ||
+        !Number.isInteger(p.decimals) ||
+        p.decimals < 0 ||
+        p.decimals > 6
+      ) {
+        findings.push({
+          refusal: 'endpoint_request_incomplete',
+          field: `connectors.${connector.name}.endpoint.price`,
+          detail: 'a price declaration needs a field, a currency and 0-6 decimals (§24)',
+        });
+      }
     }
     if (endpoint.operation === '') {
       findings.push({

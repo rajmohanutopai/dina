@@ -31,54 +31,105 @@
  * change to what this node discloses rather than a refactor.
  */
 
+import { detectPII } from '../pii/patterns';
+
 /**
- * Fields a public catalog item may carry (§12.1).
+ * The closed public vocabulary (§12.1 rule 1).
  *
- * Deliberately SMALL. Every addition is a decision to publish a new kind of
- * fact about a supplier's business for ever, and the right default for a
- * field nobody has argued for is "not in the catalog".
+ * THIS LIST IS THE `CatalogItem` WIRE TYPE, and it has to be, which is a
+ * lesson that cost a real defect. It was first written from §12.1's prose as a
+ * hand-picked set — `category`, `regions`, `list_price`, `pack_size` — while
+ * `@dina/commerce-protocol` defines the published item as `category_ids`,
+ * `fulfilment_regions`, `indicative_price`, `pack`. The two vocabularies never
+ * met, so **this gate refused every item shape AppView's ingest requires**: a
+ * supplier publishing a real `CatalogItem` could not get past their own node's
+ * publication gate.
+ *
+ * NOTHING ON EITHER SIDE COULD SEE IT. Core's publisher tests used a flat
+ * `{sku, name}` CSV shape, and AppView's ingest tests hand-built `CatalogItem`s
+ * and never called Core's publisher. It took a fixture that carries one side's
+ * BYTES to the other — `catalog_interop_fixture.test.ts` — and it failed on its
+ * first run.
+ *
+ * So the list now covers the wire type's field names AND the flat CSV column
+ * names an import produces before normalization, and
+ * `catalog_leakage_vocabulary.test.ts` asserts that every field a valid
+ * `CatalogItem` can carry is in here. That test is the actual fix; this list is
+ * data it checks.
+ *
+ * Still deliberately SMALL beyond that. Every addition that is not required by
+ * the wire type is a decision to publish a new kind of fact about a supplier's
+ * business for ever, and the right default for a field nobody has argued for is
+ * "not in the catalog".
  */
 export const PUBLIC_CATALOG_FIELDS: ReadonlySet<string> = new Set([
-  // Identity — what the product IS (§9.3, §9.4).
+  // --- §9.3 identity: what the product IS -----------------------------------
   'product',
   'scheme',
   'value',
   // Part of a §9.3 ProductRef, not an extra. A `manufacturer_sku` or `custom`
   // reference is ambiguous WITHOUT its issuer — two suppliers may both call
   // something CHAIR-1 — so the issuing DID travels with the identity and is
-  // public by construction. Omitting it from this list meant no scoped product
-  // reference could be published at all, which the importer found by
-  // producing one.
+  // public by construction.
   'issuer_did',
   'variant_digest',
+  // §9.4 relationship claims. `family_ref` and `formulation_ref` are
+  // ProductRefs; `relationship_claim_refs` are AT-URIs of signed assertions.
+  'family_ref',
+  'formulation_ref',
+  'relationship_claim_refs',
   'variant_of',
   'variant_axes',
-  // Supplier-side identifiers. These are printed on the packaging, so their
-  // publicness is not a judgement call. They are a second way to say what
-  // `product: {scheme, value}` says canonically, which is a real tension —
-  // recorded rather than resolved, because refusing a `sku` column would make
-  // the gate fail every honest CSV import for a reason that has nothing to do
-  // with leakage.
+  // --- who published it, and which catalog it belongs to --------------------
+  // Public by construction: the record is signed by this DID and indexed under
+  // this catalog. Refusing them meant refusing every real `CatalogItem`.
+  'supplier_did',
+  'catalog_id',
+  'item_revision',
+  // --- supplier-side identifiers -------------------------------------------
+  // Printed on the packaging, so their publicness is not a judgement call.
+  // `identifiers` is the wire type's array of secondary ProductRefs; `sku` and
+  // `mpn` are the flat CSV columns an import produces before normalization.
+  'identifiers',
   'sku',
   'mpn',
-  // Presentation.
+  // --- presentation ---------------------------------------------------------
   'name',
   'description',
+  // BOTH LANES. `category_ids` is the wire type's array; `category` is the
+  // flat CSV column an import produces before normalization. Reconciling this
+  // list to the wire type dropped the flat one and broke every spreadsheet
+  // import — caught by an existing test, which is why the pair is now named
+  // together with the reason.
+  'category_ids',
   'category',
   'brand',
   'image_url',
-  // Commercial surface a buyer needs to decide whether to ask for a quote.
+  // --- commercial surface a buyer needs to decide whether to ask for a quote -
+  'pack',
+  'sell_unit',
+  'units_per_pack',
   'unit_code',
   'pack_size',
+  'minimum_order',
   'min_order_quantity',
   'lead_time_days',
+  'fulfilment_regions',
   'regions',
   'availability',
-  // List price is PUBLIC by the supplier's own choice; a real price still
-  // comes from a signed quote (§9.8), so this is advertising, not a term.
+  'freshness',
+  'generated_at',
+  'valid_until',
+  // An indicative price is PUBLIC by the supplier's own choice; a real price
+  // still comes from a signed quote (§9.8), so this is advertising and not a
+  // term (§10.4).
+  'indicative_price',
   'list_price',
   'currency',
   'minor_units',
+  // §9.5 bounded attribute map. The KEY `attributes` is public; the keys
+  // INSIDE it are supplier-chosen and handled separately — see the walk.
+  'attributes',
 ]);
 
 export type LeakageRefusal =
@@ -86,6 +137,14 @@ export type LeakageRefusal =
   | 'unknown_public_field'
   /** A value that looks like a credential. */
   | 'secret_shaped_value'
+  /**
+   * §12.1 step 10 — a value carrying a structured personal identifier: a
+   * phone, an email, an account or an ID number. Distinct from
+   * `secret_shaped_value`, because the two send an operator to different
+   * places: one means "rotate that credential", the other means "a person's
+   * details are in your catalog export".
+   */
+  | 'personal_identifier_value'
   /** Structure a catalog item may not have (nesting depth, non-object item). */
   | 'malformed_item';
 
@@ -123,8 +182,178 @@ const SECRET_PATTERNS: readonly { name: string; re: RegExp }[] = [
   },
 ];
 
+/**
+ * §12.1 step 10 — the structured-identifier PII half of the value scan.
+ *
+ * THE SPEC NAMES THIS EXPLICITLY and it was missing: "validation runs
+ * value-level scanning with the existing structured-identifier PII patterns
+ * (phone, email, account and ID number shapes) PLUS a secret-shaped-token
+ * detector". Only the second half was built. The first half is not new work —
+ * `detectPII` is the scrubber Core already runs on the egress path — so the
+ * gap was wiring, not capability, which is why nothing looked missing.
+ *
+ * WHAT IS AND IS NOT CLAIMED. §12.1 is unusually careful here and this follows
+ * it: identifier and credential SHAPES, and no promise of person-name
+ * detection. The closed vocabulary above is what keeps prose out of public
+ * fields; this is the residual case where a legal field carries a value that
+ * belongs to a person. `IP` and `ADDRESS` are in `detectPII` and are NOT used
+ * here — §12.1 names neither, an address is a legitimate thing for a supplier
+ * to describe, and a gate that refuses "ships from 12 Mill Road" would be
+ * disabled within a week.
+ */
+const PERSONAL_IDENTIFIER_TYPES: ReadonlySet<string> = new Set([
+  'EMAIL',
+  'PHONE',
+  'SSN',
+  'AADHAAR',
+  'PAN',
+  'IFSC',
+  'UPI',
+  'BANK_ACCT',
+  'CREDIT_CARD',
+]);
+
+/**
+ * Fields whose declared meaning is a PRODUCT number, and every class that
+ * collides with one there.
+ *
+ * ONE LIST, IN ONE PLACE. This block and the function below used to disagree
+ * about how long the list was — one said "two collisions", the other said
+ * "three" — which in a file whose comments ARE the decision record is how the
+ * next error gets made.
+ *
+ * THIS RULE HAS BEEN WRONG THREE TIMES and every error was the same mistake:
+ * reasoning about a class instead of measuring it.
+ *
+ *  1. It excluded `BANK_ACCT` and `CREDIT_CARD` on a general principle about
+ *     alphanumeric runs, and a valid card number in a `sku` column published
+ *     clean.
+ *  2. It admitted both back because "`CREDIT_CARD` is Luhn-validated" — which
+ *     settles `BANK_ACCT` and not `CREDIT_CARD`, whose pattern takes 13 to 19
+ *     digits while a GTIN-13 is thirteen. Measured: `5901234123457` and
+ *     `4901234567894` are real GTIN-13s that pass Luhn.
+ *  3. It left `AADHAAR` scanning, which is twelve digits, as is UPC-A.
+ *     Measured: `712345678904` is a valid UPC-A read as an Aadhaar number.
+ *
+ * FIVE EXCLUSIONS, and they split into two kinds. The first three have a
+ * MEASURED boundary, because what they compete with is a GTIN — a closed set
+ * of lengths with a check digit, so the line can be derived:
+ *
+ * - `PHONE` — always. The US pattern is not anchored at its start, so it finds
+ *   a ten-digit window inside ANY longer digit run.
+ * - `CREDIT_CARD` — below fifteen digits, where a GTIN can reach (8, 12, 13,
+ *   14). Fifteen and up cannot be one.
+ * - `AADHAAR` — only when the match carries no separator. Twelve bare digits
+ *   cannot be told from a UPC-A; a real Aadhaar written `2345 6789 0123` keeps
+ *   its spacing and stays refused, so the separator is the only signal there
+ *   is and it is the one used. `PHONE` does not cover this case: inside a
+ *   twelve-digit run the phone rule matches a ten-digit window,
+ *   `resolveOverlaps` drops the shorter match, and the AADHAAR span survives.
+ *
+ * The last two are a CHOICE and not a measurement, and saying so is the point:
+ *
+ * - `PAN` (`[A-Z]{5}\d{4}[A-Z]`) and `IFSC` (`[A-Z]{4}0[A-Z0-9]{6}`) compete
+ *   with `sku`, `mpn` and `custom` values — supplier-chosen strings with no
+ *   length bound, no vocabulary and no check digit. There is no boundary to
+ *   derive, so no amount of measuring settles it. Measured only that the
+ *   collision is real and ordinary: `CHAIR2024B` is refused as a tax ID and
+ *   `ACME012345X` as a bank branch code.
+ *
+ *   Excluded, on the asymmetry. A supplier cannot renumber their catalog, so a
+ *   false positive makes an honest SKU scheme permanently unpublishable; while
+ *   a genuine PAN or IFSC in a `sku` column is a deliberate act rather than the
+ *   ERP-export accident this scan exists for. §12.1 is explicit that this layer
+ *   is defence in depth and that the CLOSED VOCABULARY is the primary control.
+ *   Free-text fields still scan both at full strength, which is where a leaked
+ *   contact block actually arrives.
+ *
+ * Everything else scans normally in these fields, including `BANK_ACCT`:
+ * sixteen bare digits, and no product-code standard is sixteen (SSCC is
+ * eighteen, ITF-14 is fourteen).
+ *
+ * WHAT THE CARD BOUNDARY KNOWINGLY GIVES UP: a Diners Club number is fourteen
+ * digits, so a 13- or 14-digit card pasted into a product-number field is not
+ * scanned. That is the accepted side of the trade — the alternative refuses
+ * about a tenth of honest GTIN-13/14 catalogs.
+ *
+ * Free-text fields keep the FULL scan. A description reading "Model
+ * 9506000134352" will be refused, and that is the accepted cost: moving the
+ * code into `sku` takes seconds, a published customer phone number is public
+ * for ever.
+ */
+const PRODUCT_NUMBER_FIELDS: ReadonlySet<string> = new Set(['value', 'sku', 'mpn']);
+/** Longest GTIN. A numeric match above this cannot be a product number. */
+const MAX_GTIN_DIGITS = 14;
+
+/** Does this match collide with an honest product number? See above. */
+function collidesWithProductNumber(type: string, value: string): boolean {
+  if (type === 'PHONE' || type === 'PAN' || type === 'IFSC') return true;
+  if (type === 'CREDIT_CARD') return value.replace(/\D/g, '').length <= MAX_GTIN_DIGITS;
+  if (type === 'AADHAAR') return !/[\s-]/.test(value);
+  return false;
+}
+
+function scanForPersonalIdentifiers(value: string, path: string, out: LeakageFinding[]): void {
+  const leaf = path.slice(path.lastIndexOf('.') + 1);
+  const productNumber = PRODUCT_NUMBER_FIELDS.has(leaf);
+  const reported = new Set<string>();
+  for (const match of detectPII(value)) {
+    if (!PERSONAL_IDENTIFIER_TYPES.has(match.type)) continue;
+    if (productNumber && collidesWithProductNumber(match.type, match.value)) continue;
+    // ONE finding per type per field. Ten emails in a description is one
+    // problem to fix, and listing it ten times pushes other findings past the
+    // reporting cap.
+    if (reported.has(match.type)) continue;
+    reported.add(match.type);
+    // The TYPE, never the value — the same rule as the secret scan. A finding
+    // that quoted the phone number would copy it into the log.
+    out.push({
+      refusal: 'personal_identifier_value',
+      path,
+      detail: `value contains something shaped like a ${match.type.toLowerCase()} (§12.1)`,
+    });
+  }
+}
+
 /** Depth a catalog item may nest. Beyond this, a "product" is a document. */
 const MAX_ITEM_DEPTH = 4;
+
+/** The one field whose child keys are the supplier's own words (§9.5). */
+const ATTRIBUTES_FIELD = 'attributes';
+
+/**
+ * Scan an `attributes` map's VALUES without treating its keys as vocabulary.
+ *
+ * Flat by construction: §9.5 bounds attribute values to string, number or
+ * boolean, so there is no subtree here and nothing to recurse into. A nested
+ * object under `attributes` is malformed rather than deep, and
+ * `validateCatalogItem` refuses it before publication — so this reports it as
+ * a structural fault instead of silently walking something the wire type does
+ * not permit.
+ */
+function walkAttributeValues(value: unknown, path: string, out: LeakageFinding[]): void {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    out.push({
+      refusal: 'malformed_item',
+      path,
+      detail: 'attributes must be a flat object (§9.5)',
+    });
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const childPath = `${path}.${key}`;
+    if (typeof child === 'string') {
+      walk(child, childPath, 0, out);
+      continue;
+    }
+    if (typeof child === 'number' || typeof child === 'boolean') continue;
+    out.push({
+      refusal: 'malformed_item',
+      path: childPath,
+      detail: 'an attribute value must be a string, number or boolean (§9.5)',
+    });
+  }
+}
 
 /**
  * Check ONE catalog item, returning every finding rather than the first.
@@ -163,6 +392,7 @@ function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]
         return;
       }
     }
+    scanForPersonalIdentifiers(value, path, out);
     return;
   }
   if (Array.isArray(value)) {
@@ -172,6 +402,16 @@ function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]
   if (value === null || typeof value !== 'object') return;
 
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === ATTRIBUTES_FIELD) {
+      // §9.5 — a BOUNDED free-form map, so its keys are supplier-chosen and
+      // cannot be vocabulary; refusing them refused every item that used the
+      // feature the wire type provides. The VALUES are still supplier text
+      // reaching a public record, which is precisely where the value scan
+      // belongs, so the subtree is walked with the vocabulary check skipped
+      // one level rather than skipped entirely.
+      walkAttributeValues(child, `${path}.${key}`, out);
+      continue;
+    }
     if (!PUBLIC_CATALOG_FIELDS.has(key)) {
       // Named, not valued. The field name is the supplier's own word and is
       // safe to echo; whatever is inside it is exactly what must not be.

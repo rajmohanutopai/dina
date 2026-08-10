@@ -127,6 +127,22 @@ describe('commerce aggregate boundary', () => {
       // validated against the PINNED schema at the tool lane, which is a
       // different contract from a record digest.
       'order_decision.ts',
+      // The same case, for the quote lane: `readRunnerTerms` parses the
+      // supplier runner's unsigned TERMS, which have never been stored and
+      // carry no digest to re-derive. Every field is checked before use and an
+      // unreadable answer becomes `terms_unusable`, so a runner that returns
+      // nonsense gets a refusal rather than a quote — which is the discipline
+      // this guard exists to enforce, applied where a digest cannot be. The
+      // buyer's REQUEST, which does have a digest, goes through
+      // `validateQuoteRequest` and not through a bare parse.
+      'quote_issuance.ts',
+      // The retained quote request is parsed and IMMEDIATELY re-derived
+      // through `validateQuoteRequest`, which ends in
+      // `verifyCommerceRecordDigest` — so a row edited after writing is caught
+      // rather than believed. That is the discipline this guard enforces, not
+      // an exemption from it: the row is the yardstick an arriving quote is
+      // measured against, and it checks itself on every read.
+      'buyer_requests.ts',
       // A catalog feed body arrives over HTTP and has not been stored yet;
       // `parseJson` already answers a typed `body_unreadable` refusal.
       'catalog_ingest.ts',
@@ -204,6 +220,14 @@ describe('commerce aggregate boundary', () => {
       ['catalog_pointer_store.ts:InMemoryCatalogPointerRepository', 'test double'],
       ['idempotency_store.ts:InMemoryIdempotencyEvidenceRepository', 'test double'],
       ['status_heads.ts:InMemoryCommerceStatusHeadRepository', 'test double'],
+      // §12.3 — the buyer's quote-request COMPOSER exists and is exercised
+      // end to end by `buyer_quote_round_trip.test.ts`, but no route or UI
+      // calls it yet, so an owner cannot ask for a price from the product.
+      // Named here rather than left silent: this is the last piece of the
+      // buyer lane, and the ledger is what stops it being forgotten again.
+      ['buyer_quote_request.ts:requestQuote', 'no operator surface yet — route pending'],
+      ['buyer_requests.ts:InMemoryBuyerQuoteRequestRepository', 'test double'],
+      ['order_approvals.ts:InMemoryOrderApprovalRepository', 'test double'],
       ['buyer_quotes.ts:InMemoryBuyerQuoteRepository', 'test double'],
       ['buyer_status.ts:InMemoryBuyerStatusRepository', 'test double'],
       ['buyer_orders.ts:InMemoryBuyerOrderRepository', 'test double'],
@@ -491,6 +515,164 @@ describe('commerce aggregate boundary', () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * THE HOLE THAT HID THE QUOTE LANE. A cold audit found that
+   * `CommerceAdmissionService.registerSignedQuote` had no production caller —
+   * every journey test called it directly, so the supplier could not issue a
+   * quote on a real node and 8,000 green tests said nothing about it.
+   *
+   * The orphan ledger above could not have caught it: it scans top-level
+   * `export function|const|class` and never class METHODS, so an unwired
+   * method on a wired class is invisible to it. That is the specific gap, and
+   * this is the specific guard — narrow on purpose. Extending the whole ledger
+   * to every method would demand an allow-list of internal helpers large
+   * enough to hide the next one in.
+   *
+   * APPLICATION SERVICES ONLY. These are the seams the rest of Core is meant
+   * to enter commerce through, so a public method here with no caller is a
+   * capability the product does not actually have.
+   */
+  it('every public method on an application service has a production caller', () => {
+    const SERVICES = ['admission_service.ts', 'reconciliation_service.ts'];
+    // A method may be listed only with a reason it is not yet reachable.
+    const NOT_YET_CALLED = new Map<string, string>([
+      [
+        'admission_service.ts:registerReplacementQuote',
+        '§16.2 step 3 — the post-restore re-offer ceremony has no operator surface yet',
+      ],
+      [
+        // SUPERSEDED, not merely unused. `issueQuote` replaced it: this one
+        // infers the audience from `quote.buyer_did`, which is the record
+        // checking itself, while `issueQuote` takes the authenticated sender.
+        // Kept only because the quote-ledger tests exercise registration
+        // directly; it should be deleted once those move to `issueQuote`, and
+        // a new production caller must never be added.
+        'admission_service.ts:registerSignedQuote',
+        'superseded by issueQuote — delete once quote-ledger tests migrate',
+      ],
+      // The §16.2 recovery ceremony. All three are real, tested engines with
+      // no operator surface to start them yet — the same shape as
+      // `registerReplacementQuote` and recorded for the same reason: a row
+      // here is a capability the product does not YET have, said out loud
+      // rather than discovered by an auditor.
+      [
+        'reconciliation_service.ts:signGenesis',
+        '§9.11 genesis signing is reached through decideOrder today; no direct caller',
+      ],
+      [
+        'reconciliation_service.ts:signRestoreFence',
+        '§16.2 fence ceremony has no operator surface yet',
+      ],
+      [
+        'reconciliation_service.ts:reconcileRestoredOrder',
+        '§12.7 per-order re-adoption ceremony has no operator surface yet',
+      ],
+    ]);
+    const callers = tsFiles(CORE_SRC)
+      .filter((f) => !f.includes(`${path.sep}__tests__${path.sep}`))
+      .map((f) => ({ name: path.basename(f), body: codeNoStrings(fs.readFileSync(f, 'utf8')) }));
+
+    const offenders: string[] = [];
+    for (const service of SERVICES) {
+      const body = code(fs.readFileSync(path.join(COMMERCE_SRC, service), 'utf8'));
+      for (const m of body.matchAll(/^ {2}(?!private |constructor|get |static )(\w+)\(/gm)) {
+        const method = m[1] ?? '';
+        const key = `${service}:${method}`;
+        if (NOT_YET_CALLED.has(key)) continue;
+        // Called from anywhere in production that is not the service itself.
+        const called = callers.some(
+          (c) => c.name !== service && new RegExp(`\\.${method}\\s*\\(`).test(c.body),
+        );
+        if (!called) offenders.push(key);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * THE HOLE IN THE GUARD ABOVE, closed by the audit that found it.
+   *
+   * The service-method check is scoped to application services, and the
+   * class-level ledger counts a symbol as wired the moment `runtime.ts` names
+   * its constructor. So a REPOSITORY the runtime builds, whose only mutator
+   * nothing ever calls, passes both — which is exactly how
+   * `BuyerQuoteRequestRepository.put` shipped with no writer while its reader
+   * refused every inbound quote as `unsolicited_quote`. Eight thousand tests
+   * were green and the buyer's quote path was unreachable in production.
+   *
+   * A STORE THAT IS NEVER WRITTEN IS NOT A STORE. Read methods are exempt by
+   * name because plenty of stores are legitimately read-only from Core's side;
+   * a mutator is a capability, and a capability with no caller is one the
+   * product does not have.
+   *
+   * The class list is DERIVED from the composition root rather than typed out,
+   * so a store added to `runtime.ts` tomorrow is covered without anyone
+   * remembering to add it here.
+   */
+  it('every mutator on a runtime-constructed commerce store has a production caller', () => {
+    const READ_ONLY = /^(get|list|count|find|has|load|chain|recent|all|peek|latest|evidence)/;
+    const NOT_YET_CALLED = new Map<string, string>([
+      // Each entry is a capability the product does not YET have, said out
+      // loud. A row here is a promise to wire it, not permission to forget.
+      [
+        'idempotency_store.ts:forget',
+        '§15.5 probe eviction — no retention sweep calls it yet',
+      ],
+    ]);
+
+    // BOUND TO THE RUNTIME FIELD, not to the bare method name. A first version
+    // searched for `.put(` anywhere and every store passed, because half of
+    // them have a `put`. Matching the field the composition root exposes —
+    // `buyerQuoteRequests.put(` — is what makes the question "is THIS store
+    // written" rather than "does any store have a method by this name".
+    const runtimeSource = code(fs.readFileSync(path.join(COMMERCE_SRC, 'runtime.ts'), 'utf8'));
+    const fieldOfClass = new Map<string, string>();
+    for (const m of runtimeSource.matchAll(/(\w+):\s*new\s+(SQLite\w+)\s*\(/g)) {
+      fieldOfClass.set(m[2] ?? '', m[1] ?? '');
+    }
+    const callers = tsFiles(CORE_SRC)
+      .filter((f) => !f.includes(`${path.sep}__tests__${path.sep}`))
+      .map((f) => ({ file: f, body: codeNoStrings(fs.readFileSync(f, 'utf8')) }));
+
+    const offenders = new Set<string>();
+    for (const file of tsFiles(COMMERCE_SRC)) {
+      const name = path.basename(file);
+      const body = code(fs.readFileSync(file, 'utf8'));
+      for (const cls of body.matchAll(/^export class (SQLite\w+)/gm)) {
+        const field = fieldOfClass.get(cls[1] ?? '');
+        if (field === undefined) continue;
+        for (const m of body.matchAll(/^ {2}(?!private |constructor|get |static )(\w+)\(/gm)) {
+          const method = m[1] ?? '';
+          if (READ_ONLY.test(method)) continue;
+          const key = `${name}:${method}`;
+          if (NOT_YET_CALLED.has(key)) continue;
+          // TWO WAYS TO COUNT AS CALLED, and both are real wiring:
+          //
+          //   - the store's OWN module uses it. `verifyInboundQuote` lives
+          //     beside the repository it appends to and takes it as a
+          //     parameter, so the receiver is a local name; the module owns
+          //     its store and that is the ordinary shape here.
+          //   - somewhere else reaches it through the runtime FIELD, which is
+          //     the only name the composition root exposes.
+          //
+          // What neither covers is a mutator nothing invokes at all, which is
+          // the case this test exists for.
+          const ownModuleUses = new RegExp(`\\.${method}\\s*\\(`).test(
+            // Strip the class body's own declaration line so a method is not
+            // counted as calling itself.
+            body.replace(new RegExp(`^ {2}${method}\\(`, 'gm'), '  __decl__('),
+          );
+          const call = new RegExp(`\\b${field}\\.${method}\\s*\\(`);
+          const calledElsewhere = callers.some(
+            (c) => path.basename(c.file) !== name && call.test(c.body),
+          );
+          if (!ownModuleUses && !calledElsewhere) offenders.add(key);
+        }
+      }
+    }
+    expect([...offenders]).toEqual([]);
+  });
+
   it('no production file outside an owner calls a raw persistence mutator', () => {
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -582,6 +764,44 @@ describe('commerce aggregate boundary', () => {
       // after an identity switch would go on re-reading the previous
       // identity's repo.
       if (!/\.stop\(\)/.test(body)) missing.push(`${path.basename(root)}: stop`);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  /**
+   * §12.7 — both roots must install the held-evidence reader.
+   *
+   * The regression is recorded in `reconcile_poller.ts` and it is worth the
+   * second guard: `installHeldEvidenceReader` was once called only from tests,
+   * so every real node presented NO evidence — which makes a supplier's
+   * `never_received` legal, and that is the one answer authorizing a
+   * resubmission. §12.7's re-adoption path was inert end to end.
+   *
+   * STATIC AND OVER BOTH ROOTS, for the reason the sweeper guard above gives:
+   * a behavioural test on one boot passes while the other does nothing. And
+   * static rather than through an exported getter, because an accessor whose
+   * only caller is a test is the same orphan shape this ledger exists to
+   * catch — the fix for "is it wired" must not itself be unwired.
+   */
+  it('every composition root installs the held-evidence reader', () => {
+    const REPO = path.join(CORE_SRC, '..', '..', '..');
+    const ROOTS = [
+      path.join(REPO, 'apps', 'home-node-lite', 'core-server', 'src', 'storage', 'init.ts'),
+      path.join(REPO, 'apps', 'mobile', 'src', 'storage', 'init.ts'),
+    ];
+    const missing: string[] = [];
+    for (const root of ROOTS) {
+      const body = code(fs.readFileSync(root, 'utf8'));
+      if (!/installHeldEvidenceReader\s*\(/.test(body)) {
+        missing.push(`${path.basename(path.dirname(root))}/init.ts: install`);
+      }
+      // The reader must be BUILT from the node's own repositories rather than
+      // handed something narrower: `makeHeldEvidenceReader` is what reads the
+      // acknowledgement envelope and the status chain, and installing a
+      // hand-rolled stand-in is how a node comes to present less than it holds.
+      if (!/makeHeldEvidenceReader\s*\(/.test(body)) {
+        missing.push(`${path.basename(path.dirname(root))}/init.ts: make`);
+      }
     }
     expect(missing).toEqual([]);
   });

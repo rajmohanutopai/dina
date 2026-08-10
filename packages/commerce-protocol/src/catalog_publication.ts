@@ -104,6 +104,21 @@ export interface CatalogPointer {
   published_at: string;
   /** Absent on the genesis pointer and on nothing else. */
   previous_snapshot_digest?: string;
+  /**
+   * Which SERVICE LISTING serves this catalog (§10.5, DR-5).
+   *
+   * §10.2 identifies a catalog by `catalog_id` and says nothing about the
+   * listing a buyer should send a quote request to, so AppView had nowhere to
+   * learn it and answered `self` for every candidate. On a supplier with one
+   * listing that is right by accident; on a supplier with several — the
+   * rkey-keyed model §10 assumes — it points every buyer at the wrong one.
+   *
+   * OPTIONAL, because `self` is the platform's documented convention for a
+   * node's primary listing and requiring it would invalidate every catalog
+   * published so far. Present, it is the supplier's own statement and beats
+   * the convention.
+   */
+  service_rkey?: string;
   /** Absent when `withdrawn` is true: a tombstone names no snapshot. */
   snapshot_rkey?: string;
   snapshot_digest?: string;
@@ -277,6 +292,12 @@ export function validateCatalogPointer(value: unknown): string | null {
       'pointer.previous_snapshot_digest',
     );
     if (prev !== null) return prev;
+  }
+  if (pointer.service_rkey !== undefined) {
+    // An RKEY like any other. Validated even on a tombstone: a withdrawal
+    // that names a malformed listing is still a malformed record.
+    const listing = validateId(pointer.service_rkey, 'pointer.service_rkey');
+    if (listing !== null) return listing;
   }
   if (pointer.withdrawn === true) {
     // A tombstone names no snapshot — carrying one would leave consumers

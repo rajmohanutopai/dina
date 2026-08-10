@@ -20,6 +20,7 @@ export * from './region';
 export * from './product';
 export * from './quote';
 export * from './search';
+export * from './cross_index';
 export * from './order';
 export * from './acknowledgement';
 export * from './status';

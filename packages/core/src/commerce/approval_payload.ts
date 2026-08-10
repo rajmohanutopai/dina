@@ -47,6 +47,18 @@ import type { Money, PurchaseOrderProposal, Quantity } from '@dina/commerce-prot
  */
 const APPROVAL_PREFIX = 'dina:commerce:approval:v1:';
 
+/**
+ * The authority domains this node records for its own two acts (§7.2, §15.2).
+ *
+ * NAMED CONSTANTS, not literals at the call sites, because these are the values
+ * an auditor reads back and the values a staff grant would be scoped against.
+ * They are CORE-SIDE: §7.2 says caller-supplied body fields establish none of
+ * these identities, so the domain of an act is something this node states about
+ * itself rather than something a surface passes in.
+ */
+export const BUYER_ORDER_AUTHORITY_DOMAIN = 'buyer.order_submission';
+export const SUPPLIER_ORDER_AUTHORITY_DOMAIN = 'supplier.order_acceptance';
+
 /** Who approved, and under what authority (§7.2, §15.2). */
 export interface ApprovingPrincipal {
   /** The human. Absent when policy auto-approved — see `policyRevision`. */
@@ -206,16 +218,7 @@ export interface BuyerApprovalContext {
   quoteRevision: number;
   quoteExpiresAt: string;
   install: ActingInstall;
-  /**
-   * Category ids the order touches, for §7.3 category-buyer authority.
-   *
-   * NOT bound into the approval digest: it describes the order for an
-   * authority decision rather than being something the human approved, and
-   * binding it would make two different card renderings of the same order
-   * fail the comparison.
-   */
-  allowedCategoryIds?: string[];
-}
+  }
 
 /**
  * A built payload, or the §15.2 fields the card failed to supply.

@@ -311,4 +311,99 @@ describe('Audit Service', () => {
       expect(() => appendAudit('brain', 'test', 'res', '')).not.toThrow();
     });
   });
+
+  describe('bounding a detail without corrupting it', () => {
+    // The sink bounds every detail so a peer cannot write unbounded content,
+    // or embed a newline that makes one entry render as two. The first version
+    // did that by treating EVERY detail as flat text, which broke the
+    // structured ones — these pin both halves.
+
+    it('keeps a JSON-packed detail parseable when it exceeds the flat cap', () => {
+      // Cut at 512 bytes, a packed detail lands mid-string and stops parsing.
+      // `parseAuditDetail` answers a parse failure with `{ text: <broken> }`,
+      // so the agent-audit route returns a well-formed response with every
+      // field blank — silent loss, invisible from outside. Structured details
+      // are bounded at the PRODUCER instead, per field.
+      const entry = appendAuditWithDetail('brain', 'test', 'res', {
+        query_type: 'vault_search',
+        reason: 'x'.repeat(2_000),
+        metadata: { count: 3, note: 'y'.repeat(2_000) },
+      });
+
+      expect(entry).not.toBeNull();
+      const parsed = parseAuditDetail(entry?.detail ?? '');
+      // Still an object with its sub-fields, not a `{ text: … }` wreck.
+      expect(parsed.query_type).toBe('vault_search');
+      expect(parsed.reason?.length).toBe(256);
+      expect(parsed.metadata?.count).toBe(3);
+      expect((parsed.metadata?.note as string).length).toBe(256);
+    });
+
+    it('does not rewrite the value it was asked to store', () => {
+      // The first version collapsed `\s+` to a single space over the whole
+      // detail, so `"a  b"` was STORED as `"a b"`. Altering content inside a
+      // log whose purpose is to be tamper-evident is worse than the tidiness
+      // it bought.
+      const entry = appendAuditWithDetail('brain', 'test', 'res', {
+        reason: 'two  spaces  preserved',
+      });
+      expect(parseAuditDetail(entry?.detail ?? '').reason).toBe('two  spaces  preserved');
+
+      const flat = appendAudit('brain', 'test', 'res', 'flat  text  preserved');
+      expect(flat?.detail).toBe('flat  text  preserved');
+    });
+
+    it('bounds a JSON detail from a writer that never calls buildAuditDetail', () => {
+      // THE EXEMPTION HAD A FALSE PREMISE. An earlier version waved long JSON
+      // through on the grounds that `buildAuditDetail` had bounded it at the
+      // producer — but that function is reachable only via
+      // `appendAuditWithDetail`, which has no production caller. Every JSON
+      // detail this codebase writes is `JSON.stringify(...)` passed straight to
+      // `appendAudit`, exactly as here, so the exemption removed the bound from
+      // precisely the details it claimed were already bounded.
+      //
+      // The sink now re-packs, so the guarantee no longer depends on how the
+      // detail was built — which is the only version that survives the next
+      // call site.
+      const entry = appendAudit(
+        'brain',
+        'test',
+        'res',
+        JSON.stringify({ reason: 'z'.repeat(5_000), count: 7 }),
+      );
+
+      expect((entry?.detail ?? '').length).toBeLessThanOrEqual(4_096);
+      // Bounded AND still structured: a consumer reading sub-fields must never
+      // be handed `{ text: <broken JSON> }`.
+      const parsed = parseAuditDetail(entry?.detail ?? '');
+      expect(parsed.reason?.length).toBe(256);
+      expect(parsed.metadata).toBeUndefined();
+      expect(JSON.parse(entry?.detail ?? '').count).toBe(7);
+      // And it SAYS something was dropped. A bounded-away value reads back as
+      // absent, which is indistinguishable from never-set without this.
+      expect(JSON.parse(entry?.detail ?? '').truncated).toBe(true);
+    });
+
+    it('bounds an ARRAY-shaped JSON detail too', () => {
+      // Shape decided the old branch (`startsWith('{')`), so an array-shaped
+      // detail was cut mid-string while an object-shaped one was waved through.
+      const entry = appendAudit(
+        'brain',
+        'test',
+        'res',
+        JSON.stringify(Array.from({ length: 200 }, () => 'w'.repeat(100))),
+      );
+
+      expect((entry?.detail ?? '').length).toBeLessThanOrEqual(4_096);
+      const parsed: unknown = JSON.parse(entry?.detail ?? '');
+      expect(Array.isArray(parsed)).toBe(true);
+      expect((parsed as string[]).length).toBe(32);
+    });
+
+    it('still strips newlines and bounds flat text', () => {
+      const entry = appendAudit('brain', 'test', 'res', `a\nforged=yes ${'B'.repeat(900)}`);
+      expect(entry?.detail).not.toContain('\n');
+      expect((entry?.detail ?? '').length).toBeLessThanOrEqual(512);
+    });
+  });
 });

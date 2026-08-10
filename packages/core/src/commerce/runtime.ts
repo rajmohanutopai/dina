@@ -27,6 +27,10 @@ import { CommerceAdmissionEngine } from './admission';
 import { CommerceAdmissionService } from './admission_service';
 import { SQLiteBuyerOrderRepository, type BuyerOrderRepository } from './buyer_orders';
 import { SQLiteBuyerQuoteRepository, type BuyerQuoteRepository } from './buyer_quotes';
+import {
+  SQLiteBuyerQuoteRequestRepository,
+  type BuyerQuoteRequestRepository,
+} from './buyer_requests';
 import { SQLiteBuyerStatusRepository, type BuyerStatusRepository } from './buyer_status';
 import {
   SQLiteCatalogPointerRepository,
@@ -40,16 +44,20 @@ import {
   type IdempotencyEvidenceRepository,
 } from './idempotency_store';
 import { CommerceLifecycleEngine } from './lifecycle_engine';
+import {
+  SQLiteOrderApprovalRepository,
+  type OrderApprovalRepository,
+} from './order_approvals';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
+import {
+  SQLitePendingSupplierDecisionRepository,
+  type PendingSupplierDecisionRepository,
+} from './pending_decisions';
 import { installQuoteAttemptLedger, QuoteAttemptLedger } from './probing_ledger';
 import { DEFAULT_PROBING_POLICY } from './probing_resistance';
 import { QuoteFamilyStore } from './quote_family';
 import { SQLiteCommerceQuoteLedgerRepository } from './quote_ledger';
 import { SQLiteCommerceReceiptRepository } from './receipts';
-import {
-  SQLitePendingSupplierDecisionRepository,
-  type PendingSupplierDecisionRepository,
-} from './pending_decisions';
 import { CommerceReconciliationService } from './reconciliation_service';
 import {
   SQLiteCommerceSettingsRepository,
@@ -64,7 +72,6 @@ import type { LifecycleEngineDeps } from './lifecycle_engine';
 import type { CommerceReceiptRepository } from './receipts';
 import type { CommerceEpochWatermarkRepository } from './watermarks';
 import type { DatabaseAdapter } from '../storage/db_adapter';
-import type { SignedQuote } from '@dina/commerce-protocol';
 
 /**
  * §9.9 step 3: how long a `pre_effect` reservation may sit undecided before
@@ -157,6 +164,18 @@ export interface CommerceRuntime {
    */
   buyerQuotes: BuyerQuoteRepository;
   /**
+   * §9.8 — the quote requests THIS node sent, retained so an arriving quote
+   * can be checked against the question it claims to answer. Without it the
+   * buyer-side `request_digest` and projection bindings have no yardstick.
+   */
+  buyerQuoteRequests: BuyerQuoteRequestRepository;
+  /**
+   * §15.2 — the approval material Core minted when it showed a card, held
+   * until the owner sends or the card expires. The binding check is only
+   * meaningful against material the submitting caller does not supply.
+   */
+  orderApprovals: OrderApprovalRepository;
+  /**
    * THIS NODE's DID.
    *
    * One identity, two roles. The inputs call it `supplierDid` because the
@@ -166,6 +185,19 @@ export interface CommerceRuntime {
    * it IS rather than for whichever role is asking.
    */
   nodeDid: () => string;
+  /**
+   * §16.2 — the live commerce epoch this node signs at.
+   *
+   * THROWS until an epoch record has been published, and that is the contract
+   * rather than a defect: a node that stamped a guessed epoch would produce
+   * records no restore fence could place. Callers that sign must handle the
+   * throw as a refusal.
+   *
+   * Exposed because quote issuance stamps it and the runtime already held the
+   * thunk — reaching through `admission` to the engine's ledger for it would
+   * be a second path to one fact.
+   */
+  currentEpoch: () => string;
   /** §18.2/§18.3 owner policy, validated on every read. */
   settings: CommerceSettingsRepository;
   /**
@@ -336,6 +368,9 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     buyerStatus: new SQLiteBuyerStatusRepository(inputs.adapter),
     buyerQuotes: new SQLiteBuyerQuoteRepository(inputs.adapter),
     nodeDid: inputs.supplierDid,
+    currentEpoch: inputs.currentEpoch,
+    buyerQuoteRequests: new SQLiteBuyerQuoteRequestRepository(inputs.adapter),
+    orderApprovals: new SQLiteOrderApprovalRepository(inputs.adapter),
     settings: new SQLiteCommerceSettingsRepository(inputs.adapter),
     credentials,
     idempotencyEvidence: new SQLiteIdempotencyEvidenceRepository(inputs.adapter),

@@ -33,6 +33,8 @@ import {
   REQUEST_QUOTE_CAPABILITY,
 } from '../../src/commerce/buyer_response';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -42,6 +44,22 @@ import type { SignedQuote } from '@dina/commerce-protocol';
 
 const PASSHEX = randomBytes(32).toString('hex');
 const NOW = Date.parse('2026-08-01T10:00:00.000Z');
+
+/**
+ * The request these quotes answer, RETAINED — because §9.8's buyer-side
+ * bindings now check an arriving quote against the question this node asked.
+ *
+ * Before the retained-request store existed, `verifySignedQuoteForBuyer` had
+ * no caller and a quote was accepted without anyone asking whether it answered
+ * anything. These cases exercise the chain rules, so they supply the request
+ * that makes their quotes solicited; the binding itself is covered where it
+ * lives.
+ */
+function retainedRequests(): InMemoryBuyerQuoteRequestRepository {
+  const store = new InMemoryBuyerQuoteRequestRepository();
+  store.put(makeQuoteRequest(), NOW);
+  return store;
+}
 
 let dir: string;
 let adapter: NodeSQLiteAdapter;
@@ -87,6 +105,14 @@ describe('the production entry point (§9.8 wiring)', () => {
     installCommerceRuntime({
       buyerQuotes: repository,
       nodeDid: () => BUYER_DID,
+      // §16.2 — a REAL watermark store, not an omission the cast hides.
+      // `applyInboundBuyerResponse` runs the counterparty fence on every
+      // arriving record, so a double without this one is not a smaller
+      // runtime, it is a runtime whose restore fence cannot run. Starting
+      // empty means every epoch here is at or above the watermark, which
+      // leaves these quote-chain cases testing exactly what they did before.
+      watermarks: new InMemoryCommerceEpochWatermarkRepository(),
+      buyerQuoteRequests: retainedRequests(),
     } as unknown as CommerceRuntime);
     try {
       const response = (quoteBody: unknown) => ({
@@ -131,6 +157,116 @@ describe('the production entry point (§9.8 wiring)', () => {
     }
   });
 
+  it('refuses a pre-restore quote that arrives after the supplier restored', () => {
+    // §16.2/§25.3 — the delayed-pre-restore-write, on the lane it actually
+    // arrives by.
+    //
+    // The counterparty watermark existed and only the plugin TOOL-RESULT lane
+    // consulted it. A supplier answering over D2D came through here instead,
+    // where nothing checked the epoch — so a quote signed before the
+    // supplier's restore, delayed in a relay queue, was recorded as current.
+    // It verifies perfectly: the supplier really did sign it. Only the epoch
+    // says it belongs to a generation that has been abandoned.
+    //
+    // The second-order damage is why this is not merely untidy. Once the
+    // stale quote is the chain head, the supplier's next legitimate revision
+    // is judged against it and reads as a FORK — so the buyer records a
+    // protocol fault against a supplier that behaved correctly throughout.
+    const watermarks = new InMemoryCommerceEpochWatermarkRepository();
+    // This node has already seen epoch 5 from that supplier: it restored.
+    watermarks.raiseTo(SUPPLIER_DID, '5');
+    installCommerceRuntime({
+      buyerQuotes: repository,
+      nodeDid: () => BUYER_DID,
+      watermarks,
+      buyerQuoteRequests: retainedRequests(),
+    } as unknown as CommerceRuntime);
+    try {
+      // `makeSignedQuote` stamps `supplier_epoch: '1'` — the old generation.
+      const stale = makeSignedQuote(makeQuoteRequest());
+      expect(stale.supplier_epoch).toBe('1');
+
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: {
+            capability: REQUEST_QUOTE_CAPABILITY,
+            query_id: 'q-req-stale',
+            status: 'success' as const,
+            result: { quote: stale },
+          },
+          nowMs: NOW,
+        }),
+      ).toBe('stale_epoch');
+      // NOTHING recorded. A refusal that still wrote the row would leave the
+      // fence decorative.
+      expect(repository.chain(SUPPLIER_DID, stale.quote_id)).toHaveLength(0);
+      // And the refusal taught this node nothing about the supplier's
+      // generation — a rejected record must not move the fence.
+      expect(watermarks.get(SUPPLIER_DID)).toBe('5');
+    } finally {
+      installCommerceRuntime(null);
+    }
+  });
+
+  it('cannot raise a THIRD party watermark from a supplier answer', () => {
+    // §16.2/§20 — the restore fence must not become a weapon.
+    //
+    // `collectSignedRecords` attributes a record to the `supplier_did` written
+    // INSIDE the body, and verifies neither signature nor identity — at that
+    // point neither has been checked. That was harmless while the gate was
+    // reached only from the buyer's own runner result. Putting it on the D2D
+    // lane put an untrusted party in charge of those bytes.
+    //
+    // So supplier X names a VICTIM at a huge epoch inside its own answer. The
+    // watermark only ever goes up, so every genuinely signed quote and status
+    // the victim sends afterwards is discarded as stale — a permanent cut-off
+    // between this buyer and a supplier it may have open orders with,
+    // triggered by an unrelated third party, with no way back down.
+    //
+    // This is the house rule in its general form: authorization binds to the
+    // relay-authenticated envelope, never to a sender-supplied inner body.
+    const watermarks = new InMemoryCommerceEpochWatermarkRepository();
+    installCommerceRuntime({
+      buyerQuotes: repository,
+      nodeDid: () => BUYER_DID,
+      watermarks,
+      buyerQuoteRequests: retainedRequests(),
+    } as unknown as CommerceRuntime);
+    try {
+      const VICTIM = 'did:plc:victim-supplier';
+      const own = makeSignedQuote(makeQuoteRequest());
+
+      expect(
+        applyInboundBuyerResponse({
+          supplierDid: SUPPLIER_DID,
+          response: {
+            capability: REQUEST_QUOTE_CAPABILITY,
+            query_id: 'q-req-poison',
+            status: 'success' as const,
+            result: {
+              quote: own,
+              // Anywhere in the free-form result will do; the walker recurses.
+              note: { supplier_did: VICTIM, supplier_epoch: '99999999' },
+            },
+          },
+          nowMs: NOW,
+        }),
+      // NOT `stale_epoch`. A supplier that restored and a supplier that named
+      // a third party are opposite facts about the counterparty, and the
+      // owner's decision log has to be able to tell them apart.
+      ).toBe('foreign_supplier');
+
+      // The victim's fence never moved, so their real records still arrive.
+      expect(watermarks.get(VICTIM)).toBe('0');
+      // And the sender's OWN quote is not recorded either: a message this node
+      // cannot account for is refused whole rather than partly believed.
+      expect(repository.chain(SUPPLIER_DID, own.quote_id)).toHaveLength(0);
+    } finally {
+      installCommerceRuntime(null);
+    }
+  });
+
   it('refuses a quote addressed to somebody else', () => {
     // Audience binding, driven through the same seam. The node's OWN identity
     // decides, never the quote's `buyer_did` field — that is the field the
@@ -138,6 +274,10 @@ describe('the production entry point (§9.8 wiring)', () => {
     installCommerceRuntime({
       buyerQuotes: repository,
       nodeDid: () => 'did:plc:not-this-buyer',
+      // Empty, so the watermark admits every epoch and the AUDIENCE check is
+      // what this case is left testing.
+      watermarks: new InMemoryCommerceEpochWatermarkRepository(),
+      buyerQuoteRequests: retainedRequests(),
     } as unknown as CommerceRuntime);
     try {
       expect(

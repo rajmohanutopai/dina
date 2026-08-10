@@ -10,7 +10,26 @@ import { base64 } from '@scure/base';
 
 import { buildMessageJSON } from '@dina/protocol';
 
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import { getPublicKey, sign } from '../../src/crypto/ed25519';
+import {
+  BUYER_REFERENCE_MANIFEST,
+  SUPPLIER_REFERENCE_MANIFEST,
+} from '../../src/commerce/reference_manifests';
+import {
+  SQLitePluginInstallRepository,
+  getPluginInstallRepository,
+  setPluginInstallRepository,
+  type PluginInstallRepository,
+} from '../../src/plugins/registry';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
 
 import type { RetainedEnvelope } from '@dina/commerce-protocol';
@@ -333,4 +352,171 @@ export function makeHeldEvidence<T extends object>(
     sign(overrides.signingKey ?? SUPPLIER_SIGNING_KEY, new TextEncoder().encode(signed)),
   );
   return { record, envelope, signature };
+}
+
+/**
+ * A REAL buyer install, active, for tests that drive routes which now resolve
+ * §15.2's install facts from Core's own registry (DR-2).
+ *
+ * A REAL `SQLitePluginInstallRepository` over a temp file rather than a stub
+ * with a hand-written `getById`. The whole point of DR-2 is that the install
+ * facts come from the node's record of the install; a stub that returns
+ * whatever the test wants would be the same claim-trusting shape one layer up,
+ * and would go on passing if `activate` stopped setting `status`.
+ *
+ * The BUYER reference manifest, not a fixture — so `capabilityHashes` carries
+ * exactly the capabilities the shipped pack declares, and a test that names a
+ * capability the buyer pack does not hold is refused for the real reason.
+ */
+export interface InstalledBuyerPack {
+  installId: string;
+  capabilityId: string;
+  manifestCid: string;
+  installScopeHash: string;
+  configRevision: string;
+  /** Close the adapter and remove the temp directory. Call in `afterEach`. */
+  dispose: () => void;
+}
+
+export function installActiveBuyerPack(nowMs: number): InstalledBuyerPack {
+  // Required late so this helper module stays importable by tests that never
+  // touch the plugin registry.
+
+  const dir = mkdtempSync(path.join(tmpdir(), 'buyer-install-'));
+  const adapter = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: randomBytes(32).toString('hex'),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
+  applyMigrations(adapter, IDENTITY_MIGRATIONS);
+
+  const installs = new SQLitePluginInstallRepository(adapter);
+  setPluginInstallRepository(installs);
+
+  const manifestCid = 'bafyreibuyerreference';
+  const installScopeHash = 's'.repeat(64);
+  const installId = installs.createPending({
+    publisherDid: 'did:plc:dinakernelpub',
+    pluginId: BUYER_REFERENCE_MANIFEST.plugin_id,
+    label: 'Commerce — Buyer',
+    executionMode: 'runner',
+    currentCid: manifestCid,
+    currentVersion: BUYER_REFERENCE_MANIFEST.version,
+    manifest: BUYER_REFERENCE_MANIFEST,
+    installScopeHash,
+    capabilityHashes: Object.fromEntries(
+      BUYER_REFERENCE_MANIFEST.capabilities.map((c, i) => [c.id, String(i).repeat(64)]),
+    ),
+    behaviorHash: 'b'.repeat(64),
+    presentationHash: 'p'.repeat(64),
+    trustAnchor: { kind: 'repo_proof' },
+    pendingExpiresAtSec: Math.floor(nowMs / 1000) + 900,
+    nowMs,
+  });
+  installs.activate(installId, 'did:key:zBuyerRunner', nowMs);
+
+  const held = installs.getById(installId);
+  if (held === null) throw new Error('the install this helper just wrote is not readable');
+
+  return {
+    installId,
+    // The capability the BUYER pack acts under when it places an order.
+    // `submit-order` belongs to the supplier pack and naming it here would be
+    // a fixture claiming an authority the buyer install does not hold.
+    capabilityId: 'com.dinakernel.commerce.place-order',
+    manifestCid,
+    installScopeHash,
+    configRevision: String(held.configRevision),
+    dispose: () => {
+      setPluginInstallRepository(null);
+      try {
+        adapter.close();
+      } catch {
+        /* already closed */
+      }
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * Install the SUPPLIER pack alongside a buyer one, so role separation can be
+ * driven rather than argued about (§7.1, NEW-5).
+ *
+ * Reuses the repository the buyer helper installed — a second call to
+ * `setPluginInstallRepository` would replace it, and then the two installs
+ * would live in different registries, which is not the situation being tested.
+ */
+export function installActiveSupplierPack(nowMs: number): { installId: string; pluginId: string } {
+  const installs = getPluginInstallRepository();
+  if (installs === null) {
+    throw new Error('install the buyer pack first — this shares its registry');
+  }
+  const installId = installs.createPending({
+    publisherDid: 'did:plc:dinakernelpub',
+    pluginId: SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+    label: 'Commerce — Supplier',
+    executionMode: 'runner',
+    currentCid: 'bafyreisupplierreference',
+    currentVersion: SUPPLIER_REFERENCE_MANIFEST.version,
+    manifest: SUPPLIER_REFERENCE_MANIFEST,
+    installScopeHash: 'p'.repeat(64),
+    capabilityHashes: Object.fromEntries(
+      SUPPLIER_REFERENCE_MANIFEST.capabilities.map((c, i) => [c.id, String(i).repeat(64)]),
+    ),
+    behaviorHash: 'c'.repeat(64),
+    presentationHash: 'd'.repeat(64),
+    trustAnchor: { kind: 'repo_proof' },
+    pendingExpiresAtSec: Math.floor(nowMs / 1000) + 900,
+    nowMs,
+  });
+  installs.activate(installId, 'did:key:zSupplierRunner', nowMs);
+  return { installId, pluginId: SUPPLIER_REFERENCE_MANIFEST.plugin_id };
+}
+
+/**
+ * Register the buyer pack in an ALREADY-INSTALLED registry.
+ *
+ * The journeys stand up their own `SQLitePluginInstallRepository` for the
+ * supplier side, and `submitApprovedOrder` now re-resolves the acting install
+ * against whatever registry is installed — so a journey that registers only
+ * the supplier pack and then submits a buyer order under a hand-written
+ * install id is refused, correctly. This gives those journeys a real buyer
+ * install without replacing the repository they already own.
+ */
+export function registerBuyerPack(
+  installs: PluginInstallRepository,
+  nowMs: number,
+): Omit<InstalledBuyerPack, 'dispose'> {
+  const manifestCid = 'bafyreibuyerreference';
+  const installScopeHash = 's'.repeat(64);
+  const installId = installs.createPending({
+    publisherDid: 'did:plc:dinakernelpub',
+    pluginId: BUYER_REFERENCE_MANIFEST.plugin_id,
+    label: 'Commerce — Buyer',
+    executionMode: 'runner',
+    currentCid: manifestCid,
+    currentVersion: BUYER_REFERENCE_MANIFEST.version,
+    manifest: BUYER_REFERENCE_MANIFEST,
+    installScopeHash,
+    capabilityHashes: Object.fromEntries(
+      BUYER_REFERENCE_MANIFEST.capabilities.map((c, i) => [c.id, String(i).repeat(64)]),
+    ),
+    behaviorHash: 'b'.repeat(64),
+    presentationHash: 'p'.repeat(64),
+    trustAnchor: { kind: 'repo_proof' },
+    pendingExpiresAtSec: Math.floor(nowMs / 1000) + 900,
+    nowMs,
+  });
+  installs.activate(installId, 'did:key:zBuyerRunner', nowMs);
+  const held = installs.getById(installId);
+  if (held === null) throw new Error('the install this helper just wrote is not readable');
+  return {
+    installId,
+    capabilityId: 'com.dinakernel.commerce.place-order',
+    manifestCid,
+    installScopeHash,
+    configRevision: String(held.configRevision),
+  };
 }

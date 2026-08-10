@@ -1,3 +1,4 @@
+import { checkCatalogPointer, checkCatalogSnapshot } from '@/shared/commerce/wire_shape.js'
 import { and, eq } from 'drizzle-orm'
 
 import {
@@ -16,6 +17,9 @@ import {
   type CatalogPointer,
   type CatalogSnapshot,
   type CatalogSnapshotPage,
+  verifyCatalogPage,
+  verifyCatalogSnapshot,
+  verifyPageIndexCoverage,
 } from '@/shared/commerce/catalog-verify.js'
 
 import type { HandlerContext, RecordHandler, RecordOp } from './index.js'
@@ -45,6 +49,11 @@ function readPages(record: Record<string, unknown>): CatalogSnapshotPage[] | nul
   if (!Array.isArray(pages)) return null
   if (pages.length > MAX_CATALOG_PAGES) return null
   for (const page of pages) {
+    // THE PAGE ITSELF FIRST. Reading `.items` off an unchecked element threw
+    // on `pages:[null]` — the cast said the element was a page, and the cast
+    // was describing an intention, not the bytes. A throw here is strictly
+    // worse than the refusal below: the record is neither indexed NOR counted.
+    if (page === null || typeof page !== 'object' || Array.isArray(page)) return null
     const items = (page as { items?: unknown }).items
     if (!Array.isArray(items) || items.length > MAX_CATALOG_PAGE_ITEMS) return null
   }
@@ -122,8 +131,16 @@ async function apply(
       // The previously indexed catalog stays. An empty index reads to a buyer
       // as "this supplier stocks nothing", which is a worse lie than a page
       // that is one revision behind.
+      // OUR OWN WORDS, not the publisher's. `reason` is a string this
+      // codebase wrote and `findings` carry FIELD NAMES only, so neither
+      // reprints payload bytes. The raw `uri` and `did` are dropped for
+      // consistency with the rule the rest of the repo follows — they are
+      // public firehose identifiers rather than secrets, so this costs some
+      // debuggability and buys one fewer place where a logging rule has an
+      // exception that has to be remembered. The refusal metric and the
+      // firehose remain the way to find which record it was.
       ctx.logger.warn(
-        { uri: op.uri, did: op.did, reason: action.reason, findings: action.findings },
+        { collection: op.collection, reason: action.reason, findings: action.findings },
         '[CommerceCatalog] refused',
       )
       ctx.metrics.incr('ingester.commerce_catalog.refused')
@@ -145,6 +162,7 @@ async function apply(
           publishedAt: action.pointer.published_at,
           snapshotDigest: action.pointer.snapshot_digest ?? null,
           previousSnapshotDigest: action.pointer.previous_snapshot_digest ?? null,
+          serviceRkey: action.pointer.service_rkey ?? null,
           withdrawn: false,
           awaitingSnapshot: true,
           uri: op.uri,
@@ -154,8 +172,14 @@ async function apply(
           set: {
             snapshotSequence: action.pointer.snapshot_sequence,
             publishedAt: action.pointer.published_at,
+            // §9.13: the version the supplier published THIS pointer under.
+            // Omitting it from the update left the row stamped with whichever
+            // minor arrived first, so a later verification ran against a
+            // version the supplier never published.
+            protocolVersion: action.pointer.protocol_version,
             snapshotDigest: action.pointer.snapshot_digest ?? null,
             previousSnapshotDigest: action.pointer.previous_snapshot_digest ?? null,
+            serviceRkey: action.pointer.service_rkey ?? null,
             awaitingSnapshot: true,
             uri: op.uri,
             indexedAt: new Date(),
@@ -194,6 +218,7 @@ async function apply(
             set: {
               snapshotSequence: action.pointer.snapshot_sequence,
               publishedAt: action.pointer.published_at,
+              protocolVersion: action.pointer.protocol_version,
               snapshotDigest: null,
               previousSnapshotDigest: action.pointer.previous_snapshot_digest ?? null,
               withdrawn: true,
@@ -225,6 +250,7 @@ async function apply(
               catalogId: row.catalogId,
               snapshotSequence: row.snapshotSequence,
               snapshotDigest: row.snapshotDigest,
+              serviceRkey: row.serviceRkey,
               itemRevision: row.itemRevision,
               name: row.name,
               brand: row.brand,
@@ -249,6 +275,7 @@ async function apply(
             publishedAt: action.pointer.published_at,
             snapshotDigest: action.pointer.snapshot_digest ?? null,
             previousSnapshotDigest: action.pointer.previous_snapshot_digest ?? null,
+            serviceRkey: action.pointer.service_rkey ?? null,
             withdrawn: false,
             awaitingSnapshot: false,
             uri: op.uri,
@@ -258,8 +285,10 @@ async function apply(
             set: {
               snapshotSequence: action.pointer.snapshot_sequence,
               publishedAt: action.pointer.published_at,
+              protocolVersion: action.pointer.protocol_version,
               snapshotDigest: action.pointer.snapshot_digest ?? null,
               previousSnapshotDigest: action.pointer.previous_snapshot_digest ?? null,
+              serviceRkey: action.pointer.service_rkey ?? null,
               withdrawn: false,
               awaitingSnapshot: false,
               uri: op.uri,
@@ -275,6 +304,23 @@ async function apply(
 export const commerceCatalogPointerHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record ?? {}
+
+    // SHAPE FIRST. Nothing else on this path checks types:
+    // `verifyCatalogPointerAdvance` compares sequences and digests, and both
+    // the `await_snapshot` and `withdrawn` branches return BEFORE any content
+    // verification runs. So an object in `protocol_version` or `published_at`
+    // went straight into a `text NOT NULL` column and `catalog_id` reached the
+    // primary key as `[object Object]` — one record from any DID was enough.
+    //
+    // This was the THIRD table a reviewer found unvisited by the no-secrets
+    // scan, after the two relationship tables. Hence one gate per record type
+    // rather than another field-by-field patch.
+    const malformed = checkCatalogPointer(record)
+    if (malformed !== null) {
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+
     const pointer = { ...record, supplier_did: record.supplier_did } as CatalogPointer
     const previous = await loadCurrentPointer(ctx, op.did, pointer.catalog_id)
     const snapshot =
@@ -326,7 +372,13 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
       // Refused, not truncated. A snapshot is full state, so half a catalog
       // published as if it were the whole one omits products silently.
       ctx.logger.warn(
-        { uri: op.uri, did: op.did },
+        // COLLECTION AND REASON ONLY. An AT URI EMBEDS the publisher's DID, so
+        // dropping the explicit `did` field while keeping `uri` would have
+        // changed nothing — §22 forbids DIDs in shared logs, and the URI is a
+        // DID in a longer coat. The previous round fixed the one refusal path
+        // it was shown and left these two, which is the instance-not-class
+        // habit this review keeps catching.
+        { collection: op.collection, reason: 'pages missing or over the §10.2 caps' },
         '[CommerceCatalog] snapshot pages missing or over the §10.2 caps',
       )
       ctx.metrics.incr('ingester.commerce_catalog.refused')
@@ -340,6 +392,97 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
 
     // Store first: the decision may index off this row, and a pending pointer
     // found below must see it.
+        // THE FOURTH RECORD TYPE. The row below is written BEFORE
+    // `decideCatalogSnapshot` verifies anything, and `catalog_id`,
+    // `snapshot_digest` and `snapshot_sequence` are extracted lookup
+    // columns — a projection, even on a table that also keeps the record
+    // verbatim. One record from any DID reached them: an empty `pages`
+    // array is within the caps, so the row landed and was only then
+    // refused for a supplier mismatch, leaving the row behind.
+    if (checkCatalogSnapshot(snapshot) !== null) {
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+
+    /**
+     * EARN THE KEY BEFORE TAKING IT.
+     *
+     * `snapshot_digest` is the PRIMARY KEY of a globally shared table, and it
+     * arrived as a publisher's claim. Storing first and verifying later made
+     * that key claimable by anyone:
+     *
+     *   1. an attacker publishes a snapshot record asserting the digest the
+     *      real supplier is about to use, carrying arbitrary bytes;
+     *   2. the row lands, because nothing yet checks that the digest commits
+     *      to those bytes;
+     *   3. the real supplier's snapshot arrives and `onConflictDoNothing`
+     *      DISCARDS it;
+     *   4. their pointer names that digest, loads the attacker's bytes, and
+     *      the publication is refused — permanently, and only when delivery
+     *      happened to arrive in that order.
+     *
+     * "Content-addressed, so a repeat is the same bytes" was the assumption
+     * the insert rested on, and it is true only AFTER this check. Verifying
+     * here makes the comment true rather than hopeful.
+     *
+     * The repo binding comes first for the same reason it does on the pointer:
+     * a record naming someone else as supplier would otherwise let any account
+     * occupy a rival's catalog.
+     */
+    if (snapshot.supplier_did !== op.did) {
+      ctx.logger.warn(
+        { collection: op.collection, reason: 'supplier_did is not the publishing repo' },
+        '[CommerceCatalog] snapshot refused',
+      )
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+    const snapshotError = verifyCatalogSnapshot(snapshot)
+    if (snapshotError !== null) {
+      ctx.logger.warn(
+        { collection: op.collection, reason: snapshotError },
+        '[CommerceCatalog] snapshot refused',
+      )
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+    if (pages.length !== snapshot.page_digests.length) {
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+    const coverageError = verifyPageIndexCoverage(pages, snapshot)
+    if (coverageError !== null) {
+      ctx.logger.warn(
+        { collection: op.collection, reason: coverageError },
+        '[CommerceCatalog] snapshot refused',
+      )
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+    // THE WHOLE-PUBLICATION ITEM COUNT, which the pre-insert path omitted:
+    // a snapshot is full state, so a total that disagrees with the pages means
+    // the bytes claiming the digest key are not the catalog that was committed.
+    const totalItems = pages.reduce((sum, page) => sum + page.items.length, 0)
+    if (totalItems !== snapshot.item_count) {
+      ctx.logger.warn(
+        { collection: op.collection, reason: 'item_count does not match the pages' },
+        '[CommerceCatalog] snapshot refused',
+      )
+      ctx.metrics.incr('ingester.commerce_catalog.refused')
+      return
+    }
+    for (const page of pages) {
+      const pageError = verifyCatalogPage(page, snapshot)
+      if (pageError !== null) {
+        ctx.logger.warn(
+          { collection: op.collection, reason: pageError },
+          '[CommerceCatalog] snapshot refused',
+        )
+        ctx.metrics.incr('ingester.commerce_catalog.refused')
+        return
+      }
+    }
+
     await ctx.db
       .insert(commerceCatalogSnapshots)
       .values({
@@ -350,7 +493,8 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
         snapshotJson: snapshot,
         pagesJson: pages,
       })
-      // Content-addressed, so a repeat is the same bytes. Nothing to update.
+      // Content-addressed — VERIFIED above — so a repeat really is the same
+      // bytes and there is nothing to update.
       .onConflictDoNothing()
 
     const pending = await ctx.db
@@ -376,6 +520,14 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
             published_at: held.publishedAt,
             snapshot_rkey: held.snapshotDigest ?? '',
             snapshot_digest: held.snapshotDigest ?? '',
+            // §10.5 (DR-5, NEW-2) — CARRIED THROUGH THE WAIT. The
+            // `await_snapshot` write persists the listing, and rebuilding the
+            // held pointer without it made the whole read path depend on
+            // delivery order: snapshot-then-pointer kept the listing,
+            // pointer-then-snapshot silently lost it and every candidate fell
+            // back to `self`. Both orders are normal, and this file handles
+            // the second one deliberately everywhere else.
+            ...(held.serviceRkey === null ? {} : { service_rkey: held.serviceRkey }),
             ...(held.previousSnapshotDigest === null
               ? {}
               : { previous_snapshot_digest: held.previousSnapshotDigest }),
@@ -400,7 +552,7 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
     // products: the pointer still names it, and a buyer following that pointer
     // is entitled to what the supplier published. Removing the row only means
     // AppView can no longer re-verify from storage.
-    ctx.logger.debug({ uri: op.uri }, '[CommerceCatalog] snapshot record deleted')
+    ctx.logger.debug({ collection: op.collection }, '[CommerceCatalog] snapshot record deleted')
     ctx.metrics.incr('ingester.commerce_catalog.snapshot_deleted')
   },
 }

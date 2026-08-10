@@ -70,6 +70,7 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';
 
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import {
   BUYER_DID,
   SUPPLIER_DID,
@@ -77,7 +78,11 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  registerBuyerPack,
 } from './helpers';
+
+/** The owner this node acts for. §7.3: one grant, evaluated like any other. */
+const TEST_OWNER_DID = 'did:plc:testowner00000000';
 
 const T0 = Date.parse('2026-08-08T09:00:00.000Z');
 const NOW_ISO = '2026-08-08T09:00:00.000Z';
@@ -118,6 +123,8 @@ describe('Sancho discovers ChairMaker and buys from them — the whole journey',
   let runner: PluginRunner;
   let router: CoreRouter;
 
+  let buyerPack: ReturnType<typeof registerBuyerPack>;
+
   beforeEach(() => {
     dir = mkdtempSync(path.join(tmpdir(), 'journey-'));
     adapter = new NodeSQLiteAdapter({
@@ -129,6 +136,7 @@ describe('Sancho discovers ChairMaker and buys from them — the whole journey',
     applyMigrations(adapter, IDENTITY_MIGRATIONS);
     installs = new SQLitePluginInstallRepository(adapter);
     setPluginInstallRepository(installs);
+    buyerPack = registerBuyerPack(installs, T0);
 
     installId = installs.createPending({
       publisherDid: 'did:plc:chairmakerpub',
@@ -382,13 +390,10 @@ describe('Sancho discovers ChairMaker and buys from them — the whole journey',
       charges: [],
       quoteRevision: 1,
       quoteExpiresAt: '2026-08-09T09:00:00.000Z',
-      install: {
-        installId: 'install-buyer',
-        capabilityId: SUBMIT_CAP_ID,
-        manifestCid: MANIFEST_CID,
-        installScopeHash: 's'.repeat(64),
-        configRevision: '1',
-      },
+      // A REAL buyer install in this journey's own registry (NEW-11): the
+      // executor re-resolves the acting install before sending, so a
+      // hand-written id naming nothing is refused.
+      install: buyerPack,
     };
     const approvedCard = buildBuyerApprovalPayload(order, approvalContext);
     if (!approvedCard.ok) throw new Error(approvedCard.missing.join(', '));
@@ -441,6 +446,15 @@ describe('Sancho discovers ChairMaker and buys from them — the whole journey',
           ? { kind: 'ambiguous', reason: 'no acknowledgement came back' }
           : { kind: 'acknowledged', acknowledgement: signed as never };
       },
+    
+      // DR-1: authority is REQUIRED now. The single-owner configuration is
+      // one grant evaluated like any other — not a branch that skips §7.3.
+      authority: singleOwnerAuthority({
+        ownerDid: TEST_OWNER_DID,
+        order,
+        context: approvalContext,
+        serviceRkey: 'self',
+      }),
     });
     expect(submitted.ok).toBe(true);
     if (!submitted.ok) throw new Error(submitted.error);

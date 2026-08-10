@@ -5,7 +5,10 @@
   "domain_separation": {
     "payload": {
       "alpha": "1",
-      "beta": ["x", "y"]
+      "beta": [
+        "x",
+        "y"
+      ]
     },
     "expected_by_domain": {
       "projection": "f1998923e9234308612790e929f389540c41be362cd8f9f6faf3aa0503d0cf00",

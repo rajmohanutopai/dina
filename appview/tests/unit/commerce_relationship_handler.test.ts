@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  commerceCatalogProducts,
   commerceProductRelationships,
   commerceRelationshipClaims,
 } from '@/db/schema/index.js'
@@ -33,6 +34,7 @@ interface Recorded {
 function tableName(table: unknown): string {
   if (table === commerceRelationshipClaims) return 'claims'
   if (table === commerceProductRelationships) return 'edges'
+  if (table === commerceCatalogProducts) return 'products'
   return 'unknown'
 }
 
@@ -109,9 +111,36 @@ const claim = {
 }
 
 describe('storing a claim and deriving the edges', () => {
+  it('rebuilds BOTH subjects when a record moves from one subject to another', async () => {
+    // AT create and update arrive through the same handler, so a record can
+    // change which product it is about. Rebuilding only the INCOMING subject
+    // left the one it departed still holding an edge derived from a claim that
+    // no longer says it — the edge outliving its assertion, which is the exact
+    // failure deriving-rather-than-mutating exists to prevent.
+    const recorded: Recorded = { events: [], inserted: {} }
+    const ctx = stubCtx(recorded, [
+      [], // the repo supplies no catalog row for this subject
+      // The prior row: this URI used to be about a DIFFERENT subject.
+      [{ subjectKey: 'gtin:0000000000000' }],
+      [], // rebuild of the OLD subject finds no claims left
+      [], // rebuild of the NEW subject
+    ])
+
+    await commerceRelationshipClaimHandler.handleCreate(ctx, op(claim))
+
+    // Two rebuilds, old subject first so the claim never counts for both.
+    const rebuilds = recorded.events.filter((e) => e === 'tx:begin').length
+    expect(rebuilds).toBe(2)
+    expect(recorded.events[0]).toBe('select:products')
+    expect(recorded.events[1]).toBe('select:claims')
+    expect(recorded.events[2]).toBe('insert:claims')
+  })
+
   it('stores the claim, then rebuilds the subject from every stored claim', async () => {
     const recorded: Recorded = { events: [], inserted: {} }
     const ctx = stubCtx(recorded, [
+      [], // the repo supplies no catalog row for this subject
+      [], // no prior row for this URI
       [
         {
           claimJson: claim,
@@ -128,6 +157,14 @@ describe('storing a claim and deriving the edges', () => {
     // edges inside one transaction. Not "update the edge in place": a dispute
     // has to be able to disappear when its claim is withdrawn.
     expect(recorded.events).toEqual([
+      // Whether this repo SUPPLIES the subject, read from the verified
+      // catalog index — first party is authority over the subject, not
+      // authorship of the claim.
+      'select:products',
+      // Then the claim's PRIOR subject: a record can move between subjects,
+      // and the one it leaves has to be rebuilt too or its edge outlives the
+      // assertion behind it.
+      'select:claims',
       'insert:claims',
       'select:claims',
       'tx:begin',
@@ -143,16 +180,77 @@ describe('storing a claim and deriving the edges', () => {
     })
   })
 
-  it('treats the publishing repo as the first party, and nobody else', async () => {
-    // A rival re-publishing the same claim cannot promote it to first-party by
-    // saying so: `source` comes from the repo, not the record.
-    const mine: Recorded = { events: [], inserted: {} }
-    await commerceRelationshipClaimHandler.handleCreate(stubCtx(mine, [[]]), op(claim))
-    expect(mine.inserted.claims?.[0]).toMatchObject({ source: 'first_party_claim' })
+  it('lets a verified seller speak with authority about SELLING, and nothing else', async () => {
+    // A verified catalog row proves this repo sells the thing. That is standing
+    // over `sold_by` and over nothing else.
+    const sells: Recorded = { events: [], inserted: {} }
+    await commerceRelationshipClaimHandler.handleCreate(
+      stubCtx(sells, [[{ rowKey: 'row-1' }], []]),
+      op({ ...claim, relationship: 'sold_by', object: { did: MAKER } }),
+    )
+    expect(sells.inserted.claims?.[0]).toMatchObject({ source: 'first_party_claim' })
+  })
 
+  it('refuses a reseller product-line authority they do not have', async () => {
+    // THE §24 NON-GOAL, stated outright: "Making public catalog presence
+    // equivalent to supplier verification." An earlier fix did exactly that —
+    // any repo holding a catalog row spoke as first party about the product's
+    // FORMULATION and what it REPLACES, at 9500 basis points, clearing the
+    // substitution threshold. Listing a product is not knowing how it is made.
+    for (const relationship of ['same_formulation_as', 'replaces', 'variant_of']) {
+      const recorded: Recorded = { events: [], inserted: {} }
+      await commerceRelationshipClaimHandler.handleCreate(
+        stubCtx(recorded, [[{ rowKey: 'row-1' }], []]),
+        op({ ...claim, relationship }),
+      )
+      expect(recorded.inserted.claims?.[0]).toMatchObject({ source: 'third_party_claim' })
+    }
+  })
+
+  it('refuses a reseller MANUFACTURER authority even for an operator claim', async () => {
+    const recorded: Recorded = { events: [], inserted: {} }
+    await commerceRelationshipClaimHandler.handleCreate(
+      stubCtx(recorded, [[{ rowKey: 'row-1' }], []]),
+      op({ ...claim, relationship: 'manufactured_by', object: { did: MAKER } }),
+    )
+    expect(recorded.inserted.claims?.[0]).toMatchObject({ source: 'third_party_claim' })
+  })
+
+  it('refuses first-party standing to a publisher who merely names itself issuer', async () => {
+    // THE ATTACK the old rule allowed. `source` was `repoDid === issuerDid`,
+    // which any publisher satisfies by setting `issuer_did` to itself — and
+    // the claim can be about ANY product. That bought 9500 basis points and a
+    // pass through the standing predicate, which is how one manufacturer's
+    // reputation lands on another's product.
+    //
+    // Here the repo IS the named issuer and still supplies no catalog row for
+    // the subject, so it has demonstrated no authority over it.
+    const selfDeclared: Recorded = { events: [], inserted: {} }
+    await commerceRelationshipClaimHandler.handleCreate(
+      stubCtx(selfDeclared, [[], []]),
+      op(claim),
+    )
+    expect(selfDeclared.inserted.claims?.[0]).toMatchObject({
+      source: 'third_party_claim',
+    })
+  })
+
+  it('treats a publisher who issued the subject IDENTITY as the first party', async () => {
+    // A scoped ProductRef carries its issuer, so authority is on the record
+    // itself and needs no catalog lookup.
+    const scoped = {
+      ...claim,
+      subject: { scheme: 'manufacturer_sku' as const, value: 'CHAIR-2', issuer_did: MAKER },
+    }
+    const owned: Recorded = { events: [], inserted: {} }
+    await commerceRelationshipClaimHandler.handleCreate(stubCtx(owned, [[], []]), op(scoped))
+    expect(owned.inserted.claims?.[0]).toMatchObject({ source: 'first_party_claim' })
+  })
+
+  it('gives a rival re-publishing the same claim no standing at all', async () => {
     const theirs: Recorded = { events: [], inserted: {} }
     await commerceRelationshipClaimHandler.handleCreate(
-      stubCtx(theirs, [[]]),
+      stubCtx(theirs, [[{ rowKey: 'row-1' }], []]),
       op(claim, RIVAL),
     )
     expect(theirs.inserted.claims?.[0]).toMatchObject({ source: 'third_party_claim' })
@@ -161,7 +259,7 @@ describe('storing a claim and deriving the edges', () => {
   it('caps a model-suggested edge below the standing threshold', async () => {
     const recorded: Recorded = { events: [], inserted: {} }
     await commerceRelationshipClaimHandler.handleCreate(
-      stubCtx(recorded, [[]]),
+      stubCtx(recorded, [[], []]),
       op({ ...claim, inference_version: 'sim-v3', confidence_bp: 10000 }),
     )
     const stored = recorded.inserted.claims?.[0] as { source: string; confidenceBp: number }
@@ -174,6 +272,8 @@ describe('storing a claim and deriving the edges', () => {
   it('surfaces a dispute when two claims name different parents', async () => {
     const recorded: Recorded = { events: [], inserted: {} }
     const ctx = stubCtx(recorded, [
+      [], // the repo supplies no catalog row for this subject
+      [], // no prior row for this URI
       [
         {
           claimJson: claim,
@@ -192,11 +292,20 @@ describe('storing a claim and deriving the edges', () => {
       ],
     ])
     await commerceRelationshipClaimHandler.handleCreate(ctx, op(claim))
-    const edge = recorded.inserted.edges?.[0] as { disputed: boolean; evidenceJson: unknown[] }
-    expect(edge.disputed).toBe(true)
-    // Both claims survive on the edge. Deleting the loser is the silent merge
-    // §10.7 forbids.
-    expect(edge.evidenceJson).toHaveLength(2)
+    // TWO EDGES, both disputed. §10.3: "Conflicting edges coexist". Asserting
+    // one edge holding both claims encoded the old collapse — the losing
+    // parent was hidden behind whichever row the unordered query returned
+    // first.
+    const edges = (recorded.inserted.edges ?? []) as {
+      disputed: boolean
+      objectKey: string
+      evidenceJson: unknown[]
+    }[]
+    expect(edges).toHaveLength(2)
+    expect(edges.every((e) => e.disputed)).toBe(true)
+    // One claim each, kept apart rather than merged into a single edge.
+    expect(edges.map((e) => e.evidenceJson.length).sort()).toEqual([1, 1])
+    expect(new Set(edges.map((e) => e.objectKey)).size).toBe(2)
   })
 })
 
@@ -231,7 +340,7 @@ describe('withdrawing a claim', () => {
 
   it('does nothing for a record it never stored', async () => {
     const recorded: Recorded = { events: [], inserted: {} }
-    await commerceRelationshipClaimHandler.handleDelete(stubCtx(recorded, [[]]), op(claim))
+    await commerceRelationshipClaimHandler.handleDelete(stubCtx(recorded, [[], []]), op(claim))
     expect(recorded.events).toEqual(['select:claims'])
   })
 })

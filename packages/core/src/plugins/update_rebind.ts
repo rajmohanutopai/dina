@@ -354,7 +354,7 @@ export class UpdateRebindCoordinator {
     //   three LIFECYCLE handlers §9.13 names. Retaining quoting or ordering
     //   authority as well would let a superseded major keep taking NEW
     //   business, which is the opposite of draining.
-    const majorChanged = protocolMajorOf(install.currentVersion) !== protocolMajorOf(nextVersion);
+    const releaseMajorChanged = releaseMajorOf(install.currentVersion) !== releaseMajorOf(nextVersion);
     const capabilities = install.manifest.capabilities ?? [];
     const now = this.deps.now();
     const drainMs = this.deps.drainMs ?? DEFAULT_DRAIN_MS;
@@ -410,7 +410,7 @@ export class UpdateRebindCoordinator {
       // ONLY across a major, and only for the lifecycle handlers. No expiry:
       // §9.13 serves the prior major until its orders are terminal, and a
       // deadline would cut a buyer off mid-order.
-      if (majorChanged && LIFECYCLE_CAPABILITIES.has(bareCapabilityName(cap.id))) {
+      if (releaseMajorChanged && LIFECYCLE_CAPABILITIES.has(bareCapabilityName(cap.id))) {
         if (drains.put({ ...base, kind: 'lifecycle_continuity', expiresAt: null })) {
           created += 1;
         }
@@ -442,8 +442,24 @@ export const LIFECYCLE_CAPABILITIES: ReadonlySet<string> = new Set([
   'cancel_order',
 ]);
 
-/** `MAJOR` of a `MAJOR.MINOR[.PATCH]` version string; the whole string if unparseable. */
-export function protocolMajorOf(version: string): string {
+/**
+ * `MAJOR` of the PLUGIN RELEASE version — `PluginInstall.currentVersion`, read
+ * from the manifest's own `version` field.
+ *
+ * NAMED FOR WHAT IT READS, after being named for what it was wished to mean.
+ * It was `protocolMajorOf`, which invited the reading that this is §9.13's
+ * commerce protocol major. It is not, and the two are unrelated version
+ * spaces: an order pins the WIRE version in `CommerceOrderRef.pinnedVersion`
+ * ("1.0"), while a plugin ships "0.2.0" on its own schedule. A manifest
+ * declares no protocol major at all today, so there is nothing here to read
+ * one from.
+ *
+ * The consequence is written down in implementation-notes.html rather than
+ * hidden behind a hopeful name: continuity retention is keyed on the plugin
+ * author's own compatibility declaration, which is the only signal the
+ * manifest actually carries.
+ */
+export function releaseMajorOf(version: string): string {
   return version.split('.')[0] ?? version;
 }
 

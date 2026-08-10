@@ -36,10 +36,26 @@ import {
  * contract ever sees it.
  */
 
+/**
+ * A query-string LIST: `?category=a&category=b`, or a single `?category=a`.
+ *
+ * A bare `z.array(...)` cannot be satisfied over HTTP. One value in a query
+ * string is a string, not a one-element array, and a caller has no way to say
+ * otherwise — so a field declared as a plain array rejects every request that
+ * uses it. Arity belongs here, in the schema, rather than in a transport that
+ * would have to know which fields are lists.
+ */
+function queryList(max: number, itemMax: number) {
+  return z.preprocess(
+    (v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v]),
+    z.array(z.string().min(1).max(itemMax)).max(max).optional(),
+  )
+}
+
 export const CommerceCatalogSearchParams = z.object({
   /** Product identifiers, as `scheme:value[:issuer_did]`. */
-  identifier: z.array(z.string().min(1).max(400)).max(20).optional(),
-  category: z.array(z.string().min(1).max(64)).max(20).optional(),
+  identifier: queryList(20, 400),
+  category: queryList(20, 64),
   q: z.string().max(256).optional(),
   region: z.string().max(64).optional(),
   supplier: z.string().max(256).optional(),
@@ -145,13 +161,31 @@ export async function searchCommerceCatalog(
     anyOf.push(
       or(
         inArray(commerceCatalogProducts.productKey, keys),
-        sql`${commerceCatalogProducts.identifierKeys} ?| ${sql.raw(`ARRAY[${keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(',')}]`)}`,
+        // PARAMETERISED, not interpolated. The previous form built the array
+        // literal with `sql.raw` and hand-rolled quote doubling — a product key
+        // carries a `custom` value, which is an arbitrary bounded string from a
+        // stranger's published catalog, and hand-escaping is the wrong side of
+        // that boundary to be standing on. The cast is required because `?|`
+        // takes text[] and a bare placeholder list is untyped.
+        sql`${commerceCatalogProducts.identifierKeys} ?| ARRAY[${sql.join(
+          keys.map((k) => sql`${k}`),
+          sql`, `,
+        )}]::text[]`,
       ) as SQL,
     )
   }
   if (params.category !== undefined && params.category.length > 0) {
     anyOf.push(
-      sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${commerceCatalogProducts.categoryIds}) c WHERE lower(c) = ANY(${params.category.map((v) => v.toLowerCase())}))`,
+      // `IN (...)` with one placeholder per value, NOT `= ANY(<array>)`.
+      // Drizzle spreads a JS array into separate placeholders, so `ANY($1)`
+      // received a bare string and Postgres tried to parse `furniture.seating`
+      // as an array literal — `malformed array literal`, every category search
+      // failing at the database. The handler's stub test could not see it: it
+      // records that a select happened, not whether the SQL runs.
+      sql`EXISTS (SELECT 1 FROM jsonb_array_elements_text(${commerceCatalogProducts.categoryIds}) c WHERE lower(c) IN (${sql.join(
+        params.category.map((v) => sql`${v.toLowerCase()}`),
+        sql`, `,
+      )}))`,
     )
   }
   if (params.q !== undefined && params.q.trim() !== '') {
@@ -166,7 +200,14 @@ export async function searchCommerceCatalog(
   }
   if (params.region !== undefined && params.region !== '') {
     anyOf.push(
-      sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${commerceCatalogProducts.fulfilmentRegions}) r WHERE lower(r->>'scheme' || ':' || r->>'value') = ${params.region.toLowerCase()})`,
+      // PARENTHESISED, and it has to be. `->>` and `||` sit in the same
+      // precedence class in Postgres and associate LEFT, so
+      // `r->>'scheme' || ':' || r->>'value'` parses as
+      // `(((r->>'scheme') || ':') || r) ->> 'value'` — a text on the left of
+      // `->>`, which is `operator does not exist: text ->> unknown`. Every
+      // region-filtered search failed at the database, and a stub that records
+      // "a select happened" reports it as working.
+      sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${commerceCatalogProducts.fulfilmentRegions}) r WHERE lower((r->>'scheme') || ':' || (r->>'value')) = ${params.region.toLowerCase()})`,
     )
   }
   if (anyOf.length === 0) {
@@ -229,6 +270,7 @@ export async function searchCommerceCatalog(
       catalogId: row.catalogId,
       snapshotSequence: row.snapshotSequence,
       snapshotDigest: row.snapshotDigest,
+      serviceRkey: row.serviceRkey,
       itemRevision: row.itemRevision,
       name: row.name,
       brand: row.brand,
@@ -276,12 +318,18 @@ export function toCandidate(
   relationshipEvidenceRefs: string[] = [],
 ): CommerceSearchCandidateDto {
   const [scheme, value, issuer, variant] = decodeProductKey(row.productKey)
+  // §10.5 (DR-5) — WHERE TO SEND THE QUOTE REQUEST, from the supplier's own
+  // pointer. This was hardcoded to `self` for every candidate, which is right
+  // for a supplier with one listing and points every buyer at the wrong one
+  // for a supplier with several — and §10's model is rkey-keyed listings. The
+  // pointer now carries `service_rkey`; `self` remains the documented
+  // convention for a node's PRIMARY listing and is used only where the
+  // supplier has not said otherwise, rather than asserted as if known.
+  const listingRkey = row.serviceRkey ?? 'self'
   return {
     supplier_did: row.supplierDid,
-    // The catalog is served by the supplier's own service listing; `self` is
-    // the rkey convention for a node's primary listing.
-    service_uri: `at://${row.supplierDid}/com.dinakernel.service.profile/self`,
-    service_rkey: 'self',
+    service_uri: `at://${row.supplierDid}/com.dinakernel.service.profile/${listingRkey}`,
+    service_rkey: listingRkey,
     product: {
       scheme,
       value,

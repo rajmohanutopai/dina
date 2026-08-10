@@ -37,6 +37,7 @@ import { registerPairRoutes } from './routes/pair';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
 import { registerPIIRoutes } from './routes/pii';
+import { registerHostOperationRoutes } from './routes/host_operations';
 import { registerPluginUpdateRoutes } from './routes/plugin_updates';
 import { registerPolicyRoutes } from './routes/policy';
 import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
@@ -126,6 +127,7 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // supplier is vulnerable.
   registerCommerceRoutes(router, options.ownerCapability);
   registerPluginUpdateRoutes(router, options.ownerCapability);
+  registerHostOperationRoutes(router, options.ownerCapability);
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

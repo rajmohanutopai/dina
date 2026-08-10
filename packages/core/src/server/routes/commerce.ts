@@ -47,19 +47,35 @@ import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
   validateCatalogPointer,
+  validatePurchaseOrderProposal,
   type CatalogPointer,
   type CommerceOrderStatus,
   type OrderState,
+  type PurchaseOrderProposal,
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
-import { getBuyerOrderSender, submitApprovedOrder } from '../../commerce/buyer_executor';
+import { resolveActingInstall } from '../../commerce/acting_install';
+import {
+  buildBuyerApprovalPayload,
+  BUYER_ORDER_AUTHORITY_DOMAIN,
+  SUPPLIER_ORDER_AUTHORITY_DOMAIN,
+  type ApprovingPrincipal,
+  type BuyerApprovalContext,
+} from '../../commerce/approval_payload';
+import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
+import { getBuyerAuthorityProvider } from '../../commerce/buyer_authority';
+import {
+  getBuyerOrderSender,
+  submitApprovedOrder,
+  type SubmitRefusal,
+ SubmitAuthority } from '../../commerce/buyer_executor';
 import { describeOrderForOwner } from '../../commerce/buyer_reconciliation';
+import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
 import {
   makeServiceQueryStatusAsk,
   type BuyerStatusRepository,
 } from '../../commerce/buyer_status';
-import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
 import {
   applyPromotion,
   evaluatePromotion,
@@ -83,14 +99,12 @@ import {
   loadCatalogThroughConnector,
   type ConnectorKind,
 } from '../../commerce/connectors';
-import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
 import { performOrderEffect } from '../../commerce/effect_executor';
 import {
   reconcileFulfilment,
   sweepFulfilment,
   type ExternalFulfilment,
 } from '../../commerce/fulfilment_reconciler';
-import { settleInboundOrderDecision } from '../../commerce/order_decision';
 import {
   DEFAULT_RETENTION_REQUIREMENT,
   evaluateIdempotencyEvidence,
@@ -99,11 +113,18 @@ import {
   type RetentionRequirement,
 } from '../../commerce/idempotency_evidence';
 import { planCommerceInstall, roleIsInstalled } from '../../commerce/install_plan';
+import {
+  newApprovalId,
+  ORDER_APPROVAL_TTL_MS,
+  type RetainedOrderApproval,
+} from '../../commerce/order_approvals';
+import { settleInboundOrderDecision } from '../../commerce/order_decision';
 import { chooseOffer, planProcurement } from '../../commerce/procurement_service';
 import { describeQuoteForOwner } from '../../commerce/quote_read_model';
 import { askReconcilePolls } from '../../commerce/reconcile_poller';
 import { makeServiceQueryReconcileSend } from '../../commerce/reconcile_sweeper';
 import { buildReconciliationCensus } from '../../commerce/reconciliation_census';
+import { BUYER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
 import {
   describeDisagreement,
   mayAuthorizeSubstitution,
@@ -113,6 +134,7 @@ import {
   type AppViewAnswer,
 } from '../../commerce/relationship_resolver';
 import { commerceAvailability, getCommerceRuntime } from '../../commerce/runtime';
+import { resolveServiceBinding } from '../../commerce/service_binding';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
 import { getNodeDID } from '../../pairing/ceremony';
 import { getPluginInstallRepository } from '../../plugins/registry';
@@ -280,6 +302,37 @@ function ownerDid(): string | null {
   return did === null || did === '' ? null : did;
 }
 
+/**
+ * Read an optional listing rkey off a request body (§10.5, DR-5).
+ *
+ * Returns `null` for "not stated" and `false` for "stated and unusable" — the
+ * two are different answers and collapsing them would let a malformed value
+ * read as an omission. The character set matches what `parseAtUri` accepts
+ * inside a segment, because that is the parser on the other end of this value.
+ */
+const MAX_LISTING_RKEY_LENGTH = 512;
+function readListingRkey(value: unknown): string | null | false {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value === '') return false;
+  if (value.length > MAX_LISTING_RKEY_LENGTH) return false;
+  return /[?#/%\s]/.test(value) ? false : value;
+}
+
+/**
+ * Which status a submit refusal deserves (NEW-17).
+ *
+ * The three are different answers to a client: 200 says the order is already
+ * placed, 503 says this node cannot decide, 409 says it decided no. Mapping an
+ * unreadable install registry to 409 told a client "the install changed since
+ * approval, retry" about a node that will refuse identically for ever — and
+ * every other not-configured condition on these routes already answers 503.
+ */
+function unanswerableStatus(refusal: SubmitRefusal): number {
+  if (refusal === 'already_submitted') return 200;
+  if (refusal === 'install_registry_unavailable') return 503;
+  return 409;
+}
+
 export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: string): void {
   // Same boot-minted-capability guard as /v1/run and /v1/watch, and the same
   // fail-closed posture: a router registered without a capability rejects
@@ -390,15 +443,268 @@ function fulfilmentOf(
  * OWNER-ONLY. An order this node cannot account for is a list of exactly where
  * its money might already be.
  */
+/**
+ * The retained card, or the refusal that says why it cannot be answered.
+ *
+ * ONE READER for submit and resend. Two copies of "is this card still good"
+ * would eventually disagree, and the direction that matters is the one where
+ * the send accepts a card the other path would have refused.
+ */
+/**
+ * §7.2/§7.3 — who may commit this business, resolved by CORE (DR-1).
+ *
+ * FAIL CLOSED. A node whose composition root installed no authority provider
+ * cannot say who is allowed to spend its money, so it does not spend it. The
+ * previous shape passed nothing and `submitApprovedOrder` skipped the check
+ * entirely, which meant every order on this node was committed with no
+ * authority evaluation at all.
+ */
+function resolveAuthority(
+  order: PurchaseOrderProposal,
+  context: BuyerApprovalContext,
+  serviceRkey: string,
+): { ok: true; authority: SubmitAuthority } | { ok: false; response: CoreResponse } {
+  const provider = getBuyerAuthorityProvider();
+  if (provider === null) {
+    return {
+      ok: false,
+      response: { status: 503, body: { error: 'authority_provider_unavailable' } },
+    };
+  }
+  const authority = provider({ order, context, serviceRkey });
+  if (authority === null) {
+    // §7.3: an owner with no grant record is not an owner. A missing record is
+    // a refusal, never a default.
+    return { ok: false, response: { status: 403, body: { error: 'no_authority_record' } } };
+  }
+  return { ok: true, authority };
+}
+
+
+function readAnswerableApproval(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  approvalId: string,
+  nowMs: number,
+):
+  | { ok: true; approval: RetainedOrderApproval }
+  | { ok: false; response: CoreResponse } {
+  const approval = runtime.orderApprovals.get(approvalId);
+  if (approval === null) {
+    // Absent, or held in a form this node can no longer reconstruct — a row
+    // edited after writing reads as absent on purpose, because sending
+    // against an approval we cannot rebuild is sending against nothing.
+    return { ok: false, response: { status: 404, body: { error: 'unknown_approval' } } };
+  }
+  if (approval.consumedAt !== null) {
+    return { ok: false, response: { status: 409, body: { error: 'approval_already_used' } } };
+  }
+  if (nowMs >= approval.expiresAt) {
+    return { ok: false, response: { status: 409, body: { error: 'approval_expired' } } };
+  }
+  return { ok: true, approval };
+}
+
 function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerOnlyGuard = makeOwnerGuard(
     ownerCapability,
     'only the owner may read outstanding orders',
   );
 
+  /**
+   * Show a card, and REMEMBER what it said (§15.2).
+   *
+   * The half of the binding that was missing. `verifyApprovalBinding` compares
+   * what is about to execute against what was approved, and that comparison is
+   * worth having only when the two sides come from different places. Submit
+   * used to carry the order, the context and the approved payload in one body,
+   * rebuild the payload from that body's order, and compare it to that body's
+   * payload — so a caller that re-planned the order rebuilt both halves and
+   * passed. Core now mints the payload here and keeps it; the send names it.
+   */
+  router.post('/v1/commerce/orders/prepare', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as {
+      order?: unknown;
+      context?: unknown;
+      service_rkey?: unknown;
+    };
+    for (const field of ['order', 'context'] as const) {
+      if (body[field] === null || typeof body[field] !== 'object') {
+        return { status: 400, body: { error: `${field} is required` } };
+      }
+    }
+
+    const order = body.order as PurchaseOrderProposal;
+    const claimedContext = body.context as BuyerApprovalContext;
+    // The order is validated HERE, before anything is retained. A card built
+    // over an order that does not describe itself would be a retained approval
+    // for a document the store then refuses to hydrate — a pending decision
+    // that can never be answered.
+    const invalid = validatePurchaseOrderProposal(order, hash);
+    if (invalid !== null) {
+      return { status: 400, body: { error: 'invalid_order', detail: invalid } };
+    }
+
+    // §15.2 (DR-2) — THE BUSINESS BEING COMMITTED IS THIS NODE, and the node
+    // knows which node it is. Taking `actingBusinessDid` from the body meant
+    // the approval bound whichever business the caller named, which is no
+    // binding at all: the §15.2 check later compares the send against the card
+    // and both halves came from the same claim.
+    const self = ownerDid();
+    if (self === null) {
+      return { status: 503, body: { error: 'node_identity_unavailable' } };
+    }
+    if (claimedContext.actingBusinessDid !== self) {
+      return {
+        status: 403,
+        body: {
+          error: 'acting_business_mismatch',
+          detail: 'context.actingBusinessDid is not this node',
+        },
+      };
+    }
+    // §15.2 (NEW-3) — WHO APPROVED is also this node's to say.
+    //
+    // DR-2 fixed the acting business and the install and left the principal,
+    // which §7.2 lists in the same breath: "caller-supplied body fields do not
+    // establish any of those identities", and authority domain and policy
+    // revision are two of the six it names. `chainGaps` only checks that the
+    // domain is NON-EMPTY, which any string satisfies, and nothing compares
+    // the retained principal to the one `singleOwnerAuthority` substitutes
+    // into the chain — so the card could say a human approved under a domain
+    // nobody holds while the authority evaluation used the owner.
+    //
+    // The supplier half of this file already does the right thing one function
+    // away: it names `owner` and a Core-side domain constant. This is that,
+    // for the buy side. A node with no staff directory can still say who its
+    // owner is and what act this is.
+    const principal: ApprovingPrincipal = {
+      principalDid: self,
+      authorityDomain: BUYER_ORDER_AUTHORITY_DOMAIN,
+      // A PERSON tapped this card. §15.2b's rule holds on both sides: a
+      // payload approved by a human must never be presentable as
+      // policy-approved, so the policy slot stays empty rather than echoing
+      // whatever the body sent.
+      policyRevision: null,
+    };
+    const statedPrincipal = claimedContext.principal;
+    if (
+      statedPrincipal !== undefined &&
+      ((typeof statedPrincipal.principalDid === 'string' &&
+        statedPrincipal.principalDid !== '' &&
+        statedPrincipal.principalDid !== principal.principalDid) ||
+        (typeof statedPrincipal.authorityDomain === 'string' &&
+          statedPrincipal.authorityDomain !== '' &&
+          statedPrincipal.authorityDomain !== principal.authorityDomain) ||
+        (statedPrincipal.policyRevision !== undefined &&
+          statedPrincipal.policyRevision !== null))
+    ) {
+      // Refused rather than overwritten, for the same reason the install facts
+      // are: the surface showed the owner an accountability story, and if it
+      // is not the one that would be recorded then they approved a different
+      // act.
+      return {
+        status: 403,
+        body: {
+          error: 'principal_mismatch',
+          detail: 'context.principal is not the principal this node would record',
+        },
+      };
+    }
+
+    // Same argument for the install: the caller SELECTS one, this node says
+    // what it is. Disagreement refuses rather than overwriting — see
+    // `resolveActingInstall`.
+    // BUILT FROM NAMED FIELDS, never spread from the body (NEW-13). A spread
+    // carries whatever else the caller put inside `context` into the retained
+    // row and into `context_json`, where the approval digest — which covers
+    // only the fields §15.2 names — does not bind it. A field that is
+    // accepted, stored, and neither bound nor read is the shape this review
+    // keeps finding; the fix is to stop accepting it rather than to remember
+    // not to trust it.
+    const namedContext: BuyerApprovalContext = {
+      actingBusinessDid: self,
+      principal,
+      serviceUri: claimedContext.serviceUri,
+      displayedLabels: claimedContext.displayedLabels,
+      productKeys: claimedContext.productKeys,
+      linePrices: claimedContext.linePrices,
+      charges: claimedContext.charges,
+      quoteRevision: claimedContext.quoteRevision,
+      quoteExpiresAt: claimedContext.quoteExpiresAt,
+      install: claimedContext.install,
+    };
+    const resolved = resolveActingInstall(namedContext, BUYER_REFERENCE_MANIFEST.plugin_id);
+    if (!resolved.ok) {
+      return {
+        status: resolved.refusal === 'install_registry_unavailable' ? 503 : 403,
+        body: { error: resolved.refusal, detail: resolved.detail },
+      };
+    }
+    const context = resolved.context;
+
+    const built = buildBuyerApprovalPayload(order, context);
+    if (!built.ok) {
+      // §15.2 names these fields; a payload built with them missing binds a
+      // constant and protects nothing.
+      return {
+        status: 400,
+        body: { error: 'approval_incomplete', missing: built.missing },
+      };
+    }
+
+    // §15.2 (DR-3) — the listing is named ONCE, by the URI the card bound.
+    // `service_rkey` used to arrive beside it and default to 'self', so the
+    // card could show one listing while the authority check ran against
+    // another.
+    const listing = resolveServiceBinding({
+      serviceUri: context.serviceUri,
+      supplierDid: order.supplier_did,
+      statedRkey: body.service_rkey,
+    });
+    if (!listing.ok) {
+      return { status: 400, body: { error: listing.refusal, detail: listing.detail } };
+    }
+
+    const now = Date.now();
+    const approvalId = newApprovalId();
+    const retained = runtime.orderApprovals.put({
+      approvalId,
+      order,
+      context,
+      serviceRkey: listing.serviceRkey,
+      createdAt: now,
+      expiresAt: now + ORDER_APPROVAL_TTL_MS,
+    });
+    if (!retained) {
+      // A minted id that already exists is not a retry, it is a collision in
+      // 128 bits of randomness. Refusing beats overwriting a live card.
+      return { status: 409, body: { error: 'approval_not_retained' } };
+    }
+    return {
+      status: 200,
+      body: {
+        approval_id: approvalId,
+        // The payload travels so the surface can render exactly what is bound,
+        // and so an operator can recompute the digest by hand. It is the
+        // owner's own data on the owner's own route.
+        approved: built.payload,
+        expires_at: now + ORDER_APPROVAL_TTL_MS,
+      },
+    };
+  });
+
   router.post('/v1/commerce/orders/submit', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
+
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
 
     const send = getBuyerOrderSender();
     if (send === null) {
@@ -409,33 +715,50 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 503, body: { error: 'buyer_sender_unavailable' } };
     }
 
-    const body = (req.body ?? {}) as {
-      order?: unknown;
-      approved?: unknown;
-      context?: unknown;
-      service_rkey?: unknown;
-    };
-    for (const field of ['order', 'approved', 'context'] as const) {
-      if (body[field] === null || typeof body[field] !== 'object') {
-        return { status: 400, body: { error: `${field} is required` } };
-      }
+    const body = (req.body ?? {}) as { approval_id?: unknown };
+    const approvalId = typeof body.approval_id === 'string' ? body.approval_id : '';
+    if (approvalId === '') {
+      return { status: 400, body: { error: 'approval_id is required' } };
     }
 
+    const held = readAnswerableApproval(runtime, approvalId, Date.now());
+    if (!held.ok) return held.response;
+
+    const authorised = resolveAuthority(
+      held.approval.order,
+      held.approval.context,
+      held.approval.serviceRkey,
+    );
+    if (!authorised.ok) return authorised.response;
+
     const result = await submitApprovedOrder({
-      order: body.order as never,
-      approved: body.approved as never,
-      context: body.context as never,
-      serviceRkey: typeof body.service_rkey === 'string' ? body.service_rkey : 'self',
+      authority: authorised.authority,
+      // ALL THREE COME FROM THE RETAINED CARD. Taking any of them from the
+      // request would restore the defect: the rebuild inside
+      // `submitApprovedOrder` compares a payload derived from the order to the
+      // approved payload, and a caller supplying both proves only that it was
+      // self-consistent.
+      order: held.approval.order,
+      approved: held.approval.payload,
+      context: held.approval.context,
+      serviceRkey: held.approval.serviceRkey,
       send,
       nowMs: Date.now(),
     });
+    // SPENT ONLY ON A SEND. A refusal leaves the card answerable, so a
+    // transient `buyer_sender_unavailable` or a momentarily expired quote does
+    // not burn a decision the owner would have to make again from scratch.
+    if (result.ok) runtime.orderApprovals.consume(approvalId, Date.now());
     // A REFUSAL IS A 200 when it carries a tracked record: "already submitted"
     // is the correct answer to a repeated tap, and the caller needs the state
     // more than it needs an error code. A binding failure is a 409 — the
     // request was well formed and the world disagreed with it.
     if (!result.ok) {
       return {
-        status: result.refusal === 'already_submitted' ? 200 : 409,
+        // 503 for a node that cannot answer, 200 for "already submitted"
+        // (the right answer to a repeated tap), 409 for a well-formed request
+        // the world disagreed with. See `install_registry_unavailable`.
+        status: unanswerableStatus(result.refusal),
         body: { ok: false, refusal: result.refusal, error: result.error, record: result.record },
       };
     }
@@ -453,10 +776,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       supplier_did?: unknown;
       purchase_order_id?: unknown;
       action?: unknown;
-      order?: unknown;
-      approved?: unknown;
-      context?: unknown;
-      service_rkey?: unknown;
+      approval_id?: unknown;
     };
     const supplierDid = typeof body.supplier_did === 'string' ? body.supplier_did : '';
     const purchaseOrderId =
@@ -556,28 +876,48 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (action === 'resend') {
       const send = getBuyerOrderSender();
       if (send === null) return { status: 503, body: { error: 'buyer_sender_unavailable' } };
-      for (const field of ['order', 'approved', 'context'] as const) {
-        if (body[field] === null || typeof body[field] !== 'object') {
-          // The approval is REBUILT and re-verified for a resend, not carried
-          // over from the first attempt. The order is unchanged, but which
-          // install, which capability, which manifest CID and which config
-          // revision are about to send it may not be — and §15.2 says a swap of
-          // any of those is a different act by a different actor.
-          return { status: 400, body: { error: `${field} is required to resend` } };
-        }
+      // A RESEND NEEDS ITS OWN CARD. The approval is rebuilt and re-verified
+      // rather than carried over from the first attempt: the order is
+      // unchanged, but which install, which capability, which manifest CID and
+      // which config revision are about to send it may not be — and §15.2 says
+      // a swap of any of those is a different act by a different actor. So the
+      // owner prepares again and names the new card here.
+      const approvalId = typeof body.approval_id === 'string' ? body.approval_id : '';
+      if (approvalId === '') {
+        return { status: 400, body: { error: 'approval_id is required to resend' } };
       }
+      const held = readAnswerableApproval(runtime, approvalId, Date.now());
+      if (!held.ok) return held.response;
+      // The card must name the order being resent. Without this a card
+      // prepared for one purchase could send another, which is precisely the
+      // substitution §15.2 exists to stop.
+      if (
+        held.approval.order.supplier_did !== supplierDid ||
+        held.approval.order.purchase_order_id !== purchaseOrderId
+      ) {
+        return { status: 409, body: { error: 'approval_is_for_another_order' } };
+      }
+      const authorised = resolveAuthority(
+        held.approval.order,
+        held.approval.context,
+        held.approval.serviceRkey,
+      );
+      if (!authorised.ok) return authorised.response;
       const result = await submitApprovedOrder({
-        order: body.order as never,
-        approved: body.approved as never,
-        context: body.context as never,
-        serviceRkey: typeof body.service_rkey === 'string' ? body.service_rkey : record.serviceRkey,
+        authority: authorised.authority,
+        order: held.approval.order,
+        approved: held.approval.payload,
+        context: held.approval.context,
+        serviceRkey: held.approval.serviceRkey,
         send,
         nowMs: Date.now(),
         resend: true,
       });
+      if (result.ok) runtime.orderApprovals.consume(approvalId, Date.now());
       if (!result.ok) {
         return {
-          status: 409,
+          // A resend is a send: same three answers. See `unanswerableStatus`.
+          status: unanswerableStatus(result.refusal),
           body: { ok: false, refusal: result.refusal, error: result.error, record: result.record },
         };
       }
@@ -1332,6 +1672,23 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
     };
 
     const settings = runtime.settings.readSupplier();
+    // §7.1 / §15.2b (NEW-6) — THE SAME RULE THE BUYER HALF ENFORCES. The
+    // buyer path refuses an `actingBusinessDid` that is not this node with
+    // `acting_business_mismatch`; this path took whatever the settings row
+    // said, and the settings validator checks that field only for
+    // non-emptiness. A node would then sign an acknowledgement bound to a
+    // business it cannot act for. An asymmetric rule is a rule with a hole in
+    // it, and nothing about the code revealed which half was which.
+    const actingBusinessDid = settings.ok ? settings.settings.actingBusinessDid : owner;
+    if (actingBusinessDid !== owner) {
+      return {
+        status: 403,
+        body: {
+          error: 'acting_business_mismatch',
+          detail: 'the configured acting business is not this node',
+        },
+      };
+    }
     const settled = settleInboundOrderDecision({
       buyerDid,
       purchaseOrderId,
@@ -1339,13 +1696,13 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
       runnerResultJson: pending.runnerResultJson,
       approval: {
         approved: buildSupplierApprovalPayload({
-          actingBusinessDid: settings.ok ? settings.settings.actingBusinessDid : owner,
+          actingBusinessDid,
           principal: {
             // A PERSON approved this, so the policy-revision slot stays empty:
             // §15.2b binds both, and a payload approved by a human must never
             // be presentable as policy-approved.
             principalDid: owner,
-            authorityDomain: 'supplier.order_acceptance',
+            authorityDomain: SUPPLIER_ORDER_AUTHORITY_DOMAIN,
             policyRevision: null,
           },
           buyerDid,
@@ -1355,10 +1712,10 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
           acknowledgementKind: 'accepted',
           install: actingInstall,
         }),
-        actingBusinessDid: settings.ok ? settings.settings.actingBusinessDid : owner,
+        actingBusinessDid,
         principal: {
           principalDid: owner,
-          authorityDomain: 'supplier.order_acceptance',
+          authorityDomain: SUPPLIER_ORDER_AUTHORITY_DOMAIN,
           policyRevision: null,
         },
         install: actingInstall,
@@ -2049,6 +2406,8 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
       items?: unknown;
       previous?: unknown;
       page_size?: unknown;
+      /** §10.5 (DR-5) — which listing serves this catalog. */
+      service_rkey?: unknown;
     };
     if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
       return { status: 400, body: { error: 'catalog_id is required' } };
@@ -2077,6 +2436,24 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     const owner = ownerDid();
     if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
 
+    // Refused here rather than at the far end: this value lands inside an
+    // AT-URI that buyers parse, and one carrying a separator makes the
+    // supplier's own products unreadable with no explanation reaching either
+    // party. AppView refuses the same shape on ingest.
+    const stated = readListingRkey(body.service_rkey);
+    if (stated === false) {
+      return { status: 400, body: { error: 'service_rkey is not a usable record key' } };
+    }
+    // INHERITED FROM THE PREDECESSOR when the body does not restate it
+    // (NEW-10). `service_rkey` is a published fact about where to send a quote
+    // request, and a republication that omits it is not a supplier saying
+    // "back to the primary listing" — it is a supplier republishing a catalog.
+    // Without inheritance a routine reprice silently redirected every buyer,
+    // with no error and nothing visible to look at. This route already refuses
+    // a MISSING `items` array on exactly that reasoning; a dropped field must
+    // not retire a published fact.
+    const listing = stated ?? previous?.pointer.service_rkey ?? null;
+
     const built = buildCatalogSnapshot({
       supplierDid: owner,
       catalogId: body.catalog_id,
@@ -2086,6 +2463,14 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
       items: body.items,
       previous,
       ...(typeof body.page_size === 'number' ? { pageSize: body.page_size } : {}),
+      // §10.5 (DR-5) — WITHOUT THIS THE READ HALF IS DEAD. The pointer type
+      // carries `service_rkey`, ingest stores it and discovery reads it, but
+      // no Dina node could emit one: this route accepted no such field and
+      // neither builder set it. So every catalog this implementation publishes
+      // had a null listing and every candidate fell back to `self`, which is
+      // the symptom the fix was for. A read path with no producer is the same
+      // defect as a rule with no caller, one layer out.
+      ...(listing === null ? {} : { serviceRkey: listing }),
       sha256: hash,
     });
     // A BUILD refusal keeps its existing 200-with-`ok:false` shape. It is the
@@ -2189,6 +2574,13 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     const built = buildCatalogWithdrawal({
       supplierDid: owner,
       catalogId: body.catalog_id,
+      // Carried from the head being withdrawn, so the tombstone stays
+      // self-describing (NEW-10). The parameter existed with no caller that
+      // ever supplied it, which is the same unreached-capability shape as the
+      // defect this whole field was added to fix.
+      ...(chain.previous.pointer.service_rkey === undefined
+        ? {}
+        : { serviceRkey: chain.previous.pointer.service_rkey }),
       protocolVersion: typeof body.protocol_version === 'string' ? body.protocol_version : '1.0',
       publishedAt:
         typeof body.published_at === 'string' ? body.published_at : new Date().toISOString(),

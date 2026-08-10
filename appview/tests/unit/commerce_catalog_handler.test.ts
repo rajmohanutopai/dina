@@ -47,9 +47,47 @@ function catalogItem(sku: string) {
     item_revision: '1',
     name: `Chair ${sku}`,
     category_ids: ['furniture.seating'],
+    // §9.5 requires `pack`; this fixture omitted it, so the cases here were
+    // driving items no conformant publisher could publish.
+    pack: { sell_unit: { unit_code: 'each', value: '1' } },
     fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
     freshness: { generated_at: '2026-08-08T09:00:00.000Z' },
   }
+}
+
+/**
+ * A TWO-PAGE publication, one item per page.
+ *
+ * `publication()` always emits a single page, which is fine for the chain tests
+ * but cannot express the defect below: with one committed page there is nothing
+ * for a duplicate to displace, so the count check alone catches it. Coverage
+ * only becomes a distinct rule once there are at least two slots to fill.
+ */
+function twoPagePublication(sequence: number, skus: [string, string]) {
+  const pages: CatalogSnapshotPage[] = skus.map((sku, i) => {
+    const draft: CatalogSnapshotPage = {
+      catalog_id: CATALOG,
+      snapshot_sequence: sequence,
+      page_index: i,
+      items: [catalogItem(sku)],
+      page_digest: '',
+    }
+    return { ...draft, page_digest: catalogPageDigest(draft) }
+  })
+  const digests = pages.map((p) => p.page_digest)
+  const draft: CatalogSnapshot = {
+    supplier_did: SUPPLIER,
+    catalog_id: CATALOG,
+    snapshot_sequence: sequence,
+    protocol_version: '1.0',
+    published_at: '2026-08-08T09:00:00.000Z',
+    page_digests: digests,
+    item_count: skus.length,
+    payload_root: catalogPayloadRoot(digests),
+    snapshot_digest: '',
+  }
+  const snapshot: CatalogSnapshot = { ...draft, snapshot_digest: catalogSnapshotDigest(draft) }
+  return { snapshot, pages }
 }
 
 function publication(sequence: number, skus: string[], previousDigest?: string) {
@@ -308,6 +346,60 @@ describe('the catalog snapshot handler', () => {
     expect(recorded.inserted.products).toBeUndefined()
   })
 
+  it('refuses a snapshot that serves one page twice and omits another', async () => {
+    // PER-PAGE VERIFICATION DOES NOT ADD UP TO A WHOLE. Each page answers
+    // "do I belong to this snapshot, at the slot I claim?" about ITSELF, so
+    // serving page 0 twice passed: the count matched, both copies verified at
+    // index 0, and a committed page was simply never presented. The catalog
+    // then projected is not the catalog the supplier published — and it lands
+    // under the global digest key, where `onConflictDoNothing` stops the
+    // correct bytes from ever replacing it.
+    const { snapshot, pages } = twoPagePublication(1, ['CHAIR-1', 'CHAIR-2'])
+    expect(pages.length).toBe(2)
+    const recorded: Recorded = { events: [], inserted: {} }
+    const ctx = stubCtx(recorded, [[]])
+
+    await commerceCatalogSnapshotHandler.handleCreate(
+      ctx,
+      op({ snapshot, pages: [pages[0], pages[0]] }),
+    )
+
+    expect(recorded.inserted.snapshots).toBeUndefined()
+    expect(ctx.metrics.incr).toHaveBeenCalledWith('ingester.commerce_catalog.refused')
+  })
+
+  it('refuses a snapshot whose claimed digest does not commit to its bytes', async () => {
+    // DIGEST SQUATTING. `snapshot_digest` is the primary key of a globally
+    // shared table and it arrives as a claim. Storing before verifying let an
+    // attacker occupy the digest the real supplier is about to publish under:
+    // their row lands first, `onConflictDoNothing` then DISCARDS the genuine
+    // snapshot, and the supplier's pointer resolves to the attacker's bytes —
+    // so their catalog is refused for as long as the squatted row survives.
+    const { snapshot, pages } = publication(1, ['CHAIR-1'])
+    const squatted = { ...snapshot, item_count: snapshot.item_count + 41 }
+    const recorded: Recorded = { events: [], inserted: {} }
+    const ctx = stubCtx(recorded, [[]])
+
+    await commerceCatalogSnapshotHandler.handleCreate(ctx, op({ snapshot: squatted, pages }))
+
+    expect(recorded.inserted.snapshots).toBeUndefined()
+    expect(ctx.metrics.incr).toHaveBeenCalledWith('ingester.commerce_catalog.refused')
+  })
+
+  it('refuses a snapshot published in a repo that is not its supplier', async () => {
+    const { snapshot, pages } = publication(1, ['CHAIR-1'])
+    const recorded: Recorded = { events: [], inserted: {} }
+    const ctx = stubCtx(recorded, [[]])
+
+    await commerceCatalogSnapshotHandler.handleCreate(ctx, {
+      ...op({ snapshot, pages }),
+      did: 'did:plc:rivalchairs01',
+    })
+
+    expect(recorded.inserted.snapshots).toBeUndefined()
+    expect(ctx.metrics.incr).toHaveBeenCalledWith('ingester.commerce_catalog.refused')
+  })
+
   it('indexes when it completes a held pointer', async () => {
     const { snapshot, pages } = publication(1, ['CHAIR-1', 'CHAIR-2'])
     const recorded: Recorded = { events: [], inserted: {} }
@@ -391,13 +483,17 @@ describe('a catalog record can actually reach the handlers', () => {
   it('exposes the §10.5 search method on the xRPC surface', async () => {
     // Ingesting a catalog nobody can query is the same defect as an orphan,
     // one layer out: the index fills up and discovery still returns nothing.
-    const { readFileSync } = await import('node:fs')
-    const path = await import('node:path')
-    const { fileURLToPath } = await import('node:url')
-    const here = path.dirname(fileURLToPath(import.meta.url))
-    const server = readFileSync(path.resolve(here, '../../src/web/server.ts'), 'utf8')
-    expect(server).toContain("'com.dinakernel.commerce.searchCatalog'")
-    expect(server).toContain('searchCommerceCatalog')
+    //
+    // Reads the TABLE, not the server's source. This used to grep `server.ts`
+    // for two substrings, which pinned a spelling rather than a registration —
+    // it would have passed a route registered under a typo'd method id, and it
+    // broke the moment the table moved to its own module without any behaviour
+    // changing. The table is now importable, so ask it.
+    const { XRPC_ROUTES } = await import('@/web/xrpc-routes.js')
+    const route = XRPC_ROUTES['com.dinakernel.commerce.searchCatalog']
+    expect(route).toBeDefined()
+    expect(typeof route?.handler).toBe('function')
+    expect(typeof route?.params.parse).toBe('function')
   })
 
   it('refuses a pointer that both names a snapshot and claims to be a withdrawal', async () => {

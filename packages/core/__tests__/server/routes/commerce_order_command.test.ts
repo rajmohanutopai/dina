@@ -22,13 +22,28 @@ import {
   installBuyerOrderSender,
   type BuyerOrderSender,
 } from '../../../src/commerce/buyer_executor';
+import {
+  installBuyerAuthorityProvider,
+  singleOwnerAuthority,
+} from '../../../src/commerce/buyer_authority';
 import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../../src/commerce/buyer_reconciliation';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
+import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
+import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
+import { InMemoryOrderApprovalRepository } from '../../../src/commerce/order_approvals';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
-import { BUYER_DID, makeOrder, makeQuoteRequest, makeSignedQuote } from '../../commerce/helpers';
+import { setNodeDID } from '../../../src/pairing/ceremony';
+import {
+  BUYER_DID,
+  installActiveBuyerPack,
+  makeOrder,
+  makeQuoteRequest,
+  makeSignedQuote,
+  type InstalledBuyerPack,
+} from '../../commerce/helpers';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 
@@ -45,30 +60,34 @@ const ORDER = makeOrder(QUOTE, REQUEST.delivery.projection);
 const SUPPLIER = ORDER.supplier_did;
 const PO = ORDER.purchase_order_id;
 
-const INSTALL: ActingInstall = {
-  installId: 'install-buyer',
-  capabilityId: 'com.dinakernel.commerce.submit-order',
-  manifestCid: 'bafyreibuyer',
-  installScopeHash: 's'.repeat(64),
-  configRevision: '1',
-};
+const T0 = Date.parse('2026-08-08T09:00:00.000Z');
 
-const CONTEXT: BuyerApprovalContext = {
-  actingBusinessDid: BUYER_DID,
-  principal: {
-    principalDid: 'did:plc:sanchoowner',
-    authorityDomain: 'procurement',
-    policyRevision: null,
-  },
-  serviceUri: `at://${SUPPLIER}/com.dinakernel.service.profile/self`,
-  displayedLabels: { l1: 'Oak dining chair' },
-  productKeys: { l1: 'gtin:05012345678900' },
-  linePrices: { l1: { currency: 'INR', minor_units: '500' } },
-  charges: [],
-  quoteRevision: 1,
-  quoteExpiresAt: '2026-08-09T09:00:00.000Z',
-  install: INSTALL,
-};
+/** Minted per test from the real install registry — see the submit suite. */
+let pack: InstalledBuyerPack;
+let INSTALL: ActingInstall;
+let CONTEXT: BuyerApprovalContext;
+
+function buildContext(): BuyerApprovalContext {
+  return {
+    actingBusinessDid: BUYER_DID,
+    principal: {
+      // The principal THIS NODE would record (NEW-3). The fixture used to name
+      // `did:plc:sanchoowner` under a `procurement` domain — a principal the
+      // node has never heard of, which passed because nothing checked.
+      principalDid: BUYER_DID,
+      authorityDomain: 'buyer.order_submission',
+      policyRevision: null,
+    },
+    serviceUri: `at://${SUPPLIER}/com.dinakernel.service.profile/self`,
+    displayedLabels: { l1: 'Oak dining chair' },
+    productKeys: { l1: 'gtin:05012345678900' },
+    linePrices: { l1: { currency: 'INR', minor_units: '500' } },
+    charges: [],
+    quoteRevision: 1,
+    quoteExpiresAt: '2026-08-09T09:00:00.000Z',
+    install: INSTALL,
+  };
+}
 
 function approval(): BuyerApprovalPayload {
   const built = buildBuyerApprovalPayload(ORDER, CONTEXT);
@@ -90,6 +109,7 @@ const DESCRIBED = {
 };
 
 let buyerOrders: InMemoryBuyerOrderRepository;
+let approvals: InMemoryOrderApprovalRepository;
 let router: CoreRouter;
 /** Every outbound service query this node made. */
 let dispatched: { toDid: string; body: Record<string, unknown> }[];
@@ -127,8 +147,31 @@ function record(over: Partial<BuyerOrderRecord> = {}): BuyerOrderRecord {
 }
 
 beforeEach(() => {
+  // Composition-root stand-in: node identity + a real active buyer install.
+  setNodeDID(BUYER_DID);
+  pack = installActiveBuyerPack(T0);
+  INSTALL = {
+    installId: pack.installId,
+    capabilityId: pack.capabilityId,
+    manifestCid: pack.manifestCid,
+    installScopeHash: pack.installScopeHash,
+    configRevision: pack.configRevision,
+  };
+  CONTEXT = buildContext();
+
   buyerOrders = new InMemoryBuyerOrderRepository();
-  installCommerceRuntime({ buyerOrders } as unknown as CommerceRuntime);
+  approvals = new InMemoryOrderApprovalRepository();
+  installCommerceRuntime({
+    buyerOrders,
+    // §12.4 step 6 — the executor revalidates the held quote before dispatch;
+    // empty stores mean "no quote held", the documented skip.
+    buyerQuotes: new InMemoryBuyerQuoteRepository(),
+    buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),
+    // §15.2 — Core mints and holds the card. The route no longer accepts
+    // approval material from the caller, so a runtime without this store
+    // cannot prepare one and every resend refuses.
+    orderApprovals: approvals,
+  } as unknown as CommerceRuntime);
   dispatched = [];
   sent = [];
   installCommerceServiceQueryDispatch(async ({ toDid, body }) => {
@@ -140,14 +183,22 @@ beforeEach(() => {
     return { kind: 'ambiguous', reason: 'sent; awaiting the supplier acknowledgement' };
   };
   installBuyerOrderSender(sender);
+  // §7.2/§7.3 (DR-1) — the composition root's job, which this harness stands in
+  // for. Without it the routes fail closed, which is the intended posture and
+  // is covered by its own case below.
+  installBuyerAuthorityProvider(({ order, context, serviceRkey }) =>
+    singleOwnerAuthority({ ownerDid: 'did:plc:testowner00000000', order, context, serviceRkey }),
+  );
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
 });
 
 afterEach(() => {
+  pack.dispose();
   installCommerceRuntime(null);
   installCommerceServiceQueryDispatch(null);
   installBuyerOrderSender(null);
+  installBuyerAuthorityProvider(null);
 });
 
 describe('the boundary', () => {
@@ -342,11 +393,52 @@ describe('reconcile_now', () => {
   });
 });
 
+/**
+ * Ask Core for a card, the way an owner's surface does (§15.2).
+ *
+ * THE POINT OF THE TWO STEPS. The approval payload is minted HERE, by Core,
+ * and kept; the command names it by id. A test that handed the payload to the
+ * command would be testing the defect this replaced — a caller supplying both
+ * sides of its own binding check.
+ */
+async function prepare(over: Record<string, unknown> = {}): Promise<string> {
+  const resp = await router.handle({
+    ...owner({ order: ORDER, context: CONTEXT, ...over }),
+    path: '/v1/commerce/orders/prepare',
+  });
+  if (resp.status !== 200) {
+    throw new Error(`prepare refused: ${resp.status} ${JSON.stringify(resp.body)}`);
+  }
+  return (resp.body as { approval_id: string }).approval_id;
+}
+
+/**
+ * Edit a retained card AFTER it was written, from the harness rather than
+ * through a production affordance.
+ *
+ * `put` is first-writer-wins on purpose — a replayed prepare must not be able
+ * to redefine what a pending approval means — so there is no supported way to
+ * change a retained row, and adding one to make this testable would be adding
+ * the very hole the test is checking for.
+ */
+function tamperWithRetainedApproval(approvalId: string): void {
+  const inner = approvals as unknown as { held: Map<string, { context_json: string }> };
+  const row = inner.held.get(approvalId);
+  if (row === undefined) throw new Error('nothing retained to tamper with');
+  // The stored digest still describes the ORIGINAL context, so the rebuild on
+  // the next read cannot match.
+  row.context_json = JSON.stringify({
+    ...CONTEXT,
+    serviceUri: `at://did:plc:someoneelse00000000/com.dinakernel.service.profile/self`,
+  });
+}
+
 describe('resend', () => {
-  it('needs the order, the approval and the context — it does not reuse the first attempt', async () => {
+  it('needs a freshly prepared card — it does not reuse the first attempt', async () => {
     // §15.2: the order is unchanged, but WHICH install, capability, manifest
     // CID and config revision are about to send it may not be, and a swap of
-    // any of those is a different act by a different actor.
+    // any of those is a different act by a different actor. So the owner
+    // prepares again rather than the route remembering.
     buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
     const resp = await router.handle(
       owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend' }),
@@ -355,7 +447,13 @@ describe('resend', () => {
     expect(sent).toEqual([]);
   });
 
-  it('refuses when the binding does not hold, and sends nothing', async () => {
+  it('IGNORES approval material in the request body', async () => {
+    // THE C-03 REGRESSION. The route used to take the order, the context AND
+    // the approved payload from one body, rebuild the payload from that body's
+    // order, and compare it to that body's payload — so a caller that
+    // re-planned the order rebuilt both halves and the binding passed. Sending
+    // all three now proves nothing and sends nothing: without a prepared card
+    // there is no approval, whatever the body claims.
     buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
     const resp = await router.handle(
       owner({
@@ -363,13 +461,77 @@ describe('resend', () => {
         purchase_order_id: PO,
         action: 'resend',
         order: ORDER,
-        // An approval payload that binds to nothing this order is about.
-        approved: { kind: 'buyer_order_approval', digest: 'f'.repeat(64) },
+        approved: approval(),
         context: CONTEXT,
       }),
     );
-    expect(resp.status).toBe(409);
-    expect((resp.body as { refusal: string }).refusal).toBe('approval_binding_failed');
+    expect(resp.status).toBe(400);
+    expect(sent).toEqual([]);
+    expect(buyerOrders.get(SUPPLIER, PO)?.resubmissionAuthorized).toBe(true);
+  });
+
+  it('refuses a card prepared for a DIFFERENT order', async () => {
+    // A card names one purchase. Letting it send another is exactly the
+    // substitution §15.2 exists to stop.
+    buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
+    const resp = await router.handle(
+      owner({
+        supplier_did: SUPPLIER,
+        purchase_order_id: 'po-someone-else',
+        action: 'resend',
+        approval_id: await prepare(),
+      }),
+    );
+    // The projection is asked first, and it knows nothing of that order.
+    expect(resp.status).toBe(404);
+    expect(sent).toEqual([]);
+  });
+
+  it('refuses a card that has already been spent', async () => {
+    buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
+    const approvalId = await prepare();
+    const first = await router.handle(
+      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+    );
+    expect(first.status).toBe(200);
+    expect(sent).toEqual([PO]);
+
+    // Put the order back in a state the projection offers resend from, so the
+    // ONLY thing standing between this call and a second send is the spent
+    // card. Through the LIVE record, because `put` is a revision CAS — writing
+    // a fresh fixture silently fails and the test would then pass on
+    // `action_not_offered`, proving nothing about the card.
+    const live = buyerOrders.get(SUPPLIER, PO);
+    if (live === null) throw new Error('the order vanished');
+    const restored = buyerOrders.put(SUPPLIER, {
+      ...live,
+      state: 'never_received',
+      resubmissionAuthorized: true,
+    });
+    expect(restored).toBe(true);
+    const second = await router.handle(
+      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+    );
+    expect(second.status).toBe(409);
+    expect((second.body as { error: string }).error).toBe('approval_already_used');
+    expect(sent).toEqual([PO]);
+  });
+
+  it('refuses a card whose retained row no longer describes itself, and sends nothing', async () => {
+    // The binding failure that is still REACHABLE now that the caller cannot
+    // supply a payload: a retained row edited after writing. The store rebuilds
+    // the payload from the stored order and context on every read and compares
+    // it to the stored digest, so a tampered row reads as ABSENT rather than as
+    // a differently-approved order.
+    buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
+    const approvalId = await prepare();
+    tamperWithRetainedApproval(approvalId);
+
+    const resp = await router.handle(
+      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+    );
+    expect(resp.status).toBe(404);
+    expect((resp.body as { error: string }).error).toBe('unknown_approval');
     expect(sent).toEqual([]);
     // And the record is untouched, so the authorization is still there to use.
     expect(buyerOrders.get(SUPPLIER, PO)?.resubmissionAuthorized).toBe(true);
@@ -387,9 +549,7 @@ describe('resend', () => {
         supplier_did: SUPPLIER,
         purchase_order_id: PO,
         action: 'resend',
-        order: ORDER,
-        approved: approval(),
-        context: CONTEXT,
+        approval_id: await prepare(),
       }),
     );
     expect(first.status).toBe(200);
@@ -401,9 +561,7 @@ describe('resend', () => {
         supplier_did: SUPPLIER,
         purchase_order_id: PO,
         action: 'resend',
-        order: ORDER,
-        approved: approval(),
-        context: CONTEXT,
+        approval_id: await prepare(),
       }),
     );
     // The card no longer offers it, so the command no longer performs it.
@@ -435,9 +593,7 @@ describe('resend', () => {
         supplier_did: SUPPLIER,
         purchase_order_id: PO,
         action: 'resend',
-        order: ORDER,
-        approved: approval(),
-        context: CONTEXT,
+        approval_id: await prepare(),
       }),
     );
     expect(atSendTime).toHaveLength(1);
@@ -462,9 +618,7 @@ describe('resend', () => {
         supplier_did: SUPPLIER,
         purchase_order_id: PO,
         action: 'resend',
-        order: ORDER,
-        approved: approval(),
-        context: CONTEXT,
+        approval_id: await prepare(),
       }),
     );
     expect(seen).toHaveLength(1);
@@ -479,9 +633,7 @@ describe('resend', () => {
         supplier_did: SUPPLIER,
         purchase_order_id: PO,
         action: 'resend',
-        order: ORDER,
-        approved: approval(),
-        context: CONTEXT,
+        approval_id: await prepare(),
       }),
     );
     // A successful dispatch is AMBIGUOUS — the acknowledgement comes back later

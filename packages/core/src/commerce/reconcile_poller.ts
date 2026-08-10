@@ -1,4 +1,10 @@
 import {
+  MAX_HELD_STATUS_RECEIPTS,
+  type OrderReconcileRequest,
+  type OrderReconcileResult,
+} from '@dina/commerce-protocol';
+
+import {
   applyReconcileResult,
   isPollDue,
   settleBuyerOrder,
@@ -8,12 +14,6 @@ import { getCommerceRuntime } from './runtime';
 
 import type { BuyerOrderRepository } from './buyer_orders';
 import type { BuyerStatusRepository, EnvelopeEvidence } from './buyer_status';
-
-import {
-  MAX_HELD_STATUS_RECEIPTS,
-  type OrderReconcileRequest,
-  type OrderReconcileResult,
-} from '@dina/commerce-protocol';
 
 /**
  * The re-poll half of §12.7 — asking again, for as long as it takes.
@@ -92,6 +92,7 @@ let heldEvidenceReader: HeldEvidenceReader | null = null;
 export function installHeldEvidenceReader(value: HeldEvidenceReader | null): void {
   heldEvidenceReader = value;
 }
+
 
 /**
  * The reader a real node installs: what this buyer actually holds (§12.7).

@@ -15,10 +15,11 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { commerceRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
-import { resetAuditState } from '../../src/audit/service';
+import { queryAudit, resetAuditState } from '../../src/audit/service';
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { clearGatesState } from '../../src/d2d/gates';
@@ -43,6 +44,7 @@ const QUOTE_ID = 'q-1';
 const PO = 'po-1';
 
 let buyerOrders: InMemoryBuyerOrderRepository;
+let watermarks: InMemoryCommerceEpochWatermarkRepository;
 
 function parked(): BuyerOrderRecord {
   return {
@@ -106,7 +108,12 @@ beforeEach(() => {
   clearReplayCache();
   resetServiceWindows();
   buyerOrders = new InMemoryBuyerOrderRepository();
-  installCommerceRuntime({ buyerOrders } as unknown as CommerceRuntime);
+  watermarks = new InMemoryCommerceEpochWatermarkRepository();
+  // A REAL watermark store. The §16.2 fence runs on every arriving record now,
+  // and a double that omitted it was passing only because acknowledgements
+  // carry no `supplier_epoch` and so collect no records at all — one quote
+  // answer away from a crash that had nothing to do with the rule under test.
+  installCommerceRuntime({ buyerOrders, watermarks } as unknown as CommerceRuntime);
   buyerOrders.create(SUPPLIER, parked());
 });
 
@@ -190,6 +197,48 @@ describe('a supplier answer arriving over D2D', () => {
 
     expect(result.action).toBe('bypassed');
     expect(buyerOrders.get(SUPPLIER, PO)?.state).toBe('outcome_unknown');
+  });
+
+  it('writes a decision-log line when the answer is refused, and does not just say accepted', () => {
+    // §22 — the outcome of `applyInboundBuyerResponse` used to be DISCARDED at
+    // this, its only production caller. Every refusal returns normally, so the
+    // surrounding try/catch never saw one, and the unconditional
+    // `d2d_recv_service_accepted` was the only trace: an answer refused for a
+    // stale epoch, a forked chain, or — as here — a peer naming a third party
+    // was logged as accepted, and the owner had nothing to look at.
+    //
+    // The specific case matters most. `foreign_supplier` is the single
+    // observable signal of a watermark-poisoning attempt, and separating it
+    // from `stale_epoch` in the type bought nothing while neither reached a
+    // log. This is what makes that split real.
+    setRequesterWindow(SUPPLIER, PO, 'request_quote', 300);
+    const VICTIM = 'did:plc:victim-supplier';
+
+    const result = receiveD2D(
+      sealedAnswer('request_quote', {
+        quote: { supplier_did: VICTIM, supplier_epoch: '99999999' },
+      }),
+      buyerPub,
+      buyerPriv,
+      [supplierPub],
+      'unknown',
+      { authenticatedFromDID: SUPPLIER, authenticatedToDID: BUYER },
+    );
+
+    // The MESSAGE was accepted at the ingress layer — it was authorized and
+    // well formed. Its CONTENTS were refused. Both facts are now recorded,
+    // which is the honest pair; previously only the first one was.
+    expect(result.action).toBe('bypassed');
+    const unsettled = queryAudit({}).find(
+      (e) => e.action === 'd2d_recv_service_buyer_unsettled',
+    );
+    expect(unsettled).toBeDefined();
+    expect(unsettled?.detail).toContain('outcome=foreign_supplier');
+    expect(unsettled?.detail).toContain('capability=request_quote');
+    // Metadata only — no payload in the log.
+    expect(unsettled?.detail).not.toContain(VICTIM);
+    // And the fence itself held: the victim's watermark never moved.
+    expect(watermarks.get(VICTIM)).toBe('0');
   });
 
   it('carries every other capability through untouched', () => {

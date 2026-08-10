@@ -460,3 +460,171 @@ describe('an RPC connector (§24)', () => {
     expect(calls[0]?.request).toBeUndefined();
   });
 });
+
+/**
+ * §24 / WS-9.2 — a real ERP does not answer a bare list.
+ *
+ * Odoo's JSON-RPC replies `{jsonrpc, id, result: [...]}`, and `recordsFrom`
+ * refuses anything that is not an array or `{items: [...]}` — on purpose,
+ * because guessing which field holds the catalog is how a connector silently
+ * publishes a page of metadata as products. `rowsAt` is the owner DECLARING
+ * the field instead.
+ */
+describe('a wrapped ERP answer (§24 — Odoo JSON-RPC)', () => {
+  const ODOO: ConnectorEndpoint = {
+    url: 'https://erp.example.com/jsonrpc',
+    auth: { kind: 'bearer' },
+    json: true,
+    rowsAt: 'result',
+    request: {
+      method: 'POST',
+      contentType: 'application/json',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'call',
+        params: { service: 'object', method: 'execute_kw' },
+      }),
+    },
+  };
+
+  it('hands back the declared field, so the rows reach the importer', async () => {
+    const { transport } = scripted({
+      'https://erp.example.com/jsonrpc': {
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          result: [{ default_code: 'CHAIR-OAK', name: 'Oak dining chair', list_price: 500 }],
+        }),
+      },
+    });
+
+    const result = await executorFor(ODOO, transport)({ secret: SECRET, params: {} });
+    expect(result.ok).toBe(true);
+    // The ENVELOPE is gone; what remains is what a catalog reader expects.
+    expect(result.ok && result.result).toEqual([
+      { default_code: 'CHAIR-OAK', name: 'Oak dining chair', list_price: 500 },
+    ]);
+  });
+
+  it('does not fall back to the envelope when the declared field is absent', async () => {
+    // A JSON-RPC ERROR answer carries no `result`. Degrading to "try the top
+    // level" would hand the importer an object, and reading it as an empty
+    // catalog would publish a withdrawal of every product the supplier sells.
+    const { transport } = scripted({
+      'https://erp.example.com/jsonrpc': {
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          error: { code: 200, message: 'Odoo Server Error' },
+        }),
+      },
+    });
+
+    const result = await executorFor(ODOO, transport)({ secret: SECRET, params: {} });
+    // The executor succeeded — the HTTP call worked — and handed back nothing
+    // a row reader can use, which `loadCatalogThroughConnector` refuses as
+    // `not_a_row_list` rather than importing.
+    expect(result.ok && result.result).toBeUndefined();
+  });
+
+  it('leaves an unwrapped REST answer alone', async () => {
+    const { transport } = scripted({
+      'https://erp.example.com/catalog': {
+        body: JSON.stringify([{ sku: 'CHAIR-OAK' }]),
+      },
+    });
+    const result = await executorFor(JSON_ENDPOINT, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([{ sku: 'CHAIR-OAK' }]);
+  });
+
+  it('carries the RPC body and the credential to the ERP', async () => {
+    const { transport, calls } = scripted({
+      'https://erp.example.com/jsonrpc': {
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: [] }),
+      },
+    });
+    await executorFor(ODOO, transport)({ secret: SECRET, params: {} });
+    expect(calls[0]?.request?.method).toBe('POST');
+    expect(calls[0]?.request?.contentType).toBe('application/json');
+    expect(calls[0]?.headers.authorization).toBe(`Bearer ${SECRET}`);
+  });
+});
+
+/**
+ * §24 / WS-9.2 — an ERP does not speak the catalog's vocabulary.
+ *
+ * Odoo's `product.product` answers `default_code`, `name`, `barcode` and a
+ * major-unit float `list_price`. The importer wants `identifier`, `title`,
+ * `gtin` and integer `list_price_minor_units`, and it is STRICT — an
+ * unrecognised column raises `unknown_column` rather than being dropped. So the
+ * rename and the money conversion happen here, from an owner's declaration.
+ */
+describe('projecting an ERP row onto catalog columns (§24)', () => {
+  const ODOO_MAPPED: ConnectorEndpoint = {
+    url: 'https://erp.example.com/jsonrpc',
+    auth: { kind: 'bearer' },
+    json: true,
+    rowsAt: 'result',
+    fieldMap: { identifier: 'default_code', title: 'name', gtin: 'barcode' },
+    price: { field: 'list_price', currency: 'INR', decimals: 2 },
+  };
+
+  const answer = (rows: unknown[]): Record<string, Partial<FeedResponse>> => ({
+    'https://erp.example.com/jsonrpc': {
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, result: rows }),
+    },
+  });
+
+  it('renames the declared fields and leaves the rest alone', async () => {
+    const { transport } = scripted(
+      answer([{ default_code: 'CHAIR-OAK', name: 'Oak dining chair', barcode: '05012345678900' }]),
+    );
+    const result = await executorFor(ODOO_MAPPED, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([
+      { identifier: 'CHAIR-OAK', title: 'Oak dining chair', gtin: '05012345678900' },
+    ]);
+  });
+
+  it('turns a major-unit price into integer minor units with its currency', async () => {
+    // §9.1 — no float ever reaches an amount. 500.0 INR is 50000 paise.
+    const { transport } = scripted(answer([{ default_code: 'CHAIR-OAK', list_price: 500.0 }]));
+    const result = await executorFor(ODOO_MAPPED, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([
+      { identifier: 'CHAIR-OAK', list_price_minor_units: '50000', currency: 'INR' },
+    ]);
+  });
+
+  it('rounds rather than truncates a price with more precision than the currency', async () => {
+    // Truncating 12.345 to 1234 undercharges every line of every order.
+    const { transport } = scripted(answer([{ list_price: 12.345 }]));
+    const result = await executorFor(ODOO_MAPPED, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([
+      { list_price_minor_units: '1235', currency: 'INR' },
+    ]);
+  });
+
+  it('DROPS a price that is not a number rather than publishing a zero', async () => {
+    // Odoo answers `false` for an unset field. Coercing that to 0 would put a
+    // free chair in a public catalog.
+    const { transport } = scripted(answer([{ default_code: 'CHAIR-OAK', list_price: false }]));
+    const result = await executorFor(ODOO_MAPPED, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([{ identifier: 'CHAIR-OAK' }]);
+  });
+
+  it('passes an unmapped field through, so the importer still names it', async () => {
+    // Hiding it here would decide on the supplier's behalf that a column they
+    // believe they published does not exist.
+    const { transport } = scripted(answer([{ default_code: 'CHAIR-OAK', qty_available: 12 }]));
+    const result = await executorFor(ODOO_MAPPED, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([{ identifier: 'CHAIR-OAK', qty_available: 12 }]);
+  });
+
+  it('leaves rows untouched when the owner declared no projection', async () => {
+    const { transport } = scripted(answer([{ default_code: 'CHAIR-OAK', list_price: 500 }]));
+    const plain: ConnectorEndpoint = { ...ODOO_MAPPED };
+    delete plain.fieldMap;
+    delete plain.price;
+    const result = await executorFor(plain, transport)({ secret: SECRET, params: {} });
+    expect(result.ok && result.result).toEqual([{ default_code: 'CHAIR-OAK', list_price: 500 }]);
+  });
+});

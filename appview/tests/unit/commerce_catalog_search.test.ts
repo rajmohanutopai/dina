@@ -39,6 +39,7 @@ function row(overrides: Partial<CatalogProductRow> = {}): CatalogProductRow {
     catalogId: 'chairmaker-main',
     snapshotSequence: 1,
     snapshotDigest: 'a'.repeat(64),
+    serviceRkey: null,
     itemRevision: '1',
     name: 'Oak dining chair',
     brand: 'ChairMaker',

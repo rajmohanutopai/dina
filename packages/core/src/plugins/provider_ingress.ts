@@ -556,21 +556,43 @@ export function createProviderIngressTask(args: {
   // consulted at all: its version of this capability may take different
   // params, return a different shape, or be gone.
   const priorCid = subject.servingManifestCid;
-  // Named once: the two uses below must never disagree about whether this
-  // request is a prior-manifest one.
-  const needsPriorManifest = priorCid !== '' && priorCid !== install.currentCid;
-  const continuity = needsPriorManifest
+  const orderPredatesCurrentManifest = priorCid !== '' && priorCid !== install.currentCid;
+  const continuity = orderPredatesCurrentManifest
     ? (getDrainAuthorizationRepository()
         ?.listLive(installId, priorCid, pluginCapabilityId, nowMs)
         // Only `lifecycle_continuity` admits a NEW request; a `drain` entry
         // covers work already claimed when the rebind happened.
         .find((entry) => entry.kind === 'lifecycle_continuity') ?? null)
     : null;
-  if (needsPriorManifest && continuity === null) {
-    // The order predates a plugin update and no continuity lane was retained
-    // for it. Refusing is the only honest answer: answering under the current
-    // manifest would parse the buyer's request against a contract their order
-    // was never opened under.
+  const capability = install.manifest.capabilities.find((c) => c.id === pluginCapabilityId);
+  const currentServesCapability =
+    capability !== undefined && (capability.kinds ?? []).includes('provider');
+
+  // §9.13 — A DIFFERENT CID IS NOT BY ITSELF A BROKEN CONTRACT, and treating
+  // it as one stranded every open order behind a routine plugin release.
+  //
+  // `update_rebind.retain()` draws the line and this must read it the same
+  // way: a SAME-MAJOR swap is compatible, so "anything NEW belongs to the
+  // current runtime" — and a status query or a cancellation on an order
+  // opened before the update IS a new request. Only a MAJOR change is
+  // incompatible, and that is exactly when `retain()` writes the
+  // never-expiring `lifecycle_continuity` row. So the row's PRESENCE is the
+  // signal that the prior manifest must keep serving, not the CID delta.
+  //
+  // Keying on the CID delta instead meant a supplier who shipped 0.1.0 →
+  // 0.2.0 could no longer answer `order_status` or `cancel_order` for any
+  // order already open: no continuity row is written across a same-major
+  // update, so every one of them refused permanently while §16.4 kept the
+  // manifest pinned open. The buyer could neither track nor cancel an order
+  // the supplier had already accepted.
+  //
+  // Three cases, and the refusal now names the real one:
+  //   - a lane was retained  → serve under the PRIOR manifest (incompatible);
+  //   - no lane, current manifest still provides the capability → serve under
+  //     the CURRENT one (the compatible swap);
+  //   - no lane and the current manifest dropped the capability → refuse,
+  //     because now nothing can honour the contract.
+  if (orderPredatesCurrentManifest && continuity === null && !currentServesCapability) {
     return {
       ok: false,
       code: 'lifecycle_continuity_unavailable',
@@ -579,20 +601,7 @@ export function createProviderIngressTask(args: {
     };
   }
 
-  // §9.9 — Core admits the order BEFORE the runner is asked. This is the seam
-  // that gives §9.13 its meaning in production: the reservation records which
-  // manifest was serving, so a later lifecycle request can be routed back to
-  // this contract even after the install has moved on.
-  if (isCommerceCapability(CREATES_ORDER, query.capability, boundCapabilityId)) {
-    const admitted = admitInboundOrder(query, install.currentCid, install.installId);
-    if (admitted !== null) return admitted;
-  }
-
-  const capability = install.manifest.capabilities.find((c) => c.id === pluginCapabilityId);
-  if (
-    continuity === null &&
-    (capability === undefined || !(capability.kinds ?? []).includes('provider'))
-  ) {
+  if (continuity === null && !currentServesCapability) {
     return {
       ok: false,
       code: 'capability_not_provider',
@@ -698,6 +707,28 @@ export function createProviderIngressTask(args: {
       code: 'envelope_rejected',
       error: `provider ingress: ${error instanceof Error ? error.message : String(error)}`,
     };
+  }
+
+  // §9.9 — Core admits the order BEFORE the runner is asked, and this is the
+  // LAST step before the task exists. The reservation records which manifest
+  // was serving, so a later lifecycle request can be routed back to this
+  // contract even after the install has moved on.
+  //
+  // ADMITTING EARLIER COST THE BUYER REAL CAPACITY. Admission holds a counted
+  // use against the quote and writes the `reserved` order reference; it ran
+  // ahead of the provider-kind consent check and the envelope build, so a
+  // request refused by either left the hold standing for the full decision
+  // timeout. On a `max_uses: "1"` quote — the default — one undeliverable
+  // request consumed the buyer's only use and blocked resubmission of that
+  // `purchase_order_id` behind the §15.5 `processing` replay branch, making a
+  // request that never reached a runner indistinguishable from a live order.
+  //
+  // Everything that can refuse on its own now runs first. The remaining
+  // window is `workflow.create` alone, which is the seam the reservation
+  // exists to make recoverable.
+  if (isCommerceCapability(CREATES_ORDER, query.capability, boundCapabilityId)) {
+    const admitted = admitInboundOrder(query, install.currentCid, install.installId);
+    if (admitted !== null) return admitted;
   }
 
   const ttlSeconds = query.ttlSeconds ?? 60;

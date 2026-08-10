@@ -11,6 +11,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
+  validateCatalogPointer,
   verifyCatalogPage,
   verifyCatalogPointerAdvance,
   verifyCatalogSnapshot,
@@ -205,5 +206,93 @@ describe('withdrawal (§10.2)', () => {
     expect(!relaunch.ok && relaunch.error).toBe(
       'pointer chain: this catalog was withdrawn; publish under a new catalog_id',
     );
+  });
+});
+
+/**
+ * §10.5 (DR-5) — the producer half, which was the half that did not exist.
+ *
+ * `CatalogPointer.service_rkey` was added to the protocol type and to
+ * AppView's copy, carried through ingest and read by `toCandidate` — and no
+ * Dina node could emit one. The publish route accepted no such field and
+ * neither builder set it, so every catalog this implementation publishes had a
+ * null listing and every candidate fell back to `self`: the original symptom,
+ * unchanged, behind a fix that read as complete.
+ *
+ * A read path with no producer is the same defect as a rule with no caller,
+ * one layer out — and it survived a round of review because the tests that
+ * covered it wrote the pointer by hand.
+ */
+describe('a supplier can say which listing serves the catalog', () => {
+  it('carries the listing onto the pointer it publishes', () => {
+    const result = buildCatalogSnapshot({
+      supplierDid: MANUFACTURER,
+      catalogId: CATALOG,
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-08T10:00:00.000Z',
+      items: chairs(2),
+      previous: null,
+      serviceRkey: 'chairs',
+      sha256: hash,
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.pointer.service_rkey).toBe('chairs');
+  });
+
+  it('omits the field entirely when the supplier did not say', () => {
+    // Absent and empty-string are different claims. An omitted field lets a
+    // consumer apply the `self` convention; an empty one would be a listing
+    // named nothing, which the validator refuses.
+    const result = publish(chairs(2));
+    if (!result.ok) throw new Error(result.error);
+
+    expect('service_rkey' in result.pointer).toBe(false);
+  });
+
+  it('carries it onto a TOMBSTONE too, so a withdrawal stays self-describing', () => {
+    const first = buildCatalogSnapshot({
+      supplierDid: MANUFACTURER,
+      catalogId: CATALOG,
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-08T10:00:00.000Z',
+      items: chairs(2),
+      previous: null,
+      serviceRkey: 'chairs',
+      sha256: hash,
+    });
+    if (!first.ok) throw new Error(first.error);
+    const firstSnapshot = first.snapshot;
+    if (firstSnapshot === undefined) throw new Error('a snapshot publication has a snapshot');
+
+    const withdrawal = buildCatalogWithdrawal({
+      supplierDid: MANUFACTURER,
+      catalogId: CATALOG,
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-08T11:00:00.000Z',
+      previous: { pointer: first.pointer, snapshotDigest: firstSnapshot.snapshot_digest },
+      serviceRkey: 'chairs',
+    });
+    if (!withdrawal.ok) throw new Error(withdrawal.error);
+
+    expect(withdrawal.pointer.service_rkey).toBe('chairs');
+  });
+
+  it('produces a pointer the CONSUMER validator accepts', () => {
+    // The producer runs the consumer's own check on its output, so a field
+    // added on one side and not the other fails here rather than in the wild.
+    const result = buildCatalogSnapshot({
+      supplierDid: MANUFACTURER,
+      catalogId: CATALOG,
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-08T10:00:00.000Z',
+      items: chairs(2),
+      previous: null,
+      serviceRkey: 'chairs',
+      sha256: hash,
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    expect(validateCatalogPointer(result.pointer)).toBeNull();
   });
 });

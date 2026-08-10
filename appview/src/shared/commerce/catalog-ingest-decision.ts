@@ -63,6 +63,18 @@ export type CatalogIngestAction =
   | { kind: 'refuse'; reason: string; findings?: ProjectionFinding[] }
 
 /**
+ * A record key usable inside an AT-URI segment.
+ *
+ * The buyer's `parseAtUri` refuses `/`, `%`, `?`, `#` and whitespace inside a
+ * segment, so anything it would refuse must be refused HERE — otherwise the
+ * supplier's products vanish from results with no explanation to anybody.
+ */
+const RKEY_MAX_LENGTH = 512
+function isRkey(value: string): boolean {
+  return value.length > 0 && value.length <= RKEY_MAX_LENGTH && !/[?#/%\s]/.test(value)
+}
+
+/**
  * Decide what an arriving POINTER means.
  *
  * `snapshot` is what AppView already holds for the digest this pointer names,
@@ -81,6 +93,15 @@ export function decideCatalogPointer(args: {
     // Believing it would let any account publish a catalog under a rival's
     // name — the cheapest possible attack on a discovery index.
     return { kind: 'refuse', reason: 'pointer: supplier_did is not the publishing repo' }
+  }
+
+  // §10.5 (DR-5) — the listing rkey is supplier-controlled and ends up inside
+  // an AT-URI that buyers parse. A value carrying a separator would either
+  // splice the URI or be refused wholesale by the buyer's parser, which would
+  // silently drop the supplier's own products from every result. Refusing the
+  // publication instead tells the supplier what is wrong with it.
+  if (args.pointer.service_rkey !== undefined && !isRkey(args.pointer.service_rkey)) {
+    return { kind: 'refuse', reason: 'pointer: service_rkey is not a usable record key' }
   }
 
   const advance = verifyCatalogPointerAdvance(args.previous, args.pointer)
@@ -104,6 +125,10 @@ export function decideCatalogPointer(args: {
     catalogId: args.pointer.catalog_id,
     snapshotSequence: args.pointer.snapshot_sequence,
     snapshotDigest: args.snapshot.snapshot.snapshot_digest,
+    // §10.5 (DR-5) — from the POINTER, which is the repo-level record the
+    // supplier signed. An item claiming a listing would be an item claiming
+    // where to route a quote request, which is not an item's to say.
+    serviceRkey: args.pointer.service_rkey ?? null,
     items,
   })
   if (!projection.ok) {

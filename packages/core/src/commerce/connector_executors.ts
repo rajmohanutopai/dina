@@ -62,6 +62,51 @@ export interface ConnectorEndpoint {
    * record, with the owner's credential attached.
    */
   request?: FeedRequestBody;
+  /**
+   * §24 — the response field the rows live under, when the answer is wrapped.
+   *
+   * Odoo's JSON-RPC does not answer a list; it answers
+   * `{jsonrpc, id, result: [...]}`. So does every other RPC-shaped ERP, each
+   * under its own field name. `recordsFrom` accepts a bare array or
+   * `{items: [...]}` and REFUSES the rest on purpose — guessing which field
+   * holds the catalog is how a connector silently publishes a page of metadata
+   * as products.
+   *
+   * This is the owner DECLARING the field rather than the code guessing it. A
+   * single field name, never a path: a dotted expression is a small query
+   * language, and a query language over a supplier's response is a second way
+   * to decide what a catalog is.
+   */
+  rowsAt?: string;
+  /**
+   * §24 — how THIS backend's field names map onto catalog columns.
+   *
+   * An ERP does not speak the catalog's vocabulary. Odoo's `product.product`
+   * answers `default_code`, `name`, `barcode`, `list_price`; the importer wants
+   * `identifier`, `title`, `gtin`, `list_price_minor_units`. The importer is
+   * strict on purpose — an unrecognised column raises `unknown_column` rather
+   * than being dropped, because a column silently ignored is a column the
+   * supplier believes they published — so the rename has to happen before it.
+   *
+   * Target column → source field. A RENAME and nothing else: no expressions,
+   * no defaults, no concatenation. Every one of those is a step toward a
+   * transformation language sitting between a supplier's system of record and
+   * what the world is told they sell.
+   */
+  fieldMap?: Record<string, string>;
+  /**
+   * §24 — the one field a rename cannot carry: money.
+   *
+   * ERPs quote a major-unit decimal (`list_price: 500.0`) and the catalog
+   * carries integer minor units (§9.1 — no float ever reaches an amount). Three
+   * named values, not a formula: which field holds the price, what currency it
+   * is in, and how many decimal places that currency's major unit has.
+   *
+   * The currency is CONFIGURATION rather than a mapped column because an ERP
+   * that answers a bare number has not said which currency it means, and
+   * guessing that is how a catalog gets published at a hundredth of its price.
+   */
+  price?: { field: string; currency: string; decimals: number };
 }
 
 /** A transport that sends the headers it is given, and nothing else. */
@@ -165,6 +210,9 @@ export function endpointsFromSupplierSettings(
             ? { kind: 'header', name: endpoint.headerName ?? '' }
             : { kind: endpoint.auth },
         json: endpoint.json,
+        ...((endpoint.rowsAt ?? '') === '' ? {} : { rowsAt: endpoint.rowsAt as string }),
+        ...(endpoint.fieldMap === undefined ? {} : { fieldMap: endpoint.fieldMap }),
+        ...(endpoint.price === undefined ? {} : { price: endpoint.price }),
         // Only when the owner configured BOTH halves — the settings validator
         // refuses one without the other, and reading them independently here
         // would let a row that failed validation still produce a request.
@@ -219,7 +267,11 @@ function makeExecutor(
     }
     if (!endpoint.json) return { ok: true, result: fetched.value };
     try {
-      return { ok: true, result: JSON.parse(fetched.value) as unknown };
+      const parsed = JSON.parse(fetched.value) as unknown;
+      // UNWRAPPED HERE, in the one place that knows this endpoint's shape.
+      // Doing it downstream would mean handing the envelope to a reader that
+      // has to work out which field to trust.
+      return { ok: true, result: projectRows(unwrapRows(parsed, endpoint.rowsAt), endpoint) };
     } catch (error) {
       return {
         ok: false,
@@ -229,4 +281,96 @@ function makeExecutor(
       };
     }
   };
+}
+
+/**
+ * Take the declared field out of a wrapped answer.
+ *
+ * FAIL LOUD, NOT SILENTLY THROUGH. When `rowsAt` is declared and the field is
+ * absent, this returns the field's own (undefined) value rather than the whole
+ * envelope — so the caller refuses `not_a_row_list` and names the connector.
+ * Returning the envelope instead would let a declared-but-missing field
+ * degrade into "try the top level", which is the guessing this exists to
+ * avoid.
+ *
+ * A JSON-RPC ERROR answer is caught by the same rule: Odoo replies
+ * `{jsonrpc, id, error: {...}}` with no `result`, and an unwrap of an absent
+ * field is a refusal rather than an empty catalog. An empty catalog would
+ * publish a withdrawal of every product the supplier sells.
+ */
+function unwrapRows(parsed: unknown, rowsAt: string | undefined): unknown {
+  if (rowsAt === undefined || rowsAt === '') return parsed;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  return (parsed as Record<string, unknown>)[rowsAt];
+}
+
+/**
+ * Rename an ERP's fields onto catalog columns, and turn its price into minor
+ * units (§24).
+ *
+ * NOT A GUESS ANYWHERE. Only fields the owner named are renamed; a source
+ * field the mapping does not mention is passed through untouched, so the
+ * importer still raises `unknown_column` for it rather than this function
+ * deciding what to hide. A price field that is not a finite number is DROPPED
+ * rather than coerced — a catalog row with no price is refused downstream,
+ * where a row priced at zero would be published.
+ *
+ * A non-array answer passes straight through, because "these are not rows" is
+ * the caller's refusal to make and it names the connector when it does.
+ */
+function projectRows(rows: unknown, endpoint: ConnectorEndpoint): unknown {
+  const map = endpoint.fieldMap;
+  const price = endpoint.price;
+  if ((map === undefined || Object.keys(map).length === 0) && price === undefined) return rows;
+  if (!Array.isArray(rows)) return rows;
+
+  // Inverted once, not per row: source field → target column.
+  const rename = new Map<string, string>();
+  for (const [target, source] of Object.entries(map ?? {})) rename.set(source, target);
+
+  return rows.map((row) => {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return row;
+    const source = row as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(source)) {
+      if (price !== undefined && key === price.field) continue; // handled below
+      out[rename.get(key) ?? key] = value;
+    }
+    if (price !== undefined) {
+      const minor = toMinorUnits(source[price.field], price.decimals);
+      if (minor !== null) {
+        out.list_price_minor_units = minor;
+        out.currency = price.currency;
+      }
+    }
+    return out;
+  });
+}
+
+/**
+ * A major-unit amount as integer minor units, or null when it is not a number.
+ *
+ * Rounded, not truncated: an ERP that answers `12.345` for a 2-decimal
+ * currency has more precision than the currency has, and truncating would
+ * silently undercharge every line. Rounding half away from zero matches what a
+ * person reading the ERP screen would write down.
+ */
+function toMinorUnits(value: unknown, decimals: number): string | null {
+  // NOT `Number(value)`. Odoo answers `false` for an unset field, and
+  // `Number(false)` is 0 — as are `Number(null)` and `Number('')`. Every one of
+  // those would publish a free product. A number is a number, or a string that
+  // is entirely one; nothing else is a price.
+  let amount: number;
+  if (typeof value === 'number') {
+    amount = value;
+  } else if (typeof value === 'string' && value.trim() !== '') {
+    amount = Number(value);
+  } else {
+    return null;
+  }
+  if (!Number.isFinite(amount)) return null;
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 6) return null;
+  const scaled = amount * Math.pow(10, decimals);
+  const rounded = scaled < 0 ? -Math.round(-scaled) : Math.round(scaled);
+  return String(rounded);
 }

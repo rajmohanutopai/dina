@@ -387,3 +387,58 @@ describe('§9.13 forward compatibility: an additive field is tolerated AND commi
     );
   });
 });
+
+/**
+ * §10.5 (DR-5) — which service listing serves this catalog.
+ *
+ * §10.2 identifies a catalog by `catalog_id` and says nothing about the
+ * listing a buyer should send a quote request to, so an index had nowhere to
+ * learn it and every candidate said `self`. Right for a supplier with one
+ * listing; wrong for the rkey-keyed model §10 assumes.
+ */
+describe('the pointer may name the listing that serves the catalog', () => {
+  const pointer = (over: Record<string, unknown>) => ({
+    ...makePointer(makeSnapshot([makePage()])),
+    ...over,
+  });
+
+  it('accepts a pointer that names one', () => {
+    expect(validateCatalogPointer(pointer({ service_rkey: 'chairs' }))).toBeNull();
+  });
+
+  it('accepts a pointer that names none — the field is additive', () => {
+    // Every catalog published before this field existed omits it, and none of
+    // them became invalid the day it was added.
+    expect(validateCatalogPointer(pointer({}))).toBeNull();
+  });
+
+  it('refuses an empty listing name rather than reading it as absent', () => {
+    expect(validateCatalogPointer(pointer({ service_rkey: '' }))).toBe(
+      'pointer.service_rkey: must be a non-empty string',
+    );
+  });
+
+  it('refuses a non-string listing name', () => {
+    expect(validateCatalogPointer(pointer({ service_rkey: 7 }))).toBe(
+      'pointer.service_rkey: must be a non-empty string',
+    );
+  });
+
+  it('validates it on a TOMBSTONE too', () => {
+    // A withdrawal names no snapshot, but a malformed field is malformed
+    // whatever else the record says.
+    const tombstone = {
+      supplier_did: SUPPLIER,
+      catalog_id: CATALOG,
+      snapshot_sequence: 2,
+      protocol_version: '1.0',
+      published_at: '2026-08-08T10:00:00.000Z',
+      previous_snapshot_digest: 'a'.repeat(64),
+      withdrawn: true,
+      service_rkey: '',
+    };
+    expect(validateCatalogPointer(tombstone)).toBe(
+      'pointer.service_rkey: must be a non-empty string',
+    );
+  });
+});

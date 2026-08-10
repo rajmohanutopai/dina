@@ -37,6 +37,7 @@ import {
   type SupplierApprovalPayload,
 } from './approval_payload';
 import { isCommerceCapability } from './capability_names';
+import { settleInboundQuote } from './quote_issuance';
 import { rehydrateOrderStatus } from './rehydrate';
 import { getCommerceRuntime } from './runtime';
 
@@ -300,6 +301,17 @@ const CANCELS_ORDER: ReadonlySet<string> = new Set([
 ]);
 
 /** The capability whose answer makes a claim Core can check (§9.11). */
+/**
+ * §9.8 — the capability whose answer Core turns into a signed quote.
+ *
+ * Both spellings, like its siblings: the service lane carries the short wire
+ * name while the manifest and the spec use the NSID.
+ */
+const ISSUES_QUOTE: ReadonlySet<string> = new Set([
+  'request_quote',
+  'com.dinakernel.commerce.request_quote',
+]);
+
 const REPORTS_STATUS: ReadonlySet<string> = new Set([
   'order_status',
   'com.dinakernel.commerce.order_status',
@@ -476,7 +488,20 @@ export function transformInboundOrderResult(args: {
   fromDid: string;
   params: unknown;
   resultJSON: string;
+  /**
+   * INJECTED, like every other clock in this aggregate (§17.5).
+   *
+   * These two paths read `Date.now()` directly while every neighbouring module
+   * takes time as an argument, which made them the one place a test could not
+   * put the world at a chosen instant — so quote expiry and the age of a
+   * withheld decision were untestable on the ingress path specifically.
+   * Optional with a clock default because this is a composition seam and the
+   * D2D ingress has no clock of its own to pass; the default lives here and
+   * nowhere deeper.
+   */
+  nowMs?: number;
 }): IngressResultDecision {
+  const nowMs = args.nowMs ?? Date.now();
   // THE SAME QUESTION THE INGRESS GATE ASKED, asked the same way. A raw
   // `Set.has(wireLabel)` missed the hyphenated manifest ids the supplier
   // reference pack actually publishes, so an order admitted under
@@ -498,6 +523,31 @@ export function transformInboundOrderResult(args: {
       ? { kind: 'replace', json: settled.resultJson }
       : { kind: 'withhold', reason: settled.refusal };
   }
+  // §9.8/§9.12 — a QUOTE is signed here or it is not a quote.
+  //
+  // `request_quote` used to reach the fall-through below, so the runner's
+  // unsigned terms went to the buyer unchanged: no signature, no quote id, no
+  // registered family, and therefore no capacity for a later order to spend.
+  // The buyer received something quote-shaped that this node had not committed
+  // to and could not honour, and the supplier's own admission then refused
+  // every order against it with `quote_unknown`.
+  if (isCommerceCapability(ISSUES_QUOTE, args.capability, args.capabilityId)) {
+    const issued = settleInboundQuote({
+      buyerDid: args.fromDid,
+      // The buyer's request travels in the PARAMS it sent. The runner's answer
+      // carries terms; it does not restate the question, and would not be
+      // believed about it if it did.
+      request: args.params,
+      runnerResultJson: args.resultJSON,
+      nowMs,
+    });
+    if (issued.kind === 'signed') return { kind: 'replace', json: issued.quoteJson };
+    // A decline is the runner's own answer and travels unchanged; see
+    // `settleInboundQuote`.
+    if (issued.kind === 'declined') return { kind: 'passthrough' };
+    return { kind: 'withhold', reason: issued.refusal };
+  }
+
   if (!decides && !reports) return { kind: 'passthrough' };
   const params = args.params;
   const purchaseOrderId =
@@ -542,7 +592,7 @@ export function transformInboundOrderResult(args: {
       capability: args.capabilityId ?? args.capability,
       runnerResultJson: args.resultJSON,
       reason: settled.refusal,
-      createdAt: Date.now(),
+      createdAt: nowMs,
     });
   }
   return { kind: 'withhold', reason: settled.refusal };
