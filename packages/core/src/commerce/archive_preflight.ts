@@ -84,6 +84,10 @@ export interface CommerceArchiveTables {
     purchase_order_id?: unknown;
     quote_id?: unknown;
     order_digest?: unknown;
+    /** §12.7 — 1 while the node cannot yet describe this order. */
+    reconciliation_required?: unknown;
+    /** The recorded terminal answer, present on every decided reference. */
+    acknowledgement_json?: unknown;
   }[];
   commerce_quote_heads?: { quote_id?: unknown; head_digest?: unknown }[];
   commerce_quote_uses?: { quote_id?: unknown; purchase_order_id?: unknown }[];
@@ -173,6 +177,31 @@ function unwrapReceiptRecord(
   };
 }
 
+/**
+ * Did this order reference end in a refusal?
+ *
+ * Read from the recorded acknowledgement rather than inferred, because the
+ * exemption it grants is narrow: a refused order may name a quote this node
+ * never had, and nothing else may.
+ *
+ * Unreadable JSON answers `false` — the STRICTER side. A row whose recorded
+ * answer cannot be parsed does not get to claim it was a refusal, so a
+ * corrupt column narrows nothing.
+ */
+function decisionWasRefusal(acknowledgementJson: unknown): boolean {
+  if (typeof acknowledgementJson !== 'string' || acknowledgementJson === '') return false;
+  try {
+    const parsed: unknown = JSON.parse(acknowledgementJson);
+    return (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      (parsed as { kind?: unknown }).kind === 'rejected'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function preflightCommerceArchive(tables: CommerceArchiveTables): PreflightVerdict {
   const findings: PreflightFinding[] = [];
   const add = (refusal: PreflightRefusal, table: string, key: string, detail: string): void => {
@@ -248,6 +277,20 @@ export function preflightCommerceArchive(tables: CommerceArchiveTables): Preflig
       return;
     }
     quoteIds.add(row.quote_id);
+    // The head names a receipt. Without it `loadRetainedQuote` returns null,
+    // so the family is permanently unregisterable for a revision — the same
+    // fail-closed shape the status chain has, and it was going unchecked while
+    // `head_digest` was declared on the row type and then discarded.
+    if (!isNonEmptyString(row.head_digest) || !HEX64.test(row.head_digest)) {
+      add('bad_row_shape', 'commerce_quote_heads', row.quote_id, 'head_digest is not hex64');
+    } else if (!receiptDigests.has(row.head_digest)) {
+      add(
+        'dangling_receipt_reference',
+        'commerce_quote_heads',
+        row.quote_id,
+        'the quote head names a receipt this archive does not contain',
+      );
+    }
   });
 
   const orderKeys = new Set<string>();
@@ -263,19 +306,66 @@ export function preflightCommerceArchive(tables: CommerceArchiveTables): Preflig
       return;
     }
     orderKeys.add(key);
+    // §12.7 — a reference REBUILT from a buyer's held evidence. This node
+    // never received the order document and never knew its quote, so it holds
+    // neither the order receipt nor a quote family for it, and no amount of
+    // correct behaviour will produce them. Both cross-checks below would fire
+    // on every such row.
+    const readopted = row.reconciliation_required === 1 || row.reconciliation_required === true;
     if (!isNonEmptyString(row.order_digest) || !HEX64.test(row.order_digest)) {
       add('bad_row_shape', 'commerce_order_refs', key, 'order_digest is not hex64');
+    } else if (!readopted && !receiptDigests.has(row.order_digest)) {
+      // `decideOrderInTx` refuses with "order receipt missing — store integrity
+      // failure" when this receipt is absent, so the order can never be decided
+      // at all. Letting the archive through preflight only moves the discovery
+      // from restore time to the first admission, which is precisely what §16.2
+      // fail-closed reconstruction exists to prevent.
+      add(
+        'dangling_receipt_reference',
+        'commerce_order_refs',
+        key,
+        'the order names a receipt this archive does not contain',
+      );
     }
     // 3. CROSS-TABLE. An order whose quote is not in the archive cannot have
     //    its capacity re-derived, and capacity re-derivation is the whole
     //    point of not adopting the counters (§16.2 / owner decision 6).
-    if (!isNonEmptyString(row.quote_id) || !quoteIds.has(row.quote_id)) {
-      add(
-        'dangling_quote_reference',
-        'commerce_order_refs',
-        key,
-        'the order names a quote this archive does not contain',
-      );
+    //
+    //    TWO REFERENCES CANNOT SATISFY THIS, EVER, and requiring it of them
+    //    turned a routine event into permanent backup loss:
+    //
+    //      - a REFUSED order, when the refusal reason WAS that this node had
+    //        no such quote (`quote_unknown` is the commonest admission
+    //        refusal, and any peer can provoke it by naming a quote_id this
+    //        node never issued);
+    //      - a RE-ADOPTED order, which NAMES NO QUOTE AT ALL. §12.7 writes
+    //        `quote_id: ''`, and the reconciliation ceremony never fills it
+    //        in: the buyer's proposal restores the order, not the quote
+    //        family this node never issued.
+    //
+    //    Neither consumed capacity — refusals refund their hold and
+    //    re-adoption never took one — so neither has a `commerce_quote_uses`
+    //    row, and that table's own check (below) still holds the line for
+    //    every reference that DID consume some.
+    //
+    //    KEYED ON THE EMPTY QUOTE ID, NOT ON `reconciliation_required`. That
+    //    flag is TRANSIENT: the ceremony clears it, and clearing it does not
+    //    conjure a quote family. Keyed on the flag, this exemption covered a
+    //    re-adopted order right up until the owner recovered it, and then
+    //    dropped it back into the trap — the first backup after a successful
+    //    recovery would be the unrestorable one. An empty `quote_id` is the
+    //    permanent fact, and admission can never produce one (the wire
+    //    validator requires a non-empty `quote_id` on every proposal).
+    const namesAQuote = isNonEmptyString(row.quote_id);
+    if (namesAQuote && !decisionWasRefusal(row.acknowledgement_json)) {
+      if (!quoteIds.has(row.quote_id as string)) {
+        add(
+          'dangling_quote_reference',
+          'commerce_order_refs',
+          key,
+          'the order names a quote this archive does not contain',
+        );
+      }
     }
   });
 

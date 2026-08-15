@@ -41,6 +41,14 @@ function tableName(table: unknown): string {
 function stubCtx(recorded: Recorded, selects: unknown[][]): HandlerContext {
   const queue = [...selects]
   const handle = (prefix: string): Record<string, unknown> => ({
+    // The per-subject advisory lock. Recorded rather than ignored, so the
+    // ORDER is asserted: the lock must be taken before the claims are read,
+    // or two concurrent rebuilds can still interleave a stale read with a
+    // later replacement.
+    execute: async () => {
+      recorded.events.push(`${prefix}lock:subject`)
+      return { rows: [] }
+    },
     select: () => ({
       from: (table: unknown) => {
         const consume = async (): Promise<unknown[]> => {
@@ -166,8 +174,13 @@ describe('storing a claim and deriving the edges', () => {
       // assertion behind it.
       'select:claims',
       'insert:claims',
-      'select:claims',
+      // The claims read moved INSIDE the transaction, behind a per-subject
+      // advisory lock: reading outside it let two concurrent rebuilds of one
+      // subject interleave, so an older rebuild could commit last and delete
+      // an edge whose claim was still in the table.
       'tx:begin',
+      'tx:lock:subject',
+      'tx:select:claims',
       'tx:delete:edges',
       'tx:insert:edges',
       'tx:commit',
@@ -328,8 +341,13 @@ describe('withdrawing a claim', () => {
     expect(recorded.events).toEqual([
       'select:claims',
       'delete:claims',
-      'select:claims',
+      // The claims read moved INSIDE the transaction, behind a per-subject
+      // advisory lock: reading outside it let two concurrent rebuilds of one
+      // subject interleave, so an older rebuild could commit last and delete
+      // an edge whose claim was still in the table.
       'tx:begin',
+      'tx:lock:subject',
+      'tx:select:claims',
       'tx:delete:edges',
       'tx:insert:edges',
       'tx:commit',

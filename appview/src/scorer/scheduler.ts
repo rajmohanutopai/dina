@@ -24,7 +24,16 @@ interface ScorerJob {
   handler: (db: DrizzleDB) => Promise<void>
 }
 
-const jobs: ScorerJob[] = [
+/**
+ * The scheduled jobs, EXPORTED so a test can count the real thing.
+ *
+ * An integration test asserted "the scheduler defines exactly 9 jobs" by
+ * checking the length of its OWN fixture array, with a comment explaining
+ * that the real list could not be imported. So the claim was never checked
+ * against anything: the list grew to 13 and the assertion stayed green,
+ * because it had only ever measured itself.
+ */
+export const SCORER_JOBS: ScorerJob[] = [
   { name: 'refresh-profiles', schedule: '*/5 * * * *', handler: refreshProfiles },
   { name: 'refresh-subject-scores', schedule: '*/5 * * * *', handler: refreshSubjectScores },
   { name: 'refresh-reviewer-stats', schedule: '*/15 * * * *', handler: refreshReviewerStats },
@@ -80,7 +89,7 @@ function jobLockId(jobName: string): number {
 export function startScheduler(db: DrizzleDB): void {
   const runningJobs = new Set<string>()
 
-  for (const job of jobs) {
+  for (const job of SCORER_JOBS) {
     const lockId = jobLockId(job.name)
 
     cron.schedule(job.schedule, async () => {

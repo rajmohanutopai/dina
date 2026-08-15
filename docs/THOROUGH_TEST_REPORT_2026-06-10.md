@@ -14,7 +14,7 @@
 >
 > **Context:** run immediately after the PUBLIC_SERVICES_TAXONOMY enforcement
 > implementation (uncommitted in the working tree — see
-> `implementation-notes.html#taxonomy`). Where a finding could have been caused by
+> `docs/PUBLIC_SERVICES_TAXONOMY.md`). Where a finding could have been caused by
 > that work, it was **stash-bisected against clean HEAD** before attribution.
 
 ---
@@ -128,7 +128,7 @@ The search screen's container id never matched even when children would — cons
 - AppView: generic search filters `intentRoutable`; ingester drops public+sensitive at the trust boundary; `isDiscoverable` derived from the enum — appview unit **1911/1911**.
 - Brain: local re-filter + rewritten routing prompts — brain **3254 passed**.
 - Mobile: stale-catalog gate, stub parity (set + ORDER), alias-aware hydrate — services **320/320**; live sensitive-public gate verified on-sim (alert + one-tap fix + save).
-- Full detail + design decisions: `implementation-notes.html#taxonomy`.
+- Full detail + design decisions: `docs/PUBLIC_SERVICES_TAXONOMY.md`.
 
 ## Recommended next actions (in order)
 1. ~~Top up Gemini prepayment credits + re-test F-1/F-2~~ **DONE 2026-06-10 — both resolved.** Shipped alongside:

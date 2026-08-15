@@ -37,8 +37,11 @@ Freeze happens when all of these hold:
 
 - [ ] canonicalization, digests and arithmetic settled (§9.1, §9.3) — **done**
 - [x] catalog declaration/snapshot records and proof verification (§10.2) —
-      wire contract, publisher, ingester and frozen vectors landed; the AppView
-      index that consumes them is separate and unbuilt
+      wire contract, publisher, ingester and frozen vectors landed. The AppView
+      index that consumes them is BUILT and driven against real Postgres
+      (`commerce_catalog_ingest`, `_discovery`, `_interop`); it consumes this
+      package directly through its `compiled` export condition rather than
+      reimplementing the chain
 - [ ] frozen vectors cover every §25.1 category — partial
 - [ ] product relationship claims, evidence thresholds, review dimensions — partial
 - [ ] legal order-state transitions and error codes (§9.11) — **done**

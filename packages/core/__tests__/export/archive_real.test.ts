@@ -213,6 +213,34 @@ const STATUS_RECEIPT = (() => {
   return { digest, recordJson: JSON.stringify({ ...base, status_digest: digest }) };
 })();
 
+/**
+ * The order and quote receipts the round-trip fixture used to omit.
+ *
+ * It called itself "a full, coherent commerce set" while filing an order
+ * under `'a'.repeat(64)` and a quote head under `'b'.repeat(64)` — digests no
+ * receipt in the archive carried. Those two rows are not decoration: the
+ * status, fence and cancellation paths all fetch the order receipt by
+ * `order_digest` and refuse with "order receipt missing — store integrity
+ * failure" without it, and `loadRetainedQuote` returns null for a head whose
+ * digest names nothing. Restoring that set produced a node whose every open
+ * order was already unusable. The preflight now refuses it, so the fixture
+ * carries what a node would really have stored.
+ */
+const receiptFor = (domain: 'order' | 'quote', base: Record<string, unknown>, field: string) => {
+  const digest = commerceRecordDigest(domain, { ...base, [field]: '' }, (data) => sha256(data));
+  return { digest, recordJson: JSON.stringify({ ...base, [field]: digest }) };
+};
+const ORDER_RECEIPT = receiptFor(
+  'order',
+  { purchase_order_id: 'po-1', quote_id: 'q-1', buyer_did: 'did:plc:buyer' },
+  'order_digest',
+);
+const QUOTE_RECEIPT = receiptFor(
+  'quote',
+  { quote_id: 'q-1', supplier_did: 'did:plc:supplier', revision: '0' },
+  'quote_digest',
+);
+
 describe('real export → clean-install import', () => {
   it('restores identity + multi-persona rows, excluding secrets', async () => {
     const src = freshBundle([
@@ -1271,7 +1299,7 @@ describe('commerce restore fence marker (§16.2)', () => {
         `INSERT INTO commerce_quote_heads
            (quote_id, buyer_did, head_digest, head_revision, max_uses, valid_until, supplier_epoch, created_at, updated_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-        ['q-1', 'did:plc:buyer', 'b'.repeat(64), '0', '3', 9_999_999, '1', 1, 1],
+        ['q-1', 'did:plc:buyer', QUOTE_RECEIPT.digest, '0', '3', 9_999_999, '1', 1, 1],
       );
       src.id.execute(
         `INSERT INTO commerce_order_refs
@@ -1282,9 +1310,9 @@ describe('commerce restore fence marker (§16.2)', () => {
           'did:plc:buyer',
           'po-1',
           'idem-1',
-          'a'.repeat(64),
+          ORDER_RECEIPT.digest,
           'q-1',
-          'b'.repeat(64),
+          QUOTE_RECEIPT.digest,
           '1.0',
           1,
         ],
@@ -1307,6 +1335,25 @@ describe('commerce restore fence marker (§16.2)', () => {
           1,
         ],
       );
+      for (const receipt of [
+        { domain: 'order', ...ORDER_RECEIPT },
+        { domain: 'quote', ...QUOTE_RECEIPT },
+      ]) {
+        src.id.execute(
+          `INSERT INTO commerce_receipts (record_digest, domain, buyer_did, quote_id, purchase_order_id, record_json, evidence_json, created_at)
+           VALUES (?,?,?,?,?,?,?,?)`,
+          [
+            receipt.digest,
+            receipt.domain,
+            'did:plc:buyer',
+            'q-1',
+            'po-1',
+            receipt.recordJson,
+            '{}',
+            1,
+          ],
+        );
+      }
       src.id.execute(
         `INSERT INTO commerce_status_heads (buyer_did, purchase_order_id, head_digest, head_sequence, state, supplier_epoch, updated_at)
          VALUES (?,?,?,?,?,?,?)`,

@@ -62,6 +62,7 @@ function frozenRef(purchaseOrderId: string, createdAt: number): CommerceOrderRef
     servingInstallId: '',
     admittedEpoch: '1',
     reconciliationRequired: true,
+    readoptedChainEvidence: false,
     state: 'reserved',
     effectPhase: 'pre_effect',
     acknowledgementJson: null,

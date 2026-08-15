@@ -1,5 +1,5 @@
 import { checkCatalogPointer, checkCatalogSnapshot } from '@/shared/commerce/wire_shape.js'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 import {
   commerceCatalogPointers,
@@ -64,6 +64,25 @@ function pointerId(supplierDid: string, catalogId: string): string {
   return `${supplierDid}/${catalogId}`
 }
 
+/**
+ * A pointer whose snapshot has not arrived lives in its OWN row.
+ *
+ * It used to be written over the accepted one, because both keyed on
+ * `supplier/catalog`. That worked at sequence 1 and nowhere else: the accepted
+ * pointer — the chain's actual predecessor — was destroyed by the pending
+ * write, `loadCurrentPointer` returned null for the pending row it found, and
+ * when the snapshot finally arrived the advance was checked against NOTHING.
+ * `verifyCatalogPointerAdvance(null, sequence 2)` then refused it as a genesis
+ * that must start at 1, permanently, while the previous catalog stayed live
+ * with a pending pointer over it.
+ *
+ * Separate keys keep both facts: what this supplier is currently publishing,
+ * and what they have announced but not yet delivered.
+ */
+function pendingPointerId(supplierDid: string, catalogId: string): string {
+  return `${supplierDid}/${catalogId}#pending`
+}
+
 async function loadCurrentPointer(
   ctx: HandlerContext,
   supplierDid: string,
@@ -121,6 +140,38 @@ async function loadSnapshot(
  * insert inside it: a snapshot is full state, so a reader must never see the
  * new catalog half-applied over the old one.
  */
+/**
+ * Serialize the WHOLE read-decide-write for one catalog.
+ *
+ * The decision reads the current pointer and the held snapshot, then `apply`
+ * opens its own transactions to write. Production ingests concurrently up to
+ * the database pool size (`BoundedIngestionQueue`), so those reads sat outside
+ * the writes they informed: a pointer could observe no snapshot while the
+ * snapshot event observed no pending pointer, and BOTH could then commit
+ * successfully — leaving the pointer awaiting a snapshot that had already
+ * arrived. The catalog stays invisible to discovery until the supplier
+ * republishes, which is the §10.5 failure the pending-pointer row exists to
+ * prevent.
+ *
+ * The lock is keyed on `supplier/catalog`, so different catalogs still ingest
+ * in parallel, and `pg_advisory_xact_lock` releases when the transaction ends
+ * — nothing to leak on an error path. `apply`'s own transactions become
+ * savepoints inside this one, so its atomicity is unchanged.
+ *
+ * Same fix, same reason, as the relationship rebuild.
+ */
+async function withCatalogLock(
+  ctx: HandlerContext,
+  supplierDid: string,
+  catalogId: string,
+  run: (locked: HandlerContext) => Promise<void>,
+): Promise<void> {
+  await ctx.db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${pointerId(supplierDid, catalogId)}))`)
+    await run({ ...ctx, db: tx as unknown as HandlerContext['db'] })
+  })
+}
+
 async function apply(
   ctx: HandlerContext,
   action: CatalogIngestAction,
@@ -154,7 +205,10 @@ async function apply(
       await ctx.db
         .insert(commerceCatalogPointers)
         .values({
-          id: pointerId(action.pointer.supplier_did, action.pointer.catalog_id),
+          // The PENDING key — see `pendingPointerId`. Writing this over the
+          // accepted row is what broke pointer-first publication past
+          // sequence 1.
+          id: pendingPointerId(action.pointer.supplier_did, action.pointer.catalog_id),
           supplierDid: action.pointer.supplier_did,
           catalogId: action.pointer.catalog_id,
           snapshotSequence: action.pointer.snapshot_sequence,
@@ -295,6 +349,20 @@ async function apply(
               indexedAt: new Date(),
             },
           })
+        // PROMOTED, so the announcement is spent. Leaving the pending row
+        // behind would let the digest lookup on the snapshot side find an
+        // already-indexed publication and reprocess it, and would leave a
+        // permanent "awaiting" row for a catalog that is not waiting for
+        // anything. Same transaction as the index, so the two states can
+        // never disagree.
+        await tx
+          .delete(commerceCatalogPointers)
+          .where(
+            eq(
+              commerceCatalogPointers.id,
+              pendingPointerId(action.pointer.supplier_did, action.pointer.catalog_id),
+            ),
+          )
       })
       ctx.metrics.incr('ingester.commerce_catalog.indexed')
       return
@@ -322,16 +390,18 @@ export const commerceCatalogPointerHandler: RecordHandler = {
     }
 
     const pointer = { ...record, supplier_did: record.supplier_did } as CatalogPointer
-    const previous = await loadCurrentPointer(ctx, op.did, pointer.catalog_id)
-    const snapshot =
-      pointer.snapshot_digest === undefined
-        ? null
-        : await loadSnapshot(ctx, pointer.snapshot_digest)
-    await apply(
-      ctx,
-      decideCatalogPointer({ previous, pointer, repoDid: op.did, snapshot }),
-      op,
-    )
+    await withCatalogLock(ctx, op.did, pointer.catalog_id, async (locked) => {
+      const previous = await loadCurrentPointer(locked, op.did, pointer.catalog_id)
+      const snapshot =
+        pointer.snapshot_digest === undefined
+          ? null
+          : await loadSnapshot(locked, pointer.snapshot_digest)
+      await apply(
+        locked,
+        decideCatalogPointer({ previous, pointer, repoDid: op.did, snapshot }),
+        op,
+      )
+    })
   },
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {
@@ -483,68 +553,86 @@ export const commerceCatalogSnapshotHandler: RecordHandler = {
       }
     }
 
-    await ctx.db
-      .insert(commerceCatalogSnapshots)
-      .values({
-        snapshotDigest: snapshot.snapshot_digest,
-        supplierDid: op.did,
-        catalogId: snapshot.catalog_id,
-        snapshotSequence: snapshot.snapshot_sequence,
-        snapshotJson: snapshot,
-        pagesJson: pages,
-      })
-      // Content-addressed — VERIFIED above — so a repeat really is the same
-      // bytes and there is nothing to update.
-      .onConflictDoNothing()
+    await withCatalogLock(ctx, op.did, snapshot.catalog_id, async (locked) => {
+      await locked.db
+        .insert(commerceCatalogSnapshots)
+        .values({
+          snapshotDigest: snapshot.snapshot_digest,
+          supplierDid: op.did,
+          catalogId: snapshot.catalog_id,
+          snapshotSequence: snapshot.snapshot_sequence,
+          snapshotJson: snapshot,
+          pagesJson: pages,
+        })
+        // Content-addressed — VERIFIED above — so a repeat really is the same
+        // bytes and there is nothing to update.
+        .onConflictDoNothing()
 
-    const pending = await ctx.db
-      .select()
-      .from(commerceCatalogPointers)
-      .where(
-        and(
-          eq(commerceCatalogPointers.snapshotDigest, snapshot.snapshot_digest),
-          eq(commerceCatalogPointers.awaitingSnapshot, true),
-        ),
+      // KEYED, not searched. This looked the pending row up by digest alone,
+      // and pending rows from every repo share one table — so `LIMIT 1` over an
+      // unordered scan could return SOMEONE ELSE'S row. A pointer carrying
+      // `snapshot_digest` is public on the firehose before its snapshot lands,
+      // and `decideCatalogPointer` accepts any pointer whose `supplier_did`
+      // matches the publishing repo, so a bystander could register a pending row
+      // naming a digest it had merely READ. When the real supplier's snapshot
+      // arrived, the foreign row won the scan, `decideCatalogPointer` refused it
+      // on the repo check, and the genuine supplier's own pending pointer was
+      // never promoted: their catalog stayed unindexed until they republished
+      // under a new digest (§20.1 catalog poisoning, from a stranger).
+      //
+      // The pending row's identity is `supplier/catalog#pending`, and both parts
+      // are on the snapshot record, so this is a primary-key read with the
+      // digest as the guard rather than as the search term.
+      const pending = await locked.db
+        .select()
+        .from(commerceCatalogPointers)
+        .where(
+          and(
+            eq(commerceCatalogPointers.id, pendingPointerId(op.did, snapshot.catalog_id)),
+            eq(commerceCatalogPointers.snapshotDigest, snapshot.snapshot_digest),
+            eq(commerceCatalogPointers.awaitingSnapshot, true),
+          ),
+        )
+        .limit(1)
+      const held = pending[0]
+
+      const pendingPointer: CatalogPointer | null =
+        held === undefined
+          ? null
+          : {
+              supplier_did: held.supplierDid,
+              catalog_id: held.catalogId,
+              snapshot_sequence: held.snapshotSequence,
+              protocol_version: held.protocolVersion,
+              published_at: held.publishedAt,
+              snapshot_rkey: held.snapshotDigest ?? '',
+              snapshot_digest: held.snapshotDigest ?? '',
+              // §10.5 (DR-5, NEW-2) — CARRIED THROUGH THE WAIT. The
+              // `await_snapshot` write persists the listing, and rebuilding the
+              // held pointer without it made the whole read path depend on
+              // delivery order: snapshot-then-pointer kept the listing,
+              // pointer-then-snapshot silently lost it and every candidate fell
+              // back to `self`. Both orders are normal, and this file handles
+              // the second one deliberately everywhere else.
+              ...(held.serviceRkey === null ? {} : { service_rkey: held.serviceRkey }),
+              ...(held.previousSnapshotDigest === null
+                ? {}
+                : { previous_snapshot_digest: held.previousSnapshotDigest }),
+            }
+
+      // The predecessor is whatever is CURRENT for that catalog, which is not
+      // the held pointer itself.
+      const previous =
+        pendingPointer === null
+          ? null
+          : await loadCurrentPointer(locked, op.did, pendingPointer.catalog_id)
+
+      await apply(
+          locked,
+        decideCatalogSnapshot({ repoDid: op.did, snapshot, pages, pendingPointer, previous }),
+        held === undefined ? op : { ...op, uri: held.uri },
       )
-      .limit(1)
-    const held = pending[0]
-
-    const pendingPointer: CatalogPointer | null =
-      held === undefined
-        ? null
-        : {
-            supplier_did: held.supplierDid,
-            catalog_id: held.catalogId,
-            snapshot_sequence: held.snapshotSequence,
-            protocol_version: held.protocolVersion,
-            published_at: held.publishedAt,
-            snapshot_rkey: held.snapshotDigest ?? '',
-            snapshot_digest: held.snapshotDigest ?? '',
-            // §10.5 (DR-5, NEW-2) — CARRIED THROUGH THE WAIT. The
-            // `await_snapshot` write persists the listing, and rebuilding the
-            // held pointer without it made the whole read path depend on
-            // delivery order: snapshot-then-pointer kept the listing,
-            // pointer-then-snapshot silently lost it and every candidate fell
-            // back to `self`. Both orders are normal, and this file handles
-            // the second one deliberately everywhere else.
-            ...(held.serviceRkey === null ? {} : { service_rkey: held.serviceRkey }),
-            ...(held.previousSnapshotDigest === null
-              ? {}
-              : { previous_snapshot_digest: held.previousSnapshotDigest }),
-          }
-
-    // The predecessor is whatever is CURRENT for that catalog, which is not
-    // the held pointer itself.
-    const previous =
-      pendingPointer === null
-        ? null
-        : await loadCurrentPointer(ctx, op.did, pendingPointer.catalog_id)
-
-    await apply(
-      ctx,
-      decideCatalogSnapshot({ repoDid: op.did, snapshot, pages, pendingPointer, previous }),
-      held === undefined ? op : { ...op, uri: held.uri },
-    )
+    })
   },
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {

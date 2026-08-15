@@ -387,6 +387,114 @@ describe('provider ingress bridge (§11.2a)', () => {
   });
 
   /**
+   * §3.4 — a HOST-OPERATION PROPOSAL IS NOT AN ANSWER.
+   *
+   * A runner asks Core to act on its behalf by completing its claim with a
+   * typed proposal; the real answer follows once the operation settles.
+   * `complete()` bridged FIRST and noticed the proposal second, so every
+   * proposal was delivered to the peer as a successful `service.response` —
+   * carrying the proposal's internal parameters, before the operation had been
+   * noticed let alone executed — and a SECOND response followed when it
+   * actually completed. Two answers to one question, the first of them false.
+   *
+   * The peer must hear exactly once, when there is something true to say.
+   */
+  it('does not answer the peer with a host-operation PROPOSAL (§3.4)', async () => {
+    // Same seeding as the loop above: a peer's query becomes a task on the
+    // install's lane, which the runner then claims.
+    createProviderIngressTask({
+      workflow,
+      capabilityConfig: binding(),
+      query: query(),
+      nowMs: T0,
+    });
+    const install = installs.getById(installId);
+    if (!install) throw new Error('install missing');
+    const claim = claimPluginTask({
+      repo: workflowRepo,
+      install,
+      deviceDid: PLUGIN_DID,
+      nowMs: T0 + 1000,
+      leaseMs: 60_000,
+    });
+    const claimed = claim.task;
+    if (!claimed) throw new Error('claim returned no task');
+
+    workflow.complete(
+      claimed.id,
+      // The §3.4 proposal shape, as `parseHostOperationRequest` reads it.
+      JSON.stringify({
+        kind: 'host_operation_proposal',
+        operation_name: 'd2d_send',
+        idempotency_key: 'idem-1',
+        params: { note: 'internal proposal parameters' },
+      }),
+      'answered',
+      PLUGIN_DID,
+      claimed.claim_id,
+    );
+    await workflow.flushBridgeInFlight();
+
+    expect(bridged).toHaveLength(0);
+    // And nothing of the proposal reached the wire.
+    expect(JSON.stringify(bridged)).not.toContain('internal proposal parameters');
+  });
+
+  /**
+   * A REFUSED PROPOSAL IS STILL NOT AN ANSWER.
+   *
+   * The suppression above asked `parseHostOperationRequest(...) === null`, and
+   * null is what that function returns for BOTH "ordinary completion" and
+   * "proposal I refuse". So the refused ones — a missing field, or a runner
+   * naming its own `install_id`, which is the refusal that stops a runner
+   * choosing whose authority to spend — were the proposals that DID get
+   * bridged. Their parameters went to the peer as a successful
+   * `service.response`, which is exactly the outcome the refusal exists to
+   * prevent, reachable by adding one field to a payload.
+   */
+  it.each([
+    ['names its own install', { install_id: 'install-2' }],
+    ['no operation name', { operation_name: '' }],
+    ['no idempotency key', { idempotency_key: '' }],
+  ])('does not answer the peer with a REFUSED proposal: %s', async (_label, broken) => {
+    createProviderIngressTask({
+      workflow,
+      capabilityConfig: binding(),
+      query: query(),
+      nowMs: T0,
+    });
+    const install = installs.getById(installId);
+    if (!install) throw new Error('install missing');
+    const claim = claimPluginTask({
+      repo: workflowRepo,
+      install,
+      deviceDid: PLUGIN_DID,
+      nowMs: T0 + 1000,
+      leaseMs: 60_000,
+    });
+    const claimed = claim.task;
+    if (!claimed) throw new Error('claim returned no task');
+
+    workflow.complete(
+      claimed.id,
+      JSON.stringify({
+        kind: 'host_operation_proposal',
+        operation_name: 'd2d_send',
+        idempotency_key: 'idem-1',
+        params: { note: 'internal proposal parameters' },
+        ...broken,
+      }),
+      'answered',
+      PLUGIN_DID,
+      claimed.claim_id,
+    );
+    await workflow.flushBridgeInFlight();
+
+    expect(bridged).toHaveLength(0);
+    expect(JSON.stringify(bridged)).not.toContain('internal proposal parameters');
+  });
+
+  /**
    * The loop above stops at the bridge CONTEXT, because the harness stubs
    * `responseBridgeSender`. That proves the correlation survives the plugin
    * lane, and nothing about what the peer actually receives — so the half of

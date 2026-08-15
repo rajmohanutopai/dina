@@ -1,0 +1,165 @@
+# AppView test suites — unit (no infrastructure) + integration (real Postgres).
+#
+# WHY THIS EXISTS. `appview/` became a root npm workspace, so the root
+# `npm test` sweep (`npm test --workspaces --if-present`) reaches it. Its
+# integration suite talks to a real Postgres and fails loudly without one —
+# it does not skip — so leaving `appview`'s `test` script pointed at the full
+# vitest run would have made the whole monorepo suite depend on a database
+# every developer and every other workflow would then need.
+#
+# So `appview`'s `test` script runs the UNIT suite, and the integration suite
+# is run HERE, against a service container, on every change that touches it.
+# The narrowing is only safe because this job exists: an infrastructure-gated
+# suite that no pipeline runs is a suite that does not exist.
+
+name: appview-test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "appview/**"
+      - "packages/commerce-protocol/**"
+      - "packages/protocol/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/appview-test.yml"
+  pull_request:
+    paths:
+      - "appview/**"
+      - "packages/commerce-protocol/**"
+      - "packages/protocol/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".github/workflows/appview-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: appview-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  appview:
+    name: AppView (unit + integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: dina_trust
+          POSTGRES_USER: dina
+          POSTGRES_PASSWORD: dina
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dina -d dina_trust"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # The suite's own default, spelled out so a change to that default does
+      # not silently repoint CI at a different database.
+      DATABASE_URL: postgresql://dina:dina@localhost:5432/dina_trust
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Node version from .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck --workspace @dina/appview
+
+      - name: Apply migrations
+        run: npm run migrate --workspace @dina/appview
+
+      # This repo hand-writes its migrations — `drizzle-kit generate` is not in
+      # the loop — so migration SQL and schema TS can drift apart undetected.
+      # The integration suite IS that check: it reads and writes the migrated
+      # tables through the same Drizzle schema the ingester uses, so a column
+      # declared in TS but missing from the SQL fails here rather than in
+      # production. No separate schema assertion is added, because a "did any
+      # tables appear" probe would pass in every case that matters.
+      - name: Unit tests
+        run: npm run test:unit --workspace @dina/appview
+
+      - name: Integration tests
+        run: npm run test:integration --workspace @dina/appview
+
+  # The docker suite asserts things a service container cannot provide: that
+  # the IMAGES build, that jetstream connects, that the web service answers,
+  # that migrations run on startup. Its probes excuse an absent service so a
+  # developer can run them with nothing up — which made the whole suite
+  # incapable of failing anywhere else. `APPVIEW_DOCKER_SUITE=required` turns
+  # every excuse into a failure, and this is the job that earns the right to
+  # set it by bringing the stack up first.
+  docker:
+    name: AppView (full compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Node version from .nvmrc
+        id: nvmrc
+        run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.nvmrc.outputs.version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bring up the full stack
+        working-directory: appview
+        env:
+          POSTGRES_PASSWORD: dina
+        run: |
+          docker compose up -d --wait --wait-timeout 300
+          docker compose ps
+
+      - name: Run the docker suite, fail-closed
+        working-directory: appview
+        env:
+          # Both halves matter: the URL points at the compose stack, and the
+          # flag says an unreachable service is a failed integration.
+          APPVIEW_DOCKER_SUITE: required
+          DATABASE_URL: postgresql://dina:dina@localhost:5433/dina_trust
+          JETSTREAM_URL: ws://localhost:6008
+        run: npx vitest run tests/integration/16-docker-integration.test.ts
+
+      - name: Container logs on failure
+        if: failure()
+        working-directory: appview
+        run: docker compose logs --tail 200
+
+      - name: Tear down
+        if: always()
+        working-directory: appview
+        run: docker compose down -v

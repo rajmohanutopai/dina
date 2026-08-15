@@ -1,7 +1,24 @@
 import { createHash } from 'node:crypto'
 
+import {
+  MAX_CATALOG_ID_LENGTH,
+  MAX_CATALOG_PAGE_ITEMS,
+  MAX_CATALOG_PAGES,
+  canonicalJson,
+  catalogPageDigest as protocolCatalogPageDigest,
+  catalogPayloadRoot as protocolCatalogPayloadRoot,
+  catalogSnapshotDigest as protocolCatalogSnapshotDigest,
+  verifyCatalogPage as protocolVerifyCatalogPage,
+  verifyCatalogPointerAdvance as protocolVerifyCatalogPointerAdvance,
+  verifyCatalogSnapshot as protocolVerifyCatalogSnapshot,
+  type CatalogPointer,
+  type CatalogSnapshot,
+  type CatalogSnapshotPage,
+  type Sha256Fn,
+} from '@dina/commerce-protocol'
+
 /**
- * The §10.2 catalog trust chain, verified AppView-side (FR-A1, FR-A2).
+ * The §10.2 catalog trust chain, as AppView applies it (FR-A1, FR-A2).
  *
  *     supplier repo proof
  *       -> current snapshot pointer
@@ -9,208 +26,91 @@ import { createHash } from 'node:crypto'
  *       -> canonical payload digest/root
  *       -> bounded catalog pages
  *
- * Every hop is recomputable here, so the feed host is transport and never
- * authority: a modified page fails its digest, a swapped payload fails the
- * root, a forged pointer fails the chain.
+ * Every hop is recomputable, so the feed host is transport and never authority:
+ * a modified page fails its digest, a swapped payload fails the root, a forged
+ * pointer fails the chain.
  *
- * WHY A SECOND IMPLEMENTATION, AND WHY THAT IS NOT DUPLICATION-BY-ACCIDENT.
- * `@dina/commerce-protocol` owns this contract, and AppView cannot depend on
- * it: AppView is deployed standalone with its own lockfile and Dockerfile, and
- * the same boundary is why the capability registry is physically duplicated.
- * Copying the module verbatim is not available either — commerce-protocol uses
- * extensionless relative imports and AppView runs Node ESM, where those fail
- * at runtime while passing under vitest's bundler resolution. That combination
- * (green tests, broken production) is worse than either alternative.
+ * THIS WAS A SECOND IMPLEMENTATION AND IS NOW AN ADAPTER — the same correction
+ * `wire_shape.ts` already carries, applied to the file that was missed. The old
+ * header here justified a duplicate with "AppView cannot depend on
+ * `@dina/commerce-protocol` … commerce-protocol uses extensionless relative
+ * imports and AppView runs Node ESM". That is true of the package's SOURCE and
+ * false of its BUILD, which is CommonJS and imports cleanly. AppView now
+ * depends on the package, resolves its `compiled` export condition in tests and
+ * in production alike, and this module keeps no digest or chain rules of its
+ * own.
  *
- * So this is an independent implementation, and the thing that keeps it honest
- * is the FROZEN CONFORMANCE VECTORS. `catalog.json` pins the page digests, the
- * payload root, the snapshot digest, and every chain refusal STRING; the unit
- * test runs this code against that file. Those vectors exist precisely so a
- * port can be checked rather than trusted, and this is the first real port —
- * if the vectors are not enough to keep two implementations agreeing, that is
- * a finding about the vectors, and better learnt here than in a Rust client.
+ * IT HAD ALREADY DRIFTED, which is the argument. The protocol's
+ * `verifyCatalogPointerAdvance`, `verifyCatalogSnapshot` and `verifyCatalogPage`
+ * each begin by validating the record's SHAPE; the copies here did not. So the
+ * two answered differently for any caller that did not happen to run
+ * `checkCatalogPointer` first — and a divergence in chain rules means AppView
+ * indexing a publication no other implementation accepts. Deleting the second
+ * copy of the wire rules and leaving its sibling standing fixed the instance
+ * and not the class.
  *
- * WHAT IS DELIBERATELY NOT HERE. Record SHAPE validation lives in AppView's
- * own zod validator alongside every other collection. Divergence there is
- * fail-closed and harmless — AppView refusing a record the protocol would
- * accept means it is not indexed — whereas divergence in the digest math or
- * the chain rules would mean AppView indexing something no other implementation
- * considers valid. Only the second kind is pinned here.
+ * WHAT LEGITIMATELY REMAINS HERE: the SHA-256 injection (the protocol takes a
+ * `Sha256Fn` so it can stay dependency-free; Node has one) and three AppView
+ * compositions — `verifyPointerNamesSnapshot`, `verifyPageIndexCoverage` and
+ * `verifyCatalogPublication` — which sequence the protocol's primitives in the
+ * order this indexer needs. Those are policy about how AppView spends its fetch
+ * budget, not wire law.
  */
-
-/** Domain separation for §10 content commitments. Distinct from §9.12. */
-const CATALOG_PREFIX = 'dina:commerce:catalog:v1:'
-
-/** §10.2 bounds, so a fetcher caps its work before trusting anything. */
-export const MAX_CATALOG_PAGE_ITEMS = 500
-export const MAX_CATALOG_PAGES = 1000
-export const MAX_CATALOG_ID_LENGTH = 128
-
-export interface CatalogSnapshotPage {
-  catalog_id: string
-  snapshot_sequence: number
-  page_index: number
-  items: unknown[]
-  page_digest: string
-}
-
-export interface CatalogSnapshot {
-  supplier_did: string
-  catalog_id: string
-  snapshot_sequence: number
-  protocol_version: string
-  published_at: string
-  page_digests: string[]
-  item_count: number
-  payload_root: string
-  snapshot_digest: string
-}
-
-export interface CatalogPointer {
-  supplier_did: string
-  catalog_id: string
-  snapshot_sequence: number
-  protocol_version: string
-  published_at: string
-  /**
-   * Which service listing serves this catalog (§10.5, DR-5). Mirrors
-   * `@dina/commerce-protocol`'s `CatalogPointer`, which AppView keeps a copy
-   * of rather than importing — so this field has to be added in both places
-   * or discovery silently keeps answering `self`.
-   */
-  service_rkey?: string
-  snapshot_rkey?: string
-  snapshot_digest?: string
-  previous_snapshot_digest?: string
-  withdrawn?: boolean
-}
 
 /**
- * JCS-style canonical JSON: keys sorted by code unit, no insignificant
- * whitespace, `undefined` properties dropped so an absent optional field and
- * a missing key canonicalize identically. Non-finite numbers throw rather than
- * coerce — a digest input that needed coercion is a bug upstream.
+ * Node's hash, injected once. The protocol carries no crypto dependency, so it
+ * takes a `Sha256Fn` — BYTES IN, BYTES OUT. The protocol does its own UTF-8
+ * encoding and hex formatting around this call; a string-in/hex-out adapter
+ * would be hashing a different thing.
  */
-export function canonicalJson(value: unknown): string {
-  if (value === null) return 'null'
-  switch (typeof value) {
-    case 'string':
-      return JSON.stringify(value)
-    case 'boolean':
-      return value ? 'true' : 'false'
-    case 'number':
-      if (!Number.isFinite(value)) throw new Error('canonicalJson: non-finite number')
-      return JSON.stringify(value)
-    case 'object':
-      break
-    default:
-      throw new Error(`canonicalJson: unsupported type ${typeof value}`)
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((v) => canonicalJson(v === undefined ? null : v)).join(',')}]`
-  }
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`
-}
+const sha256: Sha256Fn = (data) => new Uint8Array(createHash('sha256').update(data).digest())
 
-function commit(kind: string, value: unknown): string {
-  return createHash('sha256')
-    .update(`${CATALOG_PREFIX}${kind}\n${canonicalJson(value)}`, 'utf8')
-    .digest('hex')
+export {
+  MAX_CATALOG_ID_LENGTH,
+  MAX_CATALOG_PAGE_ITEMS,
+  MAX_CATALOG_PAGES,
+  canonicalJson,
+  type CatalogPointer,
+  type CatalogSnapshot,
+  type CatalogSnapshotPage,
 }
 
 /** Digest of one page, excluding its own digest field. */
 export function catalogPageDigest(page: CatalogSnapshotPage): string {
-  const { page_digest: _excluded, ...rest } = page
-  return commit('page', rest)
+  return protocolCatalogPageDigest(page, sha256)
 }
 
 /** An ordered commitment over the page digests — flat, not a Merkle tree. */
 export function catalogPayloadRoot(pageDigests: readonly string[]): string {
-  return commit('root', pageDigests)
+  return protocolCatalogPayloadRoot(pageDigests, sha256)
 }
 
 /** Digest of a snapshot record, excluding its own digest field. */
 export function catalogSnapshotDigest(snapshot: CatalogSnapshot): string {
-  const { snapshot_digest: _excluded, ...rest } = snapshot
-  return commit('snapshot', rest)
+  return protocolCatalogSnapshotDigest(snapshot, sha256)
 }
 
 /**
  * Verify that `next` legally advances the chain from `previous`.
  *
- * `previous` is null for the genesis pointer. §10.2: AppView applies snapshots
- * in sequence order and treats a GAP or a ROLLBACK as a publication fault
- * rather than silently indexing it — so both are errors here, not warnings. A
- * repeat of the same sequence is a fork attempt and is refused for the same
- * reason: two different snapshots may not share a position in the chain.
+ * §10.2: snapshots apply in sequence order, and a GAP or a ROLLBACK is a
+ * publication fault rather than something to index quietly. A repeat of the
+ * same sequence is a fork attempt and is refused for the same reason: two
+ * different snapshots may not share a position in the chain.
  *
- * The refusal STRINGS are frozen in the conformance vectors. Two
- * implementations rejecting a rollback for differently-worded reasons diverge
- * the first time an operator reads a log across both.
+ * The refusal STRINGS are frozen in the conformance vectors, and now come from
+ * the protocol rather than from a paraphrase of it.
  */
 export function verifyCatalogPointerAdvance(
   previous: CatalogPointer | null,
   next: CatalogPointer,
 ): string | null {
-  if (previous === null) {
-    if (next.snapshot_sequence !== 1) {
-      return 'pointer chain: a genesis pointer must start at sequence 1'
-    }
-    if (next.previous_snapshot_digest !== undefined) {
-      return 'pointer chain: a genesis pointer has no predecessor to name'
-    }
-    return null
-  }
-
-  if (next.supplier_did !== previous.supplier_did) {
-    return 'pointer chain: supplier_did changed mid-chain'
-  }
-  if (next.catalog_id !== previous.catalog_id) {
-    return 'pointer chain: catalog_id changed mid-chain'
-  }
-  if (previous.withdrawn === true) {
-    // A withdrawal ENDS this catalog_id's chain. It names no snapshot, so
-    // there is nothing for a successor to link to, and a consumer that saw
-    // the tombstone has already stopped following.
-    return 'pointer chain: this catalog was withdrawn; publish under a new catalog_id'
-  }
-  if (next.snapshot_sequence <= previous.snapshot_sequence) {
-    return 'pointer chain: sequence must advance (rollback or fork refused)'
-  }
-  if (next.snapshot_sequence !== previous.snapshot_sequence + 1) {
-    return 'pointer chain: sequence gap — a missing snapshot is a publication fault'
-  }
-  if (next.previous_snapshot_digest !== previous.snapshot_digest) {
-    return 'pointer chain: previous_snapshot_digest does not match the prior pointer'
-  }
-  return null
+  return protocolVerifyCatalogPointerAdvance(previous, next)
 }
 
-/**
- * Verify a snapshot against its own commitments, and against the caps.
- *
- * The caps are checked HERE rather than only at fetch time (FR-A2): a snapshot
- * naming ten thousand pages is a publication fault whatever transport carried
- * it, and refusing it before the fetcher starts is the difference between
- * bounded work and a bill.
- */
+/** Verify a snapshot against its own commitments, and against the §10.2 caps. */
 export function verifyCatalogSnapshot(snapshot: CatalogSnapshot): string | null {
-  if (snapshot.page_digests.length > MAX_CATALOG_PAGES) {
-    return 'snapshot: exceeds the maximum page count'
-  }
-  if (snapshot.catalog_id.length > MAX_CATALOG_ID_LENGTH) {
-    return 'snapshot: catalog_id is too long'
-  }
-  if (catalogPayloadRoot(snapshot.page_digests) !== snapshot.payload_root) {
-    return 'snapshot: payload_root does not commit to these page digests'
-  }
-  if (catalogSnapshotDigest(snapshot) !== snapshot.snapshot_digest) {
-    return 'snapshot: snapshot_digest does not match the record'
-  }
-  return null
+  return protocolVerifyCatalogSnapshot(snapshot, sha256)
 }
 
 /**
@@ -223,35 +123,16 @@ export function verifyCatalogPage(
   page: CatalogSnapshotPage,
   snapshot: CatalogSnapshot,
 ): string | null {
-  if (page.items.length > MAX_CATALOG_PAGE_ITEMS) {
-    return 'page: exceeds the maximum item count'
-  }
-  if (page.catalog_id !== snapshot.catalog_id) {
-    return 'page: belongs to a different catalog'
-  }
-  if (page.snapshot_sequence !== snapshot.snapshot_sequence) {
-    return 'page: belongs to a different snapshot sequence'
-  }
-  const expected = snapshot.page_digests[page.page_index]
-  if (expected === undefined) {
-    return 'page: page_index is outside this snapshot'
-  }
-  if (catalogPageDigest(page) !== expected) {
-    return 'page: content does not match the digest this snapshot commits to'
-  }
-  if (page.page_digest !== expected) {
-    return 'page: page_digest field disagrees with the snapshot'
-  }
-  return null
+  return protocolVerifyCatalogPage(page, snapshot, sha256)
 }
 
 /**
  * Verify a pointer against the snapshot it names.
  *
  * A pointer and a snapshot can each be internally valid and still not belong
- * together, which is the whole reason the pointer carries the digest: without
- * this check a supplier could advance the chain while serving last week's
- * catalog, and every individual record would verify.
+ * together, which is why the pointer carries the digest: without this check a
+ * supplier could advance the chain while serving last week's catalog, and every
+ * individual record would still verify.
  */
 export function verifyPointerNamesSnapshot(
   pointer: CatalogPointer,
@@ -278,25 +159,15 @@ export function verifyPointerNamesSnapshot(
 }
 
 /**
- * The whole chain in one call: pointer advance, snapshot commitments, the
- * binding between them, and every page.
- *
- * Composed here rather than left to each caller, because the ORDER is part of
- * the guarantee — checking pages before confirming the pointer names this
- * snapshot would spend the fetch budget on a catalog the supplier is not
- * currently publishing — and because a caller that forgot one hop would still
- * look like it verified.
- */
-/**
  * Every committed page present EXACTLY ONCE.
  *
  * Per-page verification asks "does this page belong to this snapshot, at the
  * slot it claims?" — a question each page answers about itself. Nothing asked
- * whether the pages TOGETHER cover the snapshot, so serving page 0 twice passed:
- * the count matched, both pages verified at index 0, and when the duplicated
- * page happened to carry the same number of items as the one it displaced, the
- * total matched too. A committed page was simply never presented, and the
- * catalog projected was not the catalog published.
+ * whether the pages TOGETHER cover the snapshot, so serving page 0 twice
+ * passed: the count matched, both pages verified at index 0, and when the
+ * duplicated page happened to carry the same number of items as the one it
+ * displaced, the total matched too. A committed page was simply never
+ * presented, and the catalog projected was not the catalog published.
  *
  * The set check is what makes the per-page check add up to a whole.
  */
@@ -315,6 +186,16 @@ export function verifyPageIndexCoverage(
   return null
 }
 
+/**
+ * The whole chain in one call: pointer advance, snapshot commitments, the
+ * binding between them, and every page.
+ *
+ * Composed here rather than left to each caller, because the ORDER is part of
+ * the guarantee — checking pages before confirming the pointer names this
+ * snapshot would spend the fetch budget on a catalog the supplier is not
+ * currently publishing — and because a caller that forgot one hop would still
+ * look like it verified.
+ */
 export function verifyCatalogPublication(args: {
   previous: CatalogPointer | null
   pointer: CatalogPointer

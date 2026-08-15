@@ -1,5 +1,5 @@
 import { checkRelationshipClaim } from '@/shared/commerce/wire_shape.js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import {
   commerceCatalogProducts,
@@ -120,27 +120,43 @@ async function rebuildSubject(ctx: HandlerContext, subjectKey: string): Promise<
   // boundary and consumed at two, and would hold only for rows written after
   // the gate existed. Re-checking here makes the guarantee local to the caller
   // that needs it rather than a fact about history.
-  const rows = await ctx.db
-    .select()
-    .from(commerceRelationshipClaims)
-    .where(eq(commerceRelationshipClaims.subjectKey, subjectKey));
-
-  const { edges } = projectRelationships(
-    rows
-      // Rows written before this gate existed, or by any future caller, are
-      // skipped rather than trusted. The projection's type guarantee is now
-      // local to the code that relies on it.
-      .filter((row) => checkRelationshipClaim(row.claimJson) === null)
-      .map((row) => ({
-        claim: row.claimJson as RelationshipClaimShape,
-        source: row.source as EdgeSource,
-        confidenceBp: row.confidenceBp,
-        assertedAt: row.assertedAt,
-        ...(row.inferenceVersion === null ? {} : { inferenceVersion: row.inferenceVersion }),
-      })),
-  );
-
   await ctx.db.transaction(async (tx) => {
+    // SERIALISED PER SUBJECT, and the read happens INSIDE the transaction.
+    //
+    // The claim rows used to be read OUTSIDE the transaction that replaces the
+    // edges. Production ingests concurrently up to the database pool size, so
+    // two workers touching one subject could read `[A]` and `[A, B]`, and if
+    // the older rebuild committed last it deleted B's edge while B's CLAIM
+    // stayed durably in the table. The result is a claim whose edge simply is
+    // not there — invisible until some later event on the same subject happens
+    // to rebuild it, and indistinguishable from a supplier who never asserted
+    // the relationship.
+    //
+    // `pg_advisory_xact_lock` is released when the transaction ends, so there
+    // is nothing to leak on an error path, and the lock is keyed on the SUBJECT
+    // so rebuilds of different subjects still run in parallel.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${subjectKey}))`);
+
+    const rows = await tx
+      .select()
+      .from(commerceRelationshipClaims)
+      .where(eq(commerceRelationshipClaims.subjectKey, subjectKey));
+
+    const { edges } = projectRelationships(
+      rows
+        // Rows written before this gate existed, or by any future caller, are
+        // skipped rather than trusted. The projection's type guarantee is now
+        // local to the code that relies on it.
+        .filter((row) => checkRelationshipClaim(row.claimJson) === null)
+        .map((row) => ({
+          claim: row.claimJson as RelationshipClaimShape,
+          source: row.source as EdgeSource,
+          confidenceBp: row.confidenceBp,
+          assertedAt: row.assertedAt,
+          ...(row.inferenceVersion === null ? {} : { inferenceVersion: row.inferenceVersion }),
+        })),
+    );
+
     // Replace, never merge: an edge that no surviving claim supports must go,
     // and a partial update would leave it behind looking believed.
     await tx

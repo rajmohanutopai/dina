@@ -7,6 +7,8 @@
  * stops applying when the server acts.
  */
 
+import { validateMoney } from '@dina/commerce-protocol';
+
 import {
   effectiveFanoutCeiling,
   quoteAdmissibility,
@@ -433,5 +435,88 @@ describe('connector endpoints are checked where the owner types them (§6.5, WS-
         }),
       ),
     ).toEqual({ ok: true });
+  });
+});
+
+/**
+ * The two fields the photo-catalog lane added, and the reason each is
+ * OPTIONAL rather than required.
+ *
+ * A supplier who sells nothing priced needs no currency, and one who has not
+ * chosen categories yet is mid-setup, not misconfigured. So absence is legal
+ * here and the refusal lands where the value is USED — the assembler, which
+ * can say which item it could not build and why. What this layer refuses is a
+ * value that is present and unusable, because storing one puts a number into
+ * every published price that the wire then rejects.
+ */
+describe('trading currency', () => {
+  it('accepts a supplier with none — an unpriced catalog is a real catalog', () => {
+    expect(validateSupplierSettings(supplier())).toEqual({ ok: true });
+  });
+
+  it('accepts a valid ISO 4217 code', () => {
+    expect(validateSupplierSettings(supplier({ tradingCurrency: 'INR' }))).toEqual({ ok: true });
+  });
+
+  it.each(['inr', 'Rupees', 'INRR', 'IN', '', '₹'])('refuses %p', (code) => {
+    const verdict = validateSupplierSettings(supplier({ tradingCurrency: code }));
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.findings.map((f) => f.refusal)).toContain('unknown_trading_currency');
+  });
+
+  it('agrees with Money, because both read one rule', () => {
+    // The check here and the check `Money` runs are the same function. If they
+    // were two regexes, this test would be the only thing noticing when one of
+    // them was edited — and it would notice by failing, which is the point.
+    for (const code of ['INR', 'USD', 'EUR']) {
+      expect(validateSupplierSettings(supplier({ tradingCurrency: code }))).toEqual({ ok: true });
+      expect(validateMoney({ currency: code, minor_units: '100' })).toBeNull();
+    }
+    for (const code of ['inr', 'INRR']) {
+      expect(validateSupplierSettings(supplier({ tradingCurrency: code })).ok).toBe(false);
+      expect(validateMoney({ currency: code, minor_units: '100' })).not.toBeNull();
+    }
+  });
+});
+
+describe('catalog category ids', () => {
+  it('accepts a supplier with none, and a supplier with well-formed ids', () => {
+    expect(validateSupplierSettings(supplier())).toEqual({ ok: true });
+    expect(
+      validateSupplierSettings(supplier({ catalogCategoryIds: ['food.preserves', 'food:pickle-1'] })),
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses an EMPTY list, which is not the same as an absent one', () => {
+    // Absent means "not configured yet". Empty means "configured to nothing",
+    // which can never satisfy the non-empty `category_ids` every published
+    // item needs — so it is a setting that guarantees a later failure.
+    const verdict = validateSupplierSettings(supplier({ catalogCategoryIds: [] }));
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.findings.map((f) => f.refusal)).toContain('empty_catalog_categories');
+  });
+
+  it('refuses free text that cannot be an id — the category read off a price list', () => {
+    // This is the exact value the extraction vocabulary yields: a human-facing
+    // category with a space and an ampersand. `validateId` permits only
+    // [A-Za-z0-9._:-], so it cannot become a published category id, and the
+    // seller has to choose one instead.
+    const verdict = validateSupplierSettings(
+      supplier({ catalogCategoryIds: ['Pickles & Preserves'] }),
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.findings.map((f) => f.refusal)).toContain('malformed_catalog_category');
+  });
+
+  it('names WHICH entry is malformed, not just that one is', () => {
+    const verdict = validateSupplierSettings(
+      supplier({ catalogCategoryIds: ['food.ok', 'bad value', 'also.ok'] }),
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.findings.map((f) => f.field)).toContain('catalogCategoryIds[1]');
   });
 });

@@ -82,37 +82,112 @@ export interface CommerceSupplierDimensionsResponse {
  * and the version is pinned: a later extraction pass must be distinguishable
  * from what a person wrote.
  */
-const EXTRACTOR_ID = 'com.dinakernel.appview.attestation-category'
-const EXTRACTOR_VERSION = '1'
+const EXTRACTOR_ID = 'com.dinakernel.appview.attestation-dimensions'
+const EXTRACTOR_VERSION = '2'
 
-function toClaim(row: {
+/**
+ * A reviewer's per-dimension verdict, as the lexicon carries it.
+ *
+ * `dimensionRatingSchema` in `record-validator.ts`: `{dimension, value, note?}`
+ * with `value` one of `exceeded | met | below | failed`.
+ */
+interface DimensionRating {
+  dimension?: unknown
+  value?: unknown
+}
+
+/**
+ * §14.4 sentiment from a §14.4 verdict.
+ *
+ * `met` reads POSITIVE, not neutral: the reviewer is affirming the supplier
+ * did what they promised on that dimension, which is a judgement rather than
+ * an absence of one. Neutral is reserved for a verdict this index cannot
+ * interpret — and a rating carrying no recognisable verdict produces no claim
+ * at all rather than a neutral one, because inventing a neutral opinion the
+ * reviewer never expressed is the same fabrication as inventing a positive one.
+ */
+function sentimentOf(value: unknown): 'positive' | 'neutral' | 'negative' | null {
+  switch (value) {
+    case 'exceeded':
+    case 'met':
+      return 'positive'
+    case 'below':
+    case 'failed':
+      return 'negative'
+    default:
+      return null
+  }
+}
+
+/**
+ * The reviewer's OWN per-dimension ratings, turned into §14.4 claims.
+ *
+ * WHAT THIS REPLACES, because the previous version was wrong in a way that
+ * passed its tests. It read `dimension: row.category` — the attestation's
+ * SUBJECT CATEGORY (`z.string().min(1).max(200)`, holding values like
+ * `commerce/product`) — and offered it as a §14.4 review dimension, which is a
+ * CLOSED set of six. On real published reviews every claim fell out as
+ * `unknown_dimension`, so the endpoint returned an empty `dimensions` list and
+ * a refusal per review. The integration tests seeded `category: 'fulfilment'`,
+ * so the suite was green while the endpoint was dead.
+ *
+ * The reviewer's actual per-dimension verdicts were in `dimensions_json` the
+ * whole time — written by the ingester, and already read correctly by the
+ * scorer's sentiment aggregation one directory away. This reads the same
+ * column. `category` returns to being context, not an answer.
+ *
+ * One review yields one claim PER RATING, so a reviewer who rated packaging
+ * and fulfilment separately is not collapsed into a single verdict.
+ */
+function toClaims(row: {
   uri: string
   subjectDid: string | null
-  category: string
   sentiment: string
-  searchContent: string | null
-}): DimensionClaim {
-  return {
-    dimension: row.category,
-    // The reviewer chose this category when they published. It is their word,
-    // not this index's inference, so it is confirmed and uncapped.
-    source: 'reviewer_confirmed',
-    confidenceBp: 10000,
-    sentiment:
-      row.sentiment === 'positive' || row.sentiment === 'negative' ? row.sentiment : 'neutral',
-    sourceReviewUri: row.uri,
-    targetNode: row.subjectDid ?? '',
-    // Directly about the supplier. A path arrives only through the §10.3
-    // relationship resolver, which is a different question than this one.
-    relationshipPath: [],
-    // 'direct' — written about this exact subject. The inherited and
-    // brand/seller provenances arrive only through the §10.3 relationship
-    // resolver, which answers a different question than this endpoint.
-    provenance: 'direct',
-    extractorId: EXTRACTOR_ID,
-    extractorVersion: EXTRACTOR_VERSION,
-    ...(row.searchContent === null ? {} : { evidenceText: row.searchContent }),
+  dimensionsJson: unknown
+}): DimensionClaim[] {
+  if (!Array.isArray(row.dimensionsJson)) return []
+
+  const claims: DimensionClaim[] = []
+  for (const raw of row.dimensionsJson as DimensionRating[]) {
+    if (raw === null || typeof raw !== 'object') continue
+    const name = typeof raw.dimension === 'string' ? raw.dimension.trim().toLowerCase() : ''
+    if (name === '') continue
+
+    // Per-dimension verdict first; the record-level sentiment is the fallback
+    // for a rating that names a dimension without scoring it.
+    const perDimension = sentimentOf(raw.value)
+    const sentiment =
+      perDimension ??
+      (row.sentiment === 'positive' || row.sentiment === 'negative' ? row.sentiment : 'neutral')
+
+    claims.push({
+      // NOT normalised into the §14.4 set here. `projectReviewDimensions`
+      // owns that vocabulary and refuses `unknown_dimension` with a finding an
+      // operator can see; silently mapping a near-miss would hide a publisher
+      // using a dimension name this index does not honour.
+      dimension: name,
+      // The reviewer scored this dimension themselves when they published. It
+      // is their word, not this index's inference, so it is confirmed.
+      source: 'reviewer_confirmed',
+      confidenceBp: 10000,
+      sentiment,
+      sourceReviewUri: row.uri,
+      targetNode: row.subjectDid ?? '',
+      // Directly about the supplier. A path arrives only through the §10.3
+      // relationship resolver, which answers a different question.
+      relationshipPath: [],
+      provenance: 'direct',
+      extractorId: EXTRACTOR_ID,
+      extractorVersion: EXTRACTOR_VERSION,
+      // NO `evidenceText`. `ProjectedDimension` has no field to carry it, so
+      // nothing was ever published from it — while supplying it ran the
+      // commercial-terms scan, which REFUSES THE WHOLE CLAIM when the review
+      // text mentions a price. That dropped legitimate dimensions from the
+      // projection and filed a privacy-shaped finding, for a disclosure that
+      // could not occur.
+    })
   }
+  return claims
 }
 
 export async function getSupplierDimensions(
@@ -127,9 +202,12 @@ export async function getSupplierDimensions(
     .select({
       uri: attestations.uri,
       subjectDid: subjects.did,
-      category: attestations.category,
       sentiment: attestations.sentiment,
-      searchContent: attestations.searchContent,
+      // The reviewer's per-dimension verdicts. `category` is deliberately NOT
+      // selected any more: it is the subject's category, never a §14.4
+      // dimension, and reading it as one is what made this endpoint answer
+      // nothing on real data.
+      dimensionsJson: attestations.dimensionsJson,
     })
     .from(attestations)
     .innerJoin(subjects, eq(attestations.subjectId, subjects.id))
@@ -137,7 +215,11 @@ export async function getSupplierDimensions(
     .orderBy(desc(attestations.uri))
     .limit(params.limit)
 
-  const projected = projectReviewDimensions(rows.map(toClaim))
+  // flatMap, because one review carries as many verdicts as the reviewer chose
+  // to give. The previous shape was one-claim-per-review, which could not have
+  // represented a reviewer who rated packaging and fulfilment differently even
+  // if it had been reading the right column.
+  const projected = projectReviewDimensions(rows.flatMap(toClaims))
 
   return {
     supplier_did: params.supplier,

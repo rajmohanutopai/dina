@@ -1,4 +1,9 @@
-# Run the TS workspace test suites (Jest per-package).
+# Run the TS workspace test suites (Jest per-package; vitest for appview).
+#
+# Root `npm test` sweeps every workspace, so this reaches `appview` too — but
+# only its UNIT suite. AppView's integration tests need a real Postgres and
+# run in appview-test.yml against a service container.
+#
 # Runs only when TS-workspace files change — Go/Python changes skip this entirely.
 #
 # Owner: docs/HOME_NODE_LITE_TASKS.md Phase 0c (task 0.15)
@@ -11,6 +16,7 @@ on:
     paths:
       - "packages/**"
       - "apps/**"
+      - "appview/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"
@@ -19,6 +25,7 @@ on:
     paths:
       - "packages/**"
       - "apps/**"
+      - "appview/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"

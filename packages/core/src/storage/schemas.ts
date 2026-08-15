@@ -1849,6 +1849,17 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         -- "belongs to an older generation" are different facts, and at epoch 1
         -- there is no lower epoch to encode the first one with.
         reconciliation_required INTEGER NOT NULL DEFAULT 0,
+        -- §16.2/§9.11: set when the buyer that presented this order's held
+        -- evidence ALSO presented verifiable status receipts — proving it
+        -- holds a status chain this node lost. Such an order must never be
+        -- given a fresh genesis: a second sequence-0 record differs from the
+        -- one the buyer holds (different epoch, different timestamp, so a
+        -- different digest), and §9.11 requires the buyer to reject a
+        -- duplicate sequence with a different digest. The order would be
+        -- stranded by the very ceremony meant to rescue it, with neither side
+        -- able to say why. The flag makes chain creation refuse and names the
+        -- fence path instead.
+        readopted_chain_evidence INTEGER NOT NULL DEFAULT 0,
         state TEXT NOT NULL DEFAULT 'reserved'
           CHECK (state IN ('reserved', 'decided')),
         effect_phase TEXT NOT NULL DEFAULT 'pre_effect'
@@ -2066,6 +2077,97 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         created_at INTEGER NOT NULL,
         PRIMARY KEY (install_id, previous_cid, capability_id, kind)
       );
+
+      -- commerce_catalog_drafts — the photo-catalog lane's durable state
+      -- (docs/PHOTO_CATALOG_LANE.md §6, §10 item 8).
+      --
+      -- ONE ROW IS ONE PUBLICATION ATTEMPT, from extracted rows through to a
+      -- published pointer. It exists because the lane suspends twice on a
+      -- human: once at confirm, once at the snapshot review — and a design
+      -- that held those in memory would lose an owner's approval to an app
+      -- restart and then rebuild different bytes, which is the one thing the
+      -- approval is supposed to prevent.
+      --
+      -- WHY THE ASSEMBLED ITEMS ARE STORED AND NOT RECOMPUTED. Publish takes
+      -- a draft id and no item list, so the items Core signs are the items
+      -- Core stored. Recomputing them at publish would reopen exactly the gap
+      -- the draft id closes: a caller could not substitute a set, but a
+      -- rebuild could substitute itself.
+      CREATE TABLE IF NOT EXISTS commerce_catalog_drafts (
+        draft_id TEXT PRIMARY KEY,
+        catalog_id TEXT NOT NULL,
+        -- created | confirmed | prepared | approved | published. Enforced in
+        -- code, stored here so a restart does not lose where the draft was —
+        -- without this column the "persisted state machine" persists no state.
+        state TEXT NOT NULL,
+        -- owner_authored | source_parsed | model_derived. CORE ASSIGNS THIS
+        -- from the entry point used; the caller never states it, because a
+        -- class that exempts a draft from confirmation is worth forging.
+        -- Defaults to the strictest so an unestablished class demands a
+        -- receipt rather than skipping one.
+        provenance_class TEXT NOT NULL DEFAULT 'model_derived',
+        -- How every bare identifier in these rows is READ. Stored because
+        -- repair (§5 step 4) re-imports the stored rows, and re-importing them
+        -- under a different scheme would silently reinterpret the catalog.
+        default_scheme TEXT NOT NULL DEFAULT 'sku',
+        -- §5: where a model produced the values, the extraction that produced
+        -- them. Empty on the classes that infer nothing. Held per DRAFT rather
+        -- than per field because one draft is one extraction, and 20 copies of
+        -- one string is not more provenance.
+        -- Set while a publication is in flight, so an edit racing the two
+        -- network writes is refused rather than silently overwritten. Zero
+        -- means unclaimed; a claim older than the TTL is treated as abandoned
+        -- so a process that died mid-publish cannot brick the draft.
+        publish_claimed_at_ms INTEGER NOT NULL DEFAULT 0,
+        -- WHOSE claim it is. Age alone cannot answer that: two publications
+        -- overlapping past the TTL would each clear the other's, and a clock
+        -- that moves backwards makes an expiry unreachable.
+        publish_claim_token TEXT NOT NULL DEFAULT '',
+        extraction_model TEXT NOT NULL DEFAULT '',
+        extraction_schema_version TEXT NOT NULL DEFAULT '',
+        -- Monotonic over CONTENT only: rows, findings, per-field provenance
+        -- and assembled items. Core's own bookkeeping writes (the receipt, the
+        -- held bytes, the approval) do NOT bump it — a rule that fired on its
+        -- own writes would invalidate every publication.
+        content_revision INTEGER NOT NULL DEFAULT 0,
+        rows_json TEXT NOT NULL DEFAULT '[]',
+        findings_json TEXT NOT NULL DEFAULT '[]',
+        -- Per field: proposed | accepted | edited | not_model_derived, with the
+        -- model and schema version where a model produced it.
+        provenance_json TEXT NOT NULL DEFAULT '{}',
+        items_json TEXT NOT NULL DEFAULT '[]',
+        -- Minted ONCE at assembly and never re-derived. A rebuild that re-mints
+        -- either changes the canonical bytes and so the snapshot digest, which
+        -- breaks an approval the owner already gave.
+        generated_at_iso TEXT NOT NULL DEFAULT '',
+        item_revision TEXT NOT NULL DEFAULT '',
+        -- The content receipt: Core mints it, Core keeps it, no caller ever
+        -- presents one. Carries the content revision it was taken at.
+        receipt_digest TEXT NOT NULL DEFAULT '',
+        receipt_revision INTEGER NOT NULL DEFAULT -1,
+        -- Held across the owner's review: the built snapshot and its pages,
+        -- the CAS value, and the approval. All four carry the content revision
+        -- they were built from, and any edit voids them together.
+        held_snapshot_json TEXT NOT NULL DEFAULT '',
+        held_pages_json TEXT NOT NULL DEFAULT '',
+        -- The pointer the builder MADE, not one reassembled at publish time.
+        -- previous_snapshot_digest and service_rkey live only on the pointer,
+        -- so a rebuild drops the chain link and the listing binding: the repo
+        -- accepts the write and AppView then refuses it for a broken chain.
+        held_pointer_json TEXT NOT NULL DEFAULT '',
+        held_pointer_cid TEXT NOT NULL DEFAULT '',
+        held_revision INTEGER NOT NULL DEFAULT -1,
+        approved_digest TEXT NOT NULL DEFAULT '',
+        approved_revision INTEGER NOT NULL DEFAULT -1,
+        -- Set once the pointer write is accepted. A publish against a terminal
+        -- draft returns this rather than starting a second publication.
+        publication_json TEXT NOT NULL DEFAULT '',
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_commerce_catalog_drafts_catalog
+        ON commerce_catalog_drafts(catalog_id, updated_at_ms DESC);
     `,
   },
 ];

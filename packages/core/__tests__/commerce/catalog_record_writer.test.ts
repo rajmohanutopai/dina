@@ -22,7 +22,12 @@ import {
   publishCatalogRecords,
 } from '../../src/commerce/catalog_record_writer';
 
-import type { CatalogPointer, CatalogSnapshot, Sha256Fn } from '@dina/commerce-protocol';
+import type {
+  CatalogPointer,
+  CatalogSnapshot,
+  CatalogSnapshotPage,
+  Sha256Fn,
+} from '@dina/commerce-protocol';
 
 const hash: Sha256Fn = (data) => sha256(data);
 const SUPPLIER = 'did:plc:chairmaker99';
@@ -34,12 +39,27 @@ const CATALOG_ID = 'chairmaker-main';
  * instruction to the repo than `null`, and the distinction this double exists
  * to record.
  */
-let writes: { collection: string; rkey: string; swapRecord?: string | null }[];
+let writes: {
+  collection: string;
+  rkey: string;
+  swapRecord?: string | null;
+  /**
+   * THE RECORD BODY, which this double used to throw away.
+   *
+   * That omission is why a malformed snapshot survived every test in this
+   * file: the double asserted where a record went and never what it was, so
+   * the writer could publish a flat snapshot with no pages and still satisfy
+   * "the snapshot is written before the pointer".
+   */
+  record: unknown;
+}[];
 
 function publication(
   items: Record<string, unknown>[],
   previous: { pointer: CatalogPointer; snapshotDigest: string } | null = null,
-): { pointer: CatalogPointer; snapshot: CatalogSnapshot } {
+  /** Forced only where a test needs MORE THAN ONE page to mean anything. */
+  pageSize?: number,
+): { pointer: CatalogPointer; snapshot: CatalogSnapshot; pages: readonly CatalogSnapshotPage[] } {
   const built = buildCatalogSnapshot({
     supplierDid: SUPPLIER,
     catalogId: CATALOG_ID,
@@ -47,10 +67,13 @@ function publication(
     publishedAt: '2026-08-09T09:00:00.000Z',
     items,
     previous,
+    ...(pageSize === undefined ? {} : { pageSize }),
     sha256: hash,
   });
-  if (!built.ok || built.snapshot === undefined) throw new Error('fixture failed to build');
-  return { pointer: built.pointer, snapshot: built.snapshot };
+  if (!built.ok || built.snapshot === undefined || built.pages === undefined) {
+    throw new Error('fixture failed to build');
+  }
+  return { pointer: built.pointer, snapshot: built.snapshot, pages: built.pages };
 }
 
 /** A repo that records every write and can be told to fail one collection. */
@@ -63,6 +86,7 @@ function repo(failOn?: string): void {
     writes.push({
       collection,
       rkey,
+      record: write.record,
       ...('swapRecord' in write ? { swapRecord: write.swapRecord } : {}),
     });
     if (collection === failOn) throw new Error(`${collection} is unavailable`);
@@ -189,5 +213,161 @@ describe('a node with no repo', () => {
     const pub = publication([{ sku: 'oak-chair' }]);
     const outcome = await publishCatalogRecords({ ...pub, expectedPointerCid: null });
     expect(outcome).toMatchObject({ ok: false, refusal: 'no_record_writer' });
+  });
+});
+
+/**
+ * WHAT GOES ON THE WIRE — the half no test in this file used to look at.
+ *
+ * Every test above asserts ORDER, and order was never the defect. The writer
+ * published the pointer to a collection AppView does not index, and published
+ * the snapshot in a shape AppView cannot read, and the whole file stayed green
+ * because the repo double recorded where each record went and discarded what
+ * it was.
+ *
+ * These assert against `@dina/commerce-protocol`, which is the package AppView
+ * reads its collection names and record shapes from too. Asserting against a
+ * literal spelled here would reproduce the original bug in the test: two
+ * independent spellings that agree until someone changes one.
+ */
+describe('the records AppView has to be able to read', () => {
+  it('publishes the pointer to the collection AppView indexes', async () => {
+    repo();
+    const pub = publication([{ sku: 'oak-chair' }]);
+    await publishCatalogRecords({ ...pub, expectedPointerCid: null });
+
+    const pointer = writes.find((w) => w.collection === CATALOG_POINTER_NSID);
+    expect(pointer).toBeDefined();
+    // The pointer's fields are FLAT, and `$type` names the same collection.
+    expect(pointer?.record).toMatchObject({
+      $type: CATALOG_POINTER_NSID,
+      supplier_did: SUPPLIER,
+      catalog_id: CATALOG_ID,
+      snapshot_sequence: 1,
+    });
+  });
+
+  it('publishes the snapshot as metadata AND its pages, not flattened', async () => {
+    repo();
+    const pub = publication([{ sku: 'oak-chair' }, { sku: 'elm-stool' }]);
+    await publishCatalogRecords({ ...pub, expectedPointerCid: null });
+
+    const snapshot = writes.find((w) => w.collection === CATALOG_SNAPSHOT_NSID);
+    const record = snapshot?.record as {
+      snapshot?: CatalogSnapshot;
+      pages?: CatalogSnapshotPage[];
+    };
+    // NESTED under `snapshot`. A flat spread put `snapshot_digest` at the top
+    // level, where AppView's `record.snapshot` found nothing and refused.
+    expect(record.snapshot?.snapshot_digest).toBe(pub.snapshot.snapshot_digest);
+    expect(record.pages).toHaveLength(pub.pages.length);
+  });
+
+  it('carries every page the snapshot committed to, in order', async () => {
+    repo();
+    const pub = publication([{ sku: 'a' }, { sku: 'b' }, { sku: 'c' }]);
+    await publishCatalogRecords({ ...pub, expectedPointerCid: null });
+
+    const record = writes.find((w) => w.collection === CATALOG_SNAPSHOT_NSID)?.record as {
+      snapshot: CatalogSnapshot;
+      pages: CatalogSnapshotPage[];
+    };
+    // `payload_root` commits to these digests IN ORDER. Publishing a subset,
+    // or the same pages reordered, is a commitment to bytes no consumer can
+    // reassemble — and the pages were dropped entirely before this.
+    expect(record.pages.map((p) => p.page_digest)).toEqual([...record.snapshot.page_digests]);
+  });
+
+  it('REFUSES pages that do not match the snapshot’s commitment', async () => {
+    // An EMPTY array, not an absent one. The first version of this guard asked
+    // only whether `pages` was undefined, so a caller passing `[]` for a
+    // snapshot committing to real pages published a record committing to a
+    // payload it did not carry — the absent case refused, the empty case
+    // waved through.
+    repo();
+    const pub = publication([{ sku: 'a' }, { sku: 'b' }]);
+    const outcome = await publishCatalogRecords({
+      pointer: pub.pointer,
+      snapshot: pub.snapshot,
+      pages: [],
+      expectedPointerCid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'snapshot_without_pages' });
+    expect(writes).toEqual([]);
+  });
+
+  it('REFUSES MORE pages than the snapshot committed to', async () => {
+    // THE CASE ONLY THE COUNT CHECK CATCHES, and the reason it is not
+    // redundant with the ordering check below. Ordering walks `page_digests`,
+    // so a trailing page beyond the commitment is never inspected: every
+    // committed digest matches, `findIndex` returns -1, and an extra page
+    // rides along inside a record whose `payload_root` says nothing about it.
+    // Mutation-testing the count check is what surfaced this — with only the
+    // too-few case covered, disabling the count check broke no test.
+    repo();
+    const pub = publication([{ sku: 'a' }, { sku: 'b' }], null, 1);
+    const outcome = await publishCatalogRecords({
+      pointer: pub.pointer,
+      snapshot: pub.snapshot,
+      pages: [...pub.pages, { ...pub.pages[0]!, page_index: pub.pages.length }],
+      expectedPointerCid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'snapshot_without_pages' });
+    expect(writes).toEqual([]);
+  });
+
+  it('REFUSES pages presented out of the committed order', async () => {
+    // `payload_root` commits to the digests IN SEQUENCE, so the same pages
+    // shuffled are a different payload than the one the snapshot names.
+    repo();
+    // PAGE SIZE 1, so three items really are three pages. At the default size
+    // they would be one page, reversing a single-element array is a no-op, and
+    // the test would pass whether or not the ordering check existed.
+    const pub = publication([{ sku: 'a' }, { sku: 'b' }, { sku: 'c' }], null, 1);
+    expect(pub.pages.length).toBeGreaterThan(1);
+    const outcome = await publishCatalogRecords({
+      pointer: pub.pointer,
+      snapshot: pub.snapshot,
+      pages: [...pub.pages].reverse(),
+      expectedPointerCid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'snapshot_without_pages' });
+    expect(writes).toEqual([]);
+  });
+
+  it('REFUSES a live pointer that names no snapshot, while keeping the retry path open', async () => {
+    repo();
+    const pub = publication([{ sku: 'oak-chair' }]);
+
+    // Named but not republished — the documented recovery after a lost head
+    // write. This must still work.
+    const retry = await publishCatalogRecords({
+      pointer: pub.pointer,
+      expectedPointerCid: 'cid-previous-head',
+    });
+    expect(retry.ok).toBe(true);
+
+    // Naming nothing publishes a head that resolves to a record no consumer
+    // can identify.
+    const { snapshot_digest: _d, snapshot_rkey: _r, ...unnamed } = pub.pointer;
+    const outcome = await publishCatalogRecords({
+      pointer: unnamed,
+      expectedPointerCid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'pointer_names_no_snapshot' });
+  });
+
+  it('REFUSES to publish a snapshot whose pages it was not given', async () => {
+    repo();
+    const pub = publication([{ sku: 'oak-chair' }]);
+    const outcome = await publishCatalogRecords({
+      pointer: pub.pointer,
+      snapshot: pub.snapshot,
+      // pages omitted — exactly what the route used to do.
+      expectedPointerCid: null,
+    });
+    expect(outcome).toMatchObject({ ok: false, refusal: 'snapshot_without_pages' });
+    // And NOTHING was written: no orphan snapshot, no head naming it.
+    expect(writes).toEqual([]);
   });
 });

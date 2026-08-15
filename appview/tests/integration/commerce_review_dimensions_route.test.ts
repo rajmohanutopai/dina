@@ -39,8 +39,17 @@ async function subject(id: string, did: string): Promise<void> {
 async function review(args: {
   uri: string
   subjectId: string
+  /**
+   * The SUBJECT's category — `commerce/product`, `furniture/chair`. Never a
+   * §14.4 review dimension. Seeding a dimension name here is what made the
+   * previous version of this suite pass against an endpoint that returned
+   * nothing on real data: the route read `category` AS the dimension, and the
+   * fixture obligingly handed it one.
+   */
   category: string
   sentiment: string
+  /** The reviewer's per-dimension verdicts, where the real signal lives. */
+  dimensions?: { dimension: string; value: 'exceeded' | 'met' | 'below' | 'failed' }[]
   searchContent?: string
 }): Promise<void> {
   await db.insert(attestations).values({
@@ -53,6 +62,7 @@ async function review(args: {
     subjectRefRaw: { did: args.subjectId },
     category: args.category,
     sentiment: args.sentiment,
+    ...(args.dimensions === undefined ? {} : { dimensionsJson: args.dimensions }),
     recordCreatedAt: new Date('2026-08-08T09:00:00.000Z'),
     ...(args.searchContent === undefined ? {} : { searchContent: args.searchContent }),
   })
@@ -75,13 +85,15 @@ describe('a buyer asks what reviewers said, by dimension', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/1',
       subjectId: 'subj-chairmaker',
-      category: 'fulfilment',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'positive',
     })
     await review({
       uri: 'at://did:plc:reviewer0001/a/2',
       subjectId: 'subj-chairmaker',
-      category: 'product_quality',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'product_quality', value: 'met' }],
       sentiment: 'positive',
     })
 
@@ -101,7 +113,8 @@ describe('a buyer asks what reviewers said, by dimension', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/3',
       subjectId: 'subj-rivalwood',
-      category: 'fulfilment',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'negative',
     })
 
@@ -115,7 +128,11 @@ describe('a buyer asks what reviewers said, by dimension', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/4',
       subjectId: 'subj-chairmaker',
-      category: 'packaging',
+      category: 'commerce/product',
+      // The reviewer's OWN verdict on this dimension. `failed` is the signal;
+      // the record-level `sentiment` is only the fallback for a rating that
+      // names a dimension without scoring it.
+      dimensions: [{ dimension: 'packaging', value: 'failed' }],
       sentiment: 'negative',
     })
 
@@ -130,7 +147,8 @@ describe('a buyer asks what reviewers said, by dimension', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/5',
       subjectId: 'subj-chairmaker',
-      category: 'terms_held',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'terms_held', value: 'met' }],
       sentiment: 'positive',
     })
 
@@ -148,7 +166,8 @@ describe('§14.4’s rules survive the route, not just the module', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/6',
       subjectId: 'subj-chairmaker',
-      category: 'vibes',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'vibes', value: 'met' }],
       sentiment: 'positive',
     })
 
@@ -162,21 +181,39 @@ describe('§14.4’s rules survive the route, not just the module', () => {
     expect(out.reviews_examined).toBe(1)
   })
 
-  it('refuses a review whose text carries an exact commercial term', async () => {
-    // §14.4 forbids republishing a term the owner never published. The
-    // finding names the field and never the value.
+  /**
+   * WHAT THIS REPLACED. The case here used to assert
+   * `findings[0].refusal === 'commercial_terms_leak'`: the route passed the
+   * whole review body as `evidenceText`, so `projectDimension` refused the
+   * ENTIRE claim whenever the text mentioned a price. But
+   * `ProjectedDimension` has no `evidenceText` field — nothing was ever
+   * published from it. The refusal prevented no disclosure, cost a legitimate
+   * dimension, and filed a privacy-shaped finding an operator would read as
+   * the index degrading.
+   *
+   * The route no longer supplies `evidenceText`. Privacy comes from the SHAPE
+   * — a projected dimension has nowhere to put review prose — which is the
+   * same argument FR-A7 makes for the catalog row.
+   */
+  it('keeps a dimension whose review text mentions a price, and republishes no term', async () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/7',
       subjectId: 'subj-chairmaker',
-      category: 'terms_held',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'terms_held', value: 'met' }],
       sentiment: 'positive',
       searchContent: 'they honoured the agreed price of INR 4,50,000 per pallet',
     })
 
     const out = await getSupplierDimensions(db, { supplier: SUPPLIER, limit: 50 })
 
-    expect(out.findings[0]?.refusal).toBe('commercial_terms_leak')
+    // The reviewer's verdict survives — a buyer asking "did they hold terms?"
+    // gets the answer a reviewer gave.
+    expect(out.dimensions.map((d) => d.dimension)).toContain('terms_held')
+    expect(out.findings).toEqual([])
+    // And the term itself never appears, because no field carries it.
     expect(JSON.stringify(out)).not.toContain('4,50,000')
+    expect(JSON.stringify(out)).not.toContain('honoured the agreed price')
   })
 
   it('marks a reviewer-confirmed dimension as able to move standing', async () => {
@@ -185,7 +222,8 @@ describe('§14.4’s rules survive the route, not just the module', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/8',
       subjectId: 'subj-chairmaker',
-      category: 'customer_service',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'customer_service', value: 'met' }],
       sentiment: 'positive',
     })
 
@@ -202,7 +240,8 @@ describe('§14.4’s rules survive the route, not just the module', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/a/9',
       subjectId: 'subj-chairmaker',
-      category: 'fulfilment',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'positive',
     })
 
@@ -223,13 +262,15 @@ describe('§14.4’s rules survive the route, not just the module', () => {
     await review({
       uri: 'at://did:plc:reviewer0001/b/1',
       subjectId: 'subj-chairmaker',
-      category: 'fulfilment',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'positive',
     })
     await review({
       uri: 'at://did:plc:reviewer0001/b/2',
       subjectId: 'subj-chairmaker',
-      category: 'fulfilment',
+      category: 'commerce/product',
+      dimensions: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'negative',
     })
 
@@ -247,7 +288,8 @@ describe('§14.4’s rules survive the route, not just the module', () => {
       await review({
         uri: `at://did:plc:reviewer0001/c/${String(i)}`,
         subjectId: 'subj-chairmaker',
-        category: 'packaging',
+        category: 'commerce/product',
+        dimensions: [{ dimension: 'packaging', value: 'met' }],
         sentiment: 'positive',
       })
     }

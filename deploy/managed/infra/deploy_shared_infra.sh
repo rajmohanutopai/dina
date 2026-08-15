@@ -254,13 +254,33 @@ sync_files() {
         "$PROJECT_ROOT/msgbox/" \
         "$REMOTE:$REMOTE_DIR/msgbox/"
 
-    # AppView source
+    # AppView build context — REPO-ROOT SHAPED, because the Dockerfile is.
+    #
+    # This used to sync `appview/` alone, and the infra compose built with
+    # `context: ../../appview`. That stopped working the day appview became a
+    # workspace: its Dockerfile now COPYs `package.json`, `package-lock.json`,
+    # `tsconfig.base.json` and `packages/commerce-protocol/` from the ROOT, and
+    # none of those exist inside `appview/`. The local compose was updated to
+    # `context: ..` at the time; this one was not, and nothing noticed because
+    # the remote deploy had not been run since — so the build definition that
+    # SHIPS was the one nobody exercised.
+    #
+    # `appview-src/` mirrors the repo layout, exactly as `grants-src/` already
+    # does for the grants service, so one Dockerfile serves both compose files.
+    ssh "$REMOTE" "mkdir -p $REMOTE_DIR/appview-src/packages"
+    rsync -az "$PROJECT_ROOT/package.json" "$PROJECT_ROOT/package-lock.json" \
+        "$PROJECT_ROOT/tsconfig.base.json" \
+        "$REMOTE:$REMOTE_DIR/appview-src/"
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' \
+        "$PROJECT_ROOT/packages/commerce-protocol/" \
+        "$REMOTE:$REMOTE_DIR/appview-src/packages/commerce-protocol/"
     rsync -az --delete \
         --exclude='node_modules' \
         --exclude='dist' \
         --exclude='.env' \
         "$PROJECT_ROOT/appview/" \
-        "$REMOTE:$REMOTE_DIR/appview/"
+        "$REMOTE:$REMOTE_DIR/appview-src/appview/"
 
     # Grants service build context (root manifests + protocol + service).
     # Synced unconditionally so a later GRANTS_HOST enablement needs no
@@ -413,22 +433,41 @@ start_services() {
 # ── Step 7: Push AppView schema ──
 push_schema() {
     info "Pushing AppView schema..."
+    # `set -e` INSIDE the remote shell, and the ssh status checked OUTSIDE it.
+    #
+    # Neither was here, and both failures happened at once: the migrator was
+    # built from `appview/` — a context that stopped containing the
+    # workspace-root files its Dockerfile COPYs — so the build failed, the
+    # script carried on to `docker run` a STALE migrator image from a previous
+    # release, and then printed "Schema pushed" unconditionally.
+    #
+    # The result was a live AppView serving commerce endpoints over a database
+    # that had never been given the commerce tables: `searchCatalog` answered
+    # `{"candidates":[],"examined":0}` for a query with no `q`, and 500'd with
+    # `relation "commerce_catalog_products" does not exist` for one with. A
+    # deploy step that cannot report its own failure is worse than no step.
     ssh "$REMOTE" "
+        set -e
         cd $REMOTE_DIR
         # Wait for postgres
         for i in \$(seq 1 30); do
             COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f deploy/docker-compose.infra.yml exec -T postgres pg_isready -U dina -d dina_trust >/dev/null 2>&1 && break
             sleep 2
         done
-        # Build the migrator stage (has drizzle-kit + drizzle.config.ts + schema)
-        docker build --target migrator -t ${COMPOSE_PROJECT}-migrator appview/
+        # Build the migrator stage (has drizzle-kit + drizzle.config.ts + schema).
+        # Same repo-root-shaped context the services build from — see sync_files.
+        docker build --target migrator -f appview-src/appview/Dockerfile -t ${COMPOSE_PROJECT}-migrator appview-src/
         # Run migrator on the compose network
         PG_PASS=\$(grep POSTGRES_PASSWORD deploy/.env | cut -d= -f2)
         docker run --rm \
             --network ${COMPOSE_PROJECT}_default \
             -e DATABASE_URL=postgresql://dina:\${PG_PASS}@postgres:5432/dina_trust \
             ${COMPOSE_PROJECT}-migrator
-    "
+    " || {
+        echo "Refusing to continue: the AppView schema migration FAILED." >&2
+        echo "The services would come up over a database that does not match them." >&2
+        exit 1
+    }
     info "Schema pushed"
 }
 

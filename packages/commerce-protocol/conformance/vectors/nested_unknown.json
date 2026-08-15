@@ -93,6 +93,241 @@
       "canonical": "{\"catalog_id\":\"chairmaker-main\",\"items\":[{\"name\":\"Oak dining chair\",\"product\":{\"future_qualifier\":\"x\"},\"sku\":\"CHAIR-1\"}],\"page_digest\":\"d40b96107aead6cf606f63edc498cdc4aeef72ffc08bd98bd99741c1f68a1b0b\",\"page_index\":0,\"snapshot_sequence\":1}"
     },
     {
+      "kind": "signed_quote",
+      "name": "top level",
+      "record": {
+        "protocol_version": "1.0",
+        "quote_id": "q-1",
+        "request_id": "req-1",
+        "request_digest": "52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_revision": "1",
+        "priced_delivery_projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44",
+        "lines": [
+          {
+            "line_id": "l1",
+            "requested_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "offered_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            },
+            "price_basis": {
+              "value": "1",
+              "unit_code": "each"
+            },
+            "unit_price": {
+              "currency": "INR",
+              "minor_units": "500"
+            },
+            "stock_status": "available",
+            "line_subtotal": {
+              "currency": "INR",
+              "minor_units": "50000"
+            }
+          }
+        ],
+        "charges": [],
+        "total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "issued_at": "2026-08-07T11:00:00Z",
+        "valid_until": "2026-08-08T09:00:00Z",
+        "supplier_epoch": "1",
+        "terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "future_field": "x"
+      },
+      "canonical": "{\"buyer_did\":\"did:plc:buyer1234\",\"charges\":[],\"future_field\":\"x\",\"issued_at\":\"2026-08-07T11:00:00Z\",\"lines\":[{\"line_id\":\"l1\",\"line_subtotal\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"offered_product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"price_basis\":{\"unit_code\":\"each\",\"value\":\"1\"},\"quantity\":{\"unit_code\":\"each\",\"value\":\"100\"},\"requested_product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"stock_status\":\"available\",\"unit_price\":{\"currency\":\"INR\",\"minor_units\":\"500\"}}],\"priced_delivery_projection_digest\":\"aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44\",\"protocol_version\":\"1.0\",\"quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"quote_id\":\"q-1\",\"quote_revision\":\"1\",\"request_digest\":\"52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d\",\"request_id\":\"req-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_epoch\":\"1\",\"terms_digest\":\"e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30\",\"total\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"valid_until\":\"2026-08-08T09:00:00Z\"}"
+    },
+    {
+      "kind": "signed_quote",
+      "name": "inside a quote LINE",
+      "record": {
+        "protocol_version": "1.0",
+        "quote_id": "q-1",
+        "request_id": "req-1",
+        "request_digest": "52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_revision": "1",
+        "priced_delivery_projection_digest": "aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44",
+        "lines": [
+          {
+            "line_id": "l1",
+            "requested_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "offered_product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            },
+            "price_basis": {
+              "value": "1",
+              "unit_code": "each"
+            },
+            "unit_price": {
+              "currency": "INR",
+              "minor_units": "500"
+            },
+            "stock_status": "available",
+            "line_subtotal": {
+              "currency": "INR",
+              "minor_units": "50000"
+            },
+            "future_qualifier": "x"
+          }
+        ],
+        "charges": [],
+        "total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "issued_at": "2026-08-07T11:00:00Z",
+        "valid_until": "2026-08-08T09:00:00Z",
+        "supplier_epoch": "1",
+        "terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0"
+      },
+      "canonical": "{\"buyer_did\":\"did:plc:buyer1234\",\"charges\":[],\"issued_at\":\"2026-08-07T11:00:00Z\",\"lines\":[{\"future_qualifier\":\"x\",\"line_id\":\"l1\",\"line_subtotal\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"offered_product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"price_basis\":{\"unit_code\":\"each\",\"value\":\"1\"},\"quantity\":{\"unit_code\":\"each\",\"value\":\"100\"},\"requested_product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"stock_status\":\"available\",\"unit_price\":{\"currency\":\"INR\",\"minor_units\":\"500\"}}],\"priced_delivery_projection_digest\":\"aac8e4bc69cca800c412dbf6f74fef3bdc1cd85e9fb4ae83402eadbd0e773c44\",\"protocol_version\":\"1.0\",\"quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"quote_id\":\"q-1\",\"quote_revision\":\"1\",\"request_digest\":\"52beba574fad37a0c73005dabe9a5c7e92dd1b58afb1dc1162e614446d3cb37d\",\"request_id\":\"req-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_epoch\":\"1\",\"terms_digest\":\"e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30\",\"total\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"valid_until\":\"2026-08-08T09:00:00Z\"}"
+    },
+    {
+      "kind": "purchase_order",
+      "name": "top level",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_id": "q-1",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "accepted_lines": [
+          {
+            "line_id": "l1",
+            "product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            }
+          }
+        ],
+        "delivery": {
+          "region": {
+            "scheme": "postal_area",
+            "value": "682001"
+          },
+          "recipient_name": "Stores Desk",
+          "projection_digest": "d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1"
+        },
+        "approved_total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "accepted_terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "idempotency_key": "idem-po-1",
+        "submitted_at": "2026-08-07T12:00:00Z",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+        "future_field": "x"
+      },
+      "canonical": "{\"accepted_lines\":[{\"line_id\":\"l1\",\"product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"quantity\":{\"unit_code\":\"each\",\"value\":\"100\"}}],\"accepted_terms_digest\":\"e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30\",\"approved_total\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"buyer_did\":\"did:plc:buyer1234\",\"delivery\":{\"projection_digest\":\"d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1\",\"recipient_name\":\"Stores Desk\",\"region\":{\"scheme\":\"postal_area\",\"value\":\"682001\"}},\"future_field\":\"x\",\"idempotency_key\":\"idem-po-1\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"quote_id\":\"q-1\",\"submitted_at\":\"2026-08-07T12:00:00Z\",\"supplier_did\":\"did:plc:supplier5678\"}"
+    },
+    {
+      "kind": "purchase_order",
+      "name": "inside the DELIVERY projection",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "quote_id": "q-1",
+        "quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "accepted_lines": [
+          {
+            "line_id": "l1",
+            "product": {
+              "scheme": "gtin",
+              "value": "09506000134352"
+            },
+            "quantity": {
+              "value": "100",
+              "unit_code": "each"
+            }
+          }
+        ],
+        "delivery": {
+          "region": {
+            "scheme": "postal_area",
+            "value": "682001"
+          },
+          "recipient_name": "Stores Desk",
+          "projection_digest": "d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1",
+          "future_qualifier": "x"
+        },
+        "approved_total": {
+          "currency": "INR",
+          "minor_units": "50000"
+        },
+        "accepted_terms_digest": "e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30",
+        "idempotency_key": "idem-po-1",
+        "submitted_at": "2026-08-07T12:00:00Z",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d"
+      },
+      "canonical": "{\"accepted_lines\":[{\"line_id\":\"l1\",\"product\":{\"scheme\":\"gtin\",\"value\":\"09506000134352\"},\"quantity\":{\"unit_code\":\"each\",\"value\":\"100\"}}],\"accepted_terms_digest\":\"e92f1195de8f2730164f9bcc9f2271507ab5e09e4d123d640dc1dc9d1ef38a30\",\"approved_total\":{\"currency\":\"INR\",\"minor_units\":\"50000\"},\"buyer_did\":\"did:plc:buyer1234\",\"delivery\":{\"future_qualifier\":\"x\",\"projection_digest\":\"d6ca433ad08b5092ee847451db05a50f629fd00a5705e005b6fe0780d4527cd1\",\"recipient_name\":\"Stores Desk\",\"region\":{\"scheme\":\"postal_area\",\"value\":\"682001\"}},\"idempotency_key\":\"idem-po-1\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"quote_id\":\"q-1\",\"submitted_at\":\"2026-08-07T12:00:00Z\",\"supplier_did\":\"did:plc:supplier5678\"}"
+    },
+    {
+      "kind": "order_acknowledgement",
+      "name": "top level",
+      "record": {
+        "protocol_version": "1.0",
+        "acknowledgement_id": "ack-1",
+        "purchase_order_id": "po-1",
+        "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "issued_at": "2026-08-07T12:05:00Z",
+        "kind": "accepted",
+        "supplier_order_id": "so-77",
+        "accepted_quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+        "accepted_at": "2026-08-07T12:05:00Z",
+        "acknowledgement_digest": "0e6f19420b13e8fd7a996ccb9877395b6aecb7d01fbd43dbad0e51fc450150e5",
+        "future_field": "x"
+      },
+      "canonical": "{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"0e6f19420b13e8fd7a996ccb9877395b6aecb7d01fbd43dbad0e51fc450150e5\",\"acknowledgement_id\":\"ack-1\",\"buyer_did\":\"did:plc:buyer1234\",\"future_field\":\"x\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"}"
+    },
+    {
+      "kind": "order_status",
+      "name": "top level",
+      "record": {
+        "protocol_version": "1.0",
+        "purchase_order_id": "po-1",
+        "buyer_did": "did:plc:buyer1234",
+        "supplier_did": "did:plc:supplier5678",
+        "sequence": "0",
+        "state": "accepted",
+        "supplier_epoch": "1",
+        "updated_at": "2026-08-07T12:06:00Z",
+        "status_digest": "fbb5aa0a4fe10f112de1fe10cb5f18add3e7bb02d463d8b6ad9cfb7e0b381cb5",
+        "future_field": "x"
+      },
+      "canonical": "{\"buyer_did\":\"did:plc:buyer1234\",\"future_field\":\"x\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"sequence\":\"0\",\"state\":\"accepted\",\"status_digest\":\"fbb5aa0a4fe10f112de1fe10cb5f18add3e7bb02d463d8b6ad9cfb7e0b381cb5\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_epoch\":\"1\",\"updated_at\":\"2026-08-07T12:06:00Z\"}"
+    },
+    {
       "kind": "relationship_claim",
       "name": "inside the claim SUBJECT",
       "record": {

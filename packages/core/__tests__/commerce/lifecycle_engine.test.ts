@@ -1195,6 +1195,79 @@ describe.each([
       ).toEqual(['cx-parked']);
     });
 
+    /**
+     * A STORED RESULT IS RE-VALIDATED ON THE WAY OUT.
+     *
+     * The reader did `JSON.parse(...) as CancellationResult` — a promise to the
+     * compiler, not a check on the data. Any object carrying a matching
+     * `cancellation_id` could stand as this node's terminal answer: an invented
+     * `result` kind, no status head, a `result_digest` that hashes to nothing,
+     * or a perfectly valid result belonging to a DIFFERENT order (the receipt
+     * store is keyed by digest, so a valid foreign row is still a valid row).
+     *
+     * Everything else in this codebase revalidates a stored commercial
+     * commitment when it reads it, because the row may have come back from a
+     * restore or a partial write, and a decision is exactly what must not be
+     * taken on trust.
+     */
+    it('ignores a stored result that no longer validates', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      const parked = makeCancellation(order, '1.0', 'cx-real');
+      engine.resolveCancellation(parked, BUYER_DID, () => 'pending_review');
+
+      // A structurally invalid `result` receipt filed under this order.
+      h.receipts.put({
+        recordDigest: 'de'.repeat(32),
+        domain: 'result',
+        buyerDid: BUYER_DID,
+        quoteId: '',
+        purchaseOrderId: order.purchase_order_id,
+        recordJson: JSON.stringify({
+          cancellation_id: 'cx-forged',
+          purchase_order_id: order.purchase_order_id,
+          result: 'pending_review',
+        }),
+        evidenceJson: '{}',
+        createdAt: 1,
+      });
+
+      // The real one is still listed; the forgery is not.
+      expect(
+        engine
+          .listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)
+          .map((entry) => entry.cancellation_id),
+      ).toEqual(['cx-real']);
+    });
+
+    it('ignores a VALID result filed under a DIFFERENT order', () => {
+      const { order } = seedAdmittedOrder();
+      acceptOrder(order.purchase_order_id);
+      engine.signGenesis(BUYER_DID, order.purchase_order_id);
+      engine.resolveCancellation(
+        makeCancellation(order, '1.0', 'cx-real'),
+        BUYER_DID,
+        () => 'pending_review',
+      );
+      const real = h.receipts
+        .listByOrder(BUYER_DID, order.purchase_order_id)
+        .find((r) => r.domain === 'result');
+      expect(real).toBeDefined();
+
+      // The SAME record — every field valid, digest included — filed under
+      // another order. The receipt store is keyed by digest, so a valid
+      // foreign row is still a valid row; only its own `purchase_order_id`
+      // says whose answer it is.
+      h.receipts.put({
+        ...real!,
+        recordDigest: 'ef'.repeat(32),
+        purchaseOrderId: 'po-somebody-else',
+      });
+
+      expect(engine.listPendingReviewCancellations(BUYER_DID, 'po-somebody-else')).toEqual([]);
+    });
+
     it('lists nothing for an order whose cancellation was decided outright', () => {
       const { order } = seedAdmittedOrder();
       acceptOrder(order.purchase_order_id);

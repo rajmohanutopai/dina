@@ -3,10 +3,27 @@ import { logger } from '@/shared/utils/logger.js'
 import type { TrustCollection } from '@/config/lexicons.js'
 import { CONSTANTS } from '@/config/constants.js'
 import {
-  admitsProtocolVersion,
+  CATALOG_POINTER_NSID,
+  CATALOG_SNAPSHOT_NSID,
+  checkProtocolVersion,
   validateId,
-  validateRelationshipClaim,
-} from '@/shared/commerce/wire-rules.js'
+  validateProductRelationshipClaim,
+  validateProtocolVersionShape,
+} from '@dina/commerce-protocol'
+
+/**
+ * §9.13 admission: a well-formed `MAJOR.MINOR` of a MAJOR this build implements.
+ *
+ * Composed from the protocol's two questions rather than restated, because the
+ * local restatement of exactly this rule is what drifted last time. Shape and
+ * admission are genuinely separate — a receiver can parse a higher MINOR and
+ * must refuse an unknown MAJOR — and both must hold.
+ */
+function admitsProtocolVersion(value: unknown, field: string): string | null {
+  const shape = validateProtocolVersionShape(value, field)
+  if (shape !== null) return shape
+  return checkProtocolVersion(value as string) === null ? null : field
+}
 
 /**
  * Zod validation schemas for all 19 trust record types.
@@ -711,7 +728,7 @@ const relationshipClaimSchema = z.object({
    * that started this.
    */
   .superRefine((claim, ctx) => {
-    const error = validateRelationshipClaim(claim)
+    const error = validateProductRelationshipClaim(claim)
     if (error !== null) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'invalid claim', path: [error] })
     }
@@ -740,8 +757,11 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   'com.dinakernel.peerlens.trustPolicy': trustPolicySchema,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsSchema,
   'com.dinakernel.service.profile': serviceProfileSchema,
-  'com.dinakernel.commerce.catalog': catalogPointerSchema,
-  'com.dinakernel.commerce.catalogSnapshot': catalogSnapshotRecordSchema,
+  // FROM THE PROTOCOL PACKAGE, not spelled again here. The publisher used a
+  // different name for the pointer collection than this file did, and every
+  // pointer it published reached no handler. Both sides now read one constant.
+  [CATALOG_POINTER_NSID]: catalogPointerSchema,
+  [CATALOG_SNAPSHOT_NSID]: catalogSnapshotRecordSchema,
   'com.dinakernel.commerce.relationshipClaim': relationshipClaimSchema,
   // NOTE: every collection added here whose contents are covered by a digest
   // must also be listed in DIGEST_BOUND_COLLECTIONS below.
@@ -755,17 +775,39 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
  * a digest is recomputed over. See the explanation at the return site.
  */
 const DIGEST_BOUND_COLLECTIONS: ReadonlySet<string> = new Set([
-  'com.dinakernel.commerce.catalog',
-  'com.dinakernel.commerce.catalogSnapshot',
+  CATALOG_POINTER_NSID,
+  CATALOG_SNAPSHOT_NSID,
   'com.dinakernel.commerce.relationshipClaim',
 ])
 
 // ── Public API ──────────────────────────────────────────────────────
 
+/**
+ * A validation fault, carrying WHERE and WHAT KIND — never the value.
+ *
+ * §22 / the repository's PII invariant. A `ZodError` is not a safe diagnostic
+ * for firehose input: `invalid_literal` carries `received` (the publisher's
+ * ACTUAL value), `unrecognized_keys` carries `keys` (publisher-chosen key
+ * names), and `message` interpolates both. The rejection writer spreads its
+ * `detail` into a warn log and persists it, so returning the raw error put a
+ * stranger's plaintext into shared operator storage and stdout.
+ *
+ * Redacting only at the log call site was the earlier, partial fix: the raw
+ * error still escaped this function, and the leak simply moved one caller
+ * downstream. The redaction belongs at the boundary, so there is nothing
+ * unsafe left to pass on.
+ */
+export interface ValidationIssue {
+  /** Zod's discriminator: `invalid_type`, `unrecognized_keys`, … */
+  code: string
+  /** Dotted path to the offending field. Structure, not content. */
+  path: string
+}
+
 export interface ValidationResult<T = unknown> {
   success: boolean
   data?: T
-  errors?: z.ZodError
+  errors?: ValidationIssue[]
 }
 
 /**
@@ -786,22 +828,23 @@ export function validateRecord(
   const result = schema.safeParse(record)
 
   if (!result.success) {
-    logger.warn(
-      {
-        collection,
-        // CODE AND PATH ONLY. Zod's issue objects carry `received` and a
-        // message quoting the raw value, so serialising the issue array put
-        // publisher-controlled plaintext into stdout — the one thing the
-        // logging rule forbids. The code and path say what is wrong without
-        // reprinting the bytes.
-        issues: result.error.issues.map((issue) => ({
-          code: issue.code,
-          path: issue.path.join('.'),
-        })),
-      },
-      '[Validator] Record validation failed',
-    )
-    return { success: false, errors: result.error }
+    // CODE AND PATH ONLY, and redacted ONCE, here. Zod's issue objects carry
+    // `received` (the publisher's actual value), `keys` (their chosen key
+    // names) and a `message` quoting both, so anything downstream that
+    // serialises them puts a stranger's plaintext into stdout and into the
+    // durable rejection row.
+    //
+    // Redacting at the log line alone left `result.error` escaping this
+    // function, and the ingester put it straight into `detail` — which the
+    // rejection writer both persists and spreads into a warn log. The same
+    // leak, one caller further on. So the redaction happens at the boundary
+    // and the raw error never leaves.
+    const issues: ValidationIssue[] = result.error.issues.map((issue) => ({
+      code: issue.code,
+      path: issue.path.join('.'),
+    }))
+    logger.warn({ collection, issues }, '[Validator] Record validation failed')
+    return { success: false, errors: issues }
   }
 
   // DIGEST-BOUND COLLECTIONS GET THEIR OWN BYTES BACK.

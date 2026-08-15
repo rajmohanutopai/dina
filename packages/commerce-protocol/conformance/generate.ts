@@ -1200,19 +1200,58 @@ const heldRecord = makeAcceptedAck(order, {
   acknowledgement_id: 'ack-held-1',
 }) as unknown as Record<string, unknown>;
 
-/** The envelope BINDS the record by naming its digest. */
+/**
+ * The envelope, IN THE SHAPE PRODUCTION ACTUALLY USES, with the parties bound
+ * to the record.
+ *
+ * Two defects here, both of which let a conforming-looking implementation be
+ * incompatible with the real wire:
+ *
+ * 1. THE SHAPE WAS FICTIONAL. It signed `{envelope_id, from_did, to_did,
+ *    sent_at, record_digest}`; a `RetainedEnvelope` is `{id, type, from, to,
+ *    created_time, body}` and the record travels inside `body` as the result
+ *    of a `service.response`. An implementation built to satisfy the old
+ *    vector would verify a message no Dina node ever sends.
+ *
+ * 2. THE PARTIES WERE NOT BOUND. The signer was `did:plc:supplier1` while the
+ *    acknowledgement names `did:plc:supplier5678`, and the recipient was
+ *    `did:plc:buyer1` against a record for `did:plc:buyer1234`. So the case
+ *    called VALID was evidence signed by a different supplier, for a
+ *    different buyer — and an implementation that checked the binding would
+ *    have FAILED the vector for being right.
+ *
+ * The parties are now read off the record, so they cannot drift from it.
+ */
+const heldSupplierDid = String(heldRecord.supplier_did);
+const heldBuyerDid = String(heldRecord.buyer_did);
+
+/** A conformant `service.response` carrying the acknowledgement as its result. */
+const heldBody = canonicalJson({
+  capability: 'com.dinakernel.commerce.order_status',
+  query_id: 'q-held-1',
+  status: 'success',
+  ttl_seconds: 300,
+  result: heldRecord,
+});
+
 const heldEnvelope = {
-  envelope_id: 'env-held-1',
-  from_did: 'did:plc:supplier1',
-  to_did: 'did:plc:buyer1',
-  sent_at: '2026-06-01T00:00:01Z',
-  record_digest: heldRecord.acknowledgement_digest,
+  id: 'env-held-1',
+  type: 'service.response',
+  from: heldSupplierDid,
+  to: [heldBuyerDid],
+  created_time: 1780272001,
+  body: heldBody,
 };
 
 const signEnvelope = (envelope: unknown): string =>
   sign(null, Buffer.from(canonicalJson(envelope), 'utf8'), heldPrivate).toString('hex');
 
 const heldSignature = signEnvelope(heldEnvelope);
+
+/** Same key, same record, WRONG sender — a real message from the wrong party. */
+const heldWrongSenderEnvelope = { ...heldEnvelope, from: 'did:plc:othersupplier' };
+/** Same key, same record, WRONG recipient — a real message for someone else. */
+const heldWrongRecipientEnvelope = { ...heldEnvelope, to: ['did:plc:otherbuyer'] };
 
 /** Flip one hex digit — a signature that is well-formed and simply wrong. */
 const flipHex = (hex: string): string =>
@@ -1221,12 +1260,37 @@ const flipHex = (hex: string): string =>
 write('held_signed.json', {
   description:
     'Genuinely signed §12.7/§16.2 held evidence. The signature is Ed25519 over canonicalJson(envelope); the envelope commits to the record via record_digest. An implementation passes only by verifying BOTH the signature and the record binding.',
-  signer: { did: 'did:plc:supplier1', public_key_hex: heldPublicHex },
+  signer: { did: heldSupplierDid, public_key_hex: heldPublicHex },
   cases: [
     {
       name: 'valid/signature verifies and envelope binds the record',
       accepted: true,
       evidence: { record: heldRecord, envelope: heldEnvelope, signature: heldSignature },
+    },
+    {
+      // BOUND PARTIES. Both of these are GENUINELY SIGNED by the key the
+      // vector names, over a well-formed envelope carrying the right record
+      // digest — everything the old family checked. They must still be
+      // refused, because evidence from a supplier who is not this order's
+      // supplier, or addressed to a buyer who is not this order's buyer, is
+      // somebody else's message. The old vector could not express this: its
+      // own "valid" case was already mismatched on both.
+      name: 'parties/signed by a supplier the record does not name',
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: heldWrongSenderEnvelope,
+        signature: signEnvelope(heldWrongSenderEnvelope),
+      },
+    },
+    {
+      name: 'parties/addressed to a buyer the record does not name',
+      accepted: false,
+      evidence: {
+        record: heldRecord,
+        envelope: heldWrongRecipientEnvelope,
+        signature: signEnvelope(heldWrongRecipientEnvelope),
+      },
     },
     {
       name: 'signature/one hex digit flipped',
@@ -1252,7 +1316,7 @@ write('held_signed.json', {
       accepted: false,
       evidence: {
         record: heldRecord,
-        envelope: { ...heldEnvelope, to_did: 'did:plc:attacker1' },
+        envelope: { ...heldEnvelope, to: ['did:plc:attacker1'] },
         signature: heldSignature,
       },
     },
@@ -1359,6 +1423,55 @@ const nestedUnknownCases = [
           : item,
       ),
     },
+  },
+  // EVERY DIGEST-BOUND RECORD, not only the catalog ones.
+  //
+  // The four kinds below were uncovered: the flat `parse_round_trip` family
+  // passed the synthetic kind `generic`, which lets a port route the case to
+  // anything it likes — the reference implementation treats parsing as
+  // identity — while the named cases reached only the catalog and
+  // relationship parsers. A port whose QUOTE parser strips additive fields
+  // therefore passed conformance and then hashed a document nobody sent:
+  // §9.13's whole point is that a digest is taken over the bytes as they
+  // arrived, so a parser that drops an unknown field before hashing produces
+  // a signature over something else.
+  {
+    kind: 'signed_quote',
+    name: 'top level',
+    record: { ...quote, future_field: 'x' },
+  },
+  {
+    kind: 'signed_quote',
+    name: 'inside a quote LINE',
+    record: {
+      ...quote,
+      lines: (quote.lines as unknown as Record<string, unknown>[]).map((line, i) =>
+        i === 0 ? { ...line, future_qualifier: 'x' } : line,
+      ),
+    },
+  },
+  {
+    kind: 'purchase_order',
+    name: 'top level',
+    record: { ...order, future_field: 'x' },
+  },
+  {
+    kind: 'purchase_order',
+    name: 'inside the DELIVERY projection',
+    record: {
+      ...order,
+      delivery: { ...(order.delivery as unknown as Record<string, unknown>), future_qualifier: 'x' },
+    },
+  },
+  {
+    kind: 'order_acknowledgement',
+    name: 'top level',
+    record: { ...acceptedAck, future_field: 'x' },
+  },
+  {
+    kind: 'order_status',
+    name: 'top level',
+    record: { ...genesisStatus, future_field: 'x' },
   },
   {
     kind: 'relationship_claim',

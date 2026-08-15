@@ -10,7 +10,9 @@
  *
  * **Contract under test**: `validateRecord(collection, record)`
  * returns `{success: true, data}` on a parseable record OR
- * `{success: false, errors?: ZodError}` on rejection. A record
+ * `{success: false, errors?: ValidationIssue[]}` on rejection — a REDACTED
+ * issue list (code + path), never Zod's raw error, which carries the
+ * publisher's own values. A record
  * with no schema in `SCHEMA_MAP` returns `{success: false}`
  * without `errors` — the validator distinguishes "rejected by
  * schema" from "no schema for this NSID" so the ingester can log
@@ -38,7 +40,7 @@ const NOW_ISO = new Date().toISOString()
 function expectReject(collection: string, record: unknown) {
   const r = validateRecord(collection, record)
   expect(r.success).toBe(false)
-  return r.errors?.issues ?? []
+  return r.errors ?? []
 }
 
 function expectAccept(collection: string, record: unknown) {
@@ -47,7 +49,7 @@ function expectAccept(collection: string, record: unknown) {
     // Surface the zod errors so a test failure shows what's wrong
     // instead of just `Expected true got false`.
     throw new Error(
-      `expected accept for ${collection} but got: ${JSON.stringify(r.errors?.issues)}`,
+      `expected accept for ${collection} but got: ${JSON.stringify(r.errors)}`,
     )
   }
   return r.data
@@ -67,7 +69,7 @@ describe('validateRecord — registry surface', () => {
     const r = validateRecord('com.dinakernel.peerlens.attestation', {})
     expect(r.success).toBe(false)
     expect(r.errors).toBeDefined()
-    expect(r.errors?.issues.length).toBeGreaterThan(0)
+    expect(r.errors?.length).toBeGreaterThan(0)
   })
 
   it('hasSchema returns true for every registered NSID + false for unknowns', () => {
@@ -179,7 +181,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
     // The rejection MUST be on the `did` path — defends against
     // a refactor that loosens didString and lets garbage slip
     // through under a different bound (e.g. just a min-length).
-    expect(issues.some((i) => i.path.join('.') === 'subject.did')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.did')).toBe(true)
   })
 
   it('rejects a DID shorter than 8 chars', () => {
@@ -189,7 +191,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       confidence: 'high',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path[0] === 'subject')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'subject')).toBe(true)
   })
 
   // Tier 1 fields are hashed VERBATIM by the subject-id resolver, so
@@ -203,7 +205,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path.join('.') === 'subject.did')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.did')).toBe(true)
   })
 
   it('rejects a uri with surrounding whitespace (verbatim-hash guard)', () => {
@@ -213,7 +215,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path.join('.') === 'subject.uri')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.uri')).toBe(true)
   })
 
   it('rejects a whitespace-only identifier (verbatim-hash guard)', () => {
@@ -223,7 +225,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path.join('.') === 'subject.identifier')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.identifier')).toBe(true)
   })
 
   it('accepts a clean (unpadded) Tier 1 identifier', () => {
@@ -257,7 +259,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path.join('.') === 'subject.did')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.did')).toBe(true)
   })
 
   it('accepts did:web with colons in the method-specific id', () => {
@@ -278,7 +280,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: future,
     })
-    expect(issues.some((i) => i.path[0] === 'createdAt')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'createdAt')).toBe(true)
   })
 
   it('accepts a createdAt in the past (no lower bound — old replays OK)', () => {
@@ -297,7 +299,7 @@ describe('shared validators — didString + boundedIsoDate', () => {
       sentiment: 'positive',
       createdAt: 'yesterday',
     })
-    expect(issues.some((i) => i.path[0] === 'createdAt')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'createdAt')).toBe(true)
   })
 })
 
@@ -335,7 +337,7 @@ describe('attestationSchema', () => {
       ...minimal(),
       sentiment: 'mixed',
     })
-    expect(issues.some((i) => i.path[0] === 'sentiment')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'sentiment')).toBe(true)
   })
 
   it('rejects an unknown subject.type', () => {
@@ -343,7 +345,7 @@ describe('attestationSchema', () => {
       ...minimal(),
       subject: { type: 'event', did: VALID_DID },
     })
-    expect(issues.some((i) => i.path.join('.') === 'subject.type')).toBe(true)
+    expect(issues.some((i) => i.path === 'subject.type')).toBe(true)
   })
 
   it('rejects category exceeding the 200-char bound', () => {
@@ -351,7 +353,7 @@ describe('attestationSchema', () => {
       ...minimal(),
       category: 'x'.repeat(201),
     })
-    expect(issues.some((i) => i.path[0] === 'category')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'category')).toBe(true)
   })
 
   it('rejects more than 10 dimensions (DOS guard)', () => {
@@ -359,7 +361,7 @@ describe('attestationSchema', () => {
       ...minimal(),
       dimensions: Array(11).fill({ dimension: 'd', value: 'met' }),
     })
-    expect(issues.some((i) => i.path[0] === 'dimensions')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'dimensions')).toBe(true)
   })
 
   // ── TN-V2-REV-001: useCases ────────────────────────────────────────
@@ -392,7 +394,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         useCases: ['a', 'b', 'c', 'd'],
       })
-      expect(issues.some((i) => i.path[0] === 'useCases')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'useCases')).toBe(true)
     })
 
     it('rejects a use-case tag exceeding 50 chars', () => {
@@ -400,7 +402,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         useCases: ['x'.repeat(51)],
       })
-      expect(issues.some((i) => i.path[0] === 'useCases')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'useCases')).toBe(true)
     })
 
     it('rejects an empty-string use-case tag (min-length 1 guard)', () => {
@@ -408,7 +410,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         useCases: ['everyday', ''],
       })
-      expect(issues.some((i) => i.path[0] === 'useCases')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'useCases')).toBe(true)
     })
 
     it('rejects a non-string use-case entry', () => {
@@ -416,7 +418,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         useCases: ['everyday', 42],
       })
-      expect(issues.some((i) => i.path[0] === 'useCases')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'useCases')).toBe(true)
     })
   })
 
@@ -453,7 +455,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         lastUsedMs: future,
       })
-      expect(issues.some((i) => i.path[0] === 'lastUsedMs')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'lastUsedMs')).toBe(true)
     })
 
     it('rejects a negative value (would invert recency math)', () => {
@@ -461,7 +463,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         lastUsedMs: -1,
       })
-      expect(issues.some((i) => i.path[0] === 'lastUsedMs')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'lastUsedMs')).toBe(true)
     })
 
     it('rejects a non-integer (CBOR records forbid floats)', () => {
@@ -469,7 +471,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         lastUsedMs: Date.now() - 1234.5,
       })
-      expect(issues.some((i) => i.path[0] === 'lastUsedMs')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'lastUsedMs')).toBe(true)
     })
 
     it('rejects a string-typed lastUsedMs', () => {
@@ -477,7 +479,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         lastUsedMs: '1700000000000',
       })
-      expect(issues.some((i) => i.path[0] === 'lastUsedMs')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'lastUsedMs')).toBe(true)
     })
   })
 
@@ -497,7 +499,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         reviewerExperience: 'guru',
       })
-      expect(issues.some((i) => i.path[0] === 'reviewerExperience')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'reviewerExperience')).toBe(true)
     })
 
     it('rejects an empty-string tier (would otherwise pass a min-length 1 check)', () => {
@@ -505,7 +507,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         reviewerExperience: '',
       })
-      expect(issues.some((i) => i.path[0] === 'reviewerExperience')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'reviewerExperience')).toBe(true)
     })
 
     it('rejects a non-string tier', () => {
@@ -513,7 +515,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         reviewerExperience: 2,
       })
-      expect(issues.some((i) => i.path[0] === 'reviewerExperience')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'reviewerExperience')).toBe(true)
     })
   })
 
@@ -558,7 +560,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         recommendFor: ['a', 'b', 'c', 'd', 'e', 'f'],
       })
-      expect(issues.some((i) => i.path[0] === 'recommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'recommendFor')).toBe(true)
     })
 
     it('rejects more than 5 not-recommend-for tags (cap enforced)', () => {
@@ -566,7 +568,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         notRecommendFor: ['a', 'b', 'c', 'd', 'e', 'f'],
       })
-      expect(issues.some((i) => i.path[0] === 'notRecommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'notRecommendFor')).toBe(true)
     })
 
     it('rejects a recommend-for tag exceeding 50 chars', () => {
@@ -574,7 +576,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         recommendFor: ['x'.repeat(51)],
       })
-      expect(issues.some((i) => i.path[0] === 'recommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'recommendFor')).toBe(true)
     })
 
     it('rejects an empty-string recommend-for tag (min-length 1 guard)', () => {
@@ -582,7 +584,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         recommendFor: ['everyday', ''],
       })
-      expect(issues.some((i) => i.path[0] === 'recommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'recommendFor')).toBe(true)
     })
 
     it('rejects an empty-string not-recommend-for tag (min-length 1 guard)', () => {
@@ -590,7 +592,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         notRecommendFor: [''],
       })
-      expect(issues.some((i) => i.path[0] === 'notRecommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'notRecommendFor')).toBe(true)
     })
 
     it('rejects a non-string recommend-for entry', () => {
@@ -598,7 +600,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         recommendFor: ['everyday', 42],
       })
-      expect(issues.some((i) => i.path[0] === 'recommendFor')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'recommendFor')).toBe(true)
     })
   })
 
@@ -629,7 +631,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         alternatives: Array(6).fill({ type: 'product', name: 'Same Name' }),
       })
-      expect(issues.some((i) => i.path[0] === 'alternatives')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'alternatives')).toBe(true)
     })
 
     it('rejects an alternative whose subject.type is unknown (shared SubjectRef bound)', () => {
@@ -637,7 +639,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         alternatives: [{ type: 'event', name: 'Bad Type' }],
       })
-      expect(issues.some((i) => i.path.join('.') === 'alternatives.0.type')).toBe(true)
+      expect(issues.some((i) => i.path === 'alternatives.0.type')).toBe(true)
     })
 
     it('rejects an alternative with a malformed DID (shared SubjectRef bound)', () => {
@@ -645,7 +647,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         alternatives: [{ type: 'did', did: 'not-a-did' }],
       })
-      expect(issues.some((i) => i.path.join('.') === 'alternatives.0.did')).toBe(true)
+      expect(issues.some((i) => i.path === 'alternatives.0.did')).toBe(true)
     })
 
     it('rejects an alternative with an oversized name (shared SubjectRef bound)', () => {
@@ -653,7 +655,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         alternatives: [{ type: 'product', name: 'x'.repeat(201) }],
       })
-      expect(issues.some((i) => i.path.join('.') === 'alternatives.0.name')).toBe(true)
+      expect(issues.some((i) => i.path === 'alternatives.0.name')).toBe(true)
     })
   })
 
@@ -673,13 +675,13 @@ describe('attestationSchema', () => {
       })
       // The refine fires at the subject path itself, not at a
       // child field — Zod attaches refine issues to the parent.
-      expect(
-        issues.some(
-          (i) =>
-            i.path.join('.') === 'subject' &&
-            i.message.includes('at least one'),
-        ),
-      ).toBe(true)
+      //
+      // Matched on CODE + PATH rather than on the message. `ValidationIssue`
+      // deliberately drops `message`, because Zod interpolates the publisher's
+      // own value into it and the rejection row is durable shared storage.
+      // A refine reports `custom`, so code+path still says which rule fired
+      // and where.
+      expect(issues.some((i) => i.path === 'subject' && i.code === 'custom')).toBe(true)
     })
 
     it('rejects a whitespace-only name with no other fields', () => {
@@ -689,11 +691,7 @@ describe('attestationSchema', () => {
         sentiment: 'positive',
         createdAt: NOW_ISO,
       })
-      expect(
-        issues.some(
-          (i) => i.path.join('.') === 'subject' && i.message.includes('at least one'),
-        ),
-      ).toBe(true)
+      expect(issues.some((i) => i.path === 'subject' && i.code === 'custom')).toBe(true)
     })
 
     it('accepts when name is the only field (non-empty after trim)', () => {
@@ -761,7 +759,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compliance: Array(11).fill('halal'),
       })
-      expect(issues.some((i) => i.path[0] === 'compliance')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compliance')).toBe(true)
     })
 
     it('rejects a compliance tag exceeding 50 chars', () => {
@@ -769,7 +767,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compliance: ['x'.repeat(51)],
       })
-      expect(issues.some((i) => i.path[0] === 'compliance')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compliance')).toBe(true)
     })
 
     it('rejects an empty-string compliance tag (min-length 1 guard)', () => {
@@ -777,7 +775,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compliance: ['halal', ''],
       })
-      expect(issues.some((i) => i.path[0] === 'compliance')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compliance')).toBe(true)
     })
 
     it('rejects a non-string compliance entry', () => {
@@ -785,7 +783,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compliance: ['halal', true],
       })
-      expect(issues.some((i) => i.path[0] === 'compliance')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compliance')).toBe(true)
     })
   })
 
@@ -817,7 +815,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         accessibility: Array(11).fill('wheelchair'),
       })
-      expect(issues.some((i) => i.path[0] === 'accessibility')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'accessibility')).toBe(true)
     })
 
     it('rejects an accessibility tag exceeding 50 chars', () => {
@@ -825,7 +823,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         accessibility: ['x'.repeat(51)],
       })
-      expect(issues.some((i) => i.path[0] === 'accessibility')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'accessibility')).toBe(true)
     })
 
     it('rejects an empty-string accessibility tag', () => {
@@ -833,7 +831,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         accessibility: [''],
       })
-      expect(issues.some((i) => i.path[0] === 'accessibility')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'accessibility')).toBe(true)
     })
   })
 
@@ -865,7 +863,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compat: Array(16).fill('usb-c'),
       })
-      expect(issues.some((i) => i.path[0] === 'compat')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compat')).toBe(true)
     })
 
     it('rejects a compat tag exceeding 50 chars', () => {
@@ -873,7 +871,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compat: ['x'.repeat(51)],
       })
-      expect(issues.some((i) => i.path[0] === 'compat')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compat')).toBe(true)
     })
 
     it('rejects an empty-string compat tag', () => {
@@ -881,7 +879,7 @@ describe('attestationSchema', () => {
         ...minimal(),
         compat: ['ios', ''],
       })
-      expect(issues.some((i) => i.path[0] === 'compat')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'compat')).toBe(true)
     })
   })
 
@@ -921,7 +919,7 @@ describe('attestationSchema', () => {
         price: { ...validPrice(), low_e7: 50_00_000_000, high_e7: 10_00_000_000 },
       })
       // The cross-field refine surfaces under the `price` path.
-      expect(issues.some((i) => i.path[0] === 'price')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'price')).toBe(true)
     })
 
     it('rejects negative low_e7', () => {
@@ -987,7 +985,7 @@ describe('attestationSchema', () => {
         // contract is "object or absent," never "partial object".
         price: { low_e7: 100, high_e7: 200 },
       })
-      expect(issues.some((i) => i.path[0] === 'price')).toBe(true)
+      expect(issues.some((i) => i.path.split('.')[0] === 'price')).toBe(true)
     })
   })
 
@@ -1197,7 +1195,7 @@ describe('attestationSchema', () => {
       recommendFor: ['x'.repeat(51)],              // > 50 char per-entry
       alternatives: [{ type: 'event', name: 'X' }], // unknown subject.type
     })
-    const paths = new Set(issues.map((i) => i.path[0]))
+    const paths = new Set(issues.map((i) => i.path.split('.')[0]))
     for (const p of ['useCases', 'reviewerExperience', 'lastUsedMs', 'recommendFor', 'alternatives']) {
       expect(paths.has(p)).toBe(true)
     }
@@ -1244,7 +1242,7 @@ describe('vouchSchema', () => {
       confidence: 'speculative', // attestation has this; vouch deliberately doesn't
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path[0] === 'confidence')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'confidence')).toBe(true)
   })
 
   it('rejects empty vouchType (min-length 1 guard)', () => {
@@ -1304,7 +1302,7 @@ describe('flagSchema', () => {
       severity: 'medium', // not in [critical, serious, warning, informational]
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path[0] === 'severity')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'severity')).toBe(true)
   })
 })
 
@@ -1327,7 +1325,7 @@ describe('replySchema', () => {
       text: '',
       createdAt: NOW_ISO,
     })
-    expect(issues.some((i) => i.path[0] === 'text')).toBe(true)
+    expect(issues.some((i) => i.path.split('.')[0] === 'text')).toBe(true)
   })
 
   it('rejects an unknown intent value', () => {
@@ -1782,7 +1780,7 @@ describe('serviceProfileSchema', () => {
         radiusKm: 25,
       },
     })
-    expect(issues.some((i) => i.path.join('.').includes('latE7'))).toBe(true)
+    expect(issues.some((i) => i.path.includes('latE7'))).toBe(true)
   })
 
   it('rejects radiusKm > 500 (Plan §3.5.5 cap)', () => {

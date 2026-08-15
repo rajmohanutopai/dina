@@ -1,4 +1,16 @@
-/** All trust record collection NSIDs */
+import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID } from '@dina/commerce-protocol'
+
+/**
+ * All trust record collection NSIDs.
+ *
+ * THIS LIST IS THE JETSTREAM SUBSCRIPTION. `wantedCollections` is built from
+ * it, so a name that is here and nowhere else still gets a firehose; a name
+ * that is elsewhere and not here is never delivered at all. The catalog
+ * entries therefore come from `@dina/commerce-protocol` rather than being
+ * spelled a third time — the publisher and the handler map already agree
+ * through those constants, and a subscription list that disagreed with both
+ * would fail silently, which is how the original defect stayed invisible.
+ */
 export const TRUST_COLLECTIONS = [
   'com.dinakernel.peerlens.attestation',
   'com.dinakernel.peerlens.vouch',
@@ -20,8 +32,8 @@ export const TRUST_COLLECTIONS = [
   'com.dinakernel.peerlens.trustPolicy',
   'com.dinakernel.peerlens.notificationPrefs',
   'com.dinakernel.service.profile',
-  'com.dinakernel.commerce.catalog',
-  'com.dinakernel.commerce.catalogSnapshot',
+  CATALOG_POINTER_NSID,
+  CATALOG_SNAPSHOT_NSID,
   'com.dinakernel.commerce.relationshipClaim',
 ] as const
 
@@ -49,7 +61,7 @@ export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {
   trustPolicy: 'com.dinakernel.peerlens.trustPolicy',
   notificationPrefs: 'com.dinakernel.peerlens.notificationPrefs',
   serviceProfile: 'com.dinakernel.service.profile',
-  commerceCatalog: 'com.dinakernel.commerce.catalog',
-  commerceCatalogSnapshot: 'com.dinakernel.commerce.catalogSnapshot',
+  commerceCatalog: CATALOG_POINTER_NSID,
+  commerceCatalogSnapshot: CATALOG_SNAPSHOT_NSID,
   commerceRelationshipClaim: 'com.dinakernel.commerce.relationshipClaim',
 }

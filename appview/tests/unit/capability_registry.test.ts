@@ -111,27 +111,34 @@ describe('capability-registry — invariants', () => {
 })
 
 describe('capability-registry — buildAliasMap fail-loud invariant', () => {
+  /**
+   * A minimal registry entry. `buildAliasMap` reads only `canonical` and
+   * `aliases`; the rest exist because `CanonicalCapability` requires them.
+   * Built through one helper so a new required field is added in ONE place —
+   * these fixtures had gone stale against three fields the type gained, and
+   * nothing noticed because no typecheck covered `tests/`.
+   */
+  const entry = (canonical: string, aliases: string[]): CanonicalCapability => ({
+    canonical,
+    aliases,
+    categoryIds: [],
+    description: '',
+    domain: 'd',
+    intentRoutable: true,
+    privacyClass: 'public',
+    requiresSubjectAuthorization: false,
+  })
+
   it('throws when two entries claim the same alias', () => {
-    const bad: CanonicalCapability[] = [
-      { canonical: 'a', aliases: ['x'], categoryIds: [], description: '', domain: 'd' },
-      { canonical: 'b', aliases: ['x'], categoryIds: [], description: '', domain: 'd' },
-    ]
-    expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
+    expect(() => buildAliasMap([entry('a', ['x']), entry('b', ['x'])])).toThrow(/maps to both/)
   })
 
   it('throws when one entry\'s alias collides with another\'s canonical', () => {
-    const bad: CanonicalCapability[] = [
-      { canonical: 'a', aliases: [], categoryIds: [], description: '', domain: 'd' },
-      { canonical: 'b', aliases: ['a'], categoryIds: [], description: '', domain: 'd' },
-    ]
-    expect(() => buildAliasMap(bad)).toThrow(/maps to both/)
+    expect(() => buildAliasMap([entry('a', []), entry('b', ['a'])])).toThrow(/maps to both/)
   })
 
   it('tolerates an alias listed identically twice within one entry (no false positive)', () => {
-    const ok: CanonicalCapability[] = [
-      { canonical: 'a', aliases: ['x', 'x'], categoryIds: [], description: '', domain: 'd' },
-    ]
-    expect(buildAliasMap(ok).get('x')).toBe('a')
+    expect(buildAliasMap([entry('a', ['x', 'x'])]).get('x')).toBe('a')
   })
 })
 

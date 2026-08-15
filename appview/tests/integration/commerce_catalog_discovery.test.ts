@@ -28,6 +28,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { searchCommerceCatalog } from '@/api/xrpc/commerce-catalog-search.js'
+import { commerceProductRelationships } from '@/db/schema/index.js'
+import { productKey } from '@/shared/commerce/catalog-projection.js'
 import {
   commerceCatalogPointerHandler,
   commerceCatalogSnapshotHandler,
@@ -80,6 +82,8 @@ function item(supplier: string, catalog: string, spec: ItemSpec) {
     item_revision: '1',
     name: spec.name,
     category_ids: spec.categories ?? ['furniture.seating'],
+    // REQUIRED by §9.5 — see the note in `commerce_catalog_ingest.test.ts`.
+    pack: { sell_unit: { unit_code: 'each', value: '1' } },
     fulfilment_regions: [{ scheme: 'admin_area', value: spec.region ?? 'IN-KA' }],
     freshness: {
       generated_at: NOW,
@@ -426,5 +430,73 @@ describe('either delivery order gives the same answer', () => {
 
     const out = await search({ q: 'cedar bookcase', limit: 5 })
     expect(out.candidates.find((c) => c.supplier_did === supplier)?.service_rkey).toBe('self')
+  })
+})
+
+describe('the SQL candidate set, not just the matcher', () => {
+  /**
+   * §10.7 RECALL EXPANSION, through the real endpoint.
+   *
+   * The related-product lookup ran AFTER the SQL predicate was closed, so a
+   * product reachable only along an edge was never fetched and the matcher
+   * never saw it. Every pure-matcher test passed, because those hand the
+   * matcher the row directly — the row that production never loads.
+   */
+  it('returns a product reachable ONLY through a relationship edge', async () => {
+    const queried = { scheme: 'gtin' as const, value: '05012345678900' }
+    // The buyer's GTIN belongs to a product nobody published…
+    await publish(CHAIRMAKER, 'chairmaker-main', [
+      { sku: 'CHAIR-SUCCESSOR', name: 'Oak dining chair 2026' },
+    ])
+    const successorKey = productKey({
+      scheme: 'manufacturer_sku',
+      value: 'CHAIR-SUCCESSOR',
+      issuer_did: CHAIRMAKER,
+    } as never)
+
+    // …but an edge says the queried GTIN is superseded by the published one.
+    await db.insert(commerceProductRelationships).values({
+      edgeKey: `${productKey(queried as never)}|variant_of|${successorKey}`,
+      subjectKey: productKey(queried as never),
+      relationship: 'variant_of',
+      objectKey: successorKey,
+      confidenceBp: 9000,
+      disputed: false,
+      evidenceJson: [{ claimId: 'rc-1', issuerDid: CHAIRMAKER, confidenceBp: 9000 }],
+    })
+
+    const found = await search({ identifier: ['gtin:05012345678900'], limit: 20 })
+    expect(found.candidates.map((c) => c.product.value)).toContain('CHAIR-SUCCESSOR')
+  })
+
+  /**
+   * The cap used to be applied to an UNORDERED result, so PostgreSQL was free
+   * to return any `limit * 4` matching rows — and could drop the one EXACT
+   * IDENTIFIER match while keeping lower-value category hits, contradicting
+   * the documented SQL-superset guarantee and the 6000bp weight the scorer
+   * gives an identifier.
+   */
+  it('keeps an exact identifier match when far more rows match broadly', async () => {
+    const limit = 3
+    // 4*limit = 12 rows the broad predicate matches …
+    await publish(
+      CHAIRMAKER,
+      'chairmaker-main',
+      Array.from({ length: 20 }, (_, i) => ({
+        sku: `BULK-${String(i).padStart(2, '0')}`,
+        name: `Oak dining chair ${i}`,
+      })),
+    )
+    // … plus ONE row carrying the identifier the buyer actually holds.
+    await publish(RIVALWOOD, 'rivalwood-main', [
+      { sku: 'EXACT-1', name: 'Oak dining chair', gtin: '05012345678917' },
+    ])
+
+    const found = await search({
+      category: ['furniture.seating'],
+      identifier: ['gtin:05012345678917'],
+      limit,
+    })
+    expect(found.candidates.map((c) => c.product.value)).toContain('EXACT-1')
   })
 })

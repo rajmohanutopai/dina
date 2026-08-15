@@ -73,6 +73,14 @@ export interface CommerceOrderRef {
    * actually know what this order is".
    */
   reconciliationRequired: boolean;
+  /**
+   * §16.2/§9.11 — the buyer that re-adopted this order also proved it holds a
+   * status chain this node lost. Chain CREATION must refuse for ever: a fresh
+   * genesis forks against the genesis the buyer already has, and §9.11 makes
+   * the buyer reject it. The way forward is the restore fence, not a new
+   * chain.
+   */
+  readoptedChainEvidence: boolean;
   state: CommerceOrderRefState;
   effectPhase: CommerceEffectPhase;
   /** Recorded SIGNED acknowledgement JSON once decided (§15.5). */
@@ -93,16 +101,30 @@ export interface DecideOptions {
   requirePreEffect?: boolean;
 }
 
+/**
+ * What a caller supplies to open a reservation.
+ *
+ * `readoptedChainEvidence` is OPTIONAL and defaults to false. Every path that
+ * admits an order here learns of it from the buyer's proposal and knows
+ * nothing about a status chain elsewhere; only §12.7 re-adoption can. Making
+ * it required would put `readoptedChainEvidence: false` on a dozen ordinary
+ * call sites and bury the one place the value carries information.
+ */
+export type NewCommerceOrderRef = Omit<
+  CommerceOrderRef,
+  | 'state'
+  | 'effectPhase'
+  | 'acknowledgementJson'
+  | 'externalRef'
+  | 'decidedAt'
+  | 'readoptedChainEvidence'
+> & { readoptedChainEvidence?: boolean };
+
 export interface CommerceOrderRefRepository {
   getByOrderId(buyerDid: string, purchaseOrderId: string): CommerceOrderRef | null;
   getByIdempotencyKey(buyerDid: string, idempotencyKey: string): CommerceOrderRef | null;
   /** Insert the reserved record. False when either unique key exists. */
-  createReserved(
-    ref: Omit<
-      CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
-    >,
-  ): boolean;
+  createReserved(ref: NewCommerceOrderRef): boolean;
   /** CAS reserved/pre_effect -> effect_started. Durable BEFORE the effect. */
   markEffectStarted(buyerDid: string, purchaseOrderId: string): boolean;
   /** CAS reserved -> decided, persisting the acknowledgement. */
@@ -187,6 +209,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
     servingInstallId: String(row.serving_install_id ?? ''),
     admittedEpoch: String(row.admitted_epoch),
     reconciliationRequired: Number(row.reconciliation_required) === 1,
+    readoptedChainEvidence: Number(row.readopted_chain_evidence ?? 0) === 1,
     state: String(row.state) as CommerceOrderRefState,
     effectPhase: String(row.effect_phase) as CommerceEffectPhase,
     acknowledgementJson:
@@ -201,7 +224,7 @@ function rowToOrderRef(row: DBRow): CommerceOrderRef {
 const SELECT = `
   SELECT buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
          quote_digest, pinned_version, serving_manifest_cid, serving_install_id,
-         admitted_epoch, reconciliation_required,
+         admitted_epoch, reconciliation_required, readopted_chain_evidence,
          state, effect_phase, acknowledgement_json,
          external_ref, decision_deadline_at, created_at, decided_at
   FROM commerce_order_refs
@@ -226,20 +249,15 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
     return rows[0] ? rowToOrderRef(rows[0]) : null;
   }
 
-  createReserved(
-    ref: Omit<
-      CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
-    >,
-  ): boolean {
+  createReserved(ref: NewCommerceOrderRef): boolean {
     try {
       const affected = this.db.run(
         `INSERT INTO commerce_order_refs (
            buyer_did, purchase_order_id, idempotency_key, order_digest, quote_id,
            quote_digest, pinned_version, serving_manifest_cid, serving_install_id,
-           admitted_epoch, reconciliation_required,
+           admitted_epoch, reconciliation_required, readopted_chain_evidence,
            state, effect_phase, decision_deadline_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', 'pre_effect', ?, ?)
          ON CONFLICT DO NOTHING`,
         [
           ref.buyerDid,
@@ -253,6 +271,7 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
           ref.servingInstallId,
           ref.admittedEpoch,
           ref.reconciliationRequired ? 1 : 0,
+          ref.readoptedChainEvidence === true ? 1 : 0,
           ref.decisionDeadlineAt,
           ref.createdAt,
         ],
@@ -471,16 +490,15 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
     return null;
   }
 
-  createReserved(
-    ref: Omit<
-      CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
-    >,
-  ): boolean {
+  createReserved(ref: NewCommerceOrderRef): boolean {
     if (this.byOrderId.has(this.orderKey(ref.buyerDid, ref.purchaseOrderId))) return false;
     if (this.getByIdempotencyKey(ref.buyerDid, ref.idempotencyKey)) return false;
     this.byOrderId.set(this.orderKey(ref.buyerDid, ref.purchaseOrderId), {
       ...ref,
+      // Spelled out because the input type makes it optional: `...ref` alone
+      // would leave `undefined` where the row type promises a boolean, and
+      // every reader of this store would then be reading a third state.
+      readoptedChainEvidence: ref.readoptedChainEvidence === true,
       state: 'reserved',
       effectPhase: 'pre_effect',
       acknowledgementJson: null,

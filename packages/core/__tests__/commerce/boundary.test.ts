@@ -40,6 +40,17 @@ const OWNERS = new Set([
   'commerce_order.ts',
 ]);
 
+/**
+ * Drop `InMemory*` class bodies.
+ *
+ * They are test doubles, so a call inside one is not a production caller — and
+ * their `Map`/`Set` operations (`this.rows.delete(...)`) collide by name with
+ * the very mutators these rules check.
+ */
+function withoutInMemoryClasses(source: string): string {
+  return source.replace(/export class InMemory[\s\S]*?\n\}\n/g, '\n');
+}
+
 function tsFiles(dir: string): string[] {
   return fs
     .readdirSync(dir, { withFileTypes: true })
@@ -69,10 +80,69 @@ function code(source: string): string {
  * reference.
  */
 function codeNoStrings(source: string): string {
-  return code(source)
-    .replace(/'(?:\\.|[^'\\])*'/g, "''")
-    .replace(/"(?:\\.|[^"\\])*"/g, '""')
-    .replace(/`(?:\\.|\$\{[^}]*\}|[^`\\])*`/g, (m) => (m.match(/\$\{[^}]*\}/g) ?? []).join(' '));
+  // A SCANNER, NOT A PATTERN, because the thing being read is not regular.
+  //
+  // The regex version stripped quotes before backticks, so an apostrophe
+  // inside a template — `the seller's settings` — read as an opening quote and
+  // paired with the next one hundreds of lines away, deleting every call site
+  // between them. Reordering did not save it either: a NESTED template
+  // (`${n > 5 ? `and more` : ''}`) leaves the interpolation pattern matching to
+  // the first `}` and the backticks unbalanced again.
+  //
+  // Both failures are the same mistake — matching a nesting language with a
+  // flat pattern — and both are silent. The ledger reported two wired methods
+  // as callerless, and would as easily have hidden a call it exists to find, so
+  // this walks the text once and keeps a stack instead.
+  const text = code(source);
+  let out = '';
+  let i = 0;
+  /** Depth of `${` interpolations, so a nested template returns to its parent. */
+  const templates: number[] = [];
+  while (i < text.length) {
+    const ch = text[i] ?? '';
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      i += 1;
+      while (i < text.length && text[i] !== quote) i += text[i] === '\\' ? 2 : 1;
+      i += 1;
+      out += quote + quote;
+      continue;
+    }
+    if (ch === '`') {
+      i += 1;
+      while (i < text.length) {
+        if (text[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (text[i] === '`') {
+          i += 1;
+          break;
+        }
+        // An interpolation is CODE and is kept — that is where calls hide.
+        if (text[i] === '$' && text[i + 1] === '{') {
+          i += 2;
+          templates.push(1);
+          let depth = 1;
+          const from = i;
+          while (i < text.length && depth > 0) {
+            if (text[i] === '{') depth += 1;
+            else if (text[i] === '}') depth -= 1;
+            if (depth > 0) i += 1;
+          }
+          out += ` ${codeNoStrings(text.slice(from, i))} `;
+          i += 1;
+          templates.pop();
+          continue;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 describe('commerce aggregate boundary', () => {
@@ -97,6 +167,128 @@ describe('commerce aggregate boundary', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * THE UNRECEIPTED PUBLISH BODY IS GATED ON PRESENCE, NOT ON A COMMENT.
+   *
+   * `/v1/commerce/catalog/publish` still accepts an item list, which publishes
+   * with no content receipt, no snapshot approval and no presence step. §6
+   * retires that body; it survives only because §10 item 9's presence
+   * primitive is unwired, so the draft lane — where the receipt and the
+   * approval live — cannot publish at all yet.
+   *
+   * That makes the retirement conditional, and a conditional nobody can see is
+   * how a bypass outlives its reason. This pins the mechanism: ONE presence
+   * function, read by the draft service AND by the guard on the item-list
+   * body, so the day it returns true the bypass closes on its own. Two
+   * separate answers to "is a person here" is exactly the asymmetry that would
+   * leave a working draft lane and an open bypass side by side.
+   */
+  it('the item-list publish body and the draft lane read ONE presence function', () => {
+    const routes = code(
+      fs.readFileSync(path.join(CORE_SRC, 'server', 'routes', 'commerce.ts'), 'utf8'),
+    );
+    // Declared once.
+    expect(routes.match(/function ownerPresenceAvailable\(/g) ?? []).toHaveLength(1);
+    // Read by the draft service's presence dep...
+    expect(/userPresent:\s*ownerPresenceAvailable/.test(routes)).toBe(true);
+    // ...and by the guard that retires the item list.
+    expect(/if \(ownerPresenceAvailable\(\)\)[\s\S]{0,400}item_list_retired/.test(routes)).toBe(
+      true,
+    );
+    // And no second, hand-rolled "false" standing in for presence anywhere.
+    expect(/userPresent:\s*\(\)\s*=>\s*false/.test(routes)).toBe(false);
+  });
+
+  /**
+   * ONLY THE PUBLISHER MINTS A POINTER.
+   *
+   * The draft lane held a snapshot across the owner's review and then
+   * reassembled a pointer from that snapshot's fields at publish time. It
+   * type-checked and it published, but `previous_snapshot_digest` and
+   * `service_rkey` live ONLY on the pointer: the repo accepted the write,
+   * AppView refused it for a broken chain, and Core reported a successful
+   * publication buyers never saw. Every publish test passed because they all
+   * started from an empty pointer repo, where the dropped fields do not exist.
+   *
+   * `snapshot_rkey` is the tell — a field no other record carries — so a
+   * second place constructing a pointer cannot avoid naming it.
+   */
+  it('only the catalog publisher constructs a pointer', () => {
+    const offenders: string[] = [];
+    for (const file of tsFiles(CORE_SRC)) {
+      if (file.includes(`${path.sep}__tests__${path.sep}`)) continue;
+      const name = path.basename(file);
+      if (name === 'catalog_publisher.ts') continue;
+      if (/\bsnapshot_rkey\s*:/.test(code(fs.readFileSync(file, 'utf8')))) {
+        offenders.push(path.relative(CORE_SRC, file));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * `repairRow` takes its assembler as a CALLBACK, so the guarantee is the
+   * caller's to keep.
+   *
+   * Assembly is where two rows resolving to one product identity are refused,
+   * and that refusal is what keeps a colliding pair out of a draft, out of the
+   * provenance map keyed by identity, and out of a signature. Every other way
+   * into a draft calls `assembleCatalogItems` directly; repair reaches it only
+   * because the one route that calls `repairRow` happens to pass
+   * `assembleFromRows`. A second call site passing anything else would reopen
+   * the hole silently, and no type would object — the parameter's type is
+   * satisfied by any function returning items and findings.
+   *
+   * The callback exists for a real reason: the service is deliberately
+   * settings-agnostic and the route supplies the seller's CURRENT settings, so
+   * moving the assembler into the service would drag supplier settings across
+   * that boundary. This pins the invariant instead of removing the seam.
+   */
+  it('every repairRow call site assembles through the assembler', () => {
+    // PER CALL SITE, NOT PER FILE. The first version asked whether a file
+    // containing `repairRow(` also contained `assembleFromRows(` anywhere —
+    // co-occurrence, not correspondence. A SECOND repair call in
+    // `commerce.ts` passing an arbitrary callback would have satisfied it on
+    // the first call's match, which is precisely the hole it was written to
+    // close. So this walks each call expression and reads its own argument
+    // list, bracket-matched rather than line-matched, because the callback
+    // spans several lines and contains nested parentheses of its own.
+    const sites: { file: string; text: string }[] = [];
+    for (const file of tsFiles(CORE_SRC)) {
+      if (file.includes(`${path.sep}__tests__${path.sep}`)) continue;
+      // The definition is not a call site.
+      if (path.basename(file) === 'catalog_draft_service.ts') continue;
+      const source = code(fs.readFileSync(file, 'utf8'));
+      for (const match of source.matchAll(/\brepairRow\s*\(/g)) {
+        const open = (match.index ?? 0) + match[0].length - 1;
+        let depth = 0;
+        let close = open;
+        for (let i = open; i < source.length; i += 1) {
+          if (source[i] === '(') depth += 1;
+          else if (source[i] === ')') {
+            depth -= 1;
+            if (depth === 0) {
+              close = i;
+              break;
+            }
+          }
+        }
+        sites.push({ file: path.relative(CORE_SRC, file), text: source.slice(open, close + 1) });
+      }
+    }
+
+    for (const site of sites) {
+      // The assembler must be invoked INSIDE this call's own arguments.
+      expect({ file: site.file, assembles: /assembleFromRows\s*\(/.test(site.text) }).toEqual({
+        file: site.file,
+        assembles: true,
+      });
+    }
+    // Non-vacuity, and by COUNT as well as by file: a second call site in the
+    // same file is the case the old assertion could not see.
+    expect(sites.map((s) => s.file)).toEqual(['server/routes/commerce.ts']);
   });
 
   /**
@@ -180,6 +372,16 @@ describe('commerce aggregate boundary', () => {
       // default — every field is checked and a single miss discards the whole
       // record.
       'idempotency_store.ts',
+      // The draft store parses and IMMEDIATELY re-derives: `readItems` runs
+      // every stored item back through `validateCatalogItem`, the same
+      // validator the assembler ran on the way in, and a single failure makes
+      // the whole set read as EMPTY. These are the bytes that get signed, so
+      // believing a row edited after writing is the one thing that must not
+      // happen — and the state machine refuses to publish a draft with no
+      // items, so an unreadable row publishes nothing rather than something
+      // nobody checked. The provenance class fails closed to `model_derived`
+      // for the same reason, and an unknown draft state reads as absent.
+      'catalog_draft_store.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -226,6 +428,9 @@ describe('commerce aggregate boundary', () => {
       // Named here rather than left silent: this is the last piece of the
       // buyer lane, and the ledger is what stops it being forgotten again.
       ['buyer_quote_request.ts:requestQuote', 'no operator surface yet — route pending'],
+      // The draft store (PCL-4). The state machine that owns it is PCL-5 and
+      // the routes are PCL-6; both entries leave when those land.
+      ['catalog_draft_store.ts:InMemoryCatalogDraftRepository', 'test double'],
       ['buyer_requests.ts:InMemoryBuyerQuoteRequestRepository', 'test double'],
       ['order_approvals.ts:InMemoryOrderApprovalRepository', 'test double'],
       ['buyer_quotes.ts:InMemoryBuyerQuoteRepository', 'test double'],
@@ -533,13 +738,19 @@ describe('commerce aggregate boundary', () => {
    * capability the product does not actually have.
    */
   it('every public method on an application service has a production caller', () => {
-    const SERVICES = ['admission_service.ts', 'reconciliation_service.ts'];
+    // DERIVED, NOT TYPED OUT. The list was two hand-written filenames, so
+    // `catalog_draft_service.ts` — added later — was outside the rule
+    // entirely, and its `recordEdit` sat with no caller and no ledger row
+    // while this test passed. A guard whose scope is maintained by memory
+    // stops covering the thing it was written for on the day someone adds a
+    // file. Any `*_service.ts` in this directory is in.
+    const SERVICES = fs
+      .readdirSync(COMMERCE_SRC)
+      .filter((f) => f.endsWith('_service.ts'))
+      .sort();
+    expect(SERVICES.length).toBeGreaterThanOrEqual(3);
     // A method may be listed only with a reason it is not yet reachable.
     const NOT_YET_CALLED = new Map<string, string>([
-      [
-        'admission_service.ts:registerReplacementQuote',
-        '§16.2 step 3 — the post-restore re-offer ceremony has no operator surface yet',
-      ],
       [
         // SUPERSEDED, not merely unused. `issueQuote` replaced it: this one
         // infers the audience from `quote.buyer_did`, which is the record
@@ -550,23 +761,17 @@ describe('commerce aggregate boundary', () => {
         'admission_service.ts:registerSignedQuote',
         'superseded by issueQuote — delete once quote-ledger tests migrate',
       ],
-      // The §16.2 recovery ceremony. All three are real, tested engines with
-      // no operator surface to start them yet — the same shape as
-      // `registerReplacementQuote` and recorded for the same reason: a row
-      // here is a capability the product does not YET have, said out loud
-      // rather than discovered by an auditor.
+      // The §16.2 recovery ceremony USED TO BE HERE — all three of it, plus
+      // `registerReplacementQuote` — and the reason given was "no operator
+      // surface yet". It stayed true for as long as nobody looked: a restored
+      // supplier could LIST its frozen orders and had no way to recover one.
+      // The routes exist now (`/v1/commerce/reconciliation/order`, `/fence`,
+      // `/v1/commerce/quotes/replacement`), so the rows are gone.
       [
         'reconciliation_service.ts:signGenesis',
         '§9.11 genesis signing is reached through decideOrder today; no direct caller',
       ],
-      [
-        'reconciliation_service.ts:signRestoreFence',
-        '§16.2 fence ceremony has no operator surface yet',
-      ],
-      [
-        'reconciliation_service.ts:reconcileRestoredOrder',
-        '§12.7 per-order re-adoption ceremony has no operator surface yet',
-      ],
+
     ]);
     const callers = tsFiles(CORE_SRC)
       .filter((f) => !f.includes(`${path.sep}__tests__${path.sep}`))
@@ -587,6 +792,32 @@ describe('commerce aggregate boundary', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * AN ALLOWLIST THAT CANNOT EXPIRE IS A PERMANENT EXCUSE.
+   *
+   * The check above skips every allowlisted key outright, so a row whose
+   * reason has since been fixed sits there for ever, still saying the product
+   * lacks a capability it now has. That is the same shape as the defects this
+   * file exists to catch: a statement nothing re-examines.
+   *
+   * So a row is wrong in BOTH directions — an unwired method missing from it,
+   * and a wired method still in it.
+   */
+  it('the not-yet-called allowlist has no stale rows', () => {
+    const ALLOWLISTED = ['reconciliation_service.ts:signGenesis'];
+    const callers = tsFiles(CORE_SRC)
+      .filter((f) => !f.includes(`${path.sep}__tests__${path.sep}`))
+      .map((f) => ({ name: path.basename(f), body: codeNoStrings(fs.readFileSync(f, 'utf8')) }));
+
+    const stale = ALLOWLISTED.filter((key) => {
+      const [service = '', method = ''] = key.split(':');
+      return callers.some(
+        (c) => c.name !== service && new RegExp(`\\.${method}\\s*\\(`).test(c.body),
+      );
+    });
+    expect(stale).toEqual([]);
   });
 
   /**
@@ -618,6 +849,16 @@ describe('commerce aggregate boundary', () => {
         'idempotency_store.ts:forget',
         '§15.5 probe eviction — no retention sweep calls it yet',
       ],
+      // Exposed the moment this rule stopped counting the in-memory double's
+      // `Map.delete` as a use. A draft holds the extracted rows of a
+      // photographed price list — the seller's own data — and there is no way
+      // to remove one: no route, no sweep, no erasure path. §10 item 7 records
+      // retention, erasure and export as undefined FOR THE DRAFT STORE
+      // SPECIFICALLY, so this is that gap with a name rather than a new one.
+      [
+        'catalog_draft_store.ts:delete',
+        '§10 item 7 — draft retention and erasure are undefined; no caller until they are',
+      ],
     ]);
 
     // BOUND TO THE RUNTIME FIELD, not to the bare method name. A first version
@@ -635,18 +876,22 @@ describe('commerce aggregate boundary', () => {
       .map((f) => ({ file: f, body: codeNoStrings(fs.readFileSync(f, 'utf8')) }));
 
     const offenders = new Set<string>();
+    /** Mutators that DO have a caller — used to catch a stale allowlist row. */
+    const certified = new Set<string>();
     for (const file of tsFiles(COMMERCE_SRC)) {
       const name = path.basename(file);
       const body = code(fs.readFileSync(file, 'utf8'));
-      for (const cls of body.matchAll(/^export class (SQLite\w+)/gm)) {
+      for (const cls of body.matchAll(/^export class (SQLite\w+)(?:\s+implements\s+(\w+))?/gm)) {
         const field = fieldOfClass.get(cls[1] ?? '');
         if (field === undefined) continue;
+        const iface = cls[2];
         for (const m of body.matchAll(/^ {2}(?!private |constructor|get |static )(\w+)\(/gm)) {
           const method = m[1] ?? '';
           if (READ_ONLY.test(method)) continue;
           const key = `${name}:${method}`;
-          if (NOT_YET_CALLED.has(key)) continue;
-          // TWO WAYS TO COUNT AS CALLED, and both are real wiring:
+          // NOT skipped when listed: a listed mutator is still evaluated so a
+          // row that has quietly become wired can be caught below.
+          // THREE WAYS TO COUNT AS CALLED, and all three are real wiring:
           //
           //   - the store's OWN module uses it. `verifyInboundQuote` lives
           //     beside the repository it appends to and takes it as a
@@ -654,23 +899,60 @@ describe('commerce aggregate boundary', () => {
           //     its store and that is the ordinary shape here.
           //   - somewhere else reaches it through the runtime FIELD, which is
           //     the only name the composition root exposes.
+          //   - a collaborator receives the store by INJECTION and calls it
+          //     under a local name. `CatalogDraftService` takes the runtime's
+          //     `catalogDrafts` as `drafts: CatalogDraftRepository`, so a
+          //     field-name search saw an unwritten store where six writes sit.
+          //     The receiver is matched by its DECLARED INTERFACE, not by name,
+          //     which is why this stays the question "is THIS store written":
+          //     another store's `put` is typed to another interface and cannot
+          //     answer for this one.
           //
-          // What neither covers is a mutator nothing invokes at all, which is
-          // the case this test exists for.
+          // What none of them covers is a mutator nothing invokes at all,
+          // which is the case this test exists for.
           const ownModuleUses = new RegExp(`\\.${method}\\s*\\(`).test(
             // Strip the class body's own declaration line so a method is not
-            // counted as calling itself.
-            body.replace(new RegExp(`^ {2}${method}\\(`, 'gm'), '  __decl__('),
+            // counted as calling itself — AND the in-memory double's body,
+            // which is not production and whose `Map`/`Set` calls share names
+            // with the mutators being checked. `SQLiteCatalogDraftRepository
+            // .delete` has no caller anywhere, and
+            // `InMemoryCatalogDraftRepository.delete`'s `this.rows.delete(...)`
+            // — a `Map.delete` — matched the pattern and certified it wired.
+            withoutInMemoryClasses(body).replace(
+              new RegExp(`^ {2}${method}\\(`, 'gm'),
+              '  __decl__(',
+            ),
           );
           const call = new RegExp(`\\b${field}\\.${method}\\s*\\(`);
           const calledElsewhere = callers.some(
             (c) => path.basename(c.file) !== name && call.test(c.body),
           );
-          if (!ownModuleUses && !calledElsewhere) offenders.add(key);
+          // The injected receiver must be DECLARED with this store's interface
+          // in the same file that calls the method, so the annotation and the
+          // call cannot come from two unrelated places.
+          const calledByInjection =
+            iface !== undefined &&
+            callers.some((c) => {
+              if (path.basename(c.file) === name) return false;
+              const receivers = [...c.body.matchAll(new RegExp(`(\\w+)\\s*:\\s*${iface}\\b`, 'g'))]
+                .map((r) => r[1] ?? '')
+                .filter((r) => r.length > 0);
+              return receivers.some((r) => new RegExp(`\\b${r}\\.${method}\\s*\\(`).test(c.body));
+            });
+          const wired = ownModuleUses || calledElsewhere || calledByInjection;
+          if (wired) certified.add(key);
+          else if (!NOT_YET_CALLED.has(key)) offenders.add(key);
         }
       }
     }
     expect([...offenders]).toEqual([]);
+    // AND THE LIST MUST NOT GO STALE, the same rule the orphan ledger carries.
+    // Without this, a row stays after its mutator is wired, and worse, a row
+    // whose mutator was NEVER unwired reads as a promise being kept. The
+    // `catalog_draft_store.ts:delete` row went on this list only because the
+    // rule had been counting the in-memory double's `Map.delete`; a
+    // rule-and-list pair with no staleness check cannot tell those apart.
+    expect([...NOT_YET_CALLED.keys()].filter((k) => certified.has(k))).toEqual([]);
   });
 
   it('no production file outside an owner calls a raw persistence mutator', () => {

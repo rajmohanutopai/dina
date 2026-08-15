@@ -57,8 +57,122 @@ export const MAX_CATALOG_REGIONS = 50;
 export const MAX_CATALOG_IDENTIFIERS = 10;
 export const MAX_UNITS_PER_PACK_DIGITS = 6;
 
+/**
+ * Every key a `CatalogItem` may carry. Nothing else reaches the wire.
+ *
+ * WHY AN EXACT LIST RATHER THAN A FIELD-BY-FIELD CHECK. The validator below
+ * inspects the fields it knows and said nothing about the ones it does not, so
+ * an item carrying `image_url` — or anything else — passed. Three consequences,
+ * each worse than the last: the extra key travels in the published record; it
+ * is inside the canonical bytes the snapshot digest commits to, so a verifier
+ * recomputing the digest is committing to a field no schema describes; and the
+ * §12.1 leakage gate allows `image_url` explicitly, so the one field a
+ * photo-catalog lane must never publish had no structural obstacle anywhere.
+ *
+ * A photo lane makes this urgent rather than theoretical: its items are built
+ * from what a model returned, and "the assembler will not emit that" is a
+ * convention. The wire has to be the place it cannot happen.
+ */
+/**
+ * Declared as `Record<keyof CatalogItem, true>` so the COMPILER keeps it in
+ * step with the type. A field added to `CatalogItem` and forgotten here would
+ * otherwise become quietly unpublishable — the validator would refuse the very
+ * items the type now permits — and a stale entry left behind would re-open the
+ * hole this exists to close. Both are compile errors instead.
+ */
+const CATALOG_ITEM_KEY_MAP: Record<keyof CatalogItem, true> = {
+  product: true,
+  supplier_did: true,
+  catalog_id: true,
+  item_revision: true,
+  name: true,
+  brand: true,
+  family_ref: true,
+  formulation_ref: true,
+  relationship_claim_refs: true,
+  description: true,
+  category_ids: true,
+  pack: true,
+  identifiers: true,
+  fulfilment_regions: true,
+  indicative_price: true,
+  minimum_order: true,
+  freshness: true,
+  attributes: true,
+};
+
+const CATALOG_ITEM_KEYS: ReadonlySet<string> = new Set(Object.keys(CATALOG_ITEM_KEY_MAP));
+
+/**
+ * Fields a published catalog must never carry, whoever published it.
+ *
+ * NOT the same idea as "unknown". A reader tolerates an unknown key because a
+ * later minor may have added it and the reader simply does not know it yet
+ * (§9.13). These four are different: they are known, named, and forbidden.
+ * Live stock and buyer-specific terms belong in a live service result and
+ * never in a public snapshot (§10.4 / FR-A7), and the photo lane's image stays
+ * in the vault (§7) — `CatalogItem` has no media field precisely so there is
+ * nothing to publish.
+ *
+ * A reader that tolerated these would index an item whose very presence is the
+ * violation, so the tolerance for additive fields stops exactly here.
+ */
+export const FORBIDDEN_CATALOG_ITEM_KEYS: ReadonlySet<string> = new Set([
+  'stock_on_hand',
+  'authorized_buyer',
+  'customer_price',
+  'image_url',
+]);
+
+/**
+ * THE PUBLISHER RULE — exact keys, checked before anything else.
+ *
+ * An unknown key is a statement that this item was built against a different
+ * idea of the type than the one publishing it, and no amount of correctness in
+ * the known fields makes that safe to SIGN.
+ *
+ * Deliberately NOT the rule a reader applies; see
+ * `validateCatalogItemForIngest`.
+ */
 export function validateCatalogItem(item: unknown): string | null {
   if (!isRecord(item)) return 'catalogItem: must be an object';
+  for (const key of Object.keys(item)) {
+    if (!CATALOG_ITEM_KEYS.has(key)) {
+      return `catalogItem: unknown field ${JSON.stringify(key)} — a published item carries only the declared fields (§12.1)`;
+    }
+  }
+  return validateCatalogItemFields(item);
+}
+
+/**
+ * THE READER RULE — the same field checks, unknown keys tolerated.
+ *
+ * §9.13 makes a same-major higher MINOR additive: a 1.1 publisher may put a
+ * field on an item that a 1.0 reader has never heard of. An indexer that
+ * applied the publisher's exact-key rule would refuse that item, and because
+ * snapshot projection is all-or-nothing one such field makes the supplier's
+ * WHOLE catalog unindexable — a valid, correctly-digested, correctly-signed
+ * catalog that simply disappears, with the fault reported against the
+ * publisher.
+ *
+ * Tolerating the key is safe precisely because it stays unknown: a projection
+ * writes the fields it knows into the columns it has, so a field with no
+ * column is never stored and never served.
+ *
+ * The two rules share `validateCatalogItemFields`, so the thing they agree on
+ * — what a KNOWN field must look like — has one definition and cannot drift.
+ */
+export function validateCatalogItemForIngest(item: unknown): string | null {
+  if (!isRecord(item)) return 'catalogItem: must be an object';
+  for (const key of Object.keys(item)) {
+    if (FORBIDDEN_CATALOG_ITEM_KEYS.has(key)) {
+      return `catalogItem: forbidden field ${JSON.stringify(key)} — a published snapshot carries no live stock, buyer-specific terms or media (§10.4)`;
+    }
+  }
+  return validateCatalogItemFields(item);
+}
+
+function validateCatalogItemFields(item: Record<string, unknown>): string | null {
   const checks: (string | null)[] = [
     validateProductRef(item.product),
     validateDid(item.supplier_did, 'catalogItem.supplier_did'),

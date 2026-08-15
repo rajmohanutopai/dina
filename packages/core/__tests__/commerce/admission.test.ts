@@ -269,6 +269,41 @@ describe.each([
       expect(unknown.detail).toContain('q-never-existed');
     });
 
+    /**
+     * THE REFUSED PROPOSAL IS STILL A DOCUMENT THAT ARRIVED.
+     *
+     * Only the reserved path retained it, so every durably-recorded refusal
+     * left an order reference naming an `order_digest` no receipt carried —
+     * exactly what `preflightCommerceArchive` refuses as a dangling receipt
+     * reference. One refused order, which any peer can provoke by naming a
+     * quote_id this node never issued, made the owner's next backup
+     * permanently unrestorable.
+     */
+    it('retains the refused proposal as an order receipt', () => {
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection, { quote_id: 'q-never-existed' });
+      expect(engine.admitOrder(order, BUYER_DID).kind).toBe('rejected');
+
+      const retained = h.receipts.get(order.order_digest);
+      expect(retained).not.toBeUndefined();
+      expect(retained?.domain).toBe('order');
+      expect(retained?.purchaseOrderId).toBe(order.purchase_order_id);
+      // The record is the proposal itself, not a summary of it.
+      expect(JSON.parse(retained?.recordJson ?? '{}')).toEqual(order);
+    });
+
+    it('records WHO handed it over, not who the document says', () => {
+      // §9.12 — same arrival evidence as the accepted path. The buyer DID here
+      // is the transport-authenticated sender; a refusal does not make the
+      // provenance of the document it refused less worth recording.
+      const quote = seedQuote();
+      const order = makeOrder(quote, pricedProjection, { quote_id: 'q-never-existed' });
+      engine.admitOrder(order, BUYER_DID);
+      expect(
+        readEvidence(h.receipts.get(order.order_digest)?.evidenceJson ?? '').observations,
+      ).toEqual([expect.objectContaining({ kind: 'received', fromDid: BUYER_DID })]);
+    });
+
     it('never leaks the detail into the acknowledgement the buyer receives', () => {
       // The whole point of the split. If the detail rode on the wire the
       // non-disclosing reason code would be decoration.

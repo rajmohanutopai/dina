@@ -218,15 +218,43 @@ const ours: ConformanceImplementation = {
       Buffer.from(signature, 'hex'),
     );
     if (!signatureIsGood) return false;
-    // THE BINDING. A signature alone says the supplier sent SOMETHING; it says
-    // nothing about whether this is the record it was sent with.
-    const bound = (envelope as { record_digest?: unknown }).record_digest;
-    const expected = commerceRecordDigest(
-      'acknowledgement',
-      record as Record<string, unknown>,
-      hash,
-    );
-    return bound === expected;
+
+    // THE BINDING, as production does it. A signature alone says the supplier
+    // sent SOMETHING; it says nothing about whether this is the record it was
+    // sent with, nor whether it was sent to THIS buyer.
+    //
+    // The envelope used to carry a `record_digest` field, which was fiction:
+    // a `RetainedEnvelope` carries `body`, and the record travels inside it as
+    // the `result` of a `service.response`. Checking a field production never
+    // sends certified implementations that could not read a real message.
+    const env = envelope as {
+      type?: unknown;
+      from?: unknown;
+      to?: unknown;
+      body?: unknown;
+    };
+    if (env.type !== 'service.response') return false;
+
+    const rec = record as Record<string, unknown>;
+    // PARTIES BOUND TO THE RECORD. Without this, evidence signed by a
+    // different supplier — or addressed to a different buyer — verifies.
+    if (env.from !== rec.supplier_did) return false;
+    if (!Array.isArray(env.to) || !env.to.includes(rec.buyer_did)) return false;
+
+    if (typeof env.body !== 'string') return false;
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(env.body);
+    } catch {
+      return false;
+    }
+    const body = parsedBody as { status?: unknown; result?: unknown };
+    if (body.status !== 'success') return false;
+    const result = body.result as Record<string, unknown> | undefined;
+    if (result === undefined || result === null) return false;
+
+    const expected = commerceRecordDigest('acknowledgement', rec, hash);
+    return result.acknowledgement_digest === expected;
   },
 
   compareQuantities: (a, b) => {
@@ -289,7 +317,7 @@ describe('this implementation conforms to the frozen vectors', () => {
       'search_candidate.invalid': 5,
       'schema_evolution.version_admission': 5,
       'schema_evolution.version_shape': 6,
-      'schema_evolution.nested_unknown': 6,
+      'schema_evolution.nested_unknown': 12,
       'schema_evolution.parse_round_trip': 4,
       'schema_evolution.unknown_fields': 12,
       'schema_evolution.unknown_field_tolerance': 2,
@@ -302,7 +330,7 @@ describe('this implementation conforms to the frozen vectors', () => {
       'malformed.line_subtotal': 2,
       'malformed.quote': 7,
       'malformed.status': 3,
-      'held_signed.evidence': 6,
+      'held_signed.evidence': 8,
       'malformed.held_evidence': 6,
     });
   });
@@ -645,6 +673,51 @@ describe('a partial claim is reported as partial', () => {
       (c) => c.family === 'schema_evolution.unknown_fields',
     );
     expect(canonicalOnly.every((c) => c.status === 'pass')).toBe(true);
+  });
+
+  it('fails a parser that is correct for CATALOG records and strips on commerce ones', () => {
+    // The coverage gap the nested family had. Its cases named only
+    // `catalog_pointer`, `catalog_snapshot`, `catalog_page` and
+    // `relationship_claim`, while the flat family passed the synthetic kind
+    // `generic` — which a port may route anywhere. So a port whose QUOTE,
+    // ORDER, ACKNOWLEDGEMENT or STATUS parser dropped additive fields passed
+    // conformance completely, and then signed digests over documents nobody
+    // sent: §9.13 takes the digest over the bytes as they arrived.
+    //
+    // This port is deliberately RIGHT everywhere the old vectors looked.
+    const stripUnknown = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(stripUnknown);
+      if (typeof value !== 'object' || value === null) return value;
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .filter(([k]) => !k.startsWith('future_'))
+          .map(([k, v]) => [k, stripUnknown(v)]),
+      );
+    };
+    const commerceKinds = new Set([
+      'signed_quote',
+      'purchase_order',
+      'order_acknowledgement',
+      'order_status',
+    ]);
+    const report = runConformance(
+      {
+        ...ours,
+        parseThenCanonicalJson: (kind, value) =>
+          canonicalJson(commerceKinds.has(kind) ? stripUnknown(value) : value),
+      },
+      VECTORS,
+    );
+
+    expect(report.ok).toBe(false);
+    const nested = report.cases.filter((c) => c.family === 'schema_evolution.nested_unknown');
+    const failed = nested.filter((c) => c.status === 'fail');
+    expect(failed.length).toBeGreaterThan(0);
+    // Every failure is a commerce record; the catalog cases still pass, which
+    // is what makes this a coverage test rather than a broken-port test.
+    expect(nested.filter((c) => c.name.includes('catalog')).every((c) => c.status === 'pass')).toBe(
+      true,
+    );
   });
 
   it('fails a parser that keeps TOP-LEVEL unknowns but strips nested ones', () => {

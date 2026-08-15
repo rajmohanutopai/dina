@@ -179,6 +179,13 @@ function stubDb(recorded: Recorded, selects: unknown[][]) {
         },
       }),
     }),
+    // The per-catalog advisory lock. Recorded rather than ignored, so the
+    // event sequence shows the read-decide-write is serialized before it
+    // reads anything — the ordering is the point of the lock.
+    execute: async () => {
+      recorded.events.push(`${prefix}lock`)
+      return { rows: [] }
+    },
     transaction: async (fn: (tx: unknown) => Promise<void>) => {
       recorded.events.push('tx:begin')
       await fn(handle('tx:'))
@@ -219,13 +226,31 @@ describe('the catalog pointer handler', () => {
 
     // A snapshot is full state: the old rows go before the new ones land, and
     // both happen inside one transaction so no reader sees the gap.
+    //
+    // The trailing `delete:pointers` retires the PENDING announcement row.
+    // A pointer whose snapshot has not arrived now lives under its own key,
+    // so that promoting it means clearing it — in the SAME transaction as the
+    // index, or the two could disagree about what this supplier is
+    // publishing. (Before, the pending row was written over the accepted one,
+    // which is what broke pointer-first publication past sequence 1.)
+    // THE LOCK COMES FIRST, AND THE READS ARE INSIDE IT. The decision reads
+    // the current pointer and the held snapshot; `apply` then writes. Those
+    // reads used to sit outside any transaction while the queue ingests
+    // concurrently, so a pointer could observe no snapshot at the same moment
+    // the snapshot observed no pending pointer — and both commit, leaving a
+    // catalog invisible until the supplier republishes. The sequence is the
+    // assertion: begin, lock, read, read, then the writes.
     expect(recorded.events).toEqual([
-      'select:pointers',
-      'select:snapshots',
+      'tx:begin',
+      'tx:lock',
+      'tx:select:pointers',
+      'tx:select:snapshots',
       'tx:begin',
       'tx:delete:products',
       'tx:insert:products',
       'tx:insert:pointers',
+      'tx:delete:pointers',
+      'tx:commit',
       'tx:commit',
     ])
     expect(recorded.inserted.products).toHaveLength(2)
@@ -238,7 +263,7 @@ describe('the catalog pointer handler', () => {
 
     await commerceCatalogPointerHandler.handleCreate(ctx, op(pointer as never))
 
-    expect(recorded.events).toContain('insert:pointers')
+    expect(recorded.events).toContain('tx:insert:pointers')
     // Nothing was deleted and nothing was indexed: the previously published
     // catalog stays queryable, which is the honest fallback.
     expect(recorded.events).not.toContain('tx:delete:products')
@@ -328,7 +353,12 @@ describe('the catalog pointer handler', () => {
     })
 
     expect(recorded.inserted).toEqual({})
-    expect(recorded.events).not.toContain('tx:begin')
+    // NO WRITE OF ANY KIND. This used to assert `not.toContain('tx:begin')`,
+    // which was a proxy for "wrote nothing" and stopped being one when the
+    // read-decide-write moved inside a lock: the transaction now opens before
+    // the decision refuses. The requirement never changed, so it is asserted
+    // directly instead of through a proxy that the fix invalidated.
+    expect(recorded.events.filter((e) => /insert|delete|update/.test(e))).toEqual([])
   })
 })
 

@@ -73,8 +73,16 @@ export const MAX_RETAINED_ENVELOPE_BODY = 64 * 1024;
  * envelope; a receiver must bind the two (the record's digest has to
  * appear in the signed body) rather than trust the pairing, or a buyer
  * could present one message's signature beside another message's record.
- * `signer_key_id` names the supplier verification method the buyer saw,
- * so a receiver can select the right key across a rotation.
+ * `signer_key_id` names the supplier verification method the buyer saw, so
+ * a receiver publishing several concurrent methods can narrow to the one
+ * claimed rather than accept a signature under a method the buyer never
+ * named. It does NOT carry a receiver across its own key rotation: a
+ * DID layout that keeps one fragment and replaces its value — Dina's PLC
+ * `dina_signing` does exactly that — gives every generation the same id.
+ * Surviving a rotation is the receiver's job, by retaining its historical
+ * keys and trying them; see `held_evidence_verifier.ts` in `@dina/core`.
+ * The field is optional and a receiver that knows no ids must not refuse
+ * evidence for carrying one it cannot judge.
  */
 export interface HeldEvidence<T> {
   record: T;

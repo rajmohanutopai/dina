@@ -343,6 +343,41 @@ describe.each([
       expect(h.statusHeads.setFence(BUYER, 'po-1', { ...fence, supplierEpoch: '2' })).toBe(true);
       expect(h.statusHeads.get(BUYER, 'po-1')?.supplierEpoch).toBe('2');
     });
+
+    /**
+     * A fence FAST-FORWARDS, so it may land on a state the local head never
+     * passed through — `accepted` straight to `delivered`. `delivered` is where
+     * `dispute_window_ends_at` starts to matter: `order_refs`' open-order query
+     * reads that denormalised column to decide whether an order is finished,
+     * so a fence that moves the state and leaves the deadline behind produces
+     * an order that is delivered and unfinished forever.
+     *
+     * `setFence` wrote head_digest, sequence, state, epoch and updated_at, and
+     * silently dropped the deadline. Every existing fence test started from an
+     * already-delivered head, so the stored value was already correct and the
+     * omission had nothing to change.
+     */
+    it('carries the dispute deadline when it fast-forwards to delivered', () => {
+      h.statusHeads.initGenesis(genesis);
+      // Genesis is `accepted`, with no dispute window — nothing to dispute yet.
+      expect(h.statusHeads.get(BUYER, 'po-1')?.disputeWindowEndsAt).toBeNull();
+
+      const deadline = T0 + 7 * 24 * 60 * 60 * 1000;
+      expect(
+        h.statusHeads.setFence(BUYER, 'po-1', {
+          headDigest: '3'.repeat(64),
+          headSequence: '4',
+          state: 'delivered',
+          supplierEpoch: '2',
+          updatedAt: T0 + 5,
+          disputeWindowEndsAt: deadline,
+        }),
+      ).toBe(true);
+
+      const head = h.statusHeads.get(BUYER, 'po-1');
+      expect(head?.state).toBe('delivered');
+      expect(head?.disputeWindowEndsAt).toBe(deadline);
+    });
   });
 
   describe('receipts (§16.2)', () => {

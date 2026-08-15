@@ -27,6 +27,7 @@ import {
   decideExtensionProposal,
   ExtensionOperationBroker,
   HOST_OPERATION_PROPOSAL_KIND,
+  carriesHostOperationMarker,
   parseHostOperationRequest,
 } from '../../src/plugins';
 import { ExtensionOperationRegistry } from '../../src/plugins/extension_ops';
@@ -139,6 +140,9 @@ describe('parseHostOperationRequest', () => {
     // every plugin completion into the broker.
     for (const body of ['{"ok":true}', 'not json', 'null', '"text"', '[]']) {
       expect(parseHostOperationRequest(body)).toBeNull();
+      // ...and NOTHING here carries the marker, so the bridge is free to
+      // answer the requester. That is the pairing the two functions make.
+      expect(carriesHostOperationMarker(body)).toBe(false);
     }
   });
 
@@ -152,6 +156,45 @@ describe('parseHostOperationRequest', () => {
     expect(parseHostOperationRequest(request({ operation_name: '' }))).toBeNull();
     expect(parseHostOperationRequest(request({ idempotency_key: '' }))).toBeNull();
     expect(parseHostOperationRequest(request({ operation_name: 42 }))).toBeNull();
+  });
+});
+
+/**
+ * `null` ANSWERED TWO QUESTIONS AT ONCE, and the caller could only hear one.
+ *
+ * The four cases above assert `toBeNull()` — and null is the exact value
+ * `WorkflowService` reads as "ordinary completion, bridge it to the
+ * requester". So every refusal above was, at the call site, a decision to
+ * forward the runner's proposal parameters to the counterparty as a
+ * successful `service.response`: a false answer, sent before any host
+ * operation was authorised, and carrying the payload the refusal existed to
+ * reject.
+ *
+ * The marker is now a question of its own, and these are the cases where the
+ * two answers differ. A test asserting only `null` cannot see this.
+ */
+describe('carriesHostOperationMarker — refused proposals are still proposals', () => {
+  const refused = [
+    ['names its own install', request({ install_id: 'install-2' })],
+    ['empty operation name', request({ operation_name: '' })],
+    ['empty idempotency key', request({ idempotency_key: '' })],
+    ['non-string operation name', request({ operation_name: 42 })],
+    ['no operation name at all', JSON.stringify({ kind: 'host_operation_proposal' })],
+  ] as const;
+
+  it.each(refused)('%s: refused by the parser, still marked', (_label, body) => {
+    expect(parseHostOperationRequest(body)).toBeNull();
+    expect(carriesHostOperationMarker(body)).toBe(true);
+  });
+
+  it('a valid proposal is marked too', () => {
+    expect(carriesHostOperationMarker(request())).toBe(true);
+  });
+
+  it('unparseable and non-object bodies are not marked', () => {
+    for (const body of ['not json', 'null', '"text"', '[]', '42', '']) {
+      expect(carriesHostOperationMarker(body)).toBe(false);
+    }
   });
 });
 

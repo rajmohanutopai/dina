@@ -46,6 +46,8 @@ async function insertAttestation(opts: {
   did: string
   subjectName?: string
   subjectDid?: string
+  /** Tier 1 global identifier — the `uri` arm of a subject reference. */
+  subjectUri?: string
   subjectType?: string
   sentiment?: string
   category?: string

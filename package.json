@@ -8,7 +8,8 @@
     "packages/*",
     "apps/home-node-lite/*",
     "apps/grants-service",
-    "apps/mobile"
+    "apps/mobile",
+    "appview"
   ],
   "engines": {
     "node": ">=22"

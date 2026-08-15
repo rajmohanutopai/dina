@@ -74,6 +74,16 @@ export interface CommerceStatusHeadRepository {
       state: string;
       supplierEpoch: string;
       updatedAt: number;
+      /**
+       * REQUIRED, as it is on an ordinary advance. A fence fast-forwards the
+       * local head to one the buyer has PROVEN, which can jump straight from
+       * `accepted` to `delivered` — and `delivered` is where this deadline
+       * starts to matter. Leaving the stored value at whatever the older head
+       * carried (usually null) makes the open-order query in `order_refs`
+       * treat the order as unfinished forever, because that query reads this
+       * denormalised column to decide.
+       */
+      disputeWindowEndsAt: number | null;
     },
   ): boolean;
 }
@@ -198,6 +208,16 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
       state: string;
       supplierEpoch: string;
       updatedAt: number;
+      /**
+       * REQUIRED, as it is on an ordinary advance. A fence fast-forwards the
+       * local head to one the buyer has PROVEN, which can jump straight from
+       * `accepted` to `delivered` — and `delivered` is where this deadline
+       * starts to matter. Leaving the stored value at whatever the older head
+       * carried (usually null) makes the open-order query in `order_refs`
+       * treat the order as unfinished forever, because that query reads this
+       * denormalised column to decide.
+       */
+      disputeWindowEndsAt: number | null;
     },
   ): boolean {
     // Epoch monotonicity is checked in JS (canonical integer strings do
@@ -206,7 +226,8 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
     if (!current || !epochGreater(next.supplierEpoch, current.supplierEpoch)) return false;
     const affected = this.db.run(
       `UPDATE commerce_status_heads
-       SET head_digest = ?, head_sequence = ?, state = ?, supplier_epoch = ?, updated_at = ?
+       SET head_digest = ?, head_sequence = ?, state = ?, supplier_epoch = ?, updated_at = ?,
+           dispute_window_ends_at = ?
        WHERE buyer_did = ? AND purchase_order_id = ? AND head_digest = ?`,
       [
         next.headDigest,
@@ -214,6 +235,7 @@ export class SQLiteCommerceStatusHeadRepository implements CommerceStatusHeadRep
         next.state,
         next.supplierEpoch,
         next.updatedAt,
+        next.disputeWindowEndsAt,
         buyerDid,
         purchaseOrderId,
         current.headDigest,
@@ -287,6 +309,16 @@ export class InMemoryCommerceStatusHeadRepository implements CommerceStatusHeadR
       state: string;
       supplierEpoch: string;
       updatedAt: number;
+      /**
+       * REQUIRED, as it is on an ordinary advance. A fence fast-forwards the
+       * local head to one the buyer has PROVEN, which can jump straight from
+       * `accepted` to `delivered` — and `delivered` is where this deadline
+       * starts to matter. Leaving the stored value at whatever the older head
+       * carried (usually null) makes the open-order query in `order_refs`
+       * treat the order as unfinished forever, because that query reads this
+       * denormalised column to decide.
+       */
+      disputeWindowEndsAt: number | null;
     },
   ): boolean {
     const head = this.heads.get(this.key(buyerDid, purchaseOrderId));

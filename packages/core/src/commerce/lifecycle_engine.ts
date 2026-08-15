@@ -20,6 +20,11 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+// The SAME validator the D2D receive pipeline applies to an inbound
+// service.response. Held evidence is a retained copy of exactly that message,
+// so it answers to exactly that contract (§9.12).
+import { validateServiceResponseBody } from '../d2d/service_bodies';
+
 import {
   GENESIS_STATE_BY_EVENT,
   commerceRecordDigest,
@@ -74,6 +79,8 @@ const CHAIN_ERROR: Record<ChainRefusal, string> = {
   chain_exists: 'status: genesis already signed — CAS at signing (§9.11)',
   order_awaiting_reconciliation:
     'status: order was re-adopted and is not reconciled — cannot sign a first status (§16.2)',
+  chain_evidence_requires_fence:
+    'status: the buyer holds a status chain this node lost — a new genesis would fork against it; sign a restore fence over the presented receipts instead (§9.11/§16.2)',
   order_predates_restore:
     'status: order predates a restore — reconcile it before signing a first status (§16.2)',
   chain_predates_restore: 'status: chain predates a restore — sign the restore fence first (§16.2)',
@@ -210,26 +217,69 @@ const MAX_SIGNED_BODY_NODES = 10_000;
  * Unparseable body => false. A supplier's own message is JSON; anything
  * else is not evidence this code should reason about.
  */
-function signedBodyCommitsTo(body: string, digest: string): boolean {
+/**
+ * EXPORTED FOR TESTING, because the shapes this accepts ARE the §9.12
+ * contract. Left private, the only reachable assertions were end-to-end
+ * reconcile runs, and the rules it enforces are exactly the ones a buyer
+ * would try to bend.
+ */
+export function heldResponseCommitsTo(body: string, digest: string): boolean {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
     return false;
   }
-  const stack: unknown[] = [parsed];
-  // Bounded so a deeply nested or wide body cannot spin here. The cap is far
-  // above any real service response and far below anything expensive.
-  let visited = 0;
-  while (stack.length > 0 && visited < MAX_SIGNED_BODY_NODES) {
-    visited += 1;
-    const node = stack.pop();
-    if (typeof node === 'string') {
-      if (node === digest) return true;
-      continue;
+
+  // §9.12 BINDS EVIDENCE TO A MESSAGE FAMILY, not to a byte sequence. This
+  // used to walk the whole JSON tree and accept the digest as ANY string at
+  // ANY depth, in ANY signed body — so a genuine, unrelated supplier response
+  // that merely mentioned the digest could be replayed as re-adoption
+  // evidence for an order the supplier never acknowledged.
+  if (validateServiceResponseBody(parsed) !== null) return false;
+  const response = parsed as Record<string, unknown>;
+
+  // An `unavailable` or `error` answer is not evidence that a supplier
+  // committed to anything.
+  if (response.status !== 'success') return false;
+
+  // THE DIGEST MUST BE THE RECORD'S OWN DIGEST FIELD, on the result or on one
+  // record nested directly inside it.
+  //
+  // This used to walk `result` to arbitrary depth and accept the digest as any
+  // string anywhere in it. That is narrower than searching the whole body, and
+  // still not a binding: a genuine, correctly-signed supplier response from an
+  // UNRELATED capability — one that echoes an identifier into its result, or
+  // carries a list of digests it has seen — satisfied it. §9.12 asks whether
+  // this response IS the acknowledgement or status being presented, not
+  // whether the digest appears somewhere within it.
+  //
+  // So the digest is looked for at the two places a record states its own
+  // identity: `result.<record>_digest` (the shape the frozen conformance
+  // adapter checks) or `result.<record>.<record>_digest` (the same record
+  // nested under its own key). Nothing else, and no recursion.
+  const result = response.result;
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) return false;
+  const record = result as Record<string, unknown>;
+
+  // The digest fields a held record can legitimately be identified by. Held
+  // evidence is only ever an acknowledgement (§12.7 re-adoption) or a status
+  // receipt (§16.2 fence), so the set is closed rather than derived.
+  const IDENTITY_FIELDS = ['acknowledgement_digest', 'status_digest'] as const;
+
+  for (const field of IDENTITY_FIELDS) {
+    if (record[field] === digest) return true;
+    // The same record nested under its own key: `{acknowledgement: {...}}`.
+    const nestedKey = field.replace(/_digest$/, '');
+    const nested = record[nestedKey];
+    if (
+      nested !== null &&
+      typeof nested === 'object' &&
+      !Array.isArray(nested) &&
+      (nested as Record<string, unknown>)[field] === digest
+    ) {
+      return true;
     }
-    if (node === null || typeof node !== 'object') continue;
-    stack.push(...Object.values(node as Record<string, unknown>));
   }
   return false;
 }
@@ -254,15 +304,40 @@ function signedBodyCommitsTo(body: string, digest: string): boolean {
  * Arrays are refused too: a list is not a record, and `[].cancellation_id` is
  * a quiet `undefined` rather than a refusal.
  */
-function parseResultReceipt(recordJson: string): CancellationResult | null {
+/**
+ * A stored cancellation result, RE-VALIDATED on the way out.
+ *
+ * `parsed as CancellationResult` is a promise to the compiler, not a check on
+ * the data. It let any object with a matching `cancellation_id` stand as this
+ * node's terminal answer: wrong order, invented kind, no status head, a
+ * `result_digest` that hashes to nothing. That is the rule this codebase
+ * applies everywhere else — a stored commercial commitment is re-validated
+ * when it is read, because the row may have come back from a restore, a
+ * partial write, or a hand edit, and a decision is exactly what must not be
+ * taken on trust.
+ *
+ * `validateCancellationResult` already checks every required field AND
+ * re-derives the canonical digest; it was imported in this file and used only
+ * on the OUTBOUND path. An unreadable row answers null and the caller skips
+ * it — the same fail-closed shape as an unparseable one.
+ */
+function parseResultReceipt(
+  recordJson: string,
+  expectedPurchaseOrderId: string,
+): CancellationResult | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(recordJson);
   } catch {
     return null;
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  return parsed as CancellationResult;
+  if (validateCancellationResult(parsed, hash) !== null) return null;
+  const result = parsed as CancellationResult;
+  // BOUND TO THE ORDER BEING ASKED ABOUT. The receipt store is keyed by
+  // digest, so a valid result for a DIFFERENT order is still a valid result;
+  // without this it could answer for this one on a `cancellation_id` match.
+  if (result.purchase_order_id !== expectedPurchaseOrderId) return null;
+  return result;
 }
 
 export class CommerceLifecycleEngine {
@@ -486,6 +561,38 @@ export class CommerceLifecycleEngine {
       outcome = status;
     })();
     return outcome;
+  }
+
+  /**
+   * Does this reconcile request prove the buyer holds a status chain?
+   *
+   * The same four questions the fence asks of held status receipts — valid
+   * record, our supplier DID, this buyer, this order, and OUR OWN signature
+   * over the envelope that carried it. A buyer cannot claim a chain into
+   * existence; it has to show one this node signed.
+   *
+   * Used only to SET A BAR, never to advance anything, so one verified
+   * receipt is enough: the fact recorded is "a chain exists elsewhere", and
+   * one authentic record establishes it.
+   */
+  private presentsVerifiableChain(
+    request: OrderReconcileRequest,
+    authenticatedBuyerDid: string,
+  ): boolean {
+    return (request.held_status_receipts ?? []).some((evidence) => {
+      const receipt = evidence.record;
+      return (
+        validateCommerceOrderStatus(receipt, hash) === null &&
+        receipt.supplier_did === this.deps.supplierDid() &&
+        receipt.buyer_did === authenticatedBuyerDid &&
+        receipt.purchase_order_id === request.purchase_order_id &&
+        this.verifyHeldRecord({
+          evidence,
+          recordDigest: receipt.status_digest,
+          buyerDid: authenticatedBuyerDid,
+        })
+      );
+    });
   }
 
   /**
@@ -1175,6 +1282,24 @@ export class CommerceLifecycleEngine {
           // The order is real but this node cannot yet describe it — bar
           // chain creation until reconciliation clears it.
           reconciliationRequired: true,
+          // §9.11/§16.2 — DID THE BUYER ALSO SHOW A CHAIN?
+          //
+          // `reconciliationRequired` is cleared by the owner's ceremony, and
+          // after that this node would sign a fresh genesis. That is right for
+          // an order the buyer never got past acknowledgement, and wrong for
+          // one already accepted → preparing → dispatched: the buyer holds a
+          // sequence-0 record signed at another epoch and another instant, so
+          // a second genesis carries a different digest, and §9.11 obliges the
+          // buyer to reject a duplicate sequence with a different digest. The
+          // order would be stranded by the ceremony meant to rescue it, and
+          // neither side would be told why.
+          //
+          // Verified here against this node's OWN signatures, so a buyer
+          // cannot set it by assertion.
+          readoptedChainEvidence: this.presentsVerifiableChain(
+            request,
+            authenticatedBuyerDid,
+          ),
           decisionDeadlineAt: null,
           createdAt: nowMs,
         });
@@ -1332,7 +1457,10 @@ export class CommerceLifecycleEngine {
     const { envelope } = args.evidence;
     if (envelope.from !== supplierDid) return false;
     if (!envelope.to.includes(args.buyerDid)) return false;
-    if (!signedBodyCommitsTo(envelope.body, args.recordDigest)) return false;
+    // §9.12: only a service.response can carry held evidence. A `service.query`
+    // or any other family is not the supplier answering.
+    if (envelope.type !== 'service.response') return false;
+    if (!heldResponseCommitsTo(envelope.body, args.recordDigest)) return false;
     return (
       this.deps.verifyHeldEvidence?.({
         envelope,
@@ -1489,7 +1617,12 @@ export class CommerceLifecycleEngine {
     purchaseOrderId: string,
     event: GenesisEvent,
     quoteId: string,
-    order: { admittedEpoch: string; reconciliationRequired: boolean; pinnedVersion: string },
+    order: {
+      admittedEpoch: string;
+      reconciliationRequired: boolean;
+      readoptedChainEvidence: boolean;
+      pinnedVersion: string;
+    },
     nowMs: number,
   ): CommerceOrderStatus | { error: string } {
     const status = this.buildStatus(
@@ -1858,7 +1991,7 @@ export class CommerceLifecycleEngine {
       // An unreadable row is a row that matches nothing, exactly as the
       // lookup below treats it. One corrupt receipt must not hide every
       // other cancellation on this order.
-      const result = parseResultReceipt(receipt.recordJson);
+      const result = parseResultReceipt(receipt.recordJson, purchaseOrderId);
       if (result === null) continue;
       if (seen.has(result.cancellation_id)) continue;
       seen.add(result.cancellation_id);
@@ -1893,7 +2026,7 @@ export class CommerceLifecycleEngine {
       // cancellation for this order unanswerable, so it is skipped: the scan
       // is looking for a specific `cancellation_id` and a row it cannot read
       // is a row it cannot match.
-      const result = parseResultReceipt(receipt.recordJson);
+      const result = parseResultReceipt(receipt.recordJson, purchaseOrderId);
       if (result === null) continue;
       if (result.cancellation_id !== cancellationId) continue;
       if (result.result !== 'pending_review') return result;
@@ -1983,6 +2116,7 @@ export class CommerceLifecycleEngine {
       pinnedVersion: string;
       admittedEpoch: string;
       reconciliationRequired: boolean;
+      readoptedChainEvidence: boolean;
     },
     acknowledgement: OrderAcknowledgement,
     nowMs: number,

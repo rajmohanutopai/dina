@@ -44,6 +44,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import {
   validateCatalogPointer,
@@ -82,7 +83,23 @@ import {
   resolveCapabilityId,
   type OfficialCapability,
 } from '../../commerce/capability_promotion';
-import { importCatalogCsv } from '../../commerce/catalog_import';
+import {
+  type DraftIngressDeps,
+  assembleFromRows,
+  createCatalogDraft,
+} from '../../commerce/catalog_draft_ingest';
+import { publishHeldDraft } from '../../commerce/catalog_draft_publisher';
+import {
+  CatalogDraftService,
+  unconfirmedFields,
+  type DraftRefusalOutcome,
+} from '../../commerce/catalog_draft_service';
+import {
+  type CatalogRowSource,
+  catalogRowsFromRecords,
+  importCatalogCsv,
+  parseCatalogCsv,
+} from '../../commerce/catalog_import';
 import { getCatalogFeedTransport, ingestCatalog } from '../../commerce/catalog_ingest';
 import { describeCatalogForOwner } from '../../commerce/catalog_pointer_store';
 import { buildCatalogSnapshot, buildCatalogWithdrawal } from '../../commerce/catalog_publisher';
@@ -139,9 +156,13 @@ import { buildSupplierInbox } from '../../commerce/supplier_inbox';
 import { getNodeDID } from '../../pairing/ceremony';
 import { getPluginInstallRepository } from '../../plugins/registry';
 
-import { makeOwnerGuard } from './owner_guard';
+import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 
-import type { CoreRouter, CoreResponse } from '../router';
+import type {
+  CatalogDraftRepository,
+  ProvenanceClass,
+} from '../../commerce/catalog_draft_store';
+import type { CoreRouter, CoreResponse, CoreRequest } from '../router';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -264,6 +285,21 @@ function publicationFence(): CoreResponse | null {
 }
 
 /**
+ * Can this node establish that a person is present?
+ *
+ * ONE DEFINITION, read by two places that must not disagree: the draft
+ * service's `userPresent`, and the guard on the shipped publish route.
+ *
+ * §10 item 9 records that the primitive exists — a per-persona Argon2id
+ * verifier — with no production caller, no persistence and no mobile
+ * equivalent. It returns false until that is wired, which is why the draft
+ * lane cannot yet publish anything at all.
+ */
+function ownerPresenceAvailable(): boolean {
+  return false;
+}
+
+/**
  * Remember what this node just published.
  *
  * Written only after the repo accepted the pointer, because the row's job is to
@@ -367,6 +403,104 @@ export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: str
       status: 200,
       body: buildReconciliationCensus(runtime.orders.listAwaitingReconciliation()),
     };
+  });
+
+  /**
+   * §16.2 — THE CEREMONY ITSELF, not just the census of what needs one.
+   *
+   * `signRestoreFence`, `reconcileRestoredOrder` and `registerReplacementQuote`
+   * were reachable only from tests: every engine, every transaction boundary
+   * and every refusal was built and exercised, and no production caller
+   * existed. So a restored supplier could LIST its frozen orders and do
+   * nothing about them — the read that names the problem shipped, the writes
+   * that solve it did not, and a boundary test allowlisted the gap as "no
+   * operator surface" rather than reporting it.
+   *
+   * WHOSE AUTHORITY. On the D2D lane the buyer DID is transport-authenticated
+   * and the engines take it as such. Here the OWNER is the authority — the
+   * guard above has already established that — and `buyer_did` is a lookup
+   * key naming which counterparty's order is being recovered. That is the
+   * right shape for a ceremony the owner performs on their own node, and it
+   * is written down because the same engine argument means something stronger
+   * one lane over.
+   */
+  router.post('/v1/commerce/reconciliation/order', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as { buyer_did?: unknown; proposal?: unknown };
+    const buyerDid = typeof body.buyer_did === 'string' ? body.buyer_did : '';
+    if (buyerDid === '' || body.proposal === undefined) {
+      return { status: 400, body: { error: 'buyer_did and proposal are required' } };
+    }
+
+    // The proposal is validated INSIDE the engine, through the same reader the
+    // D2D lane uses. Re-checking its shape here would be a second copy of a
+    // rule that has to stay byte-exact.
+    const done = runtime.lifecycle.reconcileRestoredOrder(body.proposal, buyerDid);
+    if ('error' in done) return { status: 409, body: { error: done.error } };
+    return { status: 200, body: { ok: true } };
+  });
+
+  router.post('/v1/commerce/reconciliation/fence', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as {
+      buyer_did?: unknown;
+      purchase_order_id?: unknown;
+      held_status_receipts?: unknown;
+    };
+    const buyerDid = typeof body.buyer_did === 'string' ? body.buyer_did : '';
+    const purchaseOrderId =
+      typeof body.purchase_order_id === 'string' ? body.purchase_order_id : '';
+    if (buyerDid === '' || purchaseOrderId === '') {
+      return { status: 400, body: { error: 'buyer_did and purchase_order_id are required' } };
+    }
+    if (!Array.isArray(body.held_status_receipts) || body.held_status_receipts.length === 0) {
+      // A fence over nothing is the one call that must not be possible: the
+      // whole point is to fast-forward onto evidence, and an empty list would
+      // ask the engine to move the chain on the owner's say-so.
+      return { status: 400, body: { error: 'held_status_receipts must be a non-empty array' } };
+    }
+
+    // Every receipt is verified against this node's OWN signature inside the
+    // engine's transaction. Nothing here decides what is authentic.
+    const fenced = runtime.lifecycle.signRestoreFence(
+      buyerDid,
+      purchaseOrderId,
+      body.held_status_receipts as Parameters<typeof runtime.lifecycle.signRestoreFence>[2],
+    );
+    if ('error' in fenced) return { status: 409, body: { error: fenced.error } };
+    return { status: 200, body: { ok: true, status: fenced } };
+  });
+
+  router.post('/v1/commerce/quotes/replacement', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as { buyer_did?: unknown; quote?: unknown };
+    const buyerDid = typeof body.buyer_did === 'string' ? body.buyer_did : '';
+    if (buyerDid === '' || body.quote === undefined) {
+      return { status: 400, body: { error: 'buyer_did and quote are required' } };
+    }
+
+    // §16.2 X-10: after a restore this node refuses to invent terms, so the
+    // way back to a live quote is a REPLACEMENT the supplier signed. The
+    // engine validates the signature, the buyer binding and the chain before
+    // anything becomes a head; a refusal writes nothing at all.
+    const refusal = runtime.admission.registerReplacementQuote(
+      body.quote as Parameters<typeof runtime.admission.registerReplacementQuote>[0],
+      buyerDid,
+    );
+    if (refusal !== null) return { status: 409, body: { error: refusal } };
+    return { status: 200, body: { ok: true } };
   });
 }
 
@@ -2412,6 +2546,32 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
       return { status: 400, body: { error: 'catalog_id is required' } };
     }
+    // §6 RETIRES THIS BODY, AND THIS IS THE RETIREMENT — armed, not scheduled.
+    //
+    // The item list publishes with no content receipt, no snapshot approval
+    // and no presence step, so while it exists the lane's safety property is a
+    // convention: a client holding the owner capability can assemble items and
+    // post them here instead of walking the draft. §6's own standard rejects
+    // that — a rule the caller can decline to use is not an enforcement point.
+    //
+    // It stays open today for one reason, and it is not the one this route
+    // used to give. The DRAFT LANE CANNOT PUBLISH AT ALL until §10 item 9's
+    // presence primitive is wired, because `approve` requires presence on
+    // every class; retiring the body now would take catalog publication to
+    // zero rather than make it safe. So the guard is written against the thing
+    // that actually gates it, and the day presence lands this refuses on its
+    // own — no second decision to remember, and no window where both a working
+    // draft lane and its bypass are open at once.
+    if (ownerPresenceAvailable()) {
+      return {
+        status: 409,
+        body: {
+          error: 'item_list_retired',
+          detail:
+            'publish takes a draft id: create a draft, confirm, prepare, approve, publish (§6)',
+        },
+      };
+    }
     if (!Array.isArray(body.items)) {
       // An empty array is legal and means "this supplier currently offers
       // nothing" — a valid, publishable state. A MISSING array is not the
@@ -2489,6 +2649,11 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     const outcome = await publishCatalogRecords({
       pointer: built.pointer,
       ...(built.snapshot === undefined ? {} : { snapshot: built.snapshot }),
+      // The builder paginates and digests these, and the snapshot's
+      // `payload_root` commits to them. They were built and then left behind
+      // here, so every catalog this node published committed to pages it never
+      // wrote — which AppView refuses, correctly, as "pages missing".
+      ...(built.pages === undefined ? {} : { pages: built.pages }),
       expectedPointerCid: chain.expectedPointerCid,
       // RE-CHECKED between the snapshot and the head. The snapshot write is an
       // awaited round trip, and §16.2 can supersede this node during it; a
@@ -2716,6 +2881,8 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     return { status: 200, body: { ok: true, catalog: describeCatalogForOwner(adopted) } };
   });
 
+  registerCatalogDraftRoutes(router, ownerOnlyGuard);
+
   /**
    * What this node has PUBLISHED (FR-P10, §10.2).
    *
@@ -2747,4 +2914,516 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
       body: { catalogs: runtime.catalogPointers.list().map(describeCatalogForOwner) },
     };
   });
+}
+
+/**
+ * The photo-catalog lane's four operations, as owner-guarded routes (§6).
+ *
+ * ADDED BESIDE THE SHIPPED PUBLISH ROUTE, NOT INSTEAD OF IT. §6 of the design
+ * argues the item-list body should be retired so every publication goes
+ * through a draft — but that reaches every catalog publication in the commerce
+ * vertical, not only photographs, and it collides with §8.3's catalog refresh
+ * cadence and §17.3's scheduled refreshes. That is §10 item 14, an owner
+ * decision, so this lane adds its own path and leaves the existing one alone.
+ * Nothing here changes what `/v1/commerce/catalog/publish` does.
+ *
+ * EVERY ROUTE TAKES A DRAFT ID AND NO ITEM LIST. The items Core signs are the
+ * items Core stored, which is what stops a caller substituting a set between
+ * confirmation and publication.
+ */
+function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGuard): void {
+  const draftService = (): CatalogDraftService | null => {
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return null;
+    return new CatalogDraftService({
+      drafts: runtime.catalogDrafts,
+      pointers: runtime.catalogPointers,
+      sha256: hash,
+      now: () => Date.now(),
+      newClaimToken: () => `pcl_${bytesToHex(randomBytes(16))}`,
+      // NOT WIRED, AND FAILING CLOSED IS THE POINT. §10 item 9: the per-persona
+      // Argon2id verifier exists but has no production caller, no persistence
+      // and no mobile equivalent. Returning false makes every binding operation
+      // refuse, which is honest — a receipt minted without presence would
+      // record that the software asked itself.
+      userPresent: ownerPresenceAvailable,
+      publicationFence: () => publicationFence(),
+      publish: async ({ draft }) =>
+        // THE PUBLISHER IS A MODULE, not a closure in a route. As a closure it
+        // could not be reached by any test — the route wires presence to false
+        // and the suite installs no record writer — and three defects lived in
+        // it: no fence before the pointer, no record of what was published,
+        // and every failure reported as "not a lost swap".
+        publishHeldDraft({ fence: () => publicationFence(), recordPublication }, draft),
+    });
+  };
+
+  const withDraftService = (
+    handler: (svc: CatalogDraftService, body: Record<string, unknown>) => Promise<CoreResponse> | CoreResponse,
+  ) => {
+    return async (req: CoreRequest): Promise<CoreResponse> => {
+      const denied = ownerOnlyGuard(req);
+      if (denied !== null) return denied;
+      const svc = draftService();
+      if (svc === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const draftId = body.draft_id;
+      if (typeof draftId !== 'string' || draftId === '') {
+        return { status: 400, body: { error: 'draft_id_required' } };
+      }
+      return handler(svc, body);
+    };
+  };
+
+  const answer = (outcome: { ok: true; value: unknown } | DraftRefusalOutcome): CoreResponse =>
+    outcome.ok
+      ? { status: 200, body: { ok: true, draft: outcome.value } }
+      : {
+          // 409 rather than 400: the request is well formed and the DRAFT is
+          // not in a state that admits it, which is a different thing for a
+          // client to handle.
+          status: outcome.refusal === 'no_such_draft' ? 404 : 409,
+          body: { ok: false, error: outcome.refusal, detail: outcome.error },
+        };
+
+  router.post(
+    '/v1/commerce/catalog/drafts/confirm',
+    withDraftService((svc, body) => answer(svc.confirm(String(body.draft_id)))),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/prepare',
+    withDraftService((svc, body) =>
+      answer(
+        svc.prepare(String(body.draft_id), {
+          protocolVersion: typeof body.protocol_version === 'string' ? body.protocol_version : '1.0',
+          publishedAt:
+            typeof body.published_at === 'string' ? body.published_at : new Date().toISOString(),
+          ...(typeof body.service_rkey === 'string' ? { serviceRkey: body.service_rkey } : {}),
+        }),
+      ),
+    ),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/approve',
+    withDraftService((svc, body) => {
+      // The digest is REQUIRED and is not a convenience: Core compares it with
+      // the snapshot it is holding, so an owner approving without naming what
+      // they approved is the shape this operation exists to refuse.
+      const digest = body.approved_snapshot_digest;
+      if (typeof digest !== 'string' || digest === '') {
+        return { status: 400, body: { error: 'approved_snapshot_digest_required' } };
+      }
+      return answer(svc.approve(String(body.draft_id), digest));
+    }),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/publish',
+    withDraftService(async (svc, body) => answer(await svc.publish(String(body.draft_id)))),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/repair',
+    withDraftService((svc, body) => {
+      // §5 step 4. The seller names a ROW and a COLUMN — the two things the
+      // repair screen shows them — and Core re-imports and re-assembles.
+      const row = body.row;
+      const column = body.column;
+      const value = body.value;
+      if (typeof row !== 'number' || !Number.isInteger(row)) {
+        return { status: 400, body: { error: 'row must be the line number the seller sees' } };
+      }
+      // THREE REPAIRS, and the third is the one §8 asks for by name:
+      //   {row, column, value}       set a cell
+      //   {row, column, value: null} clear a cell, key and all
+      //   {row, column: null}        remove the row the model invented
+      if (column !== null && (typeof column !== 'string' || column === '')) {
+        return { status: 400, body: { error: 'column must be a name, or null to remove the row' } };
+      }
+      if (value !== null && value !== undefined && typeof value !== 'string') {
+        return { status: 400, body: { error: 'value must be text, or null to clear the cell' } };
+      }
+      const runtime = getCommerceRuntime();
+      if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+      const owner = ownerDid();
+      if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+      const stored = runtime.settings.readSupplier();
+      if (!stored.ok) {
+        return stored.absent
+          ? { status: 409, body: { error: 'supplier_settings_absent' } }
+          : { status: 409, body: { error: 'supplier_settings_invalid', findings: stored.findings } };
+      }
+      const settings = stored.settings;
+      if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
+        return { status: 403, body: { error: 'acting_business_mismatch' } };
+      }
+
+      return answer(
+        svc.repairRow(
+          String(body.draft_id),
+          { row, column: column === null ? null : String(column), value: value === undefined ? null : (value as string | null) },
+          (rows, draft) =>
+          assembleFromRows({
+            rows,
+            defaultScheme: draft.defaultScheme,
+            identity: { supplierDid: owner, catalogId: draft.catalogId },
+            // CURRENT settings, not the ones ingress used: a seller who has
+            // just set their trading currency is repairing exactly that.
+            settings: {
+              categoryIds: settings.catalogCategoryIds ?? [],
+              fulfilmentRegions: settings.publicRegions,
+              ...(settings.tradingCurrency === undefined
+                ? {}
+                : { tradingCurrency: settings.tradingCurrency }),
+            },
+            // The draft's OWN stamp. A repair is not a new draft, and
+            // re-minting would move every item's revision and timestamp.
+            // The draft's OWN stamp. A repair is not a new draft, and
+            // re-minting would move every item's revision and timestamp — and
+            // with them the snapshot digest an owner may already have approved.
+            stamp: { generatedAtIso: draft.generatedAtIso, itemRevision: draft.itemRevision },
+          }),
+        ),
+      );
+    }),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/edit',
+    withDraftService((svc, body) => {
+      // ONE FIELD PER CALL. A batch would have to answer what happens when the
+      // third edit is refused — publish two and keep a draft nobody asked for,
+      // or discard two the seller meant. One field has one answer.
+      const field = body.field;
+      if (typeof field !== 'string' || field === '') {
+        return { status: 400, body: { error: 'field is required, as "<index>.<field>"' } };
+      }
+      // `value` may legitimately be absent: that CLEARS an optional field the
+      // model invented, which is a repair like any other.
+      return answer(svc.editValue(String(body.draft_id), field, body.value));
+    }),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/accept',
+    withDraftService((svc, body) => {
+      // Field names only. The provenance STATE is Core's to write — a body
+      // that carried it could exempt every field from confirmation.
+      if (!Array.isArray(body.fields) || body.fields.some((f) => typeof f !== 'string')) {
+        return { status: 400, body: { error: 'fields must be an array of strings' } };
+      }
+      return answer(svc.accept(String(body.draft_id), body.fields as string[]));
+    }),
+  );
+
+  /**
+   * The rows-ingress seam (§10 item 8) — the only way a draft is born.
+   *
+   * TWO ROUTES OVER ONE CREATOR, and the split IS the mechanism: §5 says Core
+   * assigns the provenance class from the entry point used and the caller
+   * never states it, so the class is a constant at each call site and appears
+   * in no request body. One route accepting a `provenance_class` field would
+   * be the caller-asserted shape the design rejects.
+   *
+   * §10 item 11 records what this does not close: a client holding the owner
+   * capability can serialise model-extracted rows as CSV and come in through
+   * the file route. Core cannot tell that file from one the seller typed.
+   */
+  const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps => ({
+    drafts,
+    now: () => Date.now(),
+    newDraftId: () => `cdr_${bytesToHex(randomBytes(16))}`,
+    // MINTED ONCE, HERE. `prepare` reads these back off the draft; nothing
+    // re-derives them, because a rebuild that re-mints either moves
+    // `snapshot_digest` out from under the owner's approval (§10 item 8).
+    stamp: () => ({
+      generatedAtIso: new Date().toISOString(),
+      // A CLOCK ALONE IS NOT AN IDENTITY. `item_revision` is what a consumer
+      // compares to decide whether a supplier's items changed, and two drafts
+      // minted in the same millisecond would carry the same one — so a second
+      // publication could read as "nothing moved". The random tail costs
+      // nothing and removes the case.
+      itemRevision: `${String(Date.now())}-${bytesToHex(randomBytes(4))}`,
+    }),
+  });
+
+  const ingest = (
+    provenanceClass: ProvenanceClass,
+    // WHERE THE VALUES CAME FROM, read at the entry point that knows. Only the
+    // extraction lane has a model to name; the others infer nothing.
+    readExtraction: (
+      body: Record<string, unknown>,
+    ) =>
+      | { ok: true; extraction: { model: string; schemaVersion: string } | null }
+      | { ok: false; response: CoreResponse },
+    // A DISCRIMINATED result, not "a source or a response" told apart by
+    // sniffing for a property. `'rows' in source` compiled and worked, and it
+    // would have kept working right up until a refusal body happened to carry
+    // a `rows` field.
+    readSource: (
+      body: Record<string, unknown>,
+    ) => { ok: true; source: CatalogRowSource } | { ok: false; response: CoreResponse },
+  ) => {
+    return async (req: CoreRequest): Promise<CoreResponse> => {
+      const denied = ownerOnlyGuard(req);
+      if (denied !== null) return denied;
+      const runtime = getCommerceRuntime();
+      if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
+        return { status: 400, body: { error: 'catalog_id is required' } };
+      }
+      const scheme = body.default_scheme;
+      if (scheme !== 'gtin' && scheme !== 'sku') {
+        // Same rule as `/import`, for the same reason: the scheme decides how
+        // every bare identifier is READ, so a default would silently
+        // reinterpret the seller's whole catalog.
+        return { status: 400, body: { error: "default_scheme must be 'gtin' or 'sku'" } };
+      }
+      const read = readSource(body);
+      if (!read.ok) return read.response;
+      const extraction = readExtraction(body);
+      if (!extraction.ok) return extraction.response;
+      const source = read.source;
+
+      const owner = ownerDid();
+      if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+      const stored = runtime.settings.readSupplier();
+      if (!stored.ok) {
+        // The seller's categories, regions and currency are REQUIRED inputs
+        // the assembler will not invent. Refusing here names the settings;
+        // continuing would produce a wall of per-row findings for one missing
+        // page of setup.
+        //
+        // NEVER CONFIGURED AND CONFIGURED WRONG ARE DIFFERENT ANSWERS: the
+        // first is every seller's first run and the fix is "fill this in";
+        // the second means a stored row no longer validates and the findings
+        // say which field. Collapsing them would send a first-run seller
+        // looking for a corruption that is not there.
+        return stored.absent
+          ? { status: 409, body: { error: 'supplier_settings_absent' } }
+          : {
+              status: 409,
+              body: { error: 'supplier_settings_invalid', findings: stored.findings },
+            };
+      }
+      const settings = stored.settings;
+      // THE SAME RULE THE ACKNOWLEDGEMENT PATH ENFORCES, and for the same
+      // reason it gives: an asymmetric rule is a rule with a hole in it.
+      // `validateSupplierSettings` checks `actingBusinessDid` only for
+      // non-emptiness, so a settings row naming another business would have
+      // put that DID on every item, on the snapshot and on the pointer — a
+      // catalog published from this node under a supplier it cannot act for.
+      if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
+        return {
+          status: 403,
+          body: {
+            error: 'acting_business_mismatch',
+            detail: 'the stored acting business is not this node',
+          },
+        };
+      }
+
+      const outcome = createCatalogDraft(ingressDeps(runtime.catalogDrafts), {
+        catalogId: body.catalog_id,
+        source,
+        defaultScheme: scheme,
+        identity: {
+          // The supplier is this node, never a body field — a
+          // `manufacturer_sku` is only unambiguous scoped to whoever issued
+          // it, and naming someone else would publish under their scope.
+          supplierDid: owner,
+          catalogId: body.catalog_id,
+        },
+        settings: {
+          categoryIds: settings.catalogCategoryIds ?? [],
+          fulfilmentRegions: settings.publicRegions,
+          ...(settings.tradingCurrency === undefined
+            ? {}
+            : { tradingCurrency: settings.tradingCurrency }),
+        },
+        provenanceClass,
+        extraction: extraction.extraction,
+      });
+
+      // ALWAYS A DRAFT (§5 step 3). Rows that do not yet import are the normal
+      // first state of a photographed price list, and the findings ride on the
+      // draft so the repair screen has something to repair against. A draft
+      // with findings cannot advance: `confirm` refuses one with no items.
+      return { status: 200, body: { ok: true, draft: outcome.draft } };
+    };
+  };
+
+  /**
+   * Read the drafts back.
+   *
+   * §10 item 8 requires a draft to survive app restart and persona lock, and
+   * surviving is worth nothing if the only copy an owner ever sees is the
+   * response to the call that made it. Kill the app between `prepare` and
+   * `approve` and, without this, the draft is on disk and unreachable — the
+   * pause the review exists for is exactly when a client is most likely to be
+   * closed.
+   */
+  router.get('/v1/commerce/catalog/drafts', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const catalogId = req.query.catalog_id;
+    if (typeof catalogId !== 'string' || catalogId === '') {
+      return { status: 400, body: { error: 'catalog_id is required' } };
+    }
+    const drafts = runtime.catalogDrafts.listByCatalog(catalogId);
+    return {
+      status: 200,
+      body: {
+        drafts,
+        // What each draft is still waiting on, computed rather than stored:
+        // it is a view of the provenance map, and a second copy could
+        // disagree with the map `confirm` actually checks.
+        outstanding: Object.fromEntries(drafts.map((d) => [d.draftId, unconfirmedFields(d)])),
+      },
+    };
+  });
+
+  router.post(
+    '/v1/commerce/catalog/drafts/from_extraction',
+    ingest(
+      'model_derived',
+      (body) => {
+        // REQUIRED on this lane. §5 asks for the extraction's model and schema
+        // version alongside the values, and a receipt that cannot say which
+        // model produced them records less than the person was shown.
+        const model = body.model;
+        const schemaVersion = body.schema_version;
+        if (typeof model !== 'string' || model === '') {
+          return { ok: false, response: { status: 400, body: { error: 'model is required (§5)' } } };
+        }
+        if (typeof schemaVersion !== 'string' || schemaVersion === '') {
+          return {
+            ok: false,
+            response: { status: 400, body: { error: 'schema_version is required (§5)' } },
+          };
+        }
+        return { ok: true, extraction: { model, schemaVersion } };
+      },
+      (body) => {
+      if (!Array.isArray(body.rows)) {
+        return { ok: false, response: { status: 400, body: { error: 'rows must be an array' } } };
+      }
+      return { ok: true, source: catalogRowsFromRecords(body.rows as Record<string, unknown>[]) };
+      },
+    ),
+  );
+
+  /**
+   * The connector lane's draft, and the producer `source_parsed` never had.
+   *
+   * §10 item 14's decision is that a cadence-driven refresh may fetch,
+   * assemble and build on a timer and then WAIT at `approve`. That sequence
+   * needs a draft; without one the connector's only route to publication was
+   * the item-list body, which `ownerPresenceAvailable()` is armed to retire —
+   * so the retirement would have stranded every connector catalog rather than
+   * routing it through a review.
+   *
+   * The class is `source_parsed`: a spreadsheet or an ERP read is a
+   * deterministic parse of a source the owner configured, so nothing was
+   * inferred and there is no model to name. §10 item 13 records what that
+   * exemption does NOT cover — the values can still be wrong, they are simply
+   * not machine-INVENTED — and §10 item 11's laundering hole widens by one
+   * entry point here, which is why the class is fixed by the route and cannot
+   * be asked for.
+   */
+  router.post('/v1/commerce/catalog/drafts/from_connector', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
+      return { status: 400, body: { error: 'catalog_id is required' } };
+    }
+    const kinds: ConnectorKind[] = ['spreadsheet_upload', 'spreadsheet_url', 'rest'];
+    if (!kinds.includes(body.kind as ConnectorKind)) {
+      return { status: 400, body: { error: `kind must be one of ${kinds.join(' | ')}` } };
+    }
+    if (body.default_scheme !== 'gtin' && body.default_scheme !== 'sku') {
+      return { status: 400, body: { error: "default_scheme must be 'gtin' or 'sku'" } };
+    }
+    const owner = ownerDid();
+    if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+    const stored = runtime.settings.readSupplier();
+    if (!stored.ok) {
+      return stored.absent
+        ? { status: 409, body: { error: 'supplier_settings_absent' } }
+        : { status: 409, body: { error: 'supplier_settings_invalid', findings: stored.findings } };
+    }
+    const settings = stored.settings;
+    // The same rule the acknowledgement path enforces: an asymmetric rule is a
+    // rule with a hole in it.
+    if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
+      return { status: 403, body: { error: 'acting_business_mismatch' } };
+    }
+
+    const loaded = await loadCatalogThroughConnector({
+      spec: {
+        kind: body.kind as ConnectorKind,
+        credentialResource:
+          typeof body.credential_resource === 'string' ? body.credential_resource : null,
+        operation: typeof body.operation === 'string' ? body.operation : 'read_catalog',
+      },
+      // The install is the credential's OWN record, never a body field: a
+      // caller naming an install id would be choosing which grant to spend.
+      installId:
+        typeof body.credential_resource === 'string'
+          ? (runtime.credentials.describe(body.credential_resource)?.installId ?? '')
+          : '',
+      ...(typeof body.document === 'string' ? { document: body.document } : {}),
+      broker: runtime.broker,
+      defaultScheme: body.default_scheme,
+      supplierDid: owner,
+    });
+    // A CONNECTOR REFUSAL IS A 409 — it says the source could not be read at
+    // all, which is a different thing from rows that need repair.
+    if (!loaded.ok) {
+      return { status: 409, body: { ok: false, error: loaded.refusal, detail: loaded.error } };
+    }
+
+    const outcome = createCatalogDraft(ingressDeps(runtime.catalogDrafts), {
+      catalogId: body.catalog_id,
+      source: loaded.source,
+      defaultScheme: body.default_scheme,
+      identity: { supplierDid: owner, catalogId: body.catalog_id },
+      settings: {
+        categoryIds: settings.catalogCategoryIds ?? [],
+        fulfilmentRegions: settings.publicRegions,
+        ...(settings.tradingCurrency === undefined
+          ? {}
+          : { tradingCurrency: settings.tradingCurrency }),
+      },
+      provenanceClass: 'source_parsed',
+      // A deterministic parse inferred nothing, so there is no model to name.
+      extraction: null,
+    });
+    return { status: 200, body: { ok: true, draft: outcome.draft } };
+  });
+
+  router.post(
+    '/v1/commerce/catalog/drafts/from_file',
+    ingest(
+      'owner_authored',
+      // A file the seller wrote inferred nothing, so there is no model to name.
+      () => ({ ok: true, extraction: null }),
+      (body) => {
+        if (typeof body.csv !== 'string' || body.csv === '') {
+          return { ok: false, response: { status: 400, body: { error: 'csv is required' } } };
+        }
+        return { ok: true, source: parseCatalogCsv(body.csv) };
+      },
+    ),
+  );
 }

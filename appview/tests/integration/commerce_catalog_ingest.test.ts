@@ -21,6 +21,8 @@
  */
 
 import { and, eq } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -67,6 +69,10 @@ function catalogItem(sku: string) {
     item_revision: '1',
     name: `Chair ${sku}`,
     category_ids: ['furniture.seating'],
+    // REQUIRED by §9.5. Omitting it made every item here one no conformant
+    // supplier could publish, so the handler refused the lot and this suite
+    // asserted against an empty index. It passed nothing; it had never run.
+    pack: { sell_unit: { unit_code: 'each', value: '1' } },
     fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
     freshness: { generated_at: '2026-08-08T09:00:00.000Z' },
   }
@@ -214,7 +220,140 @@ describe('both Jetstream delivery orders reach the same index', () => {
     expect(await indexedSkus()).toEqual(['Chair CHAIR-1', 'Chair CHAIR-2'])
     expect((await pointerRow())?.awaitingSnapshot).toBe(false)
   })
+
+  /**
+   * THE READ-DECIDE-WRITE IS SERIALIZED PER CATALOG, and this proves the lock
+   * is really taken rather than that the code reads as if it were.
+   *
+   * The decision reads the current pointer and the held snapshot; `apply` then
+   * writes. Those were separate transactions while the ingestion queue runs up
+   * to `DATABASE_POOL_MAX` events concurrently, so a pointer could observe no
+   * snapshot at the same moment the snapshot observed no pending pointer — and
+   * both commit, leaving the pointer waiting for a snapshot that had already
+   * arrived. The catalog then stays invisible until the supplier republishes.
+   *
+   * A CONCURRENCY TEST WITHOUT A RACE. Interleaving two handlers reliably is
+   * not something a test can promise; holding the lock they must wait on is.
+   * This takes the catalog's advisory lock on a separate connection, gives the
+   * handler a short `statement_timeout`, and asserts it CANNOT proceed —
+   * then releases and asserts it can. Without the lock in the handler the
+   * first half passes anyway, which is exactly what makes it a real check.
+   */
+  it('waits for the catalog lock rather than reading around it', async () => {
+    const { pointer, snapshot, page } = publication(1, ['CHAIR-1'])
+    await commerceCatalogSnapshotHandler.handleCreate?.(ctx, snapshotOp(snapshot, page))
+
+    const blocker = new pg.Client({ connectionString: process.env.DATABASE_URL })
+    await blocker.connect()
+    try {
+      await blocker.query('BEGIN')
+      // The SAME key the handler locks: `supplier/catalog`.
+      await blocker.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${SUPPLIER}/${CATALOG}`])
+
+      // The handler must now be unable to start its work. A short timeout
+      // turns "waits for ever" into a fast, deterministic failure.
+      const timed = new pg.Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 1,
+        statement_timeout: 1500,
+      })
+      const timedCtx = createTestHandlerContext(drizzle(timed))
+      let blocked = false
+      try {
+        await commerceCatalogPointerHandler.handleCreate?.(timedCtx, pointerOp(pointer))
+      } catch {
+        blocked = true
+      }
+      await timed.end()
+      expect(blocked).toBe(true)
+
+      // Nothing was written while it waited.
+      expect(await indexedSkus()).toEqual([])
+    } finally {
+      await blocker.query('ROLLBACK')
+      await blocker.end()
+    }
+
+    // Lock released: the same event now completes and indexes the catalog.
+    await commerceCatalogPointerHandler.handleCreate?.(ctx, pointerOp(pointer))
+    expect(await indexedSkus()).toEqual(['Chair CHAIR-1'])
+  })
+
+  /**
+   * A STRANGER CANNOT PARK ON A DIGEST THIS SUPPLIER IS ABOUT TO PUBLISH.
+   *
+   * A pointer carrying `snapshot_digest` is public on the firehose before its
+   * snapshot record lands, and any repo may publish a pointer naming any
+   * digest — the ingest gate only requires the pointer's `supplier_did` to be
+   * the publishing repo. Pending rows from every repo share one table, so a
+   * lookup keyed on the DIGEST ALONE, `LIMIT 1`, no ordering, could return the
+   * bystander's row. Promotion then ran the genuine snapshot against the
+   * stranger's pointer, refused it on the repo check, and left the real
+   * supplier's own pending pointer unpromoted: their catalog stayed unindexed
+   * until they republished under a new digest (§20.1, from a stranger).
+   */
+  it('promotes THIS supplier\'s pending pointer when another repo parked on the digest', async () => {
+    const { pointer, snapshot, page } = publication(1, ['CHAIR-1'])
+
+    // The bystander announces first, naming a digest it merely read.
+    const intruderDid = 'did:plc:bystander404'
+    const intruderPointer = { ...pointer, supplier_did: intruderDid }
+    await commerceCatalogPointerHandler.handleCreate?.(ctx, {
+      uri: `at://${intruderDid}/${POINTER_COLLECTION}/self`,
+      did: intruderDid,
+      collection: POINTER_COLLECTION,
+      rkey: 'self',
+      record: intruderPointer as unknown as Record<string, unknown>,
+    })
+
+    // Then the genuine supplier announces and publishes.
+    await commerceCatalogPointerHandler.handleCreate?.(ctx, pointerOp(pointer))
+    await commerceCatalogSnapshotHandler.handleCreate?.(ctx, snapshotOp(snapshot, page))
+
+    // The real catalog is live and the real pointer was promoted.
+    expect(await indexedSkus()).toEqual(['Chair CHAIR-1'])
+    expect((await pointerRow())?.awaitingSnapshot).toBe(false)
+  })
 })
+
+  /**
+   * POINTER-FIRST AT SEQUENCE 2, which is where it stopped working.
+   *
+   * The pending pointer was written over the ACCEPTED one — both keyed on
+   * `supplier/catalog` — so announcing sequence 2 destroyed the record of
+   * sequence 1. `loadCurrentPointer` then returned null for the pending row it
+   * found, and when the snapshot arrived the advance was checked against
+   * nothing: `verifyCatalogPointerAdvance(null, 2)` refused it as a genesis
+   * that must start at 1. Permanently — every redelivery hit the same wall —
+   * while the sequence-1 catalog stayed live under a pending pointer.
+   *
+   * The existing pointer-first case covered sequence 1 only, where "no
+   * predecessor" is the correct answer, so the defect had nowhere to show.
+   */
+  it('pointer-first works at sequence 2, not only at genesis', async () => {
+    // Sequence 1, the ordinary way round.
+    const first = publication(1, ['CHAIR-1'])
+    await commerceCatalogSnapshotHandler.handleCreate?.(ctx, snapshotOp(first.snapshot, first.page))
+    await commerceCatalogPointerHandler.handleCreate?.(ctx, pointerOp(first.pointer))
+    expect(await indexedSkus()).toEqual(['Chair CHAIR-1'])
+
+    // Sequence 2 ANNOUNCED first. The live catalog must not change yet.
+    const second = publication(2, ['CHAIR-2'], first.snapshot.snapshot_digest)
+    await commerceCatalogPointerHandler.handleCreate?.(ctx, pointerOp(second.pointer))
+    expect(await indexedSkus()).toEqual(['Chair CHAIR-1'])
+
+    // And when the snapshot lands, the advance is checked against sequence 1
+    // — which still exists — and the catalog is replaced.
+    await commerceCatalogSnapshotHandler.handleCreate?.(
+      ctx,
+      snapshotOp(second.snapshot, second.page),
+    )
+    expect(await indexedSkus()).toEqual(['Chair CHAIR-2'])
+
+    const row = await pointerRow()
+    expect(row?.snapshotSequence).toBe(2)
+    expect(row?.awaitingSnapshot).toBe(false)
+  })
 
 describe('§10.2 full-state replacement', () => {
   it('a later snapshot REPLACES the catalog rather than adding to it', async () => {

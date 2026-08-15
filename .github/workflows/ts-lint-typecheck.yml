@@ -1,4 +1,11 @@
-# Lint + typecheck the TS workspace (packages/, apps/home-node-lite/, apps/mobile).
+# Lint + typecheck the TS workspace (packages/, apps/home-node-lite/, apps/mobile,
+# appview/).
+#
+# `appview/` is typechecked (it is a root workspace and exposes a `typecheck`
+# script) but NOT linted: eslint.config.mjs has ignored it since the flat
+# config was written, a pre-existing scope decision this workflow does not
+# reopen.
+#
 # Runs only when TS-workspace files change — Go/Python changes skip this entirely.
 #
 # Owner: docs/HOME_NODE_LITE_TASKS.md Phase 0c (task 0.14)
@@ -11,6 +18,7 @@ on:
     paths:
       - "packages/**"
       - "apps/**"
+      - "appview/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"
@@ -21,6 +29,7 @@ on:
     paths:
       - "packages/**"
       - "apps/**"
+      - "appview/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig*.json"

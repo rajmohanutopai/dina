@@ -23,7 +23,7 @@
  * contractual offer has no column here to live in.
  */
 
-import { validateCatalogItem } from './wire-rules.js'
+import { checkCatalogItem, checkProductRef } from './wire_shape.js'
 
 /** A product identity as the catalog publishes it (§9.3). */
 export interface ProductRef {
@@ -251,7 +251,7 @@ export function projectCatalogSnapshot(args: {
     // READ AS UNKNOWN: the declared type describes an intention about bytes
     // that came off the wire from a publisher we do not control. Trusting the
     // annotation here is how the throw got in.
-    return validateCatalogItem(typed as unknown)
+    return checkCatalogItem(typed as unknown)
   }
 
   /**
@@ -265,17 +265,33 @@ export function projectCatalogSnapshot(args: {
    * issuer". Regions are excluded — `fulfilment_regions[…].issuer_did` is a
    * §9.0 delivery scope, not product identity.
    */
-  const classify = (path: string): ProjectionRefusal =>
-    path.endsWith('.issuer_did') &&
-    (path.startsWith('item.product') || path.startsWith('item.identifiers'))
-      ? 'unattributed_identifier'
-      : 'malformed_item'
+  const classify = (item: CatalogItemShape): ProjectionRefusal => {
+    // ASKED DIRECTLY, not read off an error string. This used to match the
+    // PATH my own validator returned (`item.product.issuer_did`), which tied a
+    // domain distinction to one implementation's message format — and the
+    // format changed the moment AppView started using the protocol's validator
+    // instead of a local copy. §9.3's rule is small enough to state: a scoped
+    // scheme with no issuer is ambiguous across suppliers, so `A-1` from two
+    // manufacturers collides into one product key.
+    const scoped = (ref: unknown): boolean => {
+      if (ref === null || typeof ref !== 'object') return false
+      const r = ref as { scheme?: unknown; issuer_did?: unknown }
+      if (r.scheme !== 'manufacturer_sku' && r.scheme !== 'custom') return false
+      return typeof r.issuer_did !== 'string' || r.issuer_did === ''
+    }
+    const raw = item as unknown as { product?: unknown; identifiers?: unknown }
+    if (scoped(raw.product)) return 'unattributed_identifier'
+    if (Array.isArray(raw.identifiers) && raw.identifiers.some(scoped)) {
+      return 'unattributed_identifier'
+    }
+    return 'malformed_item'
+  }
 
   args.items.forEach((item, index) => {
     const missing = missingField(item)
     if (missing !== null) {
       findings.push({
-        refusal: classify(missing),
+        refusal: classify(item),
         index,
         // The FIELD NAME, never its value: a refusal that quoted the payload
         // would put a hostile publisher's bytes into an operator's log.

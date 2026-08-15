@@ -27,7 +27,17 @@
  * record and the obvious first thing to update.
  */
 
-import type { CatalogPointer, CatalogSnapshot } from '@dina/commerce-protocol';
+import {
+  CATALOG_POINTER_NSID,
+  CATALOG_SNAPSHOT_NSID,
+  catalogPointerRecord,
+  catalogSnapshotRecord,
+  type CatalogPointer,
+  type CatalogPointerRecord,
+  type CatalogSnapshot,
+  type CatalogSnapshotPage,
+  type CatalogSnapshotRecord,
+} from '@dina/commerce-protocol';
 
 /**
  * Write one record into this node's own repo. Injected: the root owns the
@@ -51,7 +61,16 @@ import type { CatalogPointer, CatalogSnapshot } from '@dina/commerce-protocol';
 export type CatalogRecordWriter = (args: {
   collection: string;
   rkey: string;
-  record: Record<string, unknown>;
+  /**
+   * EXACTLY the two §10.2 record kinds, not an open bag of fields.
+   *
+   * It was `Record<string, unknown>`, which accepted any object at all — so
+   * the writer could be handed a flat snapshot missing its pages and the
+   * compiler had nothing to say. The shapes are the contract; typing them here
+   * is what makes a malformed record a build error rather than a record
+   * AppView silently refuses.
+   */
+  record: CatalogPointerRecord | CatalogSnapshotRecord;
   swapRecord?: string | null;
 }) => Promise<{ cid: string }>;
 
@@ -85,9 +104,15 @@ export function getCatalogRecordReader(): CatalogRecordReader | null {
   return recordReader;
 }
 
-/** §10.2 collections. */
-export const CATALOG_SNAPSHOT_NSID = 'com.dinakernel.commerce.catalogSnapshot';
-export const CATALOG_POINTER_NSID = 'com.dinakernel.commerce.catalogPointer';
+/**
+ * §10.2 collections — RE-EXPORTED, not redeclared.
+ *
+ * They were declared here, and the pointer's name disagreed with the one
+ * AppView indexes on. Keeping the exports (callers and tests import them from
+ * here) while sourcing the values from `@dina/commerce-protocol` means there
+ * is now one place the name can be changed and both sides follow.
+ */
+export { CATALOG_SNAPSHOT_NSID, CATALOG_POINTER_NSID };
 
 /**
  * The pointer's rkey. ONE per catalog, because the pointer IS the mutable head
@@ -106,7 +131,11 @@ export type CatalogPublishRefusal =
   /** The snapshot landed and the head did not; a retry republishes safely. */
   | 'pointer_write_failed'
   /** A withdrawal names no snapshot, so there is nothing to publish under it. */
-  | 'withdrawal_names_a_snapshot';
+  | 'withdrawal_names_a_snapshot'
+  /** A snapshot arrived without the pages its `payload_root` commits to. */
+  | 'snapshot_without_pages'
+  /** A live (non-withdrawn) pointer identified no snapshot at all. */
+  | 'pointer_names_no_snapshot';
 
 export type CatalogPublishOutcome =
   | {
@@ -152,6 +181,16 @@ export async function publishCatalogRecords(args: {
   pointer: CatalogPointer;
   /** Absent on a withdrawal. */
   snapshot?: CatalogSnapshot;
+  /**
+   * The snapshot's pages, REQUIRED whenever a snapshot is published.
+   *
+   * §10.3 v1 carries pages inline, and the snapshot's `payload_root` commits
+   * to their digests — so a snapshot published without them commits to bytes
+   * no consumer can fetch, and AppView refuses it as "pages missing". The
+   * builder returns them and this function used not to accept them, so they
+   * were computed and dropped at the call site.
+   */
+  pages?: readonly CatalogSnapshotPage[];
   expectedPointerCid: string | null;
   /**
    * Asked again immediately before the head write, after the snapshot's
@@ -180,16 +219,66 @@ export async function publishCatalogRecords(args: {
       error: 'catalog: a withdrawal publishes no snapshot (§10.2)',
     };
   }
+  if (args.pointer.withdrawn !== true && args.snapshot === undefined) {
+    // A LIVE POINTER MUST NAME A SNAPSHOT — but not necessarily publish one.
+    // Omitting the snapshot is the documented recovery: the snapshot write
+    // landed, the head write did not, and a retry rewrites only the head. That
+    // path stays open. What is refused is a live pointer that names nothing at
+    // all, which publishes a head consumers resolve to a record that was never
+    // identified, and cannot tell from a supplier mid-publish.
+    if (
+      typeof args.pointer.snapshot_digest !== 'string' ||
+      args.pointer.snapshot_digest === '' ||
+      typeof args.pointer.snapshot_rkey !== 'string' ||
+      args.pointer.snapshot_rkey === ''
+    ) {
+      return {
+        ok: false,
+        refusal: 'pointer_names_no_snapshot',
+        error: 'catalog: a live pointer names its snapshot (§10.2)',
+      };
+    }
+  }
 
   let snapshotCid: string | undefined;
   if (args.snapshot !== undefined) {
+    // FAIL CLOSED. Publishing a snapshot that does not carry the payload it
+    // commits to puts a record on the wire that every consumer rejects, and
+    // the pointer written after it names that record as current.
+    //
+    // THE CHECK IS AGAINST `page_digests`, NOT AGAINST PRESENCE. The first
+    // version asked only whether `pages` was `undefined`, which a caller
+    // passing `pages: []` for a snapshot committing to three pages walked
+    // straight past — an absent argument was refused while an empty one was
+    // published. Presence is not the property; agreeing with the commitment
+    // is. The routes always pass the builder's own pages, so this guards the
+    // exported boundary rather than the shipped callers.
+    const pageDigests = args.snapshot.page_digests;
+    const pages = args.pages;
+    if (pages === undefined || pages.length !== pageDigests.length) {
+      return {
+        ok: false,
+        refusal: 'snapshot_without_pages',
+        error: `catalog: a snapshot publishes its pages inline (§10.3) — committed to ${String(pageDigests.length)}, given ${pages === undefined ? 'none' : String(pages.length)}`,
+      };
+    }
+    // ORDER IS PART OF THE COMMITMENT: `payload_root` is a commitment over the
+    // digests IN SEQUENCE, so the same pages shuffled are a different payload.
+    const misordered = pageDigests.findIndex((d, i) => pages[i]?.page_digest !== d);
+    if (misordered !== -1) {
+      return {
+        ok: false,
+        refusal: 'snapshot_without_pages',
+        error: `catalog: page ${String(misordered)} does not match the snapshot's commitment (§10.3)`,
+      };
+    }
     try {
       const written = await writer({
         collection: CATALOG_SNAPSHOT_NSID,
         // Content-addressed: the digest IS the key, so a retry writes the same
         // record at the same place rather than a second copy.
         rkey: args.snapshot.snapshot_digest,
-        record: { ...args.snapshot, $type: CATALOG_SNAPSHOT_NSID },
+        record: catalogSnapshotRecord(args.snapshot, pages),
         // NO CONDITION AT ALL — the property is absent, not null. An immutable
         // record either is not there or is already exactly these bytes, and
         // `null` would mean "only if nothing is there", which refuses the
@@ -217,7 +306,7 @@ export async function publishCatalogRecords(args: {
     const written = await writer({
       collection: CATALOG_POINTER_NSID,
       rkey: catalogPointerRkey(args.pointer.catalog_id),
-      record: { ...args.pointer, $type: CATALOG_POINTER_NSID },
+      record: catalogPointerRecord(args.pointer),
       swapRecord: args.expectedPointerCid,
     });
     return {

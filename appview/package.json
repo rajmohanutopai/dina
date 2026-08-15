@@ -1,14 +1,17 @@
 {
   "name": "@dina/appview",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run",
-    "test:unit": "vitest run tests/unit/",
-    "test:integration": "vitest run tests/integration/",
+    "build:protocol": "npm --prefix ../packages/commerce-protocol run build",
+    "test": "npm run test:unit",
+    "test:all": "npm run build:protocol && vitest run",
+    "test:unit": "npm run build:protocol && vitest run tests/unit/",
+    "test:integration": "npm run build:protocol && vitest run tests/integration/",
     "test:status": "tsx test_appview.ts",
-    "build": "tsc",
+    "typecheck": "npm run build:protocol && tsc --noEmit",
+    "build": "npm run build:protocol && tsc",
     "migrate": "drizzle-kit migrate",
     "generate": "drizzle-kit generate",
     "seed:catalog": "npm --prefix ../packages/protocol run emit:catalog && tsx scripts/seed_catalog.ts",
@@ -17,6 +20,7 @@
     "admin:moderation": "tsx src/admin/peerlens-moderation-cli.ts"
   },
   "dependencies": {
+    "@dina/commerce-protocol": "*",
     "dotenv": "16.6.1",
     "drizzle-orm": "0.45.2",
     "franc-min": "^6.2.0",
@@ -33,6 +37,7 @@
     "@types/pg": "8.16.0",
     "@types/ws": "8.18.1",
     "drizzle-kit": "0.30.6",
+    "tsc-alias": "1.8.16",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "3.2.4"

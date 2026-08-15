@@ -31,6 +31,7 @@ function ref(overrides: Partial<CommerceOrderRef> = {}): CommerceOrderRef {
     servingInstallId: '',
     admittedEpoch: '1',
     reconciliationRequired: true,
+    readoptedChainEvidence: false,
     state: 'reserved',
     effectPhase: 'pre_effect',
     acknowledgementJson: null,
@@ -129,6 +130,7 @@ describe('the repository query behind it', () => {
         purchaseOrderId: 'po-normal',
         idempotencyKey: 'idem-2',
         reconciliationRequired: false,
+    readoptedChainEvidence: false,
       }),
     );
     expect(orders.listAwaitingReconciliation().map((r) => r.purchaseOrderId)).toEqual([

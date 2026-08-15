@@ -216,8 +216,6 @@ export async function searchCommerceCatalog(
     // clearly than it forbids a bad ranking.
     return { candidates: [], examined: 0 }
   }
-  conditions.push(or(...anyOf) as SQL)
-
   // §10.7 RECALL EXPANSION. Products reachable from the queried identifiers
   // along an edge the index is at least willing to SHOW. Deliberately not
   // gated on the standing or substitution thresholds: this widens what a buyer
@@ -244,13 +242,50 @@ export async function searchCommerceCatalog(
     }
   }
 
+  // RELATED PRODUCTS JOIN THE CANDIDATE SET, not just the matcher.
+  //
+  // This expansion used to be computed AFTER the SQL predicate was closed, so
+  // a product reachable only along an edge was never fetched and
+  // `matchCatalogRow` never saw it. §10.7's recall expansion was unreachable
+  // through the real endpoint while passing every pure-matcher test.
+  if (relatedKeys.size > 0) {
+    anyOf.push(inArray(commerceCatalogProducts.productKey, [...relatedKeys.keys()]))
+  }
+
+  conditions.push(or(...anyOf) as SQL)
+
   // Over-fetch, because the matcher drops rows SQL let through (expired, or a
   // text hit that does not survive normalization). Bounded so a broad query
   // cannot turn into a scan.
+  // DETERMINISTIC ORDER BEFORE THE CAP.
+  //
+  // The cap used to be applied to an UNORDERED result: PostgreSQL may return
+  // any matching rows within `limit * 4`, so a broad mixed-signal query could
+  // drop the one EXACT IDENTIFIER match and keep lower-value text hits — while
+  // the scorer downstream weights an identifier match at 6000bp and the
+  // endpoint documents a SQL-superset guarantee. The rows the ranking needs
+  // most were the ones the cap was free to discard.
+  //
+  // Identifier matches are tiered first in SQL, then `row_key` breaks ties so
+  // two runs of the same query return the same page.
+  // NOT a `sql`0`` placeholder when there are no identifiers: PostgreSQL reads
+  // a bare integer in ORDER BY as an ORDINAL COLUMN POSITION, so `ORDER BY 0`
+  // is an error rather than a no-op tier. The tier is added only when it has
+  // something to say.
+  const identifierKeysForOrder = identifiers.map((ref) => productKey(ref as never))
+  const ordering =
+    identifierKeysForOrder.length > 0
+      ? [
+          sql`CASE WHEN ${commerceCatalogProducts.productKey} IN ${identifierKeysForOrder} THEN 0 ELSE 1 END`,
+          commerceCatalogProducts.rowKey,
+        ]
+      : [commerceCatalogProducts.rowKey]
+
   const rows = await db
     .select()
     .from(commerceCatalogProducts)
     .where(and(...conditions))
+    .orderBy(...ordering)
     .limit(params.limit * 4)
 
   const query: CatalogSearchQuery = {

@@ -30,13 +30,26 @@ export const MAX_MONEY_MINOR_UNIT_DIGITS = 15;
 
 const CURRENCY_SHAPE = /^[A-Z]{3}$/;
 
+/**
+ * Is this a currency code `Money` will accept?
+ *
+ * EXPORTED SO THE RULE HAS ONE DEFINITION. A caller that stores a currency
+ * before building any `Money` — supplier settings, for instance — has to apply
+ * the same test, and the alternative is a second regex somewhere else that
+ * agrees until one of them is edited. Same reasoning as the §10.2 collection
+ * names: a rule spelled twice is a rule that can disagree with itself.
+ */
+export function isCurrencyCode(value: unknown): value is string {
+  return typeof value === 'string' && CURRENCY_SHAPE.test(value);
+}
+
 /** Validate a Money value. Returns null on success, error string on failure. */
 export function validateMoney(money: unknown): string | null {
   if (typeof money !== 'object' || money === null) {
     return 'money: value must be an object';
   }
   const m = money as Record<string, unknown>;
-  if (typeof m.currency !== 'string' || !CURRENCY_SHAPE.test(m.currency)) {
+  if (!isCurrencyCode(m.currency)) {
     return 'money: currency must be a three-letter uppercase ISO 4217 code';
   }
   if (typeof m.minor_units !== 'string') {

@@ -125,7 +125,7 @@ describe('catalog verifier — what it refuses', () => {
     const page = clone(vectors.pages[0]!)
     const snapshot = clone(vectors.snapshot)
     page.page_digest = 'f'.repeat(64)
-    snapshot.page_digests[0] = catalogPageDigest(page)
+    snapshot.page_digests = [catalogPageDigest(page), ...snapshot.page_digests.slice(1)]
     expect(verifyCatalogPage(page, snapshot)).toBe(
       'page: page_digest field disagrees with the snapshot',
     )
@@ -197,13 +197,13 @@ describe('catalog verifier — what it refuses', () => {
     // checked on the METADATA — before the fetcher starts — not on arrival.
     const snapshot = clone(vectors.snapshot)
     snapshot.page_digests = Array.from({ length: MAX_CATALOG_PAGES + 1 }, () => 'a'.repeat(64))
-    expect(verifyCatalogSnapshot(snapshot)).toBe('snapshot: exceeds the maximum page count')
+    expect(verifyCatalogSnapshot(snapshot)).toBe('snapshot: too many pages')
   })
 
   it('refuses an over-large page (FR-A2)', () => {
     const page = clone(vectors.pages[0]!)
     page.items = Array.from({ length: MAX_CATALOG_PAGE_ITEMS + 1 }, () => ({ sku: 'X' }))
-    expect(verifyCatalogPage(page, vectors.snapshot)).toBe('page: exceeds the maximum item count')
+    expect(verifyCatalogPage(page, vectors.snapshot)).toBe('page: too many items for one page')
   })
 
   it('refuses to bind a withdrawal to a snapshot', () => {

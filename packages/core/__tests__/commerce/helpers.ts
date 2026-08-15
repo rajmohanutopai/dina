@@ -298,8 +298,8 @@ export const SUPPLIER_SIGNING_KEY = new Uint8Array(32).fill(7);
 export const SUPPLIER_PUBLIC_KEY = getPublicKey(SUPPLIER_SIGNING_KEY);
 
 /** Resolves ONLY the supplier's DID, like a node that knows its own key. */
-export const supplierKeyResolver = (did: string): Uint8Array | null =>
-  did === SUPPLIER_DID ? SUPPLIER_PUBLIC_KEY : null;
+export const supplierKeyResolver = (did: string): { publicKey: Uint8Array }[] =>
+  did === SUPPLIER_DID ? [{ publicKey: SUPPLIER_PUBLIC_KEY }] : [];
 
 /** The production verifier, over the test key. Not a stub. */
 export const realHeldEvidenceVerifier = makeHeldEvidenceVerifier(supplierKeyResolver);
@@ -327,9 +327,16 @@ export function makeHeldEvidence<T extends object>(
   const body =
     overrides.body ??
     JSON.stringify({
+      // A GENUINE `service.response`, because that is what held evidence IS —
+      // a retained copy of the supplier's answer. This fixture used
+      // `status: 'ok'` (not in the success|unavailable|error set) and carried
+      // no `ttl_seconds`, so it was a body no D2D receive pipeline would have
+      // accepted. The verifier took it anyway, because it only searched the
+      // bytes for the digest and never asked what message this was.
       capability: 'com.dinakernel.commerce.order_status',
       query_id: 'q-held-1',
-      status: 'ok',
+      status: 'success',
+      ttl_seconds: 300,
       result: record,
     });
   const envelope: RetainedEnvelope = {

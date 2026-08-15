@@ -479,6 +479,7 @@ export class CommerceAdmissionEngine {
       return this.recordAdmissionRejection(
         order,
         serving,
+        authenticatedBuyerDid,
         'quote_unknown',
         undefined,
         `no quote family for quote_id "${order.quote_id}"`,
@@ -494,14 +495,21 @@ export class CommerceAdmissionEngine {
       // Two refusals carry more than a reason code, so they are named
       // here rather than flattened through the table.
       if (verdict.refusal === 'quote_voided' || verdict.refusal === 'stale_epoch') {
-        return this.rejectVoidedFamily(order, serving);
+        return this.rejectVoidedFamily(order, serving, authenticatedBuyerDid);
       }
       if (verdict.refusal === 'quote_superseded') {
-        return this.recordAdmissionRejection(order, serving, 'quote_superseded', family.headDigest);
+        return this.recordAdmissionRejection(
+          order,
+          serving,
+          authenticatedBuyerDid,
+          'quote_superseded',
+          family.headDigest,
+        );
       }
       return this.recordAdmissionRejection(
         order,
         serving,
+        authenticatedBuyerDid,
         ADMISSION_REASON[verdict.refusal],
         undefined,
         // The family's OWN refusal, which the wire code flattens. `expired`
@@ -520,6 +528,7 @@ export class CommerceAdmissionEngine {
       return this.recordAdmissionRejection(
         order,
         serving,
+        authenticatedBuyerDid,
         'quote_unknown',
         undefined,
         // NOT "no such quote". The quote is right there; what is missing is
@@ -544,6 +553,7 @@ export class CommerceAdmissionEngine {
       return this.recordAdmissionRejection(
         order,
         serving,
+        authenticatedBuyerDid,
         'quote_unknown',
         undefined,
         `retained request receipt unreadable: ${rehydrated.error}`,
@@ -562,14 +572,19 @@ export class CommerceAdmissionEngine {
       const reason = binding.includes('projection')
         ? 'projection_mismatch'
         : 'order_binding_mismatch';
-      return this.recordAdmissionRejection(order, serving, reason);
+      return this.recordAdmissionRejection(order, serving, authenticatedBuyerDid, reason);
     }
 
     // Capacity check-and-hold — one call, so the count and the hold
     // cannot drift apart (atomic within the surrounding tx).
     const held = family.hold(order.purchase_order_id);
     if (!held.ok) {
-      return this.recordAdmissionRejection(order, serving, ADMISSION_REASON[held.refusal]);
+      return this.recordAdmissionRejection(
+        order,
+        serving,
+        authenticatedBuyerDid,
+        ADMISSION_REASON[held.refusal],
+      );
     }
     const nowMs = this.deps.now();
     const created = this.deps.orders.createReserved({
@@ -622,6 +637,12 @@ export class CommerceAdmissionEngine {
   private recordAdmissionRejection(
     order: PurchaseOrderProposal,
     serving: { manifestCid: string; installId: string },
+    /**
+     * §9.12 — who handed this node the document, for the arrival evidence.
+     * Same value and same reason as the reserved path: the transport-
+     * authenticated sender, never a field the proposal chose.
+     */
+    authenticatedBuyerDid: string,
     reasonCode: string,
     currentQuoteDigest?: string,
     /**
@@ -668,6 +689,30 @@ export class CommerceAdmissionEngine {
     if (!created) {
       throw new Error('admission: concurrent reservation race — transaction retries');
     }
+    // THE PROPOSAL ARRIVED, and a refusal does not unsend it.
+    //
+    // Only the reserved path retained this, so every durably-recorded refusal
+    // left an order reference naming an `order_digest` no receipt carried.
+    // That is not a cosmetic gap: `preflightCommerceArchive` refuses an
+    // archive with a dangling receipt reference, so ONE refused order — which
+    // any peer can cause by proposing against a quote_id this node never
+    // issued — made the owner's next backup permanently unrestorable. §16.2
+    // fail-closed reconstruction is meant to catch a torn archive, not to
+    // manufacture one.
+    //
+    // It is also the document the buyer would dispute the refusal with, and
+    // the arrival evidence records the transport-authenticated sender rather
+    // than a field the proposal chose.
+    this.deps.receipts.put({
+      recordDigest: order.order_digest,
+      domain: 'order',
+      buyerDid: order.buyer_did,
+      quoteId: order.quote_id,
+      purchaseOrderId: order.purchase_order_id,
+      recordJson: JSON.stringify(order),
+      evidenceJson: receivedFrom({ fromDid: authenticatedBuyerDid, observedAt: nowMs }),
+      createdAt: nowMs,
+    });
     // Through the aggregate: an immediate rejection is still a decision and
     // must cross the same legality check as any other.
     const rejected = this.deps.orders.load(order.buyer_did, order.purchase_order_id);
@@ -682,6 +727,27 @@ export class CommerceAdmissionEngine {
       throw new CommerceIntegrityError(`rejection could not be recorded: ${recorded.refusal}`);
     }
     this.persistAcknowledgement(order, acknowledgement, nowMs, order.quote_id);
+    // §12.8: EVERY resolving event opens a status chain, and an immediate
+    // refusal resolves the order just as a runner's `rejected` decision does.
+    // The runner path calls this (see `decideOrder`); this path did not, so a
+    // refused order carried an acknowledgement and NO chain — nothing for the
+    // buyer to verify, and an order the unfinished-order query counts as open
+    // forever, which holds lifecycle authority and blocks plugin uninstall.
+    //
+    // Same failure handling as the normal path: a decision whose chain cannot
+    // be opened is rolled back rather than half-recorded.
+    if (this.deps.createAcceptedGenesisInTx) {
+      const genesisError = this.deps.createAcceptedGenesisInTx(
+        order.buyer_did,
+        order.purchase_order_id,
+        'rejected',
+      );
+      if (genesisError) {
+        throw new CommerceIntegrityError(
+          `refused order could not open its status chain: ${genesisError.error}`,
+        );
+      }
+    }
     return { kind: 'rejected', acknowledgement, detail: detail ?? reasonCode };
   }
 
@@ -909,6 +975,24 @@ export class CommerceAdmissionEngine {
           nowMs,
           ref.quoteId,
         );
+        // §12.8, same as every other resolving path. A decision timeout ends
+        // the order — the supplier never answered and the hold is refunded —
+        // so it opens and closes a chain at `rejected`. Without it the swept
+        // order stays chainless: counted as unfinished for ever by the
+        // open-order query, retaining lifecycle authority and blocking
+        // teardown, with nothing the buyer can verify.
+        if (this.deps.createAcceptedGenesisInTx) {
+          const genesisError = this.deps.createAcceptedGenesisInTx(
+            ref.buyerDid,
+            ref.purchaseOrderId,
+            'rejected',
+          );
+          if (genesisError) {
+            throw new CommerceIntegrityError(
+              `timed-out order could not open its status chain: ${genesisError.error}`,
+            );
+          }
+        }
         timedOut.push(ref.purchaseOrderId);
       }
     })();
@@ -981,11 +1065,45 @@ export class CommerceAdmissionEngine {
    * re-approve against it for ever. `quote_voided` says the true thing: this
    * family is gone, request a new quote.
    */
+  /**
+   * §16.2 restore-voided family — AND A RECORDED DIVERGENCE FROM ITS WORDING.
+   *
+   * The spec says "admission against one returns `quote_superseded` with a
+   * freshly signed head at the new epoch". This returns `quote_voided` with no
+   * head, for two reasons that the same specification establishes:
+   *
+   *   1. §3.2/§3.4 — a replacement quote is TERMS: price, quantity, validity.
+   *      Terms are business meaning and belong to the supplier's pack, never
+   *      to the kernel. For Core to answer with "a freshly signed head" it
+   *      would have to invent the terms it signs, which is the one thing the
+   *      kernel must not do.
+   *   2. No I/O inside a Core transaction. Obtaining real terms means asking
+   *      the supplier's runner or an ERP connector; doing that here would hold
+   *      the write lock across a network round trip — on mobile, the single
+   *      connection, for as long as the counterparty takes.
+   *
+   * So the replacement is the deliberate THREE-STEP path documented on
+   * `AdmissionService.registerReplacementQuote`: refuse here without I/O, let
+   * the supplier obtain terms with no transaction open, then register them in
+   * a second short transaction. The replacement carries a FRESH `quote_id`
+   * (see `REGISTRATION_REFUSAL.quote_voided`), so this family never acquires a
+   * head to point at — which is why there is no digest to return and why
+   * `quote_superseded` would be the wrong word: nothing superseded this
+   * family, it was voided.
+   *
+   * WHAT A BUYER LOSES: a strictly-conformant buyer following §16.2's letter
+   * waits for a head that never arrives on this response, instead of reading
+   * `quote_voided` and requesting a new quote. Closing that fully means
+   * PROMPTING the supplier's runner for a re-offer and answering the buyer
+   * once it lands — a feature, not a wording change, and one that needs the
+   * owner's decision because it alters an explicit product requirement.
+   */
   private rejectVoidedFamily(
     order: PurchaseOrderProposal,
     serving: { manifestCid: string; installId: string },
+    authenticatedBuyerDid: string,
   ): AdmissionOutcome {
-    return this.recordAdmissionRejection(order, serving, 'quote_voided');
+    return this.recordAdmissionRejection(order, serving, authenticatedBuyerDid, 'quote_voided');
   }
 
   // -------------------------------------------------------------------------

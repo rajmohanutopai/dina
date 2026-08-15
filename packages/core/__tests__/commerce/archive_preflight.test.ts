@@ -51,6 +51,23 @@ const STATUS_RECEIPT = receipt('status', { purchase_order_id: 'po-1', state: 'ac
 const ORDER_RECEIPT = receipt('order', { purchase_order_id: 'po-1', buyer_did: BUYER });
 const DIGEST_A = STATUS_RECEIPT.record_digest;
 const DIGEST_B = ORDER_RECEIPT.record_digest;
+/**
+ * Well-formed hex64 that names no receipt in the archive. The whole point of
+ * checking against the receipt SET rather than against a regex is that this
+ * value passes every shape test.
+ */
+const ABSENT_DIGEST = 'f'.repeat(64);
+/** The proposal the §16.2 ceremony recovered for a re-adopted order. */
+const RECOVERED_ORDER_RECEIPT = receipt('order', {
+  purchase_order_id: 'po-recovered',
+  buyer_did: BUYER,
+});
+
+/** The retained proposal of an order this node refused. */
+const REFUSED_ORDER_RECEIPT = receipt('order', {
+  purchase_order_id: 'po-refused',
+  buyer_did: BUYER,
+});
 
 /** A small archive that is internally coherent — the baseline every case bends. */
 function coherent(): CommerceArchiveTables {
@@ -206,6 +223,45 @@ describe('cross-table references must resolve', () => {
       expect.objectContaining({
         refusal: 'dangling_receipt_reference',
         table: 'commerce_status_heads',
+      }),
+    );
+  });
+
+  /**
+   * THE SAME RULE, FOR THE OTHER TWO LINKS. The chain head was the only
+   * digest→receipt link the preflight checked. `order_digest` was checked for
+   * hex64 and nothing more, and `commerce_quote_heads.head_digest` was declared
+   * on the row type and then discarded entirely — so an archive naming receipts
+   * it does not carry passed, and the failure surfaced later as
+   * `decideOrderInTx` refusing every admission with "order receipt missing".
+   *
+   * A well-formed digest naming nothing is the case that matters: shape checks
+   * pass it, and only set membership catches it.
+   */
+  it('refuses an order naming a receipt the archive does not carry', () => {
+    const tables = coherent();
+    tables.commerce_order_refs = [
+      { buyer_did: BUYER, purchase_order_id: 'po-1', quote_id: 'q-1', order_digest: ABSENT_DIGEST },
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings).toContainEqual(
+      expect.objectContaining({
+        refusal: 'dangling_receipt_reference',
+        table: 'commerce_order_refs',
+      }),
+    );
+  });
+
+  it('refuses a quote head naming a receipt the archive does not carry', () => {
+    const tables = coherent();
+    tables.commerce_quote_heads = [{ quote_id: 'q-1', head_digest: ABSENT_DIGEST }];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings).toContainEqual(
+      expect.objectContaining({
+        refusal: 'dangling_receipt_reference',
+        table: 'commerce_quote_heads',
       }),
     );
   });
@@ -477,5 +533,184 @@ describe('the report', () => {
     const tables = coherent();
     tables.commerce_quote_heads = [];
     expect(describePreflightRefusal(preflightCommerceArchive(tables))).not.toContain(BUYER);
+  });
+});
+
+/**
+ * THE TWO REFERENCES THAT CANNOT SATISFY THE CROSS-CHECKS, EVER.
+ *
+ * Both checks below started as "an order names a quote / a receipt this
+ * archive does not contain", stated as if every order reference could always
+ * satisfy them. Two cannot, and both are produced by ordinary operation:
+ *
+ *   - a REFUSED order, when the refusal reason WAS that this node had no such
+ *     quote. Any peer can provoke it by proposing against a quote_id this node
+ *     never issued.
+ *   - a RE-ADOPTED order (§12.7), rebuilt from a buyer's held evidence. This
+ *     node never received the order document and never knew its quote.
+ *
+ * `importArchive` throws on any finding, so requiring the impossible of them
+ * turned one refused order into a `.dina` backup that could never be restored
+ * — a remotely triggerable, permanent loss of the owner's backup, produced by
+ * the check that exists to PREVENT loss.
+ */
+describe('references a node cannot fully describe', () => {
+  const REFUSAL_JSON = JSON.stringify({
+    kind: 'rejected',
+    reason_code: 'quote_unknown',
+    purchase_order_id: 'po-refused',
+  });
+
+  it('accepts a REFUSED order whose quote this node never had', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [...tables.commerce_receipts!, REFUSED_ORDER_RECEIPT];
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-refused',
+        // The quote_id the BUYER named. There is no family for it — that IS
+        // the refusal reason.
+        quote_id: 'q-never-issued',
+        order_digest: REFUSED_ORDER_RECEIPT.record_digest,
+        acknowledgement_json: REFUSAL_JSON,
+      },
+    ];
+    expect(preflightCommerceArchive(tables)).toEqual({
+      ok: true,
+      findings: [],
+      predatesCommerce: false,
+    });
+  });
+
+  it('still requires the ORDER RECEIPT of a refused order', () => {
+    // The exemption is narrow on purpose. A refusal may name a quote this node
+    // never had; it may NOT lose the proposal it refused, because the proposal
+    // arrived and the refusal does not unsend it.
+    const tables = coherent();
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-refused',
+        quote_id: 'q-never-issued',
+        order_digest: ABSENT_DIGEST,
+        acknowledgement_json: REFUSAL_JSON,
+      },
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.map((f) => f.refusal)).toContain('dangling_receipt_reference');
+  });
+
+  it('accepts a RE-ADOPTED order with no order receipt and no quote', () => {
+    // §12.7 rebuilds the reference from the buyer's acknowledgement alone.
+    // `quote_id` is empty and no order receipt exists, by construction.
+    const tables = coherent();
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-readopted',
+        quote_id: '',
+        order_digest: ABSENT_DIGEST,
+        reconciliation_required: 1,
+      },
+    ];
+    expect(preflightCommerceArchive(tables)).toEqual({
+      ok: true,
+      findings: [],
+      predatesCommerce: false,
+    });
+  });
+
+  it('REFUSES an ordinary order missing its receipt and its quote', () => {
+    // The baseline the exemptions must not cost: no re-adoption flag, a quote
+    // it DOES name, and neither the receipt nor the family present. That is
+    // exactly the torn archive this check exists to catch.
+    const tables = coherent();
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-torn',
+        quote_id: 'q-absent',
+        order_digest: ABSENT_DIGEST,
+      },
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.map((f) => f.refusal)).toEqual(
+      expect.arrayContaining(['dangling_receipt_reference', 'dangling_quote_reference']),
+    );
+  });
+
+  /**
+   * THE FLAG IS TRANSIENT AND THE TRAP IS NOT.
+   *
+   * `reconciliation_required` is cleared by the owner's §16.2 ceremony, and
+   * clearing it does not conjure the quote family this node never issued. An
+   * exemption keyed on the flag therefore covered a re-adopted order right up
+   * until the owner RECOVERED it — and the first backup after a successful
+   * recovery was the unrestorable one.
+   */
+  it('accepts a re-adopted order AFTER the ceremony has cleared its flag', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [...tables.commerce_receipts!, RECOVERED_ORDER_RECEIPT];
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-recovered',
+        // The ceremony restored the ORDER (its receipt is present now) and
+        // left the quote id empty, because there is no quote to restore.
+        quote_id: '',
+        order_digest: RECOVERED_ORDER_RECEIPT.record_digest,
+        reconciliation_required: 0,
+      },
+    ];
+    expect(preflightCommerceArchive(tables)).toEqual({
+      ok: true,
+      findings: [],
+      predatesCommerce: false,
+    });
+  });
+
+  it('does not let an UNREADABLE acknowledgement claim the refusal exemption', () => {
+    // A corrupt column must narrow nothing: the parse fails, the row is
+    // treated as an ordinary decided order, and the quote check applies.
+    const tables = coherent();
+    tables.commerce_receipts = [...tables.commerce_receipts!, REFUSED_ORDER_RECEIPT];
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-refused',
+        quote_id: 'q-never-issued',
+        order_digest: REFUSED_ORDER_RECEIPT.record_digest,
+        acknowledgement_json: '{not json',
+      },
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.map((f) => f.refusal)).toContain('dangling_quote_reference');
+  });
+
+  it('does not let an ACCEPTED acknowledgement claim the refusal exemption', () => {
+    const tables = coherent();
+    tables.commerce_receipts = [...tables.commerce_receipts!, REFUSED_ORDER_RECEIPT];
+    tables.commerce_order_refs = [
+      ...tables.commerce_order_refs!,
+      {
+        buyer_did: BUYER,
+        purchase_order_id: 'po-refused',
+        quote_id: 'q-never-issued',
+        order_digest: REFUSED_ORDER_RECEIPT.record_digest,
+        acknowledgement_json: JSON.stringify({ kind: 'accepted' }),
+      },
+    ];
+    const verdict = preflightCommerceArchive(tables);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.findings.map((f) => f.refusal)).toContain('dangling_quote_reference');
   });
 });

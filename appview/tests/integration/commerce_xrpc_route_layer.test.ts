@@ -193,7 +193,13 @@ describe('a retailer’s whole question, over the wire', () => {
       cid: 'bafy-review-1',
       subjectId: 'subj-cm',
       subjectRefRaw: { did: MANUFACTURER },
-      category: 'fulfilment',
+      // The SUBJECT's category, and the reviewer's per-dimension verdict kept
+      // apart. This seeded `category: 'fulfilment'` — a §14.4 dimension name in
+      // the subject-category column — which matched the route's own mistake of
+      // reading `category` AS the dimension. Fixture and defect agreed, so the
+      // endpoint looked alive while returning nothing for any real publisher.
+      category: 'commerce/product',
+      dimensionsJson: [{ dimension: 'fulfilment', value: 'met' }],
       sentiment: 'positive',
       recordCreatedAt: new Date('2026-08-08T09:00:00.000Z'),
     })

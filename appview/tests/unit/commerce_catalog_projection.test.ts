@@ -97,6 +97,44 @@ describe('product identity', () => {
   })
 })
 
+describe('a future minor is additive, not a catalog that disappears (§9.13)', () => {
+  /**
+   * THE READER MUST NOT APPLY THE PUBLISHER'S EXACT-KEY RULE.
+   *
+   * `validateCatalogItem` refuses any key outside the declared set — correct
+   * for a node about to SIGN an item. When this projection delegated to it,
+   * one field added by a same-major higher minor made the projection refuse;
+   * projection is all-or-nothing and `decideCatalogPointer` turns a refusal
+   * into a rejected pointer, so a valid, correctly-digested, correctly-signed
+   * 1.1 catalog would vanish from the index entirely — and the fault would be
+   * reported against the supplier who did nothing wrong.
+   */
+  it('indexes an item carrying a field this build has never heard of', () => {
+    const future = { ...item(), rrp_minor_units: '1500' } as unknown as CatalogItemShape
+    const result = project([future])
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(JSON.stringify(result.findings))
+    expect(result.rows).toHaveLength(1)
+  })
+
+  it('still stores only the fields it knows', () => {
+    // Tolerating the key is safe BECAUSE it stays unknown: a field with no
+    // column is never stored and never served.
+    const future = { ...item(), rrp_minor_units: '1500' } as unknown as CatalogItemShape
+    const result = project([future])
+    if (!result.ok) throw new Error('expected a projection')
+    expect(Object.keys(result.rows[0] ?? {})).not.toContain('rrp_minor_units')
+  })
+
+  it('does NOT tolerate a malformed known field', () => {
+    // The reader stopped refusing unknown keys; it must not have stopped
+    // validating the ones it knows.
+    const broken = item({ name: '' })
+    const result = project([broken])
+    expect(result.ok).toBe(false)
+  })
+})
+
 describe('what the projection refuses', () => {
   it('refuses a snapshot with two items claiming one identity (§9.4)', () => {
     const result = project([item(), item({ name: 'Oak dining chair (2026)' })])
@@ -129,7 +167,14 @@ describe('what the projection refuses', () => {
     expect(primary.ok).toBe(false)
     if (primary.ok) throw new Error('expected a refusal')
     expect(primary.findings[0]?.refusal).toBe('unattributed_identifier')
-    expect(primary.findings[0]?.detail).toContain('item.product.issuer_did')
+    // THE REASON IS THE CONTRACT; the wording belongs to whoever validates.
+    // This used to assert `item.product.issuer_did` — the path AppView's own
+    // copy of the rules produced — which tied a domain distinction to one
+    // implementation's message format. The format changed the moment AppView
+    // started using the protocol's validator instead of a duplicate, which is
+    // the point: a test that pins someone else's phrasing breaks on every
+    // improvement to it.
+    expect(primary.findings[0]?.detail).toContain('requires issuer_did')
 
     const secondary = project([
       item({ identifiers: [{ scheme: 'custom', value: 'INTERNAL-77' }] }),
@@ -137,9 +182,10 @@ describe('what the projection refuses', () => {
     expect(secondary.ok).toBe(false)
     if (secondary.ok) throw new Error('expected a refusal')
     expect(secondary.findings[0]?.refusal).toBe('unattributed_identifier')
-    // The PATH names which identifier, so primary and secondary stay
-    // distinguishable without the refusal detail restating it in prose.
-    expect(secondary.findings[0]?.detail).toContain('item.identifiers[0].issuer_did')
+    // Primary and secondary stay distinguishable: the protocol prefixes a
+    // secondary identifier's fault with the field it came from.
+    expect(secondary.findings[0]?.detail).toContain('identifiers')
+    expect(primary.findings[0]?.detail).not.toContain('identifiers')
   })
 
   it('refuses an item that names a supplier other than the publishing repo', () => {
@@ -188,20 +234,35 @@ describe('what the projection carries, and what it must not (FR-A7, §10.4)', ()
     })
   })
 
-  it('has nowhere to put live stock or a buyer authorization', () => {
-    // FR-A7 is enforced by the SHAPE, not by a filter someone must remember to
-    // run: a row has no field these could occupy, so a future item carrying
-    // them cannot leak them into the index.
+  it('REFUSES an item carrying live stock or a buyer authorization', () => {
+    // FR-A7, now enforced one layer earlier than this test used to check.
+    // `validateCatalogItem` refuses any key outside the declared set, so an
+    // item like this is not a `CatalogItem` at all and never reaches the
+    // projection. §10.4 puts live stock and customer-specific price in live
+    // service results, never in a published snapshot.
     const result = project([
       item({
         ...({ stock_on_hand: '40', authorized_buyer: 'did:plc:sancho' } as Partial<CatalogItemShape>),
       }),
     ])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(JSON.stringify(result.findings)).toContain('stock_on_hand')
+  })
+
+  it('and the ROW has nowhere to put them even so', () => {
+    // Defence in depth, kept deliberately. The refusal above is the primary
+    // barrier; this asserts the projection's own shape, so a future loosening
+    // of validation could not turn into a leak here. It projects a VALID item
+    // and checks the row's key set, rather than relying on an item that can no
+    // longer exist.
+    const result = project([item()])
     if (!result.ok) throw new Error(JSON.stringify(result.findings))
     const row = result.rows[0]
     expect(row).toBeDefined()
-    expect(JSON.stringify(row)).not.toContain('stock_on_hand')
-    expect(JSON.stringify(row)).not.toContain('did:plc:sancho')
+    for (const forbidden of ['stock_on_hand', 'authorized_buyer', 'customer_price']) {
+      expect(Object.keys(row ?? {})).not.toContain(forbidden)
+    }
   })
 
   it('projects an empty catalog as zero rows rather than refusing', () => {

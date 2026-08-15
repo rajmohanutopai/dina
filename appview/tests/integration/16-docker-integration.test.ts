@@ -23,6 +23,40 @@ afterAll(async () => {
   await closeTestDb()
 })
 
+/**
+ * WHEN IS AN ABSENT SERVICE AN EXCUSE, AND WHEN IS IT A FAILURE?
+ *
+ * Every probe in this file catches "cannot connect" and returns. That is right
+ * for a developer running the unit suite with no compose stack up — and it made
+ * the whole file incapable of failing anywhere else. A broken container start,
+ * a web service that never became healthy, a Jetstream that never connected:
+ * all of them logged one line and passed. The file named itself "docker
+ * integration" and asserted nothing about docker unless docker happened to be
+ * there.
+ *
+ * So absence is an excuse ONLY when nobody claimed the stack was up.
+ * `APPVIEW_DOCKER_SUITE=required` — set by the CI job that runs
+ * `docker compose up` first, and by anyone driving the full stack locally —
+ * turns every excuse into the failure it should have been.
+ */
+const REQUIRE_SERVICES = process.env.APPVIEW_DOCKER_SUITE === 'required'
+
+function unavailable(probe: string, service: string, detail = ''): void {
+  if (REQUIRE_SERVICES) {
+    throw new Error(
+      `${probe}: ${service} is REQUIRED in this run (APPVIEW_DOCKER_SUITE=required) but was ` +
+        `unreachable${detail === '' ? '' : ` — ${detail}`}. A service that did not come up is a ` +
+        `failed integration, not a skipped one.`,
+    )
+  }
+  console.log(
+    `${probe} ${service} not reachable — assertions skipped. ` +
+      `Set APPVIEW_DOCKER_SUITE=required to make this a failure.`,
+  )
+}
+
+import { SCORER_JOBS } from '@/scorer/scheduler.js'
+
 describe('16.1 Docker Compose Smoke Tests', () => {
   // TRACE: {"suite": "APPVIEW", "case": "0594", "section": "01", "sectionName": "General", "title": "IT-DCK-001: postgres container healthy"}
   it('IT-DCK-001: postgres container healthy', async () => {
@@ -42,26 +76,29 @@ describe('16.1 Docker Compose Smoke Tests', () => {
   // IT-DCK-002
   // TRACE: {"suite": "APPVIEW", "case": "0595", "section": "01", "sectionName": "General", "title": "IT-DCK-002: jetstream container healthy"}
   it('IT-DCK-002: jetstream container healthy', async () => {
-    // Requirement: The Jetstream container must expose a /health endpoint
-    // that returns HTTP 200 when the service is ready to relay AT Protocol
-    // events. This is the liveness check used by Docker healthcheck and
-    // by the ingester's depends_on condition.
+    // Requirement: the Jetstream echo server must answer HTTP 200 when the
+    // service is ready to relay AT Protocol events. That is the liveness
+    // signal behind the compose healthcheck and the ingester's depends_on.
     //
     // Jetstream is the firehose relay (Bluesky Jetstream) that streams
-    // AT Protocol events to the ingester. If this health check fails,
-    // the ingester cannot connect and no trust records are processed.
+    // AT Protocol events to the ingester. If this check fails, the ingester
+    // cannot connect and no trust records are processed.
     //
-    // The Docker Compose healthcheck is:
-    //   wget --spider -q http://localhost:6008/health
+    // THE PATH IS `/`, NOT `/health`. This asked for `/health`, which the
+    // upstream image answers with 404 — so the stated requirement was a claim
+    // about someone else's container that was never true. It read as passing
+    // because the catch below turns an unreachable container into a silent
+    // pass, and the container had never been started. The compose healthcheck
+    // carried the same two mistakes and has been corrected alongside this.
 
     // Use JETSTREAM_URL env var (ws://host:port) or default
     const wsUrl = process.env.JETSTREAM_URL || 'ws://localhost:6008'
-    // Convert ws:// to http:// for health endpoint
+    // Convert ws:// to http:// for the echo server
     const httpUrl = wsUrl.replace(/^wss?:\/\//, 'http://')
 
     let resp: Response
     try {
-      resp = await fetch(`${httpUrl}/health`, {
+      resp = await fetch(`${httpUrl}/`, {
         signal: AbortSignal.timeout(3000),
       })
     } catch {
@@ -69,7 +106,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       // This is expected when running integration tests without the
       // full Docker Compose stack. The test is designed to validate
       // health when the stack IS running (e.g., CI with docker-compose up).
-      console.log('[IT-DCK-002] Jetstream not reachable — skipping assertions')
+      unavailable('[IT-DCK-002]', 'Jetstream')
       return
     }
 
@@ -150,7 +187,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       }
     } catch (err: any) {
       if (err?.code === 'ECONNREFUSED') {
-        console.log('[IT-DCK-003] PostgreSQL not reachable — skipping DB assertions')
+        unavailable('[IT-DCK-003]', 'PostgreSQL')
       } else {
         throw err
       }
@@ -159,14 +196,22 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     // ── Jetstream prerequisites ──
     const wsUrl = process.env.JETSTREAM_URL || 'ws://localhost:6008'
     const httpUrl = wsUrl.replace(/^wss?:\/\//, 'http://')
+    // THE FETCH IS GUARDED; THE ASSERTION IS NOT. Both used to sit inside the
+    // try, so `expect(resp.status).toBe(200)` threw into the same catch that
+    // excuses an absent container — a reachable Jetstream answering 404 was
+    // logged as "not reachable" and the test passed. Only the connection is
+    // allowed to be optional now.
+    //
+    // The path is `/` because the upstream image serves its echo server there;
+    // `/health` returns 404 (see IT-DCK-002).
+    let jetstream: Response | null = null
     try {
-      const resp = await fetch(`${httpUrl}/health`, {
-        signal: AbortSignal.timeout(3000),
-      })
-      expect(resp.status).toBe(200)
+      jetstream = await fetch(`${httpUrl}/`, { signal: AbortSignal.timeout(3000) })
     } catch {
-      // Jetstream not available
-      console.log('[IT-DCK-003] Jetstream not reachable — skipping Jetstream assertions')
+      unavailable('[IT-DCK-003]', 'Jetstream')
+    }
+    if (jetstream !== null) {
+      expect(jetstream.status).toBe(200)
     }
   })
 
@@ -231,18 +276,31 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       await db.execute(sql`SELECT pg_advisory_unlock(${lockId})`)
     } catch (err: any) {
       if (err?.code === 'ECONNREFUSED') {
-        console.log('[IT-DCK-004] PostgreSQL not reachable — skipping DB assertions')
+        unavailable('[IT-DCK-004]', 'PostgreSQL')
         return
       }
       throw err
     }
 
-    // ── Verify job count matches expectation ──
-    // The scorer scheduler.ts defines exactly 9 jobs.
-    // We verify this indirectly: 9 distinct table groups are needed.
-    // Direct import of the jobs array isn't possible (not exported),
-    // but we can assert the table count matches the expected job scope.
-    expect(scorerTables.length).toBe(9)
+    // ── The scheduler's REAL job list ──
+    //
+    // This asserted `scorerTables.length === 9` — the length of the fixture
+    // array declared forty lines above, in this same file — with a comment
+    // explaining that the real list "isn't possible" to import. So the claim
+    // "the scheduler defines exactly 9 jobs" was measured against nothing:
+    // the scheduler grew to THIRTEEN and the assertion stayed green, because
+    // the only thing it could ever detect was someone editing the fixture.
+    //
+    // The list is exported now. This counts the shipped scheduler, so adding
+    // a job is a deliberate update here rather than a silent drift.
+    expect(SCORER_JOBS).toHaveLength(13)
+    // Names are what the overlap guard and the advisory lock are keyed on, so
+    // a duplicate would make two jobs share one lock.
+    expect(new Set(SCORER_JOBS.map((j) => j.name)).size).toBe(SCORER_JOBS.length)
+    for (const job of SCORER_JOBS) {
+      expect(job.name).not.toBe('')
+      expect(job.schedule).not.toBe('')
+    }
   })
 
   // IT-DCK-005
@@ -266,13 +324,17 @@ describe('16.1 Docker Compose Smoke Tests', () => {
 
     let resp: Response
     try {
-      resp = await fetch(`${webUrl}/healthz`, {
+      // `/health` — the path `server.ts` serves, and the one the compose
+      // healthcheck probes. This asked for `/healthz`, which exists nowhere in
+      // the project, and never failed: the catch below turns an unreachable
+      // container into a silent pass, and the container had never been up.
+      resp = await fetch(`${webUrl}/health`, {
         signal: AbortSignal.timeout(3000),
       })
     } catch {
       // Web container not available in this test environment.
       // Expected when running tests without the full Docker stack.
-      console.log('[IT-DCK-005] Web container not reachable — skipping assertions')
+      unavailable('[IT-DCK-005]', 'the web container')
       return
     }
 
@@ -362,13 +424,19 @@ describe('16.1 Docker Compose Smoke Tests', () => {
       WHERE table_name = 'attestations' AND column_name = 'search_vector'
     `)
     const rows = (result as any).rows
-    // If the migration has run, search_vector column should exist as tsvector
-    if (rows.length > 0) {
-      expect(rows[0].data_type).toBe('tsvector')
-    } else {
-      // Migration may not have been applied yet in test environment — mark as pending
-      expect(rows.length).toBe(0) // Acknowledge: migration not yet applied in test DB
-    }
+    // UNCONDITIONAL. This used to branch: tsvector when the column existed,
+    // and `expect(rows.length).toBe(0)` when it did not — an assertion that
+    // zero equals zero. The test therefore passed whether the migration had
+    // run or not, which is the one thing a migration check exists to tell
+    // apart. Its name promised the column was created; its body promised
+    // nothing.
+    //
+    // This suite runs against a MIGRATED database (see tests/test-db.ts —
+    // `cleanAllTables` truncates what `information_schema` reports, so the
+    // schema is a precondition, not an aspiration). A missing column is a
+    // real failure and now reads as one.
+    expect(rows.length, 'attestations.search_vector is missing — migrations have not run').toBe(1)
+    expect(rows[0].data_type).toBe('tsvector')
   })
 
   // IT-DCK-009
@@ -401,7 +469,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     } catch {
       // Web container not available — this is expected when running
       // without the full Docker Compose stack.
-      console.log('[IT-DCK-009] Web container not reachable — skipping assertions')
+      unavailable('[IT-DCK-009]', 'the web container')
       return
     }
 

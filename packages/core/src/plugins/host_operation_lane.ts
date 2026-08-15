@@ -60,6 +60,33 @@ export interface HostOperationRequest {
  * also null rather than an error — a runner's malformed result is the
  * completion path's problem, not this one's.
  */
+/**
+ * Does this completion CLAIM to be a host-operation proposal?
+ *
+ * SEPARATE FROM PARSING, because `null` from the parser answers two different
+ * questions with one value: "this is an ordinary completion" and "this is a
+ * proposal I refuse". The bridge treats `null` as the first, so a runner that
+ * sent a proposal marker with a missing field — or one naming its own
+ * install_id, the refusal that exists to stop a runner choosing whose
+ * authority to spend — had its proposal parameters forwarded to the
+ * counterparty as a successful `service.response`. A false answer, carrying
+ * the runner's internal parameters, before any host operation was authorised.
+ *
+ * So the marker is asked about on its own. A completion carrying it never
+ * bridges: if it parses it becomes a proposal, and if it does not it is
+ * dropped. Neither outcome is an answer to the requester.
+ */
+export function carriesHostOperationMarker(resultJSON: string): boolean {
+  let value: unknown;
+  try {
+    value = JSON.parse(resultJSON);
+  } catch {
+    return false;
+  }
+  if (value === null || typeof value !== 'object') return false;
+  return (value as Record<string, unknown>).kind === HOST_OPERATION_PROPOSAL_KIND;
+}
+
 export function parseHostOperationRequest(resultJSON: string): HostOperationRequest | null {
   let value: unknown;
   try {

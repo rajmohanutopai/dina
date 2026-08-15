@@ -28,7 +28,12 @@
 
 import { CommerceIntegrityError } from './quote_family';
 
-import type { CommerceOrderRef, CommerceOrderRefRepository, DecideOptions } from './order_refs';
+import type {
+  CommerceOrderRef,
+  CommerceOrderRefRepository,
+  DecideOptions,
+  NewCommerceOrderRef,
+} from './order_refs';
 
 export type OrderRefusal =
   | 'not_found'
@@ -188,12 +193,7 @@ export class CommerceOrderStore {
    * by the repository's indexes — a database invariant, not an aggregate
    * rule, because no single order can know about all orders.
    */
-  createReserved(
-    ref: Omit<
-      CommerceOrderRef,
-      'state' | 'effectPhase' | 'acknowledgementJson' | 'externalRef' | 'decidedAt'
-    >,
-  ): boolean {
+  createReserved(ref: NewCommerceOrderRef): boolean {
     return this.deps.refs.createReserved(ref);
   }
 

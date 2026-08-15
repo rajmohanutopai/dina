@@ -21,7 +21,12 @@ services:
 
   # ── Jetstream (Go binary) ──
   jetstream:
-    image: ghcr.io/bluesky-social/jetstream:latest
+    # PINNED, because upstream publishes no `latest`. `:latest` was here and
+    # could never be pulled — `manifest unknown` — so this service, and the
+    # `ingester` that waits on it, had never started. The registry offers only
+    # `sha-<commit>` tags; this one is verified to pull and to consume the
+    # firehose. Bump it deliberately, not by drifting.
+    image: ghcr.io/bluesky-social/jetstream:sha-fc35aea
     environment:
       JETSTREAM_RELAY_URL: ${RELAY_URL:-wss://bgs.bsky.network}
       JETSTREAM_WANTED_COLLECTIONS: >-
@@ -43,12 +48,28 @@ services:
         com.dinakernel.peerlens.comparison,
         com.dinakernel.peerlens.subjectClaim,
         com.dinakernel.peerlens.trustPolicy,
-        com.dinakernel.peerlens.notificationPrefs
+        com.dinakernel.peerlens.notificationPrefs,
+        com.dinakernel.commerce.catalog,
+        com.dinakernel.commerce.catalogSnapshot,
+        com.dinakernel.commerce.relationshipClaim,
+        com.dinakernel.service.profile
       JETSTREAM_PORT: 6008
     ports:
       - "6008:6008"
+    # The image ships neither wget nor curl, and the echo server answers on `/`
+    # rather than `/health` — so the previous probe was wrong twice over and
+    # held the container permanently unhealthy while jetstream sat there
+    # happily consuming the firehose. bash is present, so /dev/tcp does it.
+    # Checked against a wrong port first: this command returns 1, which is the
+    # only evidence that it is testing anything.
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6008/health"]
+      test:
+        [
+          'CMD',
+          'bash',
+          '-c',
+          'exec 3<>/dev/tcp/127.0.0.1/6008 && printf "GET / HTTP/1.0\r\n\r\n" >&3 && grep -q "200 OK" <&3',
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -57,7 +78,8 @@ services:
   # ── Database migrations ──
   migrate:
     build:
-      context: .
+      context: ..
+      dockerfile: appview/Dockerfile
       target: migrator
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
@@ -67,12 +89,24 @@ services:
   # ── TypeScript AppView processes ──
 
   ingester:
-    build: .
-    command: ["node", "dist/ingester/main.js"]
+    build:
+      context: ..
+      dockerfile: appview/Dockerfile
+    command: ["node", "--conditions=compiled", "dist/src/ingester/main.js"]
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       DATABASE_POOL_MAX: 20
       JETSTREAM_URL: ws://jetstream:6008
+      # `NODE_ENV: production` below makes `jetstream-consumer.ts` refuse a
+      # plaintext ws: host that is not allowlisted, which is why the ingester
+      # crash-looped the first time this stack was ever started. This is the
+      # opt-in that guard documents: the sidecar sits on the compose network
+      # and its traffic never leaves the host.
+      #
+      # NOTE: this REPLACES the four public bsky defaults rather than adding to
+      # them. Correct here — this ingester talks to nothing else — but an
+      # operator pointing at a public Jetstream must list it here too.
+      JETSTREAM_ALLOWED_HOSTS: jetstream
       LOG_LEVEL: info
       NODE_ENV: production
     depends_on:
@@ -82,8 +116,10 @@ services:
     restart: unless-stopped
 
   scorer:
-    build: .
-    command: ["node", "dist/scorer/main.js"]
+    build:
+      context: ..
+      dockerfile: appview/Dockerfile
+    command: ["node", "--conditions=compiled", "dist/src/scorer/main.js"]
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       LOG_LEVEL: info
@@ -94,8 +130,10 @@ services:
     restart: unless-stopped
 
   web:
-    build: .
-    command: ["node", "dist/web/server.js"]
+    build:
+      context: ..
+      dockerfile: appview/Dockerfile
+    command: ["node", "--conditions=compiled", "dist/src/web/server.js"]
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
       NEXT_PUBLIC_BASE_URL: https://trust.dina.foundation

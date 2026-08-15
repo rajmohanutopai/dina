@@ -58,15 +58,30 @@ export const MAX_CATALOG_ID_LENGTH = 128;
  *
  * `page_digest` is excluded from its own preimage, the same rule every
  * commerce record follows, so a verifier recomputes rather than trusts.
+ *
+ * THE SHAPES IN THIS FILE ARE TYPE ALIASES, NOT INTERFACES, and the difference
+ * is load-bearing. TypeScript gives a type alias an implicit index signature
+ * and an interface none, so only an alias is assignable to the
+ * `Record<string, unknown>` an ATProto `putRecord` takes. As interfaces these
+ * records could not be handed to the repo client without a cast — and a cast at
+ * that boundary is precisely where a wrong record shape stops being a compile
+ * error, which is the failure this file exists to prevent.
+ *
+ * `consistent-type-definitions` therefore has to be off for these four. The
+ * rule states a house style; the alias here states a semantic requirement, and
+ * satisfying the rule would put back the cast ARCH-3 removed.
  */
-export interface CatalogSnapshotPage {
+/* eslint-disable @typescript-eslint/consistent-type-definitions --
+   see above: only a type alias is assignable to `Record<string, unknown>`,
+   and these records are handed straight to `putRecord`. */
+export type CatalogSnapshotPage = {
   catalog_id: string;
   snapshot_sequence: number;
   /** 0-based position; the payload root commits to the ORDER. */
   page_index: number;
   items: readonly unknown[];
   page_digest: string;
-}
+};
 
 /**
  * Immutable snapshot metadata. v1 snapshots are FULL-STATE: a snapshot
@@ -74,7 +89,7 @@ export interface CatalogSnapshotPage {
  * later additive extension, and "incremental refresh" means republishing
  * bounded full snapshots, not shipping diffs.
  */
-export interface CatalogSnapshot {
+export type CatalogSnapshot = {
   supplier_did: string;
   catalog_id: string;
   snapshot_sequence: number;
@@ -86,7 +101,7 @@ export interface CatalogSnapshot {
   /** Commitment over `page_digests`, recomputable by any verifier. */
   payload_root: string;
   snapshot_digest: string;
-}
+};
 
 /**
  * The mutable pointer. Publication is compare-and-swap on the previous
@@ -96,7 +111,7 @@ export interface CatalogSnapshot {
  * — an explicit tombstone rather than a deletion, so a consumer learns the
  * catalog is gone instead of merely stopping to hear about it.
  */
-export interface CatalogPointer {
+export type CatalogPointer = {
   supplier_did: string;
   catalog_id: string;
   snapshot_sequence: number;
@@ -123,6 +138,69 @@ export interface CatalogPointer {
   snapshot_rkey?: string;
   snapshot_digest?: string;
   withdrawn?: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Repo collections and record envelopes
+// ---------------------------------------------------------------------------
+
+/**
+ * The §10.2 collection names, and the record shapes that go in them.
+ *
+ * THESE LIVE HERE BECAUSE BOTH SIDES ARE HERE. The publisher (`@dina/core`)
+ * and the indexer (`@dina/appview`) each depend on this package and on nothing
+ * of each other's, so a name spelled independently on both sides is a name
+ * that can disagree — and did. The writer published the pointer to
+ * `com.dinakernel.commerce.catalogPointer` while AppView's handler map, its
+ * record validator and its ingest allowlist all keyed on
+ * `com.dinakernel.commerce.catalog`, so every pointer this implementation ever
+ * published was routed to no handler at all. Nothing caught it: the writer's
+ * tests asserted against the writer's own constant, and AppView's tests fed
+ * its handler hand-built fixtures that used AppView's. Both halves passed
+ * while the seam between them was open.
+ *
+ * A shared constant is the only fix that closes the CLASS. Agreeing the two
+ * literals would have closed this instance and left the next rename free to
+ * reopen it.
+ */
+export const CATALOG_POINTER_NSID = 'com.dinakernel.commerce.catalog';
+export const CATALOG_SNAPSHOT_NSID = 'com.dinakernel.commerce.catalogSnapshot';
+
+/**
+ * A snapshot record: metadata AND its pages, in one record.
+ *
+ * §10.3 v1 keeps pages INLINE, so the record is an envelope of two fields
+ * rather than the snapshot's own fields spread flat. The writer used to spread
+ * `CatalogSnapshot` directly, which put `snapshot_digest` at the top level
+ * where a reader looking for `record.snapshot` found nothing — and dropped the
+ * pages entirely, because a flat spread has nowhere to put them. The pages
+ * were built, paginated and digested, the snapshot committed to them through
+ * `payload_root`, and then they were never written down: a commitment to
+ * bytes no consumer could obtain.
+ */
+export type CatalogSnapshotRecord = {
+  snapshot: CatalogSnapshot;
+  pages: readonly CatalogSnapshotPage[];
+  $type: typeof CATALOG_SNAPSHOT_NSID;
+};
+
+export function catalogSnapshotRecord(
+  snapshot: CatalogSnapshot,
+  pages: readonly CatalogSnapshotPage[],
+): CatalogSnapshotRecord {
+  return { snapshot, pages, $type: CATALOG_SNAPSHOT_NSID };
+}
+
+/**
+ * A pointer record: the pointer's own fields, flat, plus `$type`.
+ *
+ * Flat is correct here and nested is correct for the snapshot, which is
+ * exactly why writing either by hand at the call site went wrong.
+ */
+export type CatalogPointerRecord = CatalogPointer & { $type: typeof CATALOG_POINTER_NSID };
+
+export function catalogPointerRecord(pointer: CatalogPointer): CatalogPointerRecord {
+  return { ...pointer, $type: CATALOG_POINTER_NSID };
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +229,43 @@ export function catalogPageDigest(page: CatalogSnapshotPage, sha256: Sha256Fn): 
  */
 export function catalogPayloadRoot(pageDigests: readonly string[], sha256: Sha256Fn): string {
   return commit('root', pageDigests, sha256);
+}
+
+/**
+ * The CONTENT RECEIPT commitment: what a person confirmed, before publication.
+ *
+ * A commitment over the assembled items, their per-field provenance, and the
+ * content revision they were confirmed at. Core mints it, Core keeps it, and
+ * no caller ever presents one — so this is not an authenticator, it is a
+ * yardstick Core measures its own stored draft against before it signs.
+ *
+ * IT IS IN THE CATALOG FAMILY, NOT §9.12. The ten §9.12 domains are a closed
+ * vocabulary for negotiation and lifecycle RECORDS, pinned by frozen vectors.
+ * This is a commitment over bytes a supplier confirmed and has a different
+ * lifetime, so it takes the catalog prefix for the same reason page digests
+ * and the payload root do: neither set may silently widen the other.
+ *
+ * WHY THE REVISION IS INSIDE THE PREIMAGE. Without it a receipt taken at
+ * revision 3 and one taken at revision 5 over identical items would be the
+ * same bytes, so an edit that reverted the items would leave a stale receipt
+ * looking current — which is exactly the edit-during-the-pause hole the
+ * revision exists to close.
+ */
+export function catalogContentReceiptDigest(
+  args: {
+    items: readonly unknown[];
+    provenance: Record<string, Record<string, string>>;
+    contentRevision: number;
+    /**
+     * Which model produced the values and against which schema (§5), or null
+     * where nothing was inferred. Committed to, so the answer to "who read
+     * this off the page" cannot change after a person vouched for it.
+     */
+    extraction?: { model: string; schemaVersion: string } | null;
+  },
+  sha256: Sha256Fn,
+): string {
+  return commit('content_receipt', args, sha256);
 }
 
 /** Digest of a snapshot record, excluding its own digest field. */

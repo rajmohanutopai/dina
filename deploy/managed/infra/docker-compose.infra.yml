@@ -116,12 +116,19 @@ services:
   # ── AppView Ingester (Jetstream → Postgres) ──
   appview-ingester:
     build:
-      context: ../../appview
+      context: ../../appview-src
+      dockerfile: appview/Dockerfile
       args: &appview-build-args
         VERSION: ${APPVIEW_VERSION:-dev}
         TREE: ${APPVIEW_TREE:-unknown}
         DIRTY: ${APPVIEW_DIRTY:-0}
-    command: ["node", "dist/src/ingester/main.js"]
+    # `--conditions=compiled` is NOT optional and NOT decoration. It is how
+    # `@dina/commerce-protocol` resolves to its BUILD; without it node takes
+    # the package's `default` export condition, which is its TypeScript
+    # source, and the container dies on ERR_MODULE_NOT_FOUND for
+    # `src/index.ts`. The Dockerfile's CMD carries the flag; every `command:`
+    # here OVERRIDES that CMD, so each one has to carry it too.
+    command: ["node", "--conditions=compiled", "dist/src/ingester/main.js"]
     restart: always
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
@@ -138,9 +145,10 @@ services:
   # ── AppView Scorer (background PeerLens rating) ──
   appview-scorer:
     build:
-      context: ../../appview
+      context: ../../appview-src
+      dockerfile: appview/Dockerfile
       args: *appview-build-args
-    command: ["node", "dist/src/scorer/main.js"]
+    command: ["node", "--conditions=compiled", "dist/src/scorer/main.js"]
     restart: always
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
@@ -152,9 +160,10 @@ services:
   # ── AppView Web (5 xRPC trust endpoints) ──
   appview-web:
     build:
-      context: ../../appview
+      context: ../../appview-src
+      dockerfile: appview/Dockerfile
       args: *appview-build-args
-    command: ["node", "dist/src/web/server.js"]
+    command: ["node", "--conditions=compiled", "dist/src/web/server.js"]
     restart: always
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust

@@ -227,7 +227,15 @@ export interface ConformanceImplementation {
    * guess which parser to apply and will reach for a generic one — which is
    * exactly how the first version of this family ended up unable to detect the
    * defect it exists for. The kinds are `catalog_pointer`, `catalog_snapshot`,
-   * `catalog_page` and `relationship_claim`.
+   * `catalog_page`, `relationship_claim`, `signed_quote`, `purchase_order`,
+   * `order_acknowledgement` and `order_status` — every DIGEST-BOUND record,
+   * because a parser that strips an additive field before hashing signs a
+   * document nobody sent, and that is true of a quote exactly as it is of a
+   * catalog page.
+   *
+   * `generic` appears only in the flat family below, whose inputs are
+   * synthetic JSON rather than records: that family checks CANONICALISATION,
+   * and the named cases above are what check PARSING.
    */
   parseThenCanonicalJson?: (kind: string, value: unknown) => string;
 

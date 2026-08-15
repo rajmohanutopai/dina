@@ -183,6 +183,7 @@ export {
   consentedCapability,
   decideExtensionProposal,
   HOST_OPERATION_PROPOSAL_KIND,
+  carriesHostOperationMarker,
   parseHostOperationRequest,
 } from './host_operation_lane';
 export type {

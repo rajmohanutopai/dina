@@ -31,6 +31,7 @@ function ref(overrides: Partial<CommerceOrderRef> = {}): CommerceOrderRef {
     servingInstallId: '',
     admittedEpoch: '1',
     reconciliationRequired: false,
+    readoptedChainEvidence: false,
     state: 'reserved',
     effectPhase: 'pre_effect',
     acknowledgementJson: null,

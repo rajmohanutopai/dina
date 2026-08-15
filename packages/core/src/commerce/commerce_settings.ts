@@ -1,5 +1,8 @@
+import { isCurrencyCode, validateId } from '@dina/commerce-protocol';
+
 import { checkCatalogFeedUrl } from './catalog_feed_policy';
 import { MAX_QUOTE_FANOUT } from './quote_fanout';
+
 
 import type { RegionRef } from '@dina/commerce-protocol';
 
@@ -52,6 +55,37 @@ export interface SupplierSettings {
   /** Where the catalog comes from, and when it was last confirmed healthy. */
   catalogSource: { kind: 'inline' | 'feed'; url?: string; lastHealthyAtIso: string | null };
   publicRegions: RegionRef[];
+  /**
+   * The currency this supplier prices in (§10 of the photo-catalog lane).
+   *
+   * OPTIONAL, and its absence is a real state rather than an oversight: a
+   * supplier who publishes no prices needs none. But `importCatalogRows`
+   * refuses any row carrying `list_price_minor_units` without a non-empty
+   * currency, so a priced catalog cannot be assembled until this is set — and
+   * before this field existed there was nowhere to set it, which made every
+   * priced row unimportable.
+   *
+   * It has to come from settings rather than from the source data. A model
+   * reading a price off a photograph sees a symbol, and `₹` alone does not
+   * distinguish several currencies; a CSV column can be wrong in the same way
+   * and more quietly. The seller knows what they charge in.
+   */
+  tradingCurrency?: string;
+  /**
+   * The category ids this supplier's items publish under (§12.1 step 10).
+   *
+   * Every published `CatalogItem` needs a non-empty `category_ids`, and each
+   * entry must satisfy `validateId` — so free text read off a price list
+   * ("Pickles & Preserves") cannot become one. The source is the seller, not
+   * the source data.
+   *
+   * SHAPE IS ENFORCED HERE; THE VOCABULARY IS NOT. §12.1 step 10 requires a
+   * closed, category-governed vocabulary and which vocabulary is still open
+   * (§27 Q3). Validating the shape is what this layer can honestly do; a
+   * membership check belongs with the decision, and pretending to enforce one
+   * against a list nobody has agreed would be a check that means nothing.
+   */
+  catalogCategoryIds?: string[];
   /** §10.4 — whether an indicative price may be published at all. */
   publishIndicativePrice: boolean;
   /** §14.3 — who may ask for a quote. */
@@ -147,7 +181,10 @@ export type SettingsRefusal =
   | 'endpoint_auth_incomplete'
   /** A request body with no content type, or a content type with no body. */
   | 'endpoint_request_incomplete'
-  | 'empty_identity';
+  | 'empty_identity'
+  | 'unknown_trading_currency'
+  | 'empty_catalog_categories'
+  | 'malformed_catalog_category';
 
 export interface SettingsFinding {
   refusal: SettingsRefusal;
@@ -270,6 +307,41 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
       field: 'orderAcceptance',
       detail: `expected auto | review, found ${String(settings.orderAcceptance)}`,
     });
+  }
+  // ABSENT IS FINE, PRESENT-AND-WRONG IS NOT. A supplier with no prices needs
+  // no currency; one who typed `inr` or `Rupees` has told us something we
+  // cannot act on, and storing it would put a value into every published price
+  // that `Money` refuses at the wire.
+  if (settings.tradingCurrency !== undefined && !isCurrencyCode(settings.tradingCurrency)) {
+    findings.push({
+      refusal: 'unknown_trading_currency',
+      field: 'tradingCurrency',
+      detail: `expected a three-letter uppercase ISO 4217 code, found ${String(settings.tradingCurrency)}`,
+    });
+  }
+  if (settings.catalogCategoryIds !== undefined) {
+    if (settings.catalogCategoryIds.length === 0) {
+      // An EMPTY array is not the same as an absent one. Absent says "not
+      // configured"; empty says "configured to nothing", which cannot satisfy
+      // the non-empty `category_ids` every published item needs, so the
+      // assembler would refuse every item with a message pointing at the item
+      // rather than at the setting that caused it.
+      findings.push({
+        refusal: 'empty_catalog_categories',
+        field: 'catalogCategoryIds',
+        detail: 'an empty list configures nothing; omit the field instead',
+      });
+    }
+    for (const [index, id] of settings.catalogCategoryIds.entries()) {
+      const refusal = validateId(id, `catalogCategoryIds[${String(index)}]`);
+      if (refusal !== null) {
+        findings.push({
+          refusal: 'malformed_catalog_category',
+          field: `catalogCategoryIds[${String(index)}]`,
+          detail: refusal,
+        });
+      }
+    }
   }
   for (const connector of settings.connectors) {
     for (const key of Object.keys(connector)) {

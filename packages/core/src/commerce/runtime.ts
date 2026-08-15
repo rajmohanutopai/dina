@@ -33,6 +33,10 @@ import {
 } from './buyer_requests';
 import { SQLiteBuyerStatusRepository, type BuyerStatusRepository } from './buyer_status';
 import {
+  SQLiteCatalogDraftRepository,
+  type CatalogDraftRepository,
+} from './catalog_draft_store';
+import {
   SQLiteCatalogPointerRepository,
   type CatalogPointerRepository,
 } from './catalog_pointer_store';
@@ -141,6 +145,12 @@ export interface CommerceRuntime {
    * no caller carrying the CAS.
    */
   catalogPointers: CatalogPointerRepository;
+  /**
+   * The photo-catalog lane's drafts (PCL-4). One row per publication attempt,
+   * durable because the lane suspends on a person twice and a rebuild after a
+   * restart would publish bytes the owner never approved.
+   */
+  catalogDrafts: CatalogDraftRepository;
   watermarks: CommerceEpochWatermarkRepository;
   /**
    * §12.7 — the BUYER's durable view of orders it has sent. Separate from
@@ -363,6 +373,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     orders,
     receipts,
     catalogPointers: new SQLiteCatalogPointerRepository(inputs.adapter),
+    catalogDrafts: new SQLiteCatalogDraftRepository(inputs.adapter),
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
     buyerOrders: new SQLiteBuyerOrderRepository(inputs.adapter),
     buyerStatus: new SQLiteBuyerStatusRepository(inputs.adapter),
@@ -385,8 +396,39 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     inFlightCount: (installId?: string) => {
       // Undecided orders: the supplier owes an answer it has not given.
       // Unfinished chains: the supplier owes an outcome it has not reached.
+      //
+      // `delivered` is deliberately absent from TERMINAL_CHAIN_STATES, because
+      // a buyer inside the dispute window can still dispute. But "still open"
+      // is a question about the CLOCK, and this used to be asked without one:
+      // `countNonTerminal` filters by state alone, so every delivered order
+      // stayed open forever and a supplier who completed every sale normally
+      // could never uninstall the pack that served them (§12.8, §16.4).
+      //
+      // The clock-aware rule already existed, in
+      // `countUnfinishedByServingManifest`; uninstall simply called a
+      // different method. Applying it here keeps ONE join — the in-memory
+      // order-ref store cannot reach the head table, so a repository-level
+      // version would only exist for one backend.
+      // `listNonTerminal` yields keys, so the head is loaded to read its state
+      // and deadline. Bounded by the number of OPEN chains, which is the set an
+      // uninstall is asking about anyway.
+      const stillOpen = (c: { buyerDid: string; purchaseOrderId: string }): boolean => {
+        const head = heads.get(c.buyerDid, c.purchaseOrderId);
+        // A key with no head is an obligation we cannot describe. Same rule as
+        // the missing order reference below: unknown counts as open.
+        if (head === undefined || head === null) return true;
+        if (head.state !== 'delivered') return true;
+        // ABSENT IS NOT EXPIRED. A delivered head with no recorded deadline
+        // stays open: guessing one would close an obligation nobody ended.
+        if (head.disputeWindowEndsAt === null) return true;
+        return head.disputeWindowEndsAt > now();
+      };
+
       if (installId === undefined) {
-        return orders.countReserved() + heads.countNonTerminal(TERMINAL_CHAIN_STATES);
+        return (
+          orders.countReserved() +
+          heads.listNonTerminal(TERMINAL_CHAIN_STATES).filter(stillOpen).length
+        );
       }
       // Scoped. The chain store does not know which install served an order,
       // so the join happens HERE rather than inside either aggregate — the
@@ -394,6 +436,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
       // reference is gone counts as OPEN: an obligation whose provenance we
       // cannot establish is not one to dismiss on an uninstall.
       const chains = heads.listNonTerminal(TERMINAL_CHAIN_STATES).filter((c) => {
+        if (!stillOpen(c)) return false;
         const ref = orders.load(c.buyerDid, c.purchaseOrderId)?.ref;
         return ref === undefined || ref === null || ref.servingInstallId === installId;
       }).length;

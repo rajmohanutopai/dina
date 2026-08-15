@@ -25,6 +25,10 @@ import {
   type WorkflowTask,
 } from './domain';
 import { parsePluginEnvelope } from './plugin_envelope';
+// The SAME recogniser the completion handler uses. Asking the question here
+// as well is what stops a proposal being answered as a result — see
+// `complete()`.
+import { carriesHostOperationMarker } from '../plugins/host_operation_lane';
 import { WorkflowConflictError, type WorkflowRepository } from './repository';
 
 import type { PluginCompletionHandler } from '../plugins/host_operation_completion';
@@ -572,7 +576,29 @@ export class WorkflowService {
       );
     }
     const updated = this.repo.getById(id);
-    this.bridgeServiceQueryCompletion(updated ?? task, resultJSON);
+
+    // ORDER MATTERS, and it used to be the other way round.
+    //
+    // §3.4: a runner asks for a host operation by COMPLETING its claim with a
+    // typed proposal. That completion is not an answer — it is a request for
+    // Core to do something on the runner's behalf, after which the real answer
+    // follows. Bridging first turned every proposal into a successful
+    // `service.response` to the requester: a false result, carrying the
+    // proposal's internal parameters, sent before the operation had been
+    // noticed let alone executed — and then a SECOND response once it
+    // actually settled.
+    //
+    // So the proposal is recognised first, and a proposal suppresses the
+    // bridge. The requester hears once, when there is something true to say.
+    // ASKED ABOUT THE MARKER, not about the parse. `parseHostOperationRequest`
+    // returns null both for an ordinary completion and for a proposal it
+    // REFUSES — a missing field, or a runner naming its own install_id — and
+    // this branch reads null as "ordinary". So the refused proposals were the
+    // ones that got bridged: their parameters forwarded to the counterparty as
+    // a successful answer, which is the outcome the refusal exists to prevent.
+    if (!carriesHostOperationMarker(resultJSON)) {
+      this.bridgeServiceQueryCompletion(updated ?? task, resultJSON);
+    }
     this.noticeHostOperationProposal(updated ?? task, resultJSON);
     return updated ?? task;
   }

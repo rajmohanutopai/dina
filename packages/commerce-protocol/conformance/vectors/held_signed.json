@@ -1,7 +1,7 @@
 {
   "description": "Genuinely signed §12.7/§16.2 held evidence. The signature is Ed25519 over canonicalJson(envelope); the envelope commits to the record via record_digest. An implementation passes only by verifying BOTH the signature and the record binding.",
   "signer": {
-    "did": "did:plc:supplier1",
+    "did": "did:plc:supplier5678",
     "public_key_hex": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
   },
   "cases": [
@@ -24,13 +24,78 @@
           "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:buyer1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "705fe311a895a75e4cbaa0b4e3e7cd872c77736e8db509c118e3d2999084c28a8659f77b95c36abe2f337a9e515641ec39e6d92e9fce8e3497a4dc5ba007fd04"
+        "signature": "2f4f2001b1cfbe99502f6f011fa653dea86e2e500e0b77b9e4eda1cd640ff615c96d9a2e29969b30c3e5b99cd77380d7d4e5f86856ab6005ddc14e1c29375004"
+      }
+    },
+    {
+      "name": "parties/signed by a supplier the record does not name",
+      "accepted": false,
+      "evidence": {
+        "record": {
+          "protocol_version": "1.0",
+          "acknowledgement_id": "ack-held-1",
+          "purchase_order_id": "po-1",
+          "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+          "buyer_did": "did:plc:buyer1234",
+          "supplier_did": "did:plc:supplier5678",
+          "issued_at": "2026-08-07T12:05:00Z",
+          "kind": "accepted",
+          "supplier_order_id": "so-77",
+          "accepted_quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+          "accepted_at": "2026-08-07T12:05:00Z",
+          "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+        },
+        "envelope": {
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:othersupplier",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
+        },
+        "signature": "6d3985e9a44400760d6abca87abb50c70a22b813baaa8da4b96d5371b41e3f168009c7c71ba40ec3234eb0ff0df1ff4156cb8f37157eab0aec03d9ac65795d00"
+      }
+    },
+    {
+      "name": "parties/addressed to a buyer the record does not name",
+      "accepted": false,
+      "evidence": {
+        "record": {
+          "protocol_version": "1.0",
+          "acknowledgement_id": "ack-held-1",
+          "purchase_order_id": "po-1",
+          "order_digest": "b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d",
+          "buyer_did": "did:plc:buyer1234",
+          "supplier_did": "did:plc:supplier5678",
+          "issued_at": "2026-08-07T12:05:00Z",
+          "kind": "accepted",
+          "supplier_order_id": "so-77",
+          "accepted_quote_digest": "31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0",
+          "accepted_at": "2026-08-07T12:05:00Z",
+          "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+        },
+        "envelope": {
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:otherbuyer"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
+        },
+        "signature": "41c019f0c6232432820af9725b346368b9221fbaec56c8ca61a86bc2ca05c2dc768995c0c20bd096579780fec2c29eb33614561a500ee0451f77f699e9a9600a"
       }
     },
     {
@@ -52,13 +117,16 @@
           "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:buyer1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "705fe311a895a75e4cbaa0b4e3e7cd872c77736e8db509c118e3d2999084c28a8659f77b95c36abe2f337a9e515641ec39e6d92e9fce8e3497a4dc5ba007fd00"
+        "signature": "2f4f2001b1cfbe99502f6f011fa653dea86e2e500e0b77b9e4eda1cd640ff615c96d9a2e29969b30c3e5b99cd77380d7d4e5f86856ab6005ddc14e1c29375000"
       }
     },
     {
@@ -80,13 +148,16 @@
           "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:buyer1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "705fe311a895a75e4cbaa0b4e3e7cd872c77736e8db509c118e3d2999084c28a"
+        "signature": "2f4f2001b1cfbe99502f6f011fa653dea86e2e500e0b77b9e4eda1cd640ff615"
       }
     },
     {
@@ -108,13 +179,16 @@
           "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:attacker1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:attacker1"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "705fe311a895a75e4cbaa0b4e3e7cd872c77736e8db509c118e3d2999084c28a8659f77b95c36abe2f337a9e515641ec39e6d92e9fce8e3497a4dc5ba007fd04"
+        "signature": "2f4f2001b1cfbe99502f6f011fa653dea86e2e500e0b77b9e4eda1cd640ff615c96d9a2e29969b30c3e5b99cd77380d7d4e5f86856ab6005ddc14e1c29375004"
       }
     },
     {
@@ -136,13 +210,16 @@
           "acknowledgement_digest": "1d0cf86fd79c787dd39e53baf460e85119ade289d9621bdd3bee603eb01800ea"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:buyer1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "705fe311a895a75e4cbaa0b4e3e7cd872c77736e8db509c118e3d2999084c28a8659f77b95c36abe2f337a9e515641ec39e6d92e9fce8e3497a4dc5ba007fd04"
+        "signature": "2f4f2001b1cfbe99502f6f011fa653dea86e2e500e0b77b9e4eda1cd640ff615c96d9a2e29969b30c3e5b99cd77380d7d4e5f86856ab6005ddc14e1c29375004"
       }
     },
     {
@@ -164,13 +241,16 @@
           "acknowledgement_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
         },
         "envelope": {
-          "envelope_id": "env-held-1",
-          "from_did": "did:plc:supplier1",
-          "to_did": "did:plc:buyer1",
-          "sent_at": "2026-06-01T00:00:01Z",
-          "record_digest": "89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445"
+          "id": "env-held-1",
+          "type": "service.response",
+          "from": "did:plc:supplier5678",
+          "to": [
+            "did:plc:buyer1234"
+          ],
+          "created_time": 1780272001,
+          "body": "{\"capability\":\"com.dinakernel.commerce.order_status\",\"query_id\":\"q-held-1\",\"result\":{\"accepted_at\":\"2026-08-07T12:05:00Z\",\"accepted_quote_digest\":\"31d60e9f9d0ccadb97dfe6db46ca6f0fda2d75b2ee24e7e1ed5b1bdaedd41cf0\",\"acknowledgement_digest\":\"89ff6f76f5c2f6bf22a5ba2087a395b4c729d8db7e37aa858ec57f6937b01445\",\"acknowledgement_id\":\"ack-held-1\",\"buyer_did\":\"did:plc:buyer1234\",\"issued_at\":\"2026-08-07T12:05:00Z\",\"kind\":\"accepted\",\"order_digest\":\"b4575beff06454f3de8123b09e6b99e0df5cf2a79adca6ebe9c2a9134c0e024d\",\"protocol_version\":\"1.0\",\"purchase_order_id\":\"po-1\",\"supplier_did\":\"did:plc:supplier5678\",\"supplier_order_id\":\"so-77\"},\"status\":\"success\",\"ttl_seconds\":300}"
         },
-        "signature": "5537ad0d0dcce05f609bfd98a7d935f6e94db9dfb9eb6c6a7072dfe3a013bcc818c16ed3dd489036805d5d2121ac0f646bb3bdc56c5acd69c02d92176beb1300"
+        "signature": "d0a1cc3e13b1775d5f524ad76af741cd315ffa25e21e71153c476ec98690fa5a44ee6a8988211c80303a95ebac2cb3278978861020a35d05b800b72ad4e44b0d"
       }
     }
   ]

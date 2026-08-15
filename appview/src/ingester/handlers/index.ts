@@ -1,3 +1,4 @@
+import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID } from '@dina/commerce-protocol'
 import type { DrizzleDB } from '@/db/connection.js'
 import type { Logger } from '@/shared/utils/logger.js'
 import type { Metrics } from '@/shared/utils/metrics.js'
@@ -99,10 +100,25 @@ const handlers: Record<string, RecordHandler> = {
   'com.dinakernel.peerlens.trustPolicy': peerlensPolicyHandler,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsHandler,
   'com.dinakernel.service.profile': serviceProfileHandler,
-  'com.dinakernel.commerce.catalog': commerceCatalogPointerHandler,
-  'com.dinakernel.commerce.catalogSnapshot': commerceCatalogSnapshotHandler,
+  // Keyed on the PROTOCOL's constants, so the collection a publisher writes to
+  // and the collection this map routes are the same string by construction.
+  [CATALOG_POINTER_NSID]: commerceCatalogPointerHandler,
+  [CATALOG_SNAPSHOT_NSID]: commerceCatalogSnapshotHandler,
   'com.dinakernel.commerce.relationshipClaim': commerceRelationshipClaimHandler,
 }
+
+/**
+ * Every collection this ingester can handle, DERIVED from the map above.
+ *
+ * Exported so the deployed Jetstream allowlist can be checked against the real
+ * registry rather than against a second hand-kept list. The sidecar filters
+ * the firehose by `JETSTREAM_WANTED_COLLECTIONS`, so a collection that has a
+ * handler but is missing from that list is never delivered — and the symptom
+ * is an index that is merely empty, which is indistinguishable from "nobody
+ * has published one yet". Three commerce collections and `service.profile`
+ * sat in exactly that state.
+ */
+export const HANDLED_COLLECTIONS: readonly string[] = Object.keys(handlers)
 
 /**
  * Look up the handler for a collection NSID.

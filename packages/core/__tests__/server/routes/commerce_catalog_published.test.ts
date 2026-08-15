@@ -20,6 +20,8 @@
 
 import { InMemoryCatalogPointerRepository } from '../../../src/commerce/catalog_pointer_store';
 import {
+  CATALOG_POINTER_NSID,
+  CATALOG_SNAPSHOT_NSID,
   installCatalogRecordReader,
   installCatalogRecordWriter,
 } from '../../../src/commerce/catalog_record_writer';
@@ -77,7 +79,11 @@ beforeEach(() => {
   } as unknown as CommerceRuntime);
   installCatalogRecordWriter(async ({ collection, rkey, swapRecord }) => {
     writes.push({ collection, rkey, swapRecord });
-    if (failPointer && collection.endsWith('catalogPointer')) {
+    // MATCHED ON THE CONSTANT, not on a suffix spelled here. This read
+    // `endsWith('catalogPointer')` — the publisher's old, wrong collection
+    // name — so once the publisher was corrected the double stopped failing
+    // the write these tests exist to fail.
+    if (failPointer && collection === CATALOG_POINTER_NSID) {
       throw new Error('the repo refused the swap');
     }
     return { cid: `cid-${String(nextCid++)}` };
@@ -109,7 +115,7 @@ function pointerOf(resp: CoreResponse): CatalogPointer {
 }
 
 const pointerWrites = (): typeof writes =>
-  writes.filter((w) => w.collection.endsWith('catalogPointer'));
+  writes.filter((w) => w.collection === CATALOG_POINTER_NSID);
 
 describe('the node remembers what it published', () => {
   it('records the head only after the repo accepted it', async () => {
@@ -231,7 +237,7 @@ describe('a withdrawal is PUBLISHED, not merely built', () => {
     // swaps on the head the publication left behind.
     expect(pointerWrites()).toHaveLength(2);
     expect(pointerWrites()[1]?.swapRecord).toBe('cid-2');
-    expect(writes.filter((w) => w.collection.endsWith('catalogSnapshot'))).toHaveLength(1);
+    expect(writes.filter((w) => w.collection === CATALOG_SNAPSHOT_NSID)).toHaveLength(1);
     const stored = pointers.get('chairs');
     expect(stored?.withdrawn).toBe(true);
     expect(stored?.snapshotDigest).toBe('');
@@ -482,7 +488,7 @@ describe('§16.2 fences the WRITE, not the build', () => {
     );
     // The snapshot landed and the HEAD did not, which is the safe half:
     // consumers still see the previous publication.
-    expect(writes.filter((w) => w.collection.endsWith('catalogSnapshot'))).toHaveLength(1);
+    expect(writes.filter((w) => w.collection === CATALOG_SNAPSHOT_NSID)).toHaveLength(1);
     expect(pointerWrites()).toHaveLength(0);
     expect(pointers.get('chairs')).toBeNull();
   });

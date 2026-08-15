@@ -68,7 +68,20 @@ export type ConnectorRefusal =
   | 'not_a_row_list';
 
 export type ConnectorLoad =
-  | { ok: true; import: CatalogImport }
+  | {
+      ok: true;
+      import: CatalogImport;
+      /**
+       * The rows as read, before import.
+       *
+       * §5 step 3 persists ROWS plus findings as a draft, and the import
+       * result carries only items — so a connector could preview a catalog and
+       * never create one. That left `source_parsed` a class with a validator,
+       * an exemption and no producer, and the armed retirement of the
+       * item-list body pointed connector catalogs at nothing.
+       */
+      source: CatalogRowSource;
+    }
   | { ok: false; refusal: ConnectorRefusal; error: string };
 
 /**
@@ -120,6 +133,7 @@ export async function loadCatalogThroughConnector(args: {
       defaultScheme: args.defaultScheme,
       supplierDid: args.supplierDid,
     }),
+    source: source.source,
   };
 }
 

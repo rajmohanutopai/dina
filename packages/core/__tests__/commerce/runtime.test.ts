@@ -361,6 +361,148 @@ describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
     expect(runtime.inFlightCount()).toBe(0);
   });
 
+  /**
+   * `delivered` is deliberately non-terminal — a buyer inside the dispute
+   * window can still dispute, and those are the orders an uninstall would
+   * damage most. But "inside the window" is a question about the CLOCK, and
+   * the count was asked without one: `countNonTerminal` filters by STATE
+   * alone, so a delivered order stayed open forever and a supplier who
+   * completed every sale normally could never uninstall the serving pack
+   * (§12.8, §16.4).
+   *
+   * Three points, because a boundary with one sample is an assumption: before
+   * the deadline, exactly AT it, and after. The comparison is `> nowMs`, so AT
+   * the deadline the window is already over — the rule
+   * `countUnfinishedByServingManifest` already used, and the one uninstall
+   * simply was not calling.
+   */
+  it('stops counting a delivered order once its dispute window has passed', () => {
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+    runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'so-1',
+    });
+
+    const deadline = clock.now + 60_000;
+    const lines = [{ lineId: 'l1', fulfilledQuantity: { value: '100', unitCode: 'each' } }];
+    const dispatched = runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+      state: 'dispatched',
+      lines,
+    });
+    // §9.11 makes this a discriminated union: `lines` is REQUIRED for
+    // `dispatched` and FORBIDDEN for `delivered`.
+    const delivered = runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+      state: 'delivered',
+      disputeWindowEndsAt: new Date(deadline).toISOString(),
+    });
+    // Assert the SETUP, so a refused signature cannot masquerade as an order
+    // that is still open for the reason under test. `signStatusUpdate` returns
+    // the signed status or `{error}`.
+    expect('error' in dispatched ? dispatched.error : null).toBeNull();
+    expect('error' in delivered ? delivered.error : null).toBeNull();
+
+    // Inside the window: still an obligation.
+    expect(runtime.inFlightCount()).toBe(1);
+
+    // One millisecond before: still open.
+    clock.now = deadline - 1;
+    expect(runtime.inFlightCount()).toBe(1);
+
+    // EXACTLY at the deadline: over. `> nowMs`, matching
+    // `countUnfinishedByServingManifest` — which is the rule this count should
+    // have been using all along — and matching the catalog's freshness
+    // boundary, where a row read exactly at its `valid_until` is already
+    // stale. I first asserted the opposite here; the codebase was consistent
+    // and the guess was mine.
+    clock.now = deadline;
+    expect(runtime.inFlightCount()).toBe(0);
+
+    // And after.
+    clock.now = deadline + 1;
+    expect(runtime.inFlightCount()).toBe(0);
+  });
+
+  it('refuses to sign delivered without a dispute deadline at all', () => {
+    // WRITTEN AS "a delivered head with no deadline stays open forever", which
+    // turned out to be untestable through this path: §9.11 makes
+    // `dispute_window_ends_at` REQUIRED for `delivered`, so the signer refuses
+    // before such a head can exist. That is a stronger guarantee than the one
+    // I set out to assert, and worth pinning in its own right — the clock-aware
+    // count can only ever meet a delivered head that HAS a deadline.
+    //
+    // The `disputeWindowEndsAt === null` branch in `inFlightCount` therefore
+    // guards a head that arrives some other way (a §16.2 restore fence), and
+    // stays: unknown counts as open.
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    runtime.admission.admitOrder(order, BUYER_DID);
+    runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+      kind: 'accepted',
+      supplierOrderId: 'so-1',
+    });
+    runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+      state: 'dispatched',
+      lines: [{ lineId: 'l1', fulfilledQuantity: { value: '100', unitCode: 'each' } }],
+    });
+
+    const delivered = runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+      state: 'delivered',
+    });
+    expect('error' in delivered).toBe(true);
+    expect('error' in delivered ? delivered.error : '').toMatch(/dispute_window_ends_at/);
+  });
+
+  /**
+   * §12.8: EVERY resolving event opens a status chain. `decideOrder` did that
+   * for a runner's accept AND its reject; the two paths that resolve an order
+   * WITHOUT asking a runner did not.
+   *
+   * An immediate refusal — `quote_unknown` here — is a decision. A refused
+   * order with an acknowledgement and no chain gives the buyer nothing to
+   * verify, and leaves a row the open-order query counts as unfinished
+   * forever, which retains lifecycle authority and blocks plugin uninstall.
+   */
+  it('opens a rejected chain when admission refuses the order outright (§12.8)', () => {
+    const runtime = build();
+    // No `registerSignedQuote`, so the family is unknown and admission
+    // refuses before any runner is consulted.
+    const quote = makeSignedQuote(request);
+    const order = makeOrder(quote, request.delivery.projection);
+
+    const outcome = runtime.admission.admitOrder(order, BUYER_DID);
+    expect(outcome.kind).toBe('rejected');
+
+    const chain = runtime.chains.load(BUYER_DID, order.purchase_order_id);
+    // A refused order must still have a chain.
+    expect(chain.head).not.toBeNull();
+    expect(chain.head?.state).toBe('rejected');
+    // And it is finished, so it does not hold the install open.
+    expect(runtime.inFlightCount()).toBe(0);
+  });
+
+  it('opens a rejected chain when the decision times out (§12.8)', () => {
+    // The recovery sweep resolves an order the supplier never answered. It
+    // settled the hold and wrote the acknowledgement, and left no chain.
+    const runtime = build();
+    const quote = seedQuote(runtime);
+    const order = makeOrder(quote, request.delivery.projection);
+    expect(runtime.admission.admitOrder(order, BUYER_DID)).toEqual({ kind: 'reserved' });
+
+    clock.now += DEFAULT_DECISION_TIMEOUT_MS + 1;
+    const swept = runtime.admission.recoverAdmissions();
+    expect(swept.timedOut).toContain(order.purchase_order_id);
+
+    const chain = runtime.chains.load(BUYER_DID, order.purchase_order_id);
+    // A timed-out order must still have a chain.
+    expect(chain.head).not.toBeNull();
+    expect(chain.head?.state).toBe('rejected');
+    expect(runtime.inFlightCount()).toBe(0);
+  });
+
   it('counts obligations PER INSTALL, so one pack does not block another', () => {
     // The whole point of WS-4.5. The count was node-wide, because an order
     // recorded the serving manifest CID and not the install — so on a node

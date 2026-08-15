@@ -54,6 +54,12 @@ export type ChainRefusal =
   | 'chain_exists'
   | 'order_predates_restore'
   | 'order_awaiting_reconciliation'
+  /**
+   * §9.11/§16.2 — the buyer proved it holds a chain this node lost, so a
+   * fresh genesis would fork against a record it already has. The restore
+   * fence is the way forward; a new chain never is.
+   */
+  | 'chain_evidence_requires_fence'
   | 'chain_predates_restore'
   | 'illegal_transition'
   | 'lines_violation'
@@ -208,9 +214,18 @@ export class StatusChain {
    */
   createGenesis(
     candidate: CommerceOrderStatus,
-    order: { admittedEpoch: string; reconciliationRequired: boolean },
+    order: {
+      admittedEpoch: string;
+      reconciliationRequired: boolean;
+      readoptedChainEvidence: boolean;
+    },
   ): ChainOutcome<CommerceOrderStatus> {
     if (this.headRow !== null) return refuse('chain_exists');
+    // BEFORE the reconciliation bar, because this one never lifts. The
+    // ceremony clears `reconciliationRequired`; nothing clears this. An order
+    // whose buyer holds a chain cannot be given a genesis at all — the only
+    // legal next record is a fence over the evidence that buyer presented.
+    if (order.readoptedChainEvidence) return refuse('chain_evidence_requires_fence');
     // Two distinct bars, because they are two distinct facts. An order may
     // belong to an older generation (epoch), or it may be one this node
     // rebuilt from a counterparty's evidence and cannot fully describe
@@ -301,6 +316,12 @@ export class StatusChain {
       state: candidate.state,
       supplierEpoch: candidate.supplier_epoch,
       updatedAt: this.deps.now(),
+      // The SAME derivation the ordinary advance uses. The signed fence already
+      // carries the deadline; not copying it here left the stored column stale
+      // while the chain moved. The existing delivered-fence test could not see
+      // that, because it fenced FROM an already-delivered head — so the old
+      // stored value happened to be the right one.
+      disputeWindowEndsAt: windowEndsAt(candidate),
     });
     return fenced ? allow(candidate) : refuse('fence_needs_higher_epoch');
   }

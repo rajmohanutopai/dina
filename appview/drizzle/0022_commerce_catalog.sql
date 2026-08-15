@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS "commerce_catalog_pointers" (
   "previous_snapshot_digest" text,
   "withdrawn" boolean DEFAULT false NOT NULL,
   "awaiting_snapshot" boolean DEFAULT false NOT NULL,
+  -- §10.5 / DR-5: which service listing serves this catalog. NULL when the
+  -- supplier did not say, and discovery falls back to the `self` convention.
+  "service_rkey" text,
   "uri" text NOT NULL,
   "indexed_at" timestamp DEFAULT now() NOT NULL
 );
@@ -51,6 +54,9 @@ CREATE TABLE IF NOT EXISTS "commerce_catalog_products" (
   "catalog_id" text NOT NULL,
   "snapshot_sequence" integer NOT NULL,
   "snapshot_digest" text NOT NULL,
+  -- Denormalized from the pointer, as `snapshot_digest` already is, so search
+  -- answers "where do I send the quote request" without a join.
+  "service_rkey" text,
   "item_revision" text NOT NULL,
   "name" text NOT NULL,
   "brand" text,

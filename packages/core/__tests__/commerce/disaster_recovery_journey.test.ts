@@ -93,7 +93,9 @@ describe('ChairMaker is restored mid-order, and Sancho gets an honest answer', (
   let clock: { now: number };
 
   /** Rebuild the supplier's runtime — what a boot does after a restore. */
-  function bootSupplier(): CommerceRuntime {
+  function bootSupplier(
+    overrides: { verifyHeldEvidence?: () => boolean } = {},
+  ): CommerceRuntime {
     const built = createCommerceRuntime({
       adapter,
       supplierDid: () => SUPPLIER_DID,
@@ -103,7 +105,7 @@ describe('ChairMaker is restored mid-order, and Sancho gets an honest answer', (
       // means "cannot verify" and the engine refuses rather than trusting a
       // stranger's claim about what this supplier signed. The scenario
       // supplies one, which is what an app does at composition.
-      verifyHeldEvidence: () => true,
+      verifyHeldEvidence: overrides.verifyHeldEvidence ?? ((): boolean => true),
     });
     installCommerceRuntime(built);
     return built;
@@ -323,5 +325,125 @@ describe('ChairMaker is restored mid-order, and Sancho gets an honest answer', (
     expect(runtime.lifecycle.reconcileRestoredOrder(order, BUYER_DID)).toEqual({ ok: true });
     const opened = runtime.lifecycle.signGenesis(BUYER_DID, order.purchase_order_id);
     expect('error' in opened).toBe(false);
+  });
+
+  /**
+   * THE ORDER THAT HAD ALREADY MOVED.
+   *
+   * The case above is an order Sancho never saw progress on: a fresh genesis
+   * is the truth, and signing one is right. This is the other case §16.2
+   * names — "orders created entirely after the backup come back the same way"
+   * — where Sancho holds a chain ChairMaker lost.
+   *
+   * The ceremony clears `reconciliationRequired` and nothing else, so
+   * ChairMaker would sign a SECOND sequence-0 record: a different epoch and a
+   * different instant, therefore a different digest, at a sequence Sancho
+   * already has. §9.11 obliges Sancho to reject it as a fork, and every later
+   * record too — the order is stranded by the ceremony meant to rescue it,
+   * and neither side is told why.
+   *
+   * So the evidence Sancho presents is recorded at re-adoption, and chain
+   * CREATION refuses for ever. The way forward is the restore fence, which
+   * exists precisely to fast-forward onto evidence a supplier can verify.
+   */
+  it('never opens a fresh chain for an order whose buyer holds one', () => {
+    const { order, acknowledgement } = placeAndAccept('po-chairs-4');
+    // What Sancho kept: the genesis ChairMaker signed on acceptance.
+    const heldStatus = adapter.query<{ record_json: string }>(
+      "SELECT record_json FROM commerce_receipts WHERE domain = 'status' AND purchase_order_id = ?",
+      [order.purchase_order_id],
+    )[0];
+    expect(heldStatus).toBeDefined();
+
+    adapter.execute('DELETE FROM commerce_order_refs');
+    adapter.execute('DELETE FROM commerce_status_heads');
+    epoch = '2';
+    runtime = bootSupplier();
+
+    runtime.lifecycle.reconcile(
+      {
+        ...reconcileRequest(order, acknowledgement),
+        held_status_receipts: [makeHeldEvidence(JSON.parse(heldStatus.record_json))],
+      },
+      BUYER_DID,
+    );
+
+    // The ceremony still runs — the order IS describable again...
+    expect(runtime.lifecycle.reconcileRestoredOrder(order, BUYER_DID)).toEqual({ ok: true });
+    // ...and a genesis is STILL refused, because Sancho has one already.
+    const blocked = runtime.lifecycle.signGenesis(BUYER_DID, order.purchase_order_id);
+    expect('error' in blocked).toBe(true);
+    if (!('error' in blocked)) throw new Error('expected a refusal');
+    // Named, so an operator reads what to do rather than "cannot sign".
+    expect(blocked.error).toContain('restore fence');
+  });
+
+  /**
+   * THE BACKUP TAKEN AFTER A SUCCESSFUL RECOVERY.
+   *
+   * Every part of this ran green while the archive it produces could not be
+   * restored: re-adoption writes `quote_id: ''`, the ceremony clears
+   * `reconciliation_required` and does NOT fill the quote in, and the preflight
+   * required every order reference to name a quote family the archive carries.
+   * So the owner recovered the order, took a backup, and that backup was the
+   * broken one — silently, until the day they needed it.
+   *
+   * Driven through the real engines and the real tables rather than a
+   * hand-built fixture, because the defect was in the SEQUENCE, not in any one
+   * of them.
+   */
+  it('produces a restorable archive after a re-adopted order is reconciled', () => {
+    const { order, acknowledgement } = placeAndAccept('po-chairs-6');
+    adapter.execute('DELETE FROM commerce_order_refs');
+    adapter.execute('DELETE FROM commerce_status_heads');
+    epoch = '2';
+    runtime = bootSupplier();
+
+    runtime.lifecycle.reconcile(reconcileRequest(order, acknowledgement), BUYER_DID);
+    expect(runtime.lifecycle.reconcileRestoredOrder(order, BUYER_DID)).toEqual({ ok: true });
+
+    // What `createArchive` would carry.
+    const verdict = preflightCommerceArchive({
+      commerce_receipts: adapter.query('SELECT * FROM commerce_receipts'),
+      commerce_order_refs: adapter.query('SELECT * FROM commerce_order_refs'),
+      commerce_quote_heads: adapter.query('SELECT * FROM commerce_quote_heads'),
+      commerce_quote_uses: adapter.query('SELECT * FROM commerce_quote_uses'),
+      commerce_status_heads: adapter.query('SELECT * FROM commerce_status_heads'),
+      commerce_epoch_watermarks: adapter.query('SELECT * FROM commerce_epoch_watermarks'),
+    });
+    expect(verdict.findings).toEqual([]);
+    expect(verdict.ok).toBe(true);
+  });
+
+  it('still opens a chain when the presented evidence does NOT verify', () => {
+    // The bar is set by OUR OWN signature, not by the buyer's say-so. A
+    // receipt this node cannot verify proves no chain exists elsewhere, so it
+    // must not freeze an order that is otherwise ready to move.
+    const { order, acknowledgement } = placeAndAccept('po-chairs-5');
+    const heldStatus = adapter.query<{ record_json: string }>(
+      "SELECT record_json FROM commerce_receipts WHERE domain = 'status' AND purchase_order_id = ?",
+      [order.purchase_order_id],
+    )[0];
+
+    adapter.execute('DELETE FROM commerce_order_refs');
+    adapter.execute('DELETE FROM commerce_status_heads');
+    epoch = '2';
+    runtime = bootSupplier();
+
+    runtime.lifecycle.reconcile(
+      {
+        ...reconcileRequest(order, acknowledgement),
+        // Genuine ENVELOPE, but addressed to somebody else — so the binding
+        // check refuses it and this node learns nothing about a chain.
+        held_status_receipts: [
+          makeHeldEvidence(JSON.parse(heldStatus.record_json), { to: ['did:plc:someoneelse'] }),
+        ],
+      },
+      BUYER_DID,
+    );
+    expect(runtime.lifecycle.reconcileRestoredOrder(order, BUYER_DID)).toEqual({ ok: true });
+    expect('error' in runtime.lifecycle.signGenesis(BUYER_DID, order.purchase_order_id)).toBe(
+      false,
+    );
   });
 });

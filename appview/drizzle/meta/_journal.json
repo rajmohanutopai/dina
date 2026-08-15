@@ -162,6 +162,13 @@
       "when": 1790001000000,
       "tag": "0022_commerce_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790001001000,
+      "tag": "0023_commerce_service_rkey",
+      "breakpoints": true
     }
   ]
 }
