@@ -2,7 +2,7 @@
   "name": "@dina/home-node-lite-core-server",
   "version": "0.0.1",
   "private": true,
-  "description": "Fastify-based Core HTTP server for Dina's Home Node Lite. Parity target: the Go Core at `core/` — same endpoints, status codes, field names, field types, error keys.",
+  "description": "Fastify-based Core HTTP server for Dina's Home Node Lite. Parity target: the Go Core at `core/` \u2014 same endpoints, status codes, field names, field types, error keys.",
   "license": "MIT",
   "main": "src/main.ts",
   "bin": {
@@ -37,5 +37,8 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
     "tsx": "^4.19.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.34.2"
   }
 }

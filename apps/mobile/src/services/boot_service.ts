@@ -76,6 +76,7 @@ import {
   setRunRepository,
   setRunService,
   wireRunPlaneNode,
+  InProcessOwnerCommerceClient,
   InProcessOwnerRunClient,
   createCoreRouter,
   createConnectedBrainAgentFacades,
@@ -112,6 +113,7 @@ import { isAppViewStub } from './appview_stub';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { startMobileCommercePlane } from './commerce_plane';
 import { createDemoServiceResponder } from './demo_service_responder';
+import { setOwnerCommerceClient } from './owner_commerce_client';
 import { setOwnerRunClient } from './owner_run_client';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
@@ -457,6 +459,8 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     // owner boundary (§20). Router already has /v1/run/* + /v1/watch/* registered
     // (createCoreRouter).
     setOwnerRunClient(new InProcessOwnerRunClient(router, ownerCapability));
+    // §4 (photo lanes) — the seller screens' draft dispatch, same boundary.
+    setOwnerCommerceClient(new InProcessOwnerCommerceClient(router, ownerCapability));
     setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
     setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
     setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));

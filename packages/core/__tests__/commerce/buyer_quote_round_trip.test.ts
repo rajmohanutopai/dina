@@ -23,7 +23,11 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import type { SignedQuote } from '@dina/commerce-protocol';
 
-import { applyInboundBuyerResponse, REQUEST_QUOTE_CAPABILITY } from '../../src/commerce/buyer_response';
+import {
+  applyInboundBuyerResponse,
+  REQUEST_QUOTE_CAPABILITY,
+  REQUEST_QUOTE_WIRE_CAPABILITY,
+} from '../../src/commerce/buyer_response';
 import { requestQuote } from '../../src/commerce/buyer_quote_request';
 import { installCommerceServiceQueryDispatch } from '../../src/commerce/buyer_sender';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
@@ -105,7 +109,10 @@ describe('the buyer asks, and can recognise the answer', () => {
     // request id so two dispatches of one question cannot look like two.
     expect(sent).toHaveLength(1);
     expect(sent[0].toDid).toBe(SUPPLIER_DID);
-    expect(sent[0].body.capability).toBe(REQUEST_QUOTE_CAPABILITY);
+    // The WIRE spelling is the NSID — the only form a supplier listing can
+    // declare. The bare spelling at the settle site below stays deliberate:
+    // it proves the canonicalizer still accepts either.
+    expect(sent[0].body.capability).toBe(REQUEST_QUOTE_WIRE_CAPABILITY);
     expect(sent[0].body.query_id).toBe('req-chairs-1');
 
     // AND IT IS RETAINED — the yardstick §9.8 measures the answer against.

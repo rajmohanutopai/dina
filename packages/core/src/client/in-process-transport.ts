@@ -21,6 +21,10 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.30.
  */
 
+// Pure-JS base64 — `Buffer` is a Node global Hermes does not have, and this
+// client IS the phone's transport. Same @scure/base decode D2D uses.
+import { base64 } from '@scure/base';
+
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
 import { WorkflowConflictError } from './core-client';
@@ -286,7 +290,7 @@ export class InProcessTransport implements CoreClient {
     // Bytes → base64 for transport since CoreRequest.body is JSON-friendly.
     // Core's handler base64-decodes before signing; the round-trip is
     // lossless because Uint8Array → base64 is bijective.
-    const base64Payload = Buffer.from(payload).toString('base64');
+    const base64Payload = base64.encode(payload);
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
@@ -306,7 +310,7 @@ export class InProcessTransport implements CoreClient {
           method: req.method,
           path: req.path,
           query: req.query,
-          body: Buffer.from(req.body).toString('base64'),
+          body: base64.encode(req.body),
         },
       }),
     );

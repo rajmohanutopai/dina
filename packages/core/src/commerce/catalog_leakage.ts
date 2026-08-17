@@ -293,9 +293,20 @@ function collidesWithProductNumber(type: string, value: string): boolean {
   return false;
 }
 
-function scanForPersonalIdentifiers(value: string, path: string, out: LeakageFinding[]): void {
+function scanForPersonalIdentifiers(
+  value: string,
+  path: string,
+  out: LeakageFinding[],
+  options: LeakageScanOptions,
+): void {
   const leaf = path.slice(path.lastIndexOf('.') + 1);
-  const productNumber = PRODUCT_NUMBER_FIELDS.has(leaf);
+  // §4.2 (photo lanes): the collision excuse holds when a seller TYPES
+  // their own SKU and fails when a model reads digits off a photographed
+  // counter — so photo-derived catalogs scan identifier columns like any
+  // other field. A minted `P-` value carries no such digits; a phone
+  // number misread into the sku cell surfaces as a finding instead of
+  // publishing inside a signed public record.
+  const productNumber = !options.scanIdentifierColumns && PRODUCT_NUMBER_FIELDS.has(leaf);
   const reported = new Set<string>();
   for (const match of detectPII(value)) {
     if (!PERSONAL_IDENTIFIER_TYPES.has(match.type)) continue;
@@ -331,7 +342,12 @@ const ATTRIBUTES_FIELD = 'attributes';
  * a structural fault instead of silently walking something the wire type does
  * not permit.
  */
-function walkAttributeValues(value: unknown, path: string, out: LeakageFinding[]): void {
+function walkAttributeValues(
+  value: unknown,
+  path: string,
+  out: LeakageFinding[],
+  options: LeakageScanOptions,
+): void {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     out.push({
       refusal: 'malformed_item',
@@ -343,7 +359,7 @@ function walkAttributeValues(value: unknown, path: string, out: LeakageFinding[]
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const childPath = `${path}.${key}`;
     if (typeof child === 'string') {
-      walk(child, childPath, 0, out);
+      walk(child, childPath, 0, out, options);
       continue;
     }
     if (typeof child === 'number' || typeof child === 'boolean') continue;
@@ -363,13 +379,32 @@ function walkAttributeValues(value: unknown, path: string, out: LeakageFinding[]
  * five publication attempts, and each attempt is a chance to give up and
  * disable the gate.
  */
-export function findCatalogLeakage(item: unknown, itemPath = 'item'): LeakageFinding[] {
+export interface LeakageScanOptions {
+  /**
+   * §4.2 photo lanes: remove the product-number suppression on `sku`,
+   * `mpn` and `value`. False for typed-SKU lanes, where the suppression's
+   * false-positive asymmetry still holds.
+   */
+  scanIdentifierColumns?: boolean;
+}
+
+export function findCatalogLeakage(
+  item: unknown,
+  itemPath = 'item',
+  options: LeakageScanOptions = {},
+): LeakageFinding[] {
   const findings: LeakageFinding[] = [];
-  walk(item, itemPath, 0, findings);
+  walk(item, itemPath, 0, findings, options);
   return findings;
 }
 
-function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]): void {
+function walk(
+  value: unknown,
+  path: string,
+  depth: number,
+  out: LeakageFinding[],
+  options: LeakageScanOptions,
+): void {
   if (depth > MAX_ITEM_DEPTH) {
     out.push({
       refusal: 'malformed_item',
@@ -392,11 +427,13 @@ function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]
         return;
       }
     }
-    scanForPersonalIdentifiers(value, path, out);
+    scanForPersonalIdentifiers(value, path, out, options);
     return;
   }
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => walk(entry, `${path}[${String(index)}]`, depth + 1, out));
+    value.forEach((entry, index) =>
+      walk(entry, `${path}[${String(index)}]`, depth + 1, out, options),
+    );
     return;
   }
   if (value === null || typeof value !== 'object') return;
@@ -409,7 +446,7 @@ function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]
       // reaching a public record, which is precisely where the value scan
       // belongs, so the subtree is walked with the vocabulary check skipped
       // one level rather than skipped entirely.
-      walkAttributeValues(child, `${path}.${key}`, out);
+      walkAttributeValues(child, `${path}.${key}`, out, options);
       continue;
     }
     if (!PUBLIC_CATALOG_FIELDS.has(key)) {
@@ -424,7 +461,7 @@ function walk(value: unknown, path: string, depth: number, out: LeakageFinding[]
       // report the same problem once per leaf.
       continue;
     }
-    walk(child, `${path}.${key}`, depth + 1, out);
+    walk(child, `${path}.${key}`, depth + 1, out, options);
   }
 }
 
@@ -445,7 +482,10 @@ export interface LeakageVerdict {
 
 const MAX_REPORTED_FINDINGS = 100;
 
-export function gateCatalogForPublication(items: readonly unknown[]): LeakageVerdict {
+export function gateCatalogForPublication(
+  items: readonly unknown[],
+  options: LeakageScanOptions = {},
+): LeakageVerdict {
   const findings: LeakageFinding[] = [];
   let total = 0;
   items.forEach((item, index) => {
@@ -460,7 +500,7 @@ export function gateCatalogForPublication(items: readonly unknown[]): LeakageVer
       }
       return;
     }
-    for (const finding of findCatalogLeakage(item, `items[${String(index)}]`)) {
+    for (const finding of findCatalogLeakage(item, `items[${String(index)}]`, options)) {
       total += 1;
       if (findings.length < MAX_REPORTED_FINDINGS) findings.push(finding);
     }

@@ -48,6 +48,7 @@ function draft(): CatalogDraft {
     defaultScheme: 'sku',
     publishClaim: null,
     extraction: { model: 'test-extractor', schemaVersion: '1' },
+    photoExtraction: null,
     contentRevision: 1,
     rows: [],
     findings: [],

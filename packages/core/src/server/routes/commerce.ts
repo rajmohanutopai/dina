@@ -45,12 +45,30 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
+// Base64 via @scure/base, the same pure-JS decode D2D uses — `Buffer` is a
+// Node global that does not exist on Hermes, so the previous
+// `Buffer.from(page, 'base64')` threw ReferenceError on the PHONE and the
+// catch mislabeled every photo "not valid base64". First device run found it.
+import { base64 } from '@scure/base';
 
 import {
+  commerceRecordDigest,
+  computeProjectionDigest,
+  conversationSnapshotDigest,
+  extractionCommitmentDigest,
+  verifyOrderAgainstQuote,
+  validateApprovalSourceBinding,
+  validateCatalogItem,
   validateCatalogPointer,
+  validateDeliveryProjection,
+  validateExtractionCommitment,
   validatePurchaseOrderProposal,
+  type CatalogExtractionBinding,
+  type CatalogItem,
   type CatalogPointer,
   type CommerceOrderStatus,
+  type DeliveryProjection,
+  type ExtractionCommitment,
   type OrderState,
   type PurchaseOrderProposal,
   type Sha256Fn,
@@ -67,10 +85,23 @@ import {
 import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
 import { getBuyerAuthorityProvider } from '../../commerce/buyer_authority';
 import {
-  getBuyerOrderSender,
-  submitApprovedOrder,
-  type SubmitRefusal,
- SubmitAuthority } from '../../commerce/buyer_executor';
+  OWNER_PRESENCE_TTL_MS,
+  ownerPresenceCanBeEstablished,
+  ownerPresentNow,
+  proveOwnerPresence,
+} from '../../commerce/owner_presence';
+import { getBuyerOrderSender, submitApprovedOrder } from '../../commerce/buyer_executor';
+import {
+  classifyDispatchAnswer,
+  dispatchUnderRetainedApproval,
+  readAnswerableApproval,
+  resolveAuthority,
+  unanswerableStatus,
+} from '../../commerce/order_dispatch';
+import { recordCommerceEvent } from '../../commerce/observability';
+import { OrderDraftService } from '../../commerce/order_draft_service';
+import { deriveOrderDraftState, type OrderDraft } from '../../commerce/order_draft_store';
+import { checkPriceDivergence } from '../../commerce/price_divergence';
 import { describeOrderForOwner } from '../../commerce/buyer_reconciliation';
 import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
 import {
@@ -88,6 +119,20 @@ import {
   assembleFromRows,
   createCatalogDraft,
 } from '../../commerce/catalog_draft_ingest';
+import {
+  ingestCommerceImage,
+  imageReencoderInstalled,
+  MAX_AGGREGATE_IMAGE_BYTES,
+  MAX_IMAGE_PAGES,
+} from '../../commerce/image_artifacts';
+import {
+  extractRowsThroughGate,
+  IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
+  installedEgressProvider,
+  newEgressAuthorizationId,
+} from '../../commerce/image_egress';
+import { requestQuote } from '../../commerce/buyer_quote_request';
+import { applySkuMint } from '../../commerce/sku_mint';
 import { publishHeldDraft } from '../../commerce/catalog_draft_publisher';
 import {
   CatalogDraftService,
@@ -130,6 +175,7 @@ import {
   type RetentionRequirement,
 } from '../../commerce/idempotency_evidence';
 import { planCommerceInstall, roleIsInstalled } from '../../commerce/install_plan';
+import { beginReferenceInstall } from '../../commerce/reference_install';
 import {
   newApprovalId,
   ORDER_APPROVAL_TTL_MS,
@@ -153,7 +199,9 @@ import {
 import { commerceAvailability, getCommerceRuntime } from '../../commerce/runtime';
 import { resolveServiceBinding } from '../../commerce/service_binding';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
+import { revokeDeviceByDidDurable } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
+import { confirmConsent, uninstall } from '../../plugins/install_service';
 import { getPluginInstallRepository } from '../../plugins/registry';
 
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
@@ -285,18 +333,17 @@ function publicationFence(): CoreResponse | null {
 }
 
 /**
- * Can this node establish that a person is present?
+ * Is a person here RIGHT NOW?
  *
- * ONE DEFINITION, read by two places that must not disagree: the draft
- * service's `userPresent`, and the guard on the shipped publish route.
- *
- * §10 item 9 records that the primitive exists — a per-persona Argon2id
- * verifier — with no production caller, no persistence and no mobile
- * equivalent. It returns false until that is wired, which is why the draft
- * lane cannot yet publish anything at all.
+ * Read by the draft service's `userPresent`. Both questions this file asks
+ * about presence come from `owner_presence.ts` so they cannot drift, but they
+ * are DIFFERENT questions and were once one function returning a constant:
+ * this one is an instant, and `ownerPresenceCanBeEstablished` below is a
+ * capability. Conflating them meant the retired item-list route stayed open
+ * whenever nobody happened to be at the keyboard.
  */
-function ownerPresenceAvailable(): boolean {
-  return false;
+function ownerPresentNowForRoutes(): boolean {
+  return ownerPresentNow(Date.now());
 }
 
 /**
@@ -354,19 +401,23 @@ function readListingRkey(value: unknown): string | null | false {
   return /[?#/%\s]/.test(value) ? false : value;
 }
 
+// `unanswerableStatus`, `resolveAuthority` and `readAnswerableApproval`
+// moved to `commerce/order_dispatch.ts` (PC-7) so the submit route, the
+// §5.1 orchestrator and the dispatch-intent sweeper share one path.
+
 /**
- * Which status a submit refusal deserves (NEW-17).
- *
- * The three are different answers to a client: 200 says the order is already
- * placed, 503 says this node cannot decide, 409 says it decided no. Mapping an
- * unreadable install registry to 409 told a client "the install changed since
- * approval, retry" about a node that will refuse identically for ever — and
- * every other not-configured condition on these routes already answers 503.
+ * Complete an owner-typed delivery projection: when the digest is absent,
+ * Core — which builds the request — seals what it built, so a surface
+ * carries no crypto. A PRESENT digest is never recomputed: a caller that
+ * claims one is checked against it downstream, not silently corrected.
  */
-function unanswerableStatus(refusal: SubmitRefusal): number {
-  if (refusal === 'already_submitted') return 200;
-  if (refusal === 'install_registry_unavailable') return 503;
-  return 409;
+function completeProjection(value: Record<string, unknown>): Record<string, unknown> {
+  if (typeof value.projection_digest === 'string' && value.projection_digest !== '') return value;
+  const { projection_digest: _absent, ...fields } = value;
+  return {
+    ...fields,
+    projection_digest: computeProjectionDigest(fields as never, (data) => sha256(data)),
+  };
 }
 
 export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: string): void {
@@ -584,60 +635,6 @@ function fulfilmentOf(
  * would eventually disagree, and the direction that matters is the one where
  * the send accepts a card the other path would have refused.
  */
-/**
- * §7.2/§7.3 — who may commit this business, resolved by CORE (DR-1).
- *
- * FAIL CLOSED. A node whose composition root installed no authority provider
- * cannot say who is allowed to spend its money, so it does not spend it. The
- * previous shape passed nothing and `submitApprovedOrder` skipped the check
- * entirely, which meant every order on this node was committed with no
- * authority evaluation at all.
- */
-function resolveAuthority(
-  order: PurchaseOrderProposal,
-  context: BuyerApprovalContext,
-  serviceRkey: string,
-): { ok: true; authority: SubmitAuthority } | { ok: false; response: CoreResponse } {
-  const provider = getBuyerAuthorityProvider();
-  if (provider === null) {
-    return {
-      ok: false,
-      response: { status: 503, body: { error: 'authority_provider_unavailable' } },
-    };
-  }
-  const authority = provider({ order, context, serviceRkey });
-  if (authority === null) {
-    // §7.3: an owner with no grant record is not an owner. A missing record is
-    // a refusal, never a default.
-    return { ok: false, response: { status: 403, body: { error: 'no_authority_record' } } };
-  }
-  return { ok: true, authority };
-}
-
-
-function readAnswerableApproval(
-  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
-  approvalId: string,
-  nowMs: number,
-):
-  | { ok: true; approval: RetainedOrderApproval }
-  | { ok: false; response: CoreResponse } {
-  const approval = runtime.orderApprovals.get(approvalId);
-  if (approval === null) {
-    // Absent, or held in a form this node can no longer reconstruct — a row
-    // edited after writing reads as absent on purpose, because sending
-    // against an approval we cannot rebuild is sending against nothing.
-    return { ok: false, response: { status: 404, body: { error: 'unknown_approval' } } };
-  }
-  if (approval.consumedAt !== null) {
-    return { ok: false, response: { status: 409, body: { error: 'approval_already_used' } } };
-  }
-  if (nowMs >= approval.expiresAt) {
-    return { ok: false, response: { status: 409, body: { error: 'approval_expired' } } };
-  }
-  return { ok: true, approval };
-}
-
 function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerOnlyGuard = makeOwnerGuard(
     ownerCapability,
@@ -661,6 +658,20 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
 
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    // §5.4 stage 4 — the CONDITIONAL presence gate this design adds: on a
+    // presence-capable node, a hand-built order refuses without a live
+    // proof; on a convenience-mode node behaviour is unchanged, so
+    // convenience-mode ordering survives. The named software path this
+    // closes: a program holding only the boot-minted owner capability can
+    // no longer mint a commercial approval on a node whose owner has a
+    // passphrase nobody typed.
+    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(Date.now())) {
+      return {
+        status: 403,
+        body: { error: 'no_user_presence', detail: 'approving an order needs a person present' },
+      };
+    }
 
     const body = (req.body ?? {}) as {
       order?: unknown;
@@ -761,6 +772,16 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // accepted, stored, and neither bound nor read is the shape this review
     // keeps finding; the fix is to stop accepting it rather than to remember
     // not to trust it.
+    // §2.1 — the source binding, VALIDATED at the door when present: a
+    // partial binding is refused here rather than stored, because a stored
+    // partial would be exactly the corrupted row the fail-closed hydration
+    // exists to refuse later.
+    if (claimedContext.source !== undefined) {
+      const badBinding = validateApprovalSourceBinding(claimedContext.source);
+      if (badBinding !== null) {
+        return { status: 400, body: { error: 'invalid_source_binding', detail: badBinding } };
+      }
+    }
     const namedContext: BuyerApprovalContext = {
       actingBusinessDid: self,
       principal,
@@ -772,6 +793,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       quoteRevision: claimedContext.quoteRevision,
       quoteExpiresAt: claimedContext.quoteExpiresAt,
       install: claimedContext.install,
+      ...(claimedContext.source === undefined ? {} : { source: claimedContext.source }),
     };
     const resolved = resolveActingInstall(namedContext, BUYER_REFERENCE_MANIFEST.plugin_id);
     if (!resolved.ok) {
@@ -840,63 +862,1111 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
 
-    const send = getBuyerOrderSender();
-    if (send === null) {
-      // FAIL CLOSED, and visibly. There is no fallback worth having: a default
-      // sender would either be a no-op that swallowed orders or a direct HTTP
-      // call that skipped the four gates. A node whose composition root has not
-      // supplied one cannot buy, and says so.
-      return { status: 503, body: { error: 'buyer_sender_unavailable' } };
-    }
-
     const body = (req.body ?? {}) as { approval_id?: unknown };
     const approvalId = typeof body.approval_id === 'string' ? body.approval_id : '';
     if (approvalId === '') {
       return { status: 400, body: { error: 'approval_id is required' } };
     }
 
-    const held = readAnswerableApproval(runtime, approvalId, Date.now());
-    if (!held.ok) return held.response;
+    // The whole path — card read, §5.4 source-binding enforcement, §7.2
+    // authority, send, consume-on-send, status mapping — lives in
+    // `dispatchUnderRetainedApproval` so this route, the §5.1 orchestrator
+    // and the dispatch-intent sweeper cannot drift apart.
+    return dispatchUnderRetainedApproval(runtime, approvalId, Date.now());
+  });
 
-    const authorised = resolveAuthority(
-      held.approval.order,
-      held.approval.context,
-      held.approval.serviceRkey,
-    );
-    if (!authorised.ok) return authorised.response;
+  /**
+   * §5.4 stage 1 — the draft-scoped SEND. Core loads the conversation,
+   * verifies every carried line and requirement against its current vouch
+   * entry (the send-gate row), builds the `QuoteRequest` ITSELF through
+   * the existing composer (retain-first, validated, dispatched over the
+   * D2D lane), and snapshots the conversation — immutable from here, so
+   * later repairs create new generations rather than rewriting what this
+   * request meant. ONE identity is minted and written to `request_id` AND
+   * `idempotency_key`; supplier-side absorption is the shipped
+   * request_digest derivation, not new work.
+   */
+  router.post(
+    '/v1/commerce/orders/drafts/request-quote',
+    async (req): Promise<CoreResponse> => {
+      const denied = ownerOnlyGuard(req);
+      if (denied !== null) return denied;
+      const runtime = getCommerceRuntime();
+      if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
+      const supplierDid = typeof body.supplier_did === 'string' ? body.supplier_did : '';
+      const serviceRkey = typeof body.service_rkey === 'string' ? body.service_rkey : 'self';
+      if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
+      if (supplierDid === '') return { status: 400, body: { error: 'supplier_did is required' } };
+      // The projection is the BUYER'S OWN configured delivery place — not
+      // machine-read, so it arrives from the surface like any setting, and
+      // Core completes its digest when the surface sent only the fields:
+      // Core builds the request, so Core seals what it built.
+      if (body.projection === null || typeof body.projection !== 'object') {
+        return { status: 400, body: { error: 'projection is required' } };
+      }
+      body.projection = completeProjection(body.projection as Record<string, unknown>);
 
-    const result = await submitApprovedOrder({
-      authority: authorised.authority,
-      // ALL THREE COME FROM THE RETAINED CARD. Taking any of them from the
-      // request would restore the defect: the rebuild inside
-      // `submitApprovedOrder` compares a payload derived from the order to the
-      // approved payload, and a caller supplying both proves only that it was
-      // self-consistent.
-      order: held.approval.order,
-      approved: held.approval.payload,
-      context: held.approval.context,
-      serviceRkey: held.approval.serviceRkey,
-      send,
-      nowMs: Date.now(),
-    });
-    // SPENT ONLY ON A SEND. A refusal leaves the card answerable, so a
-    // transient `buyer_sender_unavailable` or a momentarily expired quote does
-    // not burn a decision the owner would have to make again from scratch.
-    if (result.ok) runtime.orderApprovals.consume(approvalId, Date.now());
-    // A REFUSAL IS A 200 when it carries a tracked record: "already submitted"
-    // is the correct answer to a repeated tap, and the caller needs the state
-    // more than it needs an error code. A binding failure is a 409 — the
-    // request was well formed and the world disagreed with it.
-    if (!result.ok) {
+      const draft = runtime.orderDrafts.get(draftId);
+      if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+      if (draft.abandoned) return { status: 409, body: { error: 'abandoned' } };
+
+      // ONE LIVE CONVERSATION PER SUPPLIER (§5.0): a line resolving to a
+      // supplier whose live conversation has already SENT waits and joins
+      // that supplier's next conversation.
+      const live = draft.conversations.find(
+        (c) =>
+          c.supplierDid === supplierDid &&
+          c.state !== 'draft' &&
+          !['submitted', 'timed_out', 'rejected', 'superseded', 'quote_expired', 'dispatch_refused', 'closed'].includes(c.state),
+      );
+      if (live !== undefined) {
+        return { status: 409, body: { error: 'conversation_in_flight', conversation_id: live.conversationId } };
+      }
+
+      // THE SEND GATE (§5.1): every carried line's vouch entry current at
+      // its generation with NO model-derived field still proposed, and
+      // every requirement decided at its current generation — including
+      // draft-local ones, which are never transmitted but must not sit
+      // unreviewed while the screen calls the page checked.
+      const carried = draft.lines.filter(
+        (line) =>
+          line.resolution.kind === 'resolved' &&
+          line.resolution.supplierDid === supplierDid &&
+          line.submittedIn === null,
+      );
+      if (carried.length === 0) {
+        return { status: 409, body: { error: 'no_lines_for_supplier' } };
+      }
+      const unvouched = carried.filter(
+        (line) => line.vouch === null || line.vouch.generation !== line.generation,
+      );
+      if (unvouched.length > 0) {
+        return {
+          status: 409,
+          body: { error: 'unvouched_lines', lines: unvouched.map((l) => l.lineId) },
+        };
+      }
+      for (const line of carried) {
+        const proposed = Object.entries(line.provenance)
+          .filter(([, state]) => state === 'proposed')
+          .map(([field]) => field);
+        if (proposed.length > 0) {
+          return {
+            status: 409,
+            body: { error: 'unvouched_lines', lines: [line.lineId], fields: proposed },
+          };
+        }
+      }
+      for (const requirement of draft.requirements) {
+        const current =
+          requirement.vouch !== null && requirement.vouch.generation === requirement.generation;
+        if (!current && !requirement.omitted) {
+          return {
+            status: 409,
+            body: { error: 'unvouched_requirement', key: requirement.key },
+          };
+        }
+      }
+
+      // Core mints ONE identity with the intent, durable on the
+      // conversation, scoped to the buyer↔supplier pair.
+      const conversationId = `conv_${bytesToHex(randomBytes(8))}`;
+      const requestId = `qreq_${bytesToHex(randomBytes(12))}`;
+      const requiredByReq = draft.requirements.find(
+        (r) => r.key === 'required_by' && !r.omitted && r.value !== null,
+      );
+
+      const outcome = await requestQuote({
+        supplierDid,
+        serviceRkey,
+        requestId,
+        idempotencyKey: requestId,
+        lines: carried.map((line) => {
+          const resolution = line.resolution as Extract<
+            (typeof line)['resolution'],
+            { kind: 'resolved' }
+          >;
+          return {
+            lineId: line.lineId,
+            product: resolution.product,
+            quantity: { value: line.fields.quantity ?? '1', unit_code: 'each' },
+          };
+        }),
+        projection: body.projection as DeliveryProjection,
+        ...(requiredByReq?.value != null ? { requiredBy: requiredByReq.value } : {}),
+        nowMs: Date.now(),
+      });
+      if (outcome.kind === 'refused') {
+        return {
+          status: outcome.reason === 'commerce_unavailable' || outcome.reason === 'no_dispatch' ? 503 : 409,
+          body: { error: outcome.reason },
+        };
+      }
+
+      // SNAPSHOT the conversation — what this request MEANT, immutable.
+      const snapshot = {
+        draft_id: draft.draftId,
+        conversation_id: conversationId,
+        supplier_did: supplierDid,
+        request_digest: outcome.request.request_digest,
+        lines: carried.map((line) => ({
+          line_id: line.lineId,
+          generation: line.generation,
+          vouch_receipt_digest: line.vouch?.receiptDigest ?? '',
+        })),
+        requirements: draft.requirements.map((r) => ({
+          key: r.key,
+          omitted: r.omitted,
+          value: r.omitted ? null : r.value,
+          generation: r.generation,
+        })),
+      };
+      const snapshotDigest = conversationSnapshotDigest(snapshot, (data) => sha256(data));
+      draft.conversations.push({
+        conversationId,
+        supplierDid,
+        state: 'sent',
+        lineIds: carried.map((l) => l.lineId),
+        snapshot,
+        snapshotDigest,
+        requestDigest: outcome.request.request_digest,
+        requestId,
+        quoteDigest: null,
+        quoteId: null,
+        quoteValidUntil: null,
+        approvalId: null,
+        purchaseOrderId: null,
+        dispatchIntent: null,
+        outcome: outcome.kind === 'ambiguous' ? 'send_ambiguous' : null,
+      });
+      draft.updatedAtMs = Date.now();
+      runtime.orderDrafts.put(draft);
+      recordCommerceEvent({
+        event: 'send',
+        lane: 'order',
+        draftId: draft.draftId,
+        conversationId,
+        supplierDid,
+        count: carried.length,
+        atMs: Date.now(),
+      });
       return {
-        // 503 for a node that cannot answer, 200 for "already submitted"
-        // (the right answer to a repeated tap), 409 for a well-formed request
-        // the world disagreed with. See `install_registry_unavailable`.
-        status: unanswerableStatus(result.refusal),
-        body: { ok: false, refusal: result.refusal, error: result.error, record: result.record },
+        status: 200,
+        body: {
+          ok: true,
+          conversation_id: conversationId,
+          request_id: requestId,
+          request_digest: outcome.request.request_digest,
+          snapshot_digest: snapshotDigest,
+        },
+      };
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // §5.0 — the buyer's photographed order: capture, extract, read, and the
+  // §5.1 matrix rows as owner routes. The screens are RN; every rule is here.
+  // -------------------------------------------------------------------------
+
+  /** One §5.1 outcome → one wire answer, mapped identically on every row. */
+  const orderDraftAnswer = (outcome: ReturnType<OrderDraftService['confirm']>): CoreResponse => {
+    if (outcome.ok) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          draft: outcome.draft,
+          state: deriveOrderDraftState(outcome.draft),
+        },
       };
     }
-    return { status: 200, body: { ok: true, ...describeOrderForOwner(result.record) } };
+    const missing =
+      outcome.refusal === 'no_such_draft' ||
+      outcome.refusal === 'no_such_line' ||
+      outcome.refusal === 'no_such_conversation' ||
+      outcome.refusal === 'no_such_requirement';
+    return {
+      status: missing ? 404 : outcome.refusal === 'no_user_presence' ? 403 : 409,
+      body: { error: outcome.refusal, detail: outcome.detail },
+    };
+  };
+
+  const orderDraftService = (
+    runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  ): OrderDraftService =>
+    new OrderDraftService({
+      drafts: runtime.orderDrafts,
+      now: () => Date.now(),
+      sha256: hash,
+      userPresent: () => ownerPresentNow(Date.now()),
+    });
+
+  /**
+   * §6 capture, order lane — the same trusted artifact-ingest boundary the
+   * catalog lane runs: page count, byte ceilings, MIME allowlist, two-phase
+   * decode, EXIF strip. All pages or none, and the single-use §3 egress
+   * authorization is minted here with the ORDER purpose, so the schema is
+   * derived from the lane and never chosen by a caller.
+   */
+  router.post('/v1/commerce/orders/drafts/photo_capture', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (!imageReencoderInstalled()) {
+      return { status: 503, body: { error: 'no_reencoder: this node cannot ingest photographs' } };
+    }
+    const provider = installedEgressProvider();
+    if (provider === null) {
+      return { status: 503, body: { error: 'no_egress_broker: no vision provider is configured' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.pages) || body.pages.length === 0) {
+      return { status: 400, body: { error: 'pages must be a non-empty array of base64 images' } };
+    }
+    if (body.pages.length > MAX_IMAGE_PAGES) {
+      return { status: 400, body: { error: 'too_many_pages' } };
+    }
+
+    const draftId = `odr_${bytesToHex(randomBytes(16))}`;
+    const manifest: { artifact_id: string; content_hash: string; page_index: number }[] = [];
+    for (const [index, page] of body.pages.entries()) {
+      if (typeof page !== 'string' || page === '') {
+        runtime.imageArtifacts.eraseDraft(draftId);
+        return { status: 400, body: { error: `pages[${String(index)}] must be base64 bytes` } };
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = base64.decode(page);
+      } catch {
+        runtime.imageArtifacts.eraseDraft(draftId);
+        return { status: 400, body: { error: `pages[${String(index)}] is not valid base64` } };
+      }
+      const ingested = await ingestCommerceImage({
+        repository: runtime.imageArtifacts,
+        ownerDraftId: draftId,
+        lane: 'order',
+        pageIndex: index,
+        bytes,
+        nowMs: runtime.now(),
+      });
+      if (!ingested.ok) {
+        runtime.imageArtifacts.eraseDraft(draftId);
+        // §8b — the refusal KEY and the page count; never the bytes.
+        recordCommerceEvent({
+          event: 'ingest_refusal',
+          lane: 'order',
+          draftId,
+          refusal: ingested.refusal.split(':')[0] ?? ingested.refusal,
+          count: index,
+          atMs: runtime.now(),
+        });
+        return { status: 422, body: { error: ingested.refusal, page_index: index } };
+      }
+      manifest.push({
+        artifact_id: ingested.artifact.artifactId,
+        content_hash: ingested.artifact.contentHash,
+        page_index: index,
+      });
+    }
+
+    const authorizationId = newEgressAuthorizationId();
+    const at = runtime.now();
+    runtime.egressAuthorizations.put({
+      authorizationId,
+      purpose: 'order_extraction',
+      provider,
+      contentHashes: manifest.map((m) => m.content_hash),
+      maxBytes: MAX_AGGREGATE_IMAGE_BYTES,
+      createdAtMs: at,
+      expiresAtMs: at + IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
+      consumedAtMs: null,
+    });
+    recordCommerceEvent({ event: 'photo_capture', lane: 'order', draftId, count: manifest.length, atMs: at });
+    recordCommerceEvent({ event: 'egress_authorization', lane: 'order', draftId, atMs: at });
+    return {
+      status: 200,
+      body: { ok: true, draft_id: draftId, manifest, authorization_id: authorizationId, provider },
+    };
+  });
+
+  /**
+   * §3 + §5.0 — EXTRACT through the gate, then create the ORDER draft with
+   * its §2.1 chain: extraction commitment (draft_id in the preimage, ORDER
+   * lane separation in the digest) and the manifest. Every extracted field
+   * arrives `proposed` — nothing machine-read is treated as decided — and
+   * the two draft-level requirement keys the schema may produce become
+   * requirements rather than line fields: `required_by` (transmitted) and
+   * `instruction` (draft-local, reviewed but never sent).
+   */
+  router.post('/v1/commerce/orders/drafts/photo_extract', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || body.draft_id === '') {
+      return { status: 400, body: { error: 'draft_id is required (from photo_capture)' } };
+    }
+    if (typeof body.authorization_id !== 'string' || body.authorization_id === '') {
+      return { status: 400, body: { error: 'authorization_id is required (from photo_capture)' } };
+    }
+    if (runtime.orderDrafts.get(body.draft_id) !== null) {
+      return { status: 409, body: { error: 'draft_exists: extraction already created this draft' } };
+    }
+    const artifacts = runtime.imageArtifacts.listByDraft(body.draft_id);
+    if (artifacts.length === 0) {
+      return { status: 404, body: { error: 'no_captured_pages' } };
+    }
+    const extracted = await extractRowsThroughGate({
+      authorizations: runtime.egressAuthorizations,
+      readImage: (artifactId) => runtime.imageArtifacts.getBytes(artifactId),
+      authorizationId: body.authorization_id,
+      artifactIds: artifacts.map((a) => a.artifactId),
+      nowMs: runtime.now(),
+    });
+    if (!extracted.ok) {
+      return { status: 422, body: { error: extracted.refusal } };
+    }
+
+    const orderedRows = [...extracted.rows].sort((a, b) => a.page_index - b.page_index);
+    const commitment: ExtractionCommitment = {
+      draft_id: body.draft_id,
+      manifest: artifacts.map((a) => ({
+        artifact_id: a.artifactId,
+        content_hash: a.contentHash,
+        page_index: a.pageIndex,
+      })),
+      schema_id: extracted.schemaId,
+      model: extracted.model,
+      rows: orderedRows.map((row, i) => ({
+        page_index: row.page_index,
+        row: i + 2,
+        content: row.cells,
+      })),
+    };
+    const commitmentShape = validateExtractionCommitment(commitment);
+    if (commitmentShape !== null) {
+      return { status: 422, body: { error: `extraction_invalid: ${commitmentShape}` } };
+    }
+    const extractionDigest = extractionCommitmentDigest('order', commitment, (data) => sha256(data));
+
+    const REQUIREMENT_KEYS: Record<string, 'transmitted' | 'draft_local'> = {
+      required_by: 'transmitted',
+      instruction: 'draft_local',
+    };
+    const requirements: OrderDraft['requirements'] = [];
+    const lines: OrderDraft['lines'] = [];
+    for (const [index, row] of orderedRows.entries()) {
+      const fields: Record<string, string> = {};
+      const provenance: Record<string, 'proposed'> = {};
+      for (const [key, value] of Object.entries(row.cells)) {
+        if (key === 'text') continue;
+        const requirementKind = REQUIREMENT_KEYS[key];
+        if (requirementKind !== undefined) {
+          // Draft-level, first occurrence wins; a page repeating the date
+          // is one date, not two decisions.
+          if (!requirements.some((r) => r.key === key) && value !== '') {
+            requirements.push({
+              key,
+              kind: requirementKind,
+              value,
+              omitted: false,
+              provenance: 'proposed',
+              generation: 1,
+              vouch: null,
+            });
+          }
+          continue;
+        }
+        if (value !== '') {
+          fields[key] = value;
+          provenance[key] = 'proposed';
+        }
+      }
+      const text = typeof row.cells.text === 'string' ? row.cells.text : '';
+      if (text === '' && Object.keys(fields).length === 0) continue;
+      lines.push({
+        lineId: `line_${String(index + 1)}`,
+        text,
+        pageIndex: row.page_index,
+        fields,
+        provenance,
+        resolution: { kind: 'unresolved' },
+        generation: 1,
+        assignmentGeneration: 0,
+        vouch: null,
+        deferred: false,
+        evidence: null,
+        submittedIn: null,
+      });
+    }
+    if (lines.length === 0) {
+      return { status: 422, body: { error: 'nothing_extracted: no order lines were read' } };
+    }
+
+    const at = runtime.now();
+    const draft: OrderDraft = {
+      draftId: body.draft_id,
+      manifest: commitment.manifest,
+      extraction: { model: extracted.model, schemaVersion: extracted.schemaId },
+      extractionDigest,
+      lines,
+      requirements,
+      conversations: [],
+      ceremonyCounter: 0,
+      abandoned: false,
+      createdAtMs: at,
+      updatedAtMs: at,
+    };
+    runtime.orderDrafts.put(draft);
+    recordCommerceEvent({
+      event: 'extraction',
+      lane: 'order',
+      draftId: draft.draftId,
+      count: lines.length,
+      atMs: at,
+    });
+    return { status: 200, body: { ok: true, draft, state: deriveOrderDraftState(draft) } };
+  });
+
+  /** The read seam the buyer screens live on. Owner-only, whole rows. */
+  router.get('/v1/commerce/orders/drafts', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return {
+      status: 200,
+      body: {
+        drafts: runtime.orderDrafts.list().map((draft) => ({
+          draft_id: draft.draftId,
+          state: deriveOrderDraftState(draft),
+          lines: draft.lines.length,
+          conversations: draft.conversations.length,
+          created_at_ms: draft.createdAtMs,
+          updated_at_ms: draft.updatedAtMs,
+        })),
+      },
+    };
+  });
+
+  router.get('/v1/commerce/orders/drafts/get', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const draftId = String(req.query.draft_id ?? '');
+    if (draftId === '') return { status: 400, body: { error: 'draft_id is required' } };
+    const draft = runtime.orderDrafts.get(draftId);
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    return { status: 200, body: { ok: true, draft, state: deriveOrderDraftState(draft) } };
+  });
+
+  /** §5.1 matrix rows, one route per row — the service enforces every rule. */
+  router.post('/v1/commerce/orders/drafts/line/repair', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.draft_id !== 'string' ||
+      typeof body.line_id !== 'string' ||
+      typeof body.field !== 'string' ||
+      typeof body.value !== 'string'
+    ) {
+      return { status: 400, body: { error: 'draft_id, line_id, field and value are required' } };
+    }
+    return orderDraftAnswer(
+      orderDraftService(runtime).repairLine(body.draft_id, {
+        lineId: body.line_id,
+        field: body.field,
+        value: body.value,
+      }),
+    );
+  });
+
+  router.post('/v1/commerce/orders/drafts/line/resolve', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || typeof body.line_id !== 'string') {
+      return { status: 400, body: { error: 'draft_id and line_id are required' } };
+    }
+    const resolution = body.resolution as Record<string, unknown> | undefined;
+    if (
+      resolution === undefined ||
+      resolution === null ||
+      typeof resolution !== 'object' ||
+      typeof resolution.kind !== 'string'
+    ) {
+      return { status: 400, body: { error: 'resolution with a kind is required' } };
+    }
+    if (resolution.kind === 'resolved') {
+      const product = resolution.product as Record<string, unknown> | undefined;
+      if (
+        product === undefined ||
+        typeof product.scheme !== 'string' ||
+        typeof product.value !== 'string' ||
+        typeof resolution.supplierDid !== 'string' ||
+        typeof resolution.flaggedNewSupplier !== 'boolean'
+      ) {
+        return {
+          status: 400,
+          body: { error: 'a resolved line names product, supplierDid and flaggedNewSupplier' },
+        };
+      }
+    }
+    return orderDraftAnswer(
+      orderDraftService(runtime).resolveLine(body.draft_id, {
+        lineId: body.line_id,
+        resolution: resolution as unknown as OrderDraft['lines'][number]['resolution'],
+        ...(body.evidence !== undefined
+          ? { evidence: body.evidence as OrderDraft['lines'][number]['evidence'] }
+          : {}),
+      }),
+    );
+  });
+
+  router.post('/v1/commerce/orders/drafts/line/defer', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || typeof body.line_id !== 'string') {
+      return { status: 400, body: { error: 'draft_id and line_id are required' } };
+    }
+    return orderDraftAnswer(orderDraftService(runtime).deferLine(body.draft_id, body.line_id));
+  });
+
+  router.post('/v1/commerce/orders/drafts/accept_fields', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || !Array.isArray(body.refs)) {
+      return { status: 400, body: { error: 'draft_id and refs are required' } };
+    }
+    const refs: { lineId: string; field: string }[] = [];
+    for (const ref of body.refs) {
+      const named = ref as Record<string, unknown>;
+      if (typeof named.line_id !== 'string' || typeof named.field !== 'string') {
+        return { status: 400, body: { error: 'every ref names line_id and field' } };
+      }
+      refs.push({ lineId: named.line_id, field: named.field });
+    }
+    return orderDraftAnswer(orderDraftService(runtime).acceptLineFields(body.draft_id, refs));
+  });
+
+  router.post('/v1/commerce/orders/drafts/requirement', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const action = typeof body.action === 'string' ? body.action : '';
+    if (
+      typeof body.draft_id !== 'string' ||
+      typeof body.key !== 'string' ||
+      !['edit', 'accept', 'omit', 'reinstate'].includes(action)
+    ) {
+      return {
+        status: 400,
+        body: { error: 'draft_id, key and an action of edit|accept|omit|reinstate are required' },
+      };
+    }
+    return orderDraftAnswer(
+      orderDraftService(runtime).editRequirement(body.draft_id, {
+        key: body.key,
+        action: action as 'edit' | 'accept' | 'omit' | 'reinstate',
+        ...(typeof body.value === 'string' ? { value: body.value } : {}),
+      }),
+    );
+  });
+
+  /**
+   * CONFIRM (§5.3) — the ceremony, presence UNCONDITIONAL: this lane is
+   * photo-derived by its aggregate, and a batch tap cannot vouch a
+   * quantity nobody looked at. A no-presence deployment cannot confirm a
+   * photographed order at all, and says so — the same posture as approve.
+   */
+  router.post('/v1/commerce/orders/drafts/confirm', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (!ownerPresenceCanBeEstablished()) {
+      return {
+        status: 503,
+        body: { error: 'presence_unavailable', detail: 'photographed orders cannot be vouched on this deployment' },
+      };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || body.draft_id === '') {
+      return { status: 400, body: { error: 'draft_id_required' } };
+    }
+    const outcome = orderDraftService(runtime).confirm(body.draft_id);
+    if (outcome.ok) {
+      recordCommerceEvent({
+        event: 'confirm',
+        lane: 'order',
+        draftId: outcome.draft.draftId,
+        count: outcome.draft.lines.filter((line) => line.vouch !== null).length,
+        atMs: Date.now(),
+      });
+    }
+    return orderDraftAnswer(outcome);
+  });
+
+  router.post('/v1/commerce/orders/drafts/reopen', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || typeof body.conversation_id !== 'string') {
+      return { status: 400, body: { error: 'draft_id and conversation_id are required' } };
+    }
+    return orderDraftAnswer(
+      orderDraftService(runtime).reopenLines(body.draft_id, body.conversation_id),
+    );
+  });
+
+  /**
+   * Abandon — and §6's erasure follows the draft: the photographs leave
+   * with it, transactionally, except while an order may be on its way.
+   */
+  router.post('/v1/commerce/orders/drafts/abandon', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.draft_id !== 'string' || body.draft_id === '') {
+      return { status: 400, body: { error: 'draft_id_required' } };
+    }
+    const outcome = orderDraftService(runtime).abandon(body.draft_id);
+    if (outcome.ok) {
+      runtime.runInTransaction(() => {
+        runtime.imageArtifacts.eraseDraft(body.draft_id as string);
+      });
+    }
+    return orderDraftAnswer(outcome);
+  });
+
+  /**
+   * §5.4 stage 4 — the draft-scoped APPROVE. Core loads the conversation,
+   * BUILDS the `PurchaseOrderProposal` ITSELF from the accepted quote
+   * revision and the snapshotted vouch entries — the caller supplies no
+   * order, the same shape as catalog publish taking a draft id and no
+   * item list — runs `verifyOrderAgainstQuote`, and mints the
+   * SOURCE-BOUND retained approval through the shared machinery.
+   * Provenance is Core's own fact: this path is UNCONDITIONALLY
+   * presence-gated and fails closed; on a no-presence deployment a
+   * photo-derived order is unapprovable and the app says so.
+   */
+  router.post('/v1/commerce/orders/drafts/approve', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // UNCONDITIONAL: no verifier means no approval on this path, full stop.
+    if (!ownerPresenceCanBeEstablished()) {
+      return { status: 503, body: { error: 'presence_unavailable', detail: 'photo-derived orders are unapprovable on this deployment' } };
+    }
+    if (!ownerPresentNow(Date.now())) {
+      return { status: 403, body: { error: 'no_user_presence' } };
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
+    const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : '';
+    if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
+    if (conversationId === '') return { status: 400, body: { error: 'conversation_id is required' } };
+
+    const draft = runtime.orderDrafts.get(draftId);
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    const conversation = draft.conversations.find((c) => c.conversationId === conversationId);
+    if (conversation === undefined) {
+      return { status: 404, body: { error: 'no_such_conversation' } };
+    }
+    if (conversation.quoteDigest === null) {
+      return { status: 409, body: { error: 'no_accepted_quote' } };
+    }
+    // The quote id the SETTLE retained beside the digest; a caller may still
+    // name one, and a named one wins so a test can address a revision family
+    // directly, but the surface never has to carry it.
+    const quoteId =
+      typeof body.quote_id === 'string' && body.quote_id !== ''
+        ? body.quote_id
+        : (conversation.quoteId ?? '');
+    if (quoteId === '') return { status: 409, body: { error: 'quote_not_held' } };
+    // The EXACT accepted revision, from Core's own verified store — never
+    // a quote the caller carried in.
+    const revisions = runtime.buyerQuotes.chain(conversation.supplierDid, quoteId);
+    const quote = revisions.find((q) => q.quote_digest === conversation.quoteDigest);
+    if (quote === undefined) {
+      return { status: 409, body: { error: 'quote_not_held', detail: 'the accepted revision is not in the verified store' } };
+    }
+    // The quote must answer THIS conversation's request — a held quote for
+    // some other exchange, even from the same supplier, prices different
+    // terms than what this conversation's snapshot means.
+    if (quote.request_id !== conversation.requestId) {
+      return { status: 409, body: { error: 'quote_answers_foreign_request' } };
+    }
+
+    const self = ownerDid();
+    if (self === null) return { status: 503, body: { error: 'node_identity_unavailable' } };
+
+    // CORE BUILDS THE ORDER — deterministic construction over the quote's
+    // own lines, quantities and total; the §9.1 arithmetic was verified
+    // when the quote was accepted, and `verifyOrderAgainstQuote` re-binds
+    // this order to that one exact revision below.
+    const projection =
+      body.projection !== null && typeof body.projection === 'object'
+        ? completeProjection(body.projection as Record<string, unknown>)
+        : body.projection;
+    if (projection === null || typeof projection !== 'object') {
+      return { status: 400, body: { error: 'projection is required' } };
+    }
+    const invalidProjection = validateDeliveryProjection(projection, hash);
+    if (invalidProjection !== null) {
+      return { status: 400, body: { error: 'invalid_projection', detail: invalidProjection } };
+    }
+    // §9.9 — the order projection may only EXTEND the projection the quote
+    // priced, and the yardstick is the request THIS NODE retained when it
+    // asked. On the draft path Core sent that request itself, so a missing
+    // retained row is a broken node, not a documented skip: fail closed.
+    const retainedRequest = runtime.buyerQuoteRequests.get(quote.request_id);
+    if (retainedRequest === null) {
+      return { status: 409, body: { error: 'request_not_retained' } };
+    }
+    const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
+    const orderDraftBody = {
+      protocol_version: '1.0',
+      purchase_order_id: purchaseOrderId,
+      buyer_did: quote.buyer_did,
+      supplier_did: quote.supplier_did,
+      quote_id: quote.quote_id,
+      quote_digest: quote.quote_digest,
+      accepted_lines: quote.lines.map((line) => ({
+        line_id: line.line_id,
+        product: line.offered_product,
+        quantity: line.quantity,
+      })),
+      delivery: projection as Record<string, unknown>,
+      approved_total: quote.total,
+      accepted_terms_digest: quote.terms_digest,
+      idempotency_key: purchaseOrderId,
+      submitted_at: new Date(Date.now()).toISOString(),
+    };
+    const order = {
+      ...orderDraftBody,
+      order_digest: commerceRecordDigest('order', orderDraftBody as Record<string, unknown>, hash),
+    } as unknown as PurchaseOrderProposal;
+    const invalidOrder = validatePurchaseOrderProposal(order, hash);
+    if (invalidOrder !== null) {
+      return { status: 422, body: { error: 'order_build_failed', detail: invalidOrder } };
+    }
+    const against = verifyOrderAgainstQuote(
+      order,
+      quote,
+      retainedRequest.delivery.projection as unknown as Record<string, unknown>,
+    );
+    if (against !== null) {
+      return { status: 409, body: { error: 'order_quote_mismatch', detail: against } };
+    }
+
+    // §5.5 — THE DIVERGENCE WARNING, computed here because this response IS
+    // the approval card's content: the buyer sees it exactly where they
+    // decide. Deterministic two-tier arithmetic against the resolved
+    // candidate's own evidence; a pair with no comparable basis or no
+    // reference price gets its badge STATED, never guessed. Approvable
+    // either way — Law 1: no order can dispatch without the owner reviewing
+    // this very card, so silence causes no harm.
+    const buyerSettings = runtime.settings.readBuyer();
+    const thresholdPct =
+      buyerSettings.ok && buyerSettings.settings.divergenceThresholdPct !== undefined
+        ? buyerSettings.settings.divergenceThresholdPct
+        : undefined;
+    const divergence = quote.lines.map((line) => {
+      const draftLine = draft.lines.find((l) => l.lineId === line.line_id);
+      const resolution = draftLine?.resolution;
+      if (resolution?.kind !== 'resolved') {
+        return { line_id: line.line_id, verdict: { kind: 'no_reference_price' as const } };
+      }
+      // Page items are `unknown[]` on the wire type; each candidate is
+      // re-validated before it becomes a reference anything is measured by.
+      const item = (draftLine?.evidence?.page.items ?? [])
+        .filter((candidate): candidate is CatalogItem => validateCatalogItem(candidate) === null)
+        .find(
+          (i) =>
+            i.product.scheme === resolution.product.scheme &&
+            i.product.value === resolution.product.value &&
+            i.product.issuer_did === resolution.product.issuer_did,
+        );
+      if (item === undefined) {
+        return { line_id: line.line_id, verdict: { kind: 'no_reference_price' as const } };
+      }
+      return {
+        line_id: line.line_id,
+        verdict: checkPriceDivergence({
+          quoted: { unitPrice: line.unit_price, priceBasis: line.price_basis },
+          item,
+          resolvedProduct: resolution.product,
+          ...(thresholdPct !== undefined ? { thresholdPct } : {}),
+        }),
+      };
+    });
+
+    // The SOURCE BINDING, Core-derived at mint from the draft's CURRENT
+    // state — the submit-time check then verifies these same generations.
+    const source = {
+      origin: 'photo_order_draft' as const,
+      binding_version: 1 as const,
+      draft_id: draft.draftId,
+      conversation_id: conversation.conversationId,
+      assignment_generations: conversation.lineIds.map((lineId) => ({
+        line_id: lineId,
+        generation: draft.lines.find((l) => l.lineId === lineId)?.assignmentGeneration ?? -1,
+      })),
+      requirement_generations: draft.requirements.map((r) => ({
+        key: r.key,
+        generation: r.generation,
+      })),
+      snapshot_digest: conversation.snapshotDigest ?? '0'.repeat(64),
+    };
+
+    // The ACTING INSTALL is discovered from THIS NODE's registry — on the
+    // draft path the caller supplies no install claim, so Core names the
+    // active buyer pack itself and `resolveActingInstall` then verifies
+    // that discovery through the same gate every claimed install passes.
+    const installRepo = getPluginInstallRepository();
+    if (installRepo === null) {
+      return { status: 503, body: { error: 'install_registry_unavailable' } };
+    }
+    const activeBuyerInstall = installRepo
+      .list()
+      .find((i) => i.pluginId === BUYER_REFERENCE_MANIFEST.plugin_id && i.status === 'active');
+    if (activeBuyerInstall === undefined) {
+      return { status: 403, body: { error: 'buyer_pack_not_installed' } };
+    }
+
+    // The retained-approval machinery, invoked INTERNALLY — Core derives
+    // the card's context from the quote it verified.
+    const context: BuyerApprovalContext = {
+      actingBusinessDid: self,
+      principal: {
+        principalDid: self,
+        authorityDomain: BUYER_ORDER_AUTHORITY_DOMAIN,
+        policyRevision: null,
+      },
+      serviceUri: `at://${quote.supplier_did}/com.dinakernel.service.profile/self`,
+      displayedLabels: Object.fromEntries(
+        quote.lines.map((line) => [line.line_id, line.offered_product.value]),
+      ),
+      productKeys: Object.fromEntries(
+        quote.lines.map((line) => [
+          line.line_id,
+          `${line.offered_product.scheme}:${line.offered_product.value}`,
+        ]),
+      ),
+      linePrices: Object.fromEntries(quote.lines.map((line) => [line.line_id, line.unit_price])),
+      charges: [],
+      quoteRevision: Number(quote.quote_revision),
+      quoteExpiresAt: quote.valid_until,
+      // Core's own discovery, re-verified below — never a caller's claim.
+      install: {
+        installId: activeBuyerInstall.installId,
+        capabilityId: 'com.dinakernel.commerce.place-order',
+        manifestCid: activeBuyerInstall.currentCid,
+        installScopeHash: activeBuyerInstall.installScopeHash,
+        configRevision: String(activeBuyerInstall.configRevision),
+      },
+      source,
+    };
+    const resolvedInstall = resolveActingInstall(context, BUYER_REFERENCE_MANIFEST.plugin_id);
+    if (!resolvedInstall.ok) {
+      return {
+        status: resolvedInstall.refusal === 'install_registry_unavailable' ? 503 : 403,
+        body: { error: resolvedInstall.refusal, detail: resolvedInstall.detail },
+      };
+    }
+    const built = buildBuyerApprovalPayload(order, resolvedInstall.context);
+    if (!built.ok) {
+      return { status: 422, body: { error: 'approval_incomplete', missing: built.missing } };
+    }
+    const listing = resolveServiceBinding({
+      serviceUri: resolvedInstall.context.serviceUri,
+      supplierDid: order.supplier_did,
+    });
+    if (!listing.ok) {
+      return { status: 400, body: { error: listing.refusal, detail: listing.detail } };
+    }
+    const now = Date.now();
+    const approvalId = newApprovalId();
+    if (
+      !runtime.orderApprovals.put({
+        approvalId,
+        order,
+        context: resolvedInstall.context,
+        serviceRkey: listing.serviceRkey,
+        createdAt: now,
+        expiresAt: now + ORDER_APPROVAL_TTL_MS,
+      })
+    ) {
+      return { status: 409, body: { error: 'approval_not_retained' } };
+    }
+    conversation.approvalId = approvalId;
+    conversation.state = 'approved';
+    draft.updatedAtMs = now;
+    runtime.orderDrafts.put(draft);
+    recordCommerceEvent({
+      event: 'approval',
+      lane: 'order',
+      draftId: draft.draftId,
+      conversationId: conversation.conversationId,
+      supplierDid: conversation.supplierDid,
+      atMs: now,
+    });
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        approval_id: approvalId,
+        approved: built.payload,
+        purchase_order_id: purchaseOrderId,
+        expires_at: now + ORDER_APPROVAL_TTL_MS,
+        // §5.5 — per-line, beside the decision it informs.
+        divergence,
+      },
+    };
+  });
+
+  /**
+   * §5.1's submission protocol — the NAMED ORCHESTRATOR, the submit sibling
+   * of the draft-scoped approve route, and necessarily so: only step 1
+   * creates the dispatch intent that the source-binding check verifies, so
+   * an app calling `/orders/submit` directly with a photo-minted approval
+   * fails closed BY DESIGN. The steps:
+   *
+   *   (1) persist, in ONE draft-store transaction, the approval RESERVED
+   *       (referenced, not consumed), the competing assignments closed
+   *       (their approvals revoked — the courtesy), and a durable dispatch
+   *       intent carrying the purchase-order id;
+   *   (2) dispatch through the single path `/orders/submit` uses;
+   *   (3) record which of the FOUR outcome classes step 2 landed in.
+   *
+   * A crash between (1) and (3) replays from the intent row — the
+   * `DispatchIntentSweeper`'s duty, record-first.
+   */
+  router.post('/v1/commerce/orders/drafts/submit', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
+    const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : '';
+    if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
+    if (conversationId === '') {
+      return { status: 400, body: { error: 'conversation_id is required' } };
+    }
+
+    const draft = runtime.orderDrafts.get(draftId);
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    const conversation = draft.conversations.find((c) => c.conversationId === conversationId);
+    if (conversation === undefined) {
+      return { status: 404, body: { error: 'no_such_conversation' } };
+    }
+    if (conversation.state === 'submitting') {
+      // A live intent already exists and the sweeper owns its replay; a
+      // second begin here is a double-tap, not a second order.
+      return { status: 409, body: { error: 'submit_in_flight' } };
+    }
+    if (conversation.state !== 'approved' || conversation.approvalId === null) {
+      return { status: 409, body: { error: 'not_approvable', state: conversation.state } };
+    }
+    const approvalId = conversation.approvalId;
+    // The intent must carry the purchase-order id so crash replay can
+    // resolve RECORD-FIRST even after the approval row is gone; the
+    // retained card is where that id lives.
+    const approval = runtime.orderApprovals.get(approvalId);
+    if (approval === null) {
+      return { status: 404, body: { error: 'unknown_approval' } };
+    }
+
+    const service = new OrderDraftService({
+      drafts: runtime.orderDrafts,
+      now: () => Date.now(),
+      sha256: hash,
+      userPresent: () => ownerPresentNow(Date.now()),
+    });
+    const intentId = `odi_${bytesToHex(randomBytes(12))}`;
+
+    // STEP 1 — the one transaction §5.1 names, competitor approvals
+    // revoked inside it (the courtesy; submit-time staleness is the
+    // enforcement).
+    let begun: ReturnType<OrderDraftService['beginSubmit']> = {
+      ok: false,
+      refusal: 'transaction_not_run',
+      detail: 'the draft-store transaction never executed',
+    };
+    runtime.runInTransaction(() => {
+      begun = service.beginSubmit(draftId, {
+        conversationId,
+        intentId,
+        purchaseOrderId: approval.order.purchase_order_id,
+      });
+      if (begun.ok) {
+        for (const revoked of begun.revokedApprovalIds ?? []) {
+          runtime.orderApprovals.consume(revoked, Date.now());
+        }
+      }
+    });
+    if (!begun.ok) {
+      return { status: 409, body: { error: begun.refusal, detail: begun.detail } };
+    }
+
+    // STEP 2 — the single dispatch path.
+    const answer = await dispatchUnderRetainedApproval(runtime, approvalId, Date.now());
+
+    // STEP 3 — record the outcome class. A pre-send refusal never consumed
+    // the card and it bound a quote context that is now dead: invalidated
+    // here, competitors reopened by the service's refused arm.
+    const klass = classifyDispatchAnswer(answer);
+    runtime.runInTransaction(() => {
+      service.recordSubmitOutcome(draftId, {
+        conversationId,
+        ...(klass.kind === 'refused'
+          ? { kind: 'refused' as const, reason: klass.reason }
+          : klass.kind === 'transient'
+            ? { kind: 'transient' as const, reason: klass.reason }
+            : { kind: klass.kind }),
+      });
+      if (klass.kind === 'refused') runtime.orderApprovals.consume(approvalId, Date.now());
+    });
+    recordCommerceEvent({
+      event: 'dispatch_outcome',
+      lane: 'order',
+      draftId,
+      conversationId,
+      state: klass.kind,
+      ...(klass.kind === 'refused' || klass.kind === 'transient' ? { refusal: klass.reason } : {}),
+      atMs: Date.now(),
+    });
+    return {
+      status: answer.status,
+      body: { ...answer.body, dispatch_class: klass.kind, intent_id: intentId },
+    };
   });
 
   router.post('/v1/commerce/orders/command', async (req): Promise<CoreResponse> => {
@@ -1290,6 +2360,126 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
           },
         }
       : { status: 409, body: { ok: false, findings: plan.findings } };
+  });
+
+  /**
+   * §18.1 — the plan's execution, one role at a time. Three separate owner
+   * calls (begin / bind_device / confirm) because that is the §14 shape the
+   * install machinery enforces: begin creates a PENDING row, the pairing
+   * ceremony binds the runner device, and confirm is the consent decision.
+   * Collapsing them would put consent behind one tap — the exact thing the
+   * plan route's comment refuses.
+   *
+   * FIRST-PARTY ONLY. The body names a role; the manifest comes from the
+   * compiled-in table inside `beginReferenceInstall`. No caller-supplied
+   * manifest can reach the install machinery through this surface.
+   */
+  router.post('/v1/commerce/install/begin', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const role = (req.body as { role?: unknown } | null)?.role;
+    if (role !== 'buyer' && role !== 'supplier') {
+      return { status: 400, body: { error: "role must be 'buyer' | 'supplier'" } };
+    }
+    const owner = ownerDid();
+    if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+    // Idempotent against a finished ceremony: an ACTIVE install for the role
+    // is an answer, not an error — re-running the flow must not stack a
+    // second consent for authority the owner already granted.
+    const plan = planCommerceInstall(role === 'buyer' ? 'buy' : 'sell');
+    if (!plan.ok) return { status: 409, body: { ok: false, findings: plan.findings } };
+    const pluginId = plan.installs[0]?.manifest.plugin_id ?? '';
+    const existing = getPluginInstallRepository()
+      ?.list()
+      .find((install) => install.pluginId === pluginId && install.status === 'active');
+    if (existing !== undefined) {
+      return {
+        status: 200,
+        body: { ok: true, install_id: existing.installId, plugin_id: pluginId, status: 'active' },
+      };
+    }
+    const begun = beginReferenceInstall({ role, publisherDid: owner, nowMs: Date.now() });
+    if (!begun.ok) {
+      return { status: 409, body: { ok: false, error: begun.code, detail: begun.message } };
+    }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        install_id: begun.installId,
+        plugin_id: pluginId,
+        status: 'pending',
+        consent: begun.consent,
+      },
+    };
+  });
+
+  router.post('/v1/commerce/install/bind_device', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.install_id !== 'string' || typeof body.device_did !== 'string') {
+      return { status: 400, body: { error: 'install_id and device_did are required' } };
+    }
+    const installs = getPluginInstallRepository();
+    if (installs === null) return { status: 503, body: { error: 'plugin_registry_unavailable' } };
+    const bound = installs.bindPendingDevice(body.install_id, body.device_did, Date.now());
+    return bound
+      ? { status: 200, body: { ok: true } }
+      : { status: 409, body: { error: 'bind_refused' } };
+  });
+
+  router.post('/v1/commerce/install/confirm', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.install_id !== 'string' || body.install_id === '') {
+      return { status: 400, body: { error: 'install_id_required' } };
+    }
+    const deviceDid = typeof body.device_did === 'string' ? body.device_did : undefined;
+    const activated = confirmConsent(body.install_id, deviceDid, Date.now());
+    return activated
+      ? { status: 200, body: { ok: true, status: 'active' } }
+      : { status: 409, body: { error: 'consent_refused' } };
+  });
+
+  /**
+   * Retire an install — the owner's teardown, through the EXISTING
+   * `uninstall` machinery: refused while obligations are open (§16.4), the
+   * paired runner device durably revoked before the row is deleted, and a
+   * retained row on revoke failure so the abandoned-install sweeper can
+   * finish the job. Needed the day the compiled reference manifest changes:
+   * the active install pins the old bytes, and replacing it is retire +
+   * a fresh begin/consent ceremony.
+   */
+  router.post('/v1/commerce/install/retire', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.install_id !== 'string' || body.install_id === '') {
+      return { status: 400, body: { error: 'install_id_required' } };
+    }
+    let outcome;
+    try {
+      // A device the registry no longer knows has nothing left to revoke —
+      // treating not-found as not-durable would leave the install stuck as a
+      // retry anchor for a revoke that can never happen.
+      outcome = await uninstall(body.install_id, Date.now(), async (deviceDid) => {
+        const revoked = await revokeDeviceByDidDurable(deviceDid);
+        return { durable: revoked.durable || !revoked.found };
+      });
+    } catch (err) {
+      // §16.4 — open obligations refuse the teardown; the operator resolves
+      // them first. Surfaced as a refusal, not a crash.
+      return {
+        status: 409,
+        body: { error: 'obligations_open', detail: err instanceof Error ? err.message : String(err) },
+      };
+    }
+    if (outcome === null) return { status: 404, body: { error: 'no_such_install' } };
+    return outcome.removed
+      ? { status: 200, body: { ok: true, removed: true } }
+      : { status: 409, body: { error: 'retire_incomplete', detail: 'device revoke not durable; row retained for the sweeper' } };
   });
 
   router.get('/v1/commerce/inbox', async (req): Promise<CoreResponse> => {
@@ -2562,7 +3752,7 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
     // that actually gates it, and the day presence lands this refuses on its
     // own — no second decision to remember, and no window where both a working
     // draft lane and its bypass are open at once.
-    if (ownerPresenceAvailable()) {
+    if (ownerPresenceCanBeEstablished()) {
       return {
         status: 409,
         body: {
@@ -2946,7 +4136,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       // and no mobile equivalent. Returning false makes every binding operation
       // refuse, which is honest — a receipt minted without presence would
       // record that the software asked itself.
-      userPresent: ownerPresenceAvailable,
+      userPresent: ownerPresentNowForRoutes,
       publicationFence: () => publicationFence(),
       publish: async ({ draft }) =>
         // THE PUBLISHER IS A MODULE, not a closure in a route. As a closure it
@@ -2986,6 +4176,48 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           body: { ok: false, error: outcome.refusal, detail: outcome.error },
         };
 
+  /**
+   * §10 item 9 — prove a person is here, so the next step can bind.
+   *
+   * SEPARATE FROM THE OPERATIONS, and deliberately. Folding the passphrase
+   * into `confirm` and `approve` would put a secret in the body of every
+   * request that touches a draft, and would make each of them a login attempt
+   * — retried, logged by proxies, and repeated by any client that resends.
+   * One short-lived proof covers the review, which is also how it reads to a
+   * seller: unlock, then work.
+   *
+   * The passphrase is verified and dropped. It is never stored, never
+   * returned, and never logged — the response says only whether a person is
+   * now considered present and for how long.
+   */
+  router.post(
+    '/v1/commerce/catalog/drafts/presence',
+    async (req: CoreRequest): Promise<CoreResponse> => {
+      // NOT `withDraftService`: presence is about the PERSON, not a draft, so
+      // it carries no `draft_id` and that helper would refuse it for the lack.
+      const denied = ownerOnlyGuard(req);
+      if (denied !== null) return denied;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (!ownerPresenceCanBeEstablished()) {
+        return {
+          status: 409,
+          body: {
+            error: 'presence_unavailable',
+            detail: 'this node has no way to check the owner\u2019s passphrase (§10 item 9)',
+          },
+        };
+      }
+      const passphrase = typeof body.passphrase === 'string' ? body.passphrase : '';
+      const proven = await proveOwnerPresence(passphrase, Date.now());
+      if (!proven) {
+        // No detail about WHY. A wrong passphrase and a verifier that threw
+        // are the same answer to anyone who is guessing.
+        return { status: 401, body: { error: 'not_proven' } };
+      }
+      return { status: 200, body: { ok: true, expires_in_ms: OWNER_PRESENCE_TTL_MS } };
+    },
+  );
+
   router.post(
     '/v1/commerce/catalog/drafts/confirm',
     withDraftService((svc, body) => answer(svc.confirm(String(body.draft_id)))),
@@ -2993,9 +4225,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
 
   router.post(
     '/v1/commerce/catalog/drafts/prepare',
-    withDraftService((svc, body) =>
+    withDraftService(async (svc, body) =>
       answer(
-        svc.prepare(String(body.draft_id), {
+        await svc.prepare(String(body.draft_id), {
           protocolVersion: typeof body.protocol_version === 'string' ? body.protocol_version : '1.0',
           publishedAt:
             typeof body.published_at === 'string' ? body.published_at : new Date().toISOString(),
@@ -3021,7 +4253,44 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
 
   router.post(
     '/v1/commerce/catalog/drafts/publish',
-    withDraftService(async (svc, body) => answer(await svc.publish(String(body.draft_id)))),
+    withDraftService(async (svc, body) => {
+      const outcome = await svc.publish(String(body.draft_id));
+      if (outcome.ok) {
+        // §4.2 claims lifecycle: something public now references these
+        // identities, so their claims survive for ever — a later erase of
+        // the draft row releases nothing.
+        const runtime = getCommerceRuntime();
+        runtime?.skuLedger.markPublished(String(body.draft_id));
+      }
+      return answer(outcome);
+    }),
+  );
+
+  router.post(
+    '/v1/commerce/catalog/drafts/erase',
+    withDraftService((svc, body) => {
+      // §4.2's claims lifecycle needs a death, and §6 ties the photographs
+      // to it: erasing a draft removes the row, every page of its
+      // photographs, and the claims held by assignments that were NEVER
+      // published — the seller's give-up-and-re-photograph recovery. All
+      // three in one transaction, so a crash leaves nothing half-erased.
+      const runtime = getCommerceRuntime();
+      if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+      const draftId = String(body.draft_id);
+      const draft = runtime.catalogDrafts.get(draftId);
+      if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+      // Erasing mid-publication would race the two network writes the
+      // claim protects; the seller releases or waits out the claim first.
+      if (draft.publishClaim !== null) {
+        return { status: 409, body: { error: 'publication_in_flight' } };
+      }
+      runtime.runInTransaction(() => {
+        runtime.catalogDrafts.delete(draftId);
+        runtime.imageArtifacts.eraseDraft(draftId);
+        runtime.skuLedger.releaseUnpublished(draftId);
+      });
+      return { status: 200, body: { erased: draftId } };
+    }),
   );
 
   router.post(
@@ -3060,33 +4329,73 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         return { status: 403, body: { error: 'acting_business_mismatch' } };
       }
 
-      return answer(
-        svc.repairRow(
+      // §4.2: the ledger claims and the draft mutation commit in ONE
+      // transaction — a crash between them must be unobservable, which is
+      // the property the crash-between-claim-and-persist test pins.
+      let outcome: ReturnType<typeof svc.repairRow> | null = null;
+      const rollBackRefusal = new Error('repair_refused_rolling_back_claims');
+      try {
+        runtime.runInTransaction(() => {
+        outcome = svc.repairRow(
           String(body.draft_id),
           { row, column: column === null ? null : String(column), value: value === undefined ? null : (value as string | null) },
-          (rows, draft) =>
-          assembleFromRows({
-            rows,
-            defaultScheme: draft.defaultScheme,
-            identity: { supplierDid: owner, catalogId: draft.catalogId },
-            // CURRENT settings, not the ones ingress used: a seller who has
-            // just set their trading currency is repairing exactly that.
-            settings: {
-              categoryIds: settings.catalogCategoryIds ?? [],
-              fulfilmentRegions: settings.publicRegions,
-              ...(settings.tradingCurrency === undefined
-                ? {}
-                : { tradingCurrency: settings.tradingCurrency }),
-            },
-            // The draft's OWN stamp. A repair is not a new draft, and
-            // re-minting would move every item's revision and timestamp.
-            // The draft's OWN stamp. A repair is not a new draft, and
-            // re-minting would move every item's revision and timestamp — and
-            // with them the snapshot digest an owner may already have approved.
-            stamp: { generatedAtIso: draft.generatedAtIso, itemRevision: draft.itemRevision },
-          }),
-        ),
-      );
+          (rows, draft) => {
+            // The MINT PASS, photo-derived drafts only: identifier-less
+            // rows mint, and every identifier claims the issuer ledger
+            // under its row's immutable assignment id. Its findings land
+            // beside the importer's own on the repair screen.
+            const minted =
+              draft.provenanceClass === 'model_derived'
+                ? applySkuMint({
+                    ledger: runtime.skuLedger,
+                    issuerDid: owner,
+                    catalogId: draft.catalogId,
+                    draftId: draft.draftId,
+                    defaultScheme: draft.defaultScheme,
+                    rows,
+                    nowMs: runtime.now(),
+                  })
+                : { rows: [...rows], findings: [], changed: false };
+            const assembled = assembleFromRows({
+              rows: minted.rows,
+              defaultScheme: draft.defaultScheme,
+              identity: { supplierDid: owner, catalogId: draft.catalogId },
+              // CURRENT settings, not the ones ingress used: a seller who has
+              // just set their trading currency is repairing exactly that.
+              settings: {
+                categoryIds: settings.catalogCategoryIds ?? [],
+                fulfilmentRegions: settings.publicRegions,
+                ...(settings.tradingCurrency === undefined
+                  ? {}
+                  : { tradingCurrency: settings.tradingCurrency }),
+              },
+              // The draft's OWN stamp. A repair is not a new draft, and
+              // re-minting would move every item's revision and timestamp — and
+              // with them the snapshot digest an owner may already have approved.
+              stamp: { generatedAtIso: draft.generatedAtIso, itemRevision: draft.itemRevision },
+            });
+            return {
+              items: assembled.items,
+              findings: [...minted.findings, ...assembled.findings],
+              rows: minted.rows,
+            };
+          },
+        );
+        // A claim refusal is a FINDING, not a failed operation — but a
+        // refused draft operation (wrong state, unknown row) must not
+        // leave stray claims behind, so the whole body rolls back with it.
+        const decided: ReturnType<typeof svc.repairRow> | null = outcome;
+        if (decided !== null && !decided.ok) {
+          throw rollBackRefusal;
+        }
+        });
+      } catch (err) {
+        // Our own rollback marker carries the refusal in `outcome`;
+        // anything else is a genuine failure and propagates.
+        if (err !== rollBackRefusal) throw err;
+      }
+      if (outcome === null) return { status: 500, body: { error: 'repair_did_not_run' } };
+      return answer(outcome);
     }),
   );
 
@@ -3131,6 +4440,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
    * capability can serialise model-extracted rows as CSV and come in through
    * the file route. Core cannot tell that file from one the seller typed.
    */
+  // Eight lowercase letters, no digits. The modulo bias is irrelevant here:
+  // this is a uniqueness tail, not a secret.
+  const mintLetterTail = (): string =>
+    Array.from(randomBytes(8), (b) => String.fromCharCode(97 + (b % 26))).join('');
+
   const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps => ({
     drafts,
     now: () => Date.now(),
@@ -3145,7 +4459,14 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       // minted in the same millisecond would carry the same one — so a second
       // publication could read as "nothing moved". The random tail costs
       // nothing and removes the case.
-      itemRevision: `${String(Date.now())}-${bytesToHex(randomBytes(4))}`,
+      //
+      // SHAPED SO §12.1 CANNOT TRIP ON IT — the same contract as the `P-`
+      // assignment mint. Decimal epoch millis is 13 digits, and the phone
+      // scanner found a valid 10-digit span inside it on the first live
+      // photo-lane publish (model-derived drafts scan every field). Base36
+      // millis plus a letters-only tail caps any digit run at 8, below every
+      // personal-identifier pattern's minimum.
+      itemRevision: `${Date.now().toString(36)}-${mintLetterTail()}`,
     }),
   });
 
@@ -3318,6 +4639,229 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       },
     ),
   );
+
+  /**
+   * §4.1 CAPTURE — the photographs become bounded, stripped artifacts and
+   * a single-use egress authorization, and NOTHING leaves the node here.
+   *
+   * The draft id is minted NOW, before any draft row exists, because the
+   * artifacts are owned by it and §6 erasure follows that ownership. The
+   * authorization pins the stored (post-strip) hashes, the installed
+   * broker's provider, and the catalog purpose — the §3 consent shape.
+   */
+  router.post('/v1/commerce/catalog/drafts/photo_capture', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (!imageReencoderInstalled()) {
+      return { status: 503, body: { error: 'no_reencoder: this node cannot ingest photographs' } };
+    }
+    const provider = installedEgressProvider();
+    if (provider === null) {
+      // Capture without an extraction path would strand the seller one
+      // screen later; saying so now names the missing piece.
+      return { status: 503, body: { error: 'no_egress_broker: no vision provider is configured' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.pages) || body.pages.length === 0) {
+      return { status: 400, body: { error: 'pages must be a non-empty array of base64 images' } };
+    }
+    if (body.pages.length > MAX_IMAGE_PAGES) {
+      return { status: 400, body: { error: 'too_many_pages' } };
+    }
+
+    const draftId = `cdr_${bytesToHex(randomBytes(16))}`;
+    const manifest: { artifact_id: string; content_hash: string; page_index: number }[] = [];
+    for (const [index, page] of body.pages.entries()) {
+      if (typeof page !== 'string' || page === '') {
+        runtime.imageArtifacts.eraseDraft(draftId);
+        return { status: 400, body: { error: `pages[${String(index)}] must be base64 bytes` } };
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = base64.decode(page);
+      } catch {
+        runtime.imageArtifacts.eraseDraft(draftId);
+        return { status: 400, body: { error: `pages[${String(index)}] is not valid base64` } };
+      }
+      const ingested = await ingestCommerceImage({
+        repository: runtime.imageArtifacts,
+        ownerDraftId: draftId,
+        lane: 'catalog',
+        pageIndex: index,
+        bytes,
+        nowMs: runtime.now(),
+      });
+      if (!ingested.ok) {
+        // ALL PAGES OR NONE: a capture that half-succeeded would leave a
+        // manifest that disagrees with the store for ever.
+        runtime.imageArtifacts.eraseDraft(draftId);
+        return { status: 422, body: { error: ingested.refusal, page_index: index } };
+      }
+      manifest.push({
+        artifact_id: ingested.artifact.artifactId,
+        content_hash: ingested.artifact.contentHash,
+        page_index: index,
+      });
+    }
+
+    const authorizationId = newEgressAuthorizationId();
+    const at = runtime.now();
+    runtime.egressAuthorizations.put({
+      authorizationId,
+      purpose: 'catalog_extraction',
+      provider,
+      contentHashes: manifest.map((m) => m.content_hash),
+      maxBytes: MAX_AGGREGATE_IMAGE_BYTES,
+      createdAtMs: at,
+      expiresAtMs: at + IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
+      consumedAtMs: null,
+    });
+    return {
+      status: 200,
+      body: { ok: true, draft_id: draftId, manifest, authorization_id: authorizationId, provider },
+    };
+  });
+
+  /**
+   * §6 — a stored page's bytes, for the OWNER'S OWN SCREENS. The repair
+   * and review screens show the photograph beside the values — their whole
+   * point — and these are the owner's own stored bytes, already stripped
+   * at ingest. Owner-only, read-only, verified against the stored hash on
+   * the way out (an edited blob reads as absent).
+   */
+  router.get('/v1/commerce/catalog/drafts/photo_page', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const artifactId = String(req.query.artifact_id ?? '');
+    if (artifactId === '') return { status: 400, body: { error: 'artifact_id is required' } };
+    const meta = runtime.imageArtifacts.getMeta(artifactId);
+    const bytes = runtime.imageArtifacts.getBytes(artifactId);
+    if (meta === null || bytes === null) return { status: 404, body: { error: 'unknown_artifact' } };
+    return {
+      status: 200,
+      body: {
+        artifact_id: artifactId,
+        mime: meta.mime,
+        bytes_base64: base64.encode(bytes),
+      },
+    };
+  });
+
+  /**
+   * §3 + §5 — EXTRACT through the gate, then create the draft with its
+   * §2.1 chain: extraction commitment (draft_id in the preimage), binding
+   * record, and the manifest — all in the row the repair screen reads.
+   */
+  router.post('/v1/commerce/catalog/drafts/photo_extract', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
+      return { status: 400, body: { error: 'catalog_id is required' } };
+    }
+    if (typeof body.draft_id !== 'string' || body.draft_id === '') {
+      return { status: 400, body: { error: 'draft_id is required (from photo_capture)' } };
+    }
+    if (typeof body.authorization_id !== 'string' || body.authorization_id === '') {
+      return { status: 400, body: { error: 'authorization_id is required (from photo_capture)' } };
+    }
+    if (runtime.catalogDrafts.get(body.draft_id) !== null) {
+      return { status: 409, body: { error: 'draft_exists: extraction already created this draft' } };
+    }
+    const owner = ownerDid();
+    if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+    const stored = runtime.settings.readSupplier();
+    if (!stored.ok) {
+      return stored.absent
+        ? { status: 409, body: { error: 'supplier_settings_absent' } }
+        : { status: 409, body: { error: 'supplier_settings_invalid', findings: stored.findings } };
+    }
+    const settings = stored.settings;
+    if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
+      return { status: 403, body: { error: 'acting_business_mismatch' } };
+    }
+
+    const artifacts = runtime.imageArtifacts.listByDraft(body.draft_id);
+    if (artifacts.length === 0) {
+      return { status: 404, body: { error: 'no_captured_pages' } };
+    }
+    const extracted = await extractRowsThroughGate({
+      authorizations: runtime.egressAuthorizations,
+      readImage: (artifactId) => runtime.imageArtifacts.getBytes(artifactId),
+      authorizationId: body.authorization_id,
+      artifactIds: artifacts.map((a) => a.artifactId),
+      nowMs: runtime.now(),
+    });
+    if (!extracted.ok) {
+      return { status: 422, body: { error: extracted.refusal } };
+    }
+
+    // §4.1's numbering: continuous across pages in page order, data from
+    // row 2 — the CSV convention the importer already speaks.
+    const orderedRows = [...extracted.rows].sort((a, b) => a.page_index - b.page_index);
+    const commitment: ExtractionCommitment = {
+      draft_id: body.draft_id,
+      manifest: artifacts.map((a) => ({
+        artifact_id: a.artifactId,
+        content_hash: a.contentHash,
+        page_index: a.pageIndex,
+      })),
+      schema_id: extracted.schemaId,
+      model: extracted.model,
+      rows: orderedRows.map((row, i) => ({
+        page_index: row.page_index,
+        row: i + 2,
+        content: row.cells,
+      })),
+    };
+    const commitmentShape = validateExtractionCommitment(commitment);
+    if (commitmentShape !== null) {
+      return { status: 422, body: { error: `extraction_invalid: ${commitmentShape}` } };
+    }
+    const extractionDigest = extractionCommitmentDigest('catalog', commitment, (data) => sha256(data));
+    const binding: CatalogExtractionBinding = {
+      binding_version: 1,
+      draft_id: body.draft_id,
+      content_revision: 1,
+      extraction_digest: extractionDigest,
+    };
+
+    const outcome = createCatalogDraft(
+      {
+        ...ingressDeps(runtime.catalogDrafts),
+        // The id CAPTURE minted — the artifacts are owned by it, and §6
+        // erasure follows that ownership.
+        newDraftId: () => body.draft_id as string,
+      },
+      {
+        catalogId: body.catalog_id,
+        source: catalogRowsFromRecords(orderedRows.map((r) => r.cells)),
+        defaultScheme: 'sku',
+        identity: { supplierDid: owner, catalogId: body.catalog_id },
+        settings: {
+          categoryIds: settings.catalogCategoryIds ?? [],
+          fulfilmentRegions: settings.publicRegions,
+          ...(settings.tradingCurrency === undefined
+            ? {}
+            : { tradingCurrency: settings.tradingCurrency }),
+        },
+        provenanceClass: 'model_derived',
+        extraction: { model: extracted.model, schemaVersion: extracted.schemaId },
+        photoExtraction: {
+          manifest: commitment.manifest,
+          extractionDigest,
+          binding,
+        },
+      },
+    );
+    return { status: 200, body: { ok: true, draft: outcome.draft } };
+  });
 
   /**
    * The connector lane's draft, and the producer `source_parsed` never had.

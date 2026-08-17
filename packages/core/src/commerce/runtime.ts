@@ -40,6 +40,19 @@ import {
   SQLiteCatalogPointerRepository,
   type CatalogPointerRepository,
 } from './catalog_pointer_store';
+import {
+  SQLiteCommerceImageArtifactRepository,
+  type CommerceImageArtifactRepository,
+} from './image_artifacts';
+import {
+  SQLiteImageEgressAuthorizationRepository,
+  type ImageEgressAuthorizationRepository,
+} from './image_egress';
+import {
+  SQLiteOrderDraftRepository,
+  type OrderDraftRepository,
+} from './order_draft_store';
+import { SQLiteSkuLedgerRepository, type SkuLedgerRepository } from './sku_ledger';
 import { CommerceOrderStore } from './commerce_order';
 import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
@@ -151,6 +164,22 @@ export interface CommerceRuntime {
    * restart would publish bytes the owner never approved.
    */
   catalogDrafts: CatalogDraftRepository;
+  /**
+   * §4.2 (photo lanes) — the issuer-scoped SKU reservation ledger. The
+   * repair path claims into it in the same transaction as the draft
+   * mutation; `runInTransaction` below is that transaction's door.
+   */
+  skuLedger: SkuLedgerRepository;
+  /** §6 — the photographs, stored stripped and erased with their draft. */
+  imageArtifacts: CommerceImageArtifactRepository;
+  /** §3 — the single-use egress authorizations the Hop-1 gate consumes. */
+  egressAuthorizations: ImageEgressAuthorizationRepository;
+  /** §5.1 — the BUYER lane's aggregate: one photographed page, whole. */
+  orderDrafts: OrderDraftRepository;
+  /** One transaction across ledger claims and draft writes (§4.2). */
+  runInTransaction: (body: () => void) => void;
+  /** The runtime's clock — injected at composition, shared by every store. */
+  now: () => number;
   watermarks: CommerceEpochWatermarkRepository;
   /**
    * §12.7 — the BUYER's durable view of orders it has sent. Separate from
@@ -374,6 +403,12 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     receipts,
     catalogPointers: new SQLiteCatalogPointerRepository(inputs.adapter),
     catalogDrafts: new SQLiteCatalogDraftRepository(inputs.adapter),
+    skuLedger: new SQLiteSkuLedgerRepository(inputs.adapter),
+    imageArtifacts: new SQLiteCommerceImageArtifactRepository(inputs.adapter),
+    egressAuthorizations: new SQLiteImageEgressAuthorizationRepository(inputs.adapter),
+    orderDrafts: new SQLiteOrderDraftRepository(inputs.adapter),
+    runInTransaction: (body) => { inputs.adapter.transaction(body); },
+    now,
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
     buyerOrders: new SQLiteBuyerOrderRepository(inputs.adapter),
     buyerStatus: new SQLiteBuyerStatusRepository(inputs.adapter),

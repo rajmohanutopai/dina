@@ -2125,6 +2125,18 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         publish_claim_token TEXT NOT NULL DEFAULT '',
         extraction_model TEXT NOT NULL DEFAULT '',
         extraction_schema_version TEXT NOT NULL DEFAULT '',
+        -- §2.1 (photo lanes): the ordered manifest capture produced —
+        -- {artifact_id, content_hash, page_index}[] — never raw bytes, which
+        -- live in commerce_image_artifacts. Empty on non-photo drafts.
+        extraction_manifest_json TEXT NOT NULL DEFAULT '',
+        -- The extraction commitment digest (catalog lane domain). A SECOND
+        -- digest beside receipt_digest, never a widening of its preimage.
+        extraction_digest TEXT NOT NULL DEFAULT '',
+        -- The versioned extraction-binding record {draft_id, content_revision,
+        -- extraction_digest} — the chain link checked at confirm, prepare and
+        -- publish, because commitments that verify alone prove nothing about
+        -- belonging together.
+        extraction_binding_json TEXT NOT NULL DEFAULT '',
         -- Monotonic over CONTENT only: rows, findings, per-field provenance
         -- and assembled items. Core's own bookkeeping writes (the receipt, the
         -- held bytes, the approval) do NOT bump it — a rule that fired on its
@@ -2168,6 +2180,169 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS idx_commerce_catalog_drafts_catalog
         ON commerce_catalog_drafts(catalog_id, updated_at_ms DESC);
+
+      -- commerce_image_egress_authorizations — §3's Hop-1 gate (photo lanes).
+      --
+      -- ONE ROW IS ONE PERMITTED TRANSMISSION. The broker is the only holder
+      -- of a vision-provider credential, and it acts only against a row here:
+      -- single-use (consumed by CAS), expiring, pinned to a provider, a
+      -- purpose, and the exact content hashes of the pages that may leave.
+      -- An authorization is not advisory — the data plane refuses bytes whose
+      -- hash the row does not name, so approving {hash, provider, purpose}
+      -- and transmitting something else is not a reachable sequence.
+      CREATE TABLE IF NOT EXISTS commerce_image_egress_authorizations (
+        authorization_id TEXT PRIMARY KEY,
+        -- catalog_extraction | order_extraction. The schema the seam speaks
+        -- is derived from this, never chosen by the caller at egress time.
+        purpose TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        -- The ordered manifest's page hashes, JSON array of hex64. The gate
+        -- re-hashes the actual outgoing bytes against these immediately
+        -- before the broker is handed anything.
+        content_hashes_json TEXT NOT NULL,
+        max_bytes INTEGER NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        expires_at_ms INTEGER NOT NULL,
+        -- 0 = unconsumed. Consumption is a single-statement CAS: two racing
+        -- extractions cannot both transmit under one authorization.
+        consumed_at_ms INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- commerce_image_artifacts — §6's defined artifact (photo lanes).
+      --
+      -- The photograph lives HERE, in the same encrypted store as the draft
+      -- that owns it — never as raw bytes in a draft row, and deliberately
+      -- not behind a persona lock: the repair screen must always have the
+      -- photograph beside the values, which is the screens' whole point.
+      -- The trade is named in the design: always-available-for-review,
+      -- protected by the store's SQLCipher encryption at rest, riding in
+      -- backups — which is why the byte ceiling is hard and erasure is tied
+      -- to the draft's.
+      --
+      -- BYTES ARE STORED POST-INGEST ONLY: bounded, header-checked, fully
+      -- re-encoded with EXIF dropped. content_hash is over the STORED bytes,
+      -- and it is what egress authorizations pin.
+      CREATE TABLE IF NOT EXISTS commerce_image_artifacts (
+        artifact_id TEXT PRIMARY KEY,
+        -- Which draft owns this page. Erasure is transactional with the
+        -- draft; an artifact with no living draft is a sweep candidate.
+        owner_draft_id TEXT NOT NULL,
+        -- catalog | order. Two draft aggregates, one artifact store.
+        lane TEXT NOT NULL,
+        page_index INTEGER NOT NULL,
+        mime TEXT NOT NULL,
+        byte_length INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        bytes BLOB NOT NULL,
+        created_at_ms INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_commerce_image_artifacts_draft
+        ON commerce_image_artifacts(owner_draft_id, page_index);
+
+      -- commerce_sku_assignments — §4.2's reservation ledger (photo lanes).
+      --
+      -- ONE ROW IS ONE CLAIMED IDENTIFIER, scoped to the ISSUER because the
+      -- protocol identity the importer builds is (issuer_did, scheme, value).
+      -- The rule is a CLAIM, not a check: every identifier entering a clean
+      -- draft — minted, inherited, seller-edited, or source-provided —
+      -- atomically claims here under the product's immutable assignment_id.
+      -- A claim the same assignment already holds succeeds idempotently
+      -- (an SKU edit and a republication both); a claim another assignment
+      -- holds refuses, naming the owning catalog.
+      --
+      -- LIFECYCLE: a claim whose assignment has NEVER been published is
+      -- released when its draft is erased or abandoned (nothing public
+      -- references it); a published claim survives for ever. The high-water
+      -- mark below never rewinds, so "never re-issued" holds for minted
+      -- values across releases.
+      CREATE TABLE IF NOT EXISTS commerce_sku_assignments (
+        issuer_did TEXT NOT NULL,
+        scheme TEXT NOT NULL,
+        value TEXT NOT NULL,
+        -- Immutable internal product identity — minted once when a row
+        -- first becomes a product, NEVER derived from anything the seller
+        -- can edit (productIdentity() includes the SKU value, which is
+        -- exactly what an edit changes).
+        assignment_id TEXT NOT NULL,
+        -- v1: a photo-lane product belongs to ONE catalog. A claim from a
+        -- second catalog refuses, naming this one.
+        catalog_id TEXT NOT NULL,
+        -- The draft currently holding the claim — release-by-draft reads it.
+        draft_id TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (issuer_did, scheme, value)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_commerce_sku_assignments_draft
+        ON commerce_sku_assignments(draft_id);
+
+      -- The per-issuer mint counter. Monotonic, never rewound — a release
+      -- frees the CLAIM, never the number.
+      CREATE TABLE IF NOT EXISTS commerce_sku_highwater (
+        issuer_did TEXT PRIMARY KEY,
+        high_water INTEGER NOT NULL
+      );
+
+      -- commerce_order_drafts — the BUYER lane's aggregate (photo-commerce
+      -- design §5.1). Its OWN store beside (not inside) the catalog
+      -- draft's: an order line is not a CatalogItem, and forcing one
+      -- through those readers erases it.
+      --
+      -- ONE ROW IS ONE PHOTOGRAPHED PAGE — the whole page, however many
+      -- suppliers its lines resolve across. Lines, requirements and
+      -- conversations live as JSON documents validated fail-closed on
+      -- read; top-level state is DERIVED from them, never stored beside
+      -- them where the two could disagree.
+      CREATE TABLE IF NOT EXISTS commerce_order_drafts (
+        draft_id TEXT PRIMARY KEY,
+        -- The ordered manifest {artifact_id, content_hash, page_index}[]
+        -- — the photographs live in commerce_image_artifacts under this
+        -- draft's id, lane 'order'.
+        manifest_json TEXT NOT NULL DEFAULT '[]',
+        extraction_model TEXT NOT NULL DEFAULT '',
+        extraction_schema_version TEXT NOT NULL DEFAULT '',
+        -- The §2.1 extraction commitment digest (order-draft domain). The
+        -- vouch receipt commits it, which is what chains a ceremony to
+        -- THESE photographed lines.
+        extraction_digest TEXT NOT NULL DEFAULT '',
+        -- Lines: text, parsed hints, per-field provenance, resolution
+        -- state, assignment generation, vouch entry, evidence record ref.
+        lines_json TEXT NOT NULL DEFAULT '[]',
+        -- Requirements, BOTH kinds: transmitted (delivery date,
+        -- destination) and draft-local (the free text never transmitted).
+        requirements_json TEXT NOT NULL DEFAULT '[]',
+        -- Per-supplier conversations: request + digest, quote heads,
+        -- accepted quote, approval id, submission state, snapshots.
+        conversations_json TEXT NOT NULL DEFAULT '[]',
+        -- §5.1: bumped ONLY by confirm ceremonies — never by repairs
+        -- (which bump line generations), never by Core bookkeeping.
+        ceremony_counter INTEGER NOT NULL DEFAULT 0,
+        -- Explicit abandonment; submitted conversations stay immutable
+        -- history inside conversations_json.
+        abandoned INTEGER NOT NULL DEFAULT 0,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 32,
+    name: 'audit_retention_checkpoint',
+    // This table was first added by editing the v1 block in place, which only
+    // ever runs on a FRESH database — every vault that existed before the
+    // edit (dev nodes, upgrading phones) then died at boot in
+    // hydrateAuditState with "no such table". Applied migrations are
+    // immutable, so existing databases get it here; IF NOT EXISTS keeps the
+    // fresh-database path (v1 already created it) harmless.
+    sql: `
+      CREATE TABLE IF NOT EXISTS audit_retention_checkpoint (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        first_retained_seq INTEGER NOT NULL CHECK (first_retained_seq >= 1),
+        anchor_hash TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
     `,
   },
 ];

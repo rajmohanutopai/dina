@@ -53,6 +53,7 @@ import { acknowledgementToResult } from './buyer_reconciliation';
 import { SUBMIT_ORDER_CAPABILITY } from './buyer_sender';
 import { verifyInboundStatus, type EnvelopeEvidence } from './buyer_status';
 import { isCommerceCapability } from './capability_names';
+import { recordCommerceEvent } from './observability';
 import { applyReconcileAnswer } from './reconcile_poller';
 import { ORDER_RECONCILE_CAPABILITY } from './reconcile_sweeper';
 import { getCommerceRuntime } from './runtime';
@@ -73,6 +74,18 @@ const hash: Sha256Fn = (data) => sha256(data);
 export const ORDER_STATUS_CAPABILITY = 'order_status';
 export const REQUEST_QUOTE_CAPABILITY = 'request_quote';
 export const CANCEL_ORDER_CAPABILITY = 'cancel_order';
+
+/**
+ * What the buyer puts ON THE WIRE for a quote request (PC-9).
+ *
+ * The bare name above stays the canonical lane key — every recognizer
+ * canonicalizes through `isCommerceCapability`. The wire carries the full
+ * NSID because a supplier's LISTING is where the capability must be
+ * declared, and listing keys refuse bare names (`unknown_capability`:
+ * a custom capability needs a namespace). One constant per direction,
+ * derived from the other, so the two spellings cannot drift.
+ */
+export const REQUEST_QUOTE_WIRE_CAPABILITY = `com.dinakernel.commerce.${REQUEST_QUOTE_CAPABILITY}`;
 
 /**
  * The five buyer-side lanes, each as a one-member set so
@@ -547,14 +560,79 @@ function applyInboundQuote(args: {
   });
   switch (ingest.outcome) {
     case 'applied':
-      return 'applied';
     case 'duplicate':
-      return 'no_change';
+      // §5.4 stage 2's SETTLE (PC-7): a verified quote that answers a photo
+      // draft's own request advances that conversation. Runs on `duplicate`
+      // too — a crash between the quote landing and the conversation moving
+      // must be healed by the redelivery, not wedged by it.
+      settleQuoteIntoDraftConversation(runtime, structural.quote, args.nowMs);
+      return ingest.outcome === 'applied' ? 'applied' : 'no_change';
     case 'fork':
     case 'not_our_quote':
       return 'quote_fork';
     default:
       return 'unreadable';
+  }
+}
+
+/**
+ * Advance the draft conversation a VERIFIED quote answers (§5.4 stages 2–3):
+ *
+ *   - `sent` → `quoted`, holding the exact accepted revision's digest — the
+ *     one `/orders/drafts/approve` will refuse to deviate from;
+ *   - `quoted` with a NEWER revision → the digest advances; the terms the
+ *     buyer will be shown are the terms now on offer;
+ *   - `approved` with a newer revision → §5.5's counterproposal row: the old
+ *     approval is invalidated and the conversation returns to `quoted`,
+ *     because re-approval on the diff is required — an approval must never
+ *     outlive the terms it approved;
+ *   - a TERMINAL conversation (retired assignment, §5.4 stage 3a) does not
+ *     move: the late quote stays visible as supplier history in the verified
+ *     store and can never become approvable.
+ *
+ * Only the quote's OWN request id selects the conversation, and the quote
+ * reaching here has already passed `verifySignedQuoteForBuyer` — audience,
+ * supplier binding, retained-request digest, §9.1 arithmetic. A quote that
+ * failed any of that was refused above and no conversation moved.
+ */
+function settleQuoteIntoDraftConversation(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  quote: { request_id: string; quote_id: string; quote_digest: string; valid_until: string },
+  nowMs: number,
+): void {
+  for (const draft of runtime.orderDrafts.list()) {
+    if (draft.abandoned) continue;
+    const conversation = draft.conversations.find((c) => c.requestId === quote.request_id);
+    if (conversation === undefined) continue;
+    if (
+      conversation.state !== 'sent' &&
+      conversation.state !== 'quoted' &&
+      conversation.state !== 'approved'
+    ) {
+      return;
+    }
+    if (conversation.quoteDigest === quote.quote_digest) return;
+    runtime.runInTransaction(() => {
+      if (conversation.state === 'approved' && conversation.approvalId !== null) {
+        runtime.orderApprovals.consume(conversation.approvalId, nowMs);
+        conversation.approvalId = null;
+      }
+      conversation.state = 'quoted';
+      conversation.quoteDigest = quote.quote_digest;
+      conversation.quoteId = quote.quote_id;
+      conversation.quoteValidUntil = quote.valid_until;
+      draft.updatedAtMs = nowMs;
+      runtime.orderDrafts.put(draft);
+    });
+    recordCommerceEvent({
+      event: 'quote_received',
+      lane: 'order',
+      draftId: draft.draftId,
+      conversationId: conversation.conversationId,
+      supplierDid: conversation.supplierDid,
+      atMs: nowMs,
+    });
+    return;
   }
 }
 

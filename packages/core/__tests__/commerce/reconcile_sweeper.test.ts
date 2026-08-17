@@ -14,6 +14,7 @@ import { newBuyerOrder } from '../../src/commerce/buyer_reconciliation';
 import {
   makeServiceQueryReconcileSend,
   ORDER_RECONCILE_CAPABILITY,
+  ORDER_RECONCILE_WIRE_CAPABILITY,
   ReconcilePollSweeper,
 } from '../../src/commerce/reconcile_sweeper';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
@@ -196,7 +197,9 @@ describe('the reconcile question on the service-query lane', () => {
     });
     expect(result).toEqual({ sent: true });
     expect(dispatched[0]?.toDid).toBe(SUPPLIER);
-    expect(dispatched[0]?.body.capability).toBe(ORDER_RECONCILE_CAPABILITY);
+    // The wire carries the NSID — the only spelling a supplier listing
+    // can declare; every recognizer canonicalizes back to the bare lane.
+    expect(dispatched[0]?.body.capability).toBe(ORDER_RECONCILE_WIRE_CAPABILITY);
     // The purchase order id IS the correlation id: two dispatches about one
     // order must not look like two different questions.
     expect(dispatched[0]?.body.query_id).toBe('po-1');

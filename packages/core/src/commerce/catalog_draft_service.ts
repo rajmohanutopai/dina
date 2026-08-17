@@ -35,12 +35,19 @@ import {
   type CatalogItem,
   type Sha256Fn,
   validateCatalogItem,
+  validateCatalogPointer,
   verifyCatalogPage,
   verifyCatalogSnapshot,
 } from '@dina/commerce-protocol';
 
 import { CATALOG_FIELD_ORIGIN, productIdentity } from './catalog_assembler';
 import { buildCatalogSnapshot } from './catalog_publisher';
+import {
+  CATALOG_POINTER_NSID,
+  catalogPointerRkey,
+  getCatalogRecordReader,
+  getCatalogRecordWriter,
+} from './catalog_record_writer';
 
 import type {
   CatalogDraft,
@@ -78,6 +85,11 @@ export type DraftRefusal =
   | 'build_failed'
   /** Publication is fenced (§16.2) or commerce is unavailable. */
   | 'fenced'
+  /**
+   * This node can publish but cannot read its own live head, so the sequence
+   * and the predecessor cannot be derived without risking a clobber.
+   */
+  | 'head_unreadable'
   | 'publish_failed';
 
 /** A refusal on its own. The guards below can only ever produce this. */
@@ -328,7 +340,10 @@ export class CatalogDraftService {
    * repo write to exist. The bytes are held on the draft with the content
    * revision they were built from, and step 10 publishes exactly these.
    */
-  prepare(draftId: string, args: { protocolVersion: string; publishedAt: string; serviceRkey?: string }): DraftOutcome<CatalogDraft> {
+  async prepare(
+    draftId: string,
+    args: { protocolVersion: string; publishedAt: string; serviceRkey?: string },
+  ): Promise<DraftOutcome<CatalogDraft>> {
     const draft = this.deps.drafts.get(draftId);
     if (draft === null) return refuse('no_such_draft', `no draft ${draftId}`);
     const wrong = requireState(draft, 'prepare');
@@ -338,6 +353,8 @@ export class CatalogDraftService {
     const receiptCheck = this.checkReceipt(draft);
     if (receiptCheck !== null) return receiptCheck;
 
+    const reconciled = await this.reconcileHead(draft.catalogId);
+    if (reconciled !== null) return reconciled;
     const head = this.deps.pointers.get(draft.catalogId);
     const built = buildCatalogSnapshot({
       supplierDid: draft.items[0]?.supplier_did ?? '',
@@ -347,6 +364,11 @@ export class CatalogDraftService {
       items: draft.items as readonly CatalogItem[],
       previous: head === null ? null : { pointer: head.pointer, snapshotDigest: head.snapshotDigest },
       ...(args.serviceRkey === undefined ? {} : { serviceRkey: args.serviceRkey }),
+      // §4.2: PHOTO-DERIVED drafts lose the identifier-column suppression —
+      // a model reads digits off a photographed counter, and a phone number
+      // misread into the sku cell must surface as a finding, never publish
+      // inside a signed public record. A minted `P-` value cannot trip it.
+      scanIdentifierColumns: draft.provenanceClass === 'model_derived',
       sha256: this.deps.sha256,
     });
     if (!built.ok) return refuse('build_failed', built.error);
@@ -412,6 +434,78 @@ export class CatalogDraftService {
     };
     this.deps.drafts.put(next);
     return { ok: true, value: next };
+  }
+
+  /**
+   * Make this node's idea of the head agree with the repo before deriving from it.
+   *
+   * WHY THIS EXISTS, AND IT IS NOT HYPOTHETICAL. `prepare` reads the sequence,
+   * the predecessor and the compare-and-swap token out of THIS NODE'S pointer
+   * store. A node that holds the identity but not that row — a new phone, a
+   * re-pair, a backup older than the last publication — derives sequence 1
+   * with no predecessor, and because there is no CID to swap against the head
+   * write carries no swap token and CANNOT LOSE. It overwrites a live chain
+   * silently: sequence 2 becomes sequence 1 and the link back is gone.
+   *
+   * A live run against a real PDS did exactly that. No unit test could: they
+   * all start with a local store and a repo that agree.
+   *
+   * WHEN IT ASKS. Only when a record WRITER is installed, because that is what
+   * makes publication possible at all — a node that cannot write cannot
+   * clobber anything, and demanding a reader from it would break every caller
+   * that only ever builds bytes. With a writer present the reader is required,
+   * and an unreadable head is a refusal rather than a guess: `readLiveHead`
+   * swallows errors on purpose for CLASSIFYING a failed write, and reusing
+   * that here would turn a network blip into "this is your first publication".
+   *
+   * Returns a refusal, or null when the local store may now be trusted.
+   */
+  private async reconcileHead(catalogId: string): Promise<DraftRefusalOutcome | null> {
+    if (this.deps.pointers.get(catalogId) !== null) return null;
+    if (getCatalogRecordWriter() === null) return null;
+
+    const reader = getCatalogRecordReader();
+    if (reader === null) {
+      return refuse(
+        'head_unreadable',
+        'this node can publish but cannot read its own repo, so the chain position is unknown',
+      );
+    }
+
+    let live: { record: unknown; cid: string } | null;
+    try {
+      live = await reader({
+        collection: CATALOG_POINTER_NSID,
+        rkey: catalogPointerRkey(catalogId),
+      });
+    } catch (err) {
+      return refuse(
+        'head_unreadable',
+        `the live head could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    // A real answer: this catalog has never been published.
+    if (live === null) return null;
+
+    const invalid = validateCatalogPointer(live.record);
+    if (invalid !== null) {
+      return refuse('head_unreadable', `the live head is not a valid pointer: ${invalid}`);
+    }
+    const pointer = live.record as CatalogPointer;
+
+    // ADOPTED, not merely read. Writing it down is what makes the CAS token
+    // available and stops the next prepare asking again.
+    this.deps.pointers.put({
+      catalogId,
+      pointer,
+      pointerCid: live.cid,
+      snapshotDigest: pointer.snapshot_digest ?? '',
+      withdrawn: pointer.withdrawn === true,
+      publishedAtMs: Number.isFinite(Date.parse(pointer.published_at))
+        ? Date.parse(pointer.published_at)
+        : this.deps.now(),
+    });
+    return null;
   }
 
   /**
@@ -732,6 +826,14 @@ export class CatalogDraftService {
     reassemble: (rows: readonly DraftRow[], draft: CatalogDraft) => {
       items: CatalogItem[];
       findings: unknown[];
+      /**
+       * §4.2: the mint pass may TRANSFORM the rows — minted values written
+       * into cells, assignment ids attached. When present these are the
+       * rows that persist, in the same write as the items they produced,
+       * so the ledger claims the caller took inside its transaction and
+       * the draft that records them commit together.
+       */
+      rows?: DraftRow[];
     },
   ): DraftOutcome<CatalogDraft> {
     const draft = this.deps.drafts.get(draftId);
@@ -764,10 +866,17 @@ export class CatalogDraftService {
         // raised on the column's NAME, so a value of `''` leaves the finding
         // exactly where it was and the draft never assembles.
         if (ref.value !== null) cells[column] = ref.value;
-        return { row: r.row, cells };
+        // The assignment id RIDES THE ROW ENTRY through every edit (§4.2):
+        // dropping it here would hand the next mint pass a row that looks
+        // like it never became a product, and the fresh identity it would
+        // mint is the §9.4 fork the id exists to prevent.
+        return r.assignmentId === undefined
+          ? { row: r.row, cells }
+          : { row: r.row, cells, assignmentId: r.assignmentId };
       });
     }
     const rebuilt = reassemble(rows, draft);
+    if (rebuilt.rows !== undefined) rows = rebuilt.rows;
 
     // Provenance is re-seeded from the NEW items, because a repair can change
     // how many items there are: a row that failed to import produces one where

@@ -57,6 +57,7 @@ function draft(overrides: Partial<CatalogDraft> = {}): CatalogDraft {
     defaultScheme: 'sku',
     publishClaim: null,
     extraction: { model: 'test-extractor', schemaVersion: '1' },
+    photoExtraction: null,
     contentRevision: 0,
     // The shape the INGRESS produces. The fixture used to be a flat
     // `{ sku, name }` record — a shape nothing in production writes — so the
@@ -599,4 +600,127 @@ forEachRepo('release leaves a claim that is NOT ours', (repo) => {
   repo.claimForPublish('draft-1', 'tok-b', T0 + TTL, TTL);
   repo.releaseClaim('draft-1', 'tok-a');
   expect(repo.get('draft-1')?.publishClaim).toEqual({ token: 'tok-b', atMs: T0 + TTL });
+});
+
+// ---------------------------------------------------------------------------
+// §2.1 photo-extraction group
+// ---------------------------------------------------------------------------
+
+const PAGE_HASH = 'a'.repeat(64);
+const EXTRACTION_DIGEST = 'b'.repeat(64);
+
+function photoGroup(draftId = 'draft-1'): NonNullable<CatalogDraft['photoExtraction']> {
+  return {
+    manifest: [
+      { artifact_id: 'img-1', content_hash: PAGE_HASH, page_index: 0 },
+      { artifact_id: 'img-2', content_hash: 'c'.repeat(64), page_index: 1 },
+    ],
+    extractionDigest: EXTRACTION_DIGEST,
+    binding: {
+      binding_version: 1,
+      draft_id: draftId,
+      content_revision: 1,
+      extraction_digest: EXTRACTION_DIGEST,
+    },
+  };
+}
+
+forEachRepo('the photo-extraction group survives a round trip whole', (repo) => {
+  repo.put(draft({ photoExtraction: photoGroup() }));
+  const read = repo.get('draft-1');
+  expect(read?.photoExtraction).toEqual(photoGroup());
+});
+
+forEachRepo('absence of the group is preserved as null', (repo) => {
+  repo.put(draft());
+  expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+});
+
+describe('photo-extraction fail-closed hydration (sqlite rows edited after writing)', () => {
+  let dir: string;
+  let adapter: NodeSQLiteAdapter;
+  let repo: SQLiteCatalogDraftRepository;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'catalog-drafts-photo-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    repo = new SQLiteCatalogDraftRepository(adapter);
+    repo.put(draft({ photoExtraction: photoGroup() }));
+  });
+  afterEach(() => {
+    adapter.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function corrupt(column: string, value: string): void {
+    adapter.run(`UPDATE commerce_catalog_drafts SET ${column} = ? WHERE draft_id = ?`, [
+      value,
+      'draft-1',
+    ]);
+  }
+
+  it('a binding naming ANOTHER draft reads as absent', () => {
+    // The binding is the chain link; a link to a different draft chains
+    // nothing here, and half-believing it would defeat the cross-draft
+    // property the digest exists for.
+    corrupt(
+      'extraction_binding_json',
+      JSON.stringify({
+        binding_version: 1,
+        draft_id: 'draft-OTHER',
+        content_revision: 1,
+        extraction_digest: EXTRACTION_DIGEST,
+      }),
+    );
+    expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+  });
+
+  it('a binding naming a DIFFERENT digest reads as absent', () => {
+    corrupt(
+      'extraction_binding_json',
+      JSON.stringify({
+        binding_version: 1,
+        draft_id: 'draft-1',
+        content_revision: 1,
+        extraction_digest: 'd'.repeat(64),
+      }),
+    );
+    expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+  });
+
+  it('a half-written group (digest without binding) reads as absent', () => {
+    corrupt('extraction_binding_json', '');
+    expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+  });
+
+  it('a manifest whose page order was shuffled reads as absent', () => {
+    // The manifest is ordered and the order is the commitment.
+    corrupt(
+      'extraction_manifest_json',
+      JSON.stringify([
+        { artifact_id: 'img-2', content_hash: 'c'.repeat(64), page_index: 1 },
+        { artifact_id: 'img-1', content_hash: PAGE_HASH, page_index: 0 },
+      ]),
+    );
+    expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+  });
+
+  it('a corrupted digest column reads as absent', () => {
+    corrupt('extraction_digest', 'not-hex');
+    expect(repo.get('draft-1')?.photoExtraction).toBeNull();
+  });
+
+  it('the rest of the draft still hydrates when the group is refused', () => {
+    // Fail-closed on the GROUP, not the draft: the seller can still open
+    // it, see the chain is gone, and re-extract — a draft that vanished
+    // would look like data loss.
+    corrupt('extraction_digest', 'not-hex');
+    const read = repo.get('draft-1');
+    expect(read).not.toBeNull();
+    expect(read?.rows.length).toBe(1);
+  });
 });

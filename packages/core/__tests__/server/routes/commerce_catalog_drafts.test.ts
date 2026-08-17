@@ -20,10 +20,16 @@ import path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { installImageReencoder } from '../../../src/commerce/image_artifacts';
+import { installImageEgressBroker } from '../../../src/commerce/image_egress';
 import { createCommerceRuntime, installCommerceRuntime } from '../../../src/commerce/runtime';
 import { clearPairingState, setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
+import {
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+} from '../../../src/commerce/owner_presence';
 import { applyMigrations } from '../../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
 
@@ -61,14 +67,29 @@ const [DRAFT_ROUTES, INGRESS_ROUTES]: [string[], string[]] = (() => {
   );
   const all = [...new Set(found)];
   const isIngress = (route: string): boolean => /\/from_[a-z_]+$/.test(route);
-  const withDraftId = all.filter((route) => !isIngress(route));
+  // THREE CATEGORIES, NOT TWO. `/presence` proves a PERSON is here and carries
+  // no `draft_id`, so the draft-route loop's "every route needs one" assertion
+  // does not apply to it — and leaving it in that loop made the loop assert
+  // something false rather than something missing.
+  const isPresence = (route: string): boolean => route.endsWith('/presence');
+  // FOUR categories. The photo pair is neither shape: `photo_capture` MINTS
+  // the draft id (like ingress, but its refusal contract is its own), and
+  // `photo_extract` names a draft that must NOT exist yet. Both are covered
+  // by their own describe below, with a floor here so a rename cannot
+  // silently drop them out of coverage.
+  const isPhoto = (route: string): boolean => /\/photo_[a-z_]+$/.test(route);
+  const withDraftId = all.filter(
+    (route) => !isIngress(route) && !isPresence(route) && !isPhoto(route),
+  );
   const ingress = all.filter(isIngress);
+  if (all.filter(isPhoto).length !== 3) throw new Error('expected exactly three photo routes');
   // A derivation that silently matched nothing would make every assertion
-  // below vacuous, which is the failure mode this replaces. Both halves need a
+  // below vacuous, which is the failure mode this replaces. Each half needs a
   // floor: a regex that stopped matching the ingress routes would empty that
   // loop while leaving this one looking healthy.
   if (withDraftId.length < 6) throw new Error(`derived only ${String(withDraftId.length)} draft routes`);
   if (ingress.length < 3) throw new Error(`derived only ${String(ingress.length)} ingress routes`);
+  if (all.filter(isPresence).length !== 1) throw new Error('expected exactly one presence route');
   return [withDraftId, ingress];
 })();
 
@@ -150,6 +171,7 @@ function seedDraft(overrides: Partial<CatalogDraft> = {}): void {
     defaultScheme: 'sku',
     publishClaim: null,
     extraction: { model: 'test-extractor', schemaVersion: '1' },
+    photoExtraction: null,
     contentRevision: 0,
     rows: [],
     findings: [],
@@ -300,7 +322,7 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // which is the point of asserting the current state rather than mocking
     // past it: the day it lands is visible in the diff.
     seedDraft();
-    const resp = await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'draft-1' }, 'owner'));
+    const resp = await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
     expect(resp.status).toBe(409);
     expect((resp.body as { error: string }).error).toBe('no_user_presence');
   });
@@ -309,7 +331,7 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // The mirror. Without it "presence is never established" would be
     // indistinguishable from "every draft is refused for every reason".
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    const resp = await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'draft-1' }, 'owner'));
+    const resp = await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
     expect(resp.status).toBe(200);
     expect((resp.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
     expect((resp.body as { draft: CatalogDraft }).draft.receipt).toBeNull();
@@ -319,7 +341,7 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // Proves the route chain actually composes: settings-free assembly, the
     // publisher's leakage gate, pagination and the digest, through HTTP.
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'draft-1' }, 'owner'));
+    await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
     const resp = await router.handle(
       post('/v1/commerce/catalog/drafts/prepare', {
         draft_id: 'draft-1',
@@ -338,7 +360,7 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // the rule the service tests pin: the confirm exemption must not reach the
     // snapshot review.
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'draft-1' }, 'owner'));
+    await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
     const prepared = await router.handle(
       post('/v1/commerce/catalog/drafts/prepare', {
         draft_id: 'draft-1',
@@ -536,6 +558,37 @@ describe('rows ingress', () => {
     // Absent, not invalid: first run has nothing to fix, and sending a seller
     // looking for a corruption that is not there is its own bug.
     expect((resp.body as { error: string }).error).toBe('supplier_settings_absent');
+  });
+
+  it('prices a photographed row that names no currency, from the seller\u2019s settings', async () => {
+    // THE LANE'S OWN PREMISE, and it did not work. A photograph of a price
+    // list has one currency for the whole sheet and usually states it nowhere
+    // a model can attach per row; the importer refused every priced row that
+    // named none, and blamed `list_price_minor_units` while doing it. The
+    // seller's `tradingCurrency` — which the assembler was already going to
+    // use — never got the chance to supply it.
+    writeSettings({ tradingCurrency: 'INR' });
+    const resp = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        {
+          catalog_id: CATALOG,
+          default_scheme: 'sku',
+          rows: [{ ...ROW, list_price_minor_units: '1800000' }],
+          ...EXTRACTION,
+        },
+        'owner',
+      ),
+    );
+
+    expect(resp.status).toBe(200);
+    const body = resp.body as { ok: boolean; draft: CatalogDraft };
+    expect(body.draft.findings).toEqual([]);
+    expect(body.draft.items).toHaveLength(1);
+    expect(body.draft.items[0]?.indicative_price).toEqual({
+      currency: 'INR',
+      minor_units: '1800000',
+    });
   });
 
   it('stores a draft in created, assembled from the rows', async () => {
@@ -901,6 +954,351 @@ describe('rows ingress', () => {
     );
     expect(last.status).toBe(409);
     expect((last.body as { error: string }).error).toBe('no_items');
+  });
+
+  it('MINTS an SKU at first repair for the seller who has none (§4.2)', async () => {
+    // The pickle seller: jars that have never had a SKU. Ingress refuses
+    // identifier-less rows, so the draft's first state is findings and no
+    // items — and the FIRST REPAIR mints, claims and imports clean.
+    writeSettings({ tradingCurrency: 'INR' });
+    const created = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        {
+          catalog_id: CATALOG,
+          default_scheme: 'sku',
+          ...EXTRACTION,
+          rows: [
+            { name: 'Red chilli pickle 250g', pack_size: '1', unit_code: 'each' },
+            { name: '', pack_size: '1', unit_code: 'each' },
+          ],
+        },
+        'owner',
+      ),
+    );
+    const draft = (created.body as { draft: CatalogDraft }).draft;
+    expect(draft.items).toEqual([]);
+    expect(JSON.stringify(draft.findings)).toContain('missing_required');
+
+    // The seller repairs the one genuinely unreadable cell; the mint rides
+    // the same repair pass and fills every identifier-less row.
+    const repaired = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/repair',
+        { draft_id: draft.draftId, row: 3, column: 'name', value: 'Green mango pickle 250g' },
+        'owner',
+      ),
+    );
+    expect(repaired.status).toBe(200);
+    const after = (repaired.body as { draft: CatalogDraft }).draft;
+    expect(after.findings).toEqual([]);
+    expect(after.items).toHaveLength(2);
+    expect(after.rows[0]?.cells.sku).toBe('P-0001');
+    expect(after.rows[1]?.cells.sku).toBe('P-0002');
+    // The immutable identities are on the rows, durably.
+    expect(after.rows[0]?.assignmentId).toMatch(/^asg_/);
+    expect(after.items.map((i) => i.product.value).sort()).toEqual(['P-0001', 'P-0002']);
+  });
+
+  it('a repair taking another product\'s SKU is an identifier_claimed finding (§4.2)', async () => {
+    writeSettings({ tradingCurrency: 'INR' });
+    const created = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        {
+          catalog_id: CATALOG,
+          default_scheme: 'sku',
+          ...EXTRACTION,
+          rows: [
+            ROW,
+            { identifier: 'BENCH-2', name: '4ft teak bench', pack_size: '1', unit_code: 'each' },
+          ],
+        },
+        'owner',
+      ),
+    );
+    const draft = (created.body as { draft: CatalogDraft }).draft;
+    // First repair claims both identifiers under their own assignments.
+    const claimed = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/repair',
+        { draft_id: draft.draftId, row: 2, column: 'name', value: 'Oak dining chair' },
+        'owner',
+      ),
+    );
+    expect((claimed.body as { draft: CatalogDraft }).draft.findings).toEqual([]);
+
+    // Now the seller edits row 3's identifier to row 2's value. The ledger
+    // refuses — the value belongs to another product — and the refusal is
+    // a repair finding, not a merge and not a crash.
+    const collided = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/repair',
+        { draft_id: draft.draftId, row: 3, column: 'identifier', value: 'CHAIR-1' },
+        'owner',
+      ),
+    );
+    expect(collided.status).toBe(200);
+    const after = (collided.body as { draft: CatalogDraft }).draft;
+    expect(JSON.stringify(after.findings)).toContain('identifier_claimed');
+    expect(after.items).toEqual([]);
+  });
+
+  it('ERASE-UNPUBLISHED-THEN-REPHOTOGRAPH: the dead draft\'s claims release (§4.2)', async () => {
+    // The seller's most ordinary recovery: give up on a half-repaired
+    // draft, re-photograph the same page. Without the claims lifecycle the
+    // dead draft holds every printed SKU for ever and the new draft meets
+    // identifier_claimed findings whose only exit forks product identity.
+    writeSettings({ tradingCurrency: 'INR' });
+    const rows = [
+      { identifier: 'JAR-RED-01', name: 'Red chilli pickle', pack_size: '1', unit_code: 'each' },
+    ];
+    const first = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        { catalog_id: CATALOG, default_scheme: 'sku', ...EXTRACTION, rows },
+        'owner',
+      ),
+    );
+    const firstDraft = (first.body as { draft: CatalogDraft }).draft;
+    // The first repair claims JAR-RED-01 under the first draft's assignment.
+    await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/repair',
+        { draft_id: firstDraft.draftId, row: 2, column: 'name', value: 'Red chilli pickle' },
+        'owner',
+      ),
+    );
+
+    const erased = await router.handle(
+      post('/v1/commerce/catalog/drafts/erase', { draft_id: firstDraft.draftId }, 'owner'),
+    );
+    expect(erased.status).toBe(200);
+    expect(draftsNow()).toHaveLength(0);
+
+    // The re-photograph: a NEW draft, new assignments, same printed SKU —
+    // and every claim succeeds.
+    const second = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        { catalog_id: CATALOG, default_scheme: 'sku', ...EXTRACTION, rows },
+        'owner',
+      ),
+    );
+    const secondDraft = (second.body as { draft: CatalogDraft }).draft;
+    const repaired = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/repair',
+        { draft_id: secondDraft.draftId, row: 2, column: 'name', value: 'Red chilli pickle' },
+        'owner',
+      ),
+    );
+    const after = (repaired.body as { draft: CatalogDraft }).draft;
+    expect(after.findings).toEqual([]);
+    expect(after.items).toHaveLength(1);
+  });
+
+  it('erase refuses while a publication claim is live', async () => {
+    writeSettings();
+    const created = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
+        'owner',
+      ),
+    );
+    const draftId = (created.body as { draft: CatalogDraft }).draft.draftId;
+    const runtime = createCommerceRuntime({
+      adapter,
+      supplierDid: () => SUPPLIER,
+      currentEpoch: () => '2',
+      now: () => 1_800_000_000_000,
+      verifyHeldEvidence: () => true,
+    });
+    expect(runtime.catalogDrafts.claimForPublish(draftId, 'tok-live', 1_800_000_000_000, 60_000)).toBe(true);
+    const erased = await router.handle(
+      post('/v1/commerce/catalog/drafts/erase', { draft_id: draftId }, 'owner'),
+    );
+    expect(erased.status).toBe(409);
+    expect((erased.body as { error: string }).error).toBe('publication_in_flight');
+  });
+
+  describe('the photo path (§4.1 capture → §3 gate → §5 draft)', () => {
+    function pngPage(seed: number): Uint8Array {
+      const u32 = (v: number): number[] => [
+        (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff,
+      ];
+      const chunk = (type: string, data: number[]): number[] => [
+        ...u32(data.length),
+        ...[...type].map((c) => c.charCodeAt(0)),
+        ...data,
+        0, 0, 0, 0,
+      ];
+      return new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ...chunk('IHDR', [...u32(640), ...u32(480), 8, 6, 0, 0, 0]),
+        ...chunk('IDAT', [seed, 2, 3]),
+        ...chunk('IEND', []),
+      ]);
+    }
+
+    afterEach(() => {
+      installImageReencoder(null);
+      installImageEgressBroker(null);
+    });
+
+    it('captures, extracts through the gate, and the draft carries its §2.1 chain', async () => {
+      writeSettings({ tradingCurrency: 'INR' });
+      // The composition-root installs, stubbed: a re-encoder that visibly
+      // strips (returns different bytes) and a broker that returns the
+      // ChairMaker rows with page attribution.
+      installImageReencoder((bytes: Uint8Array) =>
+        Promise.resolve({ bytes: pngPage(bytes[41] ?? 9), mime: 'image/png' as const }),
+      );
+      const transmitted: number[] = [];
+      installImageEgressBroker({
+        provider: 'openai',
+        extractRows: (args) => {
+          transmitted.push(args.pages.length);
+          const rows: { page_index: number; cells: Record<string, string> }[] = [
+            { page_index: 0, cells: { sku: 'CM-STOOL-1', name: 'Teak workshop stool', list_price_minor_units: '450000', pack_size: '1', unit_code: 'each' } },
+            { page_index: 1, cells: { name: 'Rosewood side table', pack_size: '1', unit_code: 'each' } },
+          ];
+          return Promise.resolve({ rows, model: 'gpt-4o-mini' });
+        },
+      });
+
+      const captured = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_capture',
+          {
+            catalog_id: CATALOG,
+            pages: [
+              Buffer.from(pngPage(1)).toString('base64'),
+              Buffer.from(pngPage(2)).toString('base64'),
+            ],
+          },
+          'owner',
+        ),
+      );
+      expect(captured.status).toBe(200);
+      const cap = captured.body as {
+        draft_id: string;
+        manifest: { content_hash: string }[];
+        authorization_id: string;
+      };
+      expect(cap.manifest).toHaveLength(2);
+      // Nothing left the node at capture.
+      expect(transmitted).toEqual([]);
+
+      const extracted = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_extract',
+          { catalog_id: CATALOG, draft_id: cap.draft_id, authorization_id: cap.authorization_id },
+          'owner',
+        ),
+      );
+      expect(extracted.status).toBe(200);
+      const draft = (extracted.body as { draft: CatalogDraft }).draft;
+      // The draft IS the capture's id, so §6 erasure follows ownership.
+      expect(draft.draftId).toBe(cap.draft_id);
+      expect(draft.provenanceClass).toBe('model_derived');
+      expect(draft.rows).toHaveLength(2);
+      // The §2.1 chain rides the row: manifest, digest, binding — bound to
+      // THIS draft.
+      expect(draft.photoExtraction).not.toBeNull();
+      expect(draft.photoExtraction?.binding.draft_id).toBe(cap.draft_id);
+      expect(draft.photoExtraction?.manifest).toHaveLength(2);
+      expect(transmitted).toEqual([2]);
+
+      // The identifier-less second row is the mint's case: first repair
+      // fills it and the draft assembles clean.
+      const repaired = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/repair',
+          { draft_id: cap.draft_id, row: 2, column: 'name', value: 'Teak workshop stool' },
+          'owner',
+        ),
+      );
+      const after = (repaired.body as { draft: CatalogDraft }).draft;
+      expect(after.findings).toEqual([]);
+      expect(after.rows[1]?.cells.sku).toBe('P-0001');
+      expect(after.items).toHaveLength(2);
+    });
+
+    it('a replayed extraction refuses: the authorization is spent and the draft exists', async () => {
+      writeSettings({ tradingCurrency: 'INR' });
+      installImageReencoder((bytes: Uint8Array) =>
+        Promise.resolve({ bytes: pngPage(bytes[41] ?? 9), mime: 'image/png' as const }),
+      );
+      installImageEgressBroker({
+        provider: 'openai',
+        extractRows: () =>
+          Promise.resolve({
+            rows: [{ page_index: 0, cells: { sku: 'A-1', name: 'Item', pack_size: '1', unit_code: 'each' } }],
+            model: 'gpt-4o-mini',
+          }),
+      });
+      const captured = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_capture',
+          { catalog_id: CATALOG, pages: [Buffer.from(pngPage(1)).toString('base64')] },
+          'owner',
+        ),
+      );
+      const cap = captured.body as { draft_id: string; authorization_id: string };
+      const first = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_extract',
+          { catalog_id: CATALOG, draft_id: cap.draft_id, authorization_id: cap.authorization_id },
+          'owner',
+        ),
+      );
+      expect(first.status).toBe(200);
+      const replay = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_extract',
+          { catalog_id: CATALOG, draft_id: cap.draft_id, authorization_id: cap.authorization_id },
+          'owner',
+        ),
+      );
+      expect(replay.status).toBe(409);
+      expect((replay.body as { error: string }).error).toContain('draft_exists');
+    });
+
+    it('capture refuses whole when one page is a bomb, leaving no artifacts', async () => {
+      writeSettings({ tradingCurrency: 'INR' });
+      installImageReencoder((bytes: Uint8Array) =>
+        Promise.resolve({ bytes: pngPage(bytes[41] ?? 9), mime: 'image/png' as const }),
+      );
+      installImageEgressBroker({
+        provider: 'openai',
+        extractRows: () => Promise.resolve({ rows: [], model: 'stub' }),
+      });
+      const u32 = (v: number): number[] => [
+        (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff,
+      ];
+      const bomb = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ...u32(13), 0x49, 0x48, 0x44, 0x52,
+        ...u32(50000), ...u32(50000), 8, 6, 0, 0, 0, 0, 0, 0, 0,
+      ]);
+      const captured = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/photo_capture',
+          {
+            catalog_id: CATALOG,
+            pages: [
+              Buffer.from(pngPage(1)).toString('base64'),
+              Buffer.from(bomb).toString('base64'),
+            ],
+          },
+          'owner',
+        ),
+      );
+      expect(captured.status).toBe(422);
+      expect((captured.body as { error: string }).error).toContain('decompression_bomb');
+    });
   });
 
   it('refuses a repair naming a row the draft does not have', async () => {
@@ -1493,4 +1891,153 @@ describe('rows ingress', () => {
     expect(confirmed.status).toBe(200);
     expect((confirmed.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
   });
+
+/**
+ * §10 item 9, at the route — the gap a live run found.
+ *
+ * Every other test in this file supplies presence from the inside. None asked
+ * what the SHIPPED ROUTES supply, and the answer was a hard-coded `false`, so
+ * the whole lane was unreachable on a real server.
+ */
+describe('proving a person is here', () => {
+  const PASSPHRASE = 'correct horse battery staple';
+
+  afterEach(() => {
+    installOwnerPresenceVerifier(null);
+    clearOwnerPresence();
+  });
+
+  it('is owner-only, like every other draft route', async () => {
+    installOwnerPresenceVerifier(async () => true);
+    for (const caller of NON_OWNER) {
+      const resp = await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, caller),
+      );
+      expect(resp.status).not.toBe(200);
+    }
+  });
+
+  it('says so plainly when this node cannot check a passphrase', async () => {
+    installOwnerPresenceVerifier(null);
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+    );
+    expect(resp.status).toBe(409);
+    expect((resp.body as { error: string }).error).toBe('presence_unavailable');
+  });
+
+  it('refuses a wrong passphrase without saying why', async () => {
+    // A wrong passphrase and a broken verifier are the same answer. The
+    // difference is only useful to somebody guessing.
+    installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: 'hunter2' }, 'owner'),
+    );
+    expect(resp.status).toBe(401);
+    expect(resp.body).toEqual({ error: 'not_proven' });
+  });
+
+  it('never echoes the passphrase back', async () => {
+    installOwnerPresenceVerifier(async () => true);
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+    );
+    expect(JSON.stringify(resp.body)).not.toContain(PASSPHRASE);
+  });
+
+  it('UNBLOCKS the lane: confirm refuses, then succeeds once a person proves it', async () => {
+    // The whole finding, in one test. Before: `no_user_presence` for ever.
+    writeSettings({ tradingCurrency: 'INR' });
+    const created = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
+        'owner',
+      ),
+    );
+    const draftId = (created.body as { draft: CatalogDraft }).draft.draftId;
+    const fields = Object.entries(
+      (created.body as { draft: CatalogDraft }).draft.provenance['0'] ?? {},
+    )
+      .filter(([, state]) => state === 'proposed')
+      .map(([field]) => `0.${field}`);
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/accept', { draft_id: draftId, fields }, 'owner'),
+    );
+
+    installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
+    const before = await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
+    );
+    expect((before.body as { error: string }).error).toBe('no_user_presence');
+
+    const proved = await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+    );
+    expect(proved.status).toBe(200);
+
+    const after = await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
+    );
+    expect(after.status).toBe(200);
+    expect((after.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
+    expect((after.body as { draft: CatalogDraft }).draft.receipt).not.toBeNull();
+  });
+
+  it('a model-derived draft REACHES PREPARE on its own minted fields', async () => {
+    // The second gap the live run found. Model-derived drafts scan every
+    // field (§4.2, no identifier-column suppression), and the route minted
+    // `item_revision` as decimal epoch millis — 13 digits, inside which the
+    // phone scanner finds a valid 10-digit span. Every photo-lane publish
+    // refused on a value the KERNEL wrote. The mint is now shaped like the
+    // `P-` assignment mint: no digit run long enough for any identifier
+    // pattern. Every fixture that hand-stamps `itemRevision: 'rev-1'` would
+    // never have caught it; only the route's real mint can.
+    writeSettings({ tradingCurrency: 'INR' });
+    const created = await router.handle(
+      post(
+        '/v1/commerce/catalog/drafts/from_extraction',
+        { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
+        'owner',
+      ),
+    );
+    const draft = (created.body as { draft: CatalogDraft }).draft;
+    expect(draft.itemRevision).not.toMatch(/\d{9}/);
+    const fields = Object.entries(draft.provenance['0'] ?? {})
+      .filter(([, state]) => state === 'proposed')
+      .map(([field]) => `0.${field}`);
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/accept', { draft_id: draft.draftId, fields }, 'owner'),
+    );
+    installOwnerPresenceVerifier(async () => true);
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+    );
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draft.draftId }, 'owner'),
+    );
+
+    const prepared = await router.handle(
+      post('/v1/commerce/catalog/drafts/prepare', {
+        draft_id: draft.draftId,
+        published_at: '2026-08-13T09:00:00.000Z',
+      }, 'owner'),
+    );
+    expect(prepared.status).toBe(200);
+    expect((prepared.body as { draft: CatalogDraft }).draft.state).toBe('prepared');
+  });
+
+  it('and the retired item-list body closes the moment presence is possible', async () => {
+    // The retirement was conditional on the draft lane being unusable. It has
+    // to stop being a bypass on the day the lane works, without anybody
+    // remembering to go and remove it.
+    writeSettings({ tradingCurrency: 'INR' });
+    installOwnerPresenceVerifier(async () => true);
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/publish', { catalog_id: CATALOG, items: [] }, 'owner'),
+    );
+    expect(resp.status).toBe(409);
+    expect((resp.body as { error: string }).error).toBe('item_list_retired');
+  });
+});
 });

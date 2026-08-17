@@ -39,7 +39,12 @@ import { sha256 } from '@noble/hashes/sha2.js';
 
 import { canonicalJson } from '@dina/commerce-protocol';
 
-import type { Money, PurchaseOrderProposal, Quantity } from '@dina/commerce-protocol';
+import type {
+  ApprovalSourceBinding,
+  Money,
+  PurchaseOrderProposal,
+  Quantity,
+} from '@dina/commerce-protocol';
 
 /**
  * Domain separation for approval bindings. Distinct from §9.12's ten wire
@@ -138,6 +143,14 @@ export interface BuyerApprovalPayload {
   orderDigest: string;
   idempotencyKey: string;
   install: ActingInstall;
+  /**
+   * §2.1 (photo lanes) — the source binding, INSIDE the payload so it is
+   * inside the integrity digest: a stripped or altered binding changes the
+   * digest the card was approved under. Absent on legacy approvals; a
+   * photo-minted approval carries every field, and hydration refuses a
+   * partial one rather than downgrading it to legacy.
+   */
+  source?: ApprovalSourceBinding;
 }
 
 export interface SupplierApprovalPayload {
@@ -218,7 +231,9 @@ export interface BuyerApprovalContext {
   quoteRevision: number;
   quoteExpiresAt: string;
   install: ActingInstall;
-  }
+  /** §2.1 photo lanes — carried into the payload when present. */
+  source?: ApprovalSourceBinding;
+}
 
 /**
  * A built payload, or the §15.2 fields the card failed to supply.
@@ -283,6 +298,7 @@ export function buildBuyerApprovalPayload(
       orderDigest: order.order_digest,
       idempotencyKey: order.idempotency_key,
       install: context.install,
+      ...(context.source === undefined ? {} : { source: context.source }),
     },
   };
 }

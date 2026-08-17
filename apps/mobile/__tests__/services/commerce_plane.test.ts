@@ -36,16 +36,18 @@ const BUSINESS_DID = 'did:plc:chairmakermobile000';
 
 /**
  * How many background ticks the plane starts: admission recovery (§9.9 step 3),
- * epoch revalidation (§16.2), the buyer re-poll (§12.7), and continuity
- * release (§9.13).
+ * epoch revalidation (§16.2), the buyer re-poll (§12.7), continuity release
+ * (§9.13), and the §5.1 dispatch-intent replay (PC-7).
  *
  * Named rather than written as a bare number so a change to it is a decision
- * somebody made, not a test that was nudged until it passed. THE DECISION:
+ * somebody made, not a test that was nudged until it passed. THE DECISIONS:
  * continuity authorizations carry no expiry, so without a tick to retire them
  * every plugin update leaves a prior CID holding authority over this node's
- * lifecycle lane for ever.
+ * lifecycle lane for ever; and a dispatch intent's crash replay is what makes
+ * "restart-recoverable from the row alone" true rather than aspirational, so
+ * its tick is always-on rather than optional.
  */
-const COMMERCE_TICKS = 4;
+const COMMERCE_TICKS = 5;
 
 /** A fake AT Protocol repo: one record, CAS on the CID we handed out. */
 class FakeRepo {

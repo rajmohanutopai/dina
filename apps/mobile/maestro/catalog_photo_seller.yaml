@@ -1,0 +1,32 @@
+# PC-4 (docs/PHOTO_COMMERCE_LANES_DESIGN.md §4) — the seller's photo-catalog
+# surface: Settings → My Catalog, the capture entry point, the empty state.
+#
+# Pure-Maestro portion: navigation + the screen contract. The DEEP journey —
+# seeding a photo via `xcrun simctl addmedia`, driving the system photo
+# picker, then repair → confirm → approve → publish — lives in a hybrid
+# runner (the picker is system UI and needs a seeded library), the same
+# honest split `composer_modes.yaml` documents for its clipped chip.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "index-mode-chip-ask"
+    timeout: 60000
+- tapOn:
+    id: "tab-settings"
+- scrollUntilVisible:
+    element:
+      id: "settings-row-catalog"
+    centerElement: true
+- tapOn:
+    id: "settings-row-catalog"
+- extendedWaitUntil:
+    visible:
+      id: "catalog-screen"
+    timeout: 15000
+- assertVisible:
+    id: "catalog-capture"
+# A fresh node has no drafts: the empty state names the action.
+- assertVisible:
+    id: "catalog-empty"

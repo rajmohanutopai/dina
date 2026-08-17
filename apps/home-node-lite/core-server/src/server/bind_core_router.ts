@@ -199,6 +199,13 @@ function isOwnerSurfacePath(p: string): boolean {
     p.startsWith('/v1/watch/') ||
     p === '/v1/owner' ||
     p.startsWith('/v1/owner/') ||
+    // The commerce owner surface (photo lanes, PC-4/PC-9): every route
+    // under it runs its own `ownerOnlyGuard` re-validating the capability,
+    // and D2D/plugin commerce traffic never arrives on these HTTP paths —
+    // it rides the receive pipeline and the plugin dispatch. Without this
+    // prefix the seller and buyer lanes were reachable only in-process,
+    // which the first live server run surfaced.
+    p.startsWith('/v1/commerce/') ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
     (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))

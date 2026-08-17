@@ -27,6 +27,10 @@ import {
   type ProvenanceClass,
 } from '../../src/commerce/catalog_draft_store';
 import { InMemoryCatalogPointerRepository } from '../../src/commerce/catalog_pointer_store';
+import {
+  installCatalogRecordReader,
+  installCatalogRecordWriter,
+} from '../../src/commerce/catalog_record_writer';
 
 const SUPPLIER = 'did:plc:chairmaker99';
 const CATALOG = 'chairmaker-main';
@@ -63,6 +67,7 @@ function makeDraft(overrides: Partial<CatalogDraft> = {}): CatalogDraft {
     defaultScheme: 'sku',
     publishClaim: null,
     extraction: { model: 'test-extractor', schemaVersion: '1' },
+    photoExtraction: null,
     contentRevision: 0,
     rows: [],
     findings: [],
@@ -160,7 +165,7 @@ function harness(
 async function toApproved(h: Harness): Promise<CatalogDraft> {
   const confirmed = h.service.confirm('draft-1');
   if (!confirmed.ok) throw new Error(`confirm: ${confirmed.error}`);
-  const prepared = h.service.prepare('draft-1', {
+  const prepared = await h.service.prepare('draft-1', {
     protocolVersion: '1.0',
     publishedAt: '2026-08-13T09:00:00.000Z',
   });
@@ -172,10 +177,10 @@ async function toApproved(h: Harness): Promise<CatalogDraft> {
 }
 
 describe('the order is enforced, not assumed', () => {
-  it('refuses every operation on a draft in the wrong state', () => {
+  it('refuses every operation on a draft in the wrong state', async () => {
     const h = harness();
     // prepare and approve both run before confirm has happened.
-    expect(h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' })).toMatchObject({
+    expect(await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' })).toMatchObject({
       ok: false,
       refusal: 'wrong_state',
     });
@@ -296,7 +301,7 @@ describe('the class-conditional rule, in both directions', () => {
     // "also class-conditional".
     const h = harness(makeDraft({ provenanceClass: 'source_parsed', provenance: {} }));
     h.service.confirm('draft-1');
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
     });
@@ -316,7 +321,7 @@ describe('approve compares against the snapshot Core is holding', () => {
     // asking itself.
     const h = harness();
     h.service.confirm('draft-1');
-    h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: '2026-08-13T09:00:00.000Z' });
+    await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: '2026-08-13T09:00:00.000Z' });
     expect(h.service.approve('draft-1', 'f'.repeat(64))).toMatchObject({
       ok: false,
       refusal: 'digest_mismatch',
@@ -395,7 +400,7 @@ describe('publish', () => {
   it('refuses when no approval was recorded through the approve operation', async () => {
     const h = harness();
     h.service.confirm('draft-1');
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
     });
@@ -496,11 +501,11 @@ describe('the second publication, which is the one with a chain to break', () =>
     return harness(makeDraft(), pointers);
   }
 
-  it('holds the pointer the builder made, chain link and all', () => {
+  it('holds the pointer the builder made, chain link and all', async () => {
     const h = withLiveCatalog();
     const confirmed = h.service.confirm('draft-1');
     if (!confirmed.ok) throw new Error(confirmed.error);
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
       serviceRkey: 'listing-2',
@@ -519,7 +524,7 @@ describe('the second publication, which is the one with a chain to break', () =>
     const h = withLiveCatalog();
     const confirmed = h.service.confirm('draft-1');
     if (!confirmed.ok) throw new Error(confirmed.error);
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
       serviceRkey: 'listing-2',
@@ -550,7 +555,7 @@ describe('the second publication, which is the one with a chain to break', () =>
     const h = withLiveCatalog();
     const confirmed = h.service.confirm('draft-1');
     if (!confirmed.ok) throw new Error(confirmed.error);
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
       serviceRkey: 'listing-2',
@@ -586,14 +591,14 @@ describe('the second publication, which is the one with a chain to break', () =>
     expect(published.value.publication?.pointer).not.toEqual(held);
   });
 
-  it('survives a restart between approval and publish with the link intact', () => {
+  it('survives a restart between approval and publish with the link intact', async () => {
     // The held pointer is durable state, not something recomputed on the way
     // out — which is the whole reason it is on the draft rather than in a
     // closure.
     const h = withLiveCatalog();
     const confirmed = h.service.confirm('draft-1');
     if (!confirmed.ok) throw new Error(confirmed.error);
-    const prepared = h.service.prepare('draft-1', {
+    const prepared = await h.service.prepare('draft-1', {
       protocolVersion: '1.0',
       publishedAt: '2026-08-13T09:00:00.000Z',
       serviceRkey: 'listing-2',
@@ -1228,5 +1233,127 @@ describe('a product identity edited onto another item', () => {
     // product would refuse because it "collides" with itself.
     const h = harness(twoItems());
     expect(h.service.editValue('draft-1', '1.name', 'Oak stool, tall').ok).toBe(true);
+  });
+});
+
+/**
+ * A node holding the identity but not the pointer row.
+ *
+ * FOUND BY A LIVE RUN, not by this suite — every test here starts with a local
+ * store and a repo that agree, and the defect only exists when they disagree.
+ * A new phone, a re-pair, or a backup older than the last publication leaves a
+ * node that can publish under the supplier's DID and has never recorded a
+ * head. It derived sequence 1 with no predecessor and wrote it with no
+ * compare-and-swap token, so the write could not lose: against a real PDS the
+ * live head went from sequence 2 back to sequence 1 and the chain link was
+ * gone.
+ */
+describe('the local head and the repo disagree', () => {
+  const LIVE: CatalogPointer = {
+    supplier_did: SUPPLIER,
+    catalog_id: CATALOG,
+    snapshot_sequence: 7,
+    protocol_version: '1.0',
+    published_at: '2026-08-14T09:00:00.000Z',
+    snapshot_digest: 'a'.repeat(64),
+    snapshot_rkey: 'a'.repeat(64),
+    previous_snapshot_digest: 'b'.repeat(64),
+  };
+
+  /** A node that can publish: a writer is installed, so a clobber is possible. */
+  function publishingNode(reader: (() => Promise<{ record: unknown; cid: string } | null>) | 'throws' | null): Harness {
+    const h = harness();
+    installCatalogRecordWriter(async () => ({ cid: 'cid-written' }));
+    if (reader === 'throws') {
+      installCatalogRecordReader(() => {
+        throw new Error('the network is down');
+      });
+    } else if (reader !== null) {
+      installCatalogRecordReader(reader);
+    } else {
+      installCatalogRecordReader(null);
+    }
+    return h;
+  }
+
+  afterEach(() => {
+    installCatalogRecordWriter(null);
+    installCatalogRecordReader(null);
+  });
+
+  it('ADOPTS the live head rather than republishing from sequence 1', async () => {
+    const h = publishingNode(async () => ({ record: LIVE, cid: 'cid-live-head' }));
+    h.service.confirm('draft-1');
+    const prepared = await h.service.prepare('draft-1', {
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-15T09:00:00.000Z',
+    });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.value.held?.pointer.snapshot_sequence).toBe(8);
+    expect(prepared.value.held?.pointer.previous_snapshot_digest).toBe(LIVE.snapshot_digest);
+    // AND IT WILL CAS. Without the live CID the write carries no swap token
+    // and cannot lose, which is what made the clobber silent.
+    expect(prepared.value.held?.expectedPointerCid).toBe('cid-live-head');
+  });
+
+  it('refuses when the head cannot be read, rather than guessing sequence 1', async () => {
+    const h = publishingNode('throws');
+    h.service.confirm('draft-1');
+    expect(
+      await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' }),
+    ).toMatchObject({ refusal: 'head_unreadable' });
+  });
+
+  it('refuses when this node can write but has no reader at all', async () => {
+    const h = publishingNode(null);
+    h.service.confirm('draft-1');
+    expect(
+      await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' }),
+    ).toMatchObject({ refusal: 'head_unreadable' });
+  });
+
+  it('refuses a live head that is not a valid pointer', async () => {
+    const h = publishingNode(async () => ({ record: { nonsense: true }, cid: 'cid-x' }));
+    h.service.confirm('draft-1');
+    expect(
+      await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' }),
+    ).toMatchObject({ refusal: 'head_unreadable' });
+  });
+
+  it('treats a genuine absence as the first publication', async () => {
+    // Null is a real answer — this catalog has never been published — and it
+    // must not be confused with the unreadable cases above.
+    const h = publishingNode(async () => null);
+    h.service.confirm('draft-1');
+    const prepared = await h.service.prepare('draft-1', {
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-15T09:00:00.000Z',
+    });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.value.held?.pointer.snapshot_sequence).toBe(1);
+    expect(prepared.value.held?.pointer.previous_snapshot_digest).toBeUndefined();
+  });
+
+  it('does not ask at all when this node cannot publish', async () => {
+    // No writer means no clobber is possible, and demanding a reader from a
+    // node that only builds bytes would refuse every legitimate caller.
+    const h = harness();
+    installCatalogRecordWriter(null);
+    installCatalogRecordReader(() => {
+      throw new Error('must not be consulted');
+    });
+    h.service.confirm('draft-1');
+    expect(
+      (
+        await h.service.prepare('draft-1', {
+          protocolVersion: '1.0',
+          publishedAt: '2026-08-15T09:00:00.000Z',
+        })
+      ).ok,
+    ).toBe(true);
   });
 });

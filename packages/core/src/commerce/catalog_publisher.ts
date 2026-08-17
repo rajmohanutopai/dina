@@ -84,6 +84,13 @@ export interface BuildCatalogSnapshotArgs {
    * the one that stocks this catalog.
    */
   serviceRkey?: string;
+  /**
+   * §4.2 photo lanes: scan `sku`/`mpn`/`value` like any other field. The
+   * suppression's false-positive excuse holds for typed SKUs and fails for
+   * model-read digits, so the DRAFT LANE sets this for model-derived
+   * drafts and the typed-item route leaves it off.
+   */
+  scanIdentifierColumns?: boolean;
   sha256: Sha256Fn;
 }
 
@@ -155,7 +162,9 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
   //
   // Before pagination and before any digest, so a refused catalog leaves no
   // computed artefact that a later caller could mistake for a publishable one.
-  const leakage = gateCatalogForPublication(args.items);
+  const leakage = gateCatalogForPublication(args.items, {
+    scanIdentifierColumns: args.scanIdentifierColumns === true,
+  });
   if (!leakage.clean) {
     return {
       ok: false,

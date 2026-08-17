@@ -152,6 +152,11 @@ export function assembleFromRows(args: {
     source: sourceFromDraftRows(args.rows),
     defaultScheme: args.defaultScheme,
     supplierDid: args.identity.supplierDid,
+    // The seller's own currency, so a photographed price list that names one
+    // nowhere still imports. The assembler overrides the row's currency with
+    // this same value anyway — without it the row was refused before ever
+    // reaching the code that would have supplied it.
+    fallbackCurrency: args.settings.tradingCurrency,
   });
   if (!imported.ok) return { items: [], findings: [...imported.findings] };
 
@@ -190,6 +195,12 @@ export function createCatalogDraft(
     provenanceClass: ProvenanceClass;
     /** §5 — which model read these rows, where one did. */
     extraction: { model: string; schemaVersion: string } | null;
+    /**
+     * §2.1 (photo lanes): the extraction chain — manifest, commitment
+     * digest, binding record — minted by the photo-extract path before the
+     * draft exists. Null on every other lane.
+     */
+    photoExtraction?: CatalogDraft['photoExtraction'];
   },
 ): IngressOutcome {
   const rows = materialiseRows(args.source);
@@ -215,6 +226,7 @@ export function createCatalogDraft(
     provenanceClass: args.provenanceClass,
     defaultScheme: args.defaultScheme,
     extraction: args.extraction,
+    photoExtraction: args.photoExtraction ?? null,
     publishClaim: null,
     contentRevision: 1,
     rows,

@@ -19,6 +19,7 @@ import * as path from 'node:path';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { validateCommerceEpochRecord, type Sha256Fn } from '@dina/commerce-protocol';
+import { stripRepoEnvelope } from '@dina/home-node';
 import {
   IDENTITY_MIGRATIONS,
   InMemoryCommerceQuoteLedgerRepository,
@@ -90,7 +91,15 @@ function fakePds() {
       const actual = state.record === null ? null : state.cid;
       if (expected !== actual) return json({ error: 'InvalidSwap' }, 400);
       counter += 1;
-      state.record = body.record as Record<string, unknown>;
+      // The real PDS stamps `$type` into every stored value, and every
+      // later read serves it back. Omitting the stamp here hid a live bug:
+      // the epoch digest revalidation included the injected field, so a
+      // node refused its own record on every boot after the first. The
+      // fake must stamp what the real one stamps.
+      state.record = {
+        $type: String(body.collection),
+        ...(body.record as Record<string, unknown>),
+      };
       state.cid = `cid-${counter}`;
       return json({ uri: 'at://x', cid: state.cid });
     }
@@ -169,10 +178,17 @@ describe('commerce epoch repo wiring', () => {
     expect(wired.service.currentEpoch()).toBe('1');
   });
 
-  it('publishes a record the protocol accepts', async () => {
+  it('publishes a record the protocol accepts once the repo envelope is off', async () => {
     const pds = fakePds();
     await wire(pds.fetchFn).establish();
-    expect(validateCommerceEpochRecord(pds.state.record, hash)).toBeNull();
+    // What the repo stores carries the PDS's `$type` stamp; what the
+    // protocol validates is the record under it. Validating the raw stored
+    // value here is exactly the mistake the live reader made.
+    expect(pds.state.record).not.toBeNull();
+    expect(
+      validateCommerceEpochRecord(stripRepoEnvelope(pds.state.record ?? {}), hash),
+    ).toBeNull();
+    expect(validateCommerceEpochRecord(pds.state.record, hash)).not.toBeNull();
   });
 
   it('adopts the live record instead of republishing', async () => {

@@ -89,55 +89,93 @@ function codeNoStrings(source: string): string {
   // (`${n > 5 ? `and more` : ''}`) leaves the interpolation pattern matching to
   // the first `}` and the backticks unbalanced again.
   //
-  // Both failures are the same mistake — matching a nesting language with a
-  // flat pattern — and both are silent. The ledger reported two wired methods
-  // as callerless, and would as easily have hidden a call it exists to find, so
-  // this walks the text once and keeps a stack instead.
-  const text = code(source);
+  // Comments then repeated the mistake a third time. They were pre-stripped
+  // with a flat `//`-to-end-of-line regex BEFORE this scanner ran, so the
+  // first template holding an at-URI — `at://${did}/…` — lost everything
+  // after its `//`, closing backtick included. Every backtick after it
+  // swapped roles, and sixteen thousand characters of route code — with the
+  // only production callers of eleven ledgered methods inside — read as
+  // template text. The ledger then demanded rows for methods that were wired.
+  //
+  // All three failures are the same mistake — matching a nesting language
+  // with a flat pattern — and all three are silent in BOTH directions: as
+  // easily as inventing an offender, the swallowed stretch could hide the
+  // uncalled method the ledger exists to catch. So comments, strings, and
+  // templates are read together in the one pass that knows which context it
+  // is in. `frames` carries one number per open template: -1 while its
+  // literal text is being read, else the brace depth of the interpolation
+  // currently open under it — so a `}` inside `${…}` knows whether it closes
+  // the interpolation or an object literal, and a nested template returns to
+  // its parent.
   let out = '';
   let i = 0;
-  /** Depth of `${` interpolations, so a nested template returns to its parent. */
-  const templates: number[] = [];
-  while (i < text.length) {
-    const ch = text[i] ?? '';
+  const frames: number[] = [];
+  const literalText = (): boolean => frames.length > 0 && frames[frames.length - 1] === -1;
+  while (i < source.length) {
+    const ch = source[i] ?? '';
+    if (literalText()) {
+      if (ch === '\\') {
+        i += 2;
+        continue;
+      }
+      if (ch === '`') {
+        frames.pop();
+        i += 1;
+        continue;
+      }
+      // An interpolation is CODE and is kept — that is where calls hide.
+      if (ch === '$' && source[i + 1] === '{') {
+        frames[frames.length - 1] = 0;
+        out += ' ';
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    // Comments are recognized HERE, in code context, never inside a string.
+    if (ch === '/' && source[i + 1] === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '*') {
+      i += 2;
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
     if (ch === "'" || ch === '"') {
-      const quote = ch;
       i += 1;
-      while (i < text.length && text[i] !== quote) i += text[i] === '\\' ? 2 : 1;
+      while (i < source.length && source[i] !== ch) i += source[i] === '\\' ? 2 : 1;
       i += 1;
-      out += quote + quote;
+      out += ch + ch;
       continue;
     }
     if (ch === '`') {
+      frames.push(-1);
       i += 1;
-      while (i < text.length) {
-        if (text[i] === '\\') {
-          i += 2;
-          continue;
-        }
-        if (text[i] === '`') {
-          i += 1;
-          break;
-        }
-        // An interpolation is CODE and is kept — that is where calls hide.
-        if (text[i] === '$' && text[i + 1] === '{') {
-          i += 2;
-          templates.push(1);
-          let depth = 1;
-          const from = i;
-          while (i < text.length && depth > 0) {
-            if (text[i] === '{') depth += 1;
-            else if (text[i] === '}') depth -= 1;
-            if (depth > 0) i += 1;
-          }
-          out += ` ${codeNoStrings(text.slice(from, i))} `;
-          i += 1;
-          templates.pop();
-          continue;
+      continue;
+    }
+    if (frames.length > 0) {
+      // Inside `${…}`: braces nest, and only the balancing `}` ends it.
+      if (ch === '{') {
+        frames[frames.length - 1] = (frames[frames.length - 1] ?? 0) + 1;
+        out += ch;
+        i += 1;
+        continue;
+      }
+      if (ch === '}') {
+        const depth = frames[frames.length - 1] ?? 0;
+        if (depth === 0) {
+          frames[frames.length - 1] = -1;
+          out += ' ';
+        } else {
+          frames[frames.length - 1] = depth - 1;
+          out += ch;
         }
         i += 1;
+        continue;
       }
-      continue;
     }
     out += ch;
     i += 1;
@@ -174,31 +212,44 @@ describe('commerce aggregate boundary', () => {
    *
    * `/v1/commerce/catalog/publish` still accepts an item list, which publishes
    * with no content receipt, no snapshot approval and no presence step. §6
-   * retires that body; it survives only because §10 item 9's presence
-   * primitive is unwired, so the draft lane — where the receipt and the
-   * approval live — cannot publish at all yet.
+   * retires that body, and the retirement is CONDITIONAL: it survives only
+   * while the draft lane — where the receipt and the approval live — cannot
+   * publish at all. A conditional nobody can see is how a bypass outlives its
+   * reason, so this pins the mechanism.
    *
-   * That makes the retirement conditional, and a conditional nobody can see is
-   * how a bypass outlives its reason. This pins the mechanism: ONE presence
-   * function, read by the draft service AND by the guard on the item-list
-   * body, so the day it returns true the bypass closes on its own. Two
-   * separate answers to "is a person here" is exactly the asymmetry that would
-   * leave a working draft lane and an open bypass side by side.
+   * TWO QUESTIONS, ONE MODULE. They were one function returning a constant,
+   * and splitting them is what made the retirement honest:
+   *
+   *   can presence be established?  a CAPABILITY. The retirement asks this.
+   *                                 Once a node can check a passphrase the
+   *                                 lane is usable and the bypass closes —
+   *                                 whether or not anyone is at the keyboard
+   *                                 this second.
+   *   is a person here now?         an INSTANT. `userPresent` asks this, and
+   *                                 must not be satisfied by a node that
+   *                                 merely COULD have asked somebody.
+   *
+   * Both come from `owner_presence.ts`, so a second hand-rolled answer to
+   * either is the drift this catches.
    */
-  it('the item-list publish body and the draft lane read ONE presence function', () => {
+  it('the item-list retirement and the draft lane read ONE presence module', () => {
     const routes = code(
       fs.readFileSync(path.join(CORE_SRC, 'server', 'routes', 'commerce.ts'), 'utf8'),
     );
-    // Declared once.
-    expect(routes.match(/function ownerPresenceAvailable\(/g) ?? []).toHaveLength(1);
-    // Read by the draft service's presence dep...
-    expect(/userPresent:\s*ownerPresenceAvailable/.test(routes)).toBe(true);
-    // ...and by the guard that retires the item list.
-    expect(/if \(ownerPresenceAvailable\(\)\)[\s\S]{0,400}item_list_retired/.test(routes)).toBe(
-      true,
+    // Both answers come from the module, not from this file.
+    expect(/from '\.\.\/\.\.\/commerce\/owner_presence'/.test(routes)).toBe(true);
+    // The retirement asks the CAPABILITY question...
+    expect(
+      /if \(ownerPresenceCanBeEstablished\(\)\)[\s\S]{0,400}item_list_retired/.test(routes),
+    ).toBe(true);
+    // ...and the draft service asks the INSTANT one.
+    expect(/userPresent:\s*ownerPresentNowForRoutes/.test(routes)).toBe(true);
+    expect(routes.match(/function ownerPresentNowForRoutes\(/g) ?? []).toHaveLength(1);
+    // And no hand-rolled constant standing in for either.
+    expect(/userPresent:\s*\(\)\s*=>\s*(false|true)/.test(routes)).toBe(false);
+    expect(/function ownerPresenceCanBeEstablished\(\)[\s\S]{0,80}return (false|true);/.test(routes)).toBe(
+      false,
     );
-    // And no second, hand-rolled "false" standing in for presence anywhere.
-    expect(/userPresent:\s*\(\)\s*=>\s*false/.test(routes)).toBe(false);
   });
 
   /**
@@ -382,6 +433,18 @@ describe('commerce aggregate boundary', () => {
       // nobody checked. The provenance class fails closed to `model_derived`
       // for the same reason, and an unknown draft state reads as absent.
       'catalog_draft_store.ts',
+      // §3's egress-authorization store, same discipline: `hydrate` parses
+      // the pinned hash list and re-validates every entry as hex64 — one
+      // bad hash reads the whole row as ABSENT, and an absent authorization
+      // transmits nothing. Believing a partially parsed hash list would
+      // authorize bytes the owner never consented to leave.
+      'image_egress.ts',
+      // The BUYER aggregate's store (§5.1), same discipline as the catalog
+      // draft store beside it: every document is re-validated on the way
+      // out — an unknown conversation state, a half-written vouch entry,
+      // or TWO live conversations for one supplier reads as NO DRAFT
+      // rather than a draft this build half-believes.
+      'order_draft_store.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -422,15 +485,40 @@ describe('commerce aggregate boundary', () => {
       ['catalog_pointer_store.ts:InMemoryCatalogPointerRepository', 'test double'],
       ['idempotency_store.ts:InMemoryIdempotencyEvidenceRepository', 'test double'],
       ['status_heads.ts:InMemoryCommerceStatusHeadRepository', 'test double'],
-      // §12.3 — the buyer's quote-request COMPOSER exists and is exercised
-      // end to end by `buyer_quote_round_trip.test.ts`, but no route or UI
-      // calls it yet, so an owner cannot ask for a price from the product.
-      // Named here rather than left silent: this is the last piece of the
-      // buyer lane, and the ledger is what stops it being forgotten again.
-      ['buyer_quote_request.ts:requestQuote', 'no operator surface yet — route pending'],
       // The draft store (PCL-4). The state machine that owns it is PCL-5 and
       // the routes are PCL-6; both entries leave when those land.
       ['catalog_draft_store.ts:InMemoryCatalogDraftRepository', 'test double'],
+      ['image_egress.ts:InMemoryImageEgressAuthorizationRepository', 'test double'],
+      // §3's Hop-1 gate (PC-1). The gate and its stores exist and are
+      // exercised by `image_egress.test.ts`; the artifact store that feeds
+      // them is PC-2 and the routes + composition-root broker install are
+      // PC-3, so no production caller exists yet. These entries leave when
+      // the seller lane lands — the ledger is what stops the gate becoming
+      // another "built and nothing calls it".
+      ['image_artifacts.ts:InMemoryCommerceImageArtifactRepository', 'test double'],
+      ['sku_ledger.ts:InMemorySkuLedgerRepository', 'test double'],
+      ['order_draft_store.ts:InMemoryOrderDraftRepository', 'test double'],
+      // §5.2 resolution (PC-6): the matcher, the closed-fields discovery
+      // projection and authority-first hydration exist and are pinned by
+      // `order_line_resolution.test.ts`; the buyer routes/surface that
+      // drive them land with PC-7/PC-8.
+      ['order_line_resolution.ts:matchLineAgainstCatalog', 'buyer routes land with PC-7/PC-8'],
+      ['order_line_resolution.ts:discoveryRequirementsFor', 'buyer routes land with PC-7/PC-8'],
+      ['order_line_resolution.ts:hydrateOrderLineEvidence', 'buyer routes land with PC-7/PC-8'],
+      // §5.1's aggregate (PC-5): the store and derivations exist and are
+      // exercised by `order_draft_store.test.ts`; the state-machine
+      // service and routes are the rest of PC-5/PC-7.
+      ['order_draft_store.ts:liveConversationFor', 'service lands with PC-5'],
+      // §4.2's reservation ledger (PC-3): the claim primitive exists and is
+      // exercised by `sku_ledger.test.ts`; the mint policy in the pack's
+      // importer/assembler and the repair-screen integration are the rest
+      // of PC-3, and these entries leave when that lands.
+      // §6's artifact store (PC-2): ingest, egress revalidation and the
+      // retention listing exist and are exercised by
+      // `image_artifacts.test.ts`; the routes + composition-root
+      // re-encoder install land with the seller lane (PC-3).
+      ['image_artifacts.ts:revalidateStoredArtifact', 'routes land with PC-3'],
+      ['image_egress.ts:imageEgressBrokerInstalled', 'gate lands with PC-2/PC-3'],
       ['buyer_requests.ts:InMemoryBuyerQuoteRequestRepository', 'test double'],
       ['order_approvals.ts:InMemoryOrderApprovalRepository', 'test double'],
       ['buyer_quotes.ts:InMemoryBuyerQuoteRepository', 'test double'],
@@ -771,7 +859,6 @@ describe('commerce aggregate boundary', () => {
         'reconciliation_service.ts:signGenesis',
         '§9.11 genesis signing is reached through decideOrder today; no direct caller',
       ],
-
     ]);
     const callers = tsFiles(CORE_SRC)
       .filter((f) => !f.includes(`${path.sep}__tests__${path.sep}`))
@@ -856,8 +943,16 @@ describe('commerce aggregate boundary', () => {
       // retention, erasure and export as undefined FOR THE DRAFT STORE
       // SPECIFICALLY, so this is that gap with a name rather than a new one.
       [
-        'catalog_draft_store.ts:delete',
-        '§10 item 7 — draft retention and erasure are undefined; no caller until they are',
+        'sku_ledger.ts:holder',
+        '§4.2 — read by the repair screen surface when PC-3 lands its routes',
+      ],
+      [
+        'order_draft_store.ts:delete',
+        '§6 buyer erasure — rides PC-8\'s retention screen with the photographs',
+      ],
+      [
+        'sku_ledger.ts:highWater',
+        '§4.2 — read by the repair screen surface when PC-3 lands its routes',
       ],
     ]);
 

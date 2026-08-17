@@ -144,6 +144,13 @@ export class ReconcilePollSweeper {
  * with them, and the one that fell behind would be the one nobody looked at.
  */
 export const ORDER_RECONCILE_CAPABILITY = 'order_reconcile';
+/**
+ * The on-the-wire spelling (PC-9): a supplier LISTING refuses bare
+ * capability keys, and the receive pipeline admits a query only for a
+ * capability the listing declares. The bare name above stays the canonical
+ * lane key every recognizer canonicalizes to.
+ */
+export const ORDER_RECONCILE_WIRE_CAPABILITY = `com.dinakernel.commerce.${ORDER_RECONCILE_CAPABILITY}`;
 
 export function makeServiceQueryReconcileSend(deps: {
   dispatch: ServiceQueryDispatch;
@@ -157,7 +164,7 @@ export function makeServiceQueryReconcileSend(deps: {
       toDid: supplierDid,
       body: {
         query_id: request.purchase_order_id,
-        capability: ORDER_RECONCILE_CAPABILITY,
+        capability: ORDER_RECONCILE_WIRE_CAPABILITY,
         params: request,
         ttl_seconds: deps.ttlSeconds ?? 300,
         // The listing the order went to. A supplier may offer commerce on a

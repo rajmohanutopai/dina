@@ -15,6 +15,8 @@
 export type AppState = 'active' | 'background' | 'background_expired' | 'killed';
 
 import { DEFAULT_BACKGROUND_TIMEOUT_S as BG_TIMEOUT_S } from '../constants';
+
+import { clearOwnerPresence } from '../commerce/owner_presence';
 const DEFAULT_BACKGROUND_TIMEOUT_S = BG_TIMEOUT_S;
 
 /** Module-level lifecycle state. */
@@ -65,6 +67,12 @@ export function expireBackground(): void {
   appState = 'background_expired';
   secretsZeroed = true;
   msgBoxConnected = false;
+  // A PHONE IN A POCKET HAS NOBODY AT IT. Presence is a statement about now,
+  // and its own five-minute window would usually have closed first — but a
+  // backgrounded app can expire sooner, and a proof that outlived the session
+  // it was given in would let a resumed app sign a catalog on the strength of
+  // a passphrase typed before the screen went dark.
+  clearOwnerPresence();
 }
 
 /** Resume from background — check if re-unlock is needed. */

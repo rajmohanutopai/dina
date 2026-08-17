@@ -22,6 +22,8 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { importCatalogRows } from '../../src/commerce/catalog_import';
+import { sourceFromDraftRows } from '../../src/commerce/catalog_draft_ingest';
 import {
   assembleCatalogItems,
   type AssemblySettings,
@@ -376,5 +378,76 @@ describe('two rows, one product identity', () => {
     ]);
 
     expect(assembled).toMatchObject({ ok: true });
+  });
+});
+
+describe('a photographed price list that names no currency', () => {
+  // THE LANE'S OWN PREMISE. A seller photographs a paper price list; the
+  // sheet is in one currency, stated once at the top if at all. The importer
+  // used to refuse every priced row without a per-row currency column, so the
+  // photo lane could not import a single priced item — and it reported the
+  // fault against `list_price_minor_units`, sending the seller to correct a
+  // price that was already right.
+
+  it('imports when the supplier has a trading currency', () => {
+    const imported = importCatalogRows({
+      source: sourceFromDraftRows([
+        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '1800000' } },
+      ]),
+      defaultScheme: 'sku',
+      supplierDid: SUPPLIER,
+      fallbackCurrency: 'INR',
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    expect(imported.items[0]?.list_price).toEqual({ currency: 'INR', minor_units: '1800000' });
+  });
+
+  it('and the row\u2019s own currency still wins where a source states one', () => {
+    // A CSV out of an ERP means what it says per row. The fallback is for the
+    // rows that state nothing, not a licence to overwrite the ones that do.
+    const imported = importCatalogRows({
+      source: sourceFromDraftRows([
+        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', currency: 'EUR', list_price_minor_units: '1800000' } },
+      ]),
+      defaultScheme: 'sku',
+      supplierDid: SUPPLIER,
+      fallbackCurrency: 'INR',
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    expect(imported.items[0]?.list_price?.currency).toBe('EUR');
+  });
+
+  it('and with NO currency anywhere the refusal names the currency, not the price', () => {
+    const imported = importCatalogRows({
+      source: sourceFromDraftRows([
+        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '1800000' } },
+      ]),
+      defaultScheme: 'sku',
+      supplierDid: SUPPLIER,
+    });
+
+    expect(imported.ok).toBe(false);
+    if (imported.ok) return;
+    expect(imported.findings[0]).toMatchObject({ row: 2, column: 'currency' });
+  });
+
+  it('and a price that is genuinely not a number still names the price', () => {
+    // Both directions, or the fix above would just be "always blame currency".
+    const imported = importCatalogRows({
+      source: sourceFromDraftRows([
+        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '18,000' } },
+      ]),
+      defaultScheme: 'sku',
+      supplierDid: SUPPLIER,
+      fallbackCurrency: 'INR',
+    });
+
+    expect(imported.ok).toBe(false);
+    if (imported.ok) return;
+    expect(imported.findings[0]).toMatchObject({ row: 2, column: 'list_price_minor_units' });
   });
 });

@@ -33,7 +33,7 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
-import { REQUEST_QUOTE_CAPABILITY } from './buyer_response';
+import { REQUEST_QUOTE_WIRE_CAPABILITY } from './buyer_response';
 import { getCommerceServiceQueryDispatch } from './buyer_sender';
 import { getCommerceRuntime } from './runtime';
 
@@ -143,7 +143,7 @@ export async function requestQuote(args: {
         // The request id IS the correlation id, so two dispatches of one
         // question cannot look like two questions.
         query_id: request.request_id,
-        capability: REQUEST_QUOTE_CAPABILITY,
+        capability: REQUEST_QUOTE_WIRE_CAPABILITY,
         params: request,
         ttl_seconds: args.ttlSeconds ?? DEFAULT_REQUEST_TTL_SECONDS,
         service_uri: `at://${args.supplierDid}/com.dinakernel.service.profile/${args.serviceRkey}`,

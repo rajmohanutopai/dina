@@ -47,6 +47,8 @@ import * as path from 'node:path';
 import {
   generateMnemonic as coreGenerateMnemonic,
   mnemonicToEntropy,
+  readWrappedSeed,
+  unwrapSeed,
   validateMnemonic,
 } from '@dina/core';
 
@@ -71,6 +73,15 @@ export const LEGACY_SEED_LEN_BYTES = 64;
 export type SeedSource =
   | { kind: 'generated'; mnemonic: string; seed: Uint8Array; recoveryPhrasePath: string }
   | { kind: 'loaded_convenience'; seed: Uint8Array }
+  /**
+   * Task 4.53 (first slice): the wrapped seed UNWRAPPED at boot with the
+   * operator-supplied `DINA_UNLOCK_PASSPHRASE` — the server analogue of
+   * typing the passphrase on the phone, delivered the way server secrets
+   * are (env / systemd credential), same as `DINA_OWNER_CAPABILITY`. The
+   * wrapped path rides along so the §10-item-9 presence verifier can
+   * re-verify a passphrase against the SAME stored secret per attempt.
+   */
+  | { kind: 'loaded_wrapped'; seed: Uint8Array; wrappedPath: string }
   | { kind: 'wrapped'; wrappedPath: string };
 
 /**
@@ -94,6 +105,18 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
 
   const wrappedPath = path.join(vaultDir, WRAPPED_SEED_NAME);
   if (await exists(wrappedPath)) {
+    // Task 4.53 first slice: a server in security mode unlocks at boot with
+    // an OPERATOR-SUPPLIED passphrase — env / systemd credential, the same
+    // delivery `DINA_OWNER_CAPABILITY` uses. A wrong passphrase REFUSES to
+    // boot (GCM tag mismatch) rather than falling back to a limited state
+    // that looks alive; an absent one keeps the pre-slice behaviour: the
+    // boot trace's 'pending' identity step.
+    const passphrase = process.env.DINA_UNLOCK_PASSPHRASE ?? '';
+    if (passphrase !== '') {
+      const wrapped = readWrappedSeed(wrappedPath);
+      const seed = await unwrapSeed(passphrase, wrapped);
+      return { kind: 'loaded_wrapped', seed, wrappedPath };
+    }
     return { kind: 'wrapped', wrappedPath };
   }
 

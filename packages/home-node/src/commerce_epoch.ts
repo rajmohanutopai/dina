@@ -71,6 +71,24 @@ export interface EpochRepoClient {
   ) => Promise<{ cid: string }>;
 }
 
+/**
+ * Remove the repo envelope from a fetched record value.
+ *
+ * The PDS stamps `$type` into every stored value, and the wire-contract
+ * validators are exact-key: they digest and check "everything the record
+ * carries" (§9.12), with transport metadata explicitly excluded. A record
+ * this node published as valid came back invalid on the next boot — the
+ * epoch digest recomputation included the `$type` the PDS added — and the
+ * node fenced itself out of commerce for ever. A live restart found it; no
+ * unit test could, because the fake repo did not stamp what the real one
+ * stamps. Only `$type` is removed: every other unexpected key must still
+ * fail the exact-key validators.
+ */
+export function stripRepoEnvelope(value: Record<string, unknown>): Record<string, unknown> {
+  const { $type: _envelope, ...record } = value;
+  return record;
+}
+
 export interface WireCommerceEpochOptions {
   /** The node's own repo client. */
   pds: EpochRepoClient;
@@ -123,13 +141,14 @@ export function wireCommerceEpoch(options: WireCommerceEpochOptions): WiredComme
       lastRead = null;
       return null;
     }
-    const invalid = validateCommerceEpochRecord(found.value, hash);
+    const value = stripRepoEnvelope(found.value);
+    const invalid = validateCommerceEpochRecord(value, hash);
     if (invalid !== null) {
       // Do NOT return null: an unreadable record is not an absent one, and
       // treating it as absent would publish a genesis over a live chain.
       throw new Error(`commerce epoch: live record is invalid — ${invalid}`);
     }
-    const record = found.value as unknown as CommerceEpochRecord;
+    const record = value as unknown as CommerceEpochRecord;
     lastRead = { digest: record.epoch_digest, cid: found.cid };
     return record;
   };

@@ -177,7 +177,7 @@ describe('CommerceEpochRevalidator', () => {
 });
 
 describe('startCommerceSweepers', () => {
-  it('starts both ticks and stops both', () => {
+  it('starts every always-on tick and stops them all', () => {
     const timers = fakeTimers();
     const sweepers = startCommerceSweepers({
       admission: { engine: () => null },
@@ -185,12 +185,15 @@ describe('startCommerceSweepers', () => {
       setInterval: timers.setInterval,
       clearInterval: timers.clearInterval,
     });
-    // Two timers, because the two have different clocks and different failure
-    // meanings; one call site, because a tick each root must remember to start
-    // is a tick one root eventually forgets.
-    expect(timers.ticks).toHaveLength(2);
+    // Three timers — admission, epoch, and the §5.1 dispatch-intent replay
+    // (PC-7), which is deliberately NOT optional: it resolves the runtime
+    // per tick and a node with none ticks quietly, while an optional duty
+    // is a tick a composition root eventually forgets. Separate timers,
+    // because they have different clocks and different failure meanings;
+    // one call site, so no root can start some and not others.
+    expect(timers.ticks).toHaveLength(3);
     sweepers.stop();
-    expect(timers.cleared).toBe(2);
+    expect(timers.cleared).toBe(3);
   });
 
   it('stops the second tick even when the first stop throws', () => {

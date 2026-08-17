@@ -28,9 +28,16 @@ import {
   getCommerceServiceQueryDispatch,
   installCatalogRecordReader,
   installCatalogRecordWriter,
+  installCommerceObserver,
+  installOwnerPresenceVerifier,
   makeServiceQueryReconcileSend,
+  unwrapSeed,
 } from '@dina/core';
+
+import { loadWrappedSeed } from './wrapped_seed_store';
 import { makeCatalogRepoAccess, wireCommerceEpoch } from '@dina/home-node';
+
+import { installMobilePhotoPipeline, uninstallMobilePhotoPipeline } from './photo_pipeline';
 
 import type { CommerceSweepers } from '@dina/core';
 import type { DatabaseAdapter } from '@dina/core/storage';
@@ -104,6 +111,37 @@ export async function startMobileCommercePlane(options: MobileCommercePlaneOptio
     options.log({ event: 'commerce.epoch_skipped', reason: 'no_pds_repo' });
   }
 
+  // §3/§6 — the photo pipeline: the re-encoder for the ingest boundary and
+  // the vision broker for the egress gate. Installed regardless of PDS
+  // state: capturing and repairing a draft is local work, and publication
+  // is separately gated by the record writer above.
+  installMobilePhotoPipeline();
+
+  // §10 item 9 — the presence primitive on the phone: verify a TYPED
+  // passphrase against the SAME wrapped seed the unlock screen uses. The
+  // phone stores the master seed wrapped under the owner's passphrase, so
+  // proving "a person is here" is proving they can unwrap it — the exact
+  // check the server's task-4.53 slice runs against wrapped_seed.bin. A
+  // convenience-mode phone (no wrapped seed) leaves the verifier unwired
+  // and the ceremony says `presence_unavailable` rather than pretending.
+  installOwnerPresenceVerifier(async (passphrase) => {
+    const wrapped = await loadWrappedSeed();
+    if (wrapped === null) return false;
+    try {
+      await unwrapSeed(passphrase, wrapped);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  // §8b — the metadata-only commerce event stream, onto the plane's own
+  // log seam. The event type carries ids, states, counts and latencies
+  // ONLY, so nothing here can put a photographed value in a log.
+  installCommerceObserver(({ event, ...meta }) => {
+    options.log({ event: `commerce.${event}`, ...meta });
+  });
+
   sweepers = startCommerceSweepers({
     ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
     ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
@@ -175,6 +213,9 @@ export function stopMobileCommercePlane(): void {
   // per-write identity check exists to catch, arriving from our own boot.
   installCatalogRecordWriter(null);
   installCatalogRecordReader(null);
+  installCommerceObserver(null);
+  uninstallMobilePhotoPipeline();
+  installOwnerPresenceVerifier(null);
 }
 
 /** Spread a logger's structured argument without assuming its shape. */

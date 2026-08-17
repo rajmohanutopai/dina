@@ -281,6 +281,31 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           );
         })()}
+        {/* The photo-catalog lane (§4): photograph a price list, repair,
+            review, publish. One commerce area beside services, per the
+            owner's decision that drafts live together. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/catalog')}
+          accessibilityRole="button"
+          accessibilityLabel="Open My Catalog"
+          testID="settings-row-catalog"
+        >
+          <Text style={styles.rowLabel}>My Catalog</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        {/* §5 — the buyer's photographed orders, beside the seller's catalog:
+            one commerce area, the same owner decision. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/orders')}
+          accessibilityRole="button"
+          accessibilityLabel="Open My Orders"
+          testID="settings-row-orders"
+        >
+          <Text style={styles.rowLabel}>My Orders</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/subscriptions')}

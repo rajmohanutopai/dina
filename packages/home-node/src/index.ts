@@ -45,7 +45,7 @@ export type { MakeResolveSenderOptions } from './resolve_sender';
 export { makeSendD2D, makeOutboxRedeliver } from './send_d2d';
 export type { MakeSendD2DOptions, SendD2D } from './send_d2d';
 export { toServiceResponseBody } from './service_runtime';
-export { wireCommerceEpoch } from './commerce_epoch';
+export { stripRepoEnvelope, wireCommerceEpoch } from './commerce_epoch';
 export type {
   EpochRepoClient,
   WireCommerceEpochOptions,

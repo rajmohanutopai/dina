@@ -34,6 +34,7 @@ import {
 } from '../../src/commerce/buyer_response';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { InMemoryOrderDraftRepository } from '../../src/commerce/order_draft_store';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -113,6 +114,10 @@ describe('the production entry point (§9.8 wiring)', () => {
       // leaves these quote-chain cases testing exactly what they did before.
       watermarks: new InMemoryCommerceEpochWatermarkRepository(),
       buyerQuoteRequests: retainedRequests(),
+      // §5.4 stage 2 (PC-7) — the settle walks the draft store on every
+      // applied quote, so the seam needs one even when no draft exists.
+      orderDrafts: new InMemoryOrderDraftRepository(),
+      runInTransaction: (fn: () => unknown) => fn(),
     } as unknown as CommerceRuntime);
     try {
       const response = (quoteBody: unknown) => ({
@@ -278,6 +283,10 @@ describe('the production entry point (§9.8 wiring)', () => {
       // what this case is left testing.
       watermarks: new InMemoryCommerceEpochWatermarkRepository(),
       buyerQuoteRequests: retainedRequests(),
+      // §5.4 stage 2 (PC-7) — the settle walks the draft store on every
+      // applied quote, so the seam needs one even when no draft exists.
+      orderDrafts: new InMemoryOrderDraftRepository(),
+      runInTransaction: (fn: () => unknown) => fn(),
     } as unknown as CommerceRuntime);
     try {
       expect(

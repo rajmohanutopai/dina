@@ -35,6 +35,8 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
+import { validateApprovalSourceBinding } from '@dina/commerce-protocol';
+
 import {
   approvalDigest,
   buildBuyerApprovalPayload,
@@ -232,6 +234,16 @@ function hydrate(row: ApprovalRow): RetainedOrderApproval | null {
   const built = buildBuyerApprovalPayload(order.value, context.value);
   if (!built.ok) return null;
   if (approvalDigest(built.payload) !== String(row.approval_digest)) return null;
+
+  // §2.1 — the origin discriminator, FAIL CLOSED. "Absent = legacy" failed
+  // open: a photo approval whose source fields were lost to corruption or a
+  // partial migration would hydrate as a legitimate legacy approval and
+  // take the unrestricted path. A payload CARRYING a source must carry a
+  // COMPLETE one; anything else reads as absent — the approval, not the
+  // binding — so the downgrade never happens.
+  if (built.payload.source !== undefined) {
+    if (validateApprovalSourceBinding(built.payload.source) !== null) return null;
+  }
 
   // NEW-7 — RE-DERIVED, not read back. The digest above covers `order` and
   // `context`; it does not cover this column, so a row whose `service_rkey`

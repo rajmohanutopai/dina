@@ -1,0 +1,32 @@
+# PC-8 (docs/PHOTO_COMMERCE_LANES_DESIGN.md §5) — the buyer's photographed
+# order surface: Settings → My Orders, the capture entry point, the empty
+# state.
+#
+# Pure-Maestro portion: navigation + the screen contract. The deep journey
+# (seeded photo → review → confirm → ask → approve → send) needs the system
+# photo picker and a second Dina answering quotes, so it lives in the
+# PC-9 two-phone runner rather than here.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "index-mode-chip-ask"
+    timeout: 60000
+- tapOn:
+    id: "tab-settings"
+- scrollUntilVisible:
+    element:
+      id: "settings-row-orders"
+    centerElement: true
+- tapOn:
+    id: "settings-row-orders"
+- extendedWaitUntil:
+    visible:
+      id: "orders-screen"
+    timeout: 15000
+- assertVisible:
+    id: "orders-capture"
+# A fresh node has no photographed orders: the empty state names the action.
+- assertVisible:
+    id: "orders-empty"

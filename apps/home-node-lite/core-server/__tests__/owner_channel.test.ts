@@ -215,4 +215,22 @@ describe('owner channel over HTTP (bindCoreRouter + owner guard)', () => {
     expect([401, 403, 404]).toContain(res.statusCode);
     expect(res.statusCode).not.toBe(200);
   });
+
+  it('the COMMERCE owner surface is reachable over the channel (PC-4/PC-9)', async () => {
+    // The first live server run found this missing: the photo lanes were
+    // reachable only in-process. With the stamp, the in-handler owner guard
+    // passes and the route answers for ITSELF — here 503, because this
+    // harness installs no commerce runtime. Without the header the guard
+    // refuses before any handler logic runs.
+    const stamped = await app.inject({
+      method: 'GET',
+      url: '/v1/commerce/orders/drafts',
+      headers: { 'x-dina-owner-capability': CAP },
+    });
+    expect(stamped.statusCode).toBe(503);
+    expect((stamped.json() as { error: string }).error).toBe('commerce_unavailable');
+
+    const bare = await app.inject({ method: 'GET', url: '/v1/commerce/orders/drafts' });
+    expect([401, 403]).toContain(bare.statusCode);
+  });
 });

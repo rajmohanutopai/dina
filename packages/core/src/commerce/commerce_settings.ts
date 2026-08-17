@@ -46,6 +46,12 @@ export interface BuyerSettings {
   preferredUnitCodes: string[];
   /** Whether outcome reviews are published or kept private (§10.7, Law 2). */
   publishReviews: boolean;
+  /**
+   * §5.5 — the divergence-warning band, in whole percent. Absent means the
+   * default (25). A quote whose converted unit price deviates from the
+   * resolved item's reference by more than this is flagged on the card.
+   */
+  divergenceThresholdPct?: number;
 }
 
 export type ListingState = 'live' | 'paused' | 'withdrawn';
@@ -184,7 +190,8 @@ export type SettingsRefusal =
   | 'empty_identity'
   | 'unknown_trading_currency'
   | 'empty_catalog_categories'
-  | 'malformed_catalog_category';
+  | 'malformed_catalog_category'
+  | 'divergence_threshold_out_of_range';
 
 export interface SettingsFinding {
   refusal: SettingsRefusal;
@@ -239,6 +246,20 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
         refusal: 'supplier_both_preferred_and_blocked',
         field: 'preferredSuppliers',
         detail: `${did} is also blocked`,
+      });
+    }
+  }
+
+  if (settings.divergenceThresholdPct !== undefined) {
+    const pct = settings.divergenceThresholdPct;
+    if (!Number.isInteger(pct) || pct < 1 || pct > 500) {
+      // Refused where the owner types it, for the fanout rule's reason: a
+      // silently-clamped band tells the owner something about their node
+      // that is not true.
+      findings.push({
+        refusal: 'divergence_threshold_out_of_range',
+        field: 'divergenceThresholdPct',
+        detail: 'whole percent between 1 and 500',
       });
     }
   }

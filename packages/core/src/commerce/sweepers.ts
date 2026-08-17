@@ -31,11 +31,13 @@
 
 import { CommerceAdmissionSweeper } from './admission_sweeper';
 import { ContinuityReleaseSweeper } from './continuity_release_sweeper';
+import { DispatchIntentSweeper } from './dispatch_intent_sweeper';
 import { CommerceEpochRevalidator } from './epoch_revalidator';
 import { ReconcilePollSweeper } from './reconcile_sweeper';
 
 import type { CommerceAdmissionSweeperOptions } from './admission_sweeper';
 import type { ContinuityReleaseSweeperOptions } from './continuity_release_sweeper';
+import type { DispatchIntentSweeperOptions } from './dispatch_intent_sweeper';
 import type { CommerceEpochRevalidatorOptions } from './epoch_revalidator';
 import type { ReconcilePollSweeperOptions } from './reconcile_sweeper';
 
@@ -61,7 +63,16 @@ export interface CommerceSweeperOptions {
     ContinuityReleaseSweeperOptions,
     'releasable' | 'release' | 'intervalMs' | 'onReleased'
   >;
-  /** Injectable timer pair, shared by all four. Tests pass fakes. */
+  /**
+   * §5.1's dispatch-intent replay (PC-7) — crash recovery and transient
+   * retry for the draft-scoped submit orchestrator. ALWAYS STARTED, never
+   * optional: it resolves the commerce runtime per tick and a node with
+   * none simply ticks quietly, while an optional duty here would repeat
+   * the exact "built and left unstarted" history this file's header
+   * narrates. Only the cadence and observers are configurable.
+   */
+  dispatch?: Pick<DispatchIntentSweeperOptions, 'intervalMs' | 'now' | 'onOutcome' | 'onError'>;
+  /** Injectable timer pair, shared by all five. Tests pass fakes. */
   setInterval?: CommerceAdmissionSweeperOptions['setInterval'];
   clearInterval?: CommerceAdmissionSweeperOptions['clearInterval'];
 }
@@ -72,7 +83,8 @@ export interface CommerceSweepers {
   /** Absent on a node with no outbound transport. */
   reconcile: ReconcilePollSweeper | null;
   continuity: ContinuityReleaseSweeper | null;
-  /** Stops all three. Idempotent, so a teardown that runs twice is harmless. */
+  dispatch: DispatchIntentSweeper;
+  /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
 
@@ -94,15 +106,18 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     options.continuity === undefined
       ? null
       : new ContinuityReleaseSweeper({ ...options.continuity, ...timers });
+  const dispatch = new DispatchIntentSweeper({ ...(options.dispatch ?? {}), ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
   continuity?.start();
+  dispatch.start();
   return {
     admission,
     epoch,
     reconcile,
     continuity,
+    dispatch,
     stop: () => {
       // All stopped even if an earlier one throws: a teardown that abandons a
       // later timer leaves a process that will not exit and a phone that keeps
@@ -116,7 +131,11 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
           try {
             reconcile?.stop();
           } finally {
-            continuity?.stop();
+            try {
+              continuity?.stop();
+            } finally {
+              dispatch.stop();
+            }
           }
         }
       }

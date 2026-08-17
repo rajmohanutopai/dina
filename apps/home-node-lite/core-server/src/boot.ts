@@ -66,6 +66,12 @@ import {
   makeServiceQueryReconcileSend,
   installCatalogRecordReader,
   installCatalogRecordWriter,
+  installCommerceObserver,
+  installImageEgressBroker,
+  installImageReencoder,
+  installOwnerPresenceVerifier,
+  readWrappedSeed,
+  verifyPassphrase,
   startCommerceSweepers,
   type CommerceSweepers,
   getWorkflowService,
@@ -114,6 +120,7 @@ import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
 import { registerOwnerSetupRoutes } from './server/owner_setup';
+import { createOpenAiVisionBroker, createSharpReencoder } from './image_pipeline';
 import { initializeStorage } from './storage/init';
 import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
@@ -323,7 +330,63 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       elapsedMs: Date.now() - identityStart,
       pendingReason: 'wrapped_seed.bin found; passphrase-unwrap step pending (task 4.53)',
     });
+  }
+
+  // §10 item 9 — HOW THIS NODE ASKS "IS A PERSON HERE?".
+  //
+  // The catalog lane binds a seller's name to values a model read, so it
+  // refuses to confirm or approve unless Core can establish that somebody is
+  // present. `ownerPresenceAvailable()` used to answer a hard-coded false,
+  // which made the whole lane unreachable on a server: a seller could build a
+  // draft and never publish it.
+  //
+  // The check is whether a passphrase unwraps the master seed. Nothing new is
+  // stored, nothing new can drift out of step with the real secret, and the
+  // answer means what presence has to mean — somebody who knows the owner's
+  // passphrase typed it a moment ago.
+  //
+  // SECURITY MODE ONLY, and that is the honest boundary rather than a gap. A
+  // convenience-mode node keeps its seed in a plain keyfile; there is no
+  // secret only the owner knows, so there is nothing to prove and presence
+  // stays unavailable. The lane then refuses, which is the correct answer for
+  // a node that cannot tell its owner from anyone holding the disk.
+  if (identity.kind === 'wrapped' || identity.kind === 'loaded_wrapped') {
+    const wrappedPath = identity.wrappedPath;
+    installOwnerPresenceVerifier(async (passphrase) => {
+      // Read per attempt rather than caching: a passphrase change rewrites
+      // this file, and a cached copy would keep accepting the old one.
+      const wrapped = readWrappedSeed(wrappedPath);
+      return verifyPassphrase(passphrase, wrapped);
+    });
   } else {
+    installOwnerPresenceVerifier(null);
+  }
+
+  // §3/§6 (photo lanes) — the two injected adapters, composed here because
+  // Core does no I/O and holds no provider credential. Each installs
+  // conditionally and absence is a NAMED degradation: no sharp means the
+  // ingest boundary refuses photographs, no OpenAI key means the egress
+  // gate refuses extraction. The rest of the node is untouched either way.
+  {
+    const reencoder = await createSharpReencoder();
+    installImageReencoder(reencoder);
+    const visionKey = process.env.OPENAI_API_KEY ?? '';
+    installImageEgressBroker(
+      visionKey === '' ? null : createOpenAiVisionBroker({ apiKey: visionKey }),
+    );
+    // The degradation is named at the ROUTE boundary (`no_reencoder`,
+    // `no_egress_broker`), which is the surface a seller actually sees —
+    // the boot trace's step union stays untouched.
+
+    // §8b — the metadata-only commerce event stream, onto the same logger
+    // whose tests already assert secrets never reach it. Every field the
+    // event type carries is an id, state, count or latency by construction.
+    installCommerceObserver((event) => {
+      logger.info({ commerce: event }, `commerce:${event.event}`);
+    });
+  }
+
+  if (identity.kind !== 'wrapped') {
     trace.push({
       step: 'identity',
       status: 'ok',
@@ -383,7 +446,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     // did:key boot had no node DID and could not pair.
     if (
       identity !== undefined &&
-      (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+      (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
     ) {
       const didKey = deriveDIDKey(deriveIdentity({ masterSeed: identity.seed }).root.publicKey);
       setNodeDID(didKey);
@@ -394,7 +457,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     const pdsStart = Date.now();
     if (
       identity !== undefined &&
-      (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+      (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
     ) {
       try {
         const derivations = deriveIdentity({ masterSeed: identity.seed });
@@ -514,7 +577,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   const dbStart = Date.now();
   if (
     identity !== undefined &&
-    (identity.kind === 'loaded_convenience' || identity.kind === 'generated')
+    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
   ) {
     try {
       const result = await initializeStorage(identity.seed, config.storage.vaultDir, logger);
@@ -809,7 +872,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   if (
     pdsIdentity !== undefined &&
     identity !== undefined &&
-    (identity.kind === 'loaded_convenience' || identity.kind === 'generated') &&
+    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped') &&
     identityDBForWorkflow !== undefined
   ) {
     // The shared workflow plane owns its own expiry sweeper. Stop the minimal

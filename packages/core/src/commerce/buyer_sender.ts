@@ -45,9 +45,28 @@ export type ServiceQueryDispatch = (args: {
 
 /** The capability a supplier pack publishes for order submission (§11.1). */
 export const SUBMIT_ORDER_CAPABILITY = 'submit_order';
+/**
+ * The on-the-wire spelling (PC-9): the full NSID, because a supplier
+ * LISTING refuses bare capability keys and the receive pipeline admits a
+ * query only for a capability the listing declares. Every recognizer on
+ * both sides canonicalizes through `isCommerceCapability`, so the two
+ * spellings cannot diverge in behavior.
+ */
+export const SUBMIT_ORDER_WIRE_CAPABILITY = `com.dinakernel.commerce.${SUBMIT_ORDER_CAPABILITY}`;
 
-/** How long a supplier has to answer before the query expires. */
-export const DEFAULT_ORDER_TTL_SECONDS = 900;
+/**
+ * How long a supplier has to answer before the query expires.
+ *
+ * BOUND BY THE WIRE CONTRACT. `service.query` refuses `ttl_seconds` above
+ * `MAX_SERVICE_TTL` (300), and this constant said 900 — so every live order
+ * dispatch carried a body the protocol validator rejects, vanished without a
+ * trace, and the sender still reported it sent. §12.7 absorbed the loss
+ * (reconcile ruled `never_received` and authorized resubmission), which is
+ * exactly the failure it exists for — but the FIRST send must be legal. The
+ * supplier's slower decision window rides the workflow task lease, not the
+ * transport TTL.
+ */
+export const DEFAULT_ORDER_TTL_SECONDS = 300;
 
 export function makeServiceQueryBuyerSender(deps: {
   dispatch: ServiceQueryDispatch;
@@ -63,7 +82,7 @@ export function makeServiceQueryBuyerSender(deps: {
           // would let two dispatches of the same order look like two different
           // questions, which is how a duplicate becomes invisible.
           query_id: order.purchase_order_id,
-          capability: SUBMIT_ORDER_CAPABILITY,
+          capability: SUBMIT_ORDER_WIRE_CAPABILITY,
           params: order,
           ttl_seconds: deps.ttlSeconds ?? DEFAULT_ORDER_TTL_SECONDS,
           service_uri: `at://${supplierDid}/com.dinakernel.service.profile/${serviceRkey}`,

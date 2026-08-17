@@ -116,12 +116,23 @@ function DinaHeaderTitle() {
 // on both iOS and Android and stays out of the way of a rightward
 // `headerRight` content slot.
 type NavMenuItem =
-  | { feature: FeatureKey; href: string; action?: undefined }
-  | { feature: FeatureKey; href?: undefined; action: 'lock' };
+  | { feature: FeatureKey; href: string; action?: undefined; label?: undefined; ionicon?: undefined }
+  | { feature: FeatureKey; href?: undefined; action: 'lock'; label?: undefined; ionicon?: undefined }
+  /** Commerce destinations — not (yet) core FeatureKeys, so they carry
+   *  their own label + icon instead of a registry lookup. */
+  | {
+      feature?: undefined;
+      action?: undefined;
+      href: string;
+      label: string;
+      ionicon: React.ComponentProps<typeof Ionicons>['name'];
+    };
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { feature: 'vault', href: '/vault' },
   { feature: 'reminders', href: '/reminders' },
+  { href: '/orders', label: 'My Orders', ionicon: 'receipt-outline' },
+  { href: '/catalog', label: 'My Catalog', ionicon: 'pricetags-outline' },
   // Notifications was here; now it's a bottom-bar tab so the menu
   // entry would just be a duplicate. Reachable via the bell-icon tab.
   { feature: 'settings', href: '/settings' },
@@ -302,23 +313,31 @@ function NavMenuSheet({
           accessible={false}
           importantForAccessibility="no-hide-descendants"
         >
-          {items.map((item) => (
-            <TouchableOpacity
-              key={item.href ?? `action:${item.action}`}
-              style={navMenuStyles.row}
-              testID={`root-layout-menu-row-${item.feature}`}
-              accessibilityRole="button"
-              accessibilityLabel={FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name}
-              onPress={() => onSelect(item)}
-            >
-              <View style={{ marginRight: 14 }}>
-                <FeatureIcon feature={item.feature} size={22} color={colors.textPrimary} />
-              </View>
-              <Text style={navMenuStyles.rowText}>
-                {FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {items.map((item) => {
+            const label =
+              item.feature !== undefined
+                ? (FEATURES[item.feature].menuLabel ?? FEATURES[item.feature].name)
+                : item.label;
+            return (
+              <TouchableOpacity
+                key={item.href ?? `action:${item.action}`}
+                style={navMenuStyles.row}
+                testID={`root-layout-menu-row-${item.feature ?? item.href}`}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+                onPress={() => onSelect(item)}
+              >
+                <View style={{ marginRight: 14 }}>
+                  {item.feature !== undefined ? (
+                    <FeatureIcon feature={item.feature} size={22} color={colors.textPrimary} />
+                  ) : (
+                    <Ionicons name={item.ionicon} size={22} color={colors.textPrimary} />
+                  )}
+                </View>
+                <Text style={navMenuStyles.rowText}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
           {/* Clear the Chat thread (history only — reminders/vault are kept;
               the cards are re-rendered chat messages, not the source data).
               Lives at the bottom, after the feature rows. */}
@@ -938,6 +957,28 @@ export default function RootLayout() {
                   // entry; it self-dismisses (router.back) after handing the code
                   // to the flow bridge, so no header is needed.
                   options={{ href: null, headerShown: false }}
+                />
+                {/* Commerce screens — hamburger-menu destinations, NEVER
+                 * bottom tabs. Without these declarations file-based routing
+                 * auto-registers each as a tab (the exact leak documented for
+                 * peerlens-preferences above); worse, the leaked
+                 * `order-draft` tab opened with no draft_id and spun for
+                 * ever. First device run found it. */}
+                <Tabs.Screen
+                  name="orders"
+                  options={{ title: 'My Orders', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="order-draft"
+                  options={{ title: 'Order', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="catalog"
+                  options={{ title: 'My Catalog', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="catalog-draft"
+                  options={{ title: 'Catalog draft', href: null, headerLeft: renderHeaderBackButton }}
                 />
                 <Tabs.Screen
                   name="reminders"

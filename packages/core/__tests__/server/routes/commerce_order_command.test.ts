@@ -337,7 +337,7 @@ describe('reconcile_now', () => {
     expect(resp.status).toBe(200);
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0]?.toDid).toBe(SUPPLIER);
-    expect(dispatched[0]?.body.capability).toBe('order_reconcile');
+    expect(dispatched[0]?.body.capability).toBe('com.dinakernel.commerce.order_reconcile');
   });
 
   it('advances the clock, so one tap does not become two questions', async () => {

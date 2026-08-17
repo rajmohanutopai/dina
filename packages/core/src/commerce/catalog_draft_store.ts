@@ -24,14 +24,16 @@
  * re-confirms, and the fresh receipt sits beside pre-edit held bytes.
  */
 
-import { validateCatalogItem } from '@dina/commerce-protocol';
+import { validateCatalogExtractionBinding, validateCatalogItem } from '@dina/commerce-protocol';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type {
+  CatalogExtractionBinding,
   CatalogItem,
   CatalogPointer,
   CatalogSnapshot,
   CatalogSnapshotPage,
+  ExtractionManifestPage,
 } from '@dina/commerce-protocol';
 
 /** Where a draft is in §6's state machine. The order is the whole rule. */
@@ -71,6 +73,14 @@ export interface DraftRow {
   /** What the seller sees: a CSV header is row 1, data starts at 2. */
   row: number;
   cells: Record<string, string>;
+  /**
+   * §4.2: the immutable product identity this row's identifier is claimed
+   * under. Minted once when the row first becomes a product, carried on
+   * the ROW ENTRY so reordering leaves assignments untouched, and never
+   * derived from anything the seller can edit. Absent until the mint
+   * policy first runs (non-photo drafts may never carry one).
+   */
+  assignmentId?: string;
 }
 
 export interface CatalogDraft {
@@ -90,6 +100,22 @@ export interface CatalogDraft {
    * to have come from a different model than the one a person vouched for.
    */
   extraction: { model: string; schemaVersion: string } | null;
+  /**
+   * The photo lane's §2.1 chain material: the ordered manifest capture
+   * produced, the extraction commitment digest, and the versioned binding
+   * record that ties the digest to THIS draft at a content revision.
+   *
+   * ALL THREE OR NONE. A group whose binding names a different draft, a
+   * different digest, or does not validate reads as ABSENT — and the photo
+   * lane's confirm/prepare/publish checks refuse a photo-derived draft
+   * whose group is absent, so a corrupted chain refuses rather than
+   * publishing unchained. Null on drafts that never came from a photograph.
+   */
+  photoExtraction: {
+    manifest: readonly ExtractionManifestPage[];
+    extractionDigest: string;
+    binding: CatalogExtractionBinding;
+  } | null;
   /**
    * When a publication claimed this draft, or null when unclaimed.
    *
@@ -282,7 +308,19 @@ function readRows(raw: unknown): DraftRow[] {
       if (typeof value !== 'string') return [];
       out[key] = value;
     }
-    rows.push({ row: line, cells: out });
+    // A CORRUPT assignment id is refused, not dropped: dropping it would
+    // read as "this row never became a product", and the mint would then
+    // invent a FRESH identity for a product that already has one — the
+    // §9.4 fork the id exists to prevent. Absent stays absent.
+    const assignment = record.assignmentId;
+    if (assignment !== undefined && (typeof assignment !== 'string' || assignment === '')) {
+      return [];
+    }
+    rows.push(
+      assignment === undefined
+        ? { row: line, cells: out }
+        : { row: line, cells: out, assignmentId: assignment },
+    );
   }
   return rows;
 }
@@ -320,6 +358,52 @@ function readProvenance(raw: unknown): Record<string, Record<string, FieldProven
     out[index] = fields;
   }
   return out;
+}
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * The photo-extraction group, ALL THREE COLUMNS OR NONE.
+ *
+ * Fail-closed like every reader here: a binding that names a different
+ * draft or a different digest is not half-believed, it is absent — and an
+ * absent group makes a photo-derived draft unconfirmable rather than
+ * publishable without its chain.
+ */
+function readPhotoExtraction(
+  manifestRaw: unknown,
+  digestRaw: unknown,
+  bindingRaw: unknown,
+  draftId: string,
+): CatalogDraft['photoExtraction'] {
+  const digest = String(digestRaw ?? '');
+  const manifestJson = String(manifestRaw ?? '');
+  const bindingJson = String(bindingRaw ?? '');
+  if (digest === '' && manifestJson === '' && bindingJson === '') return null;
+  if (!HEX64.test(digest)) return null;
+
+  const manifest = parseJson<unknown[]>(manifestJson, []);
+  if (!Array.isArray(manifest) || manifest.length === 0) return null;
+  const pages: ExtractionManifestPage[] = [];
+  for (const [i, entry] of manifest.entries()) {
+    if (entry === null || typeof entry !== 'object') return null;
+    const page = entry as Record<string, unknown>;
+    if (typeof page.artifact_id !== 'string' || page.artifact_id === '') return null;
+    if (typeof page.content_hash !== 'string' || !HEX64.test(page.content_hash)) return null;
+    // The manifest is ordered and the order is the commitment.
+    if (page.page_index !== i) return null;
+    pages.push({ artifact_id: page.artifact_id, content_hash: page.content_hash, page_index: i });
+  }
+
+  const binding = parseJson<unknown>(bindingJson, null);
+  if (validateCatalogExtractionBinding(binding) !== null) return null;
+  const typed = binding as CatalogExtractionBinding;
+  // The binding is the chain link, so a link naming another draft or
+  // another digest chains nothing here.
+  if (typed.draft_id !== draftId) return null;
+  if (typed.extraction_digest !== digest) return null;
+
+  return { manifest: pages, extractionDigest: digest, binding: typed };
 }
 
 /** An attribution is present only when both of its halves are. */
@@ -383,6 +467,12 @@ function toDraft(row: DBRow): CatalogDraft | null {
     // being unable to say against what. Half-present reads as absent, and
     // `confirm` refuses an absent attribution on a model-derived draft.
     extraction: readExtraction(row.extraction_model, row.extraction_schema_version),
+    photoExtraction: readPhotoExtraction(
+      row.extraction_manifest_json,
+      row.extraction_digest,
+      row.extraction_binding_json,
+      String(row.draft_id),
+    ),
     contentRevision: Number(row.content_revision ?? 0),
     rows: readRows(row.rows_json),
     findings: parseJson<unknown[]>(row.findings_json, []),
@@ -435,13 +525,14 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
          (draft_id, catalog_id, state, provenance_class, content_revision,
           default_scheme, publish_claimed_at_ms, publish_claim_token,
           extraction_model, extraction_schema_version,
+          extraction_manifest_json, extraction_digest, extraction_binding_json,
           rows_json, findings_json, provenance_json, items_json,
           generated_at_iso, item_revision,
           receipt_digest, receipt_revision,
           held_snapshot_json, held_pages_json, held_pointer_json, held_pointer_cid, held_revision,
           approved_digest, approved_revision, publication_json,
           created_at_ms, updated_at_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(draft_id) DO UPDATE SET
          catalog_id = excluded.catalog_id,
          state = excluded.state,
@@ -451,6 +542,9 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
          publish_claim_token = excluded.publish_claim_token,
          extraction_model = excluded.extraction_model,
          extraction_schema_version = excluded.extraction_schema_version,
+         extraction_manifest_json = excluded.extraction_manifest_json,
+         extraction_digest = excluded.extraction_digest,
+         extraction_binding_json = excluded.extraction_binding_json,
          content_revision = excluded.content_revision,
          rows_json = excluded.rows_json,
          findings_json = excluded.findings_json,
@@ -480,6 +574,9 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
         draft.publishClaim?.token ?? '',
         draft.extraction?.model ?? '',
         draft.extraction?.schemaVersion ?? '',
+        draft.photoExtraction === null ? '' : JSON.stringify(draft.photoExtraction.manifest),
+        draft.photoExtraction?.extractionDigest ?? '',
+        draft.photoExtraction === null ? '' : JSON.stringify(draft.photoExtraction.binding),
         JSON.stringify(draft.rows),
         JSON.stringify(draft.findings),
         JSON.stringify(draft.provenance),

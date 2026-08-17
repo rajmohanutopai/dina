@@ -842,7 +842,96 @@ export { serializeWrappedSeed, deserializeWrappedSeed } from './storage/seed_fil
 
 // Unlock lifecycle — full-unlock entry point used by onboarding tests
 // and the in-process boot path.
-export { fullUnlock } from './lifecycle/unlock';
+export { fullUnlock, verifyPassphrase } from './lifecycle/unlock';
+export { readWrappedSeed } from './storage/seed_file_node';
+// Task 4.53 — the server boot unwraps `wrapped_seed.bin` with the
+// operator-supplied unlock passphrase; `wrapSeed` is the conversion half
+// (convenience → security mode).
+export { unwrapSeed, wrapSeed } from './crypto/aesgcm';
+// §10 item 9 — presence. The composition root installs the verifier; the
+// commerce routes ask the two questions. See `commerce/owner_presence.ts`.
+export {
+  OWNER_PRESENCE_TTL_MS,
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+  ownerPresenceCanBeEstablished,
+  ownerPresentNow,
+  proveOwnerPresence,
+} from './commerce/owner_presence';
+export type { OwnerPresenceVerifier } from './commerce/owner_presence';
+// §3 (photo lanes) — the image-egress gate. The composition root installs
+// the broker (the only holder of a vision-provider credential); the lanes
+// call the gate; Brain receives rows and never bytes.
+export {
+  IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
+  extractRowsThroughGate,
+  imageEgressBrokerInstalled,
+  installImageEgressBroker,
+  InMemoryImageEgressAuthorizationRepository,
+  newEgressAuthorizationId,
+  SQLiteImageEgressAuthorizationRepository,
+} from './commerce/image_egress';
+export type {
+  CommerceImageReader,
+  ImageEgressAuthorization,
+  ImageEgressAuthorizationRepository,
+  ImageEgressBroker,
+  ImageEgressPurpose,
+} from './commerce/image_egress';
+// §8b (photo lanes) — metadata-only observability; the sink is the
+// composition root's logger, and the event type carries ids, states,
+// counts and latencies ONLY.
+export { installCommerceObserver, recordCommerceEvent } from './commerce/observability';
+export type { CommerceEvent, CommerceEventName, CommerceObserver } from './commerce/observability';
+// §18.1 — the first-party commerce install step (PC-9a): mobile drives the
+// same ceremony in-process that the server drives over its owner routes.
+export { beginReferenceInstall, referenceManifestCid } from './commerce/reference_install';
+export { planCommerceInstall, roleIsInstalled } from './commerce/install_plan';
+export type { CommerceRole, InstallChoice } from './commerce/install_plan';
+export {
+  BUYER_REFERENCE_MANIFEST,
+  SUPPLIER_REFERENCE_MANIFEST,
+} from './commerce/reference_manifests';
+// §6 (photo lanes) — the photograph as a defined artifact: bounded ingest,
+// two-phase decode, EXIF-stripped storage, draft-tied erasure, retention.
+export {
+  IMAGE_MIME_ALLOWLIST,
+  MAX_AGGREGATE_IMAGE_BYTES,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_PAGES,
+  MAX_IMAGE_PIXELS,
+  MAX_PAGE_IMAGE_BYTES,
+  ingestCommerceImage,
+  imageReencoderInstalled,
+  InMemoryCommerceImageArtifactRepository,
+  installImageReencoder,
+  newImageArtifactId,
+  parseImageHeader,
+  revalidateStoredArtifact,
+  SQLiteCommerceImageArtifactRepository,
+} from './commerce/image_artifacts';
+export type {
+  CommerceImageArtifact,
+  CommerceImageArtifactRepository,
+  CommerceImageLane,
+  CommerceImageMime,
+  ImageReencoder,
+} from './commerce/image_artifacts';
+// §4.2 (photo lanes) — the SKU reservation ledger: Core's atomic claim
+// primitive; the minting POLICY lives with the pack's importer/assembler.
+export {
+  InMemorySkuLedgerRepository,
+  newAssignmentId,
+  renderMintedValue,
+  SQLiteSkuLedgerRepository,
+} from './commerce/sku_ledger';
+export type {
+  SkuClaimInput,
+  SkuClaimOutcome,
+  SkuLedgerRepository,
+} from './commerce/sku_ledger';
+export { applySkuMint } from './commerce/sku_mint';
+export type { SkuMintResult } from './commerce/sku_mint';
 export type { UnlockInput, UnlockResult } from './lifecycle/unlock';
 
 // Health diagnostics — runHealthCheck assembles the live HealthReport
@@ -1284,6 +1373,25 @@ export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
 // instance is held at the app edge so Brain cannot acquire an owner-stamping
 // dispatcher. Only the class (which needs the raw router to construct) is public.
 export { InProcessOwnerRunClient, OwnerRunHttpError } from './client/owner-run-client';
+// §4 (photo lanes) — the seller screens' owner-only draft dispatch, on the
+// same real boundary as the run client: Brain holds no reference to it.
+export {
+  InProcessOwnerCommerceClient,
+  OwnerCommerceHttpError,
+} from './client/owner-commerce-client';
+export type {
+  DraftAnswer,
+  OrderApproveAnswer,
+  OrderConversation,
+  OrderDraft,
+  OrderDraftAnswer,
+  OrderDraftLine,
+  OrderDraftSummary,
+  OrderSendAnswer,
+  OrderSubmitAnswer,
+  PhotoCaptureResult,
+} from './client/owner-commerce-client';
+export type { CatalogDraft, DraftRow } from './commerce/catalog_draft_store';
 export type {
   OwnerRunClient,
   RunStartRequest,

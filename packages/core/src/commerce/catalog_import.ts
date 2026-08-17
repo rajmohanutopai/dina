@@ -75,7 +75,14 @@ export type ImportRefusal =
   | 'bad_integer'
   | 'duplicate_identifier'
   | 'unknown_variant_parent'
-  | 'malformed_csv';
+  | 'malformed_csv'
+  /**
+   * §4.2 (photo lanes): the identifier is reserved to ANOTHER product in
+   * the issuer's ledger — an edit collision, or the same printed SKU in a
+   * second catalog's draft. The detail names the owning catalog, and the
+   * refusal routes through repair like any other finding.
+   */
+  | 'identifier_claimed';
 
 export interface ImportFinding {
   refusal: ImportRefusal;
@@ -321,6 +328,21 @@ export function importCatalogRows(args: {
   source: CatalogRowSource;
   defaultScheme: 'gtin' | 'sku';
   supplierDid: string;
+  /**
+   * The currency to assume when a priced row does not name one.
+   *
+   * A CSV exported from an ERP carries a `currency` column. A PHOTOGRAPH OF A
+   * PRICE LIST DOES NOT — the whole sheet is in one currency, stated once at
+   * the top if at all, and `₹` alone does not distinguish several. Without
+   * this the photo lane could not import a single priced row, and the seller
+   * was told their PRICE was a bad integer when the price was fine.
+   *
+   * The row's own currency still wins here, because a source that states one
+   * per row means it. The assembler then overrides both with the seller's
+   * setting for exactly the reason above; this fallback is about getting the
+   * row through the importer's shape checks, not about deciding the currency.
+   */
+  fallbackCurrency?: string;
 }): CatalogImport {
   const findings: ImportFinding[] = [...args.source.parseFindings];
   const columns = args.source.columns;
@@ -466,13 +488,27 @@ export function importCatalogRows(args: {
 
     const priceMinor = get('list_price_minor_units');
     if (priceMinor !== '') {
-      const currency = get('currency');
-      if (!/^-?(?:0|[1-9][0-9]{0,17})$/.test(priceMinor) || currency === '') {
+      const currency = get('currency') !== '' ? get('currency') : (args.fallbackCurrency ?? '');
+      // TWO FAULTS, NAMED SEPARATELY. One refusal covering both pointed at the
+      // price column whatever was wrong, so a seller whose source stated no
+      // currency was told their price was a bad integer — a message that sends
+      // them to correct a value that was already right.
+      if (!/^-?(?:0|[1-9][0-9]{0,17})$/.test(priceMinor)) {
         findings.push({
           refusal: 'bad_integer',
           row: rowNumber,
           column: 'list_price_minor_units',
-          detail: 'a list price needs integer minor units and a currency',
+          detail: `"${priceMinor}" is not a whole number of minor units`,
+        });
+        continue;
+      }
+      if (currency === '') {
+        findings.push({
+          refusal: 'bad_integer',
+          row: rowNumber,
+          column: 'currency',
+          detail:
+            'this row carries a price and no currency, and the supplier has no trading currency set',
         });
         continue;
       }

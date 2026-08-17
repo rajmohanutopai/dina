@@ -169,6 +169,23 @@ export { hasDEK, wrapWithPersonaDEK, unwrapWithPersonaDEK } from './src/persona/
 export { wireRunPlaneNode } from './src/run/plane_node';
 export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './src/run/plane_node';
 export { InProcessOwnerRunClient } from './src/client/owner-run-client';
+export {
+  InProcessOwnerCommerceClient,
+  OwnerCommerceHttpError,
+} from './src/client/owner-commerce-client';
+export type {
+  DraftAnswer,
+  OrderApproveAnswer,
+  OrderConversation,
+  OrderDraft,
+  OrderDraftAnswer,
+  OrderDraftLine,
+  OrderDraftSummary,
+  OrderSendAnswer,
+  OrderSubmitAnswer,
+  PhotoCaptureResult,
+} from './src/client/owner-commerce-client';
+export type { CatalogDraft, DraftRow } from './src/commerce/catalog_draft_store';
 export type {
   OwnerReasoningSubmitRequest,
   OwnerReasoningSubmitResult,

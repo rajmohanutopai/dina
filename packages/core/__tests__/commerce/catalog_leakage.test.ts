@@ -434,3 +434,43 @@ describe('the classes with no derivable boundary', () => {
     expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
   });
 });
+
+describe('§4.2 photo lanes: the identifier-column suppression is REMOVED', () => {
+  // The lane doc's §7 bundled this with the SKU minting decision: the
+  // collision excuse holds when a seller types their own SKU and fails when
+  // a model reads digits off a photographed counter. Photo-derived drafts
+  // scan sku/mpn/value like any other field.
+
+  it('the named test: a phone-number-shaped sku is reported, not published', () => {
+    const verdict = gateCatalogForPublication([{ sku: '9876543210' }], {
+      scanIdentifierColumns: true,
+    });
+    expect(verdict.clean).toBe(false);
+    expect(verdict.findings[0]).toMatchObject({
+      refusal: 'personal_identifier_value',
+      path: 'items[0].sku',
+    });
+  });
+
+  it('a MINTED value never trips it — the P- shape carries no such digits', () => {
+    const verdict = gateCatalogForPublication(
+      [{ sku: 'P-0001' }, { sku: 'P-0417' }],
+      { scanIdentifierColumns: true },
+    );
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('typed-SKU lanes keep the suppression: the same value passes without the option', () => {
+    // The asymmetry the original rule was built on still holds where a
+    // seller typed the value themselves.
+    const verdict = gateCatalogForPublication([{ sku: '9876543210' }]);
+    expect(verdict.clean).toBe(true);
+  });
+
+  it('a genuinely printed part number that is not phone-shaped still publishes', () => {
+    const verdict = gateCatalogForPublication([{ sku: 'CM-CHAIR-1' }, { mpn: 'MX41-B' }], {
+      scanIdentifierColumns: true,
+    });
+    expect(verdict.clean).toBe(true);
+  });
+});

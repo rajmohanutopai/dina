@@ -19,6 +19,7 @@
  */
 
 import {
+  approvalDigest,
   buildBuyerApprovalPayload,
   type ActingInstall,
   type BuyerApprovalContext,
@@ -943,5 +944,271 @@ describe('a node that cannot read its own install registry', () => {
 
     expect(resp.status).toBe(409);
     expect((resp.body as { refusal: string }).refusal).toBe('install_changed_since_approval');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §5.4 stage 4 (photo-commerce design): the conditional presence gate and
+// the source-bound approval.
+// ---------------------------------------------------------------------------
+
+import {
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+  proveOwnerPresence,
+} from '../../../src/commerce/owner_presence';
+import {
+  InMemoryOrderDraftRepository,
+  type OrderDraft,
+} from '../../../src/commerce/order_draft_store';
+
+import type { ApprovalSourceBinding } from '@dina/commerce-protocol';
+
+describe('the conditional presence gate on prepare (§5.4 stage 4)', () => {
+  afterEach(() => {
+    installOwnerPresenceVerifier(null);
+    clearOwnerPresence();
+  });
+
+  it('the NAMED software-path test: owner capability alone cannot mint a commercial approval', async () => {
+    // A presence-capable node: the verifier exists, nobody has proven
+    // anything. A program holding only the boot-minted owner capability —
+    // which is exactly what this harness's `owner()` requests are — must
+    // not obtain an approval.
+    installOwnerPresenceVerifier(async (p) => p === 'correct horse');
+    const resp = await router.handle(
+      owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT }),
+    );
+    expect(resp.status).toBe(403);
+    expect((resp.body as { error: string }).error).toBe('no_user_presence');
+  });
+
+  it('a live proof opens the gate; a convenience-mode node is unchanged', async () => {
+    installOwnerPresenceVerifier(async (p) => p === 'correct horse');
+    await proveOwnerPresence('correct horse', Date.now());
+    const withProof = await router.handle(
+      owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT }),
+    );
+    expect(withProof.status).toBe(200);
+
+    // Convenience mode: no verifier, no secret only the owner knows —
+    // behaviour unchanged, so convenience-mode ordering survives.
+    installOwnerPresenceVerifier(null);
+    clearOwnerPresence();
+    const convenience = await router.handle(
+      owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT }),
+    );
+    expect(convenience.status).toBe(200);
+  });
+});
+
+describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
+  let orderDrafts: InMemoryOrderDraftRepository;
+
+  function sourceDraft(overrides: Partial<OrderDraft> = {}): OrderDraft {
+    return {
+      draftId: 'odr-1',
+      manifest: [{ artifact_id: 'img-1', content_hash: 'a'.repeat(64), page_index: 0 }],
+      extraction: { model: 'gpt-4o-mini', schemaVersion: 'order-lines-1' },
+      extractionDigest: 'a'.repeat(64),
+      lines: [
+        {
+          lineId: 'line-1',
+          text: '20 dining chairs',
+          pageIndex: 0,
+          fields: { quantity: '20' },
+          provenance: { quantity: 'accepted' },
+          resolution: {
+            kind: 'resolved',
+            product: { scheme: 'gtin', value: '05012345678900' },
+            supplierDid: SUPPLIER,
+            flaggedNewSupplier: false,
+          },
+          generation: 1,
+          assignmentGeneration: 0,
+          vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+          deferred: false,
+          evidence: null,
+          submittedIn: null,
+        },
+      ],
+      requirements: [],
+      conversations: [
+        {
+          conversationId: 'conv-1',
+          supplierDid: SUPPLIER,
+          state: 'quoted',
+          lineIds: ['line-1'],
+          snapshot: null,
+          snapshotDigest: 'd'.repeat(64),
+          requestDigest: 'c'.repeat(64),
+          requestId: 'req-1',
+          quoteDigest: 'e'.repeat(64),
+          quoteId: null,
+          quoteValidUntil: '2026-08-22T00:00:00.000Z',
+          approvalId: null,
+          purchaseOrderId: null,
+          dispatchIntent: null,
+          outcome: null,
+        },
+      ],
+      ceremonyCounter: 1,
+      abandoned: false,
+      createdAtMs: T0,
+      updatedAtMs: T0,
+      ...overrides,
+    };
+  }
+
+  function binding(overrides: Partial<ApprovalSourceBinding> = {}): ApprovalSourceBinding {
+    return {
+      origin: 'photo_order_draft',
+      binding_version: 1,
+      draft_id: 'odr-1',
+      conversation_id: 'conv-1',
+      assignment_generations: [{ line_id: 'line-1', generation: 0 }],
+      requirement_generations: [],
+      snapshot_digest: 'd'.repeat(64),
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    orderDrafts = new InMemoryOrderDraftRepository();
+    orderDrafts.put(sourceDraft());
+    installCommerceRuntime({
+      buyerOrders,
+      buyerQuotes: new InMemoryBuyerQuoteRepository(),
+      buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),
+      orderApprovals: approvals,
+      orderDrafts,
+    } as unknown as CommerceRuntime);
+  });
+
+  async function prepareBound(source: ApprovalSourceBinding): Promise<string> {
+    const resp = await router.handle(
+      owner('/v1/commerce/orders/prepare', {
+        order: ORDER,
+        context: { ...CONTEXT, source },
+      }),
+    );
+    if (resp.status !== 200) {
+      throw new Error(`prepare refused: ${resp.status} ${JSON.stringify(resp.body)}`);
+    }
+    return (resp.body as { approval_id: string }).approval_id;
+  }
+
+  function bindApproval(conversationId: string, approvalId: string): void {
+    const draft = orderDrafts.get('odr-1');
+    if (draft === null) throw new Error('draft gone');
+    const conversation = draft.conversations.find((c) => c.conversationId === conversationId);
+    if (conversation !== undefined) conversation.approvalId = approvalId;
+    orderDrafts.put(draft);
+  }
+
+  it('the binding travels INSIDE the integrity digest — stripped changes the digest', () => {
+    const withSource = buildBuyerApprovalPayload(ORDER, { ...CONTEXT, source: binding() });
+    const without = buildBuyerApprovalPayload(ORDER, CONTEXT);
+    expect(withSource.ok && without.ok).toBe(true);
+    if (!withSource.ok || !without.ok) return;
+    expect(approvalDigest(withSource.payload)).not.toBe(approvalDigest(without.payload));
+  });
+
+  it('a CURRENT binding submits', async () => {
+    const approvalId = await prepareBound(binding());
+    bindApproval('conv-1', approvalId);
+    const resp = await submit({ approval_id: approvalId });
+    expect(resp.status).toBe(200);
+    expect(sent.length).toBe(1);
+  });
+
+  it('a STALE assignment generation dies at submit — the enforcement, not the courtesy', async () => {
+    const approvalId = await prepareBound(binding());
+    bindApproval('conv-1', approvalId);
+    // The line moved after the approval was minted — a competitor closed
+    // it, a repair retired it; either way the generation is not the one
+    // the approval was minted under.
+    const draft = orderDrafts.get('odr-1');
+    if (draft !== null) {
+      draft.lines[0]!.assignmentGeneration = 1;
+      orderDrafts.put(draft);
+    }
+    const resp = await submit({ approval_id: approvalId });
+    expect(resp.status).toBe(409);
+    expect((resp.body as { error: string }).error).toBe('stale_source_binding');
+    expect(sent.length).toBe(0);
+  });
+
+  it('the NAMED test: approvals on two competing conversations — submit one, the other refuses', async () => {
+    // Both conversations carry line-1; both minted approvals before either
+    // submitted — the reachable race the design records.
+    const draft = orderDrafts.get('odr-1');
+    if (draft !== null) {
+      draft.conversations.push({
+        ...draft.conversations[0]!,
+        conversationId: 'conv-2',
+        state: 'superseded', // terminal, so the one-live invariant holds
+      });
+      orderDrafts.put(draft);
+    }
+    const approvalA = await prepareBound(binding());
+    const approvalB = await prepareBound(binding({ conversation_id: 'conv-2' }));
+    bindApproval('conv-1', approvalA);
+    bindApproval('conv-2', approvalB);
+
+    const first = await submit({ approval_id: approvalA });
+    expect(first.status).toBe(200);
+
+    // Submitting A closes the competing assignment — the orchestrator's
+    // duty, performed here as it will perform it: the shared line's
+    // assignment retires.
+    const after = orderDrafts.get('odr-1');
+    if (after !== null) {
+      after.lines[0]!.assignmentGeneration = 1;
+      orderDrafts.put(after);
+    }
+    const second = await submit({ approval_id: approvalB });
+    expect(second.status).toBe(409);
+    expect((second.body as { error: string }).error).toBe('stale_source_binding');
+    expect(sent.length).toBe(1);
+  });
+
+  it('a binding to a VANISHED draft answers 404, never the unrestricted path', async () => {
+    const approvalId = await prepareBound(binding());
+    orderDrafts.delete('odr-1');
+    const resp = await submit({ approval_id: approvalId });
+    expect(resp.status).toBe(404);
+    expect((resp.body as { error: string }).error).toBe('unknown_source_draft');
+  });
+
+  it('a PARTIAL binding is refused at the door — never stored', async () => {
+    const partial = { origin: 'photo_order_draft', binding_version: 1, draft_id: 'odr-1' };
+    const resp = await router.handle(
+      owner('/v1/commerce/orders/prepare', {
+        order: ORDER,
+        context: { ...CONTEXT, source: partial },
+      }),
+    );
+    expect(resp.status).toBe(400);
+    expect((resp.body as { error: string }).error).toBe('invalid_source_binding');
+  });
+
+  it('the DOWNGRADE never happens: a binding corrupted AFTER retention reads as no approval', async () => {
+    // §2.1: a photo approval whose source fields were lost to corruption
+    // must not hydrate as a legitimate legacy approval and take the
+    // unrestricted path. The stored context is stripped of a source field
+    // from the harness; hydration refuses the ROW whole.
+    const approvalId = await prepareBound(binding());
+    bindApproval('conv-1', approvalId);
+    const inner = approvals as unknown as { held: Map<string, { context_json: string }> };
+    const row = inner.held.get(approvalId);
+    if (row !== undefined) {
+      const context = JSON.parse(row.context_json) as { source: Record<string, unknown> };
+      delete context.source.snapshot_digest;
+      row.context_json = JSON.stringify(context);
+    }
+    const submitResp = await submit({ approval_id: approvalId });
+    expect(submitResp.status).toBe(404);
+    expect(sent.length).toBe(0);
   });
 });

@@ -81,7 +81,12 @@ const QUOTE_PARAMS = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['line_id', 'product', 'quantity'],
+        // `requested_quantity`, MATCHING §9.7's frozen QuoteRequest line —
+        // the record travels whole. This schema said `quantity`, and the
+        // first live request was refused at the envelope: a conforming
+        // supplier runner could never receive a real request under the
+        // consented shape. The wire record is frozen; the manifest bends.
+        required: ['line_id', 'product', 'requested_quantity'],
         properties: {
           line_id: { type: 'string' },
           product: {
@@ -89,7 +94,7 @@ const QUOTE_PARAMS = {
             required: ['scheme', 'value'],
             properties: { scheme: { type: 'string' }, value: { type: 'string' } },
           },
-          quantity: QUANTITY_SCHEMA,
+          requested_quantity: QUANTITY_SCHEMA,
         },
       },
     },

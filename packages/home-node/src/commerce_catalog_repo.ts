@@ -14,7 +14,8 @@
  * checked on EVERY write rather than once at wiring time.
  */
 
-import type { EpochRepoClient } from './commerce_epoch';
+import { stripRepoEnvelope, type EpochRepoClient } from './commerce_epoch';
+
 import type { CatalogRecordReader, CatalogRecordWriter } from '@dina/core';
 
 export interface CatalogRepoAccess {
@@ -62,7 +63,11 @@ export function makeCatalogRepoAccess(options: {
     reader: async ({ collection, rkey }) => {
       await assertOwnRepo();
       const found = await options.pds.getRecord(collection, rkey);
-      return found === null ? null : { record: found.value, cid: found.cid };
+      // Envelope off before any consumer validates: the PDS stamps `$type`
+      // into the stored value, and the exact-key pointer validator would
+      // report the node's own head as unreadable on every boot after the
+      // first publish (the same live failure the epoch reader hit).
+      return found === null ? null : { record: stripRepoEnvelope(found.value), cid: found.cid };
     },
   };
 }
