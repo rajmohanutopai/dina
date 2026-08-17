@@ -283,6 +283,14 @@ describe('lowestSupportedOpenAIEffort — model-id-aware reasoning floor', () =>
     expect(lowestSupportedOpenAIEffort('gpt-5-pro')).toBe('medium');
   });
 
+  // Probed live 2026-08-16: gpt-5.6-luna ACCEPTS 'none' and REJECTS
+  // 'minimal' — the generic gpt-5 prefix rule already lands on the
+  // right floor, and this pins that no nano-tier special case creeps in.
+  it('returns "none" for gpt-5.6-luna via the generic gpt-5 rule', () => {
+    expect(lowestSupportedOpenAIEffort('gpt-5.6-luna')).toBe('none');
+    expect(lowestSupportedOpenAIEffort('openai/gpt-5.6-luna')).toBe('none');
+  });
+
   it('falls back to "none" for plain gpt-5 base', () => {
     expect(lowestSupportedOpenAIEffort('gpt-5')).toBe('none');
   });

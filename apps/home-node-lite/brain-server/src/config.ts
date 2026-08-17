@@ -70,6 +70,20 @@ const LLMSchema = z.discriminatedUnion('provider', [
     apiKey: z.string().min(1),
     model: z.string().min(1).optional(),
   }),
+  z.object({
+    provider: z.literal('openai'),
+    apiKey: z.string().min(1),
+    model: z.string().min(1).optional(),
+    // Explicit `reasoning.effort` override (gpt-5+). Unset lets the
+    // adapter pick the cheapest effort the model accepts.
+    reasoningEffort: z.enum(['none', 'low', 'minimal', 'medium', 'high', 'xhigh']).optional(),
+  }),
+  // OpenRouter is OpenAI-compatible; same shape, its own key + base URL.
+  z.object({
+    provider: z.literal('openrouter'),
+    apiKey: z.string().min(1),
+    model: z.string().min(1).optional(),
+  }),
   // Deterministic canned-response provider for E2E/dev. NEVER production —
   // gated behind an explicit `DINA_BRAIN_LLM_PROVIDER=scripted` opt-in.
   z.object({
@@ -166,6 +180,21 @@ function readLLM(env: NodeJS.ProcessEnv) {
       provider: 'gemini',
       apiKey: blankToUndefined(env.DINA_GEMINI_API_KEY ?? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY),
       model: blankToUndefined(env.DINA_GEMINI_MODEL),
+    };
+  }
+  if (provider === 'openai') {
+    return {
+      provider: 'openai',
+      apiKey: blankToUndefined(env.DINA_OPENAI_API_KEY ?? env.OPENAI_API_KEY),
+      model: blankToUndefined(env.DINA_OPENAI_MODEL),
+      reasoningEffort: blankToUndefined(env.DINA_OPENAI_REASONING_EFFORT)?.toLowerCase(),
+    };
+  }
+  if (provider === 'openrouter') {
+    return {
+      provider: 'openrouter',
+      apiKey: blankToUndefined(env.DINA_OPENROUTER_API_KEY ?? env.OPENROUTER_API_KEY),
+      model: blankToUndefined(env.DINA_OPENROUTER_MODEL),
     };
   }
   if (provider === 'scripted') {

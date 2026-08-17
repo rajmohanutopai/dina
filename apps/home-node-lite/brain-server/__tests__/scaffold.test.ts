@@ -145,7 +145,42 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
 
   it('throws ConfigError when an explicit LLM provider is incomplete or unknown', () => {
     expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'gemini' })).toThrow(ConfigError);
-    expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'openai' })).toThrow(ConfigError);
+    expect(() =>
+      loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'openai', OPENAI_API_KEY: '' }),
+    ).toThrow(ConfigError);
+  });
+
+  it('honours OpenAI and OpenRouter LLM provider config, with the effort override', () => {
+    const openai = loadConfig({
+      DINA_BRAIN_LLM_PROVIDER: 'openai',
+      DINA_OPENAI_API_KEY: 'sk-test',
+      DINA_OPENAI_MODEL: 'gpt-5.6-luna',
+      DINA_OPENAI_REASONING_EFFORT: 'xhigh',
+    });
+    expect(openai.llm).toEqual({
+      provider: 'openai',
+      apiKey: 'sk-test',
+      model: 'gpt-5.6-luna',
+      reasoningEffort: 'xhigh',
+    });
+    // An out-of-set effort refuses rather than silently passing through.
+    expect(() =>
+      loadConfig({
+        DINA_BRAIN_LLM_PROVIDER: 'openai',
+        DINA_OPENAI_API_KEY: 'sk-test',
+        DINA_OPENAI_REASONING_EFFORT: 'ultra',
+      }),
+    ).toThrow(ConfigError);
+    const openrouter = loadConfig({
+      DINA_BRAIN_LLM_PROVIDER: 'openrouter',
+      DINA_OPENROUTER_API_KEY: 'sk-or-test',
+      DINA_OPENROUTER_MODEL: 'deepseek/deepseek-v4-flash-0731',
+    });
+    expect(openrouter.llm).toEqual({
+      provider: 'openrouter',
+      apiKey: 'sk-or-test',
+      model: 'deepseek/deepseek-v4-flash-0731',
+    });
   });
 
   it('requires an explicit LLM when the internal Brain worker is enabled', () => {

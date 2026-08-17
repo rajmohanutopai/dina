@@ -34,16 +34,33 @@ const KEY_SERVICE = 'dina.credits.key';
 const STATE_SERVICE = 'dina.credits.state';
 const USERNAME = 'dina_credits';
 
-/** Compiled-in safety rails (spec "config hardening"). */
-export const CREDITS_MODEL_ALLOWLIST: readonly string[] = ['deepseek/deepseek-v4-pro'];
+/**
+ * Compiled-in safety rails (spec "config hardening").
+ *
+ * V4 Flash 0731 replaced the V4 Pro pin on 2026-08-16: the 0423 Flash
+ * was disqualified in June for dropping the HEALTH constraint under
+ * 6-constraint load, and the 0731 re-post-train held every constraint
+ * on the same brutal query, twice, at roughly a sixth of Pro's price
+ * (docs/MODEL_COST_QUALITY_FINDINGS.md addendum). Pro stays in the
+ * allowlist so an already-claimed grant with the old server pin keeps
+ * working while the grants service migrates.
+ */
+export const CREDITS_MODEL_ALLOWLIST: readonly string[] = [
+  'deepseek/deepseek-v4-flash-0731',
+  'deepseek/deepseek-v4-pro',
+];
 export const CREDITS_DEFAULT_CONFIG = {
   enabled: true,
   grant_usd: 0.25,
-  model_pin: 'deepseek/deepseek-v4-pro',
-  est_conversations: 40,
+  model_pin: 'deepseek/deepseek-v4-flash-0731',
+  est_conversations: 120,
 } as const;
-/** Measured average cost per conversation (MODEL_COST_QUALITY_FINDINGS). */
-const AVG_USD_PER_CONVERSATION = 0.0063;
+/**
+ * Measured average cost per conversation. June's Pro figure was
+ * $0.0063; Flash 0731 measured ~3x cheaper on the same loop (brutal
+ * run: ~$0.0017 including reasoning tokens). Kept conservative.
+ */
+const AVG_USD_PER_CONVERSATION = 0.002;
 /** Low-balance card threshold, in estimated conversations. */
 export const LOW_BALANCE_THRESHOLD = 5;
 

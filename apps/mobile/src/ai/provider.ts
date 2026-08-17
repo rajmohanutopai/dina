@@ -57,7 +57,7 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
   openai: {
     type: 'openai',
     label: 'OpenAI',
-    description: 'GPT-5.5, GPT-5 mini',
+    description: 'GPT-5.5, GPT-5.6 Luna',
     keyPrefix: 'sk-',
     minKeyLength: 40,
   },

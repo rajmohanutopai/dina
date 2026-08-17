@@ -595,6 +595,225 @@
         scanner. Both failures were the same mistake, matching a nesting language with a flat
         pattern, and both were silent.
       </li>
+      <li>
+        <strong>A live run found three things 8,457 unit tests did not.</strong>
+        <code>scripts/commerce/photo_catalog_journey.ts</code> drives ChairMaker photographing a
+        price list through to a stranger fetching the catalog off a real PDS. Every test in the
+        suite starts from a state it built itself; these are the faults that only exist where the
+        machine meets something it did not make.
+      </li>
+      <li>
+        <strong>Presence was a hard-coded <code>false</code>, so no seller could publish.</strong>
+        §10 item 9's primitive existed and nothing connected it. New
+        <code>owner_presence.ts</code> splits what the constant conflated: CAN this node establish
+        presence (a capability — the retired item-list route asks this, so the bypass now closes on
+        its own) versus IS somebody here now (an instant, five-minute window, which is what binds a
+        receipt). The server verifier is the check that already existed — can this passphrase
+        unwrap the master seed — so nothing new is stored. Convenience mode has no such secret, so
+        presence stays unavailable there, which is the right answer for a node that cannot tell its
+        owner from anyone holding the disk.
+      </li>
+      <li>
+        <strong>A node with the identity but not the pointer row overwrote the live chain.</strong>
+        <code>prepare</code> read the sequence, the predecessor and the CAS token from local state
+        only, so a new phone derived sequence 1 and wrote it with no swap token — a write that
+        cannot lose. Against a real PDS the head went 2 → 1 and the link was gone.
+        <code>prepare</code> is now async and reconciles: with a writer installed a reader is
+        required, the live head is validated and adopted, and an unreadable head is a refusal
+        rather than a guess at "first publication".
+      </li>
+      <li>
+        <strong>The importer demanded a currency it then threw away.</strong> The assembler
+        overrides the row's currency with the seller's, because <code>₹</code> alone is ambiguous —
+        but a priced row naming none was refused before reaching it, and the refusal blamed
+        <code>list_price_minor_units</code>. A photographed price list has one currency for the
+        whole sheet. The importer takes a fallback from settings, the row's own still wins, and the
+        two faults are named separately.
+      </li>
+      <li>
+        <strong>Photo-commerce lanes design dual-reviewed to r22.</strong>
+        <code>docs/PHOTO_COMMERCE_LANES_DESIGN.md</code>: ~100 findings closed over 22 revisions,
+        3 cold audits; owner stopped after the ceiling with the final claims-lifecycle fix applied
+        but unverified.
+      </li>
+      <li>
+        <strong>PC-1 — §2.1 frozen shapes + image-egress gate.</strong> <code>photo_draft.ts</code>
+        (5 chained commitments, all named negative vectors), draft-store photo group (fail-closed),
+        <code>image_egress.ts</code> (single-use CAS, re-hash before broker, bypass/replay/substitution
+        refused), poor fixture with an identifier-less row.
+      </li>
+      <li>
+        <strong>PC-2 — §6 image artifact store.</strong> <code>image_artifacts.ts</code>: bounded
+        header parse in kernel code (bomb refused undecoded, witness-proven), injected re-encoder,
+        stripped-bytes-only storage, verified reads, draft-tied erasure, retention listing.
+      </li>
+      <li>
+        <strong>PC-3 Core — the §4.2 SKU decision, whole.</strong> Issuer-scoped ledger
+        (<code>sku_ledger.ts</code>, atomic claims on <code>assignment_id</code>), pack-side mint
+        policy, repair-route integration in one transaction (mutation-verified); photo-lane
+        <code>collidesWithProductNumber</code> unsuppression with the phone-in-sku test; claims
+        lifecycle via publish (<code>markPublished</code>) and the new <code>/drafts/erase</code>.
+      </li>
+      <li>
+        <strong>PC-3 Core — the photo path end-to-end.</strong>
+        <code>/drafts/photo_capture</code> (bounded stripped artifacts + single-use authorization,
+        all-or-none) and <code>/drafts/photo_extract</code> (gate-authorized, mints the §2.1 chain
+        onto the draft). Route journey test: capture → extract → repair mints → clean assembly;
+        replay and bomb refusals. Full core: 8566 green.
+      </li>
+      <li>
+        <strong>PC-3 adapters — both composition roots.</strong> Server:
+        <code>image_pipeline.ts</code> (sharp re-encode, EXIF-strip probed live; OpenAI broker,
+        per-page calls). Mobile: <code>photo_pipeline.ts</code> (image-manipulator re-encode; BYOK
+        key read per call, named no-key error) installed by <code>commerce_plane.ts</code>.
+      </li>
+      <li>
+        <strong>PC-3 mobile surface.</strong> <code>InProcessOwnerCommerceClient</code> (the
+        owner-run boundary pattern; Brain never holds it), <code>/drafts/photo_page</code> for
+        photograph-beside-values, <code>app/catalog.tsx</code> (capture → extract → draft) and
+        <code>app/catalog-draft.tsx</code> (repair/review, per-field accept only, presence sheet on
+        <code>no_user_presence</code>, confirm → prepare → approve-exact-digest → publish), Settings
+        row. Maestro testIDs throughout. Sim run pending dev-client rebuild (new native modules).
+      </li>
+      <li>
+        <strong>PC-5 — the buyer aggregate (§5.1).</strong> <code>order_draft_store.ts</code>
+        (fail-closed: two-live-conversations refuses, half vouch refuses, corrupt provenance →
+        proposed; derived top-level state) + <code>order_draft_service.ts</code> — the matrix as
+        operations, ceremony mints the §2.1 vouch receipt committing the extraction digest,
+        recomputed in test. 32 tests.
+      </li>
+      <li>
+        <strong>PC-6 — resolution + the §5.2 egress contract.</strong>
+        <code>order_line_resolution.ts</code>: local token-overlap matching over digest-verified
+        pages (nothing egresses), unknown suppliers flagged, closed-fields-only discovery projection
+        (no text parameter EXISTS — the named fail-closed test sweeps for raw-text fragments),
+        authority-first evidence hydration (false and thrown both refuse before any digest).
+      </li>
+      <li>
+        <strong>PC-7 slice — the source-bound approval + presence gate.</strong> The §2.1 binding
+        rides INSIDE <code>approvalDigest</code> (stripped ≠ unstripped, proven); prepare validates
+        it at the door and refuses partials; hydration refuses a corrupted-after-retention binding
+        whole (the downgrade never happens); submit enforces generations (the named
+        competing-approvals test); the conditional presence gate on <code>/orders/prepare</code>
+        with the named software-path test.
+      </li>
+      <li>
+        <strong>PC-7 — the draft-scoped send (§5.4 stage 1).</strong>
+        <code>/orders/drafts/request-quote</code>: the §5.1 send gate (unvouched line / stale
+        generation / proposed field / undecided draft-local each named), one-live-per-supplier,
+        one identity in BOTH wire fields (asserted on the dispatched request), conversation
+        snapshotted with the §2.1 digest recomputed in test. Clears requestQuote's oldest
+        "no operator surface" ledger row.
+      </li>
+      <li>
+        <strong>PC-7 — the draft-scoped approve (§5.4 stage 4).</strong>
+        <code>/orders/drafts/approve</code>: Core builds the order from the verified quote chain,
+        discovers the acting buyer install from the registry itself (a caller supplies no order,
+        no context, no install), checks the projection §9.9-extends the RETAINED request's, and
+        mints the source-bound card; presence UNCONDITIONAL. 10 tests incl. real-submit round trip.
+      </li>
+      <li>
+        <strong>PC-7 — the submit orchestrator + sweeper (§5.1's protocol).</strong>
+        <code>/orders/drafts/submit</code> runs steps 1–3 (intent + competitor closure in one
+        transaction, dispatch through the ONE extracted path <code>order_dispatch.ts</code>,
+        four-class outcome keyed on typed refusals); <code>DispatchIntentSweeper</code> replays
+        record-first (the poisoned consumed-approval case proven) and retries transients — always
+        started by <code>startCommerceSweepers</code>. Quote receive settles the conversation
+        (sent→quoted, revision-kills-approval, terminal stays history).
+      </li>
+      <li>
+        <strong>Boundary-test scanner fix.</strong> The comment stripper ran a flat
+        <code>//</code> regex BEFORE the string-aware scan, so an <code>at://</code> template in
+        the approve route ate its own closing backtick and 16k chars of callers vanished.
+        Comments now strip inside the one context-aware pass.
+      </li>
+      <li>
+        <strong>PC-8 — the §5.5 divergence check.</strong> <code>price_divergence.ts</code>:
+        exact bigint two-tier arithmetic (vocabulary factors; case-vs-each through the resolved
+        item's own <code>units_per_pack</code>), stated badges, owner threshold on
+        <code>BuyerSettings</code>; 13 golden vectors; verdict rides per-line on the approve card.
+      </li>
+      <li>
+        <strong>PC-8 — the §5.5 lifecycle rows.</strong> <code>order_lifecycle.ts</code> on the
+        same sweeper tick: request-expiry → timed_out; quote lapse kills the approval; the §12.7
+        record resolves unconfirmed submits (accepted/rejected/countered/never_received —
+        countered returns to quoted for re-approval). The conversation keeps its
+        <code>purchaseOrderId</code> after the intent clears so the projection can find it.
+      </li>
+      <li>
+        <strong>PC-8 — the buyer surface routes.</strong> Order-lane photo_capture/photo_extract
+        (order purpose, §2.1 chain, everything extracted arrives <code>proposed</code>;
+        required_by/instruction become requirements), list/get read seam, and the eight §5.1
+        matrix rows as owner routes — confirm presence-unconditional, abandon erases the pages.
+        Journey test drives photograph → gate → review → ceremony → send; clears all nine
+        boundary pledges.
+      </li>
+      <li>
+        <strong>PC-8 — §8b observability + the buyer client.</strong>
+        <code>observability.ts</code>: the ten named events, metadata-only BY TYPE (ids, states,
+        counts, latencies — no field for a value to ride in); both boots install the sink onto
+        their logger; the journey test pins the event sequence and sweeps the serialized stream
+        for photographed fragments. <code>InProcessOwnerCommerceClient</code> gains the 15
+        buyer-lane methods; orderSubmit returns classified outcomes instead of throwing them.
+      </li>
+      <li>
+        <strong>PC-8 — the buyer screens.</strong> <code>app/orders.tsx</code> (capture + drafts,
+        long-press abandon) and <code>app/order-draft.tsx</code> (photograph beside values,
+        per-field confirm/repair, resolve, requirement decisions, the presence sheet, per-supplier
+        ask → approve-with-divergence-badges → send-with-classified-outcome); settings row
+        <code>settings-row-orders</code>. Two seams so the surface carries no crypto or supplier
+        ids: Core completes an undigested owner-typed projection, and the conversation retains
+        <code>quoteId</code> at settle so approve defaults to it.
+      </li>
+      <li>
+        <strong>PC-8 closed; PC-4 flows authored.</strong> Mobile COMMERCE_TICKS pin 4 → 5 (the
+        dispatch-replay tick, recorded as a decision); full mobile 3311 green, core 8673, lite
+        2842. Maestro <code>catalog_photo_seller.yaml</code> + <code>orders_photo_buyer.yaml</code>
+        cover nav + screen contract; deep picker journeys = hybrid runner, sim run gated on the
+        dev-client rebuild (expo-image-picker/manipulator).
+      </li>
+      <li>
+        <strong>PC-9 live run — three real bugs found and fixed.</strong> (1) The route minted
+        <code>item_revision</code> as decimal epoch millis; the §12.1 phone scanner found a 10-digit
+        span inside it and refused every photo-lane publish → base36 + letters-only tail, pinned by
+        a route-mint regression test. (2) The PDS stamps <code>$type</code> into stored values; the
+        epoch/catalog readers validated the raw fetch, so a node refused its OWN epoch record on
+        every boot after the first → <code>stripRepoEnvelope</code> at both shared-plane readers,
+        fake PDS now stamps like the real one. (3) Earlier: commerce missing from the owner
+        surface; <code>DINA_UNLOCK_PASSPHRASE</code> missing from start.sh's env allowlist.
+      </li>
+      <li>
+        <strong>PC-9 live status.</strong> Seller lane fully live on ChairMaker: photo →
+        vision extraction → repair → presence → confirm → §12.1 prepare → approve → CAS publish
+        to the node's own repo (pointer seq 1 verified on the PDS). Buyer lane live on sancho
+        through: order photo → extract → repair/resolve → vouch ceremony → signed quote request
+        over MsgBox (all five §8b events fired). Remaining leg — supplier answers
+        <code>request_quote</code> — needs an active supplier install + a runner-mode plugin
+        (paired device), the P0 install wiring that is out of PC-1..9 scope.
+      </li>
+      <li>
+        <strong>PC-9a/9b — the round trip CLOSED live.</strong> Owner install routes
+        (<code>/v1/commerce/install/begin|bind_device|confirm|retire</code>) drive the existing
+        machinery for the first-party packs (content-derived CID, <code>local_publisher_key</code>
+        anchor, 8-test suite); a test-bed quote runner (paired plugin device, signed HTTP
+        claim/complete) prices from the published catalog. Final live sequence: photo →
+        vision extract → resolve → vouch → NSID quote request over MsgBox → runner terms →
+        Core-signed quote → settle → approve → submit → runner accepts → signed ack →
+        conversation <code>submitted</code>, lines bound.
+      </li>
+      <li>
+        <strong>Four more live-only bugs fixed en route.</strong> (1) Order TTL 900 &gt; the wire
+        contract's <code>MAX_SERVICE_TTL</code> 300 — every order dispatch vanished while the sender
+        reported sent; §12.7 reconcile correctly ruled <code>never_received</code> and authorized
+        resubmission, live-proving the loss lane. (2) The supplier manifest's
+        <code>QUOTE_PARAMS</code> required <code>lines[].quantity</code> vs the frozen §9.7
+        <code>requested_quantity</code> — a conforming runner could never receive a real request.
+        (3) Bare capability names (<code>request_quote</code>) can't be declared on a listing —
+        wire constants moved to NSIDs, recognizers already canonicalize both. (4) The reconcile
+        sweeper sent the bare name too. Plus: <code>listingOffersCapability</code>/schema-pin
+        interactions (unlisted custom, no published schema) and the runner decision shape
+        (<code>accepted</code> requires <code>supplier_order_id</code>).
+      </li>
     </ul>
 
     <h2>Traps worth remembering</h2>
@@ -689,6 +908,62 @@
         <strong>Conformance kit</strong> — all ten families wired, negative tests one per rule, and
         frozen vectors a port in another language can actually run.
         <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Commerce tab leak + order hang</strong> — orders/order-draft/catalog/catalog-draft
+        moved off the tab bar (href:null + hamburger rows); order-draft without a draft says so
+        instead of spinning. <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Photo reading on starter credits</strong> — vision broker resolves OpenAI BYOK →
+        OpenRouter BYOK → grant key (openai/gpt-4o-mini via OpenRouter; the DeepSeek chat pin is
+        text-only). <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Identity migration v32</strong> — audit_retention_checkpoint for pre-existing vaults;
+        the in-place v1 edit only ever ran on fresh databases and old nodes died at boot.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>iPhone photos refused (wrong_mime)</strong> — the picker hands HEIC bytes; both
+        capture screens now normalize to JPEG at pick via the image manipulator.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Server re-encoder bakes EXIF orientation</strong> — sharp dropped the tag without
+        applying it, so portrait photos reached the vision model sideways; .rotate() first.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Order resolve refuses what the store cannot re-read</strong> — a scoped product ref
+        without issuer_did was stored and the whole draft read as absent for ever; write-side mirror
+        of readResolution + contract tests. <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Buyer journey E2E on the real handwritten photo</strong> — server-side vs live
+        ChairMaker over the cloud relay: extract → vouch → quote → approve → submit → signed ack.
+        <span class="status done">VALIDATED</span>
+      </li>
+      <li>
+        <strong>Model eval: luna + flash-0731</strong> — brutal 6-constraint query on the live loop;
+        flash-0731 held all constraints twice, luna dropped HEALTH 2/3 runs
+        (MODEL_COST_QUALITY_FINDINGS addendum). <span class="status done">DONE</span>
+      </li>
+      <li>
+        <strong>Default models re-pinned per eval</strong> — credits + openrouter primary/lite →
+        deepseek-v4-flash-0731; openai lite → gpt-5.6-luna (primary stays gpt-5.5); start.sh prefers
+        OpenAI; lite brain-server gains openai/openrouter providers.
+        <span class="status done">SHIPPED</span>
+      </li>
+      <li>
+        <strong>Luna effort sweep</strong> — high/xhigh still drop the HEALTH constraint (best 1/2 at
+        4× flash-0731's cost); no default changes. DINA_OPENAI_REASONING_EFFORT knob kept on the lite
+        brain. <span class="status done">DONE</span>
+      </li>
+      <li>
+        <strong>GPT-5.6 family sweep</strong> — Terra 1/2 on health, Sol 2/2 but ~$0.31/brutal (2×
+        gpt-5.5 output price); gpt-5.5 baseline passes 1/1. No default changes; Terra + Sol added to
+        the picker. <span class="status done">DONE</span>
       </li>
     </ul>
   </body>

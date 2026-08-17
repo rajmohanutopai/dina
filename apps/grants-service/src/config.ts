@@ -88,7 +88,7 @@ export function loadConfig(
     paused: bool(env, 'GRANTS_PAUSED', false),
 
     grantUsd: num(env, 'GRANTS_GRANT_USD', 0.25),
-    modelPin: str(env, 'GRANTS_MODEL_PIN', 'deepseek/deepseek-v4-pro'),
+    modelPin: str(env, 'GRANTS_MODEL_PIN', 'deepseek/deepseek-v4-flash-0731'),
     estConversations: num(env, 'GRANTS_EST_CONVERSATIONS', 40),
     maxGrantsPerDay: num(env, 'GRANTS_MAX_PER_DAY', 500),
 

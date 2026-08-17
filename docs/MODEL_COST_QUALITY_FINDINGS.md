@@ -86,3 +86,115 @@ set `DEFAULT_OPENROUTER_PRIMARY_MODEL` in `packages/brain/src/constants.ts`,
 cold-relaunch, drive the queries. OpenRouter key (test) lives in
 `tests/sanity/.env.sanity`; paste it via the in-app field (automated
 secure-field entry mangles it → 401).
+
+---
+
+# Addendum (2026-08-16) — GPT-5.6 Luna and DeepSeek V4 Flash 0731
+
+Re-ran the brutal-query method on home-node-lite (alonso test node,
+`/api/v1/chat` on the loopback brain — the same `@dina/brain` loop the
+phone runs). Fresh vault seeded through `/remember` with six facts
+spread across Health / Finance / General: owner diabetic, Emma
+vegetarian, Priya peanut-allergic, James chilli-loving, ₹3,000 party
+budget, Arjun's dinosaur birthday. The brutal query asks for theme +
+group-safe food + activities + budget + "something I can safely eat
+too" + buy-list + a Friday reminder in one message. "Safely eat" never
+names diabetes — the model must retrieve it.
+
+## DeepSeek V4 Flash 0731 (`deepseek/deepseek-v4-flash-0731`) — PASS
+
+The 0423 revision's disqualifier was silently dropping the HEALTH
+constraint under load. 0731 held **everything, twice** (brutal + a
+CX2-style conflict query):
+
+- Retrieved the diabetes note from the Health vault UNPROMPTED
+  (vault_search in iteration 0) and built a sugar-free owner plate.
+- Peanut handling went beyond the fact: no peanut oil, label checks,
+  separate utensils.
+- Itemized buy-list totalling exactly ₹3,000.
+- `schedule_reminder` ACTUALLY FIRED (tool success in the log) with the
+  right date, time and purpose.
+- Measured brutal-run cost ≈ $0.0017 (14.7k in / 5.4k out at
+  $0.0672/$0.1344 per M) — about a sixth of V4 Pro.
+
+**Decision: credits pin + ALL openrouter tiers → flash-0731** (heavy
+included — it passed the maximum-load query, which is what heavy exists
+for; owner's call, 2026-08-17). Pro stays in the mobile allowlist
+(already-claimed grants keep working) and in the model picker.
+
+## GPT-5.6 Luna (`gpt-5.6-luna`) — FAIL as primary, PASS as lite
+
+$0.20/$1.20 per M (25× cheaper than gpt-5.5 on input), 1M context,
+accepts `reasoning.effort: none` and rejects `minimal` (probed live).
+Three brutal runs:
+
+1. Held budget/veg/peanut/spicy but never searched the Health vault —
+   asked the owner "what should I avoid?" and deferred the buy-list and
+   reminder. Follow-up turns then LOST already-confirmed constraints
+   (re-asked guest count and dietary needs it had been told).
+2. (Tool trace only) vault_search + schedule_reminder both fired —
+   the good run.
+3. Searched the vault, then claimed "none are recorded here" about the
+   owner's dietary condition while the diabetes note sat in the Health
+   vault; the plan's cake carried real sugar with no owner-safe accounting.
+
+Dropping the health constraint 2 of 3 runs — once with a false claim
+about the vault — is the June disqualifier. Classification calls
+(intent, guard scan) ran clean in every run.
+
+**Decision: openai lite tier → gpt-5.6-luna** (replacing gpt-5-mini;
+newer and cheaper). Primary/heavy stay gpt-5.5. Luna is in the Settings
+model picker for anyone who wants it as primary anyway.
+
+## Reproduce
+
+`DINA_BRAIN_LLM_PROVIDER=openai DINA_OPENAI_MODEL=gpt-5.6-luna` (or
+`openrouter` + `DINA_OPENROUTER_MODEL=...`) on the lite brain-server —
+both providers were added to it for this eval. Seed via `/remember`
+through `POST /api/v1/chat`, ask the brutal query, read the answer from
+`GET /api/v1/chat/stream?threadId=…` (the POST returns before the
+agentic answer lands).
+
+## Effort sweep (2026-08-17) — does reasoning effort fix Luna?
+
+Luna accepts `reasoning.effort` of none/low/medium/high/xhigh/max
+(probed live). Re-ran the brutal query at higher efforts through the
+lite brain-server (`DINA_OPENAI_REASONING_EFFORT`, added for this):
+
+| Effort | Runs | Held the HEALTH constraint | ~$/brutal |
+|---|---|---|---|
+| none  | 3 | 1 of 3 (once claimed the vault held nothing) | ~0.004 |
+| high  | 2 | 0 of 2 (searched the vault, still missed it) | ~0.006 |
+| xhigh | 2 | 1 of 2 (one full pass, one "assuming no restriction") | ~0.0065 |
+| flash-0731 (reference) | 2 | 2 of 2 | ~0.0017 |
+
+Effort does not cure the failure: the gap is RETRIEVAL INITIATIVE
+(what to search for and whether to hold what it found), not reasoning
+depth. At its best (xhigh) Luna costs ~4× flash-0731 per conversation
+and still drops the health constraint half the time.
+
+**Decision: no default changes.** flash-0731 stays the cheap-and-good
+pick on OpenRouter/credits; gpt-5.5 stays the openai primary; Luna
+stays lite. `DINA_OPENAI_REASONING_EFFORT` is kept on the lite
+brain-server as an operator knob (schema-validated).
+
+## Family sweep (2026-08-17) — Terra, Sol, and the gpt-5.5 baseline
+
+Same brutal query, same vault, same loop:
+
+| Model | $/M in/out | HEALTH held | Reminder actually set | ~$/brutal |
+|---|---|---|---|---|
+| gpt-5.6-terra | 2 / 12 | 1 of 2 (run 1 never searched; run 2 full pass) | 1 of 2 (run 1 asked "6pm okay?") | ~0.10 |
+| gpt-5.6-sol | 5 / 30 | 2 of 2 | 2 of 2 (tool verified) | ~0.31 |
+| gpt-5.5 (incumbent) | 5 / 15 | 1 of 1 — "no-sugar options for you" + a safe-option section | yes (tool verified) | ~0.15 |
+| flash-0731 (reference) | 0.067 / 0.134 | 2 of 2 | 2 of 2 | ~0.0017 |
+
+Sol is the only 5.6 model that holds the bar reliably — and it costs
+DOUBLE gpt-5.5 on output while 5.5 also passes. Terra halves 5.5's
+input price but inherits the family's retrieval-initiative wobble
+(sometimes it never checks the owner's Health vault).
+
+**Decision: no default changes.** gpt-5.5 keeps openai primary +
+heavy (it passed its own baseline); Luna keeps lite; Sol and Terra are
+in the Settings picker (`config/models.json`) for anyone who wants
+them. The cheap-and-reliable slot remains flash-0731 via OpenRouter.

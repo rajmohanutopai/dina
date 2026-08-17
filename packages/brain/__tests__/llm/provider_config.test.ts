@@ -197,6 +197,24 @@ describe('LLM Provider Configuration', () => {
       expect(tiers.lite).toBe('gemini-3.1-flash-lite');
     });
 
+    it('pins the 2026-08-16 eval-driven openai + openrouter tiers', () => {
+      // gpt-5.6-luna FAILED the 6-constraint brutal query as primary
+      // (dropped the HEALTH constraint 2 of 3 runs) but ran the
+      // classification calls clean, so it holds LITE only. DeepSeek
+      // V4 Flash 0731 held every constraint twice on the same
+      // maximum-load query, so it takes every openrouter tier
+      // (heavy included — owner's call, 2026-08-17).
+      // docs/MODEL_COST_QUALITY_FINDINGS.md.
+      const openai = getProviderTiers('openai');
+      expect(openai.primary).toBe('gpt-5.5');
+      expect(openai.lite).toBe('gpt-5.6-luna');
+      expect(openai.heavy).toBe('gpt-5.5');
+      const openrouter = getProviderTiers('openrouter');
+      expect(openrouter.primary).toBe('deepseek/deepseek-v4-flash-0731');
+      expect(openrouter.lite).toBe('deepseek/deepseek-v4-flash-0731');
+      expect(openrouter.heavy).toBe('deepseek/deepseek-v4-flash-0731');
+    });
+
     it('returns a tier map for every provider', () => {
       for (const name of ['claude', 'openai', 'gemini', 'openrouter', 'local'] as const) {
         const tiers = getProviderTiers(name);

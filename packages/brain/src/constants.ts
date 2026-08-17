@@ -29,7 +29,7 @@ export const DEFAULT_CONFIDENCE = 0.5;
 export const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-6';
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash';
-export const DEFAULT_OPENROUTER_MODEL = 'auto';
+export const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
 export const DEFAULT_LOCAL_MODEL = 'llama-3n';
 export const DEFAULT_EMBED_MODEL = 'text-embedding-3-small';
 export const DEFAULT_MAX_TOKENS = 4096;
@@ -67,10 +67,17 @@ export const DEFAULT_CLAUDE_PRIMARY_MODEL = 'claude-sonnet-4-6';
 export const DEFAULT_CLAUDE_LITE_MODEL = 'claude-haiku-4-5-20251001';
 export const DEFAULT_CLAUDE_HEAVY_MODEL = 'claude-opus-4-7';
 
-// OpenAI: GPT-5.5 is current flagship; `gpt-5.5-mini` is NOT released
-// (returns 404), so lite tier stays on `gpt-5-mini` which is.
+// OpenAI: GPT-5.5 stays primary + heavy. gpt-5.6-luna ($0.20/$1.20,
+// verified live 2026-08-16) was evaluated as a primary candidate on
+// the real agentic loop and FAILED the multi-constraint bar — in 2 of
+// 3 runs of the 6-constraint party query it dropped the owner's
+// HEALTH constraint (once claiming the vault held no such note while
+// the diabetes fact sat in the Health vault). Classification calls
+// (intent, guard scan) ran clean throughout, so luna takes the LITE
+// tier from gpt-5-mini — newer and cheaper. Method + transcripts:
+// docs/MODEL_COST_QUALITY_FINDINGS.md (2026-08-16 addendum).
 export const DEFAULT_OPENAI_PRIMARY_MODEL = 'gpt-5.5';
-export const DEFAULT_OPENAI_LITE_MODEL = 'gpt-5-mini';
+export const DEFAULT_OPENAI_LITE_MODEL = 'gpt-5.6-luna';
 export const DEFAULT_OPENAI_HEAVY_MODEL = 'gpt-5.5';
 
 // Gemini: 3.5 family currently has only `gemini-3.5-flash` (no
@@ -82,16 +89,21 @@ export const DEFAULT_GEMINI_PRIMARY_MODEL = 'gemini-3.5-flash';
 export const DEFAULT_GEMINI_LITE_MODEL = 'gemini-3.1-flash-lite';
 export const DEFAULT_GEMINI_HEAVY_MODEL = 'gemini-3.5-flash';
 
-// OpenRouter: pin Gemini 3.5 Flash for primary + lite. The seemingly
-// natural choice — `auto` — routes per-turn to whichever model OR
-// thinks is cheapest, and the cheap ones loop on tool-use until the
-// agentic loop hits `max_iterations` (verified 2026-05-22 — a single
-// "gift for Emma" query took >5 min on `auto` before bailing). A
-// specific tool-use-capable model is dramatically more reliable.
-// Users who want `auto` can pick it in the model-picker.
-export const DEFAULT_OPENROUTER_PRIMARY_MODEL = 'google/gemini-3.5-flash';
-export const DEFAULT_OPENROUTER_LITE_MODEL = 'google/gemini-3.5-flash';
-export const DEFAULT_OPENROUTER_HEAVY_MODEL = 'google/gemini-2.5-pro';
+// OpenRouter: DeepSeek V4 Flash 0731 on every tier. The 0423 revision
+// was disqualified in June for silently dropping the HEALTH constraint
+// under 6-constraint load; the 0731 re-post-train was re-run through
+// the same brutal query on the real loop (2026-08-16) and held ALL
+// constraints in both runs — including unprompted Health-vault
+// retrieval of the owner's diabetes and an actual `schedule_reminder`
+// tool call — at ~$0.07/$0.13 per M. It passed the maximum-load query,
+// which is exactly what the heavy tier exists for, so heavy uses it
+// too (owner's call, 2026-08-17); V4 Pro stays in the picker and the
+// credits allowlist. `auto` remains rejected: it routes to cheap
+// models that loop on tool-use (verified 2026-05-22). Method +
+// transcripts: docs/MODEL_COST_QUALITY_FINDINGS.md.
+export const DEFAULT_OPENROUTER_PRIMARY_MODEL = 'deepseek/deepseek-v4-flash-0731';
+export const DEFAULT_OPENROUTER_LITE_MODEL = 'deepseek/deepseek-v4-flash-0731';
+export const DEFAULT_OPENROUTER_HEAVY_MODEL = 'deepseek/deepseek-v4-flash-0731';
 
 export const DEFAULT_LOCAL_PRIMARY_MODEL = 'llama-3n';
 export const DEFAULT_LOCAL_LITE_MODEL = 'llama-3n';

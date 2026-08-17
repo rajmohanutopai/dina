@@ -273,7 +273,8 @@ describe('balance + exhaustion latch', () => {
   it('reads remaining and estimates conversations', async () => {
     await claim();
     const bal = await refreshBalance(fetchJson(200, { data: { limit_remaining: 0.126 } }));
-    expect(bal).toEqual({ remainingUsd: 0.126, estConversationsLeft: 20, exhausted: false });
+    // 0.126 / 0.002 avg-per-conversation (Flash 0731 measured rate) = 63.
+    expect(bal).toEqual({ remainingUsd: 0.126, estConversationsLeft: 63, exhausted: false });
   });
 
   it('latches exhaustion at the dust threshold and persists it', async () => {

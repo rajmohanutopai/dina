@@ -13,13 +13,13 @@ const SECRETS = {
 };
 
 describe('loadConfig', () => {
-  it('applies spec defaults (ios on, android OFF, $0.25, v4-pro pin)', () => {
+  it('applies spec defaults (ios on, android OFF, $0.25, v4-flash-0731 pin)', () => {
     const cfg = loadConfig({ ...SECRETS });
     expect(cfg.enabledIos).toBe(true);
     expect(cfg.enabledAndroid).toBe(false);
     expect(cfg.paused).toBe(false);
     expect(cfg.grantUsd).toBe(0.25);
-    expect(cfg.modelPin).toBe('deepseek/deepseek-v4-pro');
+    expect(cfg.modelPin).toBe('deepseek/deepseek-v4-flash-0731');
     expect(cfg.estConversations).toBe(40);
     expect(cfg.maxGrantsPerDay).toBe(500);
     expect(cfg.deviceCheckEnv).toBe('development');
