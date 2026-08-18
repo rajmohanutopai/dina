@@ -198,7 +198,8 @@ describe('correlation + comparison (§3.2 steps 3–4)', () => {
     const retained = requests.get(requestB);
     if (retained === null) throw new Error('unretained');
     const draft = {
-      protocol_version: '1.0',
+      // §9.13 — the decline answers in the request's dialect too.
+      protocol_version: retained.protocol_version,
       decline_id: 'dec-b',
       request_id: retained.request_id,
       request_digest: retained.request_digest,

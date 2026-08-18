@@ -163,7 +163,9 @@ export function makeSignedQuote(
   if (subtotal.error || !subtotal.value) throw new Error(String(subtotal.error));
   const line: SignedQuoteLine = { ...lineBase, line_subtotal: subtotal.value };
   const draft = {
-    protocol_version: '1.0',
+    // §9.13 — the answer speaks the REQUEST's dialect; a fixture pinned
+    // at 1.0 stopped answering the moment the buyer began asking at 1.1.
+    protocol_version: request.protocol_version,
     quote_id: 'q-1',
     request_id: request.request_id,
     request_digest: request.request_digest,

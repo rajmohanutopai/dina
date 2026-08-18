@@ -97,7 +97,11 @@ export async function requestQuote(args: {
   if (dispatch === null) return { kind: 'refused', reason: 'no_dispatch' };
 
   const draft = {
-    protocol_version: '1.0',
+    // §9.13 — the request picks the conversation's dialect, and §4.5's
+    // `payment_terms.due_basis` exists only at minor 1.1: a buyer asking
+    // at 1.0 could never be quoted credit terms it can derive dues from.
+    // Minors are additive, so a 1.1 question reads fine everywhere.
+    protocol_version: '1.1',
     request_id: args.requestId,
     buyer_did: runtime.nodeDid(),
     supplier_did: args.supplierDid,

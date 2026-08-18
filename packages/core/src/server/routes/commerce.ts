@@ -1777,7 +1777,11 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     }
     const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
     const orderDraftBody = {
-      protocol_version: '1.0',
+      // §9.13 — the ORDER answers in the conversation's dialect, which is
+      // the quote's. A hardcoded 1.0 here refused every 1.1 conversation
+      // the moment §4.5 terms arrived ("order_quote_mismatch"); the quote
+      // is Core's own verified record, so its version is the one fact.
+      protocol_version: quote.protocol_version,
       purchase_order_id: purchaseOrderId,
       buyer_did: quote.buyer_did,
       supplier_did: quote.supplier_did,

@@ -99,7 +99,13 @@ interface RunnerLine {
 /** The runner's terms, as far as this module is willing to believe them. */
 function readRunnerTerms(
   json: string,
-): { canSupply: boolean; lines: RunnerLine[]; validUntil?: string; maxUses?: string } | null {
+): {
+  canSupply: boolean;
+  lines: RunnerLine[];
+  validUntil?: string;
+  maxUses?: string;
+  paymentTerms?: Record<string, unknown>;
+} | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -129,6 +135,15 @@ function readRunnerTerms(
     lines,
     ...(typeof record.valid_until === 'string' ? { validUntil: record.valid_until } : {}),
     ...(typeof record.max_uses === 'string' ? { maxUses: record.max_uses } : {}),
+    // §4.5 — credit terms are the supplier's commercial policy, so the
+    // runner states them; `validateSignedQuote` below re-checks the
+    // shape AND the minor-version gate, so a malformed or 1.0-dialect
+    // terms object withholds the quote rather than shipping it.
+    ...(record.payment_terms !== null &&
+    typeof record.payment_terms === 'object' &&
+    !Array.isArray(record.payment_terms)
+      ? { paymentTerms: record.payment_terms as Record<string, unknown> }
+      : {}),
   };
 }
 
@@ -277,6 +292,7 @@ export function settleInboundQuote(args: {
     valid_until: validUntil,
     supplier_epoch: supplierEpoch,
     ...(terms.maxUses === undefined ? {} : { max_uses: terms.maxUses }),
+    ...(terms.paymentTerms === undefined ? {} : { payment_terms: terms.paymentTerms }),
   };
   const terms_digest = commerceRecordDigest('terms', termsDigestInput(draft), hash);
   const withTerms = { ...draft, terms_digest };

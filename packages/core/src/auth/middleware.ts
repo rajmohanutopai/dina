@@ -294,6 +294,13 @@ function mapToAuthzRole(callerType: string, name?: string): AuthzCallerType | nu
   // Plugin instances (PLUGIN_ARCHITECTURE.md §9.0): their OWN authz row —
   // never folded into 'device' or 'agent'.
   if (callerType === 'plugin') return 'plugin';
+  // TRADE_FIRST §6.2: staff maps to its OWN fail-closed row. This is the
+  // SIGNED pipeline's half of the mapping — `resolveCallerType` learned
+  // 'staff' with the caller-type work, but this seam kept refusing every
+  // real staff phone with "cannot determine authorization role" while
+  // the handler-level harnesses preset the caller type and never noticed.
+  // Found live, 2026-08-18.
+  if (callerType === 'staff') return 'staff';
 
   // Service: only recognized names get a role
   if (callerType === 'service' && name) {

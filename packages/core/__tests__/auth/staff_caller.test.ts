@@ -127,3 +127,52 @@ describe('authz matrix — the staff surface is the trade prefix and nothing els
     expect(isAuthorized('staff', 'GET', '/v1/anything/else')).toBe(false);
   });
 });
+describe('the SIGNED pipeline admits a staff device (the harnesses preset callerType and never noticed)', () => {
+  const { TEST_ED25519_SEED } = jest.requireActual<typeof import('@dina/test-harness')>('@dina/test-harness');
+  const { signRequest } = jest.requireActual<typeof import('../../src/auth/canonical')>('../../src/auth/canonical');
+  const {
+    authenticateRequest,
+    registerPublicKeyResolver,
+    resetMiddlewareState,
+  } = jest.requireActual<typeof import('../../src/auth/middleware')>('../../src/auth/middleware');
+  const {
+    registerDevice: registerCallerDevice,
+    resetCallerTypeState,
+    setDeviceRoleResolver,
+  } = jest.requireActual<typeof import('../../src/auth/caller_type')>('../../src/auth/caller_type');
+  const { getPublicKey } = jest.requireActual<typeof import('../../src/crypto/ed25519')>('../../src/crypto/ed25519');
+
+  const staffDid = 'did:key:z6MkSignedStaffPhone';
+  const pubKey = getPublicKey(TEST_ED25519_SEED);
+
+  function signed(method: string, path: string) {
+    const body = new Uint8Array();
+    const headers = signRequest(method, path, '', body, TEST_ED25519_SEED, staffDid);
+    return { method, path, query: '', body, headers };
+  }
+
+  beforeEach(() => {
+    resetMiddlewareState();
+    resetCallerTypeState();
+    registerPublicKeyResolver((d: string) => (d === staffDid ? pubKey : null));
+    registerCallerDevice(staffDid, 'clerk-phone');
+    setDeviceRoleResolver(() => 'staff');
+  });
+
+  afterEach(() => {
+    resetMiddlewareState();
+    resetCallerTypeState();
+  });
+
+  it('a signed staff call reaches its allowed route — the live bug refused EVERY staff phone here', () => {
+    const r = authenticateRequest(signed('GET', '/v1/commerce/trade/inbox'));
+    expect(r.authenticated).toBe(true);
+    expect(r.callerType).toBe('staff');
+  });
+
+  it('the same signed device still refuses on an owner-only route (matrix, not mapping)', () => {
+    const r = authenticateRequest(signed('GET', '/v1/commerce/trade/statement'));
+    expect(r.authenticated).toBe(false);
+    expect(r.rejectedAt).toBe('authorization');
+  });
+});

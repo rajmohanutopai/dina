@@ -23,9 +23,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
 
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
 import {
@@ -168,6 +168,30 @@ describe('a quote is born on the production seam', () => {
 });
 
 describe('what the seam refuses', () => {
+  it('§4.5 — the runner\'s payment terms ride the quote and its terms digest', () => {
+    const request = makeQuoteRequest({ protocol_version: '1.1' });
+    const decision = answerQuoteRequest(
+      request,
+      runnerTerms({ payment_terms: { credit_days: 15, due_basis: 'from_delivery' } }),
+    );
+    expect(decision.kind).toBe('replace');
+    const quote = JSON.parse((decision as { kind: 'replace'; json: string }).json) as {
+      payment_terms?: { credit_days: number; due_basis: string };
+      protocol_version: string;
+    };
+    expect(quote.protocol_version).toBe('1.1');
+    expect(quote.payment_terms).toEqual({ credit_days: 15, due_basis: 'from_delivery' });
+  });
+
+  it('§4.5 — due_basis in a 1.0 conversation WITHHOLDS rather than ships an invalid quote', () => {
+    const request = makeQuoteRequest({ protocol_version: '1.0' });
+    const decision = answerQuoteRequest(
+      request,
+      runnerTerms({ payment_terms: { credit_days: 15, due_basis: 'from_delivery' } }),
+    );
+    expect(decision.kind).toBe('withhold');
+  });
+
   it('refuses a request that names a different buyer than the sender', () => {
     // §9.8 audience binding, on the AUTHENTICATED sender. The body's
     // `buyer_did` is a claim; a supplier that priced for whoever asked would
