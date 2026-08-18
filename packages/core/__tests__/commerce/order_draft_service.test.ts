@@ -8,6 +8,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 
 import { vouchReceiptDigest } from '@dina/commerce-protocol';
 
+import { InMemoryAttributionBoundaryRepository } from '../../src/commerce/attribution_boundary';
 import { OrderDraftService } from '../../src/commerce/order_draft_service';
 import {
   InMemoryOrderDraftRepository,
@@ -108,15 +109,23 @@ function sentConversation(overrides: Partial<OrderConversation> = {}): OrderConv
   };
 }
 
-function makeService(present = true): { service: OrderDraftService; repo: InMemoryOrderDraftRepository } {
+function makeService(
+  present = true,
+  boundary = new InMemoryAttributionBoundaryRepository(),
+  voucher: string | null = 'did:plc:draftowner000000000000000',
+): { service: OrderDraftService; repo: InMemoryOrderDraftRepository; boundary: InMemoryAttributionBoundaryRepository } {
   const repo = new InMemoryOrderDraftRepository();
   const service = new OrderDraftService({
     drafts: repo,
     now: () => T0 + 1000,
     sha256: hash,
     userPresent: () => present,
+    // §6.4 — the default harness sits BEFORE the boundary (v1 minting);
+    // tests cross it explicitly.
+    attributionBoundary: boundary,
+    vouchedBy: () => voucher,
   });
-  return { service, repo };
+  return { service, repo, boundary };
 }
 
 describe('REPAIR A LINE (matrix row 1)', () => {
@@ -125,7 +134,7 @@ describe('REPAIR A LINE (matrix row 1)', () => {
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) } }),
+          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
         ],
         conversations: [sentConversation()],
       }),
@@ -156,7 +165,7 @@ describe('REPAIR A LINE (matrix row 1)', () => {
     const { service, repo } = makeService();
     const untouched = resolvedLine({
       lineId: 'line-2',
-      vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+      vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
     });
     repo.put(makeDraft({ lines: [resolvedLine(), untouched] }));
     const outcome = service.repairLine('odr-1', { lineId: 'line-1', field: 'quantity', value: '25' });
@@ -235,7 +244,7 @@ describe('RESOLVE (matrix row 2) — refuse what the store cannot re-read', () =
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) } }),
+          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
         ],
       }),
     );
@@ -492,7 +501,7 @@ describe('REOPEN and ABANDON', () => {
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) } }),
+          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
         ],
         conversations: [sentConversation({ state: 'timed_out' })],
       }),
@@ -523,5 +532,79 @@ describe('REOPEN and ABANDON', () => {
     if (!outcome.ok) return;
     expect(outcome.draft.abandoned).toBe(true);
     expect(outcome.draft.conversations[0]).toMatchObject({ state: 'closed', outcome: 'abandoned' });
+  });
+});
+
+describe('§6.4 attribution at the vouch ceremony', () => {
+  it('past the boundary, confirm commits the voucher under the v2 domain and stamps every entry', () => {
+    const boundary = new InMemoryAttributionBoundaryRepository();
+    boundary.cross(T0, []);
+    const voucher = 'did:plc:draftowner000000000000000';
+    const { service, repo } = makeService(true, boundary, voucher);
+    repo.put(makeDraft());
+    const outcome = service.confirm('odr-1');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    const vouch = outcome.draft.lines[0]?.vouch;
+    expect(vouch?.vouchedBy).toBe(voucher);
+    expect(outcome.draft.requirements[0]?.vouch?.vouchedBy).toBe(voucher);
+    // The digest moved to the v2 domain: recomputing WITHOUT attribution
+    // (the v1 preimage) must not reproduce it, and recomputing WITH it must.
+    const v1Twin = vouchReceiptDigest(
+      {
+        draft_id: 'odr-1',
+        ceremony: 1,
+        extraction_digest: HEX,
+        lines: [
+          {
+            line_id: 'line-1',
+            generation: 1,
+            quantity: { value: '20', unit_code: 'each' },
+            resolved_product: { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER },
+            supplier_did: SUPPLIER,
+          },
+        ],
+        requirements: [
+          { key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 },
+          { key: 'instruction', omitted: false, value: 'deliver to the back entrance', generation: 1 },
+        ],
+      },
+      hash,
+    );
+    expect(vouch?.receiptDigest).not.toBe(v1Twin);
+    const v2 = vouchReceiptDigest(
+      {
+        draft_id: 'odr-1',
+        ceremony: 1,
+        extraction_digest: HEX,
+        lines: [
+          {
+            line_id: 'line-1',
+            generation: 1,
+            quantity: { value: '20', unit_code: 'each' },
+            resolved_product: { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER },
+            supplier_did: SUPPLIER,
+          },
+        ],
+        requirements: [
+          { key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 },
+          { key: 'instruction', omitted: false, value: 'deliver to the back entrance', generation: 1 },
+        ],
+        attribution: { version: 2, vouched_by: voucher },
+      },
+      hash,
+    );
+    expect(vouch?.receiptDigest).toBe(v2);
+  });
+
+  it('past the boundary with no known voucher, confirm refuses', () => {
+    const boundary = new InMemoryAttributionBoundaryRepository();
+    boundary.cross(T0, []);
+    const { service, repo } = makeService(true, boundary, null);
+    repo.put(makeDraft());
+    expect(service.confirm('odr-1')).toMatchObject({
+      ok: false,
+      refusal: 'no_user_presence',
+    });
   });
 });

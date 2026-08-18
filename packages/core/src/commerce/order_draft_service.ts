@@ -31,6 +31,7 @@ import { validateProductRef, vouchReceiptDigest } from '@dina/commerce-protocol'
 
 import { TERMINAL_CONVERSATION_STATES } from './order_draft_store';
 
+import type { AttributionBoundaryRepository } from './attribution_boundary';
 import type {
   OrderDraft,
   OrderDraftLine,
@@ -90,6 +91,14 @@ export interface OrderDraftServiceDeps {
   sha256: Sha256Fn;
   /** §5.3 — the same presence module both lanes read. */
   userPresent: () => boolean;
+  /** §6.4 — past the crossing, vouch minting is v2-exclusive. */
+  attributionBoundary: AttributionBoundaryRepository;
+  /**
+   * WHO is vouching in this composition — the owner DID today, the staff
+   * device DID when the staff confirm surface lands. Null = unknown, and
+   * post-boundary confirm then refuses.
+   */
+  vouchedBy: () => string | null;
 }
 
 /** Fields a repair re-derives; anything the buyer TYPED stays `edited`. */
@@ -366,6 +375,19 @@ export class OrderDraftService {
       }
     }
 
+    // §6.4 — past the attribution boundary the ceremony must name WHO
+    // vouched, and the receipt commits it under the v2 domain.
+    let vouchedBy: string | null = null;
+    if (this.deps.attributionBoundary.crossedAt() !== null) {
+      vouchedBy = this.deps.vouchedBy();
+      if (vouchedBy === null) {
+        return refuse(
+          'no_user_presence',
+          'past the attribution boundary a vouch must name who vouched (§6.4)',
+        );
+      }
+    }
+
     const ceremony = draft.ceremonyCounter + 1;
     const requirements: VouchedRequirement[] = draft.requirements.map((r) => ({
       key: r.key,
@@ -391,18 +413,22 @@ export class OrderDraftService {
         };
       }),
       requirements,
+      ...(vouchedBy === null
+        ? {}
+        : { attribution: { version: 2 as const, vouched_by: vouchedBy } }),
     };
     const digest = vouchReceiptDigest(receipt, this.deps.sha256);
 
     draft.ceremonyCounter = ceremony;
     for (const line of included) {
-      line.vouch = { generation: line.generation, ceremony, receiptDigest: digest };
+      line.vouch = { generation: line.generation, ceremony, receiptDigest: digest, vouchedBy };
     }
     for (const requirement of draft.requirements) {
       requirement.vouch = {
         generation: requirement.generation,
         ceremony,
         receiptDigest: digest,
+        vouchedBy,
       };
     }
     return this.save(draft);

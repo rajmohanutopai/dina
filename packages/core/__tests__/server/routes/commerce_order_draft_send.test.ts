@@ -55,7 +55,7 @@ function vouchedLine(overrides: Partial<OrderDraftLine> = {}): OrderDraftLine {
     },
     generation: 1,
     assignmentGeneration: 0,
-    vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+    vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
     deferred: false,
     evidence: null,
     submittedIn: null,
@@ -84,7 +84,7 @@ function seedDraft(overrides: Partial<OrderDraft> = {}): void {
         omitted: false,
         provenance: 'accepted',
         generation: 1,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
       },
     ],
     conversations: [],
@@ -189,7 +189,7 @@ it('THE SEND GATE: an unvouched line refuses, named', async () => {
 
 it('THE SEND GATE: a vouch at a STALE generation is not a vouch', async () => {
   seedDraft({
-    lines: [vouchedLine({ generation: 2, vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) } })],
+    lines: [vouchedLine({ generation: 2, vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } })],
   });
   const resp = await router.handle(owner(sendBody()));
   expect(resp.status).toBe(409);

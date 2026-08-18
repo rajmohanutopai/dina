@@ -325,13 +325,27 @@ describe('PUT /v1/contacts/:did (PC-CORE-11)', () => {
         params: { did: 'did:plc:alice' },
         ...jsonBody({
           preferred_for: ['dental'],
-          display_name: 'ignored-for-now',
           notes: 'also-ignored',
+          frobnicate: true,
         }),
       }),
     );
     expect(res.status).toBe(200);
     expect(calls).toEqual([{ did: 'did:plc:alice', categories: ['dental'] }]);
+  });
+
+  it('trust_level is validated, never silently ignored (a lying "updated" hid it)', async () => {
+    const { updateContact, known } = setup();
+    known.set('did:plc:alice', contactFixture('did:plc:alice', 'Alice'));
+    const bad = await updateContact(
+      req({
+        method: 'PUT',
+        params: { did: 'did:plc:alice' },
+        ...jsonBody({ trust_level: 'superuser' }),
+      }),
+    );
+    expect(bad.status).toBe(400);
+    expect((bad.body as { error: string }).error).toContain('trust_level');
   });
 });
 

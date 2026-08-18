@@ -350,6 +350,206 @@ export class InProcessOwnerCommerceClient {
     }
     return expectOk<OrderSubmitAnswer>(res, 'orderSubmit');
   }
+
+  // -------------------------------------------------------------------------
+  // The trade surface (TRADE_FIRST_STRATEGY §4, §7)
+  // -------------------------------------------------------------------------
+
+  async tradeInbox(): Promise<{ items: TradeInboxItemDto[] }> {
+    const res = await this.router.handle(
+      this.stamp({ method: 'GET', path: '/v1/commerce/trade/inbox' }),
+    );
+    return expectOk<{ items: TradeInboxItemDto[] }>(res, 'tradeInbox');
+  }
+
+  async tradeStatement(
+    counterpartyDid: string,
+    currency: string,
+    /** Required when the pair trades BOTH ways (`role_required` answers the bare call). */
+    role?: 'buyer' | 'supplier',
+  ): Promise<TradeStatementAnswer> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'GET',
+        path: '/v1/commerce/trade/statement',
+        query: {
+          counterparty_did: counterpartyDid,
+          currency,
+          ...(role !== undefined ? { role } : {}),
+        },
+      }),
+    );
+    return expectOk<TradeStatementAnswer>(res, 'tradeStatement');
+  }
+
+  async issueDeliveryNote(args: {
+    counterpartyDid: string;
+    purchaseOrderId: string;
+    supplierOrderId: string;
+    lines: unknown[];
+  }): Promise<TradeDocumentAnswer> {
+    return this.post(
+      '/v1/commerce/trade/delivery-note',
+      {
+        counterparty_did: args.counterpartyDid,
+        purchase_order_id: args.purchaseOrderId,
+        supplier_order_id: args.supplierOrderId,
+        lines: args.lines,
+      },
+      'issueDeliveryNote',
+    );
+  }
+
+  async issueDeliveryReceipt(args: {
+    deliveryNoteDigest: string;
+    lines: unknown[];
+  }): Promise<TradeDocumentAnswer> {
+    return this.post(
+      '/v1/commerce/trade/delivery-receipt',
+      { delivery_note_digest: args.deliveryNoteDigest, lines: args.lines },
+      'issueDeliveryReceipt',
+    );
+  }
+
+  async issuePaymentNote(args: {
+    supplierDid: string;
+    amount: { currency: string; minor_units: string };
+    method: string;
+  }): Promise<TradeDocumentAnswer> {
+    return this.post(
+      '/v1/commerce/trade/payment-note',
+      { supplier_did: args.supplierDid, amount: args.amount, method: args.method },
+      'issuePaymentNote',
+    );
+  }
+
+  async acknowledgePayment(args: {
+    paymentNoteDigest: string;
+    kind: 'received' | 'disputed';
+    amountReceived?: { currency: string; minor_units: string };
+  }): Promise<TradeDocumentAnswer> {
+    return this.post(
+      '/v1/commerce/trade/payment-ack',
+      {
+        payment_note_digest: args.paymentNoteDigest,
+        kind: args.kind,
+        ...(args.amountReceived !== undefined ? { amount_received: args.amountReceived } : {}),
+      },
+      'acknowledgePayment',
+    );
+  }
+
+  async booksExport(currency: string): Promise<{ voucher_count: number; xml: string }> {
+    const res = await this.router.handle(
+      this.stamp({ method: 'GET', path: '/v1/commerce/trade/books-export', query: { currency } }),
+    );
+    return expectOk<{ voucher_count: number; xml: string }>(res, 'booksExport');
+  }
+
+  // -------------------------------------------------------------------------
+  // Invites (§8)
+  // -------------------------------------------------------------------------
+
+  async mintInvite(args: {
+    direction: 'i_supply_you' | 'you_supply_me';
+    serviceRkeys: readonly string[];
+    /** Absent = Core's standard trade pair; surfaces never name capabilities. */
+    capabilities?: readonly string[];
+    /** §8 cold leg: dispatch the offer over the relay to this DID too. */
+    sendToDid?: string;
+  }): Promise<{ offer: Record<string, unknown>; code: string; cold_dispatched?: boolean }> {
+    return this.post(
+      '/v1/commerce/invites',
+      {
+        direction: args.direction,
+        service_rkeys: args.serviceRkeys,
+        ...(args.capabilities !== undefined ? { capabilities: args.capabilities } : {}),
+        ...(args.sendToDid !== undefined ? { send_to_did: args.sendToDid } : {}),
+      },
+      'mintInvite',
+    );
+  }
+
+  /** §8 cold leg, standalone: (re)send a minted open offer to a DID. */
+  async sendInvite(args: { nonce: string; toDid: string }): Promise<{ ok: true; dispatched: boolean }> {
+    return this.post(
+      '/v1/commerce/invites/send',
+      { nonce: args.nonce, to_did: args.toDid },
+      'sendInvite',
+    );
+  }
+
+  async redeemInvite(args: {
+    code: string;
+    serviceRkeys: readonly string[];
+  }): Promise<{ ok: true; resent: boolean }> {
+    return this.post(
+      '/v1/commerce/invites/redeem',
+      { code: args.code, service_rkeys: args.serviceRkeys },
+      'redeemInvite',
+    );
+  }
+
+  async listInvites(): Promise<{ invites: InviteListEntry[] }> {
+    const res = await this.router.handle(
+      this.stamp({ method: 'GET', path: '/v1/commerce/invites' }),
+    );
+    return expectOk<{ invites: InviteListEntry[] }>(res, 'listInvites');
+  }
+
+  async acceptHeldInvite(args: {
+    nonce: string;
+    serviceRkeys: readonly string[];
+  }): Promise<{ ok: true }> {
+    return this.post(
+      '/v1/commerce/invites/accept-held',
+      { nonce: args.nonce, service_rkeys: args.serviceRkeys },
+      'acceptHeldInvite',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Staff grants (§6)
+  // -------------------------------------------------------------------------
+
+  async createStaffGrant(args: {
+    deviceDid: string;
+    scope: 'commerce_confirm' | 'commerce_submit' | 'commerce_receive_goods';
+    installs: 'buyer' | 'supplier' | 'both';
+    maxOrderMinorUnits?: string;
+    currency?: string;
+    pin?: string;
+  }): Promise<{ ok: true }> {
+    return this.post(
+      '/v1/commerce/staff-grants',
+      {
+        device_did: args.deviceDid,
+        scope: args.scope,
+        installs: args.installs,
+        ...(args.maxOrderMinorUnits !== undefined
+          ? { max_order_minor_units: args.maxOrderMinorUnits }
+          : {}),
+        ...(args.currency !== undefined ? { currency: args.currency } : {}),
+        ...(args.pin !== undefined ? { pin: args.pin } : {}),
+      },
+      'createStaffGrant',
+    );
+  }
+
+  async listStaffGrants(deviceDid: string): Promise<{ grants: StaffGrantEntry[] }> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'GET',
+        path: '/v1/commerce/staff-grants',
+        query: { device_did: deviceDid },
+      }),
+    );
+    return expectOk<{ grants: StaffGrantEntry[] }>(res, 'listStaffGrants');
+  }
+
+  async revokeStaffGrants(deviceDid: string): Promise<{ ok: true }> {
+    return this.post('/v1/commerce/staff-grants/revoke', { device_did: deviceDid }, 'revokeStaffGrants');
+  }
 }
 
 export interface OrderDraftAnswer {
@@ -390,6 +590,49 @@ export interface OrderSubmitAnswer {
   dispatch_class: 'confirmed' | 'uncertain' | 'transient' | 'refused';
   intent_id: string;
   [extra: string]: unknown;
+}
+
+export interface TradeInboxItemDto {
+  kind: string;
+  role: 'buyer' | 'supplier';
+  subject: string;
+  counterparty_did: string;
+  created_at: number;
+}
+
+export interface TradeStatementAnswer {
+  ok: true;
+  statement: Record<string, unknown>;
+  dues: { purchase_order_id: string; due_at: string; amount: { currency: string; minor_units: string }; overdue: boolean }[];
+  /** THIS node's side of the folded ledger (§4.4 — one fold per orientation). */
+  role: 'buyer' | 'supplier';
+}
+
+export interface TradeDocumentAnswer {
+  ok: true;
+  document: Record<string, unknown>;
+  dispatched: boolean;
+}
+
+export interface InviteListEntry {
+  role: 'inviter' | 'redeemer';
+  state: 'offered' | 'held' | 'redeemed' | 'active' | 'revoked';
+  direction: 'i_supply_you' | 'you_supply_me';
+  counterparty_did: string;
+  activation_proven: boolean;
+  expires_at: number;
+  created_at: number;
+  /** Present ONLY on held cold offers — the accept key. */
+  nonce?: string;
+}
+
+export interface StaffGrantEntry {
+  scope: string;
+  installs: string;
+  max_order_minor_units: string;
+  currency: string;
+  created_at: number;
+  revoked_at: number | null;
 }
 
 export type { OrderConversation, OrderDraft, OrderDraftLine };

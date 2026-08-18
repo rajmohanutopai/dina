@@ -139,6 +139,10 @@ export class DispatchIntentSweeper {
       sha256: (data) => sha256(data),
       // Replay performs no ceremony; nothing on this path may ask for one.
       userPresent: () => false,
+      attributionBoundary: runtime.attributionBoundary,
+      // No person is here — a replay must never mint a vouch, and a null
+      // voucher makes any confirm attempt on this path refuse (§6.4).
+      vouchedBy: () => null,
     });
 
     const outcomes: DispatchReplayOutcome[] = [];

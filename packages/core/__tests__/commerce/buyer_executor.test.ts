@@ -17,15 +17,17 @@ import {
   type BuyerApprovalContext,
   type BuyerApprovalPayload,
 } from '../../src/commerce/approval_payload';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import {
   FIRST_REPOLL_SECONDS,
   submitApprovedOrder,
   type BuyerSendOutcome,
 } from '../../src/commerce/buyer_executor';
-import { newBuyerOrder } from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
-import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
 import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
+import { newBuyerOrder } from '../../src/commerce/buyer_reconciliation';
+import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 
 import {
@@ -39,7 +41,6 @@ import {
 } from './helpers';
 
 import type { OrderAcknowledgement, PurchaseOrderProposal } from '@dina/commerce-protocol';
-import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 
 /** The owner this node acts for. §7.3: one grant, evaluated like any other. */
 const TEST_OWNER_DID = 'did:plc:testowner00000000';
@@ -129,6 +130,7 @@ function ack(kind: string, forOrder: PurchaseOrderProposal = order()): OrderAckn
 }
 
 let buyerOrders: InMemoryBuyerOrderRepository;
+let receipts: InMemoryCommerceReceiptRepository;
 let events: string[];
 
 beforeEach(() => {
@@ -142,8 +144,12 @@ beforeEach(() => {
   };
   buyerOrders = new InMemoryBuyerOrderRepository();
   events = [];
+  receipts = new InMemoryCommerceReceiptRepository();
   installCommerceRuntime({
     buyerOrders,
+    // §16.2 buyer-side retention writes here now — the khata readers'
+    // store, not a bookkeeping extra (see buyer_retention.ts).
+    receipts,
     // §12.4 step 6 — the executor now revalidates the held quote before
     // dispatch, so a runtime double without these is not a smaller runtime, it
     // is one whose pre-dispatch check cannot run. Empty stores mean "no quote
@@ -256,6 +262,65 @@ describe('the order of operations', () => {
  * SLOWEST writer wins, and each of these is a case where that is exactly the
  * wrong outcome.
  */
+describe('§16.2 buyer-side retention — the khata readers must SEE the purchase', () => {
+  it('an accepted submit retains order + acknowledgement where tradeRelationshipReaders look', async () => {
+    const { tradeRelationshipReaders } = jest.requireActual<
+      typeof import('../../src/commerce/trade_readers')
+    >('../../src/commerce/trade_readers');
+    const proposal = order();
+    const { commerceRecordDigest } = jest.requireActual<
+      typeof import('@dina/commerce-protocol')
+    >('@dina/commerce-protocol');
+    const { createHash } = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+    const sha = (data: Uint8Array) => new Uint8Array(createHash('sha256').update(data).digest());
+    const ackDraft = {
+      protocol_version: proposal.protocol_version,
+      acknowledgement_id: 'ack-retain-1',
+      purchase_order_id: proposal.purchase_order_id,
+      order_digest: proposal.order_digest,
+      buyer_did: proposal.buyer_did,
+      supplier_did: proposal.supplier_did,
+      issued_at: '2026-08-07T13:00:00.000Z',
+      kind: 'accepted',
+      supplier_order_id: 'so-retain-1',
+      accepted_quote_digest: proposal.quote_digest,
+      accepted_at: '2026-08-07T13:00:00.000Z',
+    };
+    const realAck = {
+      ...ackDraft,
+      acknowledgement_digest: commerceRecordDigest('acknowledgement', ackDraft, sha),
+    } as unknown as OrderAcknowledgement;
+    const result = await submit(proposal, { kind: 'acknowledged', acknowledgement: realAck });
+    expect(result.ok).toBe(true);
+
+    // The live bug this pins: purchases lived only in `buyerOrders`, so a
+    // real buyer node refused every DeliveryNote ("no retained order").
+    const readers = tradeRelationshipReaders({
+      receipts,
+      nodeDid: () => proposal.buyer_did,
+    } as never);
+    const retained = readers.readOrder(proposal.supplier_did, proposal.purchase_order_id);
+    expect(retained?.order_digest).toBe(proposal.order_digest);
+    expect(readers.listAcceptedOrderIds(proposal.supplier_did, 'buyer')).toEqual([
+      proposal.purchase_order_id,
+    ]);
+    expect(readers.readAcceptance(proposal.supplier_did, proposal.purchase_order_id)).not.toBeNull();
+  });
+
+  it('a rejected submit retains the order but earns NO accepted id', async () => {
+    const proposal = order();
+    await submit(proposal, { kind: 'acknowledged', acknowledgement: ack('rejected', proposal) });
+    const { tradeRelationshipReaders } = jest.requireActual<
+      typeof import('../../src/commerce/trade_readers')
+    >('../../src/commerce/trade_readers');
+    const readers = tradeRelationshipReaders({
+      receipts,
+      nodeDid: () => proposal.buyer_did,
+    } as never);
+    expect(readers.listAcceptedOrderIds(proposal.supplier_did, 'buyer')).toEqual([]);
+  });
+});
+
 describe('two writers on one order', () => {
   it('sends ONCE when two submissions race past the duplicate read', async () => {
     // The check at step 1 is a READ, and two concurrent submissions both pass

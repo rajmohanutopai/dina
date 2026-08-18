@@ -185,7 +185,12 @@ import {
   MsgTypeServiceResponse,
   setReasoningBroker,
   stagingGetItem,
+  composeInviteService,
+  installInviteService,
+  sign as ed25519Sign,
+  verify as ed25519Verify,
 } from '@dina/core';
+import { makeResolveSender } from '@dina/home-node';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import {
   buildHomeNodeServiceRuntime,
@@ -646,6 +651,23 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
 
     setD2DSender(async (to, type, body) => {
       await options.sendD2D(to, type, body);
+    });
+
+    // §8 — the invite ceremony, composed HERE because its four app facts
+    // (signing key, DID resolution, relay route) live at this boot. Core
+    // fills its own seams (invite store, D2D sender, contacts, grants).
+    const inviteResolveSender = makeResolveSender({
+      selfDID: options.did,
+      selfPublicKey: options.signingKeypair.publicKey,
+    });
+    composeInviteService({
+      signOfferDigest: (bytes) => ed25519Sign(options.signingKeypair.privateKey, bytes),
+      resolveSigningKey: async (did) => {
+        const resolved = await inviteResolveSender(did);
+        return resolved.keys[0] ?? null;
+      },
+      verify: (message, signature, publicKey) => ed25519Verify(publicKey, message, signature),
+      relayUrl: () => options.msgboxURL ?? null,
     });
 
     // Workflow service + repository — Core routes consult these via
@@ -1722,6 +1744,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         setServiceQuerySender(null);
         setServiceRespondSender(null);
         setD2DSender(null);
+        installInviteService(null);
         // Unwire BOTH the in-memory state AND the repository so the next
         // createNode() starts from a clean slate — leaving the repo
         // attached would let getServiceConfig re-hydrate the old config.

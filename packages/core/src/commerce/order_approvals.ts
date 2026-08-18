@@ -89,6 +89,13 @@ export interface OrderApprovalRepository {
    * consumed, so two taps on one card cannot both send.
    */
   consume(approvalId: string, nowMs: number): boolean;
+  /**
+   * Every retained approval digest, for the §6.4 boundary crossing's
+   * grandfather walk. The stored digest column, raw — the walk must
+   * reach rows whose JSON no longer hydrates, because a mutated row is
+   * still a digest the pre-staff node minted.
+   */
+  listApprovalDigests(): string[];
 }
 
 /** A fresh, unguessable card id. */
@@ -157,6 +164,14 @@ export class SQLiteOrderApprovalRepository implements OrderApprovalRepository {
     return row === undefined ? null : hydrate(row);
   }
 
+  listApprovalDigests(): string[] {
+    return this.db
+      .query<{ approval_digest: string }>(
+        `SELECT approval_digest FROM commerce_order_approvals`,
+      )
+      .map((row) => String(row.approval_digest));
+  }
+
   consume(approvalId: string, nowMs: number): boolean {
     // The CAS is the whole point, so it is one statement with the predicate in
     // the WHERE clause — and it is read back rather than counted, for the same
@@ -209,6 +224,10 @@ export class InMemoryOrderApprovalRepository implements OrderApprovalRepository 
     if (row === undefined || row.consumed_at !== null) return false;
     this.held.set(approvalId, { ...row, consumed_at: nowMs });
     return true;
+  }
+
+  listApprovalDigests(): string[] {
+    return [...this.held.values()].map((row) => String(row.approval_digest));
   }
 }
 

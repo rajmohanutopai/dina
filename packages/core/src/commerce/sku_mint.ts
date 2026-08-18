@@ -32,8 +32,8 @@
 
 import { newAssignmentId } from './sku_ledger';
 
-import type { ImportFinding } from './catalog_import';
 import type { DraftRow } from './catalog_draft_store';
+import type { ImportFinding } from './catalog_import';
 import type { SkuLedgerRepository } from './sku_ledger';
 
 export interface SkuMintResult {

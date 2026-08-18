@@ -15,7 +15,7 @@
  * Source: core/internal/service/transport.go (SendMessage egress)
  */
 
-import { alwaysPasses } from './families';
+import { MsgTypeCommerceInvite, alwaysPasses } from './families';
 
 export interface EgressCheckResult {
   allowed: boolean;
@@ -160,8 +160,14 @@ export function checkEgressGates(
     return { allowed: true };
   }
 
-  // Gate 1: Contact check
-  if (!checkContactGate(recipientDID)) {
+  // Gate 1: Contact check. `commerce.invite` alone passes it: the §8
+  // ceremony's messages travel to NOT-YET-contacts by definition (a
+  // redemption is how the contact comes to exist), and the receive
+  // pipeline admits the type without a contact row for the same reason
+  // — the single-use nonce is the credential. Scenario, sharing and
+  // audit still run; only the contact requirement is waived, mirroring
+  // ingress exactly.
+  if (messageType !== MsgTypeCommerceInvite && !checkContactGate(recipientDID)) {
     return { allowed: false, deniedAt: 'contact', reason: 'Recipient is not a known contact' };
   }
 

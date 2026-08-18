@@ -421,3 +421,32 @@ describe('the order the fixtures actually produce', () => {
     expect(hash(new TextEncoder().encode('probe')).length).toBe(32);
   });
 });
+describe('§6.4 — attribution rides INSIDE the integrity digest', () => {
+  it('a v2-attributed payload digests differently from the same payload unattributed', () => {
+    const proposal = order();
+    const bare = built(proposal, context());
+    const attributed = built(
+      proposal,
+      context({ attribution: { version: 2, vouchedBy: 'did:key:zstaffclerk' } }),
+    );
+    expect(attributed.attribution).toEqual({ version: 2, vouchedBy: 'did:key:zstaffclerk' });
+    expect(approvalDigest(attributed)).not.toBe(approvalDigest(bare));
+  });
+
+  it('changing WHO vouched changes what was approved', () => {
+    const proposal = order();
+    const byStaff = built(
+      proposal,
+      context({ attribution: { version: 2, vouchedBy: 'did:key:zstaffclerk' } }),
+    );
+    const byOwner = built(
+      proposal,
+      context({ attribution: { version: 2, vouchedBy: 'did:plc:sanchoowner' } }),
+    );
+    expect(approvalDigest(byStaff)).not.toBe(approvalDigest(byOwner));
+    // And the binding refuses the swap: an executing payload claiming a
+    // different voucher is not the approved one.
+    expect(verifyApprovalBinding(byStaff, byOwner).ok).toBe(false);
+    expect(verifyApprovalBinding(byStaff, byStaff).ok).toBe(true);
+  });
+});

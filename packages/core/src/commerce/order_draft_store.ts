@@ -14,8 +14,8 @@
 
 import { validateCatalogPointer, validateCatalogSnapshot, validateCatalogSnapshotPage, validateProductRef } from '@dina/commerce-protocol';
 
-import type { DatabaseAdapter } from '../storage/db_adapter';
 import type { FieldProvenance } from './catalog_draft_store';
+import type { DatabaseAdapter } from '../storage/db_adapter';
 import type {
   CatalogEvidenceRecord,
   ConversationSnapshot,
@@ -52,6 +52,12 @@ export interface LineVouchEntry {
   generation: number;
   receiptDigest: string;
   ceremony: number;
+  /**
+   * §6.4 — WHO vouched. Null = the v1 unattributed ceremony (admissible
+   * only through the grandfather index once the boundary is crossed);
+   * a DID = a v2 ceremony, whose receipt committed the same value.
+   */
+  vouchedBy: string | null;
 }
 
 export interface OrderDraftLine {
@@ -284,7 +290,18 @@ function readVouch(value: unknown): LineVouchEntry | null {
   ) {
     return null;
   }
-  return { generation: v.generation, ceremony: v.ceremony, receiptDigest: v.receiptDigest };
+  // §6.4: absent or null = a v1 entry; anything else must be a DID-shaped
+  // string. A malformed voucher reads as an unreadable vouch (null), the
+  // same fail-closed rule every other field here follows.
+  if (v.vouchedBy !== undefined && v.vouchedBy !== null && typeof v.vouchedBy !== 'string') {
+    return null;
+  }
+  return {
+    generation: v.generation,
+    ceremony: v.ceremony,
+    receiptDigest: v.receiptDigest,
+    vouchedBy: typeof v.vouchedBy === 'string' && v.vouchedBy !== '' ? v.vouchedBy : null,
+  };
 }
 
 function readResolution(value: unknown): LineResolution | null {

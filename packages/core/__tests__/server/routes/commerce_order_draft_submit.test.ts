@@ -15,10 +15,7 @@
  *     a never-sent order in reconcile.
  */
 
-import { DispatchIntentSweeper } from '../../../src/commerce/dispatch_intent_sweeper';
-import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
-import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
-import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
+import { InMemoryAttributionBoundaryRepository } from '../../../src/commerce/attribution_boundary';
 import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
@@ -27,6 +24,10 @@ import {
   installBuyerOrderSender,
   type BuyerOrderSender,
 } from '../../../src/commerce/buyer_executor';
+import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
+import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
+import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
+import { DispatchIntentSweeper } from '../../../src/commerce/dispatch_intent_sweeper';
 import { InMemoryOrderApprovalRepository } from '../../../src/commerce/order_approvals';
 import {
   InMemoryOrderDraftRepository,
@@ -38,6 +39,7 @@ import {
   installOwnerPresenceVerifier,
   proveOwnerPresence,
 } from '../../../src/commerce/owner_presence';
+import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { InMemoryCommerceSettingsRepository } from '../../../src/commerce/settings_store';
 import { setNodeDID } from '../../../src/pairing/ceremony';
@@ -124,7 +126,7 @@ function seedDraft(conversations: OrderConversation[]): void {
         },
         generation: 1,
         assignmentGeneration: 0,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
         deferred: false,
         evidence: null,
         submittedIn: null,
@@ -204,6 +206,8 @@ beforeEach(async () => {
   buyerQuoteRequests.put(REQUEST_B, T0);
   seedDraft([conversationWith({ conversationId: 'conv-1', supplierDid: SUPPLIER })]);
   installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
+    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
     buyerOrders,
     buyerQuotes,
     buyerQuoteRequests,

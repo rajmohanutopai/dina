@@ -33,6 +33,8 @@ export {
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
   MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
   MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
+  MSG_TYPE_COMMERCE_TRADE as MsgTypeCommerceTrade,
+  MSG_TYPE_COMMERCE_INVITE as MsgTypeCommerceInvite,
 } from '@dina/protocol';
 import {
   MSG_TYPE_PRESENCE_SIGNAL as MsgTypePresenceSignal,
@@ -47,6 +49,8 @@ import {
   MSG_TYPE_SERVICE_RESPONSE as MsgTypeServiceResponse,
   MSG_TYPE_SERVICE_OFFER as MsgTypeServiceOffer,
   MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
+  MSG_TYPE_COMMERCE_TRADE as MsgTypeCommerceTrade,
+  MSG_TYPE_COMMERCE_INVITE as MsgTypeCommerceInvite,
  D2D_SCENARIOS } from '@dina/protocol';
 
 import type { VaultItemType } from '../vault/validation';
@@ -89,6 +93,8 @@ const V1_TYPES_LIST: readonly D2DMessageType[] = [
   MsgTypeServiceResponse,
   MsgTypeServiceOffer,
   MsgTypeServiceGrantRequest,
+  MsgTypeCommerceTrade,
+  MsgTypeCommerceInvite,
 ];
 const V1_TYPES = new Set<string>(V1_TYPES_LIST);
 
@@ -142,6 +148,11 @@ const EPHEMERAL_TYPES_LIST: readonly EphemeralD2DType[] = [
   // service.grant_request is a requester preflight — handled inline (resolve
   // listing → policy → mint grant → reply service.offer) and never vaulted.
   MsgTypeServiceGrantRequest,
+  // commerce.trade is persisted in the TRADE LEDGER via its own pipeline
+  // handler (verify-then-store, §4.2) — never staged to the vault.
+  MsgTypeCommerceTrade,
+  // commerce.invite is retained in `commerce_invites` by its handler.
+  MsgTypeCommerceInvite,
 ];
 const EPHEMERAL_TYPES = new Set<string>(EPHEMERAL_TYPES_LIST);
 
@@ -174,6 +185,8 @@ const TYPE_TO_SCENARIO: Record<D2DMessageType, D2DScenario> = {
   [MsgTypeServiceResponse]: 'service',
   [MsgTypeServiceOffer]: 'service',
   [MsgTypeServiceGrantRequest]: 'service',
+  [MsgTypeCommerceTrade]: 'service',
+  [MsgTypeCommerceInvite]: 'service',
 };
 
 /** Maximum D2D message body size in bytes (256 KB). */

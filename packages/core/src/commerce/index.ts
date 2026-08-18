@@ -17,6 +17,15 @@ export * from './quote_family';
 export * from './status_chain';
 export * from './commerce_order';
 export * from './runtime';
+export * from './invite_compose';
+export * from './invite_store';
+export {
+  InviteService,
+  DEFAULT_INVITE_TTL_MS,
+  ACTIVATION_PROOF_WINDOW_MS,
+  supplierRole,
+  type InviteServiceDeps,
+} from './invite_service';
 export * from './status_heads';
 export * from './receipts';
 export * from './watermarks';

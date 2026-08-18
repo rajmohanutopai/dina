@@ -441,6 +441,22 @@ describe the network-level exchange but require a live loopback.
   changes only; frozen vectors unaffected (none reference `service.offer`/
   `grant_id`).
 
+- **2026-08-18** — **`commerce.trade` D2D message family added
+  (additive).** Adds a THIRTEENTH V1 message type, `commerce.trade`
+  (`MSG_TYPE_COMMERCE_TRADE`), carrying one khata document
+  (TRADE_FIRST_STRATEGY §4.2) as `{kind, document}` where `kind` ∈
+  {`delivery_note`, `delivery_receipt`, `payment_note`, `payment_ack`}.
+  Both trading directions use it; the receiver admits it only from an
+  established contact and re-verifies the document against its own
+  retained order/note before retaining it in the TRADE LEDGER — never the
+  vault (classified EPHEMERAL re: the vault, the `service.offer`
+  precedent). The document shapes and their `dina:commerce:trade:v1:`
+  digest domains live in `@dina/commerce-protocol`, not here; this entry
+  records only the envelope family. ADDITIVE: the twelve existing
+  families, all field shapes, and every frozen conformance vector are
+  unchanged. Ports that do not implement it never send it, and receiving
+  an unknown type was already a drop, so forward-compat holds.
+
 ## 16. See also
 
 - [`README.md`](../README.md) — `@dina/protocol` implementer

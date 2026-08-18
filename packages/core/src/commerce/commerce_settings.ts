@@ -52,6 +52,13 @@ export interface BuyerSettings {
    * resolved item's reference by more than this is flagged on the card.
    */
   divergenceThresholdPct?: number;
+  /**
+   * §3.2 (TRADE_FIRST_STRATEGY) — the working-capital rate the tender
+   * comparison values credit terms at, as an INTEGER in basis points.
+   * Absent means the default (1800 = 18%/year). Advisory arithmetic in
+   * this buyer's vault; never mixed into signed totals.
+   */
+  workingCapitalRateBps?: number;
 }
 
 export type ListingState = 'live' | 'paused' | 'withdrawn';
@@ -101,6 +108,13 @@ export interface SupplierSettings {
   customerPricingSource: string | null;
   /** §15.2b — does accepting an order need a human? */
   orderAcceptance: 'auto' | 'review';
+  /**
+   * §8 — whether relay-delivered COLD invite offers are held for a
+   * consent card at all. Publishing a catalog is the act of consenting
+   * to receive introductions, so the default is to hold them; `false`
+   * drops them before any card exists.
+   */
+  acceptColdInvites?: boolean;
   listingState: ListingState;
   /**
    * Connector health and credential STATUS (§18.3). Never the credential.
@@ -191,7 +205,11 @@ export type SettingsRefusal =
   | 'unknown_trading_currency'
   | 'empty_catalog_categories'
   | 'malformed_catalog_category'
-  | 'divergence_threshold_out_of_range';
+  | 'divergence_threshold_out_of_range'
+  | 'working_capital_rate_out_of_range'
+  /** Structural pre-pass: a container field is absent or the wrong shape. */
+  | 'missing_field'
+  | 'wrong_field_shape';
 
 export interface SettingsFinding {
   refusal: SettingsRefusal;
@@ -204,7 +222,68 @@ export type SettingsVerdict = { ok: true } | { ok: false; findings: SettingsFind
 /** Keys that would mean a secret reached a settings record. */
 const CREDENTIAL_SHAPED = /^(api[_-]?key|secret|token|password|passphrase|private[_-]?key)$/i;
 
+
+/**
+ * Structural pre-pass: the wire hands these validators whatever JSON the
+ * owner surface sent, and a partial body used to THROW here (an
+ * `Object.entries` over an absent `responsePolicy` — masked as a 500 by
+ * the router; found live, 2026-08-18). A missing or mistyped container
+ * is a FINDING like any other rule breach, and when the shape is broken
+ * the field rules do not run — they would only throw over the same holes.
+ */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function structuralFindings(
+  settings: Record<string, unknown>,
+  spec: readonly { field: string; kind: 'string' | 'number' | 'array' | 'record'; optional?: boolean }[],
+): SettingsFinding[] {
+  const findings: SettingsFinding[] = [];
+  for (const { field, kind, optional } of spec) {
+    const value = settings[field];
+    if (value === undefined) {
+      if (optional !== true) {
+        findings.push({
+          refusal: 'missing_field',
+          field,
+          detail: `${field} is required (${kind})`,
+        });
+      }
+      continue;
+    }
+    const ok =
+      kind === 'string'
+        ? typeof value === 'string'
+        : kind === 'number'
+          ? typeof value === 'number'
+          : kind === 'array'
+            ? Array.isArray(value)
+            : isPlainRecord(value);
+    if (!ok) {
+      findings.push({
+        refusal: 'wrong_field_shape',
+        field,
+        detail: `${field} must be a ${kind}`,
+      });
+    }
+  }
+  return findings;
+}
+
 export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict {
+  const structural = structuralFindings(settings as unknown as Record<string, unknown>, [
+    { field: 'actingIdentityDid', kind: 'string' },
+    { field: 'locations', kind: 'array' },
+    { field: 'preferredSuppliers', kind: 'array' },
+    { field: 'blockedSuppliers', kind: 'array' },
+    { field: 'allowedCategoryIds', kind: 'array' },
+    { field: 'quoteFanoutCeiling', kind: 'number' },
+    { field: 'preferredUnitCodes', kind: 'array' },
+    { field: 'workingCapitalRateBps', kind: 'number', optional: true },
+    { field: 'divergenceThresholdPct', kind: 'number', optional: true },
+  ]);
+  if (structural.length > 0) return { ok: false, findings: structural };
   const findings: SettingsFinding[] = [];
 
   if (settings.actingIdentityDid === '') {
@@ -250,6 +329,17 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
     }
   }
 
+  if (settings.workingCapitalRateBps !== undefined) {
+    const bps = settings.workingCapitalRateBps;
+    if (!Number.isInteger(bps) || bps < 0 || bps > 10000) {
+      findings.push({
+        refusal: 'working_capital_rate_out_of_range',
+        field: 'workingCapitalRateBps',
+        detail: 'integer basis points between 0 and 10000',
+      });
+    }
+  }
+
   if (settings.divergenceThresholdPct !== undefined) {
     const pct = settings.divergenceThresholdPct;
     if (!Number.isInteger(pct) || pct < 1 || pct > 500) {
@@ -268,6 +358,16 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
 }
 
 export function validateSupplierSettings(settings: SupplierSettings): SettingsVerdict {
+  const structural = structuralFindings(settings as unknown as Record<string, unknown>, [
+    { field: 'actingBusinessDid', kind: 'string' },
+    { field: 'catalogSource', kind: 'record' },
+    { field: 'publicRegions', kind: 'array' },
+    { field: 'responsePolicy', kind: 'record' },
+    { field: 'connectors', kind: 'array' },
+    { field: 'catalogCategoryIds', kind: 'array', optional: true },
+    { field: 'tradingCurrency', kind: 'string', optional: true },
+  ]);
+  if (structural.length > 0) return { ok: false, findings: structural };
   const findings: SettingsFinding[] = [];
 
   if (settings.actingBusinessDid === '') {

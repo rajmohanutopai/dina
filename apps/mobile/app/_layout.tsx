@@ -981,6 +981,18 @@ export default function RootLayout() {
                   options={{ title: 'Catalog draft', href: null, headerLeft: renderHeaderBackButton }}
                 />
                 <Tabs.Screen
+                  name="trade"
+                  options={{ title: 'Trade', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="invites"
+                  options={{ title: 'Invites', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="staff-grants"
+                  options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
                   name="reminders"
                   options={{
                     title: 'Reminders',

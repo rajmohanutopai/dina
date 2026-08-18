@@ -83,25 +83,9 @@ import {
   type BuyerApprovalContext,
 } from '../../commerce/approval_payload';
 import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
-import { getBuyerAuthorityProvider } from '../../commerce/buyer_authority';
-import {
-  OWNER_PRESENCE_TTL_MS,
-  ownerPresenceCanBeEstablished,
-  ownerPresentNow,
-  proveOwnerPresence,
-} from '../../commerce/owner_presence';
+import { enumerateV1Records } from '../../commerce/attribution_boundary';
 import { getBuyerOrderSender, submitApprovedOrder } from '../../commerce/buyer_executor';
-import {
-  classifyDispatchAnswer,
-  dispatchUnderRetainedApproval,
-  readAnswerableApproval,
-  resolveAuthority,
-  unanswerableStatus,
-} from '../../commerce/order_dispatch';
-import { recordCommerceEvent } from '../../commerce/observability';
-import { OrderDraftService } from '../../commerce/order_draft_service';
-import { deriveOrderDraftState, type OrderDraft } from '../../commerce/order_draft_store';
-import { checkPriceDivergence } from '../../commerce/price_divergence';
+import { requestQuote } from '../../commerce/buyer_quote_request';
 import { describeOrderForOwner } from '../../commerce/buyer_reconciliation';
 import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
 import {
@@ -119,20 +103,6 @@ import {
   assembleFromRows,
   createCatalogDraft,
 } from '../../commerce/catalog_draft_ingest';
-import {
-  ingestCommerceImage,
-  imageReencoderInstalled,
-  MAX_AGGREGATE_IMAGE_BYTES,
-  MAX_IMAGE_PAGES,
-} from '../../commerce/image_artifacts';
-import {
-  extractRowsThroughGate,
-  IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
-  installedEgressProvider,
-  newEgressAuthorizationId,
-} from '../../commerce/image_egress';
-import { requestQuote } from '../../commerce/buyer_quote_request';
-import { applySkuMint } from '../../commerce/sku_mint';
 import { publishHeldDraft } from '../../commerce/catalog_draft_publisher';
 import {
   CatalogDraftService,
@@ -174,20 +144,57 @@ import {
   type IdempotencyProbe,
   type RetentionRequirement,
 } from '../../commerce/idempotency_evidence';
+import {
+  ingestCommerceImage,
+  imageReencoderInstalled,
+  MAX_AGGREGATE_IMAGE_BYTES,
+  MAX_IMAGE_PAGES,
+} from '../../commerce/image_artifacts';
+import {
+  extractRowsThroughGate,
+  IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
+  installedEgressProvider,
+  newEgressAuthorizationId,
+} from '../../commerce/image_egress';
 import { planCommerceInstall, roleIsInstalled } from '../../commerce/install_plan';
-import { beginReferenceInstall } from '../../commerce/reference_install';
+import { getInviteService } from '../../commerce/invite_compose';
+import { recordCommerceEvent } from '../../commerce/observability';
 import {
   newApprovalId,
   ORDER_APPROVAL_TTL_MS,
-  type RetainedOrderApproval,
 } from '../../commerce/order_approvals';
-import { settleInboundOrderDecision } from '../../commerce/order_decision';
+import {
+  TRADE_INVITE_CAPABILITIES,
+  settleInboundOrderDecision,
+} from '../../commerce/order_decision';
+import {
+  classifyDispatchAnswer,
+  dispatchUnderRetainedApproval,
+  readAnswerableApproval,
+  resolveAuthority,
+  unanswerableStatus,
+} from '../../commerce/order_dispatch';
+import { OrderDraftService } from '../../commerce/order_draft_service';
+import { deriveOrderDraftState, type OrderDraft } from '../../commerce/order_draft_store';
+import {
+  clearStaffPresence,
+  OWNER_PRESENCE_TTL_MS,
+  ownerPresenceCanBeEstablished,
+  ownerPresentNow,
+  proveOwnerPresence,
+  proveStaffPresence,
+  staffPresenceCanBeEstablished,
+  staffPresentNow,
+} from '../../commerce/owner_presence';
+import { checkPriceDivergence } from '../../commerce/price_divergence';
 import { chooseOffer, planProcurement } from '../../commerce/procurement_service';
 import { describeQuoteForOwner } from '../../commerce/quote_read_model';
 import { askReconcilePolls } from '../../commerce/reconcile_poller';
 import { makeServiceQueryReconcileSend } from '../../commerce/reconcile_sweeper';
 import { buildReconciliationCensus } from '../../commerce/reconciliation_census';
+import { beginReferenceInstall } from '../../commerce/reference_install';
 import { BUYER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
+import { rehydrateQuoteRequest } from '../../commerce/rehydrate';
 import {
   describeDisagreement,
   mayAuthorizeSubstitution,
@@ -196,14 +203,33 @@ import {
   resolveRelationships,
   type AppViewAnswer,
 } from '../../commerce/relationship_resolver';
+import { RevshareService } from '../../commerce/revshare_service';
 import { commerceAvailability, getCommerceRuntime } from '../../commerce/runtime';
 import { resolveServiceBinding } from '../../commerce/service_binding';
+import { applySkuMint } from '../../commerce/sku_mint';
+import { escalateStaffOperation } from '../../commerce/staff_escalation';
+import {
+  checkStaffOperation,
+  STAFF_INSTALL_SCOPES,
+  STAFF_SCOPES,
+  validateStaffGrantInput,
+  type StaffInstallScope,
+  type StaffScope,
+} from '../../commerce/staff_grants';
+import { setStaffPin } from '../../commerce/staff_pins';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
+import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
+import { compareTender, createTender } from '../../commerce/tender';
+import { buildTradeInbox } from '../../commerce/trade_inbox';
+import { rehydrateTradeDocument } from '../../commerce/trade_ledger';
+import { TradeLedgerService } from '../../commerce/trade_ledger_service';
+import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
 import { revokeDeviceByDidDurable } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
 import { confirmConsent, uninstall } from '../../plugins/install_service';
 import { getPluginInstallRepository } from '../../plugins/registry';
 
+import { getD2DSender } from './d2d_msg';
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 
 import type {
@@ -418,6 +444,26 @@ function completeProjection(value: Record<string, unknown>): Record<string, unkn
     ...fields,
     projection_digest: computeProjectionDigest(fields as never, (data) => sha256(data)),
   };
+}
+
+/**
+ * A caller a staff-operable commerce route may act for: the owner, or a
+ * staff device whose grant the route will check (§6.2). NEVER widens
+ * beyond those two — every other caller gets the owner guard's own
+ * refusal, so the refusal shape stays identical across the surface.
+ */
+type CommerceRouteCaller = { kind: 'owner' } | { kind: 'staff'; deviceDid: string };
+
+function staffOrOwnerCaller(
+  req: CoreRequest,
+  ownerGuard: OwnerGuard,
+): CommerceRouteCaller | CoreResponse {
+  const denied = ownerGuard(req);
+  if (denied === null) return { kind: 'owner' };
+  if (req.callerType === 'staff' && typeof req.callerDID === 'string' && req.callerDID !== '') {
+    return { kind: 'staff', deviceDid: req.callerDID };
+  }
+  return denied;
 }
 
 export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: string): void {
@@ -794,6 +840,12 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       quoteExpiresAt: claimedContext.quoteExpiresAt,
       install: claimedContext.install,
       ...(claimedContext.source === undefined ? {} : { source: claimedContext.source }),
+      // §6.4 — past the attribution boundary every minted approval names
+      // WHO vouched, inside the integrity digest. The owner, on this
+      // owner-guarded route; the staff surface threads its device DID.
+      ...(runtime.attributionBoundary.crossedAt() === null
+        ? {}
+        : { attribution: { version: 2 as const, vouchedBy: self } }),
     };
     const resolved = resolveActingInstall(namedContext, BUYER_REFERENCE_MANIFEST.plugin_id);
     if (!resolved.ok) {
@@ -1095,12 +1147,21 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
 
   const orderDraftService = (
     runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+    caller: CommerceRouteCaller = { kind: 'owner' },
   ): OrderDraftService =>
     new OrderDraftService({
       drafts: runtime.orderDrafts,
       now: () => Date.now(),
       sha256: hash,
-      userPresent: () => ownerPresentNow(Date.now()),
+      // WHO is present and WHO vouches follow the caller: the owner's
+      // stamp and DID on the owner path, the staff device's on the §6
+      // staff path — attribution is the whole point of §6.4.
+      userPresent: () =>
+        caller.kind === 'staff'
+          ? staffPresentNow(caller.deviceDid, Date.now())
+          : ownerPresentNow(Date.now()),
+      attributionBoundary: runtime.attributionBoundary,
+      vouchedBy: () => (caller.kind === 'staff' ? caller.deviceDid : getNodeDID()),
     });
 
   /**
@@ -1498,21 +1559,38 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * photographed order at all, and says so — the same posture as approve.
    */
   router.post('/v1/commerce/orders/drafts/confirm', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = staffOrOwnerCaller(req, ownerOnlyGuard);
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
-    if (!ownerPresenceCanBeEstablished()) {
+    if (caller.kind === 'owner' && !ownerPresenceCanBeEstablished()) {
       return {
         status: 503,
         body: { error: 'presence_unavailable', detail: 'photographed orders cannot be vouched on this deployment' },
       };
     }
+    if (caller.kind === 'staff') {
+      // §6.5 — commerce_confirm carries no cap: scope + install-role
+      // check only. Money control lives at submit. Presence is checked
+      // by the service itself (staff stamp via the caller-aware deps).
+      if (!staffPresenceCanBeEstablished()) {
+        return { status: 503, body: { error: 'staff_presence_unavailable' } };
+      }
+      const gate = checkStaffOperation({
+        repository: runtime.staffGrants,
+        deviceDid: caller.deviceDid,
+        scope: 'commerce_confirm',
+        installRole: 'buyer',
+      });
+      if (gate.verdict !== 'allow') {
+        return { status: 403, body: { error: 'access_denied', reason: gate.verdict === 'refuse' ? gate.reason : 'escalation is not a confirm outcome' } };
+      }
+    }
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.draft_id !== 'string' || body.draft_id === '') {
       return { status: 400, body: { error: 'draft_id_required' } };
     }
-    const outcome = orderDraftService(runtime).confirm(body.draft_id);
+    const outcome = orderDraftService(runtime, caller).confirm(body.draft_id);
     if (outcome.ok) {
       recordCommerceEvent({
         event: 'confirm',
@@ -1573,16 +1651,33 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * photo-derived order is unapprovable and the app says so.
    */
   router.post('/v1/commerce/orders/drafts/approve', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = staffOrOwnerCaller(req, ownerOnlyGuard);
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
-    // UNCONDITIONAL: no verifier means no approval on this path, full stop.
-    if (!ownerPresenceCanBeEstablished()) {
-      return { status: 503, body: { error: 'presence_unavailable', detail: 'photo-derived orders are unapprovable on this deployment' } };
-    }
-    if (!ownerPresentNow(Date.now())) {
-      return { status: 403, body: { error: 'no_user_presence' } };
+    // UNCONDITIONAL: no verifier means no approval on this path, full
+    // stop — for the caller's OWN presence kind (§6.4: attributed).
+    if (caller.kind === 'owner') {
+      if (!ownerPresenceCanBeEstablished()) {
+        return { status: 503, body: { error: 'presence_unavailable', detail: 'photo-derived orders are unapprovable on this deployment' } };
+      }
+      if (!ownerPresentNow(Date.now())) {
+        return { status: 403, body: { error: 'no_user_presence' } };
+      }
+    } else {
+      if (!staffPresenceCanBeEstablished()) {
+        return { status: 503, body: { error: 'staff_presence_unavailable' } };
+      }
+      if (!staffPresentNow(caller.deviceDid, Date.now())) {
+        return { status: 403, body: { error: 'no_user_presence' } };
+      }
+      // Grant EXISTENCE before any draft/quote state is read: an
+      // ungranted device gets the same 403 whatever exists (§6.5's
+      // value gate still runs below, at the bound quote total).
+      const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
+      if (live === null || live.revokedAt !== null) {
+        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+      }
     }
 
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -1620,6 +1715,38 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // terms than what this conversation's snapshot means.
     if (quote.request_id !== conversation.requestId) {
       return { status: 409, body: { error: 'quote_answers_foreign_request' } };
+    }
+
+    if (caller.kind === 'staff') {
+      // §6.5 — commerce_submit gates the buyer approve at the BOUND
+      // quote total. Over the cap or off-currency: an owner card, the
+      // approved-value read-back letting the retry through.
+      const gate = checkStaffOperation({
+        repository: runtime.staffGrants,
+        deviceDid: caller.deviceDid,
+        scope: 'commerce_submit',
+        installRole: 'buyer',
+        value: quote.total,
+      });
+      if (gate.verdict === 'refuse') {
+        return { status: 403, body: { error: 'access_denied', reason: gate.reason } };
+      }
+      if (gate.verdict === 'escalate') {
+        const escalated = escalateStaffOperation({
+          deviceDid: caller.deviceDid,
+          scope: 'commerce_submit',
+          subject: `${draftId}:${conversationId}`,
+          value: quote.total,
+          reason: gate.reason,
+          nowMs: Date.now(),
+        });
+        if (escalated.kind === 'unavailable') {
+          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+        }
+        if (escalated.kind === 'escalated') {
+          return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
+        }
+      }
     }
 
     const self = ownerDid();
@@ -1791,6 +1918,17 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         configRevision: String(activeBuyerInstall.configRevision),
       },
       source,
+      // §6.4 — WHO vouched: the staff device DID on the staff path, the
+      // owner otherwise. Authority stays the owner's (the grant IS the
+      // owner's standing authorization); attribution names the human.
+      ...(runtime.attributionBoundary.crossedAt() === null
+        ? {}
+        : {
+            attribution: {
+              version: 2 as const,
+              vouchedBy: caller.kind === 'staff' ? caller.deviceDid : self,
+            },
+          }),
     };
     const resolvedInstall = resolveActingInstall(context, BUYER_REFERENCE_MANIFEST.plugin_id);
     if (!resolvedInstall.ok) {
@@ -1868,10 +2006,22 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * `DispatchIntentSweeper`'s duty, record-first.
    */
   router.post('/v1/commerce/orders/drafts/submit', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = staffOrOwnerCaller(req, ownerOnlyGuard);
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // §6.5 — presence and grant EXISTENCE before any draft state is
+    // read (same posture as approve/decide: an ungranted device learns
+    // nothing; the value gate still runs below at the approved total).
+    if (caller.kind === 'staff') {
+      if (!staffPresentNow(caller.deviceDid, Date.now())) {
+        return { status: 403, body: { error: 'access_denied', reason: 'staff presence required' } };
+      }
+      const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
+      if (live === null || live.revokedAt !== null) {
+        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+      }
+    }
 
     const body = (req.body ?? {}) as Record<string, unknown>;
     const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
@@ -1904,11 +2054,48 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 404, body: { error: 'unknown_approval' } };
     }
 
+    if (caller.kind === 'staff') {
+      // §6.5 — commerce_submit also gates the SEND: "every confirmed
+      // draft must still pass" submit, and the cap compares the retained
+      // approval's own bound total, never a caller value.
+      const gate = checkStaffOperation({
+        repository: runtime.staffGrants,
+        deviceDid: caller.deviceDid,
+        scope: 'commerce_submit',
+        installRole: 'buyer',
+        value: approval.payload.approvedTotal,
+      });
+      if (gate.verdict === 'refuse') {
+        return { status: 403, body: { error: 'access_denied', reason: gate.reason } };
+      }
+      if (gate.verdict === 'escalate') {
+        const escalated = escalateStaffOperation({
+          deviceDid: caller.deviceDid,
+          scope: 'commerce_submit',
+          subject: `${draftId}:${conversationId}`,
+          value: approval.payload.approvedTotal,
+          reason: gate.reason,
+          nowMs: Date.now(),
+        });
+        if (escalated.kind === 'unavailable') {
+          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+        }
+        if (escalated.kind === 'escalated') {
+          return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
+        }
+      }
+    }
+
     const service = new OrderDraftService({
       drafts: runtime.orderDrafts,
       now: () => Date.now(),
       sha256: hash,
-      userPresent: () => ownerPresentNow(Date.now()),
+      userPresent: () =>
+        caller.kind === 'staff'
+          ? staffPresentNow(caller.deviceDid, Date.now())
+          : ownerPresentNow(Date.now()),
+      attributionBoundary: runtime.attributionBoundary,
+      vouchedBy: () => (caller.kind === 'staff' ? caller.deviceDid : getNodeDID()),
     });
     const intentId = `odi_${bytesToHex(randomBytes(12))}`;
 
@@ -2918,8 +3105,8 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
    * signed under the old consent.
    */
   router.post('/v1/commerce/orders/decide', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = staffOrOwnerCaller(req, ownerOnlyGuard);
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
 
@@ -2943,8 +3130,59 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
     const buyerDid = body.buyer_did;
     const purchaseOrderId = body.purchase_order_id;
 
+    // §6.5 — presence and grant EXISTENCE first, so an ungranted staff
+    // device learns nothing about which decisions are pending (a 404
+    // before the 403 leaked exactly that, and made the refusal arm
+    // untestable without supplier machinery).
+    if (caller.kind === 'staff') {
+      if (!staffPresentNow(caller.deviceDid, Date.now())) {
+        return { status: 403, body: { error: 'access_denied', reason: 'staff presence required' } };
+      }
+      const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
+      if (live === null || live.revokedAt !== null) {
+        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+      }
+    }
+
     const pending = runtime.pendingDecisions.get(buyerDid, purchaseOrderId);
     if (pending === null) return { status: 404, body: { error: 'no_pending_decision' } };
+
+    if (caller.kind === 'staff') {
+      // §6.5 — commerce_submit gates the supplier order-accept at the
+      // ORDER total, read from this node's own retained proposal, never
+      // a caller value. Declines are gated identically: refusing an
+      // order is as much a commercial act as accepting one.
+      const retained = tradeRelationshipReaders(runtime).readOrder(buyerDid, purchaseOrderId);
+      const gate = checkStaffOperation({
+        repository: runtime.staffGrants,
+        deviceDid: caller.deviceDid,
+        scope: 'commerce_submit',
+        installRole: 'supplier',
+        ...(retained === null ? {} : { value: retained.approved_total }),
+      });
+      if (gate.verdict === 'refuse') {
+        return { status: 403, body: { error: 'access_denied', reason: gate.reason } };
+      }
+      if (gate.verdict === 'escalate') {
+        const escalated = escalateStaffOperation({
+          deviceDid: caller.deviceDid,
+          scope: 'commerce_submit',
+          // The domain operation is keyed (buyer, order) and the PO id is
+          // BUYER-chosen — a subject of the id alone let an approved card
+          // for buyer A's order authorize buyer B's same-numbered one.
+          subject: `${buyerDid}:${purchaseOrderId}`,
+          value: retained === null ? null : retained.approved_total,
+          reason: gate.reason,
+          nowMs: Date.now(),
+        });
+        if (escalated.kind === 'unavailable') {
+          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+        }
+        if (escalated.kind === 'escalated') {
+          return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
+        }
+      }
+    }
 
     // DECLINED: the card goes, the order does not move. It will lapse at its
     // decision deadline like any undecided order, which is the honest outcome
@@ -3035,6 +3273,14 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
           quoteDigest: order.ref.quoteDigest,
           acknowledgementKind: 'accepted',
           install: actingInstall,
+          ...(runtime.attributionBoundary.crossedAt() === null
+            ? {}
+            : {
+                attribution: {
+                  version: 2 as const,
+                  vouchedBy: caller.kind === 'staff' ? caller.deviceDid : owner,
+                },
+              }),
         }),
         actingBusinessDid,
         principal: {
@@ -3043,6 +3289,14 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
           policyRevision: null,
         },
         install: actingInstall,
+        ...(runtime.attributionBoundary.crossedAt() === null
+          ? {}
+          : {
+              attribution: {
+                version: 2 as const,
+                vouchedBy: caller.kind === 'staff' ? caller.deviceDid : owner,
+              },
+            }),
       },
     });
 
@@ -4138,6 +4392,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       // record that the software asked itself.
       userPresent: ownerPresentNowForRoutes,
       publicationFence: () => publicationFence(),
+      attributionBoundary: runtime.attributionBoundary,
+      // The owner vouches on this surface; the staff confirm surface (§7)
+      // threads the staff device DID here when it lands.
+      vouchedBy: () => getNodeDID(),
       publish: async ({ draft }) =>
         // THE PUBLISHER IS A MODULE, not a closure in a route. As a closure it
         // could not be reached by any test — the route wires presence to false
@@ -4970,4 +5228,1003 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       },
     ),
   );
+
+  // ==========================================================================
+  // The khata (TRADE_FIRST_STRATEGY §4.2–§4.4) + the tender decline (§3.4).
+  //
+  // Owner routes over `TradeLedgerService`. The retained-order and
+  // bound-quote readers resolve through the §16.2 receipts store, trying
+  // Relationship readers live in `trade_readers.ts` — one definition
+  // shared with the D2D trade ingress and the tender comparison.
+  // ==========================================================================
+
+  const tradeLedgerService = (
+    runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  ): TradeLedgerService =>
+    new TradeLedgerService({
+      documents: runtime.tradeDocuments,
+      nodeDid: runtime.nodeDid,
+      now: runtime.now,
+      ...tradeRelationshipReaders(runtime),
+    });
+
+  const tradeAnswer = <T>(outcome: { ok: true; document: T } | { ok: false; refusal: string }): CoreResponse =>
+    outcome.ok
+      ? { status: 200, body: { ok: true, document: outcome.document } }
+      : { status: 409, body: { error: outcome.refusal } };
+
+  /**
+   * §4.2/§4.3 — push an authored khata document to the counterparty as a
+   * `commerce.trade` message. BEST-EFFORT BY DESIGN: the document is
+   * already retained before this runs, both ledgers reconcile through the
+   * unanswered sweeps, and a send failure must not un-author a document —
+   * so the answer carries `dispatched` and the owner surface can re-send.
+   */
+  const dispatchTradeDocument = async (
+    toDid: string,
+    kind: string,
+    document: unknown,
+  ): Promise<boolean> => {
+    const send = getD2DSender();
+    if (send === null || toDid === '') return false;
+    try {
+      const outcome = await send(toDid, 'commerce.trade', { kind, document });
+      // Delivered, buffered at the relay, or queued for retry all count as
+      // dispatched — the outbox owns the retry from here. A void return is
+      // a fire-and-forget sender that reported nothing to distrust.
+      return outcome === undefined ? true : outcome.delivered || outcome.buffered || outcome.queued;
+    } catch {
+      return false;
+    }
+  };
+
+  const tradeAnswerDispatched = async <T>(
+    outcome: { ok: true; document: T } | { ok: false; refusal: string },
+    toDid: string,
+    kind: string,
+  ): Promise<CoreResponse> => {
+    if (!outcome.ok) return { status: 409, body: { error: outcome.refusal } };
+    const dispatched = await dispatchTradeDocument(toDid, kind, outcome.document);
+    return { status: 200, body: { ok: true, document: outcome.document, dispatched } };
+  };
+
+  router.post('/v1/commerce/trade/delivery-note', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.counterparty_did !== 'string' ||
+      typeof body.purchase_order_id !== 'string' ||
+      typeof body.supplier_order_id !== 'string' ||
+      !Array.isArray(body.lines)
+    ) {
+      return {
+        status: 400,
+        body: { error: 'counterparty_did, purchase_order_id, supplier_order_id and lines are required' },
+      };
+    }
+    return tradeAnswerDispatched(
+      tradeLedgerService(runtime).issueDeliveryNote({
+        counterpartyDid: body.counterparty_did,
+        purchaseOrderId: body.purchase_order_id,
+        supplierOrderId: body.supplier_order_id,
+        lines: body.lines as never,
+        ...(typeof body.expected_by === 'string' ? { expectedBy: body.expected_by } : {}),
+      }),
+      body.counterparty_did,
+      'delivery_note',
+    );
+  });
+
+  /**
+   * A caller a trade route may act for: the owner, or a staff device
+   * whose grant the route will check. NEVER widens beyond those two —
+   * every other caller gets the owner guard's own refusal, so the
+   * refusal shape stays identical to the rest of the commerce surface.
+   */
+  const tradeCallerFor = (req: CoreRequest): CommerceRouteCaller | CoreResponse =>
+    staffOrOwnerCaller(req, ownerOnlyGuard);
+
+  router.post('/v1/commerce/trade/delivery-receipt', async (req): Promise<CoreResponse> => {
+    const caller = tradeCallerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.delivery_note_digest !== 'string' || !Array.isArray(body.lines)) {
+      return { status: 400, body: { error: 'delivery_note_digest and lines are required' } };
+    }
+    const service = tradeLedgerService(runtime);
+    if (caller.kind === 'staff') {
+      // §6.4/§6.5 — a person at THAT device, then the deterministic gate
+      // against the receipt's value priced from the bound quote. The
+      // pricing is fail-closed: an unpriceable receipt never reaches the
+      // cap comparison, and never slips past it either.
+      if (!staffPresentNow(caller.deviceDid, runtime.now())) {
+        return { status: 403, body: { error: 'access_denied', reason: 'staff presence required' } };
+      }
+      const priced = service.priceDeliveryReceipt({
+        deliveryNoteDigest: body.delivery_note_digest,
+        lines: body.lines as never,
+      });
+      if (!priced.ok) return { status: 409, body: { error: priced.refusal } };
+      const gate = checkStaffOperation({
+        repository: runtime.staffGrants,
+        deviceDid: caller.deviceDid,
+        scope: 'commerce_receive_goods',
+        // Receiving goods is the BUYER side of the relationship, and the
+        // service itself re-verifies that this node is the order buyer.
+        installRole: 'buyer',
+        value: priced.value,
+      });
+      if (gate.verdict === 'refuse') {
+        return { status: 403, body: { error: 'access_denied', reason: gate.reason } };
+      }
+      if (gate.verdict === 'escalate') {
+        const escalated = escalateStaffOperation({
+          deviceDid: caller.deviceDid,
+          scope: 'commerce_receive_goods',
+          subject: body.delivery_note_digest,
+          value: priced.value,
+          reason: gate.reason,
+          nowMs: runtime.now(),
+        });
+        if (escalated.kind === 'unavailable') {
+          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+        }
+        if (escalated.kind === 'escalated') {
+          return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
+        }
+        // `approved` — the owner approved THIS note at THIS value; fall
+        // through to issue. The note takes only one receipt ever (the
+        // one-answer rule), so the standing card cannot authorize twice.
+      }
+    }
+    return tradeAnswerDispatched(
+      service.issueDeliveryReceipt({
+        deliveryNoteDigest: body.delivery_note_digest,
+        lines: body.lines as never,
+      }),
+      runtime.tradeDocuments.get(body.delivery_note_digest)?.counterpartyDid ?? '',
+      'delivery_receipt',
+    );
+  });
+
+  router.post('/v1/commerce/trade/payment-note', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.supplier_did !== 'string' ||
+      body.amount === null ||
+      typeof body.amount !== 'object' ||
+      typeof body.method !== 'string'
+    ) {
+      return { status: 400, body: { error: 'supplier_did, amount and method are required' } };
+    }
+    return tradeAnswerDispatched(
+      tradeLedgerService(runtime).issuePaymentNote({
+        supplierDid: body.supplier_did,
+        amount: body.amount as never,
+        method: body.method as never,
+        ...(typeof body.external_ref === 'string' ? { externalRef: body.external_ref } : {}),
+        ...(Array.isArray(body.order_refs) ? { orderRefs: body.order_refs as string[] } : {}),
+      }),
+      body.supplier_did,
+      'payment_note',
+    );
+  });
+
+  router.post('/v1/commerce/trade/payment-ack', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.payment_note_digest !== 'string' ||
+      (body.kind !== 'received' && body.kind !== 'disputed')
+    ) {
+      return {
+        status: 400,
+        body: { error: 'payment_note_digest and a kind of received | disputed are required' },
+      };
+    }
+    return tradeAnswerDispatched(
+      tradeLedgerService(runtime).acknowledgePayment({
+        paymentNoteDigest: body.payment_note_digest,
+        kind: body.kind,
+        ...(body.amount_received !== undefined ? { amountReceived: body.amount_received as never } : {}),
+      }),
+      runtime.tradeDocuments.get(body.payment_note_digest)?.counterpartyDid ?? '',
+      'payment_ack',
+    );
+  });
+
+  router.post('/v1/commerce/trade/quote-decline', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.request_id !== 'string' ||
+      typeof body.buyer_did !== 'string' ||
+      typeof body.reason_code !== 'string'
+    ) {
+      return { status: 400, body: { error: 'request_id, buyer_did and reason_code are required' } };
+    }
+    // The RETAINED request — never one the caller supplies. An inbound
+    // request is retained in the §16.2 receipts store under the
+    // REQUESTING BUYER's key, which is why the route requires it.
+    let retained = null;
+    for (const receipt of runtime.receipts.listByBuyerAndDomain(body.buyer_did, 'request')) {
+      const request = rehydrateQuoteRequest(receipt.recordJson, hash);
+      if (request.ok && request.value.request_id === body.request_id) retained = request.value;
+    }
+    if (retained === null) {
+      return { status: 404, body: { error: 'no retained request with that id' } };
+    }
+    return tradeAnswer(
+      tradeLedgerService(runtime).declineQuote({
+        request: retained,
+        reasonCode: body.reason_code,
+      }),
+    );
+  });
+
+  router.get('/v1/commerce/trade/statement', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const counterparty = req.query?.counterparty_did;
+    const currency = req.query?.currency;
+    if (typeof counterparty !== 'string' || counterparty === '' || typeof currency !== 'string' || currency === '') {
+      return { status: 400, body: { error: 'counterparty_did and currency are required' } };
+    }
+    // §4.4 — one fold per orientation. A statement is a claim retained
+    // documents back: a stranger gets a refusal rather than a fabricated
+    // "settled 0", and a dual-role pair (each supplies the other) is TWO
+    // ledgers, so the caller must name the side when both exist.
+    const sides = tradeOrientations(runtime, counterparty);
+    if (!sides.supplier && !sides.buyer) {
+      return { status: 404, body: { error: 'no_trade_relationship' } };
+    }
+    const roleParam = req.query?.role;
+    if (roleParam !== undefined && roleParam !== 'buyer' && roleParam !== 'supplier') {
+      return { status: 400, body: { error: 'role must be buyer or supplier' } };
+    }
+    if (roleParam === undefined && sides.supplier && sides.buyer) {
+      return { status: 409, body: { error: 'role_required' } };
+    }
+    const role: 'buyer' | 'supplier' = roleParam ?? (sides.supplier ? 'supplier' : 'buyer');
+    const service = tradeLedgerService(runtime);
+    const fold = service.statement({ counterpartyDid: counterparty, currency, role });
+    if (!fold.ok) return { status: 409, body: { error: fold.error } };
+    // §4.5 — derived dues ride the statement, overdue FLAGGED and never
+    // pushed: Silence First applies to money reminders too, so the flag
+    // exists for the opened statement (Solicited) and the briefing
+    // (Engagement), and this route interrupts nobody.
+    const now = runtime.now();
+    const dues = service.dues({ counterpartyDid: counterparty, currency, role }).dues.map((due) => ({
+      ...due,
+      overdue: Date.parse(due.due_at) <= now,
+    }));
+    return { status: 200, body: { ok: true, statement: fold, dues, role } };
+  });
+
+  /**
+   * §4.3 — re-dispatch a retained OUTBOUND khata document. The authoring
+   * routes are best-effort by design (a send failure must not un-author
+   * a document), and the unanswered sweep surfaces what never got
+   * through — this is the promised "the owner surface can re-send". The
+   * document travels EXACTLY as retained: digest-sealed bytes, never
+   * rebuilt, so a re-send cannot become a second document.
+   */
+  router.post('/v1/commerce/trade/resend', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const recordDigest = typeof body.record_digest === 'string' ? body.record_digest : '';
+    // An ANSWER (a receipt, an ack) has no owner-visible digest of its
+    // own — the surface knows the document it answered. `answers_to` +
+    // `kind` addresses it that way: "re-send my receipt for THIS note".
+    const answersTo = typeof body.answers_to === 'string' ? body.answers_to : '';
+    const answerKind = typeof body.kind === 'string' ? body.kind : '';
+    if (recordDigest === '' && (answersTo === '' || answerKind === '')) {
+      return { status: 400, body: { error: 'record_digest, or answers_to + kind, is required' } };
+    }
+    const row =
+      recordDigest !== ''
+        ? runtime.tradeDocuments.get(recordDigest)
+        : (runtime.tradeDocuments
+            .answersTo(answersTo, answerKind as never)
+            .find((r) => r.direction === 'outbound') ?? null);
+    if (row === null) return { status: 404, body: { error: 'unknown_document' } };
+    if (row.direction !== 'outbound') {
+      // Re-sending a counterparty's own document back at them is never
+      // this node's act.
+      return { status: 409, body: { error: 'not_this_nodes_document' } };
+    }
+    const read = rehydrateTradeDocument(row);
+    const dispatched = await dispatchTradeDocument(row.counterpartyDid, read.kind, read.document);
+    return { status: 200, body: { ok: true, dispatched } };
+  });
+
+  router.get('/v1/commerce/trade/unanswered', (req): CoreResponse => {
+    const caller = tradeCallerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // §6.3 — the clerk's inbox feed: what this relationship is waiting
+    // on. Readable by a staff device holding ANY live grant (a device
+    // with none has no business here); the balance statement and the
+    // tender comparison stay owner-only.
+    if (
+      caller.kind === 'staff' &&
+      !runtime.staffGrants.listByDevice(caller.deviceDid).some((g) => g.revokedAt === null)
+    ) {
+      return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant' } };
+    }
+    const counterparty = req.query?.counterparty_did;
+    if (typeof counterparty !== 'string' || counterparty === '') {
+      return { status: 400, body: { error: 'counterparty_did is required' } };
+    }
+    const olderThanMs = Number(req.query?.older_than_ms ?? '0');
+    const pending = tradeLedgerService(runtime).unanswered({
+      counterpartyDid: counterparty,
+      olderThanMs: Number.isFinite(olderThanMs) && olderThanMs >= 0 ? olderThanMs : 0,
+    });
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        delivery_notes: pending.deliveryNotes.map((row) => ({
+          record_digest: row.recordDigest,
+          purchase_order_id: row.purchaseOrderId,
+          direction: row.direction,
+          created_at: row.createdAt,
+        })),
+        payment_notes: pending.paymentNotes.map((row) => ({
+          record_digest: row.recordDigest,
+          direction: row.direction,
+          created_at: row.createdAt,
+        })),
+      },
+    };
+  });
+
+  router.get('/v1/commerce/trade/books-export', (req): CoreResponse => {
+    // OWNER-ONLY: the firm's books leave this node here, and §6.6 keeps
+    // exports off the staff surface.
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const currency = req.query?.currency;
+    if (typeof currency !== 'string' || currency === '') {
+      return { status: 400, body: { error: 'currency is required' } };
+    }
+    // §10 — the Tally bridge's data contract: settled facts only, each
+    // voucher naming the digest it derives from. The plugin on the
+    // distributor's machine pulls this and feeds the firm's books; the
+    // khata chain stays the shared truth.
+    const vouchers = collectTallyVouchers(runtime, { currency }, hash);
+    return {
+      status: 200,
+      body: { ok: true, voucher_count: vouchers.length, xml: renderTallyXml(vouchers) },
+    };
+  });
+
+  router.get('/v1/commerce/trade/inbox', (req): CoreResponse => {
+    const caller = tradeCallerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // §6.3 — the staff surface IS the inbox, filtered to the grant's
+    // install roles. Metadata only; a grantless staff device sees nothing.
+    let items = buildTradeInbox(runtime, runtime.now()).items;
+    if (caller.kind === 'staff') {
+      const grants = runtime.staffGrants
+        .listByDevice(caller.deviceDid)
+        .filter((g) => g.revokedAt === null);
+      if (grants.length === 0) {
+        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant' } };
+      }
+      const roles = new Set(
+        grants.flatMap((g) => (g.installs === 'both' ? ['buyer', 'supplier'] : [g.installs])),
+      );
+      items = items.filter((item) => roles.has(item.role));
+    }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        items: items.map((item) => ({
+          kind: item.kind,
+          role: item.role,
+          subject: item.subject,
+          counterparty_did: item.counterpartyDid,
+          created_at: item.createdAt,
+        })),
+      },
+    };
+  });
+
+  // ==========================================================================
+  // The private tender (§3.2) — one question, N per-supplier requests,
+  // one comparison card. Fan-out consent is the OWNER route call itself;
+  // the route reports per-member dispatch outcomes so the surface can
+  // show what actually left.
+  // ==========================================================================
+
+  router.post('/v1/commerce/trade/tender', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.suppliers) || !Array.isArray(body.lines) || body.projection === null || typeof body.projection !== 'object') {
+      return { status: 400, body: { error: 'suppliers, lines and projection are required' } };
+    }
+    const suppliers: { supplierDid: string; serviceRkey: string }[] = [];
+    for (const entry of body.suppliers) {
+      const named = entry as Record<string, unknown>;
+      if (typeof named.supplier_did !== 'string' || typeof named.service_rkey !== 'string') {
+        return { status: 400, body: { error: 'every supplier names supplier_did and service_rkey' } };
+      }
+      suppliers.push({ supplierDid: named.supplier_did, serviceRkey: named.service_rkey });
+    }
+    const created = await createTender({
+      suppliers,
+      lines: body.lines as never,
+      projection: completeProjection(body.projection as Record<string, unknown>) as never,
+      ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
+      ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),
+      nowMs: runtime.now(),
+    });
+    return created.ok
+      ? { status: 200, body: { ok: true, tender_id: created.tenderId, members: created.members } }
+      : { status: 409, body: { error: created.refusal } };
+  });
+
+  router.get('/v1/commerce/trade/tender/comparison', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const tenderId = req.query?.tender_id;
+    if (typeof tenderId !== 'string' || tenderId === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const buyerSettings = runtime.settings.readBuyer();
+    const rateBps =
+      buyerSettings.ok && buyerSettings.settings.workingCapitalRateBps !== undefined
+        ? buyerSettings.settings.workingCapitalRateBps
+        : undefined;
+    const compared = compareTender({
+      tenderId,
+      deps: {
+        ...(rateBps === undefined ? {} : { workingCapitalRateBps: rateBps }),
+        ...tradeRelationshipReaders(runtime),
+      },
+      nowMs: runtime.now(),
+    });
+    return compared.ok
+      ? { status: 200, body: { ok: true, members: compared.members } }
+      : { status: 409, body: { error: compared.refusal } };
+  });
+
+  // ==========================================================================
+  // Staff (TRADE_FIRST_STRATEGY §6) — attributed presence for a staff
+  // device, and the owner's grant ceremony. The ceremony routes live
+  // OUTSIDE the /v1/commerce/trade/ prefix on purpose: the authz matrix
+  // itself then refuses a staff caller, so §6.6 ("staff can never create
+  // or edit grants") holds at the door as well as in the handler.
+  // ==========================================================================
+
+  // ==========================================================================
+  // The revenue-share chain (§5) — owner routes over the second document
+  // chain. Same discipline as the khata: authoring runs the receiver's
+  // rules on itself, the share is DERIVED, and dispatch is best-effort
+  // over `commerce.trade` with the sweeps owning the follow-up.
+  // ==========================================================================
+
+  const revshareService = (
+    runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  ): RevshareService =>
+    new RevshareService({
+      documents: runtime.revshareDocuments,
+      nodeDid: runtime.nodeDid,
+      now: runtime.now,
+    });
+
+  const revshareAnswer = async <T>(
+    outcome: { ok: true; document: T } | { ok: false; refusal: string },
+    toDid: string,
+    kind: string,
+  ): Promise<CoreResponse> => {
+    if (!outcome.ok) return { status: 409, body: { error: outcome.refusal } };
+    const dispatched = await dispatchTradeDocument(toDid, kind, outcome.document);
+    return { status: 200, body: { ok: true, document: outcome.document, dispatched } };
+  };
+
+  router.post('/v1/commerce/trade/revshare/propose', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.counterparty_did !== 'string' ||
+      (body.self_role !== 'host' && body.self_role !== 'vendor') ||
+      typeof body.share_bps !== 'number' ||
+      typeof body.period !== 'string' ||
+      (body.cash_handler !== 'host' && body.cash_handler !== 'vendor') ||
+      typeof body.currency !== 'string' ||
+      typeof body.effective_from !== 'string'
+    ) {
+      return {
+        status: 400,
+        body: { error: 'counterparty_did, self_role, share_bps, period, cash_handler, currency and effective_from are required' },
+      };
+    }
+    return revshareAnswer(
+      revshareService(runtime).propose({
+        counterpartyDid: body.counterparty_did,
+        selfRole: body.self_role,
+        shareBps: body.share_bps,
+        period: body.period as never,
+        cashHandler: body.cash_handler,
+        currency: body.currency,
+        effectiveFrom: body.effective_from,
+        ...(typeof body.replaces_proposal_digest === 'string'
+          ? { replacesProposalDigest: body.replaces_proposal_digest }
+          : {}),
+      }),
+      body.counterparty_did,
+      'agreement_proposal',
+    );
+  });
+
+  router.post('/v1/commerce/trade/revshare/decide', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.proposal_digest !== 'string' ||
+      (body.kind !== 'accepted' && body.kind !== 'rejected')
+    ) {
+      return { status: 400, body: { error: 'proposal_digest and kind are required' } };
+    }
+    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    return revshareAnswer(
+      revshareService(runtime).decide({ proposalDigest: body.proposal_digest, kind: body.kind }),
+      counterparty,
+      'agreement_decision',
+    );
+  });
+
+  router.post('/v1/commerce/trade/revshare/terminate', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.proposal_digest !== 'string') {
+      return { status: 400, body: { error: 'proposal_digest is required' } };
+    }
+    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    return revshareAnswer(
+      revshareService(runtime).terminate({
+        proposalDigest: body.proposal_digest,
+        ...(typeof body.effective_at === 'string' ? { effectiveAt: body.effective_at } : {}),
+      }),
+      counterparty,
+      'agreement_termination',
+    );
+  });
+
+  router.post('/v1/commerce/trade/revshare/settle', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.proposal_digest !== 'string' ||
+      typeof body.period_start !== 'string' ||
+      typeof body.period_end !== 'string' ||
+      typeof body.gross_minor_units !== 'string'
+    ) {
+      return {
+        status: 400,
+        body: { error: 'proposal_digest, period_start, period_end and gross_minor_units are required' },
+      };
+    }
+    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    return revshareAnswer(
+      revshareService(runtime).issueSettlement({
+        proposalDigest: body.proposal_digest,
+        periodStart: body.period_start,
+        periodEnd: body.period_end,
+        grossMinor: body.gross_minor_units,
+        ...(typeof body.replaces_settlement_digest === 'string'
+          ? { replacesSettlementDigest: body.replaces_settlement_digest }
+          : {}),
+      }),
+      counterparty,
+      'settlement_note',
+    );
+  });
+
+  router.post('/v1/commerce/trade/revshare/ack-settlement', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.settlement_digest !== 'string' ||
+      (body.kind !== 'accepted' && body.kind !== 'disputed')
+    ) {
+      return { status: 400, body: { error: 'settlement_digest and kind are required' } };
+    }
+    const counterparty =
+      runtime.revshareDocuments.get(body.settlement_digest)?.counterpartyDid ?? '';
+    return revshareAnswer(
+      revshareService(runtime).acknowledgeSettlement({
+        settlementDigest: body.settlement_digest,
+        kind: body.kind,
+      }),
+      counterparty,
+      'settlement_ack',
+    );
+  });
+
+  router.get('/v1/commerce/trade/revshare/statement', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const proposalDigest = req.query?.proposal_digest;
+    if (typeof proposalDigest !== 'string' || proposalDigest === '') {
+      return { status: 400, body: { error: 'proposal_digest is required' } };
+    }
+    const service = revshareService(runtime);
+    const fold = service.statement(proposalDigest);
+    const { status, unansweredSettlements } = service.status(proposalDigest);
+    return fold.ok
+      ? {
+          status: 200,
+          body: {
+            ok: true,
+            statement: fold,
+            agreement_state: status.state,
+            unanswered_settlements: unansweredSettlements,
+          },
+        }
+      : { status: 409, body: { error: fold.error, agreement_state: status.state } };
+  });
+
+  router.post('/v1/commerce/trade/staff-presence', async (req): Promise<CoreResponse> => {
+    // Staff callers only. The owner proves presence with the master
+    // passphrase on its own route; accepting it here would blur which
+    // principal a stamp belongs to.
+    if (req.callerType !== 'staff' || typeof req.callerDID !== 'string' || req.callerDID === '') {
+      return { status: 403, body: { error: 'access_denied', reason: 'staff callers only' } };
+    }
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (!staffPresenceCanBeEstablished()) {
+      return { status: 503, body: { error: 'staff_presence_unavailable' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.pin !== 'string') {
+      return { status: 400, body: { error: 'pin is required' } };
+    }
+    const proven = await proveStaffPresence(req.callerDID, body.pin, runtime.now());
+    // One bit out, same as the owner route: wrong PIN and broken
+    // verifier are indistinguishable to the caller.
+    return proven
+      ? { status: 200, body: { ok: true, ttl_ms: OWNER_PRESENCE_TTL_MS } }
+      : { status: 403, body: { error: 'access_denied', reason: 'presence not proven' } };
+  });
+
+  router.post('/v1/commerce/staff-grants', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // §6.2 — a PRESENCE-GATED ceremony: handing a clerk spending
+    // authority is exactly the kind of act the five-minute window
+    // exists for. Same fail-open rule as the vouch ceremony: a node
+    // that cannot establish presence at all must not brick the grant
+    // screen, because that node has no staff PINs either.
+    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(runtime.now())) {
+      // Same error family as approve/publish: the mobile presence sheet
+      // keys on 'no_user_presence' and retries after provePresence.
+      return { status: 403, body: { error: 'no_user_presence' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      typeof body.device_did !== 'string' ||
+      body.device_did === '' ||
+      !STAFF_SCOPES.includes(body.scope as StaffScope) ||
+      !STAFF_INSTALL_SCOPES.includes(body.installs as StaffInstallScope)
+    ) {
+      return { status: 400, body: { error: 'device_did, scope and installs are required' } };
+    }
+    const scope = body.scope as StaffScope;
+    const installs = body.installs as StaffInstallScope;
+    const maxOrderMinorUnits =
+      typeof body.max_order_minor_units === 'string' ? body.max_order_minor_units : undefined;
+    const currency = typeof body.currency === 'string' ? body.currency : undefined;
+    const invalid = validateStaffGrantInput({
+      scope,
+      installs,
+      ...(maxOrderMinorUnits !== undefined ? { maxOrderMinorUnits } : {}),
+      ...(currency !== undefined ? { currency } : {}),
+    });
+    if (invalid !== null) return { status: 400, body: { error: invalid } };
+    // §6.4 — the ceremony SETS the per-device PIN. A device with no PIN
+    // record cannot prove presence, so a grant without one would be dead
+    // authority: the FIRST grant for a device requires a PIN; later
+    // grants may rotate it or leave it standing.
+    const pin = typeof body.pin === 'string' ? body.pin : undefined;
+    if (pin === undefined && runtime.staffPins.get(body.device_did) === null) {
+      return {
+        status: 400,
+        body: { error: 'pin_required', detail: 'the first grant for a device sets its presence PIN (§6.4)' },
+      };
+    }
+    if (pin !== undefined) {
+      const minted = await setStaffPin(runtime.staffPins, body.device_did, pin, runtime.now());
+      if (!minted.ok) return { status: 400, body: { error: minted.refusal } };
+    }
+    const grant = {
+      deviceDid: body.device_did,
+      scope,
+      maxOrderMinorUnits: maxOrderMinorUnits ?? '',
+      currency: currency ?? '',
+      installs,
+      createdAt: runtime.now(),
+      revokedAt: null,
+    };
+    // §6.4 — the node's FIRST staff grant crosses the attribution
+    // boundary, and the two commit in ONE transaction: the grandfather
+    // index of every v1 receipt/approval digest now in the store, then
+    // the grant. A crash between them cannot leave a staff-capable node
+    // that still accepts unattributed vouches.
+    if (runtime.attributionBoundary.crossedAt() === null) {
+      runtime.runInTransaction(() => {
+        runtime.attributionBoundary.cross(
+          runtime.now(),
+          enumerateV1Records({
+            catalogDrafts: runtime.catalogDrafts,
+            orderDrafts: runtime.orderDrafts,
+            orderApprovals: runtime.orderApprovals,
+          }),
+        );
+        runtime.staffGrants.put(grant);
+      });
+    } else {
+      runtime.staffGrants.put(grant);
+    }
+    return { status: 200, body: { ok: true } };
+  });
+
+  router.get('/v1/commerce/staff-grants', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const deviceDid = req.query?.device_did;
+    if (typeof deviceDid !== 'string' || deviceDid === '') {
+      return { status: 400, body: { error: 'device_did is required' } };
+    }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        grants: runtime.staffGrants.listByDevice(deviceDid).map((g) => ({
+          scope: g.scope,
+          installs: g.installs,
+          max_order_minor_units: g.maxOrderMinorUnits,
+          currency: g.currency,
+          created_at: g.createdAt,
+          revoked_at: g.revokedAt,
+        })),
+      },
+    };
+  });
+
+  // ==========================================================================
+  // The invite (§8) — one owner tap mints a QR/paste code; redeeming it is
+  // the counterparty's consent; the four relay messages settle in the
+  // invite service (`commerce.invite` in the receive pipeline).
+  // ==========================================================================
+
+  router.post('/v1/commerce/invites', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const service = getInviteService();
+    if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    // Minting an offer hands standing authority to whoever redeems it —
+    // the staff-grant presence rule applies, fail-open only where no
+    // verifier exists at all.
+    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(runtime.now())) {
+      // Same error family as approve/publish: the mobile presence sheet
+      // keys on 'no_user_presence' and retries after provePresence.
+      return { status: 403, body: { error: 'no_user_presence' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (
+      (body.direction !== 'i_supply_you' && body.direction !== 'you_supply_me') ||
+      !Array.isArray(body.service_rkeys) ||
+      (body.capabilities !== undefined && !Array.isArray(body.capabilities))
+    ) {
+      return { status: 400, body: { error: 'direction and service_rkeys are required' } };
+    }
+    if (body.send_to_did !== undefined && typeof body.send_to_did !== 'string') {
+      return { status: 400, body: { error: 'send_to_did must be a DID string' } };
+    }
+    const minted = service.mintOffer({
+      direction: body.direction,
+      serviceRkeys: body.service_rkeys as string[],
+      // Absent means the standard trade pair — the ONE place that list lives.
+      capabilities: (body.capabilities as string[] | undefined) ?? [...TRADE_INVITE_CAPABILITIES],
+      ...(typeof body.ttl_ms === 'number' ? { ttlMs: body.ttl_ms } : {}),
+    });
+    if (!minted.ok) return { status: 409, body: { error: minted.refusal } };
+    // §8 cold leg — the offer travels over the relay to a discovered DID
+    // instead of a pasted code. Best-effort like every dispatch: the
+    // offer is minted either way, and /invites/send re-sends it.
+    let coldDispatched: boolean | undefined;
+    if (typeof body.send_to_did === 'string' && body.send_to_did !== '') {
+      const sent = await service.sendOffer({
+        nonce: minted.value.offer.nonce,
+        toDid: body.send_to_did,
+      });
+      coldDispatched = sent.ok ? sent.value.dispatched : false;
+    }
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        offer: minted.value.offer,
+        code: minted.value.code,
+        ...(coldDispatched !== undefined ? { cold_dispatched: coldDispatched } : {}),
+      },
+    };
+  });
+
+  /**
+   * §8 cold leg, standalone: (re)send a minted, still-open offer to a
+   * DID. Owner-only, no fresh presence — the authority was minted at the
+   * presence-gated mint; this only moves the same bytes.
+   */
+  router.post('/v1/commerce/invites/send', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const service = getInviteService();
+    if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.nonce !== 'string' || body.nonce === '' || typeof body.to_did !== 'string' || body.to_did === '') {
+      return { status: 400, body: { error: 'nonce and to_did are required' } };
+    }
+    const sent = await service.sendOffer({ nonce: body.nonce, toDid: body.to_did });
+    return sent.ok
+      ? { status: 200, body: { ok: true, dispatched: sent.value.dispatched } }
+      : { status: 409, body: { error: sent.refusal } };
+  });
+
+  router.post('/v1/commerce/invites/redeem', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const service = getInviteService();
+    if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.code !== 'string' || !Array.isArray(body.service_rkeys)) {
+      return { status: 400, body: { error: 'code and service_rkeys are required' } };
+    }
+    const redeemed = await service.redeemCode({
+      code: body.code,
+      serviceRkeys: body.service_rkeys as string[],
+    });
+    return redeemed.ok
+      ? {
+          status: 200,
+          body: {
+            ok: true,
+            redemption: redeemed.value.redemption,
+            resent: redeemed.value.resent,
+            // Best-effort dispatch, VISIBLE: a denied egress must not
+            // read as a working ceremony (re-paste re-sends).
+            dispatched: redeemed.value.dispatched,
+          },
+        }
+      : { status: 409, body: { error: redeemed.refusal } };
+  });
+
+  router.post('/v1/commerce/invites/accept-held', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const service = getInviteService();
+    if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.nonce !== 'string' || body.nonce === '' || !Array.isArray(body.service_rkeys)) {
+      return { status: 400, body: { error: 'nonce and service_rkeys are required' } };
+    }
+    // The owner's consent tap on a held COLD offer — §8 continues at
+    // step 2 exactly as if the code had been pasted.
+    const accepted = await service.acceptHeldOffer({
+      nonce: body.nonce,
+      serviceRkeys: body.service_rkeys as string[],
+    });
+    return accepted.ok
+      ? {
+          status: 200,
+          body: {
+            ok: true,
+            redemption: accepted.value.redemption,
+            dispatched: accepted.value.dispatched,
+          },
+        }
+      : { status: 409, body: { error: accepted.refusal } };
+  });
+
+  router.get('/v1/commerce/invites', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        invites: runtime.invites.list().map((row) => ({
+          role: row.role,
+          state: row.state,
+          direction: row.direction,
+          counterparty_did: row.counterpartyDid,
+          activation_proven: row.activationProvenAt !== null,
+          expires_at: row.expiresAt,
+          created_at: row.createdAt,
+          // The nonce travels ONLY for held cold offers: the owner's own
+          // consent surface needs the key to accept, and nothing else does.
+          ...(row.state === 'held' ? { nonce: row.nonce } : {}),
+        })),
+      },
+    };
+  });
+
+  router.post('/v1/commerce/staff-grants/revoke', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.device_did !== 'string' || body.device_did === '') {
+      return { status: 400, body: { error: 'device_did is required' } };
+    }
+    // Revocation needs no presence window — taking authority AWAY must
+    // never wait on a passphrase. Stamp every grant and drop any
+    // standing presence proof in the same breath.
+    runtime.staffGrants.revokeDevice(body.device_did, runtime.now());
+    clearStaffPresence(body.device_did);
+    runtime.staffPins.remove(body.device_did);
+    return { status: 200, body: { ok: true } };
+  });
 }

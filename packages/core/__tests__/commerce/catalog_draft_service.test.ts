@@ -20,6 +20,7 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { InMemoryAttributionBoundaryRepository } from '../../src/commerce/attribution_boundary';
 import { CatalogDraftService } from '../../src/commerce/catalog_draft_service';
 import {
   InMemoryCatalogDraftRepository,
@@ -33,6 +34,7 @@ import {
 } from '../../src/commerce/catalog_record_writer';
 
 const SUPPLIER = 'did:plc:chairmaker99';
+const OWNER_DID = SUPPLIER;
 const CATALOG = 'chairmaker-main';
 const hash: Sha256Fn = (d) => sha256(d);
 
@@ -107,6 +109,9 @@ interface Harness {
    */
   other: CatalogDraftService;
   publishCalls: () => number;
+  /** §6.4 — the harness boundary; cross it to test v2-exclusive minting. */
+  boundary: InMemoryAttributionBoundaryRepository;
+  setVoucher: (v: string | null) => void;
 }
 
 function harness(
@@ -117,6 +122,10 @@ function harness(
   drafts.put(seed);
   let present = true;
   let fenced = false;
+  // §6.4 — the default harness sits BEFORE the attribution boundary
+  // (v1 minting, the shipped behaviour); tests cross it explicitly.
+  const boundary = new InMemoryAttributionBoundaryRepository();
+  let voucher: string | null = OWNER_DID;
   let calls = 0;
   let hook: () => void | Promise<void> = () => undefined;
   let throws = false;
@@ -139,6 +148,8 @@ function harness(
       newClaimToken: () => `${label}-${String((tokens += 1))}`,
       userPresent: () => present,
       publicationFence: () => (fenced ? 'superseded' : null),
+      attributionBoundary: boundary,
+      vouchedBy: () => voucher,
       publish: async () => {
         calls += 1;
         await hook();
@@ -158,6 +169,8 @@ function harness(
     setPublishThrows: (v) => (throws = v),
     advanceClock: (ms) => (clock += ms),
     publishCalls: () => calls,
+    boundary,
+    setVoucher: (v) => (voucher = v),
   };
 }
 
@@ -377,6 +390,7 @@ describe('an edit during the pause', () => {
           hash,
         ),
         revision: draft.contentRevision + 1,
+        vouchedBy: null,
       },
     });
     const published = await h.service.publish('draft-1');
@@ -672,7 +686,7 @@ describe('the receipt rule, in both directions', () => {
     const outcome = await approvedThen((d) => ({
       ...d,
       provenanceClass: 'owner_authored',
-      receipt: { digest: 'f'.repeat(64), revision: d.contentRevision },
+      receipt: { digest: 'f'.repeat(64), revision: d.contentRevision, vouchedBy: null },
     }));
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error('expected a refusal');
@@ -684,7 +698,7 @@ describe('the receipt rule, in both directions', () => {
     // person saw these bytes, so a row edited after writing must not pass.
     const outcome = await approvedThen((d) => ({
       ...d,
-      receipt: { digest: 'f'.repeat(64), revision: d.contentRevision },
+      receipt: { digest: 'f'.repeat(64), revision: d.contentRevision, vouchedBy: null },
     }));
     expect(outcome.ok).toBe(false);
     if (outcome.ok) throw new Error('expected a refusal');
@@ -1355,5 +1369,60 @@ describe('the local head and the repo disagree', () => {
         })
       ).ok,
     ).toBe(true);
+  });
+});
+
+describe('§6.4 attribution at the receipt', () => {
+  it('past the boundary, confirm mints a v2 receipt naming the voucher, and publish dual-reads it', async () => {
+    const h = harness();
+    h.boundary.cross(1_800_000_000_000, []);
+    const approved = await toApproved(h);
+    expect(approved.receipt?.vouchedBy).toBe(OWNER_DID);
+    // The stored digest IS the v2 commitment — recomputed the way publish does.
+    expect(approved.receipt?.digest).toBe(
+      catalogContentReceiptDigest(
+        {
+          items: approved.items,
+          provenance: approved.provenance,
+          contentRevision: approved.contentRevision,
+          extraction: approved.extraction,
+          attribution: { version: 2, vouched_by: OWNER_DID },
+        },
+        hash,
+      ),
+    );
+    const published = await h.service.publish('draft-1');
+    expect(published.ok).toBe(true);
+  });
+
+  it('past the boundary, confirm with no known voucher refuses', () => {
+    const h = harness();
+    h.boundary.cross(1_800_000_000_000, []);
+    h.setVoucher(null);
+    expect(h.service.confirm('draft-1')).toMatchObject({
+      ok: false,
+      refusal: 'no_user_presence',
+    });
+  });
+
+  it('a v1 receipt outside the index refuses at publish once the boundary is crossed; indexed passes', async () => {
+    // Confirm BEFORE the crossing — a genuine pre-staff v1 receipt.
+    const h = harness();
+    const approved = await toApproved(h);
+    expect(approved.receipt?.vouchedBy).toBeNull();
+
+    // Crossed with an EMPTY index: the v1 receipt reads as a downgrade.
+    h.boundary.cross(1_800_000_000_500, []);
+    const refused = await h.service.publish('draft-1');
+    expect(refused).toMatchObject({ ok: false, refusal: 'digest_mismatch' });
+
+    // The same walk, with the receipt grandfathered — history stays readable.
+    const h2 = harness();
+    const approved2 = await toApproved(h2);
+    h2.boundary.cross(1_800_000_000_500, [
+      { digest: approved2.receipt?.digest ?? '', kind: 'content_receipt' },
+    ]);
+    const published = await h2.service.publish('draft-1');
+    expect(published.ok).toBe(true);
   });
 });

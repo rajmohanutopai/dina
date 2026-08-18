@@ -1381,6 +1381,7 @@ export {
 } from './client/owner-commerce-client';
 export type {
   DraftAnswer,
+  InviteListEntry,
   OrderApproveAnswer,
   OrderConversation,
   OrderDraft,
@@ -1390,6 +1391,10 @@ export type {
   OrderSendAnswer,
   OrderSubmitAnswer,
   PhotoCaptureResult,
+  StaffGrantEntry,
+  TradeDocumentAnswer,
+  TradeInboxItemDto,
+  TradeStatementAnswer,
 } from './client/owner-commerce-client';
 export type { CatalogDraft, DraftRow } from './commerce/catalog_draft_store';
 export type {

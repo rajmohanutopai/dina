@@ -57,6 +57,8 @@ import { recordCommerceEvent } from './observability';
 import { applyReconcileAnswer } from './reconcile_poller';
 import { ORDER_RECONCILE_CAPABILITY } from './reconcile_sweeper';
 import { getCommerceRuntime } from './runtime';
+import { noteTenderQuoteSettled } from './tender';
+import { verifyInboundQuoteDecline } from './trade_ledger';
 import { admitSupplierRecords } from './watermark_gate';
 
 import type { BuyerOrderRecord } from './buyer_reconciliation';
@@ -182,6 +184,13 @@ export type BuyerResponseOutcome =
    * substitution the request forbade. Nothing is recorded.
    */
   | 'quote_not_our_question'
+  /**
+   * §3.4 (TRADE_FIRST_STRATEGY) — the supplier answered the quote request
+   * with a signed QuoteDecline instead of a quote. Verified against the
+   * RETAINED request and recorded in the trade ledger; the tender card
+   * reads it from there. Idempotent: a replay lands here too.
+   */
+  | 'quote_declined'
   | 'applied';
 
 /**
@@ -520,7 +529,48 @@ function applyInboundQuote(args: {
   // it should ever see answers something it asked for, so an unmatched
   // `request_id` is either a stray or an attempt.
   const structural = readSignedQuote(candidate, hash);
-  if (!structural.ok) return 'unreadable';
+  if (!structural.ok) {
+    // §3.4 — the OTHER valid answer on this lane: a signed decline. Tried
+    // only after the quote read fails, so a document that is both (cannot
+    // exist — different digest fields) never races. Verified against the
+    // retained request; recorded in the trade ledger, where the tender
+    // card reads it. Every refusal maps onto this lane's existing
+    // vocabulary rather than inventing parallel outcomes.
+    const declineCandidate =
+      args.result !== null && typeof args.result === 'object' && !Array.isArray(args.result)
+        ? ((args.result as Record<string, unknown>).decline ?? candidate)
+        : candidate;
+    const declined = verifyInboundQuoteDecline({
+      senderDid: args.supplierDid,
+      selfDid: nodeDid,
+      decline: declineCandidate,
+      repository: runtime.tradeDocuments,
+      readRequest: (requestId) => runtime.buyerQuoteRequests.get(requestId),
+      evidenceJson: '{}',
+      nowMs: args.nowMs,
+    });
+    switch (declined.outcome) {
+      case 'applied':
+      case 'duplicate':
+        recordCommerceEvent({
+          event: 'quote_declined',
+          lane: 'order',
+          draftId: '',
+          atMs: args.nowMs,
+        });
+        return 'quote_declined';
+      case 'not_ours':
+        return 'quote_fork';
+      case 'refused':
+        return declined.detail?.includes('no retained request') === true
+          ? 'unsolicited_quote'
+          : 'quote_not_our_question';
+      case 'conflict':
+        return 'quote_declined'; // the held decline stands; idempotent to the caller
+      case 'unreadable':
+        return 'unreadable';
+    }
+  }
   // AUDIENCE BEFORE QUESTION, and the order carries meaning. A quote addressed
   // to a different buyer, or claiming a supplier other than the authenticated
   // sender, is `quote_fork` — the outcome that already covers "offered to
@@ -566,6 +616,9 @@ function applyInboundQuote(args: {
       // too — a crash between the quote landing and the conversation moving
       // must be healed by the redelivery, not wedged by it.
       settleQuoteIntoDraftConversation(runtime, structural.quote, args.nowMs);
+      // §3.2 — the tender correlation, same crash-healing rule: a member
+      // whose quote landed correlates on redelivery too.
+      noteTenderQuoteSettled(structural.quote.request_id, structural.quote.quote_id);
       return ingest.outcome === 'applied' ? 'applied' : 'no_change';
     case 'fork':
     case 'not_our_quote':

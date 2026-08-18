@@ -21,6 +21,8 @@ import {
   registerDevice as registerDeviceAuth,
   unregisterDevice as unregisterDeviceAuth,
 } from '../auth/caller_type';
+import { clearStaffPresence } from '../commerce/owner_presence';
+import { getCommerceRuntime } from '../commerce/runtime';
 import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
 import { recordDecisionSafe } from '../plugins/decisions';
 import { getPluginGrantRepository } from '../plugins/grants';
@@ -39,7 +41,7 @@ import type { AgentScope } from '../auth/agent_scope';
  * surface (privilege escalation by default-case). Pinned by
  * __tests__/auth/plugin_caller.test.ts.
  */
-export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent' | 'plugin';
+export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent' | 'plugin' | 'staff';
 export type AuthType = 'ed25519' | 'token';
 
 export interface PairedDevice {
@@ -460,6 +462,24 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
     if (error === undefined) error = `reasoning cascade failed: ${errMsg(err)}`;
   }
 
+  // Step 6: staff cascade (TRADE_FIRST_STRATEGY §6.2) — stamp every staff
+  // grant revoked and drop any standing attributed-presence proof. The
+  // agent-grant discipline, reused: a missing commerce runtime downgrades
+  // `durable` only for a STAFF-role device (no other role holds staff
+  // grants, so there is nothing to clean).
+  try {
+    if (device.did !== '') {
+      const ok = disableStaffAuthorityForDevice(device.did, Date.now());
+      if (!ok && device.role === 'staff') {
+        cascadesOk = false;
+        if (error === undefined) error = 'staff cascade failed: commerce runtime unavailable';
+      }
+    }
+  } catch (err) {
+    cascadesOk = false;
+    if (error === undefined) error = `staff cascade failed: ${errMsg(err)}`;
+  }
+
   notifyListeners();
   // Round-6 #4: durable = device SQL persisted AND authority cascades completed.
   // A cascade failure means old grants/installs may survive, so report NOT
@@ -568,6 +588,24 @@ function disableAgentGrantsForDevice(deviceDid: string, nowMs: number): boolean 
 }
 
 /**
+ * TRADE_FIRST_STRATEGY §6.2: revoke a device DID's staff grants and drop
+ * any standing attributed-presence stamp. Extracted so the revoke cascade
+ * AND boot reconciliation share it, exactly like the agent-grant half.
+ * Returns false when commerce is not installed — the caller cannot then
+ * claim the staff half of cleanup succeeded for a staff-role device.
+ */
+function disableStaffAuthorityForDevice(deviceDid: string, nowMs: number): boolean {
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return false;
+  if (deviceDid !== '') {
+    runtime.staffGrants.revokeDevice(deviceDid, nowMs);
+    clearStaffPresence(deviceDid);
+    runtime.staffPins.remove(deviceDid);
+  }
+  return true;
+}
+
+/**
  * Round-7 #3 + Round-8 #2: boot-time reconciliation. A crash BETWEEN the
  * device-SQL revoke and the authority cascades leaves a device revoked in SQL
  * but its installs still active / grants live; nothing re-runs the cascade. On
@@ -586,6 +624,7 @@ export function reconcileRevokedDeviceAuthority(): number {
       try {
         const pluginOk = disablePluginAuthorityForDevice(device.did, nowMs);
         const ok = disableAgentGrantsForDevice(device.did, nowMs);
+        const staffOk = disableStaffAuthorityForDevice(device.did, nowMs);
         const reasoning = revokeReasoningAuthorityForPrincipal(device.did, nowMs);
         // Round-9 #13: don't count an AGENT device as reconciled if its
         // persona-grant repo was absent — the agent-grant half didn't run, so
@@ -594,6 +633,9 @@ export function reconcileRevokedDeviceAuthority(): number {
         // Round-12 #13: same for a PLUGIN device whose install repo was absent —
         // the plugin half didn't run; leave it for the next boot to retry.
         if (!pluginOk && device.role === 'plugin') continue;
+        // §6.2: same for a STAFF device with no commerce runtime — its
+        // grants may survive in SQL; the next boot retries.
+        if (!staffOk && device.role === 'staff') continue;
         if (reasoning.available && !reasoning.ok) continue;
         reconciled += 1;
       } catch {

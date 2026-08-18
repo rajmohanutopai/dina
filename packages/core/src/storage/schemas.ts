@@ -2345,6 +2345,224 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 33,
+    name: 'commerce_trade_documents',
+    // The khata chain + tender declines (TRADE_FIRST_STRATEGY §3.4, §4.2,
+    // §4.3). One table for all five trade documents, the commerce_receipts
+    // discipline (digest PK = idempotency, record + envelope evidence
+    // retained together) plus the ANSWER LINKAGE the sweeps run on:
+    // a receipt answers a note, a payment ack answers a payment note, a
+    // decline answers a request — `answers_digest` is that pin, and an
+    // unanswered document is a row no other row answers.
+    //
+    // `counterparty_did` is the OTHER party — the relationship key the
+    // payment leg and the statement fold on. `direction` records which
+    // side authored it; both sides hold both directions by construction.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_trade_documents (
+        record_digest TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN
+          ('quote_decline', 'delivery_note', 'delivery_receipt',
+           'payment_note', 'payment_ack')),
+        counterparty_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL DEFAULT '',
+        answers_digest TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_trade_docs_order
+        ON commerce_trade_documents(purchase_order_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_trade_docs_counterparty
+        ON commerce_trade_documents(counterparty_did, kind);
+      CREATE INDEX IF NOT EXISTS idx_trade_docs_answers
+        ON commerce_trade_documents(answers_digest, kind);
+    `,
+  },
+  {
+    version: 34,
+    name: 'commerce_tenders',
+    // The private tender (TRADE_FIRST_STRATEGY §3.2): ONE buyer-side
+    // aggregate grouping N per-supplier QuoteRequests under one comparison
+    // card. The tender row holds what was asked (lines, projection, terms,
+    // all as the JSON the requests were built from); each member row pins
+    // one supplier's request identity plus the quote family that answered
+    // it — quotes and declines themselves stay in their own verified
+    // stores, and the member row is the correlation, never the evidence.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_tenders (
+        tender_id TEXT PRIMARY KEY,
+        lines_json TEXT NOT NULL,
+        projection_json TEXT NOT NULL,
+        requested_terms_json TEXT NOT NULL DEFAULT '{}',
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commerce_tender_members (
+        tender_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL,
+        -- Correlation, written when a quote settles for this request.
+        quote_id TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (tender_id, supplier_did)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tender_members_request
+        ON commerce_tender_members(request_id);
+    `,
+  },
+  {
+    version: 35,
+    name: 'commerce_staff_grants',
+    // TRADE_FIRST_STRATEGY §6.2 — value-capped staff grants, keyed by the
+    // paired device's DID (never "the second phone" — multi-branch stays
+    // possible, §13.6). The boundary is the COMMERCE INSTALL ROLE, not a
+    // persona: shipped commerce aggregates carry no persona key, and a
+    // check with nothing Core-owned to evaluate is no check at all.
+    // Durable; revocation stamps rather than deletes, the agent-grant
+    // discipline.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_staff_grants (
+        device_did TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN
+          ('commerce_confirm', 'commerce_submit', 'commerce_receive_goods')),
+        max_order_minor_units TEXT NOT NULL DEFAULT '',
+        currency TEXT NOT NULL DEFAULT '',
+        installs TEXT NOT NULL CHECK (installs IN ('buyer', 'supplier', 'both')),
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        PRIMARY KEY (device_did, scope)
+      );
+    `,
+  },
+  {
+    version: 36,
+    name: 'commerce_attribution_boundary',
+    // TRADE_FIRST_STRATEGY §6.4 — the DURABLE vouch-attribution boundary.
+    // A v1 receipt/approval carries nothing proving its age, so the node's
+    // FIRST staff grant writes, in the same transaction, an immutable index
+    // of every v1 digest then in the store. Grandfathered digests stay
+    // readable for ever; from that transaction on, minting and ingest are
+    // v2-exclusive, and a v1 record outside the index is refused — a
+    // staff-capable node cannot be handed an unattributed receipt as a
+    // downgrade. Append-only by discipline: nothing updates or deletes here.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_attribution_boundary (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        crossed_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commerce_attribution_grandfather (
+        record_digest TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('vouch_receipt', 'content_receipt', 'approval')),
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 37,
+    name: 'catalog_receipt_vouched_by',
+    // §6.4 — WHO vouched for a content receipt. '' = the v1 unattributed
+    // shape (admissible only via the grandfather index once the boundary
+    // is crossed); a DID = the v2 shape, recomputed under its own digest
+    // domain at the publish check. Appended (never edited in place) so
+    // existing dev vaults upgrade at boot.
+    sql: `
+      ALTER TABLE commerce_catalog_drafts ADD COLUMN receipt_vouched_by TEXT NOT NULL DEFAULT '';
+    `,
+  },
+  {
+    version: 38,
+    name: 'commerce_invites',
+    // TRADE_FIRST_STRATEGY §8 — the invite exchange, keyed by its
+    // single-use NONCE. One row per exchange per role; the retained
+    // message JSON is what idempotent re-send replays, and the state
+    // machine (offered → redeemed → active | revoked) is enforced in
+    // `invite_service.ts`, never by the table.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_invites (
+        nonce TEXT PRIMARY KEY,
+        role TEXT NOT NULL CHECK (role IN ('inviter', 'redeemer')),
+        state TEXT NOT NULL CHECK (state IN ('offered', 'held', 'redeemed', 'active', 'revoked')),
+        direction TEXT NOT NULL CHECK (direction IN ('i_supply_you', 'you_supply_me')),
+        counterparty_did TEXT NOT NULL DEFAULT '',
+        offer_json TEXT NOT NULL,
+        redemption_json TEXT NOT NULL DEFAULT '',
+        confirmation_json TEXT NOT NULL DEFAULT '',
+        ack_json TEXT NOT NULL DEFAULT '',
+        activation_proven_at INTEGER,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_commerce_invites_state
+        ON commerce_invites(state, expires_at);
+    `,
+  },
+  {
+    version: 39,
+    name: 'commerce_staff_pins',
+    // §6.4 — the per-device staff PIN, an Argon2id record minted at the
+    // grant ceremony. The PIN unlocks NOTHING in the vault; it proves a
+    // person is at that device now. Params are stored per record (the
+    // wrapped-seed discipline) so tuning the defaults never breaks an
+    // existing PIN.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_staff_pins (
+        device_did TEXT PRIMARY KEY,
+        salt_hex TEXT NOT NULL,
+        hash_hex TEXT NOT NULL,
+        memory INTEGER NOT NULL,
+        iterations INTEGER NOT NULL,
+        parallelism INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 40,
+    name: 'commerce_revshare_documents',
+    // TRADE_FIRST_STRATEGY §5 — the revenue-share chain, the khata
+    // table's shape exactly: digest-PK idempotency, answer linkage,
+    // both directions, envelope evidence retained beside each row.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_revshare_documents (
+        record_digest TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN
+          ('agreement_proposal', 'agreement_decision', 'agreement_termination',
+           'settlement_note', 'settlement_ack')),
+        counterparty_did TEXT NOT NULL,
+        proposal_digest TEXT NOT NULL DEFAULT '',
+        answers_digest TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_revshare_docs_proposal
+        ON commerce_revshare_documents(proposal_digest, kind);
+      CREATE INDEX IF NOT EXISTS idx_revshare_docs_counterparty
+        ON commerce_revshare_documents(counterparty_did, kind);
+      CREATE INDEX IF NOT EXISTS idx_revshare_docs_answers
+        ON commerce_revshare_documents(answers_digest, kind);
+    `,
+  },
+  {
+    version: 41,
+    name: 'commerce_staff_pin_attempts',
+    // §6.4 — the PIN's brute-force counter, DURABLE so a reboot never
+    // resets an attacker's clock. Five failures lock the device's PIN
+    // for five minutes; policy lives in staff_pins.ts, this table only
+    // remembers.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_staff_pin_attempts (
+        device_did TEXT PRIMARY KEY,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER NOT NULL DEFAULT 0
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

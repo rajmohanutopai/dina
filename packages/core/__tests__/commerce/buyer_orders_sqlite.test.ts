@@ -24,11 +24,13 @@ import {
   buildBuyerApprovalPayload,
   type BuyerApprovalContext,
 } from '../../src/commerce/approval_payload';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
 import { SQLiteBuyerOrderRepository } from '../../src/commerce/buyer_orders';
-import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
+import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -41,7 +43,6 @@ import {
   makeSignedQuote,
   type InstalledBuyerPack,
 } from './helpers';
-import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 
 /** The owner this node acts for. §7.3: one grant, evaluated like any other. */
 const TEST_OWNER_DID = 'did:plc:testowner00000000';
@@ -276,6 +277,7 @@ describe('record-before-send, against real SQL', () => {
   beforeEach(() => {
     buyerPack = installActiveBuyerPack(Date.now());
     installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
       buyerOrders: repo,
       // §12.4 step 6 — the executor revalidates the held quote before
       // dispatch. Empty stores mean "no quote held", which is the documented

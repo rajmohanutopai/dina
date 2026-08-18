@@ -306,6 +306,30 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>My Orders</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* §7 — the dual-role trade home: the order inbox, khata statements
+            with derived dues, and invites. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/trade')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Trade"
+          testID="settings-row-trade"
+        >
+          <Text style={styles.rowLabel}>Trade</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        {/* §6 — staff grants: scoped, value-capped authority for the shop's
+            other hands. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/staff-grants')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Staff"
+          testID="settings-row-staff"
+        >
+          <Text style={styles.rowLabel}>Staff</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/subscriptions')}

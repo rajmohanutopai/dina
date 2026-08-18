@@ -8,6 +8,9 @@ import {
   commerceRecordDigest,
   verifyCommerceRecordDigest,
 } from '../src/digests';
+import { inviteRecordDigest } from '../src/invite_documents';
+import { revshareRecordDigest } from '../src/revenue_share';
+import { tradeRecordDigest } from '../src/trade_documents';
 
 const hash = (data: Uint8Array) => sha256(data);
 
@@ -127,5 +130,30 @@ describe('DIGEST_FIELD_BY_DOMAIN', () => {
     for (const domain of COMMERCE_DIGEST_DOMAINS) {
       expect(DIGEST_FIELD_BY_DOMAIN[domain]).toBe(`${domain}_digest`);
     }
+  });
+});
+describe('cross-FAMILY domain separation', () => {
+  it('one payload digests to a different value in every record family', () => {
+    // Four families beside the §9.12 set now digest records:
+    // dina:commerce:v1:, dina:commerce:trade:v1:, dina:commerce:invite:v1:,
+    // dina:commerce:revshare:v1:. If any two shared a preimage, a record
+    // admitted by one verifier could be replayed at another.
+    const payload = { probe: 'one payload, many families', n: 7 };
+    const digests = [
+      commerceRecordDigest('order', payload, hash),
+      tradeRecordDigest('payment_note', payload, hash),
+      inviteRecordDigest('invite_offer', payload, hash),
+      revshareRecordDigest('settlement_note', payload, hash),
+    ];
+    expect(new Set(digests).size).toBe(digests.length);
+  });
+
+  it('a kind name reused across families still separates (the family is in the domain)', () => {
+    // No kind string is shared today; this pins that even a FUTURE
+    // reuse cannot collide, because the family prefix is committed.
+    const payload = { probe: 'same kind string, two families' };
+    expect(tradeRecordDigest('quote_decline' as never, payload, hash)).not.toBe(
+      revshareRecordDigest('quote_decline' as never, payload, hash),
+    );
   });
 });

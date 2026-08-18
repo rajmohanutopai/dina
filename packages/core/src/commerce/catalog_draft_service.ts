@@ -40,6 +40,7 @@ import {
   verifyCatalogSnapshot,
 } from '@dina/commerce-protocol';
 
+import { v1RecordAdmissible } from './attribution_boundary';
 import { CATALOG_FIELD_ORIGIN, productIdentity } from './catalog_assembler';
 import { buildCatalogSnapshot } from './catalog_publisher';
 import {
@@ -49,6 +50,7 @@ import {
   getCatalogRecordWriter,
 } from './catalog_record_writer';
 
+import type { AttributionBoundaryRepository } from './attribution_boundary';
 import type {
   CatalogDraft,
   CatalogDraftRepository,
@@ -139,6 +141,20 @@ export interface DraftServiceDeps {
   userPresent: () => boolean;
   /** §16.2 — has this node lost authority to publish? Null means it has not. */
   publicationFence: () => unknown | null;
+  /**
+   * §6.4 — the durable attribution boundary. Before the crossing the v1
+   * unattributed receipt is simply the current shape; after it, minting
+   * is v2-exclusive and a v1 receipt is believed only through the
+   * grandfather index.
+   */
+  attributionBoundary: AttributionBoundaryRepository;
+  /**
+   * WHO is vouching in this composition — the owner DID today, the staff
+   * device DID when the staff confirm surface lands. Null = unknown, and
+   * post-boundary minting then REFUSES rather than minting a receipt
+   * that cannot say who looked.
+   */
+  vouchedBy: () => string | null;
   /** Writes snapshot then pointer. Injected so Core stays free of I/O. */
   publish: (args: {
     draft: CatalogDraft;
@@ -303,6 +319,22 @@ export class CatalogDraftService {
       }
     }
 
+    // §6.4 — past the attribution boundary, minting is v2-exclusive: the
+    // receipt must say WHO looked, or there is no receipt. Resolved before
+    // the write so a refusal leaves the draft untouched.
+    let vouchedBy: string | null = null;
+    if (draft.provenanceClass === 'model_derived') {
+      if (this.deps.attributionBoundary.crossedAt() !== null) {
+        vouchedBy = this.deps.vouchedBy();
+        if (vouchedBy === null) {
+          return refuse(
+            'no_user_presence',
+            'past the attribution boundary a receipt must name who vouched (§6.4)',
+          );
+        }
+      }
+    }
+
     const next: CatalogDraft = {
       ...draft,
       state: 'confirmed',
@@ -321,10 +353,14 @@ export class CatalogDraftService {
                   // have come from a different model than the one the person
                   // was told about when they vouched for it.
                   extraction: draft.extraction,
+                  ...(vouchedBy === null
+                    ? {}
+                    : { attribution: { version: 2 as const, vouched_by: vouchedBy } }),
                 },
                 this.deps.sha256,
               ),
               revision: draft.contentRevision,
+              vouchedBy,
             }
           : null,
       updatedAtMs: this.deps.now(),
@@ -1137,12 +1173,30 @@ export class CatalogDraftService {
     if (draft.receipt.revision !== draft.contentRevision) {
       return refuse('stale_revision', 'the draft changed after the receipt was taken');
     }
+    // §6.4 dual-read: an attributed receipt recomputes under its own v2
+    // domain WITH the stored voucher; an unattributed one recomputes as
+    // the frozen v1 bytes — and past the boundary a v1 receipt is
+    // believed only through the immutable grandfather index, so an
+    // unattributed receipt minted AFTER staff arrived cannot pass as
+    // pre-staff history.
+    if (
+      draft.receipt.vouchedBy === null &&
+      !v1RecordAdmissible(this.deps.attributionBoundary, draft.receipt.digest)
+    ) {
+      return refuse(
+        'digest_mismatch',
+        'an unattributed receipt outside the grandfather index (§6.4)',
+      );
+    }
     const recomputed = catalogContentReceiptDigest(
       {
         items: draft.items,
         provenance: draft.provenance,
         contentRevision: draft.contentRevision,
         extraction: draft.extraction,
+        ...(draft.receipt.vouchedBy === null
+          ? {}
+          : { attribution: { version: 2 as const, vouched_by: draft.receipt.vouchedBy } }),
       },
       this.deps.sha256,
     );

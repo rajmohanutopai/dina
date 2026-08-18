@@ -30,3 +30,8 @@ export * from './epoch';
 export * from './catalog';
 export * from './catalog_publication';
 export * from './photo_draft';
+export * from './dues';
+export * from './invite_documents';
+export * from './revenue_share';
+export * from './trade_documents';
+export * from './trade_fold';

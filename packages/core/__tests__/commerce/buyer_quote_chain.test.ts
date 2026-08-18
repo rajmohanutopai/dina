@@ -33,6 +33,7 @@ import {
   REQUEST_QUOTE_CAPABILITY,
 } from '../../src/commerce/buyer_response';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import { InMemoryTenderRepository } from '../../src/commerce/tender';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
 import { InMemoryOrderDraftRepository } from '../../src/commerce/order_draft_store';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
@@ -104,6 +105,7 @@ describe('the production entry point (§9.8 wiring)', () => {
   // buyer approved, silently, on every real node.
   it('routes a request_quote response through the chain and detects a fork', () => {
     installCommerceRuntime({
+      tenders: new InMemoryTenderRepository(),
       buyerQuotes: repository,
       nodeDid: () => BUYER_DID,
       // §16.2 — a REAL watermark store, not an omission the cast hides.
@@ -181,6 +183,7 @@ describe('the production entry point (§9.8 wiring)', () => {
     // This node has already seen epoch 5 from that supplier: it restored.
     watermarks.raiseTo(SUPPLIER_DID, '5');
     installCommerceRuntime({
+      tenders: new InMemoryTenderRepository(),
       buyerQuotes: repository,
       nodeDid: () => BUYER_DID,
       watermarks,
@@ -233,6 +236,7 @@ describe('the production entry point (§9.8 wiring)', () => {
     // relay-authenticated envelope, never to a sender-supplied inner body.
     const watermarks = new InMemoryCommerceEpochWatermarkRepository();
     installCommerceRuntime({
+      tenders: new InMemoryTenderRepository(),
       buyerQuotes: repository,
       nodeDid: () => BUYER_DID,
       watermarks,
@@ -277,6 +281,7 @@ describe('the production entry point (§9.8 wiring)', () => {
     // decides, never the quote's `buyer_did` field — that is the field the
     // check exists to verify.
     installCommerceRuntime({
+      tenders: new InMemoryTenderRepository(),
       buyerQuotes: repository,
       nodeDid: () => 'did:plc:not-this-buyer',
       // Empty, so the watermark admits every epoch and the AUDIENCE check is

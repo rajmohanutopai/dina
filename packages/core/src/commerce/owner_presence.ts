@@ -111,4 +111,65 @@ export function ownerPresentNow(nowMs: number): boolean {
 /** Drop any standing proof — used on lock, on logout, and by tests. */
 export function clearOwnerPresence(): void {
   provenAtMs = 0;
+  staffProvenAtMs.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Attributed presence (TRADE_FIRST_STRATEGY §6.4)
+// ---------------------------------------------------------------------------
+//
+// The owner's stamp above stays exactly as it was — every shipped caller
+// keeps its contract. What §6 adds is presence FOR A NAMED PRINCIPAL: a
+// staff device proves with its own per-device PIN (an Argon2id record
+// minted at the grant ceremony; the PIN unlocks nothing in the vault),
+// and the stamp is kept PER DEVICE with the same five-minute window.
+// A vouch made under a staff stamp is attributed to that device's DID.
+
+/** Checks a staff device's PIN. Injected by the composition root. */
+export type StaffPresenceVerifier = (deviceDid: string, pin: string) => Promise<boolean>;
+
+let staffVerifier: StaffPresenceVerifier | null = null;
+const staffProvenAtMs = new Map<string, number>();
+
+export function installStaffPresenceVerifier(value: StaffPresenceVerifier | null): void {
+  staffVerifier = value;
+  // The owner-verifier rule, held to for staff too: swapping the
+  // verifier drops every standing stamp.
+  staffProvenAtMs.clear();
+}
+
+export function staffPresenceCanBeEstablished(): boolean {
+  return staffVerifier !== null;
+}
+
+/** Verify a staff PIN and stamp that DEVICE's clock. Fail-closed. */
+export async function proveStaffPresence(
+  deviceDid: string,
+  pin: string,
+  nowMs: number,
+): Promise<boolean> {
+  if (staffVerifier === null) return false;
+  if (deviceDid === '' || pin === '') return false;
+  let proven = false;
+  try {
+    proven = await staffVerifier(deviceDid, pin);
+  } catch {
+    return false;
+  }
+  if (proven) staffProvenAtMs.set(deviceDid, nowMs);
+  return proven;
+}
+
+/** Is THIS staff device's person here right now? Same window, same
+ *  future-stamp rule as the owner's. */
+export function staffPresentNow(deviceDid: string, nowMs: number): boolean {
+  const stamp = staffProvenAtMs.get(deviceDid) ?? 0;
+  if (stamp <= 0) return false;
+  const age = nowMs - stamp;
+  return age >= 0 && age < OWNER_PRESENCE_TTL_MS;
+}
+
+/** Drop one device's proof — on its grant revocation or device revoke. */
+export function clearStaffPresence(deviceDid: string): void {
+  staffProvenAtMs.delete(deviceDid);
 }

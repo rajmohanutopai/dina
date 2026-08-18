@@ -22,8 +22,15 @@
  * Returning the failure lets each caller say which it is.
  */
 
+import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
+
 import {
+  readDeliveryNote,
+  readDeliveryReceipt,
+  readPaymentAcknowledgement,
+  readPaymentNote,
   readPurchaseOrderProposal,
+  readQuoteDecline,
   readSignedQuote,
   validateCatalogPointer,
   validateCommerceOrderStatus,
@@ -33,13 +40,37 @@ import {
   validateQuoteRequest,
   type CatalogPointer,
   type CommerceOrderStatus,
+  type DeliveryNote,
+  type DeliveryReceipt,
   type OrderAcknowledgement,
+  type PaymentAcknowledgement,
+  type PaymentNote,
+  type QuoteDecline,
   type PurchaseOrderLine,
   type PurchaseOrderProposal,
   type QuoteRequest,
   type RetainedEnvelope,
   type SignedQuote,
-} from '@dina/commerce-protocol';
+
+  validateInviteActivationAck,
+  validateInviteConfirmation,
+  validateInviteOffer,
+  validateInviteRedemption,
+  validateAgreementDecision,
+  validateAgreementProposal,
+  validateAgreementTermination,
+  validateSettlementAcknowledgement,
+  validateSettlementNote,
+  type AgreementDecision,
+  type AgreementProposal,
+  type AgreementTermination,
+  type SettlementAcknowledgement,
+  type SettlementNote,
+  type InviteActivationAck,
+  type InviteConfirmation,
+  type InviteOffer,
+  type InviteRedemption} from '@dina/commerce-protocol';
+
 
 import type { BuyerApprovalContext } from './approval_payload';
 import type { EnvelopeEvidence } from './buyer_status';
@@ -82,6 +113,63 @@ export function rehydratePurchaseOrder(
   return read.ok
     ? { ok: true, value: read.order }
     : { ok: false, error: `stored order failed validation: ${read.error}` };
+}
+
+/**
+ * Read the five trade documents (TRADE_FIRST_STRATEGY §4.2/§3.4) back
+ * from the ledger, each through its ingress validator — which re-derives
+ * the record's own digest, the same corruption net as every rehydrator
+ * here.
+ */
+export function rehydrateDeliveryNote(json: string, sha256: Sha256Fn): Rehydrated<DeliveryNote> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readDeliveryNote(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.note }
+    : { ok: false, error: `stored delivery note failed validation: ${read.error}` };
+}
+
+export function rehydrateDeliveryReceipt(
+  json: string,
+  sha256: Sha256Fn,
+): Rehydrated<DeliveryReceipt> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readDeliveryReceipt(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.receipt }
+    : { ok: false, error: `stored delivery receipt failed validation: ${read.error}` };
+}
+
+export function rehydratePaymentNote(json: string, sha256: Sha256Fn): Rehydrated<PaymentNote> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readPaymentNote(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.note }
+    : { ok: false, error: `stored payment note failed validation: ${read.error}` };
+}
+
+export function rehydratePaymentAck(
+  json: string,
+  sha256: Sha256Fn,
+): Rehydrated<PaymentAcknowledgement> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readPaymentAcknowledgement(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.ack }
+    : { ok: false, error: `stored payment ack failed validation: ${read.error}` };
+}
+
+export function rehydrateQuoteDecline(json: string, sha256: Sha256Fn): Rehydrated<QuoteDecline> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readQuoteDecline(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.decline }
+    : { ok: false, error: `stored quote decline failed validation: ${read.error}` };
 }
 
 /** Read a signed quote back from a receipt, through the ingress validator. */
@@ -267,6 +355,19 @@ export function rehydrateApprovalContext(json: string): Rehydrated<BuyerApproval
       return { ok: false, error: `stored approval context: install.${field} is not a string` };
     }
   }
+  // §6.4 — a stored v2 attribution must be exactly {version: 2, vouchedBy}.
+  // A partial or mutated one refuses rather than downgrading the row to v1:
+  // the payload rebuild would digest differently and the approval would read
+  // as absent anyway, but a named refusal beats a silent mismatch.
+  if ('attribution' in c && c.attribution !== undefined) {
+    if (!isPlainObject(c.attribution)) {
+      return { ok: false, error: 'stored approval context: attribution is not an object' };
+    }
+    const attribution = c.attribution as Record<string, unknown>;
+    if (attribution.version !== 2 || typeof attribution.vouchedBy !== 'string' || attribution.vouchedBy === '') {
+      return { ok: false, error: 'stored approval context: attribution is not a v2 attribution' };
+    }
+  }
   return { ok: true, value: v as BuyerApprovalContext };
 }
 
@@ -328,4 +429,110 @@ function rehydrateRetainedEnvelope(value: unknown): RetainedEnvelope | null {
     created_time,
     body: body as string,
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// §8 invite rows — this node's own writes, still verified on the way out
+// ---------------------------------------------------------------------------
+
+/** A stored invite row this build cannot re-verify. */
+export class InviteIntegrityError extends Error {}
+
+const defaultHash: Sha256Fn = (data) => nobleSha256(data);
+
+function rehydrateStoredInviteRecord<T>(
+  json: string,
+  validate: (value: unknown, sha256: Sha256Fn) => string | null,
+  what: string,
+): T {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new InviteIntegrityError(`stored ${what} is not JSON`);
+  }
+  const bad = validate(parsed, defaultHash);
+  if (bad !== null) throw new InviteIntegrityError(`stored ${what}: ${bad}`);
+  return parsed as T;
+}
+
+export function rehydrateStoredInviteOffer(json: string): InviteOffer {
+  return rehydrateStoredInviteRecord<InviteOffer>(json, validateInviteOffer, 'invite offer');
+}
+
+export function rehydrateStoredInviteRedemption(json: string): InviteRedemption {
+  return rehydrateStoredInviteRecord<InviteRedemption>(
+    json,
+    validateInviteRedemption,
+    'invite redemption',
+  );
+}
+
+export function rehydrateStoredInviteConfirmation(json: string): InviteConfirmation {
+  return rehydrateStoredInviteRecord<InviteConfirmation>(
+    json,
+    validateInviteConfirmation,
+    'invite confirmation',
+  );
+}
+
+export function rehydrateStoredInviteActivationAck(json: string): InviteActivationAck {
+  return rehydrateStoredInviteRecord<InviteActivationAck>(
+    json,
+    validateInviteActivationAck,
+    'invite activation ack',
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// §5 revenue-share rows — the same verified-on-read discipline
+// ---------------------------------------------------------------------------
+
+export type RehydratedRevshare =
+  | { kind: 'agreement_proposal'; document: AgreementProposal }
+  | { kind: 'agreement_decision'; document: AgreementDecision }
+  | { kind: 'agreement_termination'; document: AgreementTermination }
+  | { kind: 'settlement_note'; document: SettlementNote }
+  | { kind: 'settlement_ack'; document: SettlementAcknowledgement };
+
+/** A stored revshare row this build cannot re-verify. */
+export class RevshareIntegrityError extends Error {}
+
+const REVSHARE_VALIDATORS = {
+  agreement_proposal: validateAgreementProposal,
+  agreement_decision: validateAgreementDecision,
+  agreement_termination: validateAgreementTermination,
+  settlement_note: validateSettlementNote,
+  settlement_ack: validateSettlementAcknowledgement,
+} as const;
+
+const REVSHARE_DIGEST_FIELDS = {
+  agreement_proposal: 'proposal_digest',
+  agreement_decision: 'decision_digest',
+  agreement_termination: 'termination_digest',
+  settlement_note: 'settlement_digest',
+  settlement_ack: 'settlement_ack_digest',
+} as const;
+
+export function rehydrateRevshareDocument(row: {
+  kind: keyof typeof REVSHARE_VALIDATORS;
+  recordJson: string;
+  recordDigest: string;
+}): RehydratedRevshare {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.recordJson);
+  } catch {
+    throw new RevshareIntegrityError(`stored ${row.kind} is not JSON`);
+  }
+  const bad = REVSHARE_VALIDATORS[row.kind](parsed, defaultHash);
+  if (bad !== null) throw new RevshareIntegrityError(`stored ${row.kind}: ${bad}`);
+  // The validator re-derived the record digest; the ROW key must agree,
+  // or the row indexes a record it does not hold.
+  if ((parsed as Record<string, unknown>)[REVSHARE_DIGEST_FIELDS[row.kind]] !== row.recordDigest) {
+    throw new RevshareIntegrityError(`stored ${row.kind}: row key does not match the record digest`);
+  }
+  return { kind: row.kind, document: parsed as never };
 }

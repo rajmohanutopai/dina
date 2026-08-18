@@ -83,13 +83,13 @@ function commitUnder(lane: PhotoDraftLane, kind: string, value: unknown, sha256:
 // ---------------------------------------------------------------------------
 
 /** One page of the ordered manifest capture produced (§4.1). */
-export type ExtractionManifestPage = {
+export interface ExtractionManifestPage {
   artifact_id: string;
   /** sha-256 of the stored, EXIF-stripped page bytes. */
   content_hash: string;
   /** 0-based position in the capture order. */
   page_index: number;
-};
+}
 
 /**
  * One extracted row with its identity. `row` is numbered CONTINUOUSLY across
@@ -97,26 +97,26 @@ export type ExtractionManifestPage = {
  * already speaks, pinned in §4.1 so `row` means one thing in findings,
  * repairs and receipts whether the source was one page or five.
  */
-export type ExtractedRowCommitment = {
+export interface ExtractedRowCommitment {
   page_index: number;
   row: number;
   /** The raw extracted row, exactly as the seam returned it. */
   content: unknown;
-};
+}
 
 /**
  * The extraction commitment: which photograph produced which rows, for
  * WHICH DRAFT. The `draft_id` is in the preimage because without it the
  * commitment floats free of the draft it describes.
  */
-export type ExtractionCommitment = {
+export interface ExtractionCommitment {
   draft_id: string;
   /** The ordered manifest, whole — never "the image's" hash. */
   manifest: readonly ExtractionManifestPage[];
   schema_id: string;
   model: string;
   rows: readonly ExtractedRowCommitment[];
-};
+}
 
 export function validateExtractionCommitment(value: unknown): string | null {
   if (value === null || typeof value !== 'object') return 'extraction: must be an object';
@@ -189,12 +189,12 @@ export function extractionCommitmentDigest(
  * beside it: this draft, at this content revision, was extracted under
  * this commitment. Checked at confirm, prepare and publish.
  */
-export type CatalogExtractionBinding = {
+export interface CatalogExtractionBinding {
   binding_version: 1;
   draft_id: string;
   content_revision: number;
   extraction_digest: string;
-};
+}
 
 export function validateCatalogExtractionBinding(value: unknown): string | null {
   if (value === null || typeof value !== 'object') return 'binding: must be an object';
@@ -224,25 +224,37 @@ export function catalogExtractionBindingDigest(
 // ---------------------------------------------------------------------------
 
 /** A line as a confirm ceremony vouched it. */
-export type VouchedLine = {
+export interface VouchedLine {
   line_id: string;
   generation: number;
   quantity: Quantity;
   resolved_product: ProductRef;
   supplier_did: string;
-};
+}
 
 /**
  * A requirement as vouched or explicitly omitted. `omitted: true` carries
  * `value: null` — "value | omitted" is one field pair, not two optional
  * fields free to disagree.
  */
-export type VouchedRequirement = {
+export interface VouchedRequirement {
   key: string;
   omitted: boolean;
   value: unknown;
   generation: number;
-};
+}
+
+/**
+ * WHO vouched (TRADE_FIRST_STRATEGY §6.4) — the owner DID or the staff
+ * device DID. The version discriminator is EXPLICIT and fixed at 2: v1
+ * is the shipped unversioned shape (no attribution field at all), and a
+ * shape that carries the field must say which version it claims, so a
+ * future v3 cannot be smuggled in as "attribution present".
+ */
+export interface VouchAttribution {
+  version: 2;
+  vouched_by: string;
+}
 
 /**
  * The batch vouch receipt a confirm ceremony mints (§5.1). The ceremony
@@ -250,14 +262,28 @@ export type VouchedRequirement = {
  * ceremonies — that definition, not a reinvention. The extraction digest
  * is in the preimage: the chain that makes the vouch provably about THESE
  * photographed rows.
+ *
+ * `attribution` absent = the v1 shape, whose digest bytes are frozen;
+ * present = v2, which commits under its OWN domain (`vouch_receipt_v2`)
+ * so the two families can never collide and a stripped attribution
+ * changes the digest twice over (§6.4).
  */
-export type VouchReceipt = {
+export interface VouchReceipt {
   draft_id: string;
   ceremony: number;
   extraction_digest: string;
   lines: readonly VouchedLine[];
   requirements: readonly VouchedRequirement[];
-};
+  attribution?: VouchAttribution;
+}
+
+/** Shared §6.4 attribution check — vouch receipts and content receipts. */
+export function validateVouchAttribution(value: unknown, field: string): string | null {
+  if (value === null || typeof value !== 'object') return `${field}: must be an object`;
+  const a = value as Partial<VouchAttribution>;
+  if (a.version !== 2) return `${field}: version must be exactly 2`;
+  return validateDid(a.vouched_by, `${field}.vouched_by`);
+}
 
 function validateVouchedRequirement(value: unknown, field: string): string | null {
   if (value === null || typeof value !== 'object') return `${field}: must be an object`;
@@ -309,11 +335,24 @@ export function validateVouchReceipt(value: unknown): string | null {
     const bad = validateVouchedRequirement(entry, `vouch.requirements[${String(i)}]`);
     if (bad !== null) return bad;
   }
+  if ('attribution' in v && v.attribution !== undefined) {
+    const bad = validateVouchAttribution(v.attribution, 'vouch.attribution');
+    if (bad !== null) return bad;
+  }
   return null;
 }
 
+/**
+ * §6.4 dual-read: an unattributed receipt digests under the shipped v1
+ * domain with the shipped bytes — nothing already stored moves — and an
+ * attributed one under its own `vouch_receipt_v2` domain. The rest
+ * destructure guards the v1 bytes even against a caller that passed
+ * `attribution: undefined` explicitly.
+ */
 export function vouchReceiptDigest(receipt: VouchReceipt, sha256: Sha256Fn): string {
-  return commitUnder('order', 'vouch_receipt', receipt, sha256);
+  const { attribution, ...v1 } = receipt;
+  if (attribution === undefined) return commitUnder('order', 'vouch_receipt', v1, sha256);
+  return commitUnder('order', 'vouch_receipt_v2', receipt, sha256);
 }
 
 // ---------------------------------------------------------------------------
@@ -321,11 +360,11 @@ export function vouchReceiptDigest(receipt: VouchReceipt, sha256: Sha256Fn): str
 // ---------------------------------------------------------------------------
 
 /** A line as a conversation snapshotted it at send. */
-export type ConversationSnapshotLine = {
+export interface ConversationSnapshotLine {
   line_id: string;
   generation: number;
   vouch_receipt_digest: string;
-};
+}
 
 /**
  * The conversation snapshot — what "snapshot digest" MEANS everywhere the
@@ -333,14 +372,14 @@ export type ConversationSnapshotLine = {
  * sorted-key order, lists in stated order: `canonicalJson`'s own rules,
  * the same discipline as every §9.12 digest.
  */
-export type ConversationSnapshot = {
+export interface ConversationSnapshot {
   draft_id: string;
   conversation_id: string;
   supplier_did: string;
   request_digest: string;
   lines: readonly ConversationSnapshotLine[];
   requirements: readonly VouchedRequirement[];
-};
+}
 
 export function validateConversationSnapshot(value: unknown): string | null {
   if (value === null || typeof value !== 'object') return 'snapshot: must be an object';
@@ -405,7 +444,7 @@ export const APPROVAL_ORIGIN_PHOTO_ORDER_DRAFT = 'photo_order_draft';
  * the versioned `origin` field, and hydration of a photo approval requires
  * EVERY field here present, fail-closed, at hydration and again at submit.
  */
-export type ApprovalSourceBinding = {
+export interface ApprovalSourceBinding {
   origin: typeof APPROVAL_ORIGIN_PHOTO_ORDER_DRAFT;
   binding_version: 1;
   draft_id: string;
@@ -413,7 +452,7 @@ export type ApprovalSourceBinding = {
   assignment_generations: readonly { line_id: string; generation: number }[];
   requirement_generations: readonly { key: string; generation: number }[];
   snapshot_digest: string;
-};
+}
 
 export function validateApprovalSourceBinding(value: unknown): string | null {
   if (value === null || typeof value !== 'object') return 'source: must be an object';
@@ -475,7 +514,7 @@ export function validateApprovalSourceBinding(value: unknown): string | null {
  * pointer→snapshot→page→item chain recomputes perfectly for any
  * `supplier_did` an attacker writes into it.
  */
-export type CatalogEvidenceRecord = {
+export interface CatalogEvidenceRecord {
   /** Authority context. Verified FIRST at hydration, before any digest. */
   repo_did: string;
   collection: string;
@@ -485,7 +524,7 @@ export type CatalogEvidenceRecord = {
   /** The digest-chain material. `snapshot.page_digests` is the page list. */
   snapshot: CatalogSnapshot;
   page: CatalogSnapshotPage;
-};
+}
 
 /**
  * What Core must be handed to verify AUTHORITY — that the retained pointer

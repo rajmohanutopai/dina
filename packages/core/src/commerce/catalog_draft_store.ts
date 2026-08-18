@@ -134,7 +134,13 @@ export interface CatalogDraft {
   /** Minted once at assembly; empty until then. */
   generatedAtIso: string;
   itemRevision: string;
-  receipt: { digest: string; revision: number } | null;
+  /**
+   * The content receipt. `vouchedBy` null = the v1 unattributed shape
+   * (admissible only through the §6.4 grandfather index once the
+   * attribution boundary is crossed); a DID = v2, recomputed under its
+   * own digest domain at the publish check.
+   */
+  receipt: { digest: string; revision: number; vouchedBy: string | null } | null;
   held: {
     snapshot: CatalogSnapshot;
     pages: readonly CatalogSnapshotPage[];
@@ -218,6 +224,12 @@ export interface CatalogDraftRepository {
   releaseClaim(draftId: string, token: string): void;
   /** Every draft for a catalog, most recently touched first. */
   listByCatalog(catalogId: string): CatalogDraft[];
+  /**
+   * Every content-receipt digest currently held, for the §6.4 boundary
+   * crossing's grandfather walk. Digests only — the walk needs nothing
+   * else, and a narrower read keeps the crossing transaction cheap.
+   */
+  listReceiptDigests(): string[];
   put(draft: CatalogDraft): void;
   delete(draftId: string): void;
 }
@@ -483,7 +495,14 @@ function toDraft(row: DBRow): CatalogDraft | null {
     receipt:
       receiptDigest === ''
         ? null
-        : { digest: receiptDigest, revision: Number(row.receipt_revision ?? -1) },
+        : {
+            digest: receiptDigest,
+            revision: Number(row.receipt_revision ?? -1),
+            vouchedBy:
+              String(row.receipt_vouched_by ?? '') === ''
+                ? null
+                : String(row.receipt_vouched_by),
+          },
     held,
     approval:
       approvedDigest === ''
@@ -519,6 +538,17 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
     return rows.map(toDraft).filter((d): d is CatalogDraft => d !== null);
   }
 
+  listReceiptDigests(): string[] {
+    // Raw column read on purpose: the walk must reach the digest of a row
+    // whose JSON columns are corrupt — such a receipt is still a v1 fact
+    // the boundary must grandfather, and the full mapper would drop it.
+    return this.db
+      .query<{ receipt_digest: string }>(
+        `SELECT receipt_digest FROM commerce_catalog_drafts WHERE receipt_digest != ''`,
+      )
+      .map((row) => String(row.receipt_digest));
+  }
+
   put(draft: CatalogDraft): void {
     this.db.run(
       `INSERT INTO commerce_catalog_drafts
@@ -528,11 +558,11 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
           extraction_manifest_json, extraction_digest, extraction_binding_json,
           rows_json, findings_json, provenance_json, items_json,
           generated_at_iso, item_revision,
-          receipt_digest, receipt_revision,
+          receipt_digest, receipt_revision, receipt_vouched_by,
           held_snapshot_json, held_pages_json, held_pointer_json, held_pointer_cid, held_revision,
           approved_digest, approved_revision, publication_json,
           created_at_ms, updated_at_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(draft_id) DO UPDATE SET
          catalog_id = excluded.catalog_id,
          state = excluded.state,
@@ -554,6 +584,7 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
          item_revision = excluded.item_revision,
          receipt_digest = excluded.receipt_digest,
          receipt_revision = excluded.receipt_revision,
+         receipt_vouched_by = excluded.receipt_vouched_by,
          held_snapshot_json = excluded.held_snapshot_json,
          held_pages_json = excluded.held_pages_json,
          held_pointer_json = excluded.held_pointer_json,
@@ -585,6 +616,7 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
         draft.itemRevision,
         draft.receipt?.digest ?? '',
         draft.receipt?.revision ?? -1,
+        draft.receipt?.vouchedBy ?? '',
         draft.held === null ? '' : JSON.stringify(draft.held.snapshot),
         draft.held === null ? '' : JSON.stringify(draft.held.pages),
         draft.held === null ? '' : JSON.stringify(draft.held.pointer),
@@ -654,6 +686,13 @@ export class InMemoryCatalogDraftRepository implements CatalogDraftRepository {
       .filter((d) => d.catalogId === catalogId)
       .sort((a, b) => b.updatedAtMs - a.updatedAtMs || a.draftId.localeCompare(b.draftId))
       .map((d) => JSON.parse(JSON.stringify(d)) as CatalogDraft);
+  }
+
+  listReceiptDigests(): string[] {
+    return [...this.rows.values()]
+      .filter((d) => d.receipt !== null)
+      .map((d) => d.receipt?.digest ?? '')
+      .filter((digest) => digest !== '');
   }
 
   put(draft: CatalogDraft): void {

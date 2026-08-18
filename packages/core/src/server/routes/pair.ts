@@ -38,7 +38,7 @@ import {
 import type { DeviceRole } from '../../devices/registry';
 import type { CoreRouter } from '../router';
 
-const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent', 'plugin']);
+const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent', 'plugin', 'staff']);
 
 /**
  * Wire-aliases for `role` accepted from external callers that follow

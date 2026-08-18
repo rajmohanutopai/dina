@@ -262,10 +262,21 @@ export function catalogContentReceiptDigest(
      * this off the page" cannot change after a person vouched for it.
      */
     extraction?: { model: string; schemaVersion: string } | null;
+    /**
+     * §6.4 (TRADE_FIRST_STRATEGY) — WHO vouched: the owner DID or the staff
+     * device DID, with the explicit version discriminator. Absent/null = the
+     * v1 shape, whose digest bytes are frozen; present = v2 under its own
+     * `content_receipt_v2` domain, dual-read at the publish check.
+     */
+    attribution?: { version: 2; vouched_by: string } | null;
   },
   sha256: Sha256Fn,
 ): string {
-  return commit('content_receipt', args, sha256);
+  const { attribution, ...v1 } = args;
+  if (attribution === undefined || attribution === null) {
+    return commit('content_receipt', v1, sha256);
+  }
+  return commit('content_receipt_v2', { ...v1, attribution }, sha256);
 }
 
 /** Digest of a snapshot record, excluding its own digest field. */

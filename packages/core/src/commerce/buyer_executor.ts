@@ -45,6 +45,7 @@ import {
   settleBuyerOrder,
   type BuyerOrderRecord,
 } from './buyer_reconciliation';
+import { retainAcceptedAcknowledgement, retainBuyerOrderAndQuote } from './buyer_retention';
 import { BUYER_REFERENCE_MANIFEST } from './reference_manifests';
 import { getCommerceRuntime } from './runtime';
 import {
@@ -436,6 +437,11 @@ export async function submitApprovedOrder(args: {
   // nothing ever looked at it again. The settle below overwrites this with the
   // outcome's own schedule, so the only case it governs is the crash.
   record.nextPollAtMs = args.nowMs + FIRST_REPOLL_SECONDS * 1000;
+  // §16.2 BUYER-SIDE RETENTION — the khata readers walk the receipts
+  // store, and a purchase retained only in `buyerOrders` is invisible to
+  // them (see buyer_retention.ts). Idempotent; before the send for the
+  // same crash argument the record itself makes.
+  retainBuyerOrderAndQuote(runtime, args.order, heldQuote, args.nowMs);
   if (args.resend === true) {
     // OVERWRITE, before the send, for the same reason a first submission is
     // recorded before its send: a crash between the two must leave a record of
@@ -515,6 +521,7 @@ export async function submitApprovedOrder(args: {
         nowMs: args.nowMs,
       }),
   });
+  retainAcceptedAcknowledgement(runtime, stored, args.nowMs);
   return { ok: true, record: stored };
 }
 

@@ -82,6 +82,19 @@ export interface ApprovingPrincipal {
   policyRevision: string | null;
 }
 
+/**
+ * §6.4 (TRADE_FIRST_STRATEGY) — the approval's origin/version discriminator.
+ * Absent = the shipped v1 payload, whose digest bytes are frozen. Present =
+ * v2: `vouchedBy` (the owner DID or the staff device DID) sits INSIDE the
+ * canonical payload, so it is inside the integrity digest — a stripped or
+ * altered attribution changes what was approved. Staff-origin approvals
+ * REQUIRE v2; past the attribution boundary, minting is v2-exclusive.
+ */
+export interface ApprovalAttribution {
+  version: 2;
+  vouchedBy: string;
+}
+
 /** The plugin instance that will act (§15.2, FR-P2). */
 export interface ActingInstall {
   installId: string;
@@ -151,6 +164,8 @@ export interface BuyerApprovalPayload {
    * partial one rather than downgrading it to legacy.
    */
   source?: ApprovalSourceBinding;
+  /** §6.4 v2 attribution — see `ApprovalAttribution`. */
+  attribution?: ApprovalAttribution;
 }
 
 export interface SupplierApprovalPayload {
@@ -176,6 +191,8 @@ export interface SupplierApprovalPayload {
     statusDigestAtResolution: string;
     resultDigest: string;
   } | null;
+  /** §6.4 v2 attribution — see `ApprovalAttribution`. */
+  attribution?: ApprovalAttribution;
 }
 
 export type ApprovalPayload = BuyerApprovalPayload | SupplierApprovalPayload;
@@ -233,6 +250,8 @@ export interface BuyerApprovalContext {
   install: ActingInstall;
   /** §2.1 photo lanes — carried into the payload when present. */
   source?: ApprovalSourceBinding;
+  /** §6.4 — carried into the payload (and so the digest) when present. */
+  attribution?: ApprovalAttribution;
 }
 
 /**
@@ -299,6 +318,7 @@ export function buildBuyerApprovalPayload(
       idempotencyKey: order.idempotency_key,
       install: context.install,
       ...(context.source === undefined ? {} : { source: context.source }),
+      ...(context.attribution === undefined ? {} : { attribution: context.attribution }),
     },
   };
 }
@@ -407,6 +427,8 @@ export interface SupplierApprovalContext {
   acknowledgementKind: string;
   install: ActingInstall;
   cancellation?: SupplierApprovalPayload['cancellation'];
+  /** §6.4 — carried into the payload (and so the digest) when present. */
+  attribution?: ApprovalAttribution;
 }
 
 export function buildSupplierApprovalPayload(
@@ -423,5 +445,6 @@ export function buildSupplierApprovalPayload(
     acknowledgementKind: context.acknowledgementKind,
     install: context.install,
     cancellation: context.cancellation ?? null,
+    ...(context.attribution === undefined ? {} : { attribution: context.attribution }),
   };
 }

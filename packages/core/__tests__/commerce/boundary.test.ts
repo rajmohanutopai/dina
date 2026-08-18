@@ -477,6 +477,13 @@ describe('commerce aggregate boundary', () => {
    */
   it('every exported commerce symbol is either wired or listed as not yet wired', () => {
     const NOT_YET_WIRED = new Map<string, string>([
+      ['trade_ledger.ts:InMemoryTradeDocumentRepository', 'test double'],
+      ['tender.ts:InMemoryTenderRepository', 'test double'],
+      ['staff_grants.ts:InMemoryStaffGrantRepository', 'test double'],
+      ['staff_pins.ts:InMemoryStaffPinRepository', 'test double'],
+      ['invite_store.ts:InMemoryInviteRepository', 'test double'],
+      ['revshare_ledger.ts:InMemoryRevshareDocumentRepository', 'test double'],
+      ['attribution_boundary.ts:InMemoryAttributionBoundaryRepository', 'test double'],
       // Test doubles. Exported on purpose so suites can swap storage; a
       // production caller would be the bug.
       ['order_refs.ts:InMemoryCommerceOrderRefRepository', 'test double'],

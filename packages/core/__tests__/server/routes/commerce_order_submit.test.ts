@@ -24,14 +24,15 @@ import {
   type ActingInstall,
   type BuyerApprovalContext,
 } from '../../../src/commerce/approval_payload';
-import {
-  installBuyerOrderSender,
-  type BuyerOrderSender,
-} from '../../../src/commerce/buyer_executor';
+import { InMemoryAttributionBoundaryRepository } from '../../../src/commerce/attribution_boundary';
 import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
 } from '../../../src/commerce/buyer_authority';
+import {
+  installBuyerOrderSender,
+  type BuyerOrderSender,
+} from '../../../src/commerce/buyer_executor';
 import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
 import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
 import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
@@ -39,15 +40,25 @@ import {
   InMemoryOrderApprovalRepository,
   ORDER_APPROVAL_TTL_MS,
 } from '../../../src/commerce/order_approvals';
+import {
+  InMemoryOrderDraftRepository,
+  type OrderDraft,
+} from '../../../src/commerce/order_draft_store';
+import {
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+  proveOwnerPresence,
+} from '../../../src/commerce/owner_presence';
+import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
-import { CoreRouter, type CoreRequest } from '../../../src/server/router';
-import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import * as ceremony from '../../../src/pairing/ceremony';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import {
   getPluginInstallRepository,
   setPluginInstallRepository,
 } from '../../../src/plugins/registry';
+import { CoreRouter, type CoreRequest } from '../../../src/server/router';
+import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import {
   BUYER_DID,
   installActiveBuyerPack,
@@ -58,7 +69,7 @@ import {
   type InstalledBuyerPack,
 } from '../../commerce/helpers';
 
-import type { PurchaseOrderProposal } from '@dina/commerce-protocol';
+import type { PurchaseOrderProposal , ApprovalSourceBinding } from '@dina/commerce-protocol';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 
@@ -184,6 +195,8 @@ beforeEach(() => {
   buyerOrders = new InMemoryBuyerOrderRepository();
   approvals = new InMemoryOrderApprovalRepository();
   installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
+    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
     buyerOrders,
     // Empty quote stores mean "no quote held" — the documented §12.4 step-6
     // skip. Quote revalidation has its own suite.
@@ -952,17 +965,7 @@ describe('a node that cannot read its own install registry', () => {
 // the source-bound approval.
 // ---------------------------------------------------------------------------
 
-import {
-  clearOwnerPresence,
-  installOwnerPresenceVerifier,
-  proveOwnerPresence,
-} from '../../../src/commerce/owner_presence';
-import {
-  InMemoryOrderDraftRepository,
-  type OrderDraft,
-} from '../../../src/commerce/order_draft_store';
 
-import type { ApprovalSourceBinding } from '@dina/commerce-protocol';
 
 describe('the conditional presence gate on prepare (§5.4 stage 4)', () => {
   afterEach(() => {
@@ -1026,7 +1029,7 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
           },
           generation: 1,
           assignmentGeneration: 0,
-          vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+          vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
           deferred: false,
           evidence: null,
           submittedIn: null,
@@ -1077,6 +1080,8 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     orderDrafts = new InMemoryOrderDraftRepository();
     orderDrafts.put(sourceDraft());
     installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
+    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
       buyerOrders,
       buyerQuotes: new InMemoryBuyerQuoteRepository(),
       buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),

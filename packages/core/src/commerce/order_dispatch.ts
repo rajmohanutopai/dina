@@ -16,6 +16,8 @@
  * status alone.
  */
 
+import { approvalDigest } from './approval_payload';
+import { v1RecordAdmissible } from './attribution_boundary';
 import { getBuyerAuthorityProvider } from './buyer_authority';
 import {
   getBuyerOrderSender,
@@ -98,6 +100,17 @@ export function readAnswerableApproval(
   }
   if (nowMs >= approval.expiresAt) {
     return { ok: false, response: { status: 409, body: { error: 'approval_expired' } } };
+  }
+  // §6.4 — past the attribution boundary an UNATTRIBUTED (v1) approval is
+  // believed only through the immutable grandfather index: Core mints
+  // v2-exclusively after the crossing, so a v1 row here is either
+  // pre-staff history (indexed) or a downgrade, and a downgrade must not
+  // spend money.
+  if (
+    approval.payload.attribution === undefined &&
+    !v1RecordAdmissible(runtime.attributionBoundary, approvalDigest(approval.payload))
+  ) {
+    return { ok: false, response: { status: 409, body: { error: 'approval_unattributed' } } };
   }
   return { ok: true, approval };
 }

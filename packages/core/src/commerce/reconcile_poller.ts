@@ -10,6 +10,7 @@ import {
   settleBuyerOrder,
   type BuyerOrderRecord,
 } from './buyer_reconciliation';
+import { retainAcceptedAcknowledgement } from './buyer_retention';
 import { getCommerceRuntime } from './runtime';
 
 import type { BuyerOrderRepository } from './buyer_orders';
@@ -333,7 +334,7 @@ export function applyReconcileAnswer(args: {
   // node produces most.
   const withEvidence = (settled: BuyerOrderRecord): BuyerOrderRecord =>
     args.envelope === undefined ? settled : { ...settled, ackEvidence: args.envelope };
-  settleBuyerOrder({
+  const settledRecord = settleBuyerOrder({
     orders: runtime.buyerOrders,
     supplierDid: args.supplierDid,
     settled: withEvidence(
@@ -344,6 +345,9 @@ export function applyReconcileAnswer(args: {
         applyReconcileResult({ record: live, request, result: args.result, nowMs: args.nowMs }),
       ),
   });
+  // §16.2 buyer-side retention: an answer that settled the order ACCEPTED
+  // retains the acknowledgement where the khata readers look.
+  retainAcceptedAcknowledgement(runtime, settledRecord, args.nowMs);
   return 'applied';
 }
 

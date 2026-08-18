@@ -203,7 +203,7 @@ export interface SignedQuote {
   total: Money;
   estimated_dispatch_at?: string;
   estimated_delivery_at?: string;
-  payment_terms?: { credit_days?: number; text?: string };
+  payment_terms?: PaymentTerms;
   issued_at: string;
   valid_until: string;
   supplier_epoch: string;
@@ -212,6 +212,25 @@ export interface SignedQuote {
   catalog_snapshot_ref?: string;
   terms_digest: string;
   quote_digest: string;
+}
+
+/**
+ * §4.5 (TRADE_FIRST_STRATEGY) — when credit matures. `from_delivery`
+ * starts one clock PER RECEIPTED PORTION (each DeliveryReceipt's
+ * `received_at` + credit days, for the value that receipt accepted);
+ * `from_acceptance` runs ONE clock from the acknowledgement's
+ * `accepted_at` for the whole order. Sits INSIDE `payment_terms`, so it
+ * is under the terms digest the order accepts. Introduced at protocol
+ * minor 1.1: emitting it into a 1.0 conversation is refused, readers
+ * tolerate its absence.
+ */
+export const DUE_BASES = ['from_delivery', 'from_acceptance'] as const;
+export type DueBasis = (typeof DUE_BASES)[number];
+
+export interface PaymentTerms {
+  credit_days?: number;
+  text?: string;
+  due_basis?: DueBasis;
 }
 
 const STOCK_STATUSES: ReadonlySet<string> = new Set([
@@ -231,7 +250,7 @@ export function termsDigestInput(quote: {
   charges: Charge[];
   estimated_dispatch_at?: string;
   estimated_delivery_at?: string;
-  payment_terms?: { credit_days?: number; text?: string };
+  payment_terms?: PaymentTerms;
   valid_until: string;
 }): Record<string, unknown> {
   return {
@@ -417,6 +436,19 @@ export function validateSignedQuote(quote: unknown, sha256: Sha256Fn): string | 
     }
     if (pt.text !== undefined && (typeof pt.text !== 'string' || pt.text.length > 500)) {
       return 'quote.payment_terms.text: must be a string of at most 500 characters';
+    }
+    if (pt.due_basis !== undefined) {
+      if (!(DUE_BASES as readonly string[]).includes(pt.due_basis as string)) {
+        return 'quote.payment_terms.due_basis: must be from_delivery or from_acceptance';
+      }
+      // §4.5 — the field exists from protocol minor 1.1. A conversation
+      // pinned to 1.0 must not grow a due-date basis mid-flight: the
+      // terms digest would cover a field the counterparty's validator
+      // never pinned.
+      const minor = Number(String(quote.protocol_version).split('.')[1] ?? '0');
+      if (!Number.isFinite(minor) || minor < 1) {
+        return 'quote.payment_terms.due_basis: requires protocol minor >= 1.1';
+      }
     }
   }
   for (const field of ['estimated_dispatch_at', 'estimated_delivery_at'] as const) {

@@ -27,6 +27,7 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
+  TouchableOpacity,
   ActivityIndicator,
   Alert,
   Share,
@@ -75,11 +76,11 @@ export default function PairedDevicesScreen() {
   // hint. Pre-filling forced anyone pairing dina-cli or a phone to
   // clear the field before typing — a self-defeating "convenience".
   const [deviceName, setDeviceName] = useState('');
-  // Hardcoded — every paired entry is a `dina-agent` install today.
-  // See the help text above the form for the rationale, and the
-  // commented-out picker for the seam to restore if we ever add
-  // Rich / Thin / CLI roles.
-  const role: DeviceRole = 'agent';
+  // Two pairable roles: `agent` (a dina-agent install) and — the §6
+  // trade slice — `staff`, a clerk's phone acting under value-capped
+  // grants. Staff devices get their authority on the Staff screen; the
+  // pairing only mints the identity.
+  const [role, setRole] = useState<DeviceRole>('agent');
   // This screen installs the Dina skill into interactive coding-agent hosts
   // (Claude Code, Codex, OpenClaw, etc.). Core derives this privilege from the
   // paired device record; omitting it would intentionally downgrade the agent
@@ -414,6 +415,23 @@ export default function PairedDevicesScreen() {
             autoCapitalize="none"
             autoCorrect={false}
           />
+          {/* §6 — a STAFF phone pairs here too: same ceremony, its own
+              caller type, authority only through the Staff screen's grants. */}
+          <View style={styles.roleRow}>
+            {(['agent', 'staff'] as const).map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[styles.roleChip, role === r && styles.roleChipActive]}
+                onPress={() => setRole(r)}
+                accessibilityRole="button"
+                testID={`paired-devices-role-${r}`}
+              >
+                <Text style={role === r ? styles.roleChipActiveText : styles.roleChipText}>
+                  {r === 'agent' ? 'Coding agent' : 'Staff phone'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/*
             Role picker removed: today every paired entry is a
@@ -505,6 +523,17 @@ function formatDuration(seconds: number): string {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  roleRow: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 4 },
+  roleChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#8886',
+  },
+  roleChipActive: { backgroundColor: '#4a90d922', borderColor: '#4a90d9' },
+  roleChipText: { fontSize: 13, color: '#888' },
+  roleChipActiveText: { fontSize: 13, color: '#4a90d9', fontWeight: '600' },
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.md },
   section: { marginBottom: spacing.lg },

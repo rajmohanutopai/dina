@@ -223,6 +223,14 @@ describe('POST /v1/pair/initiate — admin only', () => {
     expect(resp.status).toBe(400);
     expect((resp.body as { error: string }).error).toMatch(/role must be one of/);
   });
+
+  it("accepts role 'staff' (§6 — a staff phone pairs over the wire like any device)", async () => {
+    const resp = await router.handle(
+      signedReq('POST', '/v1/pair/initiate', { device_name: 'clerk-phone', role: 'staff' }, admin),
+    );
+    expect(resp.status).toBe(201);
+    expect((resp.body as { role: string }).role).toBe('staff');
+  });
 });
 
 describe('POST /v1/pair/complete — public, code-authenticated', () => {

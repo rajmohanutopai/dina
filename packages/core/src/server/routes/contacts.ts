@@ -29,6 +29,7 @@ import {
   resolveByName as directoryResolveByName,
   findByAlias as directoryFindByAlias,
   addContactIfNotExists as directoryAddContactIfNotExists,
+  updateContact as directoryUpdateContact,
   listContacts as directoryListContacts,
   deleteContact as directoryDeleteContact,
 } from '../../contacts/directory';
@@ -262,6 +263,8 @@ async function handleFindByPreference(
  */
 interface UpdateContactBody {
   preferred_for?: unknown;
+  trust_level?: unknown;
+  display_name?: unknown;
 }
 
 const UPDATE_BODY_MAX_BYTES = 16 * 1024;
@@ -304,6 +307,32 @@ async function handleUpdateContact(
     }
     try {
       setFn(did, categories as string[]);
+    } catch (err) {
+      return jsonError(500, (err as Error).message);
+    }
+  }
+
+  // trust_level / display_name — the two policy fields a server owner
+  // can otherwise never change (the invite ceremony writes 'verified',
+  // but a hand-added contact starts 'unknown', and the inbound
+  // commerce.trade gate refuses 'unknown'). Until now these fields were
+  // SILENTLY IGNORED and the route still answered "updated".
+  if (body.trust_level !== undefined) {
+    if (!isTrustLevel(body.trust_level)) {
+      return jsonError(400, `trust_level must be one of: ${TRUST_LEVELS.join(', ')}`);
+    }
+    try {
+      directoryUpdateContact(did, { trustLevel: body.trust_level });
+    } catch (err) {
+      return jsonError(500, (err as Error).message);
+    }
+  }
+  if (body.display_name !== undefined) {
+    if (typeof body.display_name !== 'string' || body.display_name.trim() === '') {
+      return jsonError(400, 'display_name must be a non-empty string');
+    }
+    try {
+      directoryUpdateContact(did, { displayName: body.display_name });
     } catch (err) {
       return jsonError(500, (err as Error).message);
     }

@@ -16,8 +16,10 @@ import { type ServiceResponseBody } from '@dina/protocol';
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { applyInboundBuyerResponse } from '../../src/commerce/buyer_response';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { installHeldEvidenceReader } from '../../src/commerce/reconcile_poller';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+
 import { makeHeldEvidence } from './helpers';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -47,7 +49,10 @@ let buyerOrders: InMemoryBuyerOrderRepository;
 
 beforeEach(() => {
   buyerOrders = new InMemoryBuyerOrderRepository();
-  installCommerceRuntime({ buyerOrders } as unknown as CommerceRuntime);
+  installCommerceRuntime({
+    buyerOrders,
+    receipts: new InMemoryCommerceReceiptRepository(),
+  } as unknown as CommerceRuntime);
   buyerOrders.create(SUPPLIER, parked('po-1'));
 });
 afterEach(() => {

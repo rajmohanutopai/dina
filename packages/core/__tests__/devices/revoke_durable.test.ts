@@ -37,6 +37,13 @@ import {
 import { resetAuditState } from '../../src/audit/service';
 import { resolveCallerType, resetCallerTypeState } from '../../src/auth/caller_type';
 import {
+  installStaffPresenceVerifier,
+  proveStaffPresence,
+  staffPresentNow,
+} from '../../src/commerce/owner_presence';
+import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import { InMemoryStaffGrantRepository } from '../../src/commerce/staff_grants';
+import {
   registerDevice,
   revokeDeviceDurable,
   revokeDeviceByDidDurable,
@@ -343,6 +350,118 @@ describe('revokeDeviceDurable — cascades to agent grants (§2/§5)', () => {
 
           // Revoking the device revoked its grant — no stale locked-vault access.
           expect(grantRepo.findActiveGrant(d.did, 'health', 'read', null, Date.now())).toBeNull();
+        } finally {
+          a.close();
+          fs.rmSync(dir, { recursive: true, force: true });
+          resolve();
+        }
+      })();
+    });
+  });
+});
+
+describe('boot reconciliation — the staff cascade retries after a crash (§6.2)', () => {
+  it('a revoked staff device whose cascade never ran loses grants, PIN and presence on the next hydrate', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev-staff-boot-'));
+    const a = openId(path.join(dir, 'identity.sqlite'));
+    const sqlRepo = new SQLiteDeviceRepository(a);
+    setDeviceRepository(sqlRepo);
+    const staffGrants = new InMemoryStaffGrantRepository();
+    const removedPins: string[] = [];
+    installCommerceRuntime({
+      staffGrants,
+      staffPins: { put: () => undefined, get: () => null, remove: (did: string) => removedPins.push(did) },
+    } as unknown as CommerceRuntime);
+    try {
+      const d = registerDevice('Order clerk phone', 'z6MkStaffCrash', 'staff');
+      await sqlRepo.register(d); // force the write-through
+      staffGrants.put({
+        deviceDid: d.did,
+        scope: 'commerce_receive_goods',
+        maxOrderMinorUnits: '30000',
+        currency: 'INR',
+        installs: 'buyer',
+        createdAt: Date.now(),
+        revokedAt: null,
+      });
+      installStaffPresenceVerifier(async () => true);
+      const now = Date.now();
+      expect(await proveStaffPresence(d.did, '4321', now)).toBe(true);
+
+      // CRASH: the device row is revoked in SQL but no cascade ran.
+      await sqlRepo.revoke(d.deviceId);
+
+      // Reboot: clear the in-memory registry, hydrate — which reconciles.
+      resetDeviceRegistry();
+      await hydrateDeviceRegistry();
+
+      expect(staffGrants.listByDevice(d.did)[0]?.revokedAt).not.toBeNull();
+      expect(removedPins).toContain(d.did);
+      expect(staffPresentNow(d.did, Date.now())).toBe(false);
+    } finally {
+      installCommerceRuntime(null);
+      installStaffPresenceVerifier(null);
+      a.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('revokeDeviceDurable — cascades to staff authority (TRADE_FIRST_STRATEGY §6.2)', () => {
+  it('revokes the staff grants and drops the attributed presence stamp', async () => {
+    await new Promise<void>((resolve) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev-staff-'));
+      const a = openId(path.join(dir, 'identity.sqlite'));
+      setDeviceRepository(new SQLiteDeviceRepository(a));
+      const staffGrants = new InMemoryStaffGrantRepository();
+      installCommerceRuntime({
+        staffGrants,
+        staffPins: { put: () => undefined, get: () => null, remove: () => undefined },
+      } as unknown as CommerceRuntime);
+      void (async () => {
+        try {
+          const d = registerDevice('Order clerk phone', 'z6MkStaffClerk', 'staff');
+          staffGrants.put({
+            deviceDid: d.did,
+            scope: 'commerce_receive_goods',
+            maxOrderMinorUnits: '30000',
+            currency: 'INR',
+            installs: 'buyer',
+            createdAt: Date.now(),
+            revokedAt: null,
+          });
+          installStaffPresenceVerifier(async () => true);
+          const now = Date.now();
+          expect(await proveStaffPresence(d.did, '4321', now)).toBe(true);
+          expect(staffPresentNow(d.did, now)).toBe(true);
+
+          const result = await revokeDeviceDurable(d.deviceId);
+          expect(result).toMatchObject({ found: true, revoked: true, durable: true });
+          expect(staffGrants.listByDevice(d.did)[0]?.revokedAt).not.toBeNull();
+          expect(staffPresentNow(d.did, now)).toBe(false);
+        } finally {
+          installCommerceRuntime(null);
+          installStaffPresenceVerifier(null);
+          a.close();
+          fs.rmSync(dir, { recursive: true, force: true });
+          resolve();
+        }
+      })();
+    });
+  });
+
+  it('a STAFF-role revoke reports NOT durable when commerce is not installed', async () => {
+    await new Promise<void>((resolve) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-dev-staff2-'));
+      const a = openId(path.join(dir, 'identity.sqlite'));
+      setDeviceRepository(new SQLiteDeviceRepository(a));
+      void (async () => {
+        try {
+          const d = registerDevice('Order clerk phone', 'z6MkStaffClerk2', 'staff');
+          const result = await revokeDeviceDurable(d.deviceId);
+          // Grants may survive in SQL the cascade could not reach — the
+          // caller must retry, exactly like the agent/plugin halves.
+          expect(result).toMatchObject({ found: true, revoked: true, durable: false });
         } finally {
           a.close();
           fs.rmSync(dir, { recursive: true, force: true });

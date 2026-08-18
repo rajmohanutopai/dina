@@ -59,6 +59,37 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **ADDITIVE (TRADE_FIRST_STRATEGY)** — the khata document family:
+  `DeliveryNote` / `DeliveryReceipt` / `PaymentNote` / `PaymentAcknowledgement`
+  and `QuoteDecline`, each digest-sealed under its own
+  `dina:commerce:trade:v1:` domain (a NEW family beside the closed §9.12
+  set), with pairwise verifiers and the `computeTradeFold` derived-balance
+  arithmetic (golden fold vectors in `trade_fold.test.ts`). Documents carry
+  digests, never signature fields — authenticity is the retained signed
+  envelope, the shipped `reconcile.ts` rule.
+- **ADDITIVE (§4.5)** — `payment_terms.due_basis:
+  'from_delivery' | 'from_acceptance'`, introduced at protocol minor `1.1`:
+  the validator refuses the field on a `1.0` conversation, readers tolerate
+  absence, and the grown terms preimage is vector-pinned in `dues.test.ts`
+  beside the unchanged `1.0` preimage. `deriveDues` pins the split-delivery
+  rule: `from_delivery` runs one clock per receipted portion,
+  `from_acceptance` one clock from the acknowledgement.
+- **ADDITIVE (§5)** — the revenue-share chain: `AgreementProposal` /
+  `AgreementDecision` / `AgreementTermination` / `SettlementNote` /
+  `SettlementAcknowledgement`, digest-sealed under their own
+  `dina:commerce:revshare:v1:` family; `computedShareMinor` pins the §9.1
+  one-half-even-rounding share arithmetic and
+  `verifySettlementAgainstAgreement` refuses a note whose share drifts by
+  a paisa; `computeRevenueShareFold` states the direction once per
+  `cash_handler` value, golden vectors in `revenue_share.test.ts`.
+- **ADDITIVE (§8)** — the invite ceremony's six messages under
+  `dina:commerce:invite:v1:` (the offer alone carries an embedded
+  Ed25519 signature — it travels outside any envelope) and the
+  `dinainvite1:` paste/QR codec.
+- **ADDITIVE (§6.4)** — vouch-receipt and content-receipt `attribution`
+  (`{version: 2, vouched_by}`): v2 commits under its own domain
+  (`vouch_receipt_v2` / `content_receipt_v2`); v1 bytes are frozen and both
+  preimages are vector-pinned in `attribution_vectors.test.ts`.
 - **BREAKING** — `HeldEvidence<T>` wraps held records as
   `{record, signature, signer_key_id?}`. Previously the bare record travelled
   alone, which meant a content digest (computable by anyone) was the only

@@ -49,7 +49,7 @@ import type { CatalogItem } from '@dina/commerce-protocol';
  * settings, a caller that is not this node — and those refusals are about the
  * request, not about the rows.
  */
-export type IngressOutcome = { ok: true; draft: CatalogDraft };
+export interface IngressOutcome { ok: true; draft: CatalogDraft }
 
 export interface DraftIngressDeps {
   drafts: CatalogDraftRepository;

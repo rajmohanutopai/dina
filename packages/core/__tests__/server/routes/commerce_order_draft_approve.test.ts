@@ -15,9 +15,7 @@
  *   submit-time source-binding check kills it the moment the draft moves.
  */
 
-import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
-import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
-import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
+import { InMemoryAttributionBoundaryRepository } from '../../../src/commerce/attribution_boundary';
 import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
@@ -26,6 +24,9 @@ import {
   installBuyerOrderSender,
   type BuyerOrderSender,
 } from '../../../src/commerce/buyer_executor';
+import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
+import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
+import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
 import { InMemoryOrderApprovalRepository } from '../../../src/commerce/order_approvals';
 import {
   InMemoryOrderDraftRepository,
@@ -36,6 +37,7 @@ import {
   installOwnerPresenceVerifier,
   proveOwnerPresence,
 } from '../../../src/commerce/owner_presence';
+import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { InMemoryCommerceSettingsRepository } from '../../../src/commerce/settings_store';
 import { setNodeDID } from '../../../src/pairing/ceremony';
@@ -93,7 +95,7 @@ function quotedDraft(overrides: Partial<OrderDraft> = {}): OrderDraft {
         },
         generation: 1,
         assignmentGeneration: 0,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
         deferred: false,
         evidence: null,
         submittedIn: null,
@@ -107,7 +109,7 @@ function quotedDraft(overrides: Partial<OrderDraft> = {}): OrderDraft {
         omitted: false,
         provenance: 'accepted',
         generation: 1,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
       },
     ],
     conversations: [
@@ -183,6 +185,8 @@ beforeEach(() => {
   buyerQuoteRequests.put(REQUEST, T0);
   orderDrafts.put(quotedDraft());
   installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
+    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
     buyerOrders: new InMemoryBuyerOrderRepository(),
     buyerQuotes,
     buyerQuoteRequests,

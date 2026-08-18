@@ -45,9 +45,10 @@ const BUSINESS_DID = 'did:plc:chairmakermobile000';
  * every plugin update leaves a prior CID holding authority over this node's
  * lifecycle lane for ever; and a dispatch intent's crash replay is what makes
  * "restart-recoverable from the row alone" true rather than aspirational, so
- * its tick is always-on rather than optional.
+ * its tick is always-on rather than optional. The sixth is the §8 invite
+ * sweep — the same always-on rule.
  */
-const COMMERCE_TICKS = 5;
+const COMMERCE_TICKS = 6;
 
 /** A fake AT Protocol repo: one record, CAS on the CID we handed out. */
 class FakeRepo {

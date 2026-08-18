@@ -118,7 +118,7 @@ forEachRepo('round trip', (repo) => {
     items: [item()],
     generatedAtIso: '2026-08-13T09:00:00.000Z',
     itemRevision: 'rev-1',
-    receipt: { digest: 'a'.repeat(64), revision: 3 },
+    receipt: { digest: 'a'.repeat(64), revision: 3, vouchedBy: null },
     held: {
       snapshot: {
         supplier_did: SUPPLIER,
@@ -163,6 +163,25 @@ forEachRepo('round trip', (repo) => {
   // is written and never read back through — the defect this codebase has
   // produced twice in the same file.
   expect(read).toEqual(d);
+});
+
+forEachRepo('a v2-ATTRIBUTED receipt survives the round trip (§6.4)', (repo) => {
+  // The round-trip fixture above pins vouchedBy: null (the v1 shape);
+  // this one pins the OTHER arm — a staff-attributed receipt whose
+  // voucher column could otherwise stop being written or read back
+  // with every test still green.
+  const d = draft({
+    state: 'approved',
+    contentRevision: 4,
+    receipt: { digest: 'e'.repeat(64), revision: 4, vouchedBy: 'did:key:zstaffclerk' },
+  });
+  repo.put(d);
+  const read = repo.get('draft-1');
+  expect(read?.receipt).toEqual({
+    digest: 'e'.repeat(64),
+    revision: 4,
+    vouchedBy: 'did:key:zstaffclerk',
+  });
 });
 
 forEachRepo('the held snapshot survives a round trip intact', (repo) => {

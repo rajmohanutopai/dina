@@ -83,7 +83,7 @@ function seed(conversations: OrderConversation[]): void {
         },
         generation: 1,
         assignmentGeneration: 0,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
         deferred: false,
         evidence: null,
         submittedIn: null,

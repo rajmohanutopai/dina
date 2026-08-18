@@ -16,6 +16,7 @@ import {
   type OrderConversation,
 } from '../../src/commerce/order_draft_store';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import { InMemoryTenderRepository } from '../../src/commerce/tender';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { BUYER_DID, makeQuoteRequest, makeRevision, makeSignedQuote } from './helpers';
 
@@ -71,7 +72,7 @@ function seedDraft(conversation: Partial<OrderConversation> = {}): void {
         },
         generation: 1,
         assignmentGeneration: 0,
-        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64) },
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
         deferred: false,
         evidence: null,
         submittedIn: null,
@@ -111,6 +112,7 @@ beforeEach(() => {
   const buyerQuoteRequests = new InMemoryBuyerQuoteRequestRepository();
   buyerQuoteRequests.put(REQUEST, T0);
   installCommerceRuntime({
+      tenders: new InMemoryTenderRepository(),
     nodeDid: () => BUYER_DID,
     watermarks: new InMemoryCommerceEpochWatermarkRepository(),
     buyerQuotes,

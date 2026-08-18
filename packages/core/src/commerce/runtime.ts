@@ -25,6 +25,10 @@ import { tier0TxRunner } from '../run/tx';
 
 import { CommerceAdmissionEngine } from './admission';
 import { CommerceAdmissionService } from './admission_service';
+import {
+  SQLiteAttributionBoundaryRepository,
+  type AttributionBoundaryRepository,
+} from './attribution_boundary';
 import { SQLiteBuyerOrderRepository, type BuyerOrderRepository } from './buyer_orders';
 import { SQLiteBuyerQuoteRepository, type BuyerQuoteRepository } from './buyer_quotes';
 import {
@@ -40,6 +44,13 @@ import {
   SQLiteCatalogPointerRepository,
   type CatalogPointerRepository,
 } from './catalog_pointer_store';
+import { CommerceOrderStore } from './commerce_order';
+import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
+import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
+import {
+  SQLiteIdempotencyEvidenceRepository,
+  type IdempotencyEvidenceRepository,
+} from './idempotency_store';
 import {
   SQLiteCommerceImageArtifactRepository,
   type CommerceImageArtifactRepository,
@@ -48,24 +59,18 @@ import {
   SQLiteImageEgressAuthorizationRepository,
   type ImageEgressAuthorizationRepository,
 } from './image_egress';
-import {
-  SQLiteOrderDraftRepository,
-  type OrderDraftRepository,
-} from './order_draft_store';
-import { SQLiteSkuLedgerRepository, type SkuLedgerRepository } from './sku_ledger';
-import { CommerceOrderStore } from './commerce_order';
-import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
-import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
-import {
-  SQLiteIdempotencyEvidenceRepository,
-  type IdempotencyEvidenceRepository,
-} from './idempotency_store';
+import { SQLiteInviteRepository, type InviteRepository } from './invite_store';
 import { CommerceLifecycleEngine } from './lifecycle_engine';
 import {
   SQLiteOrderApprovalRepository,
   type OrderApprovalRepository,
 } from './order_approvals';
+import {
+  SQLiteOrderDraftRepository,
+  type OrderDraftRepository,
+} from './order_draft_store';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
+import { installStaffPresenceVerifier } from './owner_presence';
 import {
   SQLitePendingSupplierDecisionRepository,
   type PendingSupplierDecisionRepository,
@@ -77,16 +82,27 @@ import { SQLiteCommerceQuoteLedgerRepository } from './quote_ledger';
 import { SQLiteCommerceReceiptRepository } from './receipts';
 import { CommerceReconciliationService } from './reconciliation_service';
 import {
+  SQLiteRevshareDocumentRepository,
+  type RevshareDocumentRepository,
+} from './revshare_ledger';
+import {
   SQLiteCommerceSettingsRepository,
   type CommerceSettingsRepository,
 } from './settings_store';
+import { SQLiteSkuLedgerRepository, type SkuLedgerRepository } from './sku_ledger';
+import { SQLiteStaffGrantRepository, type StaffGrantRepository } from './staff_grants';
+import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository } from './staff_pins';
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
+import { SQLiteTenderRepository } from './tender';
+import { SQLiteTradeDocumentRepository } from './trade_ledger';
 import { CommerceTransaction } from './transaction';
 import { SQLiteCommerceEpochWatermarkRepository } from './watermarks';
 
 import type { LifecycleEngineDeps } from './lifecycle_engine';
 import type { CommerceReceiptRepository } from './receipts';
+import type { TenderRepository } from './tender';
+import type { TradeDocumentRepository } from './trade_ledger';
 import type { CommerceEpochWatermarkRepository } from './watermarks';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
@@ -176,6 +192,28 @@ export interface CommerceRuntime {
   egressAuthorizations: ImageEgressAuthorizationRepository;
   /** §5.1 — the BUYER lane's aggregate: one photographed page, whole. */
   orderDrafts: OrderDraftRepository;
+  /**
+   * TRADE_FIRST_STRATEGY §4.2/§4.3 — the khata ledger: delivery notes,
+   * receipts, payment notes/acks and quote declines, both directions,
+   * retained with their envelope evidence.
+   */
+  tradeDocuments: TradeDocumentRepository;
+  /** §3.2 — the private-tender aggregate: N requests, one comparison. */
+  tenders: TenderRepository;
+  /** TRADE_FIRST_STRATEGY §6.2 — value-capped, install-scoped staff grants. */
+  staffGrants: StaffGrantRepository;
+  /** §6.4 — the per-device staff PIN records the grant ceremony mints. */
+  staffPins: StaffPinRepository;
+  /**
+   * §6.4 — the durable vouch-attribution boundary: crossed by the first
+   * staff grant, carrying the immutable grandfather index of every v1
+   * receipt/approval digest then in the store.
+   */
+  attributionBoundary: AttributionBoundaryRepository;
+  /** §8 — the invite exchanges, keyed by nonce. */
+  invites: InviteRepository;
+  /** §5 — the revenue-share chain's document ledger. */
+  revshareDocuments: RevshareDocumentRepository;
   /** One transaction across ledger claims and draft writes (§4.2). */
   runInTransaction: (body: () => void) => void;
   /** The runtime's clock — injected at composition, shared by every store. */
@@ -407,6 +445,13 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     imageArtifacts: new SQLiteCommerceImageArtifactRepository(inputs.adapter),
     egressAuthorizations: new SQLiteImageEgressAuthorizationRepository(inputs.adapter),
     orderDrafts: new SQLiteOrderDraftRepository(inputs.adapter),
+    tradeDocuments: new SQLiteTradeDocumentRepository(inputs.adapter),
+    tenders: new SQLiteTenderRepository(inputs.adapter),
+    staffGrants: new SQLiteStaffGrantRepository(inputs.adapter),
+    staffPins: new SQLiteStaffPinRepository(inputs.adapter),
+    attributionBoundary: new SQLiteAttributionBoundaryRepository(inputs.adapter),
+    invites: new SQLiteInviteRepository(inputs.adapter),
+    revshareDocuments: new SQLiteRevshareDocumentRepository(inputs.adapter),
     runInTransaction: (body) => { inputs.adapter.transaction(body); },
     now,
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
@@ -505,6 +550,19 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
   // loud, but still an outage nobody chose.
   installQuoteAttemptLedger(
     value === null ? null : new QuoteAttemptLedger(DEFAULT_PROBING_POLICY.windowMs),
+  );
+  // §6.4 — attributed presence rides the runtime for the same reason the
+  // probing ledger does: a verifier each boot must remember to install is
+  // one a boot eventually forgets, and an unwired verifier fails closed —
+  // loud, but an outage nobody chose. The PIN records live in the
+  // runtime's own store; verification is core's platform-aware Argon2id.
+  installStaffPresenceVerifier(
+    value === null
+      ? null
+      : // The runtime clock, not a direct read: the lockout only ever
+        // compares against stamps it wrote itself, and the injected clock
+        // keeps every test able to place the world at any instant.
+        (deviceDid, pin) => verifyStaffPinGated(value.staffPins, deviceDid, pin, value.now()),
   );
 }
 

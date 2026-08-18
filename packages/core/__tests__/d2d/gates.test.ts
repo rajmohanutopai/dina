@@ -68,6 +68,27 @@ describe('D2D Egress 4-Gate Enforcement', () => {
       const result = checkEgressGates(unknownDID, 'presence.signal', []);
       expect(result.deniedAt).toBe('contact');
     });
+
+    it('commerce.invite reaches a NOT-YET-contact — the §8 ceremony creates the contact', () => {
+      // The live bug this pins: the redemption to a stranger was denied
+      // at gate 1 and the ceremony could never leave the building; the
+      // receive side admits the type without a contact row, and egress
+      // must mirror it (the nonce is the credential).
+      const result = checkEgressGates(unknownDID, 'commerce.invite', []);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('commerce.invite still passes the sharing gate — a restricted category refuses', () => {
+      const result = checkEgressGates(unknownDID, 'commerce.invite', ['health']);
+      expect(result.allowed).toBe(false);
+      expect(result.deniedAt).toBe('sharing');
+    });
+
+    it('commerce.trade stays CONTACT-GATED — only the invite type is waived', () => {
+      const result = checkEgressGates(unknownDID, 'commerce.trade', []);
+      expect(result.allowed).toBe(false);
+      expect(result.deniedAt).toBe('contact');
+    });
   });
 
   describe('Gate 1: Contact Check', () => {

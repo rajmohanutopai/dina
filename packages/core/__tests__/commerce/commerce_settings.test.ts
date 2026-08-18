@@ -520,3 +520,52 @@ describe('catalog category ids', () => {
     expect(verdict.findings.map((f) => f.field)).toContain('catalogCategoryIds[1]');
   });
 });
+describe('a PARTIAL wire body is findings, never a throw (live 500, 2026-08-18)', () => {
+  it('supplier: a body with only identity+regions answers structural findings', () => {
+    const verdict = validateSupplierSettings({
+      actingBusinessDid: 'did:plc:partial000000000000000000',
+      publicRegions: [{ scheme: 'postal_area', value: '560001' }],
+    } as never);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      const fields = verdict.findings.map((f) => f.field).sort();
+      expect(fields).toEqual(['catalogSource', 'connectors', 'responsePolicy']);
+      for (const f of verdict.findings) expect(f.refusal).toBe('missing_field');
+    }
+  });
+
+  it('supplier: a mistyped container is named, not thrown over', () => {
+    const verdict = validateSupplierSettings({
+      actingBusinessDid: 'did:plc:partial000000000000000000',
+      catalogSource: { kind: 'inline', lastHealthyAtIso: null },
+      publicRegions: 'everywhere',
+      responsePolicy: [],
+      connectors: [],
+    } as never);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.findings.map((f) => f.field).sort()).toEqual([
+        'publicRegions',
+        'responsePolicy',
+      ]);
+      for (const f of verdict.findings) expect(f.refusal).toBe('wrong_field_shape');
+    }
+  });
+
+  it('buyer: an absent fanout ceiling is a finding, never a silent pass', () => {
+    const verdict = validateBuyerSettings({
+      actingIdentityDid: 'did:plc:partial000000000000000000',
+      locations: [],
+      preferredSuppliers: [],
+      blockedSuppliers: [],
+      allowedCategoryIds: [],
+      preferredUnitCodes: [],
+    } as never);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.findings).toEqual([
+        expect.objectContaining({ refusal: 'missing_field', field: 'quoteFanoutCeiling' }),
+      ]);
+    }
+  });
+});

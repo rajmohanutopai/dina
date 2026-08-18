@@ -24,6 +24,8 @@ import {
 
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
+import { getInviteService } from '../commerce/invite_compose';
+import { applyInboundTradeDocument } from '../commerce/trade_ingress';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
 import {
   evaluateServiceIngressBypass,
@@ -48,6 +50,8 @@ import {
   MsgTypeServiceResponse,
   MsgTypeServiceOffer,
   MsgTypeServiceGrantRequest,
+  MsgTypeCommerceTrade,
+  MsgTypeCommerceInvite,
   MsgTypeTalkMessageV1,
 } from './families';
 import { checkScenarioGate } from './gates';
@@ -369,6 +373,89 @@ export function receiveD2D(
     return applyServiceIngressDecision(message.type, message, bypass, signatureHex);
   }
 
+  // commerce.invite — one §8 ceremony message. NOT contact-gated: a
+  // redemption arrives from a not-yet-contact by definition, and the
+  // single-use nonce inside each document — checked against this node's
+  // own retained exchange — is the admission credential (the pairing-code
+  // pattern). Unknown nonce, wrong sender, wrong predecessor digest all
+  // refuse inside the service; here only the shape is read.
+  if (message.type === MsgTypeCommerceInvite) {
+    const inviteService = getInviteService();
+    if (inviteService === null) {
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'commerce.invite unavailable: no invite service composed',
+      };
+    }
+    let parsedInvite: unknown;
+    try {
+      parsedInvite = JSON.parse(message.body);
+    } catch {
+      parsedInvite = null;
+    }
+    const inviteBody = parsedInvite as { kind?: unknown; document?: unknown } | null;
+    const inviteArgs = { senderDid: message.from, body: inviteBody?.document };
+    const settle = async (): Promise<{ ok: boolean; refusal?: string }> => {
+      switch (inviteBody?.kind) {
+        case 'offer':
+          // §8's COLD leg: a stranger's offer, held for a consent card —
+          // never auto-redeemed. Policy, catalog-consent and throttles
+          // all live in the service.
+          return inviteService.applyInboundColdOffer(inviteArgs);
+        case 'redemption':
+          return inviteService.applyInboundRedemption(inviteArgs);
+        case 'confirmation':
+          return inviteService.applyInboundConfirmation(inviteArgs);
+        case 'activation_ack':
+          return inviteService.applyInboundActivationAck(inviteArgs);
+        case 'ack_receipt':
+          return inviteService.applyInboundAckReceipt(inviteArgs);
+        case 'revocation':
+          return inviteService.applyInboundRevocation(inviteArgs);
+        default:
+          return { ok: false, refusal: 'unknown invite message kind' };
+      }
+    };
+    // The handlers are async only for their REPLY sends; settling them
+    // inline keeps ingress ordered, and a reply that cannot leave is the
+    // sweep's problem, not this message's.
+    void settle()
+      .then((outcome) => {
+        appendAudit(
+          message.from,
+          outcome.ok ? 'd2d_recv_invite_applied' : 'd2d_recv_invite_refused',
+          message.to,
+          `kind=${String(inviteBody?.kind ?? '')} id=${message.id}` +
+            (outcome.ok ? '' : ` refusal=${sanitizeAuditDetail(outcome.refusal ?? '', 96)}`),
+        );
+      })
+      .catch((err: unknown) => {
+        appendAudit(
+          message.from,
+          'd2d_recv_invite_refused',
+          message.to,
+          `kind=${String(inviteBody?.kind ?? '')} id=${message.id} error=${sanitizeAuditDetail(err instanceof Error ? err.message : String(err), 96)}`,
+        );
+      });
+    return {
+      action: 'bypassed',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: 'commerce.invite handed to the invite service',
+    };
+  }
+
+  // §8's activation-proof rule: ANY authenticated inbound envelope from a
+  // counterparty counts as proof the counterparty is alive and active.
+  // Inert without a composed invite service; O(rows awaiting proof) ≈ 0.
+  getInviteService()?.noteAuthenticatedInbound(message.from);
+
   // Determine if sender is an explicit contact with a positive trust level.
   // 'unknown' and '' mean "not a known contact" → quarantine.
   // Only explicit trust levels (verified, trusted, contact_ring1, etc.) proceed.
@@ -537,6 +624,91 @@ export function receiveD2D(
       signatureValid: true,
       bypassedBody: offerBody,
       reason: 'service.offer stored as contact metadata',
+    };
+  }
+
+  // commerce.trade — a khata document pushed by a trading counterparty
+  // (TRADE_FIRST_STRATEGY §4.2/§4.3). Accepted ONLY from an established
+  // contact: the receiving side publishes no listing and needs no execution
+  // grant, because the verifiers bind every document to an order this node
+  // already retained — a stranger's document binds to nothing and refuses.
+  // Persisted in the TRADE LEDGER with its envelope evidence, never vaulted.
+  if (message.type === MsgTypeCommerceTrade) {
+    if (!isContact) {
+      appendAudit(
+        message.from,
+        'd2d_recv_trade_denied',
+        message.to,
+        `reason=not_a_contact id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'commerce.trade rejected: sender is not a known contact',
+      };
+    }
+    let parsedTrade: unknown;
+    try {
+      parsedTrade = JSON.parse(message.body);
+    } catch {
+      parsedTrade = null;
+    }
+    // §4.3's stored-verified rule: the retained evidence is the SIGNED
+    // envelope in the six fields the signature covered, the same shape the
+    // buyer-response leg retains — a record plus a hash of itself proves
+    // nothing; the counterparty's signature over the exact bytes does.
+    const tradeEvidence = JSON.stringify({
+      envelopeId: message.id,
+      signature: signatureHex,
+      envelope: {
+        id: message.id,
+        type: message.type,
+        from: message.from,
+        to: [message.to],
+        created_time: message.created_time,
+        body: message.body,
+      },
+    });
+    const settled = applyInboundTradeDocument({
+      senderDid: message.from,
+      body: parsedTrade,
+      evidenceJson: tradeEvidence,
+      nowMs: Date.now(),
+    });
+    if (settled.outcome === 'applied' || settled.outcome === 'duplicate') {
+      appendAudit(
+        message.from,
+        'd2d_recv_trade_applied',
+        message.to,
+        `outcome=${settled.outcome} kind=${settled.kind ?? ''} id=${message.id}`,
+      );
+      return {
+        action: 'bypassed',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: `commerce.trade ${settled.outcome} to the trade ledger`,
+      };
+    }
+    // METADATA ONLY — outcome, kind and message id; never the document,
+    // which is a counterparty's commercial content.
+    appendAudit(
+      message.from,
+      'd2d_recv_trade_refused',
+      message.to,
+      `outcome=${settled.outcome} kind=${settled.kind ?? ''} id=${message.id}`,
+    );
+    return {
+      action: 'dropped',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: `commerce.trade ${settled.outcome}${settled.detail !== undefined ? `: ${settled.detail}` : ''}`,
     };
   }
 

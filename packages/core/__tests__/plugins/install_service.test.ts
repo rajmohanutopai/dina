@@ -1388,7 +1388,16 @@ describe('P2 hardening — pairing + verified-release gates', () => {
     // module even names these symbols — an accidental in-package caller fails CI
     // here. (Comment lines are skipped so docs can still discuss them.)
     const srcRoot = path.join(__dirname, '..', '..', 'src');
-    const homeModule = path.join('plugins', 'install_service.ts');
+    // TWO legitimate homes: the minter's own module, and the first-party
+    // reference-pack installer (PC-9a) — the "real verified-install caller"
+    // the round-5 note anticipated. It mints for KERNEL-OWNED manifests
+    // only, under the local_publisher_key anchor with a content-derived
+    // CID, and its own suite pins that; any OTHER module naming these
+    // symbols still fails here.
+    const allowedHomes = [
+      path.join('plugins', 'install_service.ts'),
+      path.join('commerce', 'reference_install.ts'),
+    ];
     const offenders: string[] = [];
     const walk = (dir: string): void => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -1397,7 +1406,7 @@ describe('P2 hardening — pairing + verified-release gates', () => {
           walk(p);
           continue;
         }
-        if (!entry.name.endsWith('.ts') || p.endsWith(homeModule)) continue;
+        if (!entry.name.endsWith('.ts') || allowedHomes.some((home) => p.endsWith(home))) continue;
         for (const line of readFileSync(p, 'utf8').split('\n')) {
           const trimmed = line.trim();
           if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue; // skip comments

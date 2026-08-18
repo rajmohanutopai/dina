@@ -110,6 +110,26 @@ export const MSG_TYPE_SERVICE_OFFER = 'service.offer' as const;
  * vaulted). docs/CONTACT_SERVICES_ARCHITECTURE.md §5.2. Protocol v1.1 (additive).
  */
 export const MSG_TYPE_SERVICE_GRANT_REQUEST = 'service.grant_request' as const;
+/**
+ * `commerce.trade` — a khata document pushed between trading counterparties
+ * (TRADE_FIRST_STRATEGY §4.2): the supplier's DeliveryNote and PaymentAck
+ * travelling to the buyer. Accepted only from an established contact
+ * (known-contact trust — the buyer publishes no listing and needs no
+ * execution grant); the body carries `{kind, document}` and the receiver
+ * re-verifies the document against its own retained order before storing it
+ * in the trade ledger — never in the vault. Protocol v1.2 (additive).
+ */
+export const MSG_TYPE_COMMERCE_TRADE = 'commerce.trade' as const;
+/**
+ * `commerce.invite` — one message of the §8 invite ceremony (redemption,
+ * confirmation, activation ack, ack receipt, revocation) as
+ * `{kind, document}`. NOT contact-gated: a redemption arrives from a
+ * not-yet-contact by definition, and the single-use NONCE inside each
+ * document — checked against the receiver's own retained exchange — is
+ * the admission credential, the pairing-code pattern. Never vaulted;
+ * retained in `commerce_invites`. Protocol v1.2 (additive).
+ */
+export const MSG_TYPE_COMMERCE_INVITE = 'commerce.invite' as const;
 
 /** Union of all V1 D2D message type strings. */
 export type D2DMessageType =
@@ -124,7 +144,9 @@ export type D2DMessageType =
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE
   | typeof MSG_TYPE_SERVICE_OFFER
-  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST;
+  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST
+  | typeof MSG_TYPE_COMMERCE_TRADE
+  | typeof MSG_TYPE_COMMERCE_INVITE;
 
 /**
  * Types that the protocol guarantees are NEVER staged into the persona vault.
@@ -138,7 +160,11 @@ export type EphemeralD2DType =
   | typeof MSG_TYPE_SERVICE_QUERY
   | typeof MSG_TYPE_SERVICE_RESPONSE
   | typeof MSG_TYPE_SERVICE_OFFER
-  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST;
+  | typeof MSG_TYPE_SERVICE_GRANT_REQUEST
+  // Persisted in the TRADE LEDGER (identity.sqlite), never the vault.
+  | typeof MSG_TYPE_COMMERCE_TRADE
+  // Persisted in `commerce_invites`, never the vault.
+  | typeof MSG_TYPE_COMMERCE_INVITE;
 
 /**
  * Types that DO persist into the vault. Computed from `D2DMessageType`

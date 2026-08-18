@@ -50,7 +50,8 @@ import {
 } from '@dina/core';
 // `setD2DSender` registers the generic D2D egress callback for the `/v1/msg/send`
 // route. It lives on the runtime subpath (route module), not the main barrel.
-import { setD2DSender } from '@dina/core/runtime';
+import { sign as ed25519Sign, verify as ed25519Verify } from '@dina/core';
+import { setD2DSender, composeInviteService, installInviteService } from '@dina/core/runtime';
 import {
   makeSendD2D,
   makeOutboxRedeliver,
@@ -183,6 +184,19 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
   const resolveRunSender = makeResolveSender({
     selfDID: pdsIdentity.did,
     selfPublicKey: signingKeypair.publicKey,
+  });
+
+  // §8 — the invite ceremony, composed HERE because its four app facts
+  // (signing key, DID resolution, relay route) live at this boot. Core
+  // fills its own seams (invite store, D2D sender, contacts, grants).
+  composeInviteService({
+    signOfferDigest: (bytes) => ed25519Sign(signingKeypair.privateKey, bytes),
+    resolveSigningKey: async (did) => {
+      const resolved = await resolveRunSender(did);
+      return resolved.keys[0] ?? null;
+    },
+    verify: (message, signature, publicKey) => ed25519Verify(publicKey, message, signature),
+    relayUrl: () => msgboxURL,
   });
   const runPlaneNode = wireRunPlaneNode({
     db: identityDB,
@@ -394,6 +408,8 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
       );
     },
     async dispose(): Promise<void> {
+      // Deregister the invite service so a re-wire (tests) composes fresh.
+      installInviteService(null);
       // Stop the run-plane loops first so no pacer tick races the teardown, and
       // await tick quiescence before the shared stores are torn down (§13).
       await runPlaneNode.stop();

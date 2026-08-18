@@ -23,8 +23,6 @@ import { sha256 } from '@noble/hashes/sha2.js';
 // The SAME validator the D2D receive pipeline applies to an inbound
 // service.response. Held evidence is a retained copy of exactly that message,
 // so it answers to exactly that contract (§9.12).
-import { validateServiceResponseBody } from '../d2d/service_bodies';
-
 import {
   GENESIS_STATE_BY_EVENT,
   commerceRecordDigest,
@@ -50,6 +48,9 @@ import {
   HeldEvidence,
   readPurchaseOrderProposal,
 } from '@dina/commerce-protocol';
+
+import { validateServiceResponseBody } from '../d2d/service_bodies';
+
 
 import { ackIdSuffix } from './admission';
 import { type CommerceOrderStore } from './commerce_order';

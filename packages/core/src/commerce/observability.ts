@@ -21,6 +21,7 @@ export type CommerceEventName =
   | 'confirm'
   | 'send'
   | 'quote_received'
+  | 'quote_declined'
   | 'approval'
   | 'dispatch_outcome'
   | 'reconcile';

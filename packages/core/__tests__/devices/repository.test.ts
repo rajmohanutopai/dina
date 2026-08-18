@@ -198,6 +198,31 @@ describe('round-12 #4: an out-of-enum device role is quarantined (fail closed)',
       cleanup();
     }
   });
+
+  it("role 'staff' is IN the enum: a staff device survives persistence and rehydration", async () => {
+    // The trade-first regression this pins: 'staff' was missing from
+    // VALID_DEVICE_ROLES, so a paired staff phone persisted fine and then
+    // vanished on the next boot — quarantined by the very list meant to
+    // catch corrupt roles.
+    const { adapter, cleanup } = openId();
+    try {
+      const repo = new SQLiteDeviceRepository(adapter);
+      const staff = deviceFixture({
+        deviceId: 'dev-staff',
+        did: 'did:key:zStaff',
+        publicKeyMultibase: 'zStaff',
+        role: 'staff',
+      });
+      await repo.register(staff);
+      // A second repository over the same file is the restart.
+      const rebooted = new SQLiteDeviceRepository(adapter);
+      const hydrated = await rebooted.getByDID('did:key:zStaff');
+      expect(hydrated?.role).toBe('staff');
+      expect((await rebooted.list()).map((d) => d.deviceId)).toContain('dev-staff');
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe('round-15 #8 — revoked flag is constrained + coerced fail-closed', () => {

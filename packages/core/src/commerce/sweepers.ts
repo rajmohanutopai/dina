@@ -33,6 +33,7 @@ import { CommerceAdmissionSweeper } from './admission_sweeper';
 import { ContinuityReleaseSweeper } from './continuity_release_sweeper';
 import { DispatchIntentSweeper } from './dispatch_intent_sweeper';
 import { CommerceEpochRevalidator } from './epoch_revalidator';
+import { InviteSweeper } from './invite_sweeper';
 import { ReconcilePollSweeper } from './reconcile_sweeper';
 
 import type { CommerceAdmissionSweeperOptions } from './admission_sweeper';
@@ -72,6 +73,12 @@ export interface CommerceSweeperOptions {
    * narrates. Only the cadence and observers are configurable.
    */
   dispatch?: Pick<DispatchIntentSweeperOptions, 'intervalMs' | 'now' | 'onOutcome' | 'onError'>;
+  /**
+   * §8's invite tick — ALWAYS started, same rule as `dispatch`: it
+   * resolves the installed invite service per tick and a node with none
+   * ticks quietly. Only cadence and observers configure.
+   */
+  invite?: Pick<import('./invite_sweeper').InviteSweeperOptions, 'intervalMs' | 'onSweep' | 'onError'>;
   /** Injectable timer pair, shared by all five. Tests pass fakes. */
   setInterval?: CommerceAdmissionSweeperOptions['setInterval'];
   clearInterval?: CommerceAdmissionSweeperOptions['clearInterval'];
@@ -84,6 +91,7 @@ export interface CommerceSweepers {
   reconcile: ReconcilePollSweeper | null;
   continuity: ContinuityReleaseSweeper | null;
   dispatch: DispatchIntentSweeper;
+  invite: InviteSweeper;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
@@ -107,17 +115,20 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
       ? null
       : new ContinuityReleaseSweeper({ ...options.continuity, ...timers });
   const dispatch = new DispatchIntentSweeper({ ...(options.dispatch ?? {}), ...timers });
+  const invite = new InviteSweeper({ ...(options.invite ?? {}), ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
   continuity?.start();
   dispatch.start();
+  invite.start();
   return {
     admission,
     epoch,
     reconcile,
     continuity,
     dispatch,
+    invite,
     stop: () => {
       // All stopped even if an earlier one throws: a teardown that abandons a
       // later timer leaves a process that will not exit and a phone that keeps
@@ -134,7 +145,11 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
             try {
               continuity?.stop();
             } finally {
-              dispatch.stop();
+              try {
+                dispatch.stop();
+              } finally {
+                invite.stop();
+              }
             }
           }
         }

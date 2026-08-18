@@ -18,6 +18,7 @@
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { applyReconcileAnswer, askReconcilePolls } from '../../src/commerce/reconcile_poller';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { makeHeldEvidence } from './helpers';
 
@@ -50,7 +51,11 @@ let buyerOrders: InMemoryBuyerOrderRepository;
 
 beforeEach(() => {
   buyerOrders = new InMemoryBuyerOrderRepository();
-  installCommerceRuntime({ buyerOrders } as unknown as CommerceRuntime);
+  installCommerceRuntime({
+    buyerOrders,
+    // §16.2 buyer retention writes the accepted ack here now.
+    receipts: new InMemoryCommerceReceiptRepository(),
+  } as unknown as CommerceRuntime);
 });
 afterEach(() => installCommerceRuntime(null));
 

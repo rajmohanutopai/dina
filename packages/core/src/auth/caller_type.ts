@@ -17,7 +17,7 @@
  * Source: ARCHITECTURE.md Section 2.10
  */
 
-export type CallerType = 'service' | 'device' | 'agent' | 'plugin' | 'unknown';
+export type CallerType = 'service' | 'device' | 'agent' | 'plugin' | 'staff' | 'unknown';
 
 /**
  * Optional callback: given a DID, return the device role or null if the
@@ -133,6 +133,14 @@ export function resolveCallerType(authenticatedDID: string, agentDID?: string): 
     if (role === 'plugin') {
       const scope = deviceScopeResolver?.(authenticatedDID) ?? undefined;
       return { did: authenticatedDID, callerType: 'plugin', name: deviceName, ...(scope != null ? { scope } : {}) };
+    }
+    if (role === 'staff') {
+      // TRADE_FIRST_STRATEGY §6.2 — staff is its OWN caller class,
+      // precisely so it cannot inherit the generic device surface
+      // (vault query, persona listing, user APIs). The authz matrix
+      // grants staff nothing by default; the trade routes admit it
+      // through the staff-grant gate and nothing else does.
+      return { did: authenticatedDID, callerType: 'staff', name: deviceName };
     }
     return { did: authenticatedDID, callerType: 'device', name: deviceName };
   }

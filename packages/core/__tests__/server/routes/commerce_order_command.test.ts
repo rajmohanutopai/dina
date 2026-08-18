@@ -18,24 +18,26 @@ import {
   type BuyerApprovalContext,
   type BuyerApprovalPayload,
 } from '../../../src/commerce/approval_payload';
-import {
-  installBuyerOrderSender,
-  type BuyerOrderSender,
-} from '../../../src/commerce/buyer_executor';
+import { InMemoryAttributionBoundaryRepository } from '../../../src/commerce/attribution_boundary';
 import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
 } from '../../../src/commerce/buyer_authority';
+import {
+  installBuyerOrderSender,
+  type BuyerOrderSender,
+} from '../../../src/commerce/buyer_executor';
 import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
-import { newBuyerOrder, type BuyerOrderRecord } from '../../../src/commerce/buyer_reconciliation';
-import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import { InMemoryBuyerQuoteRepository } from '../../../src/commerce/buyer_quotes';
+import { newBuyerOrder, type BuyerOrderRecord } from '../../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerQuoteRequestRepository } from '../../../src/commerce/buyer_requests';
+import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import { InMemoryOrderApprovalRepository } from '../../../src/commerce/order_approvals';
+import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
-import { setNodeDID } from '../../../src/pairing/ceremony';
 import {
   BUYER_DID,
   installActiveBuyerPack,
@@ -162,6 +164,8 @@ beforeEach(() => {
   buyerOrders = new InMemoryBuyerOrderRepository();
   approvals = new InMemoryOrderApprovalRepository();
   installCommerceRuntime({
+    receipts: new InMemoryCommerceReceiptRepository(),
+    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
     buyerOrders,
     // §12.4 step 6 — the executor revalidates the held quote before dispatch;
     // empty stores mean "no quote held", the documented skip.

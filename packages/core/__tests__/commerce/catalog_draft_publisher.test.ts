@@ -56,7 +56,7 @@ function draft(): CatalogDraft {
     items: [],
     generatedAtIso: '2026-08-13T09:00:00.000Z',
     itemRevision: 'rev-1',
-    receipt: { digest: 'c'.repeat(64), revision: 1 },
+    receipt: { digest: 'c'.repeat(64), revision: 1, vouchedBy: null },
     held: {
       snapshot: {
         supplier_did: SUPPLIER,

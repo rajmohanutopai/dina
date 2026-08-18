@@ -33,6 +33,7 @@ import {
   buildSupplierApprovalPayload,
   verifyApprovalBinding,
   type ActingInstall,
+  type ApprovalAttribution,
   type ApprovingPrincipal,
   type SupplierApprovalPayload,
 } from './approval_payload';
@@ -88,6 +89,9 @@ export interface SupplierDecisionApproval {
   actingBusinessDid: string;
   principal: ApprovingPrincipal;
   install: ActingInstall;
+  /** §6.4 — the executing rebuild must mirror the approved payload's
+   *  attribution, or the binding digests diverge on the field itself. */
+  attribution?: ApprovalAttribution;
 }
 
 /**
@@ -257,6 +261,9 @@ export function settleInboundOrderDecision(args: {
       // must not be able to sign an acceptance.
       acknowledgementKind: decision.kind,
       install: args.approval.install,
+      ...(args.approval.attribution === undefined
+        ? {}
+        : { attribution: args.approval.attribution }),
     });
     const verdict = verifyApprovalBinding(args.approval.approved, executing);
     if (!verdict.ok) {
@@ -280,6 +287,17 @@ const DECIDES_ORDER: ReadonlySet<string> = new Set([
   'submit_order',
   'com.dinakernel.commerce.submit_order',
 ]);
+
+/**
+ * §8 — the standing a trade invite hands its redeemer: exactly the
+ * capabilities a buying counterparty calls on this supplier. Named here,
+ * beside the code that SERVES them, so no surface or route hardcodes the
+ * list (the boundary guard holds `submit_order` to this module's family).
+ */
+export const TRADE_INVITE_CAPABILITIES: readonly string[] = [
+  'com.dinakernel.commerce.request_quote',
+  'com.dinakernel.commerce.submit_order',
+];
 
 /**
  * §12.5/§12.8 — the capability whose answer is a POLICY OPINION, not a result.

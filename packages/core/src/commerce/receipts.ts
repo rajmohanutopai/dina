@@ -58,6 +58,15 @@ export interface CommerceReceiptRepository {
   get(recordDigest: string): CommerceReceipt | null;
   listByOrder(buyerDid: string, purchaseOrderId: string): CommerceReceipt[];
   listByQuote(quoteId: string): CommerceReceipt[];
+  /**
+   * Every retained record of one domain for one buyer key — the khata
+   * statement walks acknowledgements this way to find a relationship's
+   * accepted orders (TRADE_FIRST_STRATEGY §4.4).
+   */
+  listByBuyerAndDomain(buyerDid: string, domain: CommerceReceiptDomain): CommerceReceipt[];
+  /** Every retained record of one domain, ALL buyer keys — the §10
+   *  books export enumerates acknowledgements node-wide this way. */
+  listByDomain(domain: CommerceReceiptDomain): CommerceReceipt[];
 }
 
 function rowToReceipt(row: DBRow): CommerceReceipt {
@@ -149,6 +158,27 @@ export class SQLiteCommerceReceiptRepository implements CommerceReceiptRepositor
       )
       .map(rowToReceipt);
   }
+
+  listByBuyerAndDomain(buyerDid: string, domain: CommerceReceiptDomain): CommerceReceipt[] {
+    return this.db
+      .query(
+        `SELECT * FROM commerce_receipts
+         WHERE buyer_did = ? AND domain = ?
+         ORDER BY created_at, record_digest`,
+        [buyerDid, domain],
+      )
+      .map(rowToReceipt);
+  }
+
+  listByDomain(domain: CommerceReceiptDomain): CommerceReceipt[] {
+    return this.db
+      .query(
+        `SELECT * FROM commerce_receipts WHERE domain = ?
+         ORDER BY created_at, record_digest`,
+        [domain],
+      )
+      .map(rowToReceipt);
+  }
 }
 
 export class InMemoryCommerceReceiptRepository implements CommerceReceiptRepository {
@@ -190,6 +220,18 @@ export class InMemoryCommerceReceiptRepository implements CommerceReceiptReposit
   listByQuote(quoteId: string): CommerceReceipt[] {
     return [...this.byDigest.values()]
       .filter((r) => r.quoteId === quoteId)
+      .sort((a, b) => a.createdAt - b.createdAt || a.recordDigest.localeCompare(b.recordDigest));
+  }
+
+  listByBuyerAndDomain(buyerDid: string, domain: CommerceReceiptDomain): CommerceReceipt[] {
+    return [...this.byDigest.values()]
+      .filter((r) => r.buyerDid === buyerDid && r.domain === domain)
+      .sort((a, b) => a.createdAt - b.createdAt || a.recordDigest.localeCompare(b.recordDigest));
+  }
+
+  listByDomain(domain: CommerceReceiptDomain): CommerceReceipt[] {
+    return [...this.byDigest.values()]
+      .filter((r) => r.domain === domain)
       .sort((a, b) => a.createdAt - b.createdAt || a.recordDigest.localeCompare(b.recordDigest));
   }
 }

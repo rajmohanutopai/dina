@@ -17,7 +17,24 @@
  * Source: core/internal/middleware/authz.go, ARCHITECTURE.md Section 18.4
  */
 
-export type CallerType = 'owner' | 'brain' | 'admin' | 'connector' | 'device' | 'agent' | 'plugin';
+export type CallerType =
+  | 'owner'
+  | 'brain'
+  | 'admin'
+  | 'connector'
+  | 'device'
+  | 'agent'
+  | 'plugin'
+  /**
+   * TRADE_FIRST_STRATEGY §6.2 — a paired device with role 'staff'.
+   * DELIBERATELY absent from every rule below except the commerce
+   * trade surface: first-match-wins plus the final deny makes an
+   * unlisted caller type fail closed on the whole API, which is the
+   * §6.6 posture (no vault, no personas, no approvals, no pairing,
+   * no settings). The trade routes admit staff through the
+   * staff-grant gate, never through this matrix alone.
+   */
+  | 'staff';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of
@@ -54,6 +71,62 @@ const AUTHZ_RULES: {
   singleSegmentTail?: boolean;
   allowed: Set<CallerType>;
 }[] = [
+  // TRADE_FIRST_STRATEGY §6 — the staff surface: EXACTLY the routes the
+  // grant scopes act through (§6.5's table) plus the two clerk reads and
+  // the PIN prover. The route handlers apply the staff-grant gate
+  // (scope, install role, value cap, currency, presence) on top; these
+  // rows only open the door to it. Exact + method-bound throughout, so
+  // no sub-path or other verb inherits the admission; every OTHER trade
+  // route (statement, books-export, tender, revshare, khata authoring)
+  // falls through to the owner-only commerce rule below.
+  {
+    prefix: '/v1/commerce/trade/delivery-receipt',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/trade/unanswered',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/trade/inbox',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/trade/staff-presence',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/drafts/confirm',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/drafts/approve',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/drafts/submit',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/decide',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
   // Interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md §12.5) —
   // OWNER-ONLY. Every /v1/run/* mutation rejects Brain/agent/plugin/service.
   // Only the owner principal (never `trustedInProcess`, never a signed
