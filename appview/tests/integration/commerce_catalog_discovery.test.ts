@@ -28,7 +28,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { searchCommerceCatalog } from '@/api/xrpc/commerce-catalog-search.js'
-import { commerceProductRelationships } from '@/db/schema/index.js'
+import { commerceProductRelationships, subjectScores, subjects } from '@/db/schema/index.js'
 import { productKey } from '@/shared/commerce/catalog-projection.js'
 import {
   commerceCatalogPointerHandler,
@@ -226,6 +226,21 @@ describe('a buyer with no prior supplier reference finds one', () => {
     const top = found.candidates[0]
     expect(top?.supplier_did).toBe(RIVALWOOD)
     expect(top?.matched_fields).toContain('region')
+    // ABSENCE, which is the title's actual claim and what this test never
+    // asserted: region once ranked instead of filtering, so the supplier
+    // who does not deliver there still came back below the fold — and a
+    // rank-only assertion reported the lie as working. Found live.
+    expect(found.candidates.map((c) => c.supplier_did)).toEqual([RIVALWOOD])
+  })
+
+  it('region never ADMITS a row the query text refused — a plank is not a chair from any pin code', async () => {
+    const found = await search({ q: 'chair', region: 'admin_area:IN-MH', limit: 20 })
+    // RIVALWOOD's chair matches text AND region; its other items in the
+    // same region must not ride in on region alone.
+    for (const candidate of found.candidates) {
+      expect(candidate.matched_fields).toContain('region')
+      expect(candidate.matched_fields).toContain('text')
+    }
   })
 
   it('narrows to one supplier when the buyer names one', async () => {
@@ -498,5 +513,57 @@ describe('the SQL candidate set, not just the matcher', () => {
       limit,
     })
     expect(found.candidates.map((c) => c.product.value)).toContain('EXACT-1')
+  })
+})
+describe('the §3.6 trust floor at the ENDPOINT — filter before ranking', () => {
+  async function scoreSupplier(did: string, weightedScore: number, confidence: number) {
+    const id = `sub-${did.slice(-8)}`
+    await db
+      .insert(subjects)
+      .values({ id, did, name: id, subjectType: 'business', createdAt: new Date(), updatedAt: new Date() })
+      .onConflictDoNothing()
+    await db.insert(subjectScores).values({
+      subjectId: id,
+      weightedScore,
+      confidence,
+      needsRecalc: false,
+      computedAt: new Date(),
+    })
+  }
+
+  it('a confidently-bad supplier is DROPPED and counted; thin evidence and no history pass', async () => {
+    await publish(CHAIRMAKER, 'main', [{ sku: 'CH-1', name: 'Oak chair' }])
+    await publish(RIVALWOOD, 'main', [{ sku: 'RW-1', name: 'Teak chair' }])
+    // CHAIRMAKER: confidently bad → below the floor. RIVALWOOD: unscored.
+    await scoreSupplier(CHAIRMAKER, 0.1, 0.9)
+
+    const answer = await search({ q: 'chair', limit: 10 })
+    expect(answer.suppressed_below_trust_floor).toBe(1)
+    expect(answer.candidates.map((c) => c.supplier_did)).toEqual([RIVALWOOD])
+  })
+
+  it('low score with thin evidence still surfaces — one grudge erases nobody', async () => {
+    await publish(CHAIRMAKER, 'main', [{ sku: 'CH-1', name: 'Oak chair' }])
+    await scoreSupplier(CHAIRMAKER, 0.05, 0.1)
+    const answer = await search({ q: 'chair', limit: 10 })
+    expect(answer.suppressed_below_trust_floor).toBe(0)
+    expect(answer.candidates.map((c) => c.supplier_did)).toEqual([CHAIRMAKER])
+  })
+
+  it('the floor is a FILTER, never a rank: an admitted low-ish supplier keeps its retrieval order', async () => {
+    // RIVALWOOD matches by GTIN (the strongest signal) but holds a lower
+    // trust score ABOVE the floor; CHAIRMAKER matches only by text with
+    // a high score. If trust leaked into ranking, CHAIRMAKER would win.
+    await publish(CHAIRMAKER, 'main', [{ sku: 'CH-1', name: 'Ledger chair' }])
+    await publish(RIVALWOOD, 'main', [{ sku: 'RW-1', name: 'Teak seat', gtin: '05012345678900' }])
+    await scoreSupplier(CHAIRMAKER, 0.95, 0.9)
+    await scoreSupplier(RIVALWOOD, 0.25, 0.9)
+    const answer = await search({
+      q: 'ledger chair',
+      identifier: ['gtin:05012345678900'],
+      limit: 10,
+    })
+    expect(answer.suppressed_below_trust_floor).toBe(0)
+    expect(answer.candidates[0]?.supplier_did).toBe(RIVALWOOD)
   })
 })

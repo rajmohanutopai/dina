@@ -371,3 +371,30 @@ describe('reaching a product along a relationship edge', () => {
     ).toEqual(['claim-7'])
   })
 })
+
+describe('the §3.6 trust floor — a filter, never a rank', () => {
+  it('drops only a supplier whose score is BOTH low and confidently established', async () => {
+    const { belowCommerceTrustFloor, COMMERCE_TRUST_FLOOR, COMMERCE_TRUST_FLOOR_MIN_CONFIDENCE } =
+      await import('@/shared/commerce/catalog-search.js')
+    // Confidently bad: dropped.
+    expect(
+      belowCommerceTrustFloor({ weightedScore: COMMERCE_TRUST_FLOOR - 0.01, confidence: 0.9 }),
+    ).toBe(true)
+    // AT the floor: passes — the floor is "below", not "at".
+    expect(
+      belowCommerceTrustFloor({ weightedScore: COMMERCE_TRUST_FLOOR, confidence: 0.9 }),
+    ).toBe(false)
+    // Low score, thin evidence: passes — one grudge erases nobody.
+    expect(
+      belowCommerceTrustFloor({
+        weightedScore: 0.05,
+        confidence: COMMERCE_TRUST_FLOOR_MIN_CONFIDENCE - 0.01,
+      }),
+    ).toBe(false)
+    // Unscored and unknown suppliers pass — absence of history is not a verdict.
+    expect(belowCommerceTrustFloor({ weightedScore: null, confidence: null })).toBe(false)
+    expect(belowCommerceTrustFloor(undefined)).toBe(false)
+    // Null confidence reads as no confidence.
+    expect(belowCommerceTrustFloor({ weightedScore: 0.05, confidence: null })).toBe(false)
+  })
+})

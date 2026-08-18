@@ -2,9 +2,10 @@ import { and, eq, gte, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import type { DrizzleDB } from '@/db/connection.js'
-import { commerceCatalogProducts, commerceProductRelationships } from '@/db/schema/index.js'
+import { commerceCatalogProducts, commerceProductRelationships, subjectScores, subjects } from '@/db/schema/index.js'
 import { productKey, type CatalogProductRow } from '@/shared/commerce/catalog-projection.js'
 import {
+  belowCommerceTrustFloor,
   matchCatalogRow,
   rankCatalogMatches,
   type CatalogSearchQuery,
@@ -98,6 +99,12 @@ export interface CommerceCatalogSearchResponse {
    * narrowing and the matcher disagree.
    */
   examined: number
+  /**
+   * §3.6 — candidates dropped by the trust FLOOR ("not horrible"), reported
+   * rather than silently vanished: a buyer seeing a thin shortlist deserves
+   * to know discovery suppressed someone, even without being told whom.
+   */
+  suppressed_below_trust_floor: number
 }
 
 /**
@@ -198,23 +205,32 @@ export async function searchCommerceCatalog(
       ) as SQL,
     )
   }
+  // Region is a CONSTRAINT, never one more OR-signal: it ANDs against
+  // whatever else admitted the row, and admits by itself only when it is
+  // the query's sole signal (a "what can be delivered here" browse). As
+  // an OR-arm it both returned off-region suppliers and let a region-only
+  // match answer an unrelated text query. The pure matcher applies the
+  // same rule, so the related-keys expansion cannot re-admit past it.
+  let regionConstraint: SQL | null = null
   if (params.region !== undefined && params.region !== '') {
-    anyOf.push(
-      // PARENTHESISED, and it has to be. `->>` and `||` sit in the same
-      // precedence class in Postgres and associate LEFT, so
-      // `r->>'scheme' || ':' || r->>'value'` parses as
-      // `(((r->>'scheme') || ':') || r) ->> 'value'` — a text on the left of
-      // `->>`, which is `operator does not exist: text ->> unknown`. Every
-      // region-filtered search failed at the database, and a stub that records
-      // "a select happened" reports it as working.
-      sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${commerceCatalogProducts.fulfilmentRegions}) r WHERE lower((r->>'scheme') || ':' || (r->>'value')) = ${params.region.toLowerCase()})`,
-    )
+    // PARENTHESISED, and it has to be. `->>` and `||` sit in the same
+    // precedence class in Postgres and associate LEFT, so
+    // `r->>'scheme' || ':' || r->>'value'` parses as
+    // `(((r->>'scheme') || ':') || r) ->> 'value'` — a text on the left of
+    // `->>`, which is `operator does not exist: text ->> unknown`. Every
+    // region-filtered search failed at the database, and a stub that records
+    // "a select happened" reports it as working.
+    regionConstraint = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${commerceCatalogProducts.fulfilmentRegions}) r WHERE lower((r->>'scheme') || ':' || (r->>'value')) = ${params.region.toLowerCase()})`
+  }
+  if (anyOf.length === 0 && regionConstraint !== null) {
+    anyOf.push(regionConstraint)
+    regionConstraint = null
   }
   if (anyOf.length === 0) {
     // No signal at all. Returning the whole index would make discovery a
     // firehose and would rank suppliers by nothing, which §10.5 forbids more
     // clearly than it forbids a bad ranking.
-    return { candidates: [], examined: 0 }
+    return { candidates: [], examined: 0, suppressed_below_trust_floor: 0 }
   }
   // §10.7 RECALL EXPANSION. Products reachable from the queried identifiers
   // along an edge the index is at least willing to SHOW. Deliberately not
@@ -253,6 +269,9 @@ export async function searchCommerceCatalog(
   }
 
   conditions.push(or(...anyOf) as SQL)
+  if (regionConstraint !== null) {
+    conditions.push(regionConstraint)
+  }
 
   // Over-fetch, because the matcher drops rows SQL let through (expired, or a
   // text hit that does not survive normalization). Bounded so a broad query
@@ -321,12 +340,38 @@ export async function searchCommerceCatalog(
     return match === null ? [] : [{ row: projected, ...match }]
   })
 
+  // §3.6 — the trust FLOOR is a hard filter and runs BEFORE ranking, the
+  // §13.2 discipline: a requirement that participates in a score is not a
+  // requirement. Trust appears NOWHERE in the score — the quotes are the
+  // ranking — and its one job here is dropping confidently-bad suppliers.
+  const supplierDids = [...new Set(scored.map((entry) => entry.row.supplierDid))]
+  const floorRows =
+    supplierDids.length === 0
+      ? []
+      : await db
+          .select({
+            did: subjects.did,
+            weightedScore: subjectScores.weightedScore,
+            confidence: subjectScores.confidence,
+          })
+          .from(subjects)
+          .innerJoin(subjectScores, eq(subjectScores.subjectId, subjects.id))
+          .where(inArray(subjects.did, supplierDids))
+  const scoreBySupplier = new Map(
+    floorRows.filter((row) => row.did !== null).map((row) => [row.did as string, row]),
+  )
+  const admitted = scored.filter(
+    (entry) => !belowCommerceTrustFloor(scoreBySupplier.get(entry.row.supplierDid)),
+  )
+  const suppressed = scored.length - admitted.length
+
   const ranked = rankCatalogMatches(
-    scored.map((entry) => ({ ...entry, rowKey: entry.row.rowKey })),
+    admitted.map((entry) => ({ ...entry, rowKey: entry.row.rowKey })),
   ).slice(0, params.limit)
 
   return {
     examined: rows.length,
+    suppressed_below_trust_floor: suppressed,
     candidates: ranked.map((entry) =>
       toCandidate(
         entry.row,

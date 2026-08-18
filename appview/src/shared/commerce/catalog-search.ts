@@ -170,6 +170,15 @@ export function matchCatalogRow(
     if (row.fulfilmentRegions.some((region) => normalize(regionKey(region)) === wanted)) {
       matchedFields.push('region')
       scoreBp += REGION_WEIGHT_BP
+    } else {
+      // A CONSTRAINT, not a signal (§3.6/§10.5): a supplier who does not
+      // deliver where the buyer is cannot be a purchase result, however
+      // well the text matched. Region used to be one more OR-signal,
+      // which both RETURNED off-region suppliers (ranked lower) and
+      // admitted region-only rows for unrelated queries — a teak plank
+      // answered "chair" because it shipped from the right pin code.
+      // Found live, 2026-08-18.
+      return null
     }
   }
 
@@ -196,4 +205,33 @@ export function rankCatalogMatches<T extends { retrievalScoreBp: number; rowKey:
           ? 1
           : 0,
   )
+}
+
+/**
+ * §3.6 (TRADE_FIRST_STRATEGY) — trust as a FLOOR, never a rank.
+ *
+ * Commerce supplier discovery keeps trust out of the score entirely (the
+ * quotes are the ranking); its one job here is "not horrible": a supplier
+ * whose PeerLens score is BOTH low and confidently established is dropped
+ * from the shortlist. Both conditions, deliberately:
+ *
+ *   - an UNSCORED supplier passes — punishing the absence of history
+ *     rewards incumbents and is exactly the silent substitution §13.4
+ *     forbids;
+ *   - a low score at low confidence passes — one grudge must not erase a
+ *     supplier from discovery.
+ *
+ * Thresholds are judgement, recorded as such: 0.2 on the [0,1] PeerLens
+ * scale is well below "mixed reviews", and 0.3 confidence requires an
+ * established pattern rather than a single attestation.
+ */
+export const COMMERCE_TRUST_FLOOR = 0.2
+export const COMMERCE_TRUST_FLOOR_MIN_CONFIDENCE = 0.3
+
+export function belowCommerceTrustFloor(
+  score: { weightedScore: number | null; confidence: number | null } | undefined,
+): boolean {
+  if (score === undefined || score.weightedScore === null) return false
+  if ((score.confidence ?? 0) < COMMERCE_TRUST_FLOOR_MIN_CONFIDENCE) return false
+  return score.weightedScore < COMMERCE_TRUST_FLOOR
 }
