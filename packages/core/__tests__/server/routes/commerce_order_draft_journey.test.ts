@@ -200,20 +200,30 @@ it('the whole §5 journey: photograph → gate → review → ceremony → send'
     }),
   );
   expect(accepted.status).toBe(200);
-  for (const [lineId, sku] of [
-    ['line_1', 'CM-CHAIR-1'],
-    ['line_2', 'CM-BENCH-2'],
+  for (const [lineId, sku, snake] of [
+    ['line_1', 'CM-CHAIR-1', false],
+    // line_2 uses the SNAKE_CASE wire spelling — the §9.13 convention a
+    // hand-written or ported client follows; the route normalizes it.
+    ['line_2', 'CM-BENCH-2', true],
   ] as const) {
-    const resolved = await router.handle(
-      owner('/v1/commerce/orders/drafts/line/resolve', {
-        draft_id: cap.draft_id,
-        line_id: lineId,
-        resolution: {
+    const resolution = snake
+      ? {
+          kind: 'resolved',
+          product: { scheme: 'manufacturer_sku', value: sku, issuer_did: SUPPLIER },
+          supplier_did: SUPPLIER,
+          flagged_new_supplier: false,
+        }
+      : {
           kind: 'resolved',
           product: { scheme: 'manufacturer_sku', value: sku, issuer_did: SUPPLIER },
           supplierDid: SUPPLIER,
           flaggedNewSupplier: false,
-        },
+        };
+    const resolved = await router.handle(
+      owner('/v1/commerce/orders/drafts/line/resolve', {
+        draft_id: cap.draft_id,
+        line_id: lineId,
+        resolution,
       }),
     );
     expect(resolved.status).toBe(200);

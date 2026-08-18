@@ -1111,6 +1111,23 @@ export type { TaskRecord } from './task/queue';
 export * from './pairing/ceremony';
 export type { PairingCode, PairingResult } from './pairing/ceremony';
 export * from './pairing/setup_code';
+
+// §6.3 — the staff phone's remote transport + client (TRADE_FIRST).
+export {
+  RemoteCoreClient,
+  RemoteTransportError,
+  type RemoteResponse,
+  type WebSocketLike,
+  type RemoteCoreClientOptions,
+} from './transport/remote_core_client';
+export {
+  StaffCoreClient,
+  StaffClientError,
+  pairStaffDevice,
+  staffTransportFor,
+  type StaffIdentity,
+  type StaffInboxItem,
+} from './transport/staff_client';
 export * from './session/lifecycle';
 export type { AgentSession, SessionGrant } from './session/lifecycle';
 export * from './config/loading';

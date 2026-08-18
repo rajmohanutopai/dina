@@ -993,6 +993,14 @@ export default function RootLayout() {
                   options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}
                 />
                 <Tabs.Screen
+                  name="staff-join"
+                  options={{ title: 'Join as staff', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="staff-home"
+                  options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
                   name="reminders"
                   options={{
                     title: 'Reminders',

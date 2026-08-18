@@ -6,6 +6,7 @@
  * component that calls one of the transition callbacks below.
  */
 
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 
 import { generateNewMnemonic } from '../../hooks/useOnboarding';
@@ -47,6 +48,7 @@ const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 const DEV_OWNER = process.env.EXPO_PUBLIC_DINA_DEV_OWNER ?? 'Dina Dev';
 
 export function OnboardingFlow(): React.ReactElement {
+  const router = useRouter();
   const [step, setStep] = useState<Step>(INITIAL_STEP);
 
   const goBack = (): void => {
@@ -93,6 +95,7 @@ export function OnboardingFlow(): React.ReactElement {
           onCreate={() => setStep({ kind: 'create_name', draft: {} })}
           onExternalAtproto={() => setStep({ kind: 'external_identity', draft: {} })}
           onRecover={() => setStep({ kind: 'recover_mnemonic', draft: {} })}
+          onJoinStaff={() => router.push('/staff-join')}
           onBack={goBack}
         />
       );

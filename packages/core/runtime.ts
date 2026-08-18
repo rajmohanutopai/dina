@@ -42,7 +42,8 @@ export {
 export type { ServiceOfferReceivedEvent } from './src/d2d/service_offer_events';
 export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
-export { getNodeDID, setNodeDID } from './src/pairing/ceremony';
+export { getNodeDID, setNodeDID,
+  setNodeSigningPublicKey } from './src/pairing/ceremony';
 export { bootstrapMsgBox } from './src/relay/msgbox_boot';
 export type { MsgBoxBootConfig } from './src/relay/msgbox_boot';
 export {

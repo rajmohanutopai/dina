@@ -758,15 +758,35 @@
         approve path composed orders at hardcoded 1.0, refusing every 1.1 conversation.
       </li>
       <li>
-        <strong>Not in yet, deliberately</strong> — the staff-MODE app fork: a staff phone that
-        pairs TO the business node instead of provisioning its own vault needs a remote signed
-        CoreClient over MsgBox in RN (today that transport exists only in the Python CLI) plus a
-        staff shell UI, and must be proven on devices against a live relay. Recorded as the one
-        remaining §6 surface; Android build stays a separate launch task. Accepted residuals:
-        approve/submit value-arm coverage rides the shared gate machinery (proven at the
-        receipt route + gate unit + decide route) rather than a full quote-store fixture;
-        commerce refusals still write no owner audit entries (the §6.4 audit question is
-        answered by attribution, not a log) — a later pass can add an audit seam.
+        <strong>Staff-MODE app fork SHIPPED (2026-08-18)</strong> — a staff phone now pairs TO
+        the business node without provisioning a vault. New <code>RemoteCoreClient</code>
+        (packages/core/src/transport) ports the dina-agent MsgBox wire to TS/Hermes: WS
+        challenge-auth, signed + sealed HTTP-in-JSON, BINARY envelope frames (a text frame is a
+        silent relay drop — found live), and response-SIGNATURE verification a sealed box demands
+        that the CLI skipped. <code>StaffCoreClient</code> exposes just the §6.2 surface; the
+        <code>dina1:</code> code carries the node's signing key (<code>node_pub</code>, additive)
+        so the first request seals with no directory round trip. Mobile: a "Join as staff"
+        onboarding card, staff-join + staff-home screens, a keychain-backed
+        <code>StaffIdentity</code> store, and a UnlockGate 'staff' mode that routes a joined
+        phone to the shell. Proven LIVE: a real clerk phone paired over test-mailbox, proved its
+        PIN, and read the grant-filtered inbox. One more live seam bug fixed: the signed
+        pipeline's <code>mapToAuthzRole</code> never learned 'staff' (every real staff phone
+        refused). Deferred within this: the on-device UI still needs a real hardware pass, and
+        a richer receipt screen for partial/short counts (the shell receipts in full).
+      </li>
+      <li>
+        <strong>Small nits cleared</strong> — invites "· confirming" now shows only on the
+        REDEEMER's unproven-active row (the inviter's active row read as stuck); the resolve and
+        tender routes accept snake_case aliases (<code>supplier_did</code>,
+        <code>flagged_new_supplier</code>, <code>line_id</code>) so a ported client follows the
+        §9.13 wire law, pinned live in the draft journey. Reassessed: <code>catalog/import</code>
+        is a legitimate CSV preview (returns findings, tested), not a misleading retired route —
+        left as is. Accepted residual: commerce refusals write no owner audit entry (§6.4 answers
+        the audit question by attribution, not a log) — a later seam.
+      </li>
+      <li>
+        <strong>Not in yet, deliberately</strong> — Android build (separate launch task);
+        pre-upgrade buyer-order retention backfill (accepted, nothing in prod).
       </li>
     </ul>
 

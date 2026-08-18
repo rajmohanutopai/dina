@@ -1469,6 +1469,19 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 400, body: { error: 'resolution with a kind is required' } };
     }
     if (resolution.kind === 'resolved') {
+      // The resolution is an internal domain object (camelCase); the
+      // wire law is snake_case. Accept BOTH spellings and normalize to
+      // the domain casing, so a hand-written or ported client can send
+      // `supplier_did` / `flagged_new_supplier` like every other route.
+      if (resolution.supplierDid === undefined && typeof resolution.supplier_did === 'string') {
+        resolution.supplierDid = resolution.supplier_did;
+      }
+      if (
+        resolution.flaggedNewSupplier === undefined &&
+        typeof resolution.flagged_new_supplier === 'boolean'
+      ) {
+        resolution.flaggedNewSupplier = resolution.flagged_new_supplier;
+      }
       const product = resolution.product as Record<string, unknown> | undefined;
       if (
         product === undefined ||
@@ -1479,7 +1492,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       ) {
         return {
           status: 400,
-          body: { error: 'a resolved line names product, supplierDid and flaggedNewSupplier' },
+          body: {
+            error:
+              'a resolved line names product, supplier_did and flagged_new_supplier',
+          },
         };
       }
     }
@@ -5686,9 +5702,17 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       }
       suppliers.push({ supplierDid: named.supplier_did, serviceRkey: named.service_rkey });
     }
+    // §9.13 wire law is snake_case; the tender line input is an internal
+    // camelCase domain shape. Accept `line_id` and normalize to `lineId`
+    // so a hand-written or ported client follows the wire convention.
+    const tenderLines = (body.lines as Record<string, unknown>[]).map((line) =>
+      line.lineId === undefined && typeof line.line_id === 'string'
+        ? { ...line, lineId: line.line_id }
+        : line,
+    );
     const created = await createTender({
       suppliers,
-      lines: body.lines as never,
+      lines: tenderLines as never,
       projection: completeProjection(body.projection as Record<string, unknown>) as never,
       ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
       ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),

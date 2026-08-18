@@ -83,7 +83,7 @@ import {
   SQLiteWorkflowRepository,
   TaskExpirySweeper,
   setCodingPermitAuthority,
-  setNodeDID,
+  setNodeDID, setNodeSigningPublicKey,
   setReasoningBroker,
   setWorkflowRepository,
   setWorkflowService,
@@ -448,8 +448,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       identity !== undefined &&
       (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
     ) {
-      const didKey = deriveDIDKey(deriveIdentity({ masterSeed: identity.seed }).root.publicKey);
+      const rootPub = deriveIdentity({ masterSeed: identity.seed }).root.publicKey;
+      const didKey = deriveDIDKey(rootPub);
       setNodeDID(didKey);
+      setNodeSigningPublicKey(rootPub);
       logger.info({ nodeDid: didKey }, 'node identity: using local did:key (no PDS)');
     }
   }
@@ -487,6 +489,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // pairing devices know which home node they're joining. With
         // a PDS-provisioned did:plc, that's our canonical identity.
         setNodeDID(pdsIdentity.did);
+        setNodeSigningPublicKey(deriveIdentity({ masterSeed: identity.seed }).root.publicKey);
       } catch (err) {
         // FAIL CLOSED — never fall back to a did:key identity. When the
         // operator opted into provisioning (`DINA_PDS_PROVISION=1` +

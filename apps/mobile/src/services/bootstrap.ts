@@ -63,7 +63,7 @@ import {
   setD2DSender,
   setDeviceRoleResolver,
   setDeviceScopeResolver,
-  setNodeDID,
+  setNodeDID, setNodeSigningPublicKey,
   setReviewPublishRepository,
   setServiceConfig,
   setServiceConfigRepository,
@@ -625,6 +625,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // surfaces "node DID not set" and pairing fails before any device
     // sees a code.
     setNodeDID(options.did);
+    // §6 — the staff setup code carries the node's signing pub so a
+    // joining clerk phone can seal its first request.
+    setNodeSigningPublicKey(options.signingKeypair.publicKey);
 
     // Egress senders — Core's route handlers for /v1/service/query,
     // /v1/service/respond, and /v1/msg/send all delegate to these

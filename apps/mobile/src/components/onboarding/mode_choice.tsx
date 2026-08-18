@@ -16,6 +16,8 @@ export interface ModeChoiceProps {
   onCreate: () => void;
   onRecover: () => void;
   onExternalAtproto: () => void;
+  /** §6.3 — this phone joins an EXISTING business as a staff device. */
+  onJoinStaff: () => void;
   onBack: () => void;
 }
 
@@ -49,6 +51,13 @@ export function ModeChoice(props: ModeChoiceProps): React.ReactElement {
         title="Restore from recovery phrase"
         body="Restore your identity on this device. Saved memories stay on your old device's vault."
         onPress={props.onRecover}
+      />
+      <View style={styles.spacer} />
+      <ChoiceCard
+        glyph={'\u25C8'}
+        title="Join a business as staff"
+        body="Your manager shared a staff code. This phone acts on their orders — it never holds their vault."
+        onPress={props.onJoinStaff}
       />
     </OnboardingShell>
   );

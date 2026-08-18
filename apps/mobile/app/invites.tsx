@@ -243,7 +243,12 @@ export default function InvitesScreen(): React.ReactElement {
               </Text>
               <Text style={styles.rowMeta}>
                 {STATE_LABEL[entry.state]}
-                {entry.state === 'active' && !entry.activation_proven ? ' · confirming' : ''}
+                {/* Only the REDEEMER waits for the activation pong; an
+                    inviter's active row is simply active, so "confirming"
+                    on it read as a state that never resolved. */}
+                {entry.state === 'active' && entry.role === 'redeemer' && !entry.activation_proven
+                  ? ' · confirming'
+                  : ''}
                 {entry.state === 'held' ? ' · tap to decide' : ''}
               </Text>
             </View>

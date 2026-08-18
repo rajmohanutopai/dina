@@ -19,6 +19,7 @@
  * Hidden from the tab bar.
  */
 
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { Stack } from 'expo-router';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -35,7 +36,8 @@ import {
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getNodeDID, type AgentScope } from '@dina/core';
+import { getNodeDID,
+  getNodeSigningPublicKey, type AgentScope } from '@dina/core';
 import {
   generatePairingCode,
   listDevices,
@@ -271,11 +273,15 @@ export default function PairedDevicesScreen() {
       if (nodeDid === null) {
         throw new Error('Node identity not ready yet — wait for boot to finish and retry.');
       }
+      const signingPub = getNodeSigningPublicKey();
       const setupCode = buildAgentSetupCode({
         msgboxUrl: resolveMsgBoxURL(),
         homenodeDid: nodeDid,
         deviceName: name,
         code,
+        // §6 — a joining STAFF phone seals its first request to this key;
+        // agents ignore the extra field.
+        ...(signingPub === null ? {} : { nodeSigningPubHex: bytesToHex(signingPub) }),
       });
       setLiveCode({ code, expiresAt, deviceName: name, role, scope, setupCode });
     } catch (err) {

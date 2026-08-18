@@ -51,14 +51,16 @@ import {
   writeInstallMarker,
 } from '../services/install_marker';
 import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
+import { loadStaffIdentity } from '../services/staff_identity_store';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
 
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 import { PassphraseField } from './PassphraseField';
+import { StaffShellRedirect } from './staff_shell_redirect';
 
-export type Mode = 'loading' | 'onboarding' | 'locked' | 'unlocking' | 'unlocked';
+export type Mode = 'loading' | 'onboarding' | 'staff' | 'locked' | 'unlocking' | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 
@@ -148,7 +150,11 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         if (existing !== null) {
           setMode('locked');
         } else {
-          setMode('onboarding');
+          // §6.3 — a staff phone provisions no vault. If this device has
+          // joined a business as staff, its home is the staff shell, not
+          // onboarding.
+          const staff = await loadStaffIdentity();
+          setMode(staff !== null ? 'staff' : 'onboarding');
         }
       } catch (err) {
         if (cancelled) return;
@@ -296,6 +302,10 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
 
   if (mode === 'onboarding') {
     return <OnboardingFlow />;
+  }
+
+  if (mode === 'staff') {
+    return <StaffShellRedirect />;
   }
 
   // `locked` or `unlocking` — returning-user passphrase form.

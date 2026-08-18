@@ -83,6 +83,22 @@ export function setNodeDID(did: string): void {
 }
 
 /** This node's DID (set at startup), or null before identity is loaded. */
+/**
+ * The node's Ed25519 SIGNING public key, for surfaces that mint
+ * connection metadata (the §6 staff setup code carries it so a joining
+ * phone can seal its first request). Public information — the same key
+ * the DID doc publishes as `#dina_signing`.
+ */
+let nodeSigningPub: Uint8Array | null = null;
+
+export function setNodeSigningPublicKey(pub: Uint8Array | null): void {
+  nodeSigningPub = pub;
+}
+
+export function getNodeSigningPublicKey(): Uint8Array | null {
+  return nodeSigningPub;
+}
+
 export function getNodeDID(): string | null {
   return nodeDID;
 }
