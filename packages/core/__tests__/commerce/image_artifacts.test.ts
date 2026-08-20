@@ -370,3 +370,33 @@ describe('the SQLite artifact store', () => {
     expect(first?.bytes).toBeGreaterThan(0);
   });
 });
+
+describe('BLOB adapter parity — op-sqlite ArrayBuffer vs better-sqlite3 Buffer', () => {
+  // getBytes only calls db.query; a minimal stub is enough to reproduce
+  // each adapter's BLOB return shape.
+  function repoReturning(bytes: unknown, contentHash: string): SQLiteCommerceImageArtifactRepository {
+    const db = {
+      query: () => [{ bytes, content_hash: contentHash }],
+    } as unknown as ConstructorParameters<typeof SQLiteCommerceImageArtifactRepository>[0];
+    return new SQLiteCommerceImageArtifactRepository(db);
+  }
+
+  it('coerces a bare ArrayBuffer (op-sqlite mobile) to a Uint8Array and validates', () => {
+    const payload = new Uint8Array([1, 2, 3, 4, 5]);
+    const hash = bytesToHex(sha256(payload));
+    const asArrayBuffer = payload.buffer.slice(0); // op-sqlite hands back an ArrayBuffer
+    const out = repoReturning(asArrayBuffer, hash).getBytes('a1');
+    expect(out).toBeInstanceOf(Uint8Array);
+    expect(Array.from(out ?? [])).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('passes a Uint8Array/Buffer (better-sqlite3 server) through unchanged', () => {
+    const payload = new Uint8Array([7, 8, 9]);
+    const hash = bytesToHex(sha256(payload));
+    expect(Array.from(repoReturning(payload, hash).getBytes('a1') ?? [])).toEqual([7, 8, 9]);
+  });
+
+  it('a non-buffer blob value reads as absent (refuses egress, no throw)', () => {
+    expect(repoReturning({ not: 'bytes' }, 'deadbeef').getBytes('a1')).toBeNull();
+  });
+});

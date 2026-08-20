@@ -343,6 +343,23 @@ function metaFromRow(row: ArtifactRow): CommerceImageArtifact | null {
   };
 }
 
+/**
+ * Normalize a SQLite BLOB read to a Uint8Array. better-sqlite3 returns a
+ * Node Buffer (already a Uint8Array); op-sqlite returns an ArrayBuffer.
+ * Anything else (or a null column) yields null so the caller treats the
+ * page as absent rather than transmitting garbage.
+ */
+function toUint8Array(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  // op-sqlite may hand back a typed-array view over a shared buffer.
+  if (ArrayBuffer.isView(value)) {
+    const view = value as ArrayBufferView;
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  }
+  return null;
+}
+
 export class SQLiteCommerceImageArtifactRepository implements CommerceImageArtifactRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
@@ -383,7 +400,13 @@ export class SQLiteCommerceImageArtifactRepository implements CommerceImageArtif
     );
     const row = rows[0];
     if (row === undefined) return null;
-    const bytes = row.bytes;
+    // A BLOB column comes back as a Node Buffer (already a Uint8Array) on
+    // better-sqlite3, but as an ArrayBuffer on op-sqlite (mobile) — the
+    // DBRow type says Uint8Array, but the op-sqlite runtime disagrees.
+    // Normalize so the hash + downstream egress never see a bare
+    // ArrayBuffer — `sha256` rejects one with "expected Uint8Array".
+    const bytes = toUint8Array(row.bytes as unknown);
+    if (bytes === null) return null;
     // VERIFIED ON READ, the same discipline as every store here: a blob
     // edited after writing reads as absent, and an absent page refuses
     // egress rather than transmitting bytes nobody authorized.
