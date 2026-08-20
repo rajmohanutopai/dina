@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.dinaattest'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.dinaattest"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // Google Play Integrity — Standard requests + Device Recall. Resolved
+  // from Google Maven at build time; bump as newer versions ship.
+  implementation 'com.google.android.play:integrity:1.4.0'
+}

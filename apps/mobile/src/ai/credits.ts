@@ -30,6 +30,29 @@ import {
 
 import * as Keychain from '../services/keychain';
 
+import type { CreditsAttestation } from '@dina/protocol';
+
+/**
+ * Choose the platform attestation to claim with. iOS → DeviceCheck.
+ * Android → Play Integrity when a real device produces a token; when it
+ * does not (emulator / no Play services / dev fake-attest), fall back to
+ * the DeviceCheck seam so the dev override (which the dev grants server
+ * expects as `devicecheck`) still drives an emulator claim. Returns null
+ * only when no attestation can be produced at all → the claim parks as
+ * 'unavailable' and BYOK stays the door.
+ */
+async function resolveAttestation(
+  platform: 'ios' | 'android',
+  deps: ClaimDeps,
+): Promise<CreditsAttestation | null> {
+  if (platform === 'android') {
+    const piToken = deps.getPlayIntegrityToken ? await deps.getPlayIntegrityToken() : null;
+    if (piToken !== null) return { kind: 'play_integrity', token: piToken };
+  }
+  const dcToken = await deps.getDeviceCheckToken();
+  return dcToken === null ? null : { kind: 'devicecheck', token: dcToken };
+}
+
 const KEY_SERVICE = 'dina.credits.key';
 const STATE_SERVICE = 'dina.credits.state';
 const USERNAME = 'dina_credits';
@@ -214,8 +237,18 @@ export function __resetCreditsCachesForTest(): void {
 // ----------------------------------------------------------------- claim
 
 export interface ClaimDeps {
-  /** Native attestation seam — null on sim/dev (no DeviceCheck). */
+  /**
+   * iOS DeviceCheck seam (also the dev fake-attest override, any
+   * platform) — null on sim/dev without the override.
+   */
   getDeviceCheckToken: () => Promise<string | null>;
+  /**
+   * Android Play Integrity seam — a real integrity token on a genuine
+   * device, null on an emulator / no-Play-services / dev override. When
+   * it yields null on Android, the flow falls back to the DeviceCheck
+   * seam so the dev fake-attest path still drives an emulator claim.
+   */
+  getPlayIntegrityToken?: () => Promise<string | null>;
   fetchImpl?: typeof fetch;
   /** Backoff schedule in ms (in-session retries on transient failures). */
   backoffMs?: number[];
@@ -259,8 +292,8 @@ async function runClaimFlowInner(
   const config = await fetchCreditsConfig(platform, fetchImpl);
   if (!config.enabled) return state.status; // stays unclaimed; retried next boot
 
-  const token = await deps.getDeviceCheckToken();
-  if (token === null) {
+  const attestation = await resolveAttestation(platform, deps);
+  if (attestation === null) {
     await saveState({ status: 'unavailable' });
     return 'unavailable';
   }
@@ -273,7 +306,7 @@ async function runClaimFlowInner(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           platform,
-          attestation: { kind: 'devicecheck', token },
+          attestation,
         }),
       });
       if (res.status === 200) {

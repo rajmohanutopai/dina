@@ -23,6 +23,15 @@ export interface GrantsConfig {
   enabledAndroid: boolean;
   /** Kill switch — overrides everything; getConfig reports disabled. */
   paused: boolean;
+  /**
+   * DEV / E2E ONLY — let an Android claim (kind `devicecheck`, a fake
+   * token) pass the attestation gate so an emulator can drive a real
+   * mint. Pairs with GRANTS_FAKE_DEVICECHECK (the DeviceState stub) and
+   * the client's EXPO_PUBLIC_DINA_FAKE_ATTEST. Defaults FALSE; the prod
+   * deploy never sets it. Without it, Android claims refuse exactly as
+   * before (`attestation_failed`) — the production path is untouched.
+   */
+  devAllowAndroidClaim: boolean;
 
   /** Cap for newly provisioned keys, USD. */
   grantUsd: number;
@@ -43,6 +52,17 @@ export interface GrantsConfig {
   deviceCheckPrivateKey: string;
   /** Apple environment: api.development vs api. */
   deviceCheckEnv: 'development' | 'production';
+
+  /**
+   * Android Play Integrity credentials. The service account is granted
+   * the Play Integrity API on the app's Google Cloud project; its key
+   * decodes integrity tokens and writes Device Recall. Required only when
+   * `enabledAndroid` (and not the dev bypass).
+   */
+  androidPackageName: string;
+  googleServiceAccountEmail: string;
+  /** PKCS8 PEM of the service-account private key (inject via secret). */
+  googleServiceAccountPrivateKey: string;
 }
 
 class ConfigError extends Error {}
@@ -86,6 +106,7 @@ export function loadConfig(
     enabledIos: bool(env, 'GRANTS_ENABLED_IOS', true),
     enabledAndroid: bool(env, 'GRANTS_ENABLED_ANDROID', false),
     paused: bool(env, 'GRANTS_PAUSED', false),
+    devAllowAndroidClaim: bool(env, 'GRANTS_DEV_ALLOW_ANDROID', false),
 
     grantUsd: num(env, 'GRANTS_GRANT_USD', 0.25),
     modelPin: str(env, 'GRANTS_MODEL_PIN', 'deepseek/deepseek-v4-flash-0731'),
@@ -100,6 +121,14 @@ export function loadConfig(
     deviceCheckPrivateKey: str(env, 'DEVICECHECK_PRIVATE_KEY', '').replace(/\\n/g, '\n'),
     deviceCheckEnv:
       str(env, 'DEVICECHECK_ENV', 'development') === 'production' ? 'production' : 'development',
+
+    androidPackageName: str(env, 'ANDROID_PACKAGE_NAME', 'com.dinakernel.mobile'),
+    googleServiceAccountEmail: str(env, 'GOOGLE_SERVICE_ACCOUNT_EMAIL', ''),
+    // Same \n-unescape as the Apple .p8 — PEMs ride single-line env vars.
+    googleServiceAccountPrivateKey: str(env, 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY', '').replace(
+      /\\n/g,
+      '\n',
+    ),
   };
 
   if (cfg.grantUsd <= 0 || cfg.grantUsd > 5) {
@@ -117,6 +146,15 @@ export function loadConfig(
       if (cfg.appleTeamId === '') missing.push('APPLE_TEAM_ID');
       if (cfg.deviceCheckKeyId === '') missing.push('DEVICECHECK_KEY_ID');
       if (cfg.deviceCheckPrivateKey === '') missing.push('DEVICECHECK_PRIVATE_KEY');
+    }
+    // Real Android (Play Integrity) needs the Google service account. The
+    // dev bypass (devAllowAndroidClaim) drives the fake DeviceState stub
+    // instead, so it does NOT require these — an emulator run stays
+    // secret-free.
+    if (cfg.enabledAndroid && !cfg.devAllowAndroidClaim) {
+      if (cfg.googleServiceAccountEmail === '') missing.push('GOOGLE_SERVICE_ACCOUNT_EMAIL');
+      if (cfg.googleServiceAccountPrivateKey === '')
+        missing.push('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY');
     }
     if (missing.length > 0) {
       throw new ConfigError(`missing required secrets: ${missing.join(', ')}`);

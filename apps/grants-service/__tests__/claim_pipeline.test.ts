@@ -17,6 +17,7 @@ function makeConfig(over: Partial<GrantsConfig> = {}): GrantsConfig {
     enabledIos: true,
     enabledAndroid: false,
     paused: false,
+    devAllowAndroidClaim: false,
     grantUsd: 0.25,
     modelPin: 'deepseek/deepseek-v4-pro',
     estConversations: 40,
@@ -26,6 +27,9 @@ function makeConfig(over: Partial<GrantsConfig> = {}): GrantsConfig {
     deviceCheckKeyId: 'KEY',
     deviceCheckPrivateKey: 'PEM',
     deviceCheckEnv: 'development',
+    androidPackageName: 'com.dinakernel.mobile',
+    googleServiceAccountEmail: 'sa@proj.iam.gserviceaccount.com',
+    googleServiceAccountPrivateKey: 'PEM',
     ...over,
   };
 }
@@ -81,12 +85,16 @@ function makeDeps(over: Partial<ClaimDeps> = {}): ClaimDeps & {
   provisioner: FakeProvisioner;
   ledger: FakeLedger;
 } {
+  // One shared fake stands in for BOTH platforms' backends, so a test
+  // pokes `deps.deviceState` regardless of the request's platform.
+  const deviceState = new FakeDeviceState();
   return {
     config: makeConfig(),
-    deviceState: new FakeDeviceState(),
+    deviceStates: { ios: deviceState, android: deviceState },
     provisioner: new FakeProvisioner(),
     ledger: new FakeLedger(),
     now: () => 1_750_000_000_000,
+    deviceState,
     ...over,
   } as ClaimDeps & {
     deviceState: FakeDeviceState;
@@ -194,6 +202,100 @@ describe('processClaim — gate order and refusals', () => {
     const out = await processClaim(deps, GOOD_BODY);
     expect(out).toEqual({ status: 409, body: { error: 'already_claimed' } });
     expect(deps.provisioner.calls).toHaveLength(0);
+  });
+});
+
+describe('processClaim — dev-only Android claim gate (GRANTS_DEV_ALLOW_ANDROID)', () => {
+  const ANDROID_BODY = {
+    platform: 'android',
+    attestation: { kind: 'devicecheck', token: 'fake-android' },
+  };
+
+  it('mints for an android devicecheck claim when the dev flag AND android are on', async () => {
+    const deps = makeDeps({
+      config: makeConfig({ enabledAndroid: true, devAllowAndroidClaim: true }),
+    });
+    const out = await processClaim(deps, ANDROID_BODY);
+    expect(out.status).toBe(200);
+    expect(deps.ledger.rows[0].platform).toBe('android');
+  });
+
+  it('still refuses an android claim when the dev flag is OFF (production path intact)', async () => {
+    // Android enabled but the dev gate closed: the attestation check
+    // rejects the non-iOS claim exactly as before this flag existed.
+    const deps = makeDeps({
+      config: makeConfig({ enabledAndroid: true, devAllowAndroidClaim: false }),
+    });
+    const out = await processClaim(deps, ANDROID_BODY);
+    expect(out).toEqual({ status: 403, body: { error: 'attestation_failed' } });
+    expect(deps.provisioner.calls).toHaveLength(0);
+  });
+
+  it('the dev flag does not open a non-devicecheck android kind (play_integrity still refused)', async () => {
+    const deps = makeDeps({
+      config: makeConfig({ enabledAndroid: true, devAllowAndroidClaim: true }),
+    });
+    const out = await processClaim(deps, {
+      platform: 'android',
+      attestation: { kind: 'play_integrity', token: 't' },
+    });
+    expect(out).toEqual({ status: 403, body: { error: 'attestation_failed' } });
+  });
+});
+
+describe('processClaim — real Android (Play Integrity)', () => {
+  const ANDROID_PI = {
+    platform: 'android',
+    attestation: { kind: 'play_integrity', token: 'pi-token' },
+  };
+
+  it('mints for a play_integrity claim when android is enabled (no dev flag)', async () => {
+    const deps = makeDeps({ config: makeConfig({ enabledAndroid: true }) });
+    const out = await processClaim(deps, ANDROID_PI);
+    expect(out.status).toBe(200);
+    expect(deps.ledger.rows[0].platform).toBe('android');
+    // Device Recall bit gets written on a fresh grant.
+    expect(deps.deviceState.setClaimedCalls).toBe(1);
+  });
+
+  it('refuses a devicecheck token on real android — only play_integrity is accepted', async () => {
+    const deps = makeDeps({ config: makeConfig({ enabledAndroid: true }) });
+    const out = await processClaim(deps, {
+      platform: 'android',
+      attestation: { kind: 'devicecheck', token: 'x' },
+    });
+    expect(out).toEqual({ status: 403, body: { error: 'attestation_failed' } });
+  });
+
+  it('already_claimed when the Device Recall bit is set — and does NOT provision', async () => {
+    const deps = makeDeps({ config: makeConfig({ enabledAndroid: true }) });
+    deps.deviceState.claimed = true;
+    const out = await processClaim(deps, ANDROID_PI);
+    expect(out).toEqual({ status: 409, body: { error: 'already_claimed' } });
+    expect(deps.provisioner.calls).toHaveLength(0);
+  });
+
+  it('a play_integrity claim while android is OFF is platform_disabled (before attestation)', async () => {
+    const deps = makeDeps(); // enabledAndroid defaults false
+    const out = await processClaim(deps, ANDROID_PI);
+    expect(out).toEqual({ status: 403, body: { error: 'platform_disabled' } });
+    expect(deps.deviceState.setClaimedCalls).toBe(0);
+  });
+
+  it('a transient Play Integrity outage → 503 attestation_unavailable (device retries)', async () => {
+    const deps = makeDeps({ config: makeConfig({ enabledAndroid: true }) });
+    deps.deviceState.unavailable = true;
+    const out = await processClaim(deps, ANDROID_PI);
+    expect(out).toEqual({ status: 503, body: { error: 'attestation_unavailable' } });
+    expect(deps.provisioner.calls).toHaveLength(0);
+  });
+
+  it('an enabled platform with no backend wired → transient, never a hard refusal', async () => {
+    const deps = makeDeps({ config: makeConfig({ enabledAndroid: true }) });
+    // Simulate a boot misconfig: android enabled but no backend in the map.
+    (deps as unknown as { deviceStates: Record<string, unknown> }).deviceStates = {};
+    const out = await processClaim(deps, ANDROID_PI);
+    expect(out).toEqual({ status: 503, body: { error: 'attestation_unavailable' } });
   });
 });
 

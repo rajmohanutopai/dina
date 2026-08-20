@@ -10,6 +10,8 @@ const SECRETS = {
   APPLE_TEAM_ID: 'TEAM',
   DEVICECHECK_KEY_ID: 'KID',
   DEVICECHECK_PRIVATE_KEY: 'PEM',
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: 'sa@proj.iam.gserviceaccount.com',
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: 'PEM',
 };
 
 describe('loadConfig', () => {
@@ -58,6 +60,37 @@ describe('loadConfig', () => {
       GRANTS_ENABLED_IOS: 'false',
     });
     expect(cfg.enabledIos).toBe(false);
+  });
+
+  it('requires Google service-account secrets when android grants are enabled', () => {
+    expect(() =>
+      loadConfig({
+        OPENROUTER_PROVISIONING_KEY: 'p',
+        GRANTS_ENABLED_IOS: 'false',
+        GRANTS_ENABLED_ANDROID: 'true',
+      }),
+    ).toThrow(/GOOGLE_SERVICE_ACCOUNT_EMAIL/);
+  });
+
+  it('the dev Android bypass exempts Android from Google secrets', () => {
+    // Emulator dev run: android enabled + dev flag → fake stub, no creds.
+    const cfg = loadConfig({
+      OPENROUTER_PROVISIONING_KEY: 'p',
+      GRANTS_ENABLED_IOS: 'false',
+      GRANTS_ENABLED_ANDROID: 'true',
+      GRANTS_DEV_ALLOW_ANDROID: '1',
+    });
+    expect(cfg.enabledAndroid).toBe(true);
+    expect(cfg.devAllowAndroidClaim).toBe(true);
+    expect(cfg.googleServiceAccountEmail).toBe('');
+  });
+
+  it('\\n-escaped Google private key is unescaped into real newlines', () => {
+    const cfg = loadConfig({
+      ...SECRETS,
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN-----\\nline\\n-----END-----',
+    });
+    expect(cfg.googleServiceAccountPrivateKey).toBe('-----BEGIN-----\nline\n-----END-----');
   });
 
   it('degraded mode boots without any secrets', () => {

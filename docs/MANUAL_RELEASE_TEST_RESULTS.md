@@ -2710,3 +2710,118 @@ behind the wrong filter (screenshot-confirmed). Fixed; risky then passed 3/3.
 talk → services → peerlens → logs), `--continue`/`--only`, PASS/FAIL/SKIP tally.
 All shell scripts `bash -n` clean; mobile `tsc --noEmit` clean. Held uncommitted
 (standing no-commit constraint).
+
+---
+
+# Android RELEASE build — real device sanity (2026-08-19)
+
+**Build:** `./gradlew :app:assembleRelease --no-daemon` (JDK 17, Gradle 9.0.0) →
+signed release APK, 117 MB, `com.dinakernel.mobile`. JS is bundled — no Metro, no
+`adb reverse`. This is the shape a TestFlight/Play tester runs.
+**Device:** `emulator-5554`, Pixel_10, Android 17. Screen 1080×2424; uiautomator
+downsample scale 0.594 (device_px = display_px ÷ 0.594).
+**Infra:** hosted TEST — `test-pds` / `test-appview` / `test-mailbox.dinakernel.com`.
+**Driver:** raw `adb shell input tap/text` at device coordinates + `uiautomator
+dump` for state. (See harness note below — Maestro could not drive the composer on
+this release build.)
+
+## Harness note — Maestro can't tap the composer on this Android release build
+Maestro's `tapOn: index-mode-chip-*` reports COMPLETED but the mode never switches
+(the active-state testIDs — `index-mode-pill`, `chat-input`, `send-button` — never
+appear). A raw `adb shell input tap` at the correct DEVICE coordinate (display ÷
+0.594) DOES switch the mode and surface every active testID. So this is a
+Maestro/Android release-build tap-registration quirk, **not** an app defect. All
+composer interaction below was driven by adb at device coords, reading state from
+`uiautomator dump`. `dina_details.md` endorses adb for the Android sim.
+
+## BLOCKER — dev Gemini key's Google Cloud project is DENIED (every LLM row)
+`/ask "What does Emma like"` answered: *"I ran into a problem reaching the AI
+provider. Please try again in a moment."* — twice, persistent. Logcat:
+`[agentic_loop] provider.chat threw: Error/Error`.
+
+Root cause (verified with `curl`, not guessed):
+- The app is correctly pinned to `gemini-3.5-flash` (`packages/brain/src/constants.ts`).
+- The baked-in `EXPO_PUBLIC_DINA_DEV_GEMINI_API_KEY` (the ONLY LLM provider in the
+  build — no OpenRouter/OpenAI/Anthropic dev key present) returns **403
+  PERMISSION_DENIED — "Your project has been denied access. Please contact
+  support."** on `gemini-3.5-flash` and `gemini-3.1-flash-lite`.
+- The one model the key still authenticates against, `gemini-2.0-flash`, is
+  **retired — 404 "no longer available, use gemini-3.6-flash"**.
+
+This is an AI-provider ACCOUNT issue (Google denied the dev project), not a Dina
+code defect. It blocks every LLM-dependent row on this build until a working
+provider key is supplied — either a fresh Gemini key (new project) re-baked into
+`.env` + rebuild, or another provider key configured via Settings → AI Provider
+(BYOK) on the running app.
+
+## Rows exercised this run
+
+| Row | What it proves | Result |
+|-----|----------------|--------|
+| MT-02 | Release APK installs + launches, no native crash | ✅ PASS |
+| MRS-12 / MT-03 | Real onboarding on release build (no dev auto-unlock), real `did:plc` provisioned via test-PDS + PLC, MsgBox endpoint published | ✅ PASS |
+| MRS-01 (store) | `/remember "Emma loves dinosaurs"` → written to vault, "Stored in General vault." Vault write + SQLCipher persona DB work on the release build. | ⚠ PARTIAL — store OK; intelligent persona routing NOT verifiable (LLM denied → General is the graceful-degradation default, not a proven classification) |
+| MRS-02 (Ask recall) | `/ask` retrieves + reasons over vault memory | ❌ BLOCKED — AI provider denied (see blocker) |
+| MRS-03 (enriched reminders) | Remember date → auto reminder card, context weave | ❌ BLOCKED — reminder planning is an LLM step |
+| MRS-04/05 (Talk) | two-Dina D2D over MsgBox | ⏭ SKIP — needs a 2nd live node up this run |
+| MRS-06/07/08 (Agent/Security/Approvals) | dina-agent intent gate, locked-vault denial, risky-action approval | ⏭ SKIP — needs dina-agent CLI + OpenClaw paired |
+| MRS-10/11 (Services) | provider discovery + query | ⏭ SKIP — needs a 2nd provider node + LLM routing |
+| MRS-13 / MT-13 (restart durability) | vault survives kill/reopen | ⏭ SKIP this run (proven on iOS MT-11/MT-05; not re-driven on Android release) |
+
+**Honest bottom line:** the Android RELEASE build itself is sound where it can be
+tested without the LLM — it installs, launches, onboards a real `did:plc` against
+the hosted test infra, and writes to the encrypted vault. Every row that needs the
+AI provider is blocked by the denied dev Gemini key, which is an account/infra
+problem outside the app. Nothing here points at an Android-specific code defect.
+Held uncommitted (standing no-commit constraint).
+
+---
+
+# Android Starter Credits (Play Integrity) — live E2E via dev bypass (2026-08-20)
+
+Drove the newly-built Android credits claim chain end to end on the real emulator,
+using the dev bypass (no Google Play Console + no real device needed for the
+plumbing): a local grants service with `GRANTS_DEV_ALLOW_ANDROID=1` + fake
+DeviceState stub + a static-key provisioner (`GRANTS_DEV_STATIC_KEY`, so no
+OpenRouter provisioning key needed), the release APK rebuilt with
+`EXPO_PUBLIC_DINA_FAKE_ATTEST` + `EXPO_PUBLIC_DINA_GRANTS_URL=http://10.0.2.2:8300`,
+and a dev-only `usesCleartextTraffic` in the (gitignored) prebuild manifest.
+
+| Step | Result |
+|------|--------|
+| Grants `getConfig?platform=android` | ✅ `{"enabled":true,…}` — Android credits ON |
+| Raw `claimGrant` (android + fake attest) | ✅ pipeline mints → 200 with the wire shape |
+| Real app boot claim | ✅ emulator → `getConfig` + `claimGrant` → server logs **"grant minted" platform:android** |
+| Onboarding "Connect AI" | ✅ the **"Start free · Your first conversations are free"** card renders on Android (never did before this feature) |
+| Tap "Start free" | ✅ onboarding claim path → server **"grant minted"** again → OpenRouter set ACTIVE |
+| AI providers screen | ✅ **"Dina Starter Credits — ACTIVE"**, `Model: deepseek-v4-flash-0731`, "runs directly through OpenRouter" |
+| Ask "What can you do" | ✅ routed through the credits grant → `provider.chat threw: APICallError` (the error type changed from the dead-Gemini `Error/Error` to the OpenAI-compatible SDK's `APICallError` — proof the active provider switched to OpenRouter). The placeholder key is rejected by OpenRouter by design. |
+
+**What this proves:** the whole Android credits chain works live — client attests →
+grants service verifies (dev stub) → provisions → client stores the key + activates
+OpenRouter → Ask routes through the grant.
+
+### Real-answer close — REAL OpenRouter provisioner + a genuine LLM answer
+
+Re-ran with the **real** `OpenRouterProvisioner` (sourced the test infra's
+`OPENROUTER_PROVISIONING_KEY` from `deploy/managed/infra/infra-test.env`, no static
+key). Verified independently first: a raw Android claim minted a genuine 73-char
+`sk-or-v1…` runtime key ($0.25 cap) via the actual OpenRouter provisioning API, and
+that key called `deepseek/deepseek-v4-flash-0731` on OpenRouter successfully. Then
+reset the app, re-onboarded, tapped "Start free" (server logged **"grant minted"**),
+and asked *"In one sentence, what is the capital of France and one famous landmark
+there"* →
+
+> **DINA: "The capital of France is Paris, and its most famous landmark is the Eiffel Tower."**
+
+A real LLM answer, through a real credits-granted OpenRouter key, on the Android app.
+The **entire** Android Starter Credits chain — free-credits-on-first-launch → real
+provisioning → real answer — is proven live end to end. The only path still needing
+an operator + physical device is the real Play Integrity attestation (native module,
+Play Console), unchanged from the runbook.
+
+**Local dev-only changes to revert/keep-local (NOT for prod):** the
+`usesCleartextTraffic="true"` in `android/app/src/main/AndroidManifest.xml`
+(gitignored prebuild); the shell-injected `EXPO_PUBLIC_*` dev vars (not in `.env`).
+The `GRANTS_DEV_STATIC_KEY` + `GRANTS_DEV_ALLOW_ANDROID` code paths are dev-gated,
+default-off, and safe to keep (held uncommitted with the rest).

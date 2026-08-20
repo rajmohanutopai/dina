@@ -20,7 +20,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { loadActiveProvider, saveActiveProvider } from '../../ai/active_provider';
-import { getDeviceCheckToken } from '../../ai/attestation';
+import { getDeviceCheckToken, getPlayIntegrityToken } from '../../ai/attestation';
 import { fetchCreditsConfig, runClaimFlow } from '../../ai/credits';
 import {
   PROVIDERS,
@@ -77,6 +77,7 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
       // just short-circuits (already claimed).
       const status = await runClaimFlow(Platform.OS === 'android' ? 'android' : 'ios', {
         getDeviceCheckToken,
+        getPlayIntegrityToken,
         backoffMs: [0],
       });
       if (status === 'claimed') {
@@ -113,11 +114,15 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
       const list = await getConfiguredProviders();
       if (cancelled) return;
       void (async () => {
-        const [cfg, token] = await Promise.all([
-          fetchCreditsConfig(Platform.OS === 'android' ? 'android' : 'ios'),
-          getDeviceCheckToken(),
-        ]);
-        if (!cancelled) setCreditsAvailable(cfg.enabled && token !== null);
+        const platform = Platform.OS === 'android' ? 'android' : 'ios';
+        // Android attests via Play Integrity; fall back to the DeviceCheck
+        // seam so the dev fake-attest override still previews as available.
+        const attest =
+          platform === 'android'
+            ? (await getPlayIntegrityToken()) ?? (await getDeviceCheckToken())
+            : await getDeviceCheckToken();
+        const cfg = await fetchCreditsConfig(platform);
+        if (!cancelled) setCreditsAvailable(cfg.enabled && attest !== null);
       })();
       if (list.length > 0) {
         // Prefer the persisted active provider if it's in the configured set.

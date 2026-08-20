@@ -26,11 +26,17 @@ import { parseClaimGrantRequest } from '@dina/protocol';
 
 import type { GrantsConfig } from './config';
 import type { DeviceState, GrantLedger, KeyProvisioner } from './ports';
-import type { ClaimGrantResponse, ClaimRefusalCode } from '@dina/protocol';
+import type { ClaimGrantResponse, ClaimRefusalCode, CreditsPlatform } from '@dina/protocol';
 
 export interface ClaimDeps {
   config: GrantsConfig;
-  deviceState: DeviceState;
+  /**
+   * The attestation backend per platform: iOS → DeviceCheck, Android →
+   * Play Integrity. A platform with no entry is treated as a transient
+   * outage (should not happen once its `enabled*` flag is on — a missing
+   * wire is our misconfig, never the device's fault).
+   */
+  deviceStates: Partial<Record<CreditsPlatform, DeviceState>>;
   provisioner: KeyProvisioner;
   ledger: GrantLedger;
   /** Injectable clock (ms). */
@@ -52,7 +58,7 @@ export type ClaimOutcome =
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function processClaim(deps: ClaimDeps, rawBody: unknown): Promise<ClaimOutcome> {
-  const { config, deviceState, provisioner, ledger } = deps;
+  const { config, provisioner, ledger } = deps;
   const now = deps.now ?? Date.now;
   const noop = (): void => undefined;
   const log = deps.log ?? { info: noop, warn: noop, error: noop };
@@ -60,7 +66,9 @@ export async function processClaim(deps: ClaimDeps, rawBody: unknown): Promise<C
   const req = parseClaimGrantRequest(rawBody);
   if (req === null) return { status: 400, body: { error: 'bad_request' } };
 
-  // Platform gating before anything else — Android is OFF at v1.
+  // Platform gating before anything else — each platform is enabled by
+  // its own config flag (iOS on; Android on once Play Integrity creds are
+  // wired and GRANTS_ENABLED_ANDROID is set).
   const enabled = req.platform === 'ios' ? config.enabledIos : config.enabledAndroid;
   if (!enabled) {
     return { status: 403, body: { error: 'platform_disabled' } };
@@ -79,14 +87,41 @@ export async function processClaim(deps: ClaimDeps, rawBody: unknown): Promise<C
     }
   }
 
-  // v1 supports DeviceCheck on iOS. Other kinds (app_attest is the
-  // documented target; play_integrity awaits Android enablement) refuse
-  // cleanly rather than crash — the parser already guaranteed shape.
-  if (req.platform !== 'ios' || req.attestation.kind !== 'devicecheck') {
+  // App Attest is the documented iOS upgrade but is not wired on either
+  // platform yet — refuse it cleanly. Ruling it out here also narrows
+  // `attestation` to the token-bearing variants (devicecheck /
+  // play_integrity) for the deviceState calls below.
+  if (req.attestation.kind === 'app_attest') {
+    return { status: 403, body: { error: 'attestation_failed' } };
+  }
+  const { kind, token } = req.attestation;
+
+  // Platform ↔ attestation-kind policy:
+  //   iOS               → DeviceCheck (production).
+  //   Android (prod)    → Play Integrity.
+  //   Android (dev)     → DeviceCheck token under GRANTS_DEV_ALLOW_ANDROID
+  //                       (DEV / E2E ONLY) — pairs with the fake stub so
+  //                       an emulator can drive a real mint; the flag IS
+  //                       the trust decision, not the fake token.
+  const attestationOk =
+    (req.platform === 'ios' && kind === 'devicecheck') ||
+    (req.platform === 'android' && config.devAllowAndroidClaim && kind === 'devicecheck') ||
+    (req.platform === 'android' && !config.devAllowAndroidClaim && kind === 'play_integrity');
+  if (!attestationOk) {
     return { status: 403, body: { error: 'attestation_failed' } };
   }
 
-  const state = await deviceState.check(req.attestation.token);
+  // Resolve the attestation backend for this platform. A missing wire is
+  // our misconfig, not the device's fault → transient.
+  const deviceState = deps.deviceStates[req.platform];
+  if (deviceState === undefined) {
+    log.warn('no device-state backend wired for platform — transient refusal', {
+      platform: req.platform,
+    });
+    return { status: 503, body: { error: 'attestation_unavailable' } };
+  }
+
+  const state = await deviceState.check(token);
   if (state === 'invalid') {
     return { status: 403, body: { error: 'attestation_failed' } };
   }
@@ -114,7 +149,7 @@ export async function processClaim(deps: ClaimDeps, rawBody: unknown): Promise<C
   }
 
   try {
-    await deviceState.setClaimed(req.attestation.token);
+    await deviceState.setClaimed(token);
   } catch (err) {
     // Key already delivered — accept the bounded double-grant risk and
     // make it observable (spec tradeoff: fail on the generous side).

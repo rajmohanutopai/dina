@@ -56,8 +56,9 @@ export async function getDeviceCheckToken(): Promise<string | null> {
   const devOverride = process.env.EXPO_PUBLIC_DINA_FAKE_ATTEST;
   if (devOverride !== undefined && devOverride !== '') return devOverride;
 
-  // Android grants are disabled at v1 (no Play Integrity path yet); web
-  // has no attestation. Short-circuit before touching the native lookup.
+  // DeviceCheck is iOS-only; Android attests via getPlayIntegrityToken.
+  // Web has no attestation. Short-circuit before touching the native
+  // lookup.
   if (Platform.OS !== 'ios') return null;
 
   const mod = getNativeModule();
@@ -69,6 +70,59 @@ export async function getDeviceCheckToken(): Promise<string | null> {
     // An Apple-side failure is transient — null parks the claim as
     // 'unavailable', which retries on the next launch rather than
     // latching a permanent refusal.
+    return null;
+  }
+}
+
+/** A per-request hash to bind the Play Integrity token to. It is not
+ *  server-verified in v1 (freshness + Device Recall carry replay
+ *  protection), so any high-entropy value serves; a random 32-hex string
+ *  is plenty. */
+function randomRequestHash(): string {
+  const bytes = new Uint8Array(16);
+  const webCrypto = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => void } })
+    .crypto;
+  if (webCrypto?.getRandomValues !== undefined) {
+    webCrypto.getRandomValues(bytes);
+  } else {
+    // Fallback for a runtime with no crypto — the hash is non-secret.
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Android Play Integrity token for the anonymous grant claim. Resolves
+ * null on every path where a real token can't be produced — iOS, the dev
+ * fake-attest override (the DeviceCheck seam carries the fake instead),
+ * a missing cloud-project-number config, the native module absent from
+ * the running binary, or no Play services — so the claim parks as
+ * 'unavailable' and BYOK stays the door. A genuine Play Integrity error
+ * rejects; the caller maps a rejection to null / transient retry.
+ */
+export async function getPlayIntegrityToken(): Promise<string | null> {
+  // Dev override lives on the DeviceCheck seam; here it means "don't try
+  // real Play Integrity" so the claim uses the fake `devicecheck` token
+  // that the dev grants server expects.
+  const devOverride = process.env.EXPO_PUBLIC_DINA_FAKE_ATTEST;
+  if (devOverride !== undefined && devOverride !== '') return null;
+
+  if (Platform.OS !== 'android') return null;
+
+  // Read literally — a dynamic env[key] does not inline in release builds.
+  const projectRaw = process.env.EXPO_PUBLIC_DINA_PLAY_CLOUD_PROJECT_NUMBER;
+  if (projectRaw === undefined || projectRaw === '') return null;
+  const cloudProjectNumber = Number(projectRaw);
+  if (!Number.isFinite(cloudProjectNumber) || cloudProjectNumber <= 0) return null;
+
+  const mod = getNativeModule();
+  if (mod === null || mod.generatePlayIntegrityToken === undefined) return null;
+
+  try {
+    return await mod.generatePlayIntegrityToken(cloudProjectNumber, randomRequestHash());
+  } catch {
+    // A Play-side failure is transient — null parks the claim, retried
+    // next launch, never a permanent refusal.
     return null;
   }
 }

@@ -107,11 +107,14 @@ Claim pipeline:
 1. Verify attestation: iOS → **App Attest** assertion (genuine-app
    proof — the stronger primitive; v1 may ship DeviceCheck-token-only
    with App Attest as the documented target) + DeviceCheck server API.
-   Android → **disabled at v1** (`getConfig.enabled=false` per
-   platform) until Play Integrity / Device Recall verification is done —
-   no weak path for symmetry's sake.
+   Android → **Play Integrity** (see the Android section below); the
+   platform stays `getConfig.enabled=false` until its Google Cloud
+   credentials are wired, so there is still no weak path shipped by
+   default.
 2. Per-device once-only: iOS → DeviceCheck **bits** (bit0 = claimed;
-   Apple stores the state — we keep no device ledger).
+   Apple stores the state — we keep no device ledger). Android → Play
+   Integrity **Device Recall** bit0 (Google stores the state — same "no
+   device ledger on our side" posture).
 3. Provision: OpenRouter provisioning API → create runtime key,
    `limit = grantUsd` (~$0.25 ≈ ₹20), label = opaque grant id.
 4. Ledger row (ops only, identity-free): `{ grant_id, or_key_id,
@@ -154,6 +157,78 @@ leaked or farmed keys each die at their cap.
   completes. Unreachable service → silent retry w/ backoff + the
   "add your own key" affordance is always present. Never a blocking
   spinner, never an error wall.
+
+## Android path (Play Integrity + Device Recall) — BUILT
+
+The Android analog of iOS DeviceCheck. Same shape everywhere: an
+anonymous claim, no DID, a per-device once-only bit stored on the
+platform's side, a spend-capped OpenRouter key in return.
+
+**Client (`modules/dina-attest` Android + `src/ai/attestation.ts`).** A
+Kotlin Expo module wraps the Play Integrity **Standard** API
+(`prepareIntegrityToken` once per cloud project, then `request` with a
+per-request hash). `getPlayIntegrityToken()` returns a token on a genuine
+device and null on every no-token path (iOS, emulator / no Play services,
+missing cloud-project config, dev override, native error) — so the claim
+parks as `unavailable` and BYOK stays the door, exactly like iOS.
+`runClaimFlow('android', …)` sends `{ kind: 'play_integrity', token }`;
+if Play Integrity yields null it falls back to the DeviceCheck seam, so
+the dev fake-attest override still drives an emulator claim.
+
+**Server (`apps/grants-service/src/play_integrity.ts`).** A
+`PlayIntegrityClient implements DeviceState`. `check` decodes the token
+via `…:decodeIntegrityToken` (authed with a Google service-account access
+token, minted in `google_oauth.ts`) and enforces:
+- **package binding** — `requestDetails.requestPackageName` == our app;
+- **freshness** — `timestampMillis` within 10 min (a stale token is a
+  replay → `invalid`);
+- **device integrity** — the verdict must include `MEETS_DEVICE_INTEGRITY`
+  (an emulator/rooted device reports only `MEETS_BASIC_INTEGRITY` or an
+  empty verdict → `invalid`). This is the anti-farm gate.
+Then it reads **Device Recall** `bitFirst` as the "already claimed" bit.
+`setClaimed` writes that bit via `…:writeDeviceRecall`. Same
+invalid / unavailable / `{claimed}` contract as DeviceCheck — a Google
+outage or our own misconfig (401/403/5xx) is `unavailable` (the device
+retries), never a device brick.
+
+**Replay model (v1).** Freshness + Device Recall carry replay protection:
+a genuine device claims once, the recall bit blocks re-grants, and the
+global daily ceiling + per-IP limit bound the small window before the bit
+is written. A **server-issued signed challenge** (a stateless HMAC nonce
+the client feeds to Play Integrity and the server verifies) is the
+documented hardening, deferred — it needs no protocol change (the nonce
+rides inside the token), so it can land later without a client break.
+
+**Enablement.** `GRANTS_ENABLED_ANDROID=1` plus the Google secrets
+(`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`,
+`ANDROID_PACKAGE_NAME`) turn it on; config validation refuses to boot
+Android-enabled without them. The dev bypass (`GRANTS_DEV_ALLOW_ANDROID`,
+paired with the fake DeviceState stub and the client's
+`EXPO_PUBLIC_DINA_FAKE_ATTEST`) lets an emulator drive a real mint with no
+Google creds — DEV/E2E ONLY, never in the prod deploy.
+
+### Play Console setup runbook (operator — the one part code can't do)
+
+Play Integrity only "recognizes" the app once it is on a Play Console
+track, so this dovetails with the Android Play Store submission.
+
+1. **Play Console → App integrity → Play Integrity API.** Link the app to
+   a Google Cloud project; note its **cloud project number**.
+2. **Turn on Device Recall** for the app (App integrity → Device Recall)
+   — this is what backs the once-per-device bit.
+3. **Google Cloud → IAM → Service Accounts.** Create a service account,
+   grant it the Play Integrity API on the project, and download a JSON
+   key. Feed its `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL` and
+   `private_key` → `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` (single-line,
+   `\n`-escaped) to the grants service.
+4. **Enable the Play Integrity API** in the Cloud project's API library.
+5. **Client build:** set `EXPO_PUBLIC_DINA_PLAY_CLOUD_PROJECT_NUMBER` to
+   the cloud project number (build-time inline). Put the app on at least
+   an internal-testing track so integrity verdicts evaluate.
+6. **Flip on:** `GRANTS_ENABLED_ANDROID=1` on the grants service, redeploy.
+7. **Verify on a REAL device** (an emulator fails device integrity by
+   design): fresh install → onboard → the grant lands; a second install
+   on the same physical device → `already_claimed` (Device Recall held).
 
 ## UI design
 
@@ -318,8 +393,11 @@ row then appears on the wall/low-balance cards, driven by getConfig.
 
 ## Open questions (parked, not blockers)
 
-- Android Play Integrity / Device Recall availability + quota — verify
-  before enabling the Android grant path at all.
+- ✅ Android Play Integrity / Device Recall — the grant path is BUILT
+  (client Kotlin module + server verifier, see the Android section).
+  Remaining before enabling: the Play Console setup runbook + a
+  real-device E2E, and a quota check on Google's decode/Device-Recall
+  APIs at expected claim volume.
 - App Attest in v1 vs DeviceCheck-token-only first (App Attest is the
   documented target either way).
 - Grant size A/B later (config-driven, no release needed).

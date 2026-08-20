@@ -18,6 +18,7 @@ function makeConfig(over: Partial<GrantsConfig> = {}): GrantsConfig {
     enabledIos: true,
     enabledAndroid: false,
     paused: false,
+    devAllowAndroidClaim: false,
     grantUsd: 0.25,
     modelPin: 'deepseek/deepseek-v4-pro',
     estConversations: 40,
@@ -27,6 +28,9 @@ function makeConfig(over: Partial<GrantsConfig> = {}): GrantsConfig {
     deviceCheckKeyId: 'K',
     deviceCheckPrivateKey: 'PEM',
     deviceCheckEnv: 'development',
+    androidPackageName: 'com.dinakernel.mobile',
+    googleServiceAccountEmail: 'sa@proj.iam.gserviceaccount.com',
+    googleServiceAccountPrivateKey: 'PEM',
     ...over,
   };
 }
@@ -43,7 +47,7 @@ const okLedger: GrantLedger = { insert: () => undefined, countSince: () => 0, cl
 async function makeApp(over: Partial<Parameters<typeof buildServer>[0]> = {}): Promise<FastifyInstance> {
   return buildServer({
     config: makeConfig(),
-    deviceState: okDeviceState,
+    deviceStates: { ios: okDeviceState, android: okDeviceState },
     provisioner: okProvisioner,
     ledger: okLedger,
     logLevel: 'silent',

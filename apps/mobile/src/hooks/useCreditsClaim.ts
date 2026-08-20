@@ -21,7 +21,7 @@ import { Platform } from 'react-native';
 
 import { saveActiveProvider, loadActiveProvider } from '../ai/active_provider';
 import { swapAgenticActiveProvider } from '../ai/agentic_swap';
-import { getDeviceCheckToken } from '../ai/attestation';
+import { getDeviceCheckToken, getPlayIntegrityToken } from '../ai/attestation';
 import { wireBrainChatProvider } from '../ai/brain_wiring';
 import { runClaimFlow } from '../ai/credits';
 import { getApiKey } from '../ai/provider';
@@ -41,6 +41,7 @@ export function useCreditsClaim(unlocked: boolean): void {
     if (!unlocked) return;
     void runClaimFlow(Platform.OS === 'android' ? 'android' : 'ios', {
       getDeviceCheckToken,
+      getPlayIntegrityToken,
       onClaimed: activateGrantIfUnconfigured,
     });
   }, [unlocked]);

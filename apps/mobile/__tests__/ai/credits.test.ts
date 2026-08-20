@@ -314,3 +314,69 @@ describe('custody', () => {
     expect((await loadCreditsState()).status).toBe('unclaimed');
   });
 });
+
+describe('runClaimFlow — Android attestation selection', () => {
+  /** Captures the JSON body of the claim POST (the 2nd fetch). */
+  function capturingFetch(responses: { status: number; body: unknown }[]): {
+    fetchImpl: typeof fetch;
+    claimBodies: unknown[];
+  } {
+    const queue = [...responses];
+    const claimBodies: unknown[] = [];
+    const fetchImpl = jest.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.body !== undefined) claimBodies.push(JSON.parse(String(init.body)));
+      const r = queue.shift();
+      if (r === undefined) throw new Error('unexpected extra fetch');
+      return { status: r.status, json: async () => r.body };
+    }) as unknown as typeof fetch;
+    return { fetchImpl, claimBodies };
+  }
+
+  it('a genuine device claims with a play_integrity attestation', async () => {
+    const { fetchImpl, claimBodies } = capturingFetch([
+      { status: 200, body: GOOD_CONFIG },
+      { status: 200, body: GOOD_GRANT },
+    ]);
+    const status = await runClaimFlow('android', {
+      getDeviceCheckToken: async () => null,
+      getPlayIntegrityToken: async () => 'pi-token',
+      fetchImpl,
+      backoffMs: [0],
+    });
+    expect(status).toBe('claimed');
+    expect(claimBodies[0]).toMatchObject({
+      platform: 'android',
+      attestation: { kind: 'play_integrity', token: 'pi-token' },
+    });
+  });
+
+  it('falls back to a devicecheck attestation when Play Integrity yields null (dev override)', async () => {
+    const { fetchImpl, claimBodies } = capturingFetch([
+      { status: 200, body: GOOD_CONFIG },
+      { status: 200, body: GOOD_GRANT },
+    ]);
+    const status = await runClaimFlow('android', {
+      getPlayIntegrityToken: async () => null,
+      getDeviceCheckToken: async () => 'dc-fake',
+      fetchImpl,
+      backoffMs: [0],
+    });
+    expect(status).toBe('claimed');
+    expect(claimBodies[0]).toMatchObject({
+      platform: 'android',
+      attestation: { kind: 'devicecheck', token: 'dc-fake' },
+    });
+  });
+
+  it('parks as unavailable when neither attestation can be produced', async () => {
+    const { fetchImpl } = capturingFetch([{ status: 200, body: GOOD_CONFIG }]);
+    const status = await runClaimFlow('android', {
+      getPlayIntegrityToken: async () => null,
+      getDeviceCheckToken: async () => null,
+      fetchImpl,
+      backoffMs: [0],
+    });
+    expect(status).toBe('unavailable');
+    expect(await getGrantKey()).toBeNull();
+  });
+});

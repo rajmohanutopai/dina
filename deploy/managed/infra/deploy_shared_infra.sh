@@ -330,6 +330,7 @@ sync_grants_env() {
     block=$(printf '%s\n' \
         "# >>> grants (managed by deploy_shared_infra.sh - do not edit)" \
         "GRANTS_ENABLED_IOS=${GRANTS_ENABLED_IOS:-true}" \
+        "GRANTS_ENABLED_ANDROID=${GRANTS_ENABLED_ANDROID:-false}" \
         "GRANTS_PAUSED=${GRANTS_PAUSED:-false}" \
         "GRANTS_GRANT_USD=${GRANTS_GRANT_USD:-0.25}" \
         "GRANTS_MODEL_PIN=${GRANTS_MODEL_PIN:-deepseek/deepseek-v4-pro}" \
@@ -340,6 +341,9 @@ sync_grants_env() {
         "DEVICECHECK_KEY_ID=${DEVICECHECK_KEY_ID:-}" \
         "DEVICECHECK_PRIVATE_KEY=${DEVICECHECK_PRIVATE_KEY:-}" \
         "DEVICECHECK_ENV=${DEVICECHECK_ENV:-development}" \
+        "ANDROID_PACKAGE_NAME=${ANDROID_PACKAGE_NAME:-com.dinakernel.mobile}" \
+        "GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}" \
+        "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:-}" \
         "GRANTS_ALLOW_DEGRADED=${degraded}" \
         "# <<< grants")
     printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \

@@ -110,6 +110,42 @@
     </p>
 
     <!-- ============================================================ -->
+    <h1 id="android-credits">
+      Android Starter Credits (Play Integrity) <span class="status done">BUILT — NOT YET ENABLED</span>
+    </h1>
+    <p class="meta">
+      Design: <code>docs/CREDITS_DESIGN.md</code> → "Android path" + "Play Console setup runbook".
+      Closes the launch gap where Android users had no free credits (iOS-only at v1).
+    </p>
+    <ul>
+      <li>
+        <strong>Server</strong> (<code>apps/grants-service</code>): <code>PlayIntegrityClient</code>
+        implements <code>DeviceState</code> — decodes the token, requires
+        <code>MEETS_DEVICE_INTEGRITY</code> (emulator fails by design) + package + freshness, and
+        uses <strong>Device Recall bit0</strong> as the once-per-device gate (the Android analog of
+        DeviceCheck bits). <code>google_oauth.ts</code> mints the SA access token. The claim
+        pipeline now dispatches a <code>DeviceState</code> per platform. 89 tests, tsc clean.
+      </li>
+      <li>
+        <strong>Client</strong>: <code>modules/dina-attest</code> gains a Kotlin module (Play
+        Integrity Standard API + Device Recall); <code>attestation.getPlayIntegrityToken()</code>
+        and <code>credits.resolveAttestation()</code> send <code>play_integrity</code> on Android,
+        falling back to the <code>devicecheck</code> fake under the dev override. attestation 15 +
+        credits 25 tests, mobile tsc clean.
+      </li>
+      <li>
+        <strong>To enable:</strong> <code>GRANTS_ENABLED_ANDROID=1</code> + Google SA secrets +
+        client <code>EXPO_PUBLIC_DINA_PLAY_CLOUD_PROJECT_NUMBER</code>; needs the Play Console setup
+        (runbook) and a <strong>real-device</strong> E2E (an emulator can't attest). Dev shortcut:
+        <code>GRANTS_DEV_ALLOW_ANDROID=1</code> lets an emulator drive a real mint via the fake stub.
+      </li>
+      <li>
+        <strong>Deferred hardening:</strong> a server-issued signed-nonce challenge (freshness +
+        Device Recall carry replay protection in v1; no protocol change needed to add it later).
+      </li>
+    </ul>
+
+    <!-- ============================================================ -->
     <h1 id="commerce">
       Commerce &amp; Procurement Pack <span class="status done">LIVE — ROUND TRIP CLOSED</span>
     </h1>
