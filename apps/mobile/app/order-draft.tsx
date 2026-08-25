@@ -105,6 +105,21 @@ export default function OrderDraftScreen(): React.ReactElement {
     void reload();
   }, [reload]);
 
+  // A quote (or the supplier's confirmation) arriving over D2D while this
+  // screen is open is not pushed to the surface — there is no commerce
+  // event subscription yet — so a conversation still WAITING on a reply is
+  // polled until it lands. Without this the screen showed a stale
+  // "Asked — waiting" until a cold reload. Polling stops the moment no
+  // conversation is awaiting a reply.
+  useEffect(() => {
+    const awaiting = draft?.conversations.some(
+      (c) => c.state === 'sent' || c.state === 'submitted_unconfirmed',
+    );
+    if (awaiting !== true) return;
+    const id = setInterval(() => void reload(), 4000);
+    return () => clearInterval(id);
+  }, [draft, reload]);
+
   /** Run an operation; on `no_user_presence` raise the passphrase sheet. */
   const withPresence = useCallback(
     async (operation: () => Promise<void>) => {
