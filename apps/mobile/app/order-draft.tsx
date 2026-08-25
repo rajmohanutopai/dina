@@ -160,7 +160,13 @@ export default function OrderDraftScreen(): React.ReactElement {
           draftId: draft.draftId,
           conversationId: conversation.conversationId,
           quoteId: '',
-          projection: { region: { scheme: 'postal_area', value: askEdit?.postal ?? '000000' } },
+          // The order's delivery is the projection the quote was PRICED
+          // against, held by Core (the retained request). The surface must
+          // NOT re-send a region: `askEdit` is cleared the moment the RFQ
+          // goes out, so it defaulted to a bogus '000000' that diverged
+          // from the priced region and refused every approve as
+          // order_quote_mismatch. Omitting it approves against the priced
+          // region.
         });
         // §5.5 — the divergence column, exactly where the decision is.
         const badges = answer.divergence
@@ -179,7 +185,7 @@ export default function OrderDraftScreen(): React.ReactElement {
         Alert.alert('Approved', `The order is ready to send.\n\n${badges}`);
       });
     },
-    [askEdit?.postal, draft, withPresence],
+    [draft, withPresence],
   );
 
   const submitConversation = useCallback(

@@ -1772,17 +1772,6 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // own lines, quantities and total; the §9.1 arithmetic was verified
     // when the quote was accepted, and `verifyOrderAgainstQuote` re-binds
     // this order to that one exact revision below.
-    const projection =
-      body.projection !== null && typeof body.projection === 'object'
-        ? completeProjection(body.projection as Record<string, unknown>)
-        : body.projection;
-    if (projection === null || typeof projection !== 'object') {
-      return { status: 400, body: { error: 'projection is required' } };
-    }
-    const invalidProjection = validateDeliveryProjection(projection, hash);
-    if (invalidProjection !== null) {
-      return { status: 400, body: { error: 'invalid_projection', detail: invalidProjection } };
-    }
     // §9.9 — the order projection may only EXTEND the projection the quote
     // priced, and the yardstick is the request THIS NODE retained when it
     // asked. On the draft path Core sent that request itself, so a missing
@@ -1790,6 +1779,26 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     const retainedRequest = runtime.buyerQuoteRequests.get(quote.request_id);
     if (retainedRequest === null) {
       return { status: 409, body: { error: 'request_not_retained' } };
+    }
+    // The delivery is the projection the quote was PRICED against (the
+    // retained request) unless the surface deliberately EXTENDS it. A
+    // surface that omits the projection — the ask-time region isn't held
+    // once the RFQ goes out — approves against the priced region rather
+    // than a bogus default, which otherwise diverged and refused every
+    // approve as order_quote_mismatch.
+    const suppliedProjection =
+      body.projection !== null && typeof body.projection === 'object'
+        ? completeProjection(body.projection as Record<string, unknown>)
+        : null;
+    const projection =
+      suppliedProjection ??
+      completeProjection(retainedRequest.delivery.projection as unknown as Record<string, unknown>);
+    if (projection === null || typeof projection !== 'object') {
+      return { status: 400, body: { error: 'projection is required' } };
+    }
+    const invalidProjection = validateDeliveryProjection(projection, hash);
+    if (invalidProjection !== null) {
+      return { status: 400, body: { error: 'invalid_projection', detail: invalidProjection } };
     }
     const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
     const orderDraftBody = {

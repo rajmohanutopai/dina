@@ -316,13 +316,18 @@ export class InProcessOwnerCommerceClient {
     draftId: string;
     conversationId: string;
     quoteId: string;
-    projection: Record<string, unknown>;
+    /**
+     * Optional. Omit to approve against the projection the quote was
+     * PRICED against (Core's retained request); supply one only to
+     * deliberately EXTEND that projection (§9.9).
+     */
+    projection?: Record<string, unknown>;
   }): Promise<OrderApproveAnswer> {
     return this.post('/v1/commerce/orders/drafts/approve', {
       draft_id: args.draftId,
       conversation_id: args.conversationId,
       quote_id: args.quoteId,
-      projection: args.projection,
+      ...(args.projection !== undefined ? { projection: args.projection } : {}),
     }, 'orderApprove');
   }
 

@@ -236,6 +236,16 @@ describe('the UNCONDITIONAL presence gate', () => {
 });
 
 describe('approving, then sending, through the REAL machinery', () => {
+  it('approves against the PRICED projection when the surface omits one (§9.9 default)', async () => {
+    // The buyer surface clears its ask-time region once the RFQ goes out,
+    // so approve sends no projection; Core defaults to the retained
+    // (priced) request rather than refusing as order_quote_mismatch.
+    await provePresence();
+    const resp = await approve({ projection: undefined });
+    expect(resp.status).toBe(200);
+    expect(orderDrafts.get('odr-1')?.conversations[0]?.state).toBe('approved');
+  });
+
   it('mints a SOURCE-BOUND approval from Core-held facts and submits under it', async () => {
     await provePresence();
     const resp = await approve();
