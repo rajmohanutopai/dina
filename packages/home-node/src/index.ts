@@ -53,3 +53,16 @@ export type {
 } from './commerce_epoch';
 export { wireWorkflowPlane } from './workflow_plane';
 export type { WireWorkflowPlaneOptions, WiredWorkflowPlane } from './workflow_plane';
+export { createRepoProofChain } from './repo_proof_chain';
+export type {
+  AtprotoIdentityModule,
+  AtprotoLibs,
+  AtprotoRepoModule,
+  DidDoc,
+  DidService,
+  DidVerificationMethod,
+  FetchInitLike,
+  FetchLike,
+  FetchResponseLike,
+  RepoProofChainDeps,
+} from './repo_proof_chain';

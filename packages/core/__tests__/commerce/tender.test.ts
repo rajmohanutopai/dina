@@ -19,6 +19,7 @@ import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
 import { applyInboundBuyerResponse } from '../../src/commerce/buyer_response';
 import { installCommerceServiceQueryDispatch } from '../../src/commerce/buyer_sender';
+import { InMemoryDeclineDocumentRepository } from '../../src/commerce/decline_documents';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import {
   compareTender,
@@ -28,10 +29,9 @@ import {
   SQLiteTenderRepository,
   type TenderComparisonDeps,
 } from '../../src/commerce/tender';
-import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 
-import { makeProjection, makeSignedQuote, makeQuoteRequest } from './helpers';
+import { makeProjection, makeSignedQuote, makeQuoteRequest, moneyClosed } from './helpers';
 
 const hash: Sha256Fn = (data) => new Uint8Array(createHash('sha256').update(data).digest());
 const T0 = 1_800_000_000_000;
@@ -48,20 +48,22 @@ const EMPTY_DEPS: TenderComparisonDeps = {
 let tenders: InMemoryTenderRepository;
 let requests: InMemoryBuyerQuoteRequestRepository;
 let quotes: InMemoryBuyerQuoteRepository;
-let tradeDocs: InMemoryTradeDocumentRepository;
+let declineDocs: InMemoryDeclineDocumentRepository;
 let dispatched: { toDid: string; params: Record<string, unknown> }[];
 
 beforeEach(() => {
   tenders = new InMemoryTenderRepository();
   requests = new InMemoryBuyerQuoteRequestRepository();
   quotes = new InMemoryBuyerQuoteRepository();
-  tradeDocs = new InMemoryTradeDocumentRepository();
+  declineDocs = new InMemoryDeclineDocumentRepository();
   dispatched = [];
   installCommerceRuntime({
     tenders,
     buyerQuoteRequests: requests,
     buyerQuotes: quotes,
-    tradeDocuments: tradeDocs,
+    // The money line CLOSED: a tender is the money-free path and must not care.
+    money: moneyClosed(),
+    declineDocuments: declineDocs,
     orderDrafts: { list: () => [] },
     watermarks: new InMemoryCommerceEpochWatermarkRepository(),
     nodeDid: () => BUYER,

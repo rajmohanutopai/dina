@@ -265,9 +265,11 @@ describe('missing data is explained, never substituted (§13.4, FR-B7)', () => {
     expect(result.ranked[0]?.offer.quoteId).toBe('q-new');
   });
 
-  it('does not reward absence either', () => {
+  it('does not invent a maximum for absence against a top-rated incumbent', () => {
     // The mirror failure. If missing trust scored as 10000, the newcomer
-    // would beat a supplier with an excellent record.
+    // would beat a supplier with an excellent record. Both tie at 10000 here
+    // ONLY because the incumbent is itself at max trust — see the redistribution
+    // test below for what happens against a sub-maximal incumbent.
     const excellent = offer({
       quoteId: 'q-excellent',
       totalMinorUnits: '100000',
@@ -279,6 +281,27 @@ describe('missing data is explained, never substituted (§13.4, FR-B7)', () => {
     // Both score 10000 on the factors they share; the tie breaks on id. What
     // matters is that neither is ahead BECAUSE of the missing field.
     expect(result.ranked.map((r) => r.scoreBp)).toEqual([10000, 10000]);
+  });
+
+  it('redistributes the missing trust weight — absence is not penalised, so it can out-score a mediocre-but-known record', () => {
+    // The honest consequence of §13.4, which the max-trust case above hides: an
+    // unrated supplier is scored on the factors it HAS (the trust weight is
+    // redistributed), so with identical price and lead time it beats an
+    // incumbent whose KNOWN trust is mediocre. This is intended — absence is not
+    // treated as the worst; a mediocre record is not treated as automatically
+    // safer than an unknown one. §13.4's guarantee is "not scored as zero", NOT
+    // "no effect at all".
+    const mediocre = offer({
+      quoteId: 'q-mediocre',
+      totalMinorUnits: '100000',
+      leadTimeDays: 5,
+      trustBp: 3000,
+    });
+    const newcomer = offer({ quoteId: 'q-new', totalMinorUnits: '100000', leadTimeDays: 5 });
+    const result = rankOffers([mediocre, newcomer], REQUIREMENTS, NOW);
+    const scoreOf = (id: string) => result.ranked.find((r) => r.offer.quoteId === id)?.scoreBp ?? -1;
+    expect(scoreOf('q-new')).toBeGreaterThan(scoreOf('q-mediocre'));
+    expect(result.ranked[0]?.offer.quoteId).toBe('q-new');
   });
 
   it('reports the weight actually applied, so scores are read honestly', () => {

@@ -94,6 +94,9 @@ class StubRepo implements PeopleRepository {
   resolveByIdentity(_type: string, _value: string): Person | null {
     return null;
   }
+  removeIdentity(): boolean {
+    return false;
+  }
   upsertIdentity(): void {
     /* no-op */
   }

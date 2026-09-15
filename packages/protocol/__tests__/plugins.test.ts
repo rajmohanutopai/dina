@@ -612,6 +612,72 @@ describe('validatePluginManifest — golden paths', () => {
   });
 });
 
+/**
+ * §15.6 — the card TEMPLATE is checked against the capability's own result
+ * schema. This is the one check the renderer cannot make: at render a slot
+ * naming a field nobody sends simply drops its block, which looks exactly
+ * like a runner omitting an optional field, so a typo would ship a card that
+ * quietly renders short forever.
+ */
+describe('validatePluginManifest — the card template’s slots (§15.6)', () => {
+  it('accepts a template whose slots name declared result fields', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].card = {
+        version: 1,
+        blocks: [
+          { kind: 'title', text: 'Flight' },
+          { kind: 'keyValue', label: 'Status', value: '{status}' },
+        ],
+      };
+    });
+    expectOk(validatePluginManifest(normalize(m)));
+  });
+
+  it('refuses a slot the result schema does not declare, and names it', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].card = {
+        version: 1,
+        blocks: [{ kind: 'keyValue', label: 'Gate', value: '{gate}' }],
+      };
+    });
+    const result = validatePluginManifest(normalize(m));
+    expect(result.ok).toBe(false);
+    const errors = result.ok ? [] : result.errors;
+    expect(errors.map((e) => e.code)).toContain('unknown_card_slot');
+    expect(JSON.stringify(errors)).toContain('gate');
+  });
+
+  it('refuses a slot on a capability whose result schema declares no properties', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      delete mm.capabilities[0].result_schema;
+      mm.capabilities[0].card = {
+        version: 1,
+        blocks: [{ kind: 'keyValue', label: 'Status', value: '{status}' }],
+      };
+    });
+    const result = validatePluginManifest(normalize(m));
+    expect(result.ok).toBe(false);
+    expect((result.ok ? [] : result.errors).map((e) => e.code)).toContain('card_slot_without_schema');
+  });
+
+  it('a template of literal text names no slots and needs no schema', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      delete mm.capabilities[0].result_schema;
+      mm.capabilities[0].card = { version: 1, blocks: [{ kind: 'body', text: 'A flight was watched.' }] };
+    });
+    expectOk(validatePluginManifest(normalize(m)));
+  });
+
+  it('refuses a card that is not an object at all', () => {
+    const m = mutate(runnerManifest(), (mm) => {
+      mm.capabilities[0].card = 'a card, honest';
+    });
+    const result = validatePluginManifest(normalize(m));
+    expect(result.ok).toBe(false);
+    expect((result.ok ? [] : result.errors).map((e) => e.code)).toContain('bad_card');
+  });
+});
+
 describe('validatePluginManifest — rejections (never first-match-wins)', () => {
   const cases: [string, PluginManifest, string][] = [
     [

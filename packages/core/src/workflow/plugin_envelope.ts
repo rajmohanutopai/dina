@@ -56,8 +56,13 @@ const VALID_ACTION_CLASSES: ReadonlySet<string> = new Set([
 const MAX_SCHEMA_SNAPSHOT_DEPTH = 32;
 const MAX_SCHEMA_SNAPSHOT_BYTES = 128 * 1024;
 
-/** A bounded, non-empty, spoof-free identity/hash/key string (PLG-29 #14). */
-function isBoundedIdentityString(v: unknown): v is string {
+/**
+ * A bounded, non-empty, spoof-free identity/hash/key string (PLG-29 #14).
+ * Exported so a PRODUCER can refuse a value this parser would quarantine
+ * before it charges a grant or stages a task — an envelope that fails here
+ * at claim is terminalized `stale_authority` with nothing to release it.
+ */
+export function isBoundedIdentityString(v: unknown): v is string {
   return (
     typeof v === 'string' &&
     v.length > 0 &&
@@ -132,6 +137,16 @@ export interface PluginTaskEnvelope {
   readonly approved_scope_hash: string;
   /** Pinned result schema — completion validates against THIS. */
   readonly schema_snapshot: unknown;
+  /**
+   * §15.6 — the pinned CARD TEMPLATE: the capability's `card`, as it stood
+   * when the owner approved this invocation. The render fills its slots from
+   * the validated result, so the layout the answer arrives in is the one the
+   * consent card showed, not whatever the install carries by the time the
+   * runner replies. `card` lives in the PRESENTATION hash (§8.1), so unlike
+   * `schema_snapshot` this is deliberately NOT a claim-time check: §14 is
+   * explicit that a presentation change never blocks work in flight.
+   */
+  readonly card_snapshot?: unknown;
   /** Config revision the approval was granted under (claim check six). */
   readonly config_revision: number;
   /** Stable across attempts — the logical execution. */
@@ -243,6 +258,10 @@ const KNOWN_ENVELOPE_FIELDS: ReadonlySet<string> = new Set([
   'continuity_order_id',
   'approved_scope_hash',
   'schema_snapshot',
+  // §15.6 — the pinned card template. Optional: an envelope staged before the
+  // template existed, or by a capability that declares none, carries none, and
+  // its result renders on the `label: value` floor.
+  'card_snapshot',
   'config_revision',
   'execution_id',
   'idempotency_key',
@@ -318,6 +337,20 @@ export function parsePluginEnvelope(payload: string): PluginTaskEnvelope | null 
       return null; // non-serializable (cycle) → cannot canonicalize
     }
     if (snapshotBytes > MAX_SCHEMA_SNAPSHOT_BYTES) return null;
+  }
+  // The card template is walked and filled at render, so it is bounded the
+  // same way and for the same reason: a template too deep or too large to
+  // inspect quarantines the envelope at parse rather than throwing inside a
+  // render nobody can catch usefully.
+  if (p.card_snapshot !== undefined && p.card_snapshot !== null) {
+    if (exceedsDepth(p.card_snapshot, MAX_SCHEMA_SNAPSHOT_DEPTH)) return null;
+    let cardBytes: number;
+    try {
+      cardBytes = new TextEncoder().encode(JSON.stringify(p.card_snapshot) ?? '').length;
+    } catch {
+      return null;
+    }
+    if (cardBytes > MAX_SCHEMA_SNAPSHOT_BYTES) return null;
   }
   // Round-12 #2/#3/#6/#1: the optional authorization-provenance fields, when
   // present, must be well-formed — a malformed value must quarantine the whole

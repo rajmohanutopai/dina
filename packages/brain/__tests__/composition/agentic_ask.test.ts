@@ -61,6 +61,12 @@ function fakeAppView(): Parameters<typeof buildAgenticAskPipeline>[0]['appViewCl
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },
+    async searchCatalog() {
+      return [];
+    },
+    async getProfile() {
+      return null;
+    },
     async resolveTrust() {
       return {} as unknown as Awaited<
         ReturnType<
@@ -97,6 +103,10 @@ interface FakeTask { id: string; status: string; payload: string }
 function fakeCoreClient(): Parameters<typeof buildAgenticAskPipeline>[0]['coreClient'] {
   return {
     async findContactsByPreference() { return []; },
+    async contactLookup() { return null; },
+    // §6 plugin tools — nothing installed in this fixture; an ask is refused.
+    async listPluginToolCapabilities() { return []; },
+    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
     async createWorkflowTask() { return { task: {} as unknown as WorkflowTask, deduped: false }; },
     async getWorkflowTask() { return null; },
     async completeWorkflowTask() { return {} as unknown as WorkflowTask; },
@@ -112,6 +122,10 @@ function makeFakeWorkflowCoreClient(): {
   const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
   const client = {
     async findContactsByPreference() { return []; },
+    async contactLookup() { return null; },
+    // §6 plugin tools — nothing installed in this fixture; an ask is refused.
+    async listPluginToolCapabilities() { return []; },
+    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
       const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
@@ -159,14 +173,17 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 14 agentic tools on the tool registry', () => {
+  it('registers all 18 agentic tools on the tool registry', () => {
     // 10 substrate / discovery tools (incl. search_capabilities — the
     // Layer-4 intent→canonical-capability discovery step that precedes
     // search_provider_services) + classify_intent (re-routing mid-loop)
     // + draft_review (LLM-decided trigger for the inline review-draft
     // card flow) + schedule_reminder (first-class /ask path for "remind
-    // me to X" — closes MT-15-I2). The full set is documented in
-    // composition/agentic_ask.ts.
+    // me to X" — closes MT-15-I2) + the two PLUGIN_ARCHITECTURE §6 tools
+    // (list_plugin_capabilities / invoke_plugin — `/ask` into the owner's
+    // installed plugins, gated by Core) + recommend_offer (§5.A6 — the
+    // research loop commits its preference-weighed pick to the card). The
+    // full set is documented in composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
@@ -178,16 +195,20 @@ describe('buildAgenticAskPipeline', () => {
         'find_preferred_provider',
         'geocode',
         'get_full_content',
+        'invoke_plugin',
         'list_personas',
+        'list_plugin_capabilities',
         'query_service',
+        'recommend_offer',
         'schedule_reminder',
         'search_capabilities',
         'search_peerlens',
+        'search_products',
         'search_provider_services',
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(14);
+    expect(pipeline.tools.size()).toBe(18);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {

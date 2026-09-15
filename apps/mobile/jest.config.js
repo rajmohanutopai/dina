@@ -18,6 +18,10 @@ module.exports = {
     // Same fix for the `@dina/test-harness` package name — donor's mapper
     // pointed at `<rootDir>/../test-harness` (sibling-in-packages); now it's
     // two levels up + into `packages/`.
+    // §5.C1-mobile: the phone's repo-proof verifier imports the ESM-only
+    // `@atproto/*` statically (for Metro); ts-jest runs CommonJS, so boot tests
+    // get a stub that fails closed exactly as an unreachable publisher would.
+    '^@dina/net-expo/repo_proof$': '<rootDir>/__mocks__/dina-net-expo-repo-proof.ts',
     '^@dina/test-harness$': '<rootDir>/../../packages/test-harness/src/index',
     '^@dina/test-harness/(.*)$': '<rootDir>/../../packages/test-harness/src/$1',
     // Native mocks live alongside the tests, paths unchanged.

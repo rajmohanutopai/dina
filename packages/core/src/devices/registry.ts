@@ -662,6 +662,18 @@ export async function revokeDeviceByDidDurable(deviceDid: string): Promise<Devic
   return revokeDeviceDurable(device.deviceId);
 }
 
+/**
+ * The `RevokeDeviceByDid` every plugin teardown path (uninstall, decline, the
+ * abandoned-install sweep) should pass. Wraps `revokeDeviceByDidDurable` with the
+ * one rule those paths share: a device the registry no longer knows has nothing
+ * left to revoke, so not-found counts as durable — otherwise the install would be
+ * retained forever as a retry anchor for a revoke that can never happen.
+ */
+export async function revokePluginDeviceForTeardown(deviceDid: string): Promise<{ durable: boolean }> {
+  const revoked = await revokeDeviceByDidDurable(deviceDid);
+  return { durable: revoked.durable || !revoked.found };
+}
+
 /** Cut a device's auth access — unregister its DID from caller-type resolution. */
 function cutDeviceAccess(device: PairedDevice): void {
   // Round-12 #14: unregister the STORED `did` — the exact value hydration /

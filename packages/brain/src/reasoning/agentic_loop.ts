@@ -160,6 +160,10 @@ export interface AgenticLoopResult {
   providerErrorKind?: ProviderErrorKind;
 }
 
+/** Sent once when a turn produced neither text nor a tool call. */
+export const EMPTY_TURN_NUDGE =
+  'Your last turn had no text and no tool call. Write your answer to the question now, in full.';
+
 const DEFAULT_MAX_ITERATIONS = 8;
 const DEFAULT_MAX_TOOL_CALLS = 12;
 
@@ -362,6 +366,10 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
   let answer = '';
   let providerErrorMessage: string | undefined;
   let providerErrorKind: ProviderErrorKind | undefined;
+  // A reasoning model sometimes ends a turn having only thought — no tool
+  // call, no text. Once per turn the loop asks it to write the answer instead
+  // of returning nothing to the owner.
+  let emptyTurnNudged = false;
 
   console.log('[agentic_loop] start', {
     iteration,
@@ -474,6 +482,20 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     });
 
     if (resp.toolCalls.length === 0) {
+      if (resp.content.trim() === '' && !emptyTurnNudged && iteration + 1 < maxIterations) {
+        emptyTurnNudged = true;
+        console.log('[agentic_loop] empty turn — nudging for the answer', { iteration });
+        transcript = [
+          ...transcript,
+          {
+            role: 'assistant',
+            content: resp.content,
+            ...(resp.reasoning !== undefined ? { reasoning: resp.reasoning } : {}),
+          },
+          { role: 'user', content: EMPTY_TURN_NUDGE },
+        ];
+        continue;
+      }
       answer = resp.content;
       transcript = [
         ...transcript,

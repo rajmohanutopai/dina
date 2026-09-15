@@ -36,6 +36,7 @@
  * — that suite is the empirical oracle for changes here.
  */
 
+import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { ASK_RETRIEVAL_PLAN, renderPrompt } from '../llm/prompts';
 
 import type { LLMRouter } from '../llm/router_dispatch';
@@ -179,7 +180,7 @@ export function buildAskRetrievalPlannerCall(
         messages: [{ role: 'user', content: prompt }],
         ...(system !== '' ? { systemPrompt: system } : {}),
         temperature: 0.1,
-        maxTokens: 512,
+        maxTokens: SMALL_TASK_MAX_TOKENS,
         responseSchema: ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA,
       });
       return response.content;

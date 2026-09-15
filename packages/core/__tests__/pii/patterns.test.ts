@@ -52,7 +52,7 @@ describe('PII Tier 1 Regex Patterns', () => {
     });
 
     it('detects Aadhaar number (12-digit Indian ID)', () => {
-      const matches = detectPII('Aadhaar: 2345 6789 0123');
+      const matches = detectPII('Aadhaar: 2345 6789 0124');
       expect(matches.length).toBe(1);
       expect(matches[0].type).toBe('AADHAAR');
     });
@@ -64,10 +64,10 @@ describe('PII Tier 1 Regex Patterns', () => {
     });
 
     it('detects Indian PAN (AAAAA0000A format)', () => {
-      const matches = detectPII('PAN: ABCDE1234F');
+      const matches = detectPII('PAN: ABCPE1234F');
       expect(matches.length).toBe(1);
       expect(matches[0].type).toBe('PAN');
-      expect(matches[0].value).toBe('ABCDE1234F');
+      expect(matches[0].value).toBe('ABCPE1234F');
     });
 
     it('detects IFSC code', () => {

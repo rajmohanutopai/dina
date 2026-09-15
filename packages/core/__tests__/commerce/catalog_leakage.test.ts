@@ -232,8 +232,8 @@ describe('structured-identifier scan (§12.1 step 10)', () => {
     ['email', 'questions to raj.mohan@example.com'],
     ['phone', 'call 98765 43210 to order'],
     ['card number', 'legacy ref 4111 1111 1111 1111'],
-    ['aadhaar', 'ref 2345 6789 0123'],
-    ['pan', 'billing under ABCDE1234F'],
+    ['aadhaar', 'ref 2345 6789 0124'],
+    ['pan', 'billing under ABCPE1234F'],
     ['ifsc', 'remit to HDFC0001234'],
   ])('refuses a %s left in a free-text field', (_label, text) => {
     const verdict = dirty({ sku: 'C-1', description: text });
@@ -314,7 +314,7 @@ describe('structured-identifier scan (§12.1 step 10)', () => {
     // The separator is the only signal that tells the two apart, so it has to
     // be the thing the rule keys on — a product number is not written in
     // four-digit groups.
-    const verdict = gateCatalogForPublication([{ sku: '2345 6789 0123' }]);
+    const verdict = gateCatalogForPublication([{ sku: '2345 6789 0124' }]);
 
     expect(verdict.clean).toBe(false);
     expect(verdict.findings[0]?.refusal).toBe('personal_identifier_value');
@@ -409,7 +409,7 @@ describe('the classes with no derivable boundary', () => {
     // The exclusion is scoped to product-number fields. Free text is where a
     // leaked contact block actually arrives, and it scans at full strength.
     const verdict = gateCatalogForPublication([
-      { sku: 'C-1', description: 'invoice under ABCDE1234F' },
+      { sku: 'C-1', description: 'invoice under ABCPE1234F' },
     ]);
 
     expect(verdict.clean).toBe(false);

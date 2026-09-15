@@ -131,6 +131,8 @@ import {
   loadCatalogThroughConnector,
   type ConnectorKind,
 } from '../../commerce/connectors';
+import { askDeliveryFilingRail, askPaymentReminderRail } from '../../commerce/country_rails';
+import { authorQuoteDecline } from '../../commerce/decline_documents';
 import { performOrderEffect } from '../../commerce/effect_executor';
 import {
   reconcileFulfilment,
@@ -204,7 +206,7 @@ import {
   type AppViewAnswer,
 } from '../../commerce/relationship_resolver';
 import { RevshareService } from '../../commerce/revshare_service';
-import { commerceAvailability, getCommerceRuntime } from '../../commerce/runtime';
+import { commerceAvailability, getCommerceRuntime, type CommerceMoneyStores } from '../../commerce/runtime';
 import { resolveServiceBinding } from '../../commerce/service_binding';
 import { applySkuMint } from '../../commerce/sku_mint';
 import { escalateStaffOperation } from '../../commerce/staff_escalation';
@@ -221,16 +223,27 @@ import { buildSupplierInbox } from '../../commerce/supplier_inbox';
 import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
 import { compareTender, createTender } from '../../commerce/tender';
 import { buildTradeInbox } from '../../commerce/trade_inbox';
-import { rehydrateTradeDocument } from '../../commerce/trade_ledger';
+import { drainTradeSpool } from '../../commerce/trade_ingress';
+import {
+  isTradeDocumentKind,
+  rehydrateTradeDocument,
+  type TradeDocumentKind,
+} from '../../commerce/trade_ledger';
 import { TradeLedgerService } from '../../commerce/trade_ledger_service';
 import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
-import { revokeDeviceByDidDurable } from '../../devices/registry';
+import { revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
-import { confirmConsent, uninstall } from '../../plugins/install_service';
+import {
+  bindVerifiedRunnerDevice,
+  confirmConsent,
+  PluginCommerceObligationError,
+  uninstall,
+} from '../../plugins/install_service';
 import { getPluginInstallRepository } from '../../plugins/registry';
 
 import { getD2DSender } from './d2d_msg';
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
+import { teardownResponse } from './plugin_install';
 
 import type {
   CatalogDraftRepository,
@@ -2637,9 +2650,12 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     if (typeof body.install_id !== 'string' || typeof body.device_did !== 'string') {
       return { status: 400, body: { error: 'install_id and device_did are required' } };
     }
-    const installs = getPluginInstallRepository();
-    if (installs === null) return { status: 503, body: { error: 'plugin_registry_unavailable' } };
-    const bound = installs.bindPendingDevice(body.install_id, body.device_did, Date.now());
+    if (getPluginInstallRepository() === null) {
+      return { status: 503, body: { error: 'plugin_registry_unavailable' } };
+    }
+    // Only a REAL, unrevoked, role='plugin' device may be bound (the boot-wired
+    // verifier); a mistyped or non-plugin DID must never become a teardown target.
+    const bound = bindVerifiedRunnerDevice(body.install_id, body.device_did, Date.now());
     return bound
       ? { status: 200, body: { ok: true } }
       : { status: 409, body: { error: 'bind_refused' } };
@@ -2677,25 +2693,20 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     }
     let outcome;
     try {
-      // A device the registry no longer knows has nothing left to revoke —
-      // treating not-found as not-durable would leave the install stuck as a
-      // retry anchor for a revoke that can never happen.
-      outcome = await uninstall(body.install_id, Date.now(), async (deviceDid) => {
-        const revoked = await revokeDeviceByDidDurable(deviceDid);
-        return { durable: revoked.durable || !revoked.found };
-      });
+      // Not-found counts as durable (see `revokePluginDeviceForTeardown`).
+      outcome = await uninstall(body.install_id, Date.now(), revokePluginDeviceForTeardown);
     } catch (err) {
       // §16.4 — open obligations refuse the teardown; the operator resolves
-      // them first. Surfaced as a refusal, not a crash.
-      return {
-        status: 409,
-        body: { error: 'obligations_open', detail: err instanceof Error ? err.message : String(err) },
-      };
+      // them first. Surfaced as a refusal, not a crash. Any OTHER throw is a
+      // fault, not a refusal, and must not be dressed up as one.
+      if (err instanceof PluginCommerceObligationError) {
+        return { status: 409, body: { error: 'obligations_open', detail: err.message } };
+      }
+      throw err;
     }
-    if (outcome === null) return { status: 404, body: { error: 'no_such_install' } };
-    return outcome.removed
-      ? { status: 200, body: { ok: true, removed: true } }
-      : { status: 409, body: { error: 'retire_incomplete', detail: 'device revoke not durable; row retained for the sweeper' } };
+    // One teardown contract with the general plugin routes (`teardown_incomplete`
+    // when the device revoke was not durable and the row stays for the sweeper).
+    return teardownResponse(outcome);
   });
 
   router.get('/v1/commerce/inbox', async (req): Promise<CoreResponse> => {
@@ -2826,14 +2837,20 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     return awaiting;
   }
 
-  for (const kind of ['buyer', 'supplier'] as const) {
+  // `business` is the node's own paper identity (§5.D) — a third kind beside
+  // the two roles, because one node is one legal business.
+  for (const kind of ['buyer', 'supplier', 'business'] as const) {
     router.get(`/v1/commerce/settings/${kind}`, async (req): Promise<CoreResponse> => {
       const denied = ownerOnlyGuard(req);
       if (denied !== null) return denied;
       const runtime = getCommerceRuntime();
       if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
       const read =
-        kind === 'buyer' ? runtime.settings.readBuyer() : runtime.settings.readSupplier();
+        kind === 'buyer'
+          ? runtime.settings.readBuyer()
+          : kind === 'supplier'
+            ? runtime.settings.readSupplier()
+            : runtime.settings.readBusiness();
       if (read.ok) return { status: 200, body: { configured: true, settings: read.settings } };
       // ABSENT and INVALID are different answers. "Not configured yet" is a
       // starting point; "stored settings no longer validate" is a fault an
@@ -2858,7 +2875,9 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
       const written =
         kind === 'buyer'
           ? runtime.settings.writeBuyer(body as never)
-          : runtime.settings.writeSupplier(body as never);
+          : kind === 'supplier'
+            ? runtime.settings.writeSupplier(body as never)
+            : runtime.settings.writeBusiness(body as never);
       return written.ok
         ? { status: 200, body: { ok: true } }
         : { status: 400, body: { ok: false, findings: written.findings } };
@@ -5267,11 +5286,38 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   // shared with the D2D trade ingress and the tender comparison.
   // ==========================================================================
 
+  /**
+   * The money line (RESEARCHER_KERNEL_ARCHITECTURE §5.B1 Cut 3): every khata
+   * and revenue-share route opens the money stores through the runtime's
+   * `money()` — an `active` Commerce Pack install — and refuses with ONE shape
+   * when they are closed. 409, not 503: nothing will change by retrying; the
+   * owner installs, resumes, or re-consents the pack. The quote-decline and
+   * tender routes below never ask — they are the money-free path.
+   */
+  const moneyOrRefusal = (
+    runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  ): CommerceMoneyStores | CoreResponse => {
+    const money = runtime.money();
+    if (money.available) {
+      // Mail that waited while the line was closed lands before any money
+      // route reads or writes the ledger (a no-op with an empty spool).
+      drainTradeSpool(runtime, money.stores);
+      return money.stores;
+    }
+    return {
+      status: 409,
+      body: { error: 'commerce_pack_inactive', reason: money.reason, detail: money.detail },
+    };
+  };
+  const isRefusal = (value: CommerceMoneyStores | CoreResponse): value is CoreResponse =>
+    'status' in value;
+
   const tradeLedgerService = (
     runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+    money: CommerceMoneyStores,
   ): TradeLedgerService =>
     new TradeLedgerService({
-      documents: runtime.tradeDocuments,
+      documents: money.tradeDocuments,
       nodeDid: runtime.nodeDid,
       now: runtime.now,
       ...tradeRelationshipReaders(runtime),
@@ -5334,17 +5380,36 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'counterparty_did, purchase_order_id, supplier_order_id and lines are required' },
       };
     }
-    return tradeAnswerDispatched(
-      tradeLedgerService(runtime).issueDeliveryNote({
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const service = tradeLedgerService(runtime, money);
+    const outcome = service.issueDeliveryNote({
+      counterpartyDid: body.counterparty_did,
+      purchaseOrderId: body.purchase_order_id,
+      supplierOrderId: body.supplier_order_id,
+      lines: body.lines as never,
+      ...(typeof body.expected_by === 'string' ? { expectedBy: body.expected_by } : {}),
+    });
+    const answer = await tradeAnswerDispatched(outcome, body.counterparty_did, 'delivery_note');
+    // §5.D — goods are on their way, so an active country pack may have a
+    // filing to make (an e-way bill, an invoice). The hook is guarded and its
+    // outcome is advisory: a note already signed, stored and sent must never
+    // be undone by a filing the node could not stage.
+    if (outcome.ok) {
+      const priced = service.priceDeliveryNote({ deliveryNoteDigest: outcome.document.note_digest });
+      const terms = service.paymentTerms({
         counterpartyDid: body.counterparty_did,
         purchaseOrderId: body.purchase_order_id,
-        supplierOrderId: body.supplier_order_id,
-        lines: body.lines as never,
-        ...(typeof body.expected_by === 'string' ? { expectedBy: body.expected_by } : {}),
-      }),
-      body.counterparty_did,
-      'delivery_note',
-    );
+      });
+      askDeliveryFilingRail({
+        note: outcome.document,
+        counterpartyDid: body.counterparty_did,
+        value: priced.ok ? priced.value : null,
+        creditDays: terms?.creditDays ?? null,
+        askAtMs: runtime.now(),
+      });
+    }
+    return answer;
   });
 
   /**
@@ -5365,7 +5430,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (typeof body.delivery_note_digest !== 'string' || !Array.isArray(body.lines)) {
       return { status: 400, body: { error: 'delivery_note_digest and lines are required' } };
     }
-    const service = tradeLedgerService(runtime);
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const service = tradeLedgerService(runtime, money);
     if (caller.kind === 'staff') {
       // §6.4/§6.5 — a person at THAT device, then the deterministic gate
       // against the receipt's value priced from the bound quote. The
@@ -5416,7 +5483,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         deliveryNoteDigest: body.delivery_note_digest,
         lines: body.lines as never,
       }),
-      runtime.tradeDocuments.get(body.delivery_note_digest)?.counterpartyDid ?? '',
+      money.tradeDocuments.get(body.delivery_note_digest)?.counterpartyDid ?? '',
       'delivery_receipt',
     );
   });
@@ -5435,8 +5502,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return { status: 400, body: { error: 'supplier_did, amount and method are required' } };
     }
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
     return tradeAnswerDispatched(
-      tradeLedgerService(runtime).issuePaymentNote({
+      tradeLedgerService(runtime, money).issuePaymentNote({
         supplierDid: body.supplier_did,
         amount: body.amount as never,
         method: body.method as never,
@@ -5463,13 +5532,15 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'payment_note_digest and a kind of received | disputed are required' },
       };
     }
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
     return tradeAnswerDispatched(
-      tradeLedgerService(runtime).acknowledgePayment({
+      tradeLedgerService(runtime, money).acknowledgePayment({
         paymentNoteDigest: body.payment_note_digest,
         kind: body.kind,
         ...(body.amount_received !== undefined ? { amountReceived: body.amount_received as never } : {}),
       }),
-      runtime.tradeDocuments.get(body.payment_note_digest)?.counterpartyDid ?? '',
+      money.tradeDocuments.get(body.payment_note_digest)?.counterpartyDid ?? '',
       'payment_ack',
     );
   });
@@ -5499,9 +5570,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 404, body: { error: 'no retained request with that id' } };
     }
     return tradeAnswer(
-      tradeLedgerService(runtime).declineQuote({
+      authorQuoteDecline({
         request: retained,
         reasonCode: body.reason_code,
+        nodeDid: runtime.nodeDid(),
+        nowMs: runtime.now(),
+        repository: runtime.declineDocuments,
       }),
     );
   });
@@ -5520,7 +5594,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // documents back: a stranger gets a refusal rather than a fabricated
     // "settled 0", and a dual-role pair (each supplies the other) is TWO
     // ledgers, so the caller must name the side when both exist.
-    const sides = tradeOrientations(runtime, counterparty);
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const sides = tradeOrientations(runtime, money, counterparty);
     if (!sides.supplier && !sides.buyer) {
       return { status: 404, body: { error: 'no_trade_relationship' } };
     }
@@ -5532,7 +5608,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 409, body: { error: 'role_required' } };
     }
     const role: 'buyer' | 'supplier' = roleParam ?? (sides.supplier ? 'supplier' : 'buyer');
-    const service = tradeLedgerService(runtime);
+    const service = tradeLedgerService(runtime, money);
     const fold = service.statement({ counterpartyDid: counterparty, currency, role });
     if (!fold.ok) return { status: 409, body: { error: fold.error } };
     // §4.5 — derived dues ride the statement, overdue FLAGGED and never
@@ -5555,6 +5631,74 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
    * document travels EXACTLY as retained: digest-sealed bytes, never
    * rebuilt, so a re-send cannot become a second document.
    */
+  /**
+   * §5.D / TRADE_FIRST §4.5 — the OWNER asks a counterparty for a matured
+   * payment. Owner-initiated by construction: this route exists because the
+   * owner tapped an overdue row on the statement they opened. Nothing sweeps,
+   * nothing schedules; the ask then cards like every other plugin write, so
+   * the owner reads the exact message target before it leaves the node.
+   */
+  router.post('/v1/commerce/trade/remind', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const counterparty = typeof body.counterparty_did === 'string' ? body.counterparty_did : '';
+    const purchaseOrderId = typeof body.purchase_order_id === 'string' ? body.purchase_order_id : '';
+    const dueAt = typeof body.due_at === 'string' ? body.due_at : '';
+    if (counterparty === '' || purchaseOrderId === '' || dueAt === '') {
+      return {
+        status: 400,
+        body: { error: 'counterparty_did, purchase_order_id and due_at are required' },
+      };
+    }
+    const currency = typeof body.currency === 'string' ? body.currency : '';
+    if (currency === '') return { status: 400, body: { error: 'currency is required' } };
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const service = tradeLedgerService(runtime, money);
+    // The reminder is about a due the STATEMENT derived, never a figure the
+    // caller supplied: a client that could name its own amount could ask a
+    // counterparty for anything.
+    const due = service
+      .dues({ counterpartyDid: counterparty, currency, role: 'supplier' })
+      .dues.find((row) => row.due_at === dueAt && row.purchase_order_id === purchaseOrderId);
+    if (due === undefined) {
+      return { status: 404, body: { ok: false, reason: 'no_derived_due' } };
+    }
+    // A due is a GROSS instalment: §4.5 derives it from the terms and never
+    // subtracts what came back. The fold does. Asking a counterparty for money
+    // they already paid is the one failure a reminder must never have, so the
+    // ask is bounded by what the ledger still says they owe, and refused when
+    // the relationship is settled.
+    const fold = service.statement({ counterpartyDid: counterparty, currency, role: 'supplier' });
+    if (!fold.ok) return { status: 409, body: { ok: false, reason: 'unfoldable', detail: fold.error } };
+    const outstanding =
+      fold.balance.direction === 'buyer_owes' ? BigInt(fold.balance.minor_units) : 0n;
+    if (outstanding <= 0n) {
+      return { status: 409, body: { ok: false, reason: 'nothing_outstanding' } };
+    }
+    // Both figures are the khata's own; the smaller is the honest ask.
+    const dueMinor = BigInt(due.amount.minor_units);
+    const askMinor = outstanding < dueMinor ? outstanding : dueMinor;
+    const order = tradeRelationshipReaders(runtime).readOrder(counterparty, purchaseOrderId);
+    const subjectDigest = order?.order_digest ?? '';
+    if (subjectDigest === '') {
+      return { status: 409, body: { ok: false, reason: 'no_retained_order' } };
+    }
+    const outcome = askPaymentReminderRail({
+      counterpartyDid: counterparty,
+      subjectDigest,
+      dueAt: due.due_at,
+      amount: { currency: due.amount.currency, minor_units: askMinor.toString(10) },
+      askAtMs: runtime.now(),
+    });
+    return outcome.asked
+      ? { status: 200, body: { ok: true, pack: outcome.pack, task_id: outcome.taskId, mode: outcome.mode } }
+      : { status: 409, body: { ok: false, reason: outcome.reason, detail: outcome.detail } };
+  });
+
   router.post('/v1/commerce/trade/resend', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
@@ -5566,17 +5710,26 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // own — the surface knows the document it answered. `answers_to` +
     // `kind` addresses it that way: "re-send my receipt for THIS note".
     const answersTo = typeof body.answers_to === 'string' ? body.answers_to : '';
-    const answerKind = typeof body.kind === 'string' ? body.kind : '';
-    if (recordDigest === '' && (answersTo === '' || answerKind === '')) {
+    if (recordDigest === '' && (answersTo === '' || body.kind === undefined)) {
       return { status: 400, body: { error: 'record_digest, or answers_to + kind, is required' } };
     }
+    // Only a KHATA document travels on `commerce.trade`. A decline is the
+    // quote lane's answer, kept in the kernel decline store, and the buyer's
+    // trade ingress would drop it — so a re-send of one is refused here.
+    if (body.kind !== undefined && !isTradeDocumentKind(body.kind)) {
+      return { status: 400, body: { error: 'kind must name a khata document' } };
+    }
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
     const row =
       recordDigest !== ''
-        ? runtime.tradeDocuments.get(recordDigest)
-        : (runtime.tradeDocuments
-            .answersTo(answersTo, answerKind as never)
+        ? money.tradeDocuments.get(recordDigest)
+        : (money.tradeDocuments
+            .answersTo(answersTo, body.kind as TradeDocumentKind)
             .find((r) => r.direction === 'outbound') ?? null);
-    if (row === null) return { status: 404, body: { error: 'unknown_document' } };
+    if (row === null || !isTradeDocumentKind(row.kind)) {
+      return { status: 404, body: { error: 'unknown_document' } };
+    }
     if (row.direction !== 'outbound') {
       // Re-sending a counterparty's own document back at them is never
       // this node's act.
@@ -5607,7 +5760,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 400, body: { error: 'counterparty_did is required' } };
     }
     const olderThanMs = Number(req.query?.older_than_ms ?? '0');
-    const pending = tradeLedgerService(runtime).unanswered({
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const pending = tradeLedgerService(runtime, money).unanswered({
       counterpartyDid: counterparty,
       olderThanMs: Number.isFinite(olderThanMs) && olderThanMs >= 0 ? olderThanMs : 0,
     });
@@ -5645,7 +5800,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // voucher naming the digest it derives from. The plugin on the
     // distributor's machine pulls this and feeds the firm's books; the
     // khata chain stays the shared truth.
-    const vouchers = collectTallyVouchers(runtime, { currency }, hash);
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const vouchers = collectTallyVouchers(runtime, money, { currency }, hash);
     return {
       status: 200,
       body: { ok: true, voucher_count: vouchers.length, xml: renderTallyXml(vouchers) },
@@ -5659,7 +5816,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     // §6.3 — the staff surface IS the inbox, filtered to the grant's
     // install roles. Metadata only; a grantless staff device sees nothing.
-    let items = buildTradeInbox(runtime, runtime.now()).items;
+    const inbox = buildTradeInbox(runtime, runtime.now());
+    let items = inbox.items;
     if (caller.kind === 'staff') {
       const grants = runtime.staffGrants
         .listByDevice(caller.deviceDid)
@@ -5676,12 +5834,24 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       status: 200,
       body: {
         ok: true,
+        // False = the khata rows are absent because no Commerce Pack is active,
+        // which a surface must not render as "nothing waiting".
+        money_available: inbox.moneyAvailable,
         items: items.map((item) => ({
           kind: item.kind,
           role: item.role,
           subject: item.subject,
           counterparty_did: item.counterpartyDid,
           created_at: item.createdAt,
+          ...(item.railCheck !== undefined
+            ? {
+                rail_check: {
+                  state: item.railCheck.state,
+                  task_id: item.railCheck.taskId,
+                  ...(item.railCheck.answer !== undefined ? { answer: item.railCheck.answer } : {}),
+                },
+              }
+            : {}),
         })),
       },
     };
@@ -5776,9 +5946,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
 
   const revshareService = (
     runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+    money: CommerceMoneyStores,
   ): RevshareService =>
     new RevshareService({
-      documents: runtime.revshareDocuments,
+      documents: money.revshareDocuments,
       nodeDid: runtime.nodeDid,
       now: runtime.now,
     });
@@ -5813,8 +5984,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'counterparty_did, self_role, share_bps, period, cash_handler, currency and effective_from are required' },
       };
     }
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
     return revshareAnswer(
-      revshareService(runtime).propose({
+      revshareService(runtime, money).propose({
         counterpartyDid: body.counterparty_did,
         selfRole: body.self_role,
         shareBps: body.share_bps,
@@ -5843,9 +6016,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return { status: 400, body: { error: 'proposal_digest and kind are required' } };
     }
-    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const counterparty = money.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
-      revshareService(runtime).decide({ proposalDigest: body.proposal_digest, kind: body.kind }),
+      revshareService(runtime, money).decide({ proposalDigest: body.proposal_digest, kind: body.kind }),
       counterparty,
       'agreement_decision',
     );
@@ -5860,9 +6035,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (typeof body.proposal_digest !== 'string') {
       return { status: 400, body: { error: 'proposal_digest is required' } };
     }
-    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const counterparty = money.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
-      revshareService(runtime).terminate({
+      revshareService(runtime, money).terminate({
         proposalDigest: body.proposal_digest,
         ...(typeof body.effective_at === 'string' ? { effectiveAt: body.effective_at } : {}),
       }),
@@ -5888,9 +6065,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'proposal_digest, period_start, period_end and gross_minor_units are required' },
       };
     }
-    const counterparty = runtime.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const counterparty = money.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
-      revshareService(runtime).issueSettlement({
+      revshareService(runtime, money).issueSettlement({
         proposalDigest: body.proposal_digest,
         periodStart: body.period_start,
         periodEnd: body.period_end,
@@ -5916,10 +6095,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return { status: 400, body: { error: 'settlement_digest and kind are required' } };
     }
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
     const counterparty =
-      runtime.revshareDocuments.get(body.settlement_digest)?.counterpartyDid ?? '';
+      money.revshareDocuments.get(body.settlement_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
-      revshareService(runtime).acknowledgeSettlement({
+      revshareService(runtime, money).acknowledgeSettlement({
         settlementDigest: body.settlement_digest,
         kind: body.kind,
       }),
@@ -5937,7 +6118,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (typeof proposalDigest !== 'string' || proposalDigest === '') {
       return { status: 400, body: { error: 'proposal_digest is required' } };
     }
-    const service = revshareService(runtime);
+    const money = moneyOrRefusal(runtime);
+    if (isRefusal(money)) return money;
+    const service = revshareService(runtime, money);
     const fold = service.statement(proposalDigest);
     const { status, unansweredSettlements } = service.status(proposalDigest);
     return fold.ok

@@ -10,6 +10,8 @@
  * Source: brain/tests/test_pii.py
  */
 
+import { isAadhaarNumber, isPan } from '@dina/core';
+
 export interface PatternMatch {
   entity_type: string;
   start: number;
@@ -39,16 +41,16 @@ interface PatternDef {
 const STRUCTURED_PATTERNS: PatternDef[] = [
   {
     entity_type: 'EMAIL_ADDRESS',
-    regex: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+    regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     score: 0.95,
   },
   { entity_type: 'US_SSN', regex: /\b\d{3}-\d{2}-\d{4}\b/g, score: 0.9 },
   {
     entity_type: 'CREDIT_CARD',
-    regex: /\b(\d[ \-]?){12,18}\d\b/g,
+    regex: /\b(\d[ -]?){12,18}\d\b/g,
     score: 0.85,
     validate: (v: string) => {
-      const d = v.replace(/[\s\-]/g, '');
+      const d = v.replace(/[\s-]/g, '');
       if (d.length < 13 || d.length > 19 || !/^\d+$/.test(d)) return false;
       let s = 0,
         a = false;
@@ -86,16 +88,16 @@ const STRUCTURED_PATTERNS: PatternDef[] = [
 ];
 
 const INDIAN_PATTERNS: PatternDef[] = [
+  // §5.D3: checksum-honest — a Verhoeff-valid, 2–9-led twelve digits is an
+  // Aadhaar; a PAN's fourth letter names a holder type. Same rules as Core's
+  // Tier 1, imported so the two tiers cannot drift.
   {
     entity_type: 'AADHAAR_NUMBER',
     regex: /\b\d{4}\s?\d{4}\s?\d{4}\b/g,
     score: 0.85,
-    validate: (m: string) => {
-      const d = m.replace(/\s/g, '');
-      return d.length === 12 && d[0] !== '0' && d[0] !== '1';
-    },
+    validate: (m: string) => isAadhaarNumber(m.replace(/\s/g, '')),
   },
-  { entity_type: 'IN_PAN', regex: /\b[A-Z]{5}\d{4}[A-Z]\b/g, score: 0.9 },
+  { entity_type: 'IN_PAN', regex: /\b[A-Z]{5}\d{4}[A-Z]\b/g, score: 0.9, validate: isPan },
   { entity_type: 'IN_IFSC', regex: /\b[A-Z]{4}0[A-Z0-9]{6}\b/g, score: 0.9 },
   {
     entity_type: 'IN_UPI_ID',

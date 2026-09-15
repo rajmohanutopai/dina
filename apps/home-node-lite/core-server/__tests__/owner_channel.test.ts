@@ -233,4 +233,28 @@ describe('owner channel over HTTP (bindCoreRouter + owner guard)', () => {
     const bare = await app.inject({ method: 'GET', url: '/v1/commerce/orders/drafts' });
     expect([401, 403]).toContain(bare.statusCode);
   });
+
+  it('the PLUGIN owner surface is reachable over the channel (§5.C2)', async () => {
+    // Same defect class as the commerce lanes: the general install routes
+    // guard on the owner stamp, so without the prefix they were reachable
+    // only in-process. With the stamp the handler answers for ITSELF — 503
+    // here, because this harness wires no plugin registry / verifier. Without
+    // the header the guard refuses before any handler logic runs.
+    const stamped = await app.inject({
+      method: 'POST',
+      url: '/v1/plugins/install/begin',
+      headers: { 'x-dina-owner-capability': CAP, 'content-type': 'application/json' },
+      payload: { publisher_did: 'did:plc:acme', rkey: '3jzfcijpj2z2a' },
+    });
+    expect(stamped.statusCode).toBe(503);
+    expect((stamped.json() as { code: string }).code).toBe('verifier_unavailable');
+
+    const bare = await app.inject({
+      method: 'POST',
+      url: '/v1/plugins/install/begin',
+      headers: { 'content-type': 'application/json' },
+      payload: { publisher_did: 'did:plc:acme', rkey: '3jzfcijpj2z2a' },
+    });
+    expect([401, 403]).toContain(bare.statusCode);
+  });
 });

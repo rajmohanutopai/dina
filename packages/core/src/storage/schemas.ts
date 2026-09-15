@@ -2563,6 +2563,76 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 42,
+    name: 'commerce_decline_documents',
+    // §5.B1 Cut 2 — tender declines get their OWN table, carved out of the
+    // shared commerce_trade_documents. A decline carries no money, so it stays
+    // kernel-side when the money engine (delivery / payment) moves to the
+    // Commerce Pack; a separate table is what lets the money rows leave without
+    // dragging the declines. Same row shape (digest PK = idempotency,
+    // answers_digest = the request the decline answers, direction = authored vs
+    // received). Existing decline rows are copied over so an upgraded node keeps
+    // them; the old rows stay in commerce_trade_documents, unread and harmless,
+    // until the money table itself moves out.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_decline_documents (
+        record_digest TEXT PRIMARY KEY,
+        counterparty_did TEXT NOT NULL,
+        answers_digest TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_decline_docs_answers
+        ON commerce_decline_documents(answers_digest);
+      INSERT OR IGNORE INTO commerce_decline_documents
+        (record_digest, counterparty_did, answers_digest, direction,
+         record_json, evidence_json, created_at)
+      SELECT record_digest, counterparty_did, answers_digest, direction,
+             record_json, evidence_json, created_at
+        FROM commerce_trade_documents
+       WHERE kind = 'quote_decline';
+    `,
+  },
+  {
+    version: 43,
+    name: 'commerce_trade_spool',
+    // §5.B1 Cut 3 — the money line. A khata document (delivery note, receipt,
+    // payment note/ack, revenue-share documents) that arrives while no Commerce
+    // Pack is active may not touch the ledger, but dropping it lost the
+    // counterparty's ANSWER for good: the sender's outbox saw the relay accept,
+    // and nothing re-sends a receipt or an ack. So it is held here, unverified,
+    // exactly as it arrived (the sender + the sealed envelope evidence), and
+    // replayed through the same verifiers once the pack is active again. Mail,
+    // not ledger: bounded, insertion-ordered, deleted on replay.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_trade_spool (
+        spool_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_did TEXT NOT NULL,
+        body_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        received_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 44,
+    name: 'contact_paper_identity',
+    // §5.D — who the counterparty IS on a filing. The khata identifies parties
+    // by DID; an e-way bill names both GSTINs, an invoice a legal name and a
+    // billing address, and nothing in the trade design placed them. Appended
+    // rather than edited into the v1 CREATE TABLE because `contacts` is read at
+    // boot: an in-place edit never re-runs on a vault that already exists.
+    // Columns default to the empty form, so every existing row is already valid
+    // and a node that files nothing notices nothing.
+    sql: `
+      ALTER TABLE contacts ADD COLUMN legal_name TEXT NOT NULL DEFAULT '';
+      ALTER TABLE contacts ADD COLUMN registrations TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE contacts ADD COLUMN billing_address TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

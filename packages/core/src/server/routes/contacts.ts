@@ -32,6 +32,10 @@ import {
   updateContact as directoryUpdateContact,
   listContacts as directoryListContacts,
   deleteContact as directoryDeleteContact,
+  setPaperIdentity as directorySetPaperIdentity,
+  setContactChannels as directorySetContactChannels,
+  checkPaperIdentity as directoryCheckPaperIdentity,
+  checkContactChannels as directoryCheckContactChannels,
 } from '../../contacts/directory';
 import {
   getServiceDecisionRepository,
@@ -46,6 +50,7 @@ import {
   CONTACTS_ROOT,
 } from './paths';
 
+import type { TaxRegistration, TradeIdentityFinding } from '../../commerce/trade_identity';
 import type { Contact, TrustLevel } from '../../contacts/directory';
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
@@ -103,6 +108,36 @@ export interface ContactRoutesOptions {
    */
   listServiceDecisions?: (limit: number) => ServiceDecision[];
   /**
+   * Set a contact's paper identity (§5.D — legal name / registrations /
+   * billing address). Defaults to the module-global directory; returns the
+   * findings, so a refusal names every problem at once.
+   */
+  setPaperIdentity?: (
+    did: string,
+    identity: Parameters<typeof directorySetPaperIdentity>[1],
+  ) => TradeIdentityFinding[];
+  /**
+   * Set a contact's messaging channels (§5.D — phone / e-mail, stored in the
+   * people graph). Defaults to the module-global directory.
+   */
+  setContactChannels?: (
+    did: string,
+    channels: Parameters<typeof directorySetContactChannels>[1],
+  ) => TradeIdentityFinding[];
+  /**
+   * Judge a paper identity / channels WITHOUT writing. The route checks BOTH
+   * halves of a trade-details save before committing either, so a refusal on
+   * one never leaves the other applied. Default to the directory's own.
+   */
+  checkPaperIdentity?: (
+    did: string,
+    identity: Parameters<typeof directorySetPaperIdentity>[1],
+  ) => TradeIdentityFinding[];
+  checkContactChannels?: (
+    did: string,
+    channels: Parameters<typeof directorySetContactChannels>[1],
+  ) => TradeIdentityFinding[];
+  /**
    * Remove a contact. Defaults to the module-global directory. Backs
    * DELETE /v1/contacts/:did — so the web thin-client (no in-process
    * directory) can remove a contact from the authoritative Core store
@@ -141,9 +176,21 @@ export function makeContactsHandlers(options: ContactRoutesOptions = {}): {
     options.listServiceDecisions ??
     ((limit: number) => getServiceDecisionRepository()?.list(limit) ?? []);
   const deleteFn = options.deleteContact ?? directoryDeleteContact;
+  const setPaperFn = options.setPaperIdentity ?? directorySetPaperIdentity;
+  const setChannelsFn = options.setContactChannels ?? directorySetContactChannels;
+  const checkPaperFn = options.checkPaperIdentity ?? directoryCheckPaperIdentity;
+  const checkChannelsFn = options.checkContactChannels ?? directoryCheckContactChannels;
   return {
     findByPreference: (req) => handleFindByPreference(req, findFn),
-    updateContact: (req) => handleUpdateContact(req, setFn, getFn),
+    updateContact: (req) =>
+      handleUpdateContact(req, {
+        setPreferredFor: setFn,
+        getContact: getFn,
+        setPaperIdentity: setPaperFn,
+        setContactChannels: setChannelsFn,
+        checkPaperIdentity: checkPaperFn,
+        checkContactChannels: checkChannelsFn,
+      }),
     lookup: (req) => handleLookup(req, getFn, resolveNameFn, findAliasFn),
     addContact: (req) => handleAddContact(req, addFn),
     serviceDecisions: (req) => handleServiceDecisions(req, listDecisionsFn),
@@ -265,15 +312,35 @@ interface UpdateContactBody {
   preferred_for?: unknown;
   trust_level?: unknown;
   display_name?: unknown;
+  /** §5.D — the paper identity, all tri-state like `preferred_for`. */
+  legal_name?: unknown;
+  registrations?: unknown;
+  billing_address?: unknown;
+  /** §5.D — the channels a rail would message. Stored in the people graph. */
+  phone?: unknown;
+  email?: unknown;
 }
 
 const UPDATE_BODY_MAX_BYTES = 16 * 1024;
 
-async function handleUpdateContact(
-  req: CoreRequest,
-  setFn: (did: string, categories: readonly string[]) => void,
-  getFn: (did: string) => Contact | null,
-): Promise<CoreResponse> {
+interface UpdateContactDeps {
+  setPreferredFor: (did: string, categories: readonly string[]) => void;
+  getContact: (did: string) => Contact | null;
+  setPaperIdentity: (did: string, identity: Parameters<typeof directorySetPaperIdentity>[1]) => TradeIdentityFinding[];
+  setContactChannels: (
+    did: string,
+    channels: Parameters<typeof directorySetContactChannels>[1],
+  ) => TradeIdentityFinding[];
+  checkPaperIdentity: (did: string, identity: Parameters<typeof directorySetPaperIdentity>[1]) => TradeIdentityFinding[];
+  checkContactChannels: (
+    did: string,
+    channels: Parameters<typeof directorySetContactChannels>[1],
+  ) => TradeIdentityFinding[];
+}
+
+async function handleUpdateContact(req: CoreRequest, deps: UpdateContactDeps): Promise<CoreResponse> {
+  const setFn = deps.setPreferredFor;
+  const getFn = deps.getContact;
   if (req.rawBody.byteLength > UPDATE_BODY_MAX_BYTES) {
     return jsonError(413, `body exceeds ${UPDATE_BODY_MAX_BYTES} bytes`);
   }
@@ -333,6 +400,93 @@ async function handleUpdateContact(
     }
     try {
       directoryUpdateContact(did, { displayName: body.display_name });
+    } catch (err) {
+      return jsonError(500, (err as Error).message);
+    }
+  }
+
+  // §5.D — the paper identity. Read the three fields together and apply them
+  // in ONE domain call: a caller correcting a GSTIN and an address at once gets
+  // both findings, and a refusal leaves neither half applied.
+  const wantsPaper =
+    body.legal_name !== undefined || body.registrations !== undefined || body.billing_address !== undefined;
+  let paperIdentity: Parameters<typeof directorySetPaperIdentity>[1] | null = null;
+  if (wantsPaper) {
+    const identity: Parameters<typeof directorySetPaperIdentity>[1] = {};
+    if (body.legal_name !== undefined) {
+      if (typeof body.legal_name !== 'string') return jsonError(400, 'legal_name must be a string');
+      identity.legalName = body.legal_name;
+    }
+    if (body.registrations !== undefined) {
+      if (!Array.isArray(body.registrations)) {
+        return jsonError(400, 'registrations must be an array of {scheme, value}');
+      }
+      const registrations: TaxRegistration[] = [];
+      for (const entry of body.registrations) {
+        const row = (entry ?? {}) as Record<string, unknown>;
+        if (typeof row.scheme !== 'string' || typeof row.value !== 'string') {
+          return jsonError(400, 'each registration needs a string scheme and value');
+        }
+        registrations.push({ scheme: row.scheme as TaxRegistration['scheme'], value: row.value });
+      }
+      identity.registrations = registrations;
+    }
+    if (body.billing_address !== undefined) {
+      if (body.billing_address === null) {
+        identity.billingAddress = null;
+      } else {
+        const wire = body.billing_address as Record<string, unknown>;
+        if (typeof wire !== 'object') return jsonError(400, 'billing_address must be an object or null');
+        const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+        identity.billingAddress = {
+          line1: text(wire.line1),
+          ...(text(wire.line2) !== '' ? { line2: text(wire.line2) } : {}),
+          city: text(wire.city),
+          ...(text(wire.region) !== '' ? { region: text(wire.region) } : {}),
+          ...(text(wire.postal_code) !== '' ? { postalCode: text(wire.postal_code) } : {}),
+          country: text(wire.country),
+        };
+      }
+    }
+    paperIdentity = identity;
+  }
+
+  // §5.D — the channels a rail would message. Same tri-state: absent leaves
+  // them, an empty string or null clears one.
+  let channelsInput: Parameters<typeof directorySetContactChannels>[1] | null = null;
+  if (body.phone !== undefined || body.email !== undefined) {
+    const channels: Parameters<typeof directorySetContactChannels>[1] = {};
+    for (const field of ['phone', 'email'] as const) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (value !== null && typeof value !== 'string') {
+        return jsonError(400, `${field} must be a string or null`);
+      }
+      channels[field] = value;
+    }
+    channelsInput = channels;
+  }
+
+  // ALL OR NOTHING across the two stores. The paper identity lives on the
+  // contact row and the channels in the people graph; judging both before
+  // committing either is what makes "identity_invalid" mean the same thing
+  // whichever half objected — nothing was written.
+  if (paperIdentity !== null || channelsInput !== null) {
+    let findings: TradeIdentityFinding[];
+    try {
+      findings = [
+        ...(paperIdentity !== null ? deps.checkPaperIdentity(did, paperIdentity) : []),
+        ...(channelsInput !== null ? deps.checkContactChannels(did, channelsInput) : []),
+      ];
+    } catch (err) {
+      return jsonError(500, (err as Error).message);
+    }
+    if (findings.length > 0) {
+      return { status: 400, body: { error: 'identity_invalid', findings } };
+    }
+    try {
+      if (paperIdentity !== null) deps.setPaperIdentity(did, paperIdentity);
+      if (channelsInput !== null) deps.setContactChannels(did, channelsInput);
     } catch (err) {
       return jsonError(500, (err as Error).message);
     }

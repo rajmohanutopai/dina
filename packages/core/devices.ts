@@ -9,7 +9,9 @@ export {
   registerDevice,
   resetDeviceRegistry,
   revokeDevice,
+  revokeDeviceByDidDurable,
   revokeDeviceDurable,
+  revokePluginDeviceForTeardown,
   subscribeToDeviceRegistry,
   touchDevice,
 } from './src/devices/registry';
@@ -19,5 +21,5 @@ export type {
   PairedDevice,
   DeviceRevokeResult,
 } from './src/devices/registry';
-export { generatePairingCode } from './src/pairing/ceremony';
+export { generatePairingCode, getPairingIntent, isCodeValid } from './src/pairing/ceremony';
 export type { PairingCode } from './src/pairing/ceremony';

@@ -36,6 +36,13 @@ import {
 } from '../../commerce/watermark_gate';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
+import { getPluginGrantRepository } from '../../plugins/grants';
+import {
+  createApprovalGrant,
+  invocationIdentity,
+  parseApprovalGrantRequest,
+  recordInvocationDecision,
+} from '../../plugins/invoke';
 import { getPluginInstallRepository } from '../../plugins/registry';
 import {
   STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
@@ -126,11 +133,17 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     return j(200, withPayloadType(task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
-    const guard = ownerDecisionGuard(req) ?? brainAgentTaskGuard(req, req.params.id ?? '');
+    const guard =
+      ownerDecisionGuard(req) ??
+      brainAgentTaskGuard(req, req.params.id ?? '') ??
+      brainPluginInvocationGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, approveTask);
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
-    const guard = ownerDecisionGuard(req) ?? brainAgentTaskGuard(req, req.params.id ?? '');
+    const guard =
+      ownerDecisionGuard(req) ??
+      brainAgentTaskGuard(req, req.params.id ?? '') ??
+      brainPluginInvocationGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, cancelTask);
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
@@ -672,6 +685,19 @@ async function approveTask(
 ): Promise<WorkflowTask> {
   const before = service.store().getById(id);
 
+  // PLUGIN_ARCHITECTURE §15.5 — a `plugin_grant` block belongs to a PENDING
+  // plugin invocation and nothing else: not an agent intent, not a persona
+  // access, not a coding gate, not a plugin task already decided. Refused
+  // before any branch below can approve, rather than dropped — a caller that
+  // attached one expects authority to be minted, and a silent 200 would let
+  // that belief stand.
+  if (
+    body?.plugin_grant !== undefined &&
+    (before === null || before.status !== WorkflowTaskState.PendingApproval || invocationIdentity(before) === null)
+  ) {
+    throw new WorkflowValidationError('plugin_grant applies only to a pending plugin invocation', 'plugin_grant');
+  }
+
   // Session-scoped approval: if the caller passes scope='session' the
   // approve grants a session-keyed approval so the same agent's SAME
   // `dina session` auto-passes subsequent calls for that action/persona.
@@ -809,6 +835,49 @@ async function approveTask(
     return approved;
   }
 
+  // PLUGIN_ARCHITECTURE §15.5 — the owner answered a carded plugin invocation.
+  // The SAME task moves to `queued` on the plugin lane (the envelope the owner
+  // saw is the one the runner claims); the decision lands in the plugin
+  // decision log (the §8 first-N counter), and an optional `plugin_grant`
+  // widens future invocations. The grant is CREATED before the approve CAS
+  // and revoked if the transition fails — the agent-grant precedent — so no
+  // standing authority ever outlives a failed approval.
+  const invocation = before !== null && before.status === WorkflowTaskState.PendingApproval
+    ? invocationIdentity(before)
+    : null;
+  if (invocation !== null) {
+    const grantRequest = parseApprovalGrantRequest(body?.plugin_grant);
+    if (grantRequest === 'invalid') {
+      throw new WorkflowValidationError(
+        'plugin_grant must be {type:"window", hours?≤24} or {type:"standing", constraints?, expires_in_hours?}',
+        'plugin_grant',
+      );
+    }
+    const nowMs = Date.now();
+    let grantId: string | null = null;
+    if (grantRequest !== null) {
+      try {
+        grantId = createApprovalGrant(invocation, grantRequest, nowMs);
+      } catch (err) {
+        throw new WorkflowValidationError(
+          `plugin_grant refused: ${err instanceof Error ? err.message : String(err)}`,
+          'plugin_grant',
+        );
+      }
+    }
+    let approved: WorkflowTask;
+    try {
+      approved = service.approve(id);
+    } catch (err) {
+      if (grantId !== null) getPluginGrantRepository()?.revoke(grantId, Math.floor(nowMs / 1000));
+      throw err;
+    }
+    recordInvocationDecision(invocation, 'invocation_approved', 'owner approved the card', nowMs);
+    if (grantId !== null) {
+      recordInvocationDecision(invocation, 'grant_created', `${grantRequest?.type} grant ${grantId}`, nowMs);
+    }
+    return approved;
+  }
   if (
     !isStagingPersonaAccessApproval(before) ||
     before?.status !== WorkflowTaskState.PendingApproval
@@ -881,6 +950,10 @@ function cancelTask(
   const before = service.store().getById(id);
   const isStagingApproval =
     isStagingPersonaAccessApproval(before) && before?.status === WorkflowTaskState.PendingApproval;
+  // §15.5 — a denied plugin invocation is recorded as the owner's decision
+  // once the cancel has actually landed (below).
+  const invocation =
+    before !== null && before.status === WorkflowTaskState.PendingApproval ? invocationIdentity(before) : null;
   // PLG-30 #7: WIN the state transition BEFORE dead-lettering the staged data.
   // `denyApproval` forces the pending_unlock staging rows to `failed` with
   // retry_count past the sweep ceiling — irreversible. If it ran first and
@@ -891,6 +964,9 @@ function cancelTask(
   const cancelled = service.cancel(id, reason);
   if (isStagingApproval) {
     denyApproval(id, reason);
+  }
+  if (invocation !== null) {
+    recordInvocationDecision(invocation, 'invocation_denied', reason, Date.now());
   }
   return cancelled;
 }
@@ -939,6 +1015,27 @@ function ownerDecisionGuard(req: CoreRequest): CoreResponse | null {
     return j(403, {
       error: 'access_denied',
       reason: `${req.callerType} callers cannot approve or deny tasks`,
+    });
+  }
+  return null;
+}
+
+/**
+ * PLUGIN_ARCHITECTURE §15.5 — a carded plugin invocation is answered by the
+ * OWNER. On the server split Brain is an untrusted tenant; letting its
+ * `brain` authority approve a plugin card (and mint a `plugin_grant`) would
+ * hand a compromised Brain the runner's effects. Same shape as the agent-origin
+ * rule: decided on the task's real payload, not on a caller claim.
+ */
+function brainPluginInvocationGuard(req: CoreRequest, id: string): CoreResponse | null {
+  if (req.callerType !== 'brain') return null;
+  const service = getWorkflowService();
+  if (service === null) return null; // runAction will surface the 503
+  const task = service.store().getById(id);
+  if (task !== null && invocationIdentity(task) !== null) {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'brain cannot decide a plugin invocation; owner decision required',
     });
   }
   return null;

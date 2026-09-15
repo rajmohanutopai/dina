@@ -24,6 +24,7 @@
  * Pure functions. Zero runtime deps.
  */
 
+import { cardTemplateSlots } from './card_template';
 import { normalizeStringSet } from './normalize';
 import { hasUnsafeText, hasDeceptiveText } from './text_safety';
 import {
@@ -109,6 +110,19 @@ const KNOWN_CAPABILITY_FIELDS = new Set([
   'network_domains',
   'host_operations',
 ]);
+
+/**
+ * The top-level property names a result schema declares, or null when it
+ * declares none this validator can read (no schema, or one without a
+ * `properties` object — a schema that admits anything cannot vouch for a
+ * slot).
+ */
+function declaredResultProperties(schema: unknown): Set<string> | null {
+  if (!isPlainObject(schema)) return null;
+  const properties = (schema as { properties?: unknown }).properties;
+  if (!isPlainObject(properties)) return null;
+  return new Set(Object.keys(properties));
+}
 
 const ACTION_CLASSES = new Set(['read', 'quote', 'write', 'booking', 'payment', 'agentic']);
 const PRIVACY_CLASSES = new Set(['public', 'personal', 'sensitive', 'regulated']);
@@ -1182,6 +1196,37 @@ function validateCapability(
   // F10: fail closed on unknown nested keys in the structured sub-objects.
   checkKnownKeys(cap.effects, KNOWN_EFFECTS_FIELDS, `${p}.effects`, err);
   checkKnownKeys(cap.data_scope, KNOWN_DATA_SCOPE_FIELDS, `${p}.data_scope`, err);
+
+  // §15.6 — the card TEMPLATE's slots must name fields the capability's own
+  // `result_schema` declares. This is the one check the renderer cannot make:
+  // at render a missing field simply drops its block, which looks identical to
+  // a runner that left an optional field out, so a publisher who typos a slot
+  // would ship a card that quietly renders short forever. Here the typo is a
+  // refusal at the door, with the name in the message.
+  if (cap.card !== undefined) {
+    if (!isPlainObject(cap.card)) {
+      err('bad_card', `${p}.card`, 'card must be an object (a CardSpec template)');
+    } else {
+      const declared = declaredResultProperties(cap.result_schema);
+      for (const slot of cardTemplateSlots(cap.card)) {
+        if (declared === null) {
+          err(
+            'card_slot_without_schema',
+            `${p}.card`,
+            `card names the result field "${slot}" but the capability declares no result_schema properties to fill it from`,
+          );
+          break;
+        }
+        if (!declared.has(slot)) {
+          err(
+            'unknown_card_slot',
+            `${p}.card`,
+            `card names the result field "${slot}", which result_schema does not declare`,
+          );
+        }
+      }
+    }
+  }
 
   // --- session (interpreted) capabilities ----------------------------------
   if (cap.interaction === 'session') {

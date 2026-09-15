@@ -1022,6 +1022,82 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(sent).toEqual({});
   });
 
+  it('approveWorkflowTask maps pluginGrant + scope to the snake_case wire body (§15.5)', async () => {
+    const approved = {
+      id: 'wf-1',
+      kind: 'delegation',
+      status: 'queued',
+      priority: 'normal',
+      description: '',
+      payload: '{}',
+      result_summary: '',
+      policy: '{}',
+      created_at: 1,
+      updated_at: 2,
+    };
+    const { client, calls } = makeStubClient(() => ok({ task: approved }));
+    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
+    const sentBody = (i: number): unknown => {
+      const body = calls[i]?.init.body;
+      return body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body));
+    };
+    await t.approveWorkflowTask('wf-1', { pluginGrant: { type: 'window', hours: 24 } });
+    expect(sentBody(0)).toEqual({ plugin_grant: { type: 'window', hours: 24 } });
+    await t.approveWorkflowTask('wf-1', { scope: 'session', pluginGrant: { type: 'window' } });
+    expect(sentBody(1)).toEqual({ scope: 'session', plugin_grant: { type: 'window' } });
+  });
+
+  it('invokePluginTool: the reply parser tells a refusal from an accepted-but-unreadable answer (§6)', async () => {
+    const table: { status: number; body: string; expect: Record<string, unknown> }[] = [
+      {
+        status: 202,
+        body: JSON.stringify({ ok: true, mode: 'approval_required', task_id: 't1', execution_id: 't1', card: { risk_level: 'HIGH', reasons: ['r'], params_text: '{}' } }),
+        expect: { ok: true, mode: 'approval_required', taskId: 't1', card: { riskLevel: 'HIGH', reasons: ['r'], paramsText: '{}' } },
+      },
+      {
+        status: 202,
+        body: JSON.stringify({ ok: true, mode: 'dispatched', task_id: 't2', execution_id: 't2', grant_id: 'g1' }),
+        expect: { ok: true, mode: 'dispatched', taskId: 't2', grantId: 'g1' },
+      },
+      // Accepted, but the answer is not one of the two shapes: a task exists — never "refused".
+      { status: 202, body: 'not json', expect: { ok: false, code: 'response_malformed' } },
+      { status: 202, body: JSON.stringify({ ok: true, mode: 'something_new', task_id: 't3' }), expect: { ok: false, code: 'response_malformed' } },
+      { status: 202, body: '', expect: { ok: false, code: 'response_malformed' } },
+      // Refusals carry Core's typed code, or the error field, or the status.
+      { status: 403, body: JSON.stringify({ ok: false, code: 'blocked', message: 'payment class' }), expect: { ok: false, code: 'blocked', message: 'payment class' } },
+      { status: 503, body: JSON.stringify({ error: 'plugin_registry_unavailable' }), expect: { ok: false, code: 'plugin_registry_unavailable' } },
+      { status: 500, body: '', expect: { ok: false, code: 'http_500' } },
+    ];
+    for (const row of table) {
+      const { client } = makeStubClient(() => ({
+        status: row.status,
+        headers: {},
+        body: new TextEncoder().encode(row.body),
+      }));
+      const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
+      const out = await t.invokePluginTool({ installId: 'pli', capabilityId: 'cap', params: {}, paramCategories: ['payment'] });
+      expect(out).toMatchObject(row.expect);
+    }
+  });
+
+  it('invokePluginTool sends the narrow snake_case body; listPluginToolCapabilities reads the list', async () => {
+    const { client, calls } = makeStubClient(() => ok({ ok: true, mode: 'dispatched', task_id: 't', execution_id: 't' }));
+    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
+    await t.invokePluginTool({ installId: 'pli', capabilityId: 'cap', params: { utr: '1' }, paramCategories: ['payment'] });
+    const body = calls[0]?.init.body;
+    expect(calls[0]?.url).toBe('http://core/v1/plugins/tool-invoke');
+    expect(body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body))).toEqual({
+      install_id: 'pli',
+      capability_id: 'cap',
+      params: { utr: '1' },
+      param_categories: ['payment'],
+    });
+    const listing = makeStubClient(() => ok({ capabilities: [{ install_id: 'pli', capability_id: 'cap' }] }));
+    const t2 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: listing.client, signer: makeStubSigner().signer });
+    await expect(t2.listPluginToolCapabilities()).resolves.toEqual([{ install_id: 'pli', capability_id: 'cap' }]);
+    expect(listing.calls[0]?.url).toBe('http://core/v1/plugins/tool-capabilities');
+  });
+
   it('cancelWorkflowTask with reason sends {reason} in body', async () => {
     const cancelled = {
       id: 'wf-2',

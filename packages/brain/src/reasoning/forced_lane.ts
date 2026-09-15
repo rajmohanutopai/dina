@@ -88,6 +88,14 @@ DECIDE after discovery — do not loop. Once search_provider_services has return
 Fall-through works BOTH ways: if Path 1 returns no candidates for a find-me-a-provider question, continue with search_capabilities; if a Path 2 question turns out to be about the user's own appointment/order/delivery, try find_preferred_provider before giving the no-service answer.`;
 
 /**
+ * Appended under the provider-services block when the classifier ALSO named
+ * `products` (§5.A1): the product's offers are the answer; the provider path
+ * is for a store the user named, and its "STOP searching" applies to the
+ * provider path alone, never to search_products / recommend_offer.
+ */
+export const PRODUCTS_BEFORE_PROVIDERS_LINE = `This question also names products. Call search_peerlens and search_products FIRST — the offers across suppliers are the answer — and use the provider paths above only for a specific store the user named. The provider block's "STOP searching" applies to the provider path, never to search_products or recommend_offer.`;
+
+/**
  * Ranked-Reviews (PeerLens) routing guidance for the forced Reviews lane.
  * Imperative: the verdict must come from the review network or be a clean
  * "no reviews", never general knowledge.

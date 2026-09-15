@@ -2831,11 +2831,28 @@ function optionalStr(v: string | undefined): string | null {
  *      `create()` path or starve other observers. Mirrors
  *      `ApprovalManager.requestApproval`'s try/swallow contract.
  */
+/**
+ * Is this task something the owner must decide? An `approval` task, or —
+ * PLUGIN_ARCHITECTURE §15.5 — a plugin invocation parked `pending_approval`
+ * on its lane (a `delegation` carrying the pinned plugin envelope). Both wake
+ * the phone's approval inbox; a plugin card that only appeared on a manual
+ * pull-to-refresh could expire unseen.
+ */
+export function isOwnerDecisionTask(task: Pick<WorkflowTask, 'kind' | 'status' | 'payload'>): boolean {
+  if (task.kind === 'approval') return true;
+  if (task.kind !== 'delegation' || task.status !== 'pending_approval') return false;
+  try {
+    return (JSON.parse(task.payload) as { type?: unknown }).type === 'plugin_invocation';
+  } catch {
+    return false;
+  }
+}
+
 function fanOutApprovalCreated(
   listeners: ReadonlySet<ApprovalCreatedListener>,
   task: WorkflowTask,
 ): void {
-  if (task.kind !== 'approval') return;
+  if (!isOwnerDecisionTask(task)) return;
   if (listeners.size === 0) return;
   for (const fn of listeners) {
     try {

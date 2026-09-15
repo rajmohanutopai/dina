@@ -8,9 +8,9 @@
  * Styled with Dina warm design system (FAF8F5 palette).
  */
 
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useHeaderHeight } from '@react-navigation/elements';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
@@ -28,9 +28,11 @@ import {
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
+import { chatRowKind, toDisplayType, type DisplayType } from '../src/chat/message_display';
 import { ACTIONS, resolveUserChip } from '../src/components/composer_modes';
 import { InlineApprovalCard } from '../src/components/InlineApprovalCard';
 import { InlineBriefingCard } from '../src/components/InlineBriefingCard';
+import { InlineComparisonCard } from '../src/components/InlineComparisonCard';
 import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
@@ -66,98 +68,8 @@ import type { ChatMessage } from '@dina/brain/chat';
 // card (5.65), nudge card (5.62), reminder card (5.64), briefing
 // card (5.63), everything-else-system (error / unrecognised).
 type UiMessage = ChatMessage & {
-  displayType:
-    | 'user'
-    | 'dina'
-    | 'system'
-    | 'ask-approval'
-    | 'service-approval'
-    | 'vault-read-approval'
-    | 'demo-approval'
-    | 'demo-review'
-    | 'demo-service-preview'
-    | 'service-query'
-    | 'missing-capability'
-    | 'ask-pending'
-    | 'reasoning-job'
-    | 'review-draft'
-    | 'quarantine-request'
-    | 'nudge'
-    | 'reminder'
-    | 'briefing';
+  displayType: DisplayType;
 };
-
-function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
-  if (m.type === 'user') return 'user';
-  if (m.type === 'approval' && m.metadata?.kind === 'ask_approval') {
-    return 'ask-approval';
-  }
-  if (m.type === 'approval' && m.metadata?.kind === 'service_approval') {
-    return 'service-approval';
-  }
-  // F-AGENT-VAULT-GATE round-2: agent-driven vault_read approval cards
-  // posted by `installWorkflowApprovalChatBridge`. Discriminator is
-  // `metadata.approvalKind` (not `metadata.kind`) since the bridge
-  // synthesises a richer metadata bag than the chat-tab approval flow.
-  if (m.type === 'approval' && m.metadata?.approvalKind === 'vault_read') {
-    return 'vault-read-approval';
-  }
-  // Guided-demo agent-approval card — backed only by the ApprovalManager (see
-  // InlineDemoApprovalCard); no gateway/workflow/grant, so it's leak-free.
-  if (m.type === 'approval' && m.metadata?.kind === 'demo_approval') {
-    return 'demo-approval';
-  }
-  // Guided-demo PeerLens review card (InlineDemoReviewCard) — inert Publish,
-  // posted as a 'system' message tagged with metadata.kind 'demo_review'.
-  if (m.metadata?.kind === 'demo_review') {
-    return 'demo-review';
-  }
-  // Guided-demo read-only services-page preview (InlineDemoServicePreviewCard) —
-  // the salon listing shown before the publish popup. Posted as a 'system'
-  // message tagged with metadata.kind 'demo_service_preview'.
-  if (m.metadata?.kind === 'demo_service_preview') {
-    return 'demo-service-preview';
-  }
-  // Lifecycle-tracked dina message — same MessageType as a plain dina
-  // reply, dispatched here on the metadata block. Mirrors the
-  // approval-card pattern (kind discriminator on metadata, no new
-  // MessageType).
-  const lifecycle = m.metadata?.lifecycle as { kind?: unknown; status?: unknown } | undefined;
-  if (m.type === 'dina' && lifecycle?.kind === 'service_query') {
-    return 'service-query';
-  }
-  if (m.type === 'dina' && lifecycle?.kind === 'missing_capability') {
-    return 'missing-capability';
-  }
-  // ask_pending bubble — show as animated dots while status is
-  // 'pending'. Once the bridge patches it to 'complete', content
-  // becomes the answer text and we fall through to the regular
-  // 'dina' branch so the same row renders as a normal reply.
-  if (m.type === 'dina' && lifecycle?.kind === 'ask_pending' && lifecycle.status === 'pending') {
-    return 'ask-pending';
-  }
-  if (m.type === 'dina' && lifecycle?.kind === 'reasoning_job' && lifecycle.status !== 'complete') {
-    return 'reasoning-job';
-  }
-  // review_draft card — chat-driven `/ask write a review of <X>`
-  // flow. Renders editable sentiment / headline / body + Publish.
-  // No status gate: every state has a card variant (drafting →
-  // ready → publishing → published / discarded / failed) so the
-  // dispatch always lands on the inline component.
-  if (m.type === 'dina' && lifecycle?.kind === 'review_draft') {
-    return 'review-draft';
-  }
-  // Unknown-sender D2D review card — a stranger's message was
-  // quarantined; offer Add-to-contacts / Block inline.
-  if (m.type === 'dina' && lifecycle?.kind === 'quarantine_request') {
-    return 'quarantine-request';
-  }
-  if (m.type === 'dina') return 'dina';
-  if (m.type === 'nudge') return 'nudge';
-  if (m.type === 'reminder') return 'reminder';
-  if (m.type === 'briefing') return 'briefing';
-  return 'system';
-}
 
 // ── E2E row contract (docs/E2E_TESTING.md §5) ──────────────────────────
 // Every chat row is wrapped once (at the FlatList `renderItem`) in a
@@ -169,37 +81,6 @@ function toDisplayType(m: ChatMessage): UiMessage['displayType'] {
 // The inner per-branch testIDs (`chat-card-*`, `chat-msg-*`, and each
 // card's `*-card-body-*`) are unchanged — this only adds an outer handle.
 
-function chatRowKind(displayType: UiMessage['displayType']): string {
-  switch (displayType) {
-    case 'user':
-      return 'user';
-    case 'dina':
-      return 'answer';
-    case 'system':
-      return 'system';
-    case 'reminder':
-      return 'reminder';
-    case 'service-query':
-      return 'service-query';
-    case 'quarantine-request':
-      return 'quarantine';
-    case 'ask-approval':
-    case 'service-approval':
-      return 'approval';
-    case 'vault-read-approval':
-      return 'vault-read-approval';
-    case 'missing-capability':
-      return 'missing-capability';
-    case 'review-draft':
-      return 'review-draft';
-    case 'nudge':
-      return 'nudge';
-    case 'briefing':
-      return 'briefing';
-    default:
-      return String(displayType);
-  }
-}
 
 /** A peer's literal D2D message renders as a left bubble with
  *  `displayType === 'dina'` + `metadata.source === 'd2d'` (mirrors
@@ -488,6 +369,16 @@ export default function ChatScreen() {
         return (
           <View testID="chat-card-service-query">
             <InlineServiceQueryCard message={item} />
+          </View>
+        );
+      }
+      // commerce_comparison card — money-free where-to-buy result from the
+      // product-research loop (§5.A4/A5). Renders the recommendation +
+      // alternatives + where-to-buy links via the generic SafeCardRenderer.
+      if (item.displayType === 'commerce-comparison') {
+        return (
+          <View testID="chat-card-commerce-comparison">
+            <InlineComparisonCard message={item} />
           </View>
         );
       }

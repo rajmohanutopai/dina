@@ -28,7 +28,9 @@ import {
   type SettlementNote,
 } from '@dina/commerce-protocol';
 
-import { rehydrateRevshareDocument } from './rehydrate';
+import {
+  rehydrateRevshareDocument,
+} from './money_rehydrate';
 import {
   agreementStatus,
   checkSettlementNote,

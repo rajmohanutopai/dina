@@ -1,6 +1,9 @@
 import {
+  normaliseBusinessSettings,
+  validateBusinessSettings,
   validateBuyerSettings,
   validateSupplierSettings,
+  type BusinessSettings,
   type BuyerSettings,
   type SettingsFinding,
   type SupplierSettings,
@@ -23,7 +26,7 @@ import type { DatabaseAdapter } from '../storage/db_adapter';
  * REFUSED rather than partially believed, and the caller fails closed.
  */
 
-export type SettingsKind = 'buyer' | 'supplier';
+export type SettingsKind = 'buyer' | 'supplier' | 'business';
 
 export type ReadSettings<T> =
   | { ok: true; settings: T }
@@ -34,10 +37,16 @@ export type ReadSettings<T> =
 export interface CommerceSettingsRepository {
   readBuyer(): ReadSettings<BuyerSettings>;
   readSupplier(): ReadSettings<SupplierSettings>;
+  /** The node's own business, on paper (§5.D) — what a filing prints. */
+  readBusiness(): ReadSettings<BusinessSettings>;
   /** Refuses invalid settings; returns the findings so an owner can fix them. */
   writeBuyer(settings: BuyerSettings): { ok: true } | { ok: false; findings: SettingsFinding[] };
   writeSupplier(
     settings: SupplierSettings,
+  ): { ok: true } | { ok: false; findings: SettingsFinding[] };
+  /** Stores the NORMALISED identity — what was judged is what is kept. */
+  writeBusiness(
+    settings: BusinessSettings,
   ): { ok: true } | { ok: false; findings: SettingsFinding[] };
 }
 
@@ -54,8 +63,14 @@ export class SQLiteCommerceSettingsRepository implements CommerceSettingsReposit
     const row = rows[0];
     if (row === undefined) return { ok: false, absent: true };
     let parsed: T;
+    let verdict: ReturnType<typeof validateBuyerSettings>;
     try {
       parsed = JSON.parse(row.settings_json) as T;
+      // The VALIDATOR runs inside the guard too: a row hand-edited to `null`
+      // or to a scalar reaches the structural pre-pass, and a thrown TypeError
+      // out of a read would surface as a generic 500 instead of the refusal
+      // this store promises ("refused rather than partially believed").
+      verdict = validate(parsed);
     } catch (error) {
       return {
         ok: false,
@@ -69,7 +84,6 @@ export class SQLiteCommerceSettingsRepository implements CommerceSettingsReposit
         ],
       };
     }
-    const verdict = validate(parsed);
     return verdict.ok
       ? { ok: true, settings: parsed }
       : { ok: false, absent: false, findings: verdict.findings };
@@ -91,6 +105,10 @@ export class SQLiteCommerceSettingsRepository implements CommerceSettingsReposit
     return this.read<SupplierSettings>('supplier', validateSupplierSettings as never);
   }
 
+  readBusiness(): ReadSettings<BusinessSettings> {
+    return this.read<BusinessSettings>('business', validateBusinessSettings as never);
+  }
+
   writeBuyer(settings: BuyerSettings): { ok: true } | { ok: false; findings: SettingsFinding[] } {
     const verdict = validateBuyerSettings(settings);
     if (!verdict.ok) return verdict;
@@ -106,12 +124,24 @@ export class SQLiteCommerceSettingsRepository implements CommerceSettingsReposit
     this.write('supplier', settings);
     return { ok: true };
   }
+
+  writeBusiness(
+    settings: BusinessSettings,
+  ): { ok: true } | { ok: false; findings: SettingsFinding[] } {
+    const verdict = validateBusinessSettings(settings);
+    if (!verdict.ok) return verdict;
+    // The normalised form is what was validated; storing the raw one would
+    // keep a GSTIN in the case the owner happened to type.
+    this.write('business', normaliseBusinessSettings(settings));
+    return { ok: true };
+  }
 }
 
 /** Test double. A production caller would be the bug. */
 export class InMemoryCommerceSettingsRepository implements CommerceSettingsRepository {
   private buyer: BuyerSettings | null = null;
   private supplier: SupplierSettings | null = null;
+  private business: BusinessSettings | null = null;
 
   readBuyer(): ReadSettings<BuyerSettings> {
     if (this.buyer === null) return { ok: false, absent: true };
@@ -142,6 +172,23 @@ export class InMemoryCommerceSettingsRepository implements CommerceSettingsRepos
     const verdict = validateSupplierSettings(settings);
     if (!verdict.ok) return verdict;
     this.supplier = settings;
+    return { ok: true };
+  }
+
+  readBusiness(): ReadSettings<BusinessSettings> {
+    if (this.business === null) return { ok: false, absent: true };
+    const verdict = validateBusinessSettings(this.business);
+    return verdict.ok
+      ? { ok: true, settings: this.business }
+      : { ok: false, absent: false, findings: verdict.findings };
+  }
+
+  writeBusiness(
+    settings: BusinessSettings,
+  ): { ok: true } | { ok: false; findings: SettingsFinding[] } {
+    const verdict = validateBusinessSettings(settings);
+    if (!verdict.ok) return verdict;
+    this.business = normaliseBusinessSettings(settings);
     return { ok: true };
   }
 }

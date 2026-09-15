@@ -10,7 +10,9 @@
  *   - Transcript preserves tool-call round-trips
  */
 
-import { runAgenticTurn } from '../../src/reasoning/agentic_loop';
+import { runAgenticTurn,
+  EMPTY_TURN_NUDGE,
+} from '../../src/reasoning/agentic_loop';
 import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
 
 import type {
@@ -122,6 +124,44 @@ describe('runAgenticTurn — no-tool-call path', () => {
     expect(result.toolCalls).toHaveLength(0);
     expect(calls).toHaveLength(1);
     expect(calls[0].hasTools).toBe(true); // tool defs are always exposed
+  });
+});
+
+describe('runAgenticTurn — an empty turn is nudged once, never handed to the owner as silence', () => {
+  it('a turn with no text and no tool call gets one nudge, and the next turn is the answer', async () => {
+    const { provider, calls } = scriptedProvider([
+      { content: '   ', toolCalls: [] },
+      { content: 'Here is the answer.', toolCalls: [] },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(echoTool());
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 'sys', userMessage: 'q' });
+    expect(result.answer).toBe('Here is the answer.');
+    expect(result.finishReason).toBe('completed');
+    expect(calls).toHaveLength(2);
+    // The nudge is what the model saw as the newest user message before it answered.
+    const users = result.transcript.filter((m) => m.role === 'user').map((m) => m.content);
+    expect(users).toEqual(['q', EMPTY_TURN_NUDGE]);
+  });
+
+  it('a second empty turn is accepted as the (empty) answer — the nudge is not a loop', async () => {
+    const { provider, calls } = scriptedProvider([
+      { content: '', toolCalls: [] },
+      { content: '', toolCalls: [] },
+    ]);
+    const tools = new ToolRegistry();
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 'sys', userMessage: 'q' });
+    expect(result.answer).toBe('');
+    expect(result.finishReason).toBe('completed');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('with no iteration left the empty turn is returned as it is, not nudged past the budget', async () => {
+    const { provider, calls } = scriptedProvider([{ content: '', toolCalls: [] }]);
+    const tools = new ToolRegistry();
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 'sys', userMessage: 'q', options: { maxIterations: 1 } });
+    expect(result.answer).toBe('');
+    expect(calls).toHaveLength(1);
   });
 });
 

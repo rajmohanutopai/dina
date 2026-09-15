@@ -41,6 +41,7 @@ import {
   declineConsent,
   uninstall,
   sweepAbandonedInstalls,
+  startAbandonedInstallSweeper,
   setRepoProofVerifier,
   setPluginDeviceVerifier,
   terminateInstallInFlight,
@@ -907,13 +908,30 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(installs.bindPendingDevice(id, 'did:key:zinstance', T0)).toBe(true);
     confirmConsent(id, 'did:key:zinstance', T0 + 1);
     expect(installs.getById(id)?.status).toBe('active');
-    // No revoke callback → the row is retained as a retry anchor, but it MUST be
-    // paused so a NEW card-backed task can't ride the still-active lane before
-    // the caller separately revokes the device. (PLG-24 only paused on the
-    // callback path; PLG-25 #5 hoists the pause above this early return.)
+    // No revoke callback → the row is retained as a retry anchor, but it MUST
+    // leave `active` so a NEW card-backed task can't ride the lane before the
+    // device is revoked. (PLG-24 only paused on the callback path; PLG-25 #5
+    // hoists the pause above this early return.) Iter 17: the retained row is a
+    // `revoked` TOMBSTONE with its expiry stamped — a paused row had a NULL
+    // expiry the abandoned-install sweep could never reach, so the promised
+    // retry never ran.
     const res = await uninstall(id, T0 + 2);
     expect(res).toEqual({ removed: false, deviceDid: 'did:key:zinstance' });
-    expect(installs.getById(id)?.status).toBe('paused');
+    expect(installs.getById(id)?.status).toBe('revoked');
+    expect(installs.resume(id, T0 + 3)).toBe(false);
+    expect(confirmConsent(id, 'did:key:zinstance', T0 + 3)).toBe(false);
+    // The sweep finishes what the uninstall could not: revoke, then remove.
+    let retried = 0;
+    const swept = await sweepAbandonedInstalls(Math.floor(T0 / 1000) + 10, async () => {
+      retried++;
+      return { durable: true };
+    });
+    expect(retried).toBe(1);
+    expect(swept.map((ref) => ref.installId)).toContain(id);
+    expect(installs.getById(id)).toBeNull();
+    // The owner's decision closes in the log exactly as an inline uninstall would.
+    const log = getPluginDecisionRepository()!.listByInstall(id, 10).map((d) => d.decision);
+    expect(log).toContain('uninstalled');
   });
 
   it('round-16 #4: uninstall of an already-MANUALLY-paused install escalates the pause reason', async () => {
@@ -1680,5 +1698,179 @@ describe('round-22 (PLG-32) hardening', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe('authenticity_failed');
+  });
+});
+
+describe('startAbandonedInstallSweeper — the cadence both hosts run', () => {
+  async function stalePendingWithDevice(): Promise<string> {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const r = await beginInstall({ publisherDid: PUBLISHER, rkey, trustAnchor: { kind: 'repo_proof' }, nowMs: T0 });
+    if (!r.ok) throw new Error('expected pending');
+    expect(getPluginInstallRepository()!.bindPendingDevice(r.installId, 'did:key:zabandoned', T0 + 1)).toBe(true);
+    return r.installId;
+  }
+
+  async function settle(until: () => boolean): Promise<void> {
+    for (let i = 0; i < 50 && !until(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  it('sweeps an expired pending on start, revoking its device, and stops cleanly', async () => {
+    const id = await stalePendingWithDevice();
+    const revoked: string[] = [];
+    const swept: string[][] = [];
+    const handle = startAbandonedInstallSweeper({
+      // Well past the 15-minute pending TTL.
+      now: () => T0 + 20 * 60 * 1000,
+      intervalMs: 20,
+      revokeDevice: async (did) => {
+        revoked.push(did);
+        return { durable: true };
+      },
+      onSwept: (refs) => swept.push(refs.map((ref) => ref.installId)),
+    });
+    try {
+      await settle(() => getPluginInstallRepository()!.getById(id) === null);
+      expect(getPluginInstallRepository()!.getById(id)).toBeNull();
+      expect(revoked).toEqual(['did:key:zabandoned']);
+      expect(swept).toEqual([[id]]);
+    } finally {
+      handle.stop();
+    }
+    // Nothing fires after stop.
+    const calls = revoked.length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(revoked.length).toBe(calls);
+  });
+
+  it('leaves a fresh pending alone', async () => {
+    const id = await stalePendingWithDevice();
+    const revoked: string[] = [];
+    const handle = startAbandonedInstallSweeper({
+      now: () => T0 + 1000,
+      intervalMs: 10,
+      revokeDevice: async (did) => {
+        revoked.push(did);
+        return { durable: true };
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    handle.stop();
+    expect(revoked).toEqual([]);
+    expect(getPluginInstallRepository()!.getById(id)?.status).toBe('pending');
+  });
+
+  it('sweeps on the CADENCE, not only at start: a pending that goes stale later is swept by a later tick', async () => {
+    const id = await stalePendingWithDevice();
+    const clock = { now: T0 + 1000 }; // fresh at start
+    const revoked: string[] = [];
+    const handle = startAbandonedInstallSweeper({
+      now: () => clock.now,
+      intervalMs: 10,
+      revokeDevice: async (did) => {
+        revoked.push(did);
+        return { durable: true };
+      },
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(revoked).toEqual([]); // the first tick saw a fresh pending
+      clock.now = T0 + 20 * 60 * 1000; // now it is stale — only an interval tick can notice
+      await settle(() => getPluginInstallRepository()!.getById(id) === null);
+      expect(revoked).toEqual(['did:key:zabandoned']);
+      expect(getPluginInstallRepository()!.getById(id)).toBeNull();
+    } finally {
+      handle.stop();
+    }
+  });
+
+  it('skips overlapping ticks: one sweep in flight at a time', async () => {
+    await stalePendingWithDevice();
+    let release: (() => void) | null = null;
+    let calls = 0;
+    const handle = startAbandonedInstallSweeper({
+      now: () => T0 + 20 * 60 * 1000,
+      intervalMs: 5,
+      revokeDevice: () =>
+        new Promise((resolve) => {
+          calls++;
+          release = () => resolve({ durable: true });
+        }),
+    });
+    try {
+      await settle(() => calls === 1);
+      // Several intervals pass while the first revoke is still blocked.
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(calls).toBe(1);
+      (release as (() => void) | null)?.();
+      await settle(() => getPluginInstallRepository()!.list().length === 0);
+    } finally {
+      handle.stop();
+    }
+  });
+
+  it('reports a throwing sweep through onError and keeps ticking', async () => {
+    await stalePendingWithDevice();
+    const errors: unknown[] = [];
+    let attempts = 0;
+    const handle = startAbandonedInstallSweeper({
+      now: () => T0 + 20 * 60 * 1000,
+      intervalMs: 5,
+      revokeDevice: async () => {
+        attempts++;
+        if (attempts === 1) throw new Error('registry hiccup');
+        return { durable: true };
+      },
+      onError: (err) => errors.push(err),
+    });
+    try {
+      await settle(() => getPluginInstallRepository()!.list().length === 0);
+      // `revokeDeviceConfirmed` maps a throw to not-durable (row kept), so the
+      // sweep itself never rejects; a later tick retried and finished it.
+      expect(attempts).toBeGreaterThanOrEqual(2);
+      expect(errors).toEqual([]);
+    } finally {
+      handle.stop();
+    }
+  });
+
+  it('does not hold the event loop open (the timer is unref-ed)', () => {
+    const spy = jest.spyOn(global, 'setInterval');
+    const handle = startAbandonedInstallSweeper({
+      now: () => T0,
+      intervalMs: 60_000,
+      revokeDevice: async () => ({ durable: true }),
+    });
+    try {
+      const timer = spy.mock.results[0]?.value as { hasRef?: () => boolean } | undefined;
+      expect(timer?.hasRef?.()).toBe(false);
+    } finally {
+      handle.stop();
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('the reserved first-party plugin-id namespace (Iter 17)', () => {
+  it('a repo-proof release naming a com.dinakernel.* id is refused as inauthentic', async () => {
+    const { rkey, verifier } = fakeVerifier({
+      ...runnerManifest(),
+      plugin_id: 'com.dinakernel.commerce.buyer',
+    });
+    setRepoProofVerifier(verifier);
+    const r = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe('authenticity_failed');
+      expect(r.message).toMatch(/reserved first-party/);
+    }
+    expect(getPluginInstallRepository()!.list()).toEqual([]);
   });
 });

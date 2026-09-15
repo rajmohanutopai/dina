@@ -33,6 +33,15 @@ export const subjectScores = pgTable('subject_scores', {
   verifiedAttestationCount: integer('verified_attestation_count').default(0),
   lastAttestationAt: timestamp('last_attestation_at'),
   attestationVelocity: real('attestation_velocity'),
+  // D4 — where this subject's reviews came from. `total_attestations`
+  // keeps its meaning (everything shown); these two say how much of it
+  // is testimony from someone the owner could reach, and how much was
+  // imported from a registered per-market feed. A subject with a high
+  // rating and `peer_review_count = 0` is exactly what a cold-start
+  // market looks like, and a surface that could not tell the two apart
+  // would be showing a number with nobody behind it.
+  peerReviewCount: integer('peer_review_count').default(0).notNull(),
+  importedReviewCount: integer('imported_review_count').default(0).notNull(),
   computedAt: timestamp('computed_at').notNull(),
 }, (table) => [
   index('subject_scores_needs_recalc_idx').on(table.needsRecalc).where(sql`${table.needsRecalc} = true`),

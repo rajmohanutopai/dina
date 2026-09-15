@@ -387,6 +387,84 @@ export class InProcessOwnerCommerceClient {
     return expectOk<TradeStatementAnswer>(res, 'tradeStatement');
   }
 
+  /**
+   * §5.D — the node's OWN business, on paper: what a filing prints. Absent is
+   * a real state ("not configured"), not an error.
+   */
+  async businessIdentity(): Promise<BusinessIdentityAnswer> {
+    const res = await this.router.handle(
+      this.stamp({ method: 'GET', path: '/v1/commerce/settings/business' }),
+    );
+    return expectOk<BusinessIdentityAnswer>(res, 'businessIdentity');
+  }
+
+  /**
+   * Store the node's business identity. Core refuses a registration that fails
+   * its scheme's own check and answers the findings, which the screen renders
+   * beside the field — nothing is stored on a refusal.
+   */
+  async saveBusinessIdentity(settings: {
+    legalName: string;
+    registrations: { scheme: string; value: string }[];
+    address?: {
+      line1: string;
+      line2?: string;
+      city: string;
+      region?: string;
+      postalCode?: string;
+      country: string;
+    };
+  }): Promise<{ ok: true } | { ok: false; findings: SettingsFindingDto[] }> {
+    const res = await this.router.handle(
+      this.stamp({ method: 'PUT', path: '/v1/commerce/settings/business', body: settings }),
+    );
+    if (res.status === 200) return { ok: true };
+    const body = (res.body ?? {}) as { findings?: SettingsFindingDto[]; error?: string };
+    if (body.findings !== undefined) return { ok: false, findings: body.findings };
+    throw new OwnerCommerceHttpError(
+      `saveBusinessIdentity failed (${String(res.status)})`,
+      res.status,
+      body.error ?? '',
+    );
+  }
+
+  /**
+   * §5.D / TRADE_FIRST §4.5 — ask a counterparty for a matured payment. The
+   * OWNER's action: this is called from a tap on an overdue statement row,
+   * never by a sweep. Core looks the due up in its own derivation, so no
+   * amount rides the call; the ask then cards like every plugin write.
+   */
+  async remindCounterparty(args: {
+    counterpartyDid: string;
+    purchaseOrderId: string;
+    dueAt: string;
+    currency: string;
+  }): Promise<TradeReminderAnswer> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'POST',
+        path: '/v1/commerce/trade/remind',
+        body: {
+          counterparty_did: args.counterpartyDid,
+          purchase_order_id: args.purchaseOrderId,
+          due_at: args.dueAt,
+          currency: args.currency,
+        },
+      }),
+    );
+    if (res.status === 200) return expectOk<TradeReminderAnswer>(res, 'remindCounterparty');
+    // A pack that cannot send is a FACT to show the owner (no channel stated,
+    // no pack installed, nothing outstanding), not an exception to swallow.
+    // The DETAIL is the domain's own words and is kept for the log; the
+    // surface speaks from the `reason`.
+    const body = (res.body ?? {}) as { reason?: string; detail?: string; error?: string };
+    return {
+      ok: false,
+      reason: body.reason ?? body.error ?? `core answered ${String(res.status)}`,
+      ...(body.detail !== undefined ? { detail: body.detail } : {}),
+    };
+  }
+
   async issueDeliveryNote(args: {
     counterpartyDid: string;
     purchaseOrderId: string;
@@ -603,6 +681,12 @@ export interface TradeInboxItemDto {
   subject: string;
   counterparty_did: string;
   created_at: number;
+  /** `unacknowledged_payment` only — the country pack's rail check for this note (§5.D). */
+  rail_check?: {
+    state: 'awaiting_owner' | 'asked' | 'answered' | 'closed';
+    task_id: string;
+    answer?: 'settled' | 'pending' | 'failed' | 'unknown';
+  };
 }
 
 export interface TradeStatementAnswer {
@@ -612,6 +696,38 @@ export interface TradeStatementAnswer {
   /** THIS node's side of the folded ledger (§4.4 — one fold per orientation). */
   role: 'buyer' | 'supplier';
 }
+
+/** One thing wrong with a settings body, as Core's validator names it. */
+export interface SettingsFindingDto {
+  refusal: string;
+  field: string;
+  detail: string;
+}
+
+/** The node's business identity, or "not configured yet". */
+export type BusinessIdentityAnswer =
+  | {
+      configured: true;
+      settings: {
+        legalName: string;
+        registrations: { scheme: string; value: string }[];
+        address?: {
+          line1: string;
+          line2?: string;
+          city: string;
+          region?: string;
+          postalCode?: string;
+          country: string;
+        };
+      };
+    }
+  | { configured: false }
+  | { configured: true; error: string; findings: SettingsFindingDto[] };
+
+/** What a reminder ask answers: the staged task, or the reason there is none. */
+export type TradeReminderAnswer =
+  | { ok: true; pack: 'in' | 'us'; task_id: string; mode: 'dispatched' | 'approval_required' }
+  | { ok: false; reason: string; detail?: string };
 
 export interface TradeDocumentAnswer {
   ok: true;

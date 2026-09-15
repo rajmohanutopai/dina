@@ -97,8 +97,10 @@ import {
   setErasureKeyStore,
   setMessageRepository,
   setPluginDeviceVerifier,
+  startAbandonedInstallSweeper,
   setReservationRepository,
   setReviewPublishRepository,
+  setRepoProofVerifier,
   setRunRepository,
   setRunService,
   setPersonaDescription,
@@ -109,7 +111,7 @@ import {
   type PersonaTier,
 } from '@dina/core';
 import { getD2DSender } from '@dina/core/d2d';
-import { getDeviceByDID, listActiveDevices } from '@dina/core/devices';
+import { getDeviceByDID, listActiveDevices, revokePluginDeviceForTeardown } from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
@@ -158,6 +160,7 @@ import {
   setVaultRepository,
   type DatabaseAdapter,
 } from '@dina/core/storage';
+import { createRepoProofVerifier } from '@dina/net-node';
 import { NodeDBProvider } from '@dina/storage-node';
 
 import { nodeAuthedTransport } from '../commerce/connector_transport';
@@ -211,6 +214,9 @@ const RESTORE_VALID_TIERS: ReadonlySet<string> = new Set([
 function restoreTier(tier: string): PersonaTier {
   return (RESTORE_VALID_TIERS.has(tier) ? tier : 'locked') as PersonaTier;
 }
+
+/** Abandoned plugin-install sweeper handle — restart-guarded like the other boot singletons. */
+let abandonedInstallSweeper: { stop: () => void } | null = null;
 
 export interface StorageInitResult {
   /** The provider instance — callers such as the archive tool also close it. */
@@ -366,6 +372,17 @@ export async function initializeStorage(
   setPluginDeviceVerifier((did) => {
     const device = getDeviceByDID(did);
     return device !== null && !device.revoked && device.role === 'plugin';
+  });
+  // PLUGIN_ARCHITECTURE §15.3: an abandoned pending install expires and its
+  // paired runner device is revoked — neither host ran this sweep before.
+  abandonedInstallSweeper?.stop();
+  abandonedInstallSweeper = startAbandonedInstallSweeper({
+    revokeDevice: revokePluginDeviceForTeardown,
+    onError: (err) =>
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'abandoned plugin-install sweep failed',
+      ),
   });
 
   // Service-config repo + hydrate. Without hydration, `getServiceConfig()`
@@ -543,6 +560,13 @@ export async function initializeStorage(
   registerCommerceHostOperations(extensionRegistry);
   const hostRuntime = createPluginHostRuntime({ db: identityDB, registry: extensionRegistry });
   installPluginHostRuntime(hostRuntime);
+  // §5.C1 — the production repo-proof verifier. Core stays pure and invokes this
+  // injected callback; the adapter (net-node) does the DID resolve + proof-CAR
+  // fetch + AT-Protocol MST/commit-signature verification. Install fails closed
+  // when it is null, so wiring it here is what makes third-party (repo-proof)
+  // installs verifiable at all.
+  // The verifier's own deadline + no-redirect policy ride through to the platform fetch.
+  setRepoProofVerifier(createRepoProofVerifier({ fetch: (url, init) => globalThis.fetch(url, init) }));
   // §3.4 / WS-3.5 — the typed host operations a runner may ask Core to
   // perform. REGISTERED HERE because each needs a boundary Core does not own:
   // the credential broker for the connector lane, the leakage gate for a

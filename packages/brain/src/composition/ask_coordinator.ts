@@ -74,6 +74,8 @@ import {
   scopeToolsForLane,
 } from '../reasoning/forced_lane';
 import { IntentClassifier } from '../reasoning/intent_classifier';
+import { buildComparisonCardSpec } from '../service/comparison_card_spec';
+
 import type { AgenticAskPipeline } from './agentic_ask';
 import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { VaultApprovalWorkflowClient } from './persona_guard';
@@ -506,11 +508,35 @@ export function translateLoopResult(
       serviceQueryCount: serviceQueries.length,
       toolCalls: result.toolCalls,
     });
-    const answer: AskAnswer = { text: gatedText };
+    // PLUGIN_ARCHITECTURE §6/§15.5 — `invoke_plugin` is terminal: the loop ends
+    // on the tool's success with whatever prose the model wrote BEFORE the
+    // call, which in the usual function-call shape is nothing. The owner must
+    // still learn that a card is waiting (or that a grant ran the ask), so the
+    // tool's plain-words note becomes the answer when the model said nothing,
+    // and follows the model's line when it did.
+    const pluginNote = extractPluginInvocationNote(result.toolCalls);
+    const answer: AskAnswer = {
+      text:
+        pluginNote === undefined
+          ? gatedText
+          : gatedText.trim() === ''
+            ? pluginNote
+            : `${gatedText.trim()}\n\n${pluginNote}`,
+    };
     if (serviceQueries.length > 0) {
       answer.serviceQueries = serviceQueries;
     } else if (missingCapabilities.length > 0) {
       answer.missingCapabilities = missingCapabilities;
+    }
+    // A money-free where-to-buy card from the product-research loop
+    // (§5.A4/A5). Lifted out of the `search_products` tool result and carried
+    // beside the narrative so the chat bridge can post a structured card; unlike
+    // a service query it does NOT suppress the narrative — the loop's prose is
+    // the answer, the card is the evidence. Rides in the persisted answer so
+    // both the fast-path 200 and the deferred delivery surface it.
+    const commerceCard = extractCommerceCardFromToolCalls(result.toolCalls);
+    if (commerceCard !== undefined) {
+      answer.commerceCard = commerceCard;
     }
     // Provenance for the chat source pill: how many network ("ranked") reviews
     // from other Dinas informed this answer. The mobile bubble turns the count
@@ -602,6 +628,21 @@ export function translateLoopResult(
  * `ServiceQueryDispatch` shape so downstream consumers stay
  * single-typed.
  */
+/**
+ * The last successful `invoke_plugin` outcome's note (§6): what the owner is
+ * told about the card or the dispatch. Undefined when the loop never asked a
+ * plugin, or every ask was refused (a refusal is a thrown tool error).
+ */
+function extractPluginInvocationNote(toolCalls: AgenticLoopResult['toolCalls']): string | undefined {
+  let note: string | undefined;
+  for (const call of toolCalls) {
+    if (call.name !== 'invoke_plugin' || !call.outcome.success) continue;
+    const payload = call.outcome.result as { note?: unknown } | null;
+    if (payload !== null && typeof payload.note === 'string' && payload.note !== '') note = payload.note;
+  }
+  return note;
+}
+
 function extractServiceQueriesFromToolCalls(toolCalls: AgenticLoopResult['toolCalls']): {
   taskId: string;
   queryId: string;
@@ -648,6 +689,33 @@ function extractServiceQueriesFromToolCalls(toolCalls: AgenticLoopResult['toolCa
     });
   }
   return out;
+}
+
+/** The two research tools whose result carries the comparison card. */
+const COMMERCE_CARD_TOOLS = new Set(['search_products', 'recommend_offer']);
+
+/**
+ * Mine the last successful research call for its money-free comparison card
+ * and project it to a wire-safe `CardSpec` (§5.A4/A5). The LAST card wins: a
+ * `recommend_offer` that followed `search_products` carries the loop's
+ * preference-weighed pick (§5.A6), so the owner never sees a card that names
+ * one seller under prose that names another; a turn that researched twice
+ * surfaces the final result. `undefined` when no research ran or the card did
+ * not project.
+ */
+function extractCommerceCardFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): Record<string, unknown> | undefined {
+  for (let i = toolCalls.length - 1; i >= 0; i--) {
+    const call = toolCalls[i];
+    if (!COMMERCE_CARD_TOOLS.has(call.name)) continue;
+    if (!call.outcome.success) continue;
+    const result = call.outcome.result as { card?: unknown } | null;
+    if (result === null || typeof result !== 'object') continue;
+    const spec = buildComparisonCardSpec(result.card);
+    if (spec !== null) return spec as unknown as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 /**

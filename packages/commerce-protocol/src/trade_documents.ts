@@ -1,8 +1,11 @@
 /**
- * Trade documents (TRADE_FIRST_STRATEGY §3.4, §4.2, §4.3) — the khata
- * chain and the tender decline. Five documents that extend the shipped
- * order conversation past `accepted`, where this trade's relationship
- * actually starts: delivery, shortage, credit, payment.
+ * Trade documents (TRADE_FIRST_STRATEGY §4.2, §4.3) — the khata chain: four
+ * documents that extend the shipped order conversation past `accepted`,
+ * where this trade's relationship actually starts: delivery, shortage,
+ * credit, payment. This is the MONEY wire (RESEARCHER_KERNEL §5.B1) and moves
+ * with the Commerce Pack; the tender decline (§3.4) is the money-free answer
+ * on the quote lane and lives in `quote_decline.ts`. Both share the digest
+ * family in `trade_digest.ts`, so nothing on the wire changed at the carve.
  *
  * Construction discipline, identical to every shipped commerce record:
  *
@@ -29,7 +32,6 @@
  * to.
  */
 
-import { bytesToHex, canonicalJson, utf8Bytes } from './canonical';
 import {
   verifyConversationVersion,
   isRecord,
@@ -41,65 +43,10 @@ import {
 } from './common';
 import { validateMoney, moneyMinorUnits, type Money } from './money';
 import { compareQuantities, validateQuantity, type Quantity } from './quantity';
-import { MAX_QUOTE_LINES, type QuoteRequest } from './quote';
+import { MAX_QUOTE_LINES } from './quote';
+import { tradeRecordDigest, validateReasonCode, verifyTradeRecordDigest } from './trade_digest';
 
 import type { Sha256Fn } from './digests';
-
-// ---------------------------------------------------------------------------
-// Digest family
-// ---------------------------------------------------------------------------
-
-/** Domain separation for trade documents. Distinct from §9.12's closed set. */
-const TRADE_PREFIX = 'dina:commerce:trade:v1:';
-
-export const TRADE_DIGEST_DOMAINS = [
-  'quote_decline',
-  'delivery_note',
-  'delivery_receipt',
-  'payment_note',
-  'payment_ack',
-] as const;
-
-export type TradeDigestDomain = (typeof TRADE_DIGEST_DOMAINS)[number];
-
-/** The digest field each domain excludes from its own input. */
-export const TRADE_DIGEST_FIELD_BY_DOMAIN: Readonly<Record<TradeDigestDomain, string>> = {
-  quote_decline: 'decline_digest',
-  delivery_note: 'note_digest',
-  delivery_receipt: 'receipt_digest',
-  payment_note: 'note_digest',
-  payment_ack: 'ack_digest',
-};
-
-/** Digest a record under a trade domain, excluding its own digest field. */
-export function tradeRecordDigest(
-  domain: TradeDigestDomain,
-  record: Record<string, unknown>,
-  sha256: Sha256Fn,
-): string {
-  const digestField = TRADE_DIGEST_FIELD_BY_DOMAIN[domain];
-  const { [digestField]: _excluded, ...rest } = record;
-  const preimage = `${TRADE_PREFIX}${domain}\n${canonicalJson(rest)}`;
-  return bytesToHex(sha256(utf8Bytes(preimage)));
-}
-
-/** Verify a trade record's digest field against a recomputation. */
-export function verifyTradeRecordDigest(
-  domain: TradeDigestDomain,
-  record: Record<string, unknown>,
-  sha256: Sha256Fn,
-): string | null {
-  const digestField = TRADE_DIGEST_FIELD_BY_DOMAIN[domain];
-  const claimed = record[digestField];
-  if (typeof claimed !== 'string' || !/^[0-9a-f]{64}$/.test(claimed)) {
-    return `digest: ${digestField} must be a 64-char lowercase hex string`;
-  }
-  const recomputed = tradeRecordDigest(domain, record, sha256);
-  if (claimed !== recomputed) {
-    return `digest: ${digestField} does not match the canonical ${domain} recomputation`;
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // Bounds and vocabularies
@@ -107,16 +54,8 @@ export function verifyTradeRecordDigest(
 
 /** One line-count bound for every lined trade document — the §9.7 bound. */
 export const MAX_TRADE_LINES = MAX_QUOTE_LINES;
-export const MAX_TRADE_REASON_CODE_LENGTH = 64;
 export const MAX_EXTERNAL_REF_LENGTH = 200;
 export const MAX_PAYMENT_ORDER_REFS = 50;
-
-/**
- * Protocol-defined decline reasons (§3.4). The set is open for
- * supplier-policy codes; these carry pinned semantics.
- * `unknown_buyer` joins in phase 3, when strangers can ask at all.
- */
-export const KNOWN_QUOTE_DECLINE_REASONS = ['out_of_region', 'capacity', 'policy'] as const;
 
 /**
  * Protocol-defined receipt reasons (§4.2). BUYER-extensible — the buyer
@@ -128,78 +67,12 @@ export const KNOWN_DELIVERY_RECEIPT_REASONS = ['damaged', 'short', 'wrong_item',
 export const PAYMENT_METHODS = ['cash', 'upi', 'cheque', 'transfer', 'other'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-function validateReasonCode(value: unknown, field: string): string | null {
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TRADE_REASON_CODE_LENGTH) {
-    return `${field}: must be a non-empty string of at most ${MAX_TRADE_REASON_CODE_LENGTH} characters`;
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// QuoteDecline (§3.4)
-// ---------------------------------------------------------------------------
-
 /* eslint-disable @typescript-eslint/consistent-type-definitions --
    the catalog_publication.ts rule: only a type alias carries the implicit
    index signature that makes these records assignable to the
    `Record<string, unknown>` the digest functions take. As interfaces,
    every digest call site needs an `as unknown as` double-cast — the cast
    family a prior wire bug shipped through. */
-export type QuoteDecline = {
-  protocol_version: string;
-  decline_id: string;
-  request_id: string;
-  request_digest: string;
-  buyer_did: string;
-  supplier_did: string;
-  reason_code: string;
-  issued_at: string;
-  decline_digest: string;
-}
-
-export type ReadQuoteDecline = { ok: true; decline: QuoteDecline } | { ok: false; error: string };
-
-export function validateQuoteDecline(decline: unknown, sha256: Sha256Fn): string | null {
-  if (!isRecord(decline)) return 'decline: must be an object';
-  const checks: (string | null)[] = [
-    validateProtocolVersionShape(decline.protocol_version, 'decline.protocol_version'),
-    validateId(decline.decline_id, 'decline.decline_id'),
-    validateId(decline.request_id, 'decline.request_id'),
-    validateHex64(decline.request_digest, 'decline.request_digest'),
-    validateDid(decline.buyer_did, 'decline.buyer_did'),
-    validateDid(decline.supplier_did, 'decline.supplier_did'),
-    validateReasonCode(decline.reason_code, 'decline.reason_code'),
-    validateIsoUtc(decline.issued_at, 'decline.issued_at'),
-  ];
-  for (const err of checks) if (err) return err;
-  return verifyTradeRecordDigest('quote_decline', decline, sha256);
-}
-
-export function readQuoteDecline(decline: unknown, sha256: Sha256Fn): ReadQuoteDecline {
-  const error = validateQuoteDecline(decline, sha256);
-  return error === null ? { ok: true, decline: decline as QuoteDecline } : { ok: false, error };
-}
-
-/**
- * A decline against the RETAINED request it claims to answer: identity,
- * digest, parties and the §9.13 version all must line up — a decline for
- * some other request must not close this conversation.
- */
-export function verifyQuoteDeclineAgainstRequest(
-  decline: QuoteDecline,
-  request: QuoteRequest,
-): string | null {
-  if (decline.request_id !== request.request_id) {
-    return 'decline: request_id does not match the retained request';
-  }
-  if (decline.request_digest !== request.request_digest) {
-    return 'decline: request_digest does not match the retained request';
-  }
-  if (decline.buyer_did !== request.buyer_did || decline.supplier_did !== request.supplier_did) {
-    return 'decline: parties do not match the retained request';
-  }
-  return verifyConversationVersion(request.protocol_version, decline.protocol_version, 'decline');
-}
 
 // ---------------------------------------------------------------------------
 // DeliveryNote (§4.2) — supplier-issued, per order, per dispatch

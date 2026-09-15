@@ -2,6 +2,17 @@ import { isCurrencyCode, validateId } from '@dina/commerce-protocol';
 
 import { checkCatalogFeedUrl } from './catalog_feed_policy';
 import { MAX_QUOTE_FANOUT } from './quote_fanout';
+import {
+  MAX_LEGAL_NAME_CHARS,
+  normaliseLegalName,
+  normalisePostalAddress,
+  normaliseTaxRegistrations,
+  validatePostalAddress,
+  validateTaxRegistrations,
+  type PostalAddress,
+  type TaxRegistration,
+  type TradeIdentityRefusal,
+} from './trade_identity';
 
 
 import type { RegionRef } from '@dina/commerce-protocol';
@@ -188,6 +199,26 @@ export interface ConnectorEndpointSetting {
   price?: { field: string; currency: string; decimals: number };
 }
 
+/**
+ * The node's OWN business, on paper (§5.D). A third kind beside buyer and
+ * supplier because a node is ONE legal business that plays both roles: a
+ * GSTIN copied onto each role's settings is a GSTIN that can disagree with
+ * itself, and the filings do not care which hat the owner was wearing.
+ *
+ * Every field is optional to HOLD but required to FILE: a node trades happily
+ * with none of this, and the country-pack hooks simply have nothing to send
+ * until the owner fills it in. That is the honest order — the khata works
+ * without a tax registration; a filing does not.
+ */
+export interface BusinessSettings {
+  /** The registered name a filing prints. */
+  legalName: string;
+  /** Registrations this business holds (GSTIN, PAN, EIN, …). */
+  registrations: TaxRegistration[];
+  /** The registered place of business an invoice prints. */
+  address?: PostalAddress;
+}
+
 export type SettingsRefusal =
   | 'fanout_above_protocol_maximum'
   | 'fanout_below_one'
@@ -209,7 +240,9 @@ export type SettingsRefusal =
   | 'working_capital_rate_out_of_range'
   /** Structural pre-pass: a container field is absent or the wrong shape. */
   | 'missing_field'
-  | 'wrong_field_shape';
+  | 'wrong_field_shape'
+  /** The paper identity of a party (§5.D) — see `trade_identity.ts`. */
+  | TradeIdentityRefusal;
 
 export interface SettingsFinding {
   refusal: SettingsRefusal;
@@ -239,6 +272,13 @@ function structuralFindings(
   settings: Record<string, unknown>,
   spec: readonly { field: string; kind: 'string' | 'number' | 'array' | 'record'; optional?: boolean }[],
 ): SettingsFinding[] {
+  // A stored row hand-edited to `null` or a scalar reaches here: refuse it as
+  // the wrong shape rather than reading fields off it and throwing.
+  if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
+    return [
+      { refusal: 'wrong_field_shape', field: '', detail: 'settings must be a JSON object' },
+    ];
+  }
   const findings: SettingsFinding[] = [];
   for (const { field, kind, optional } of spec) {
     const value = settings[field];
@@ -269,6 +309,70 @@ function structuralFindings(
     }
   }
   return findings;
+}
+
+/**
+ * Keys that would mean a secret reached this record. The supplier's connector
+ * loop applies the same rule to each connector; this is the flat-record form,
+ * used where a settings object has no sub-records of its own.
+ */
+function credentialShapedFindings(record: Record<string, unknown>, prefix: string): SettingsFinding[] {
+  const findings: SettingsFinding[] = [];
+  for (const key of Object.keys(record)) {
+    if (CREDENTIAL_SHAPED.test(key)) {
+      findings.push({
+        refusal: 'credential_material_present',
+        field: `${prefix}${key}`,
+        detail: 'settings record what a filing prints, never a credential',
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * Validate the node's own business identity. Normalise FIRST (the store keeps
+ * what the validator judged, never a rawer variant), then refuse anything that
+ * would make a filing wrong.
+ */
+export function validateBusinessSettings(settings: BusinessSettings): SettingsVerdict {
+  const structural = structuralFindings(settings as unknown as Record<string, unknown>, [
+    { field: 'legalName', kind: 'string' },
+    { field: 'registrations', kind: 'array' },
+    { field: 'address', kind: 'record', optional: true },
+  ]);
+  if (structural.length > 0) return { ok: false, findings: structural };
+
+  const findings: SettingsFinding[] = [];
+  const legalName = normaliseLegalName(settings.legalName);
+  if (legalName === '') {
+    findings.push({
+      refusal: 'empty_legal_name',
+      field: 'legalName',
+      detail: 'a filing prints a name; an empty one names nobody',
+    });
+  } else if (settings.legalName.trim().length > MAX_LEGAL_NAME_CHARS) {
+    findings.push({
+      refusal: 'legal_name_too_long',
+      field: 'legalName',
+      detail: `a legal name is at most ${String(MAX_LEGAL_NAME_CHARS)} characters`,
+    });
+  }
+  findings.push(...validateTaxRegistrations(normaliseTaxRegistrations(settings.registrations), 'registrations'));
+  if (settings.address !== undefined) {
+    findings.push(...validatePostalAddress(normalisePostalAddress(settings.address), 'address'));
+  }
+  findings.push(...credentialShapedFindings(settings as unknown as Record<string, unknown>, ''));
+  return findings.length > 0 ? { ok: false, findings } : { ok: true };
+}
+
+/** The stored form of a business identity: trimmed, cased, deduplicated. */
+export function normaliseBusinessSettings(settings: BusinessSettings): BusinessSettings {
+  return {
+    legalName: normaliseLegalName(settings.legalName),
+    registrations: normaliseTaxRegistrations(settings.registrations),
+    ...(settings.address !== undefined ? { address: normalisePostalAddress(settings.address) } : {}),
+  };
 }
 
 export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict {

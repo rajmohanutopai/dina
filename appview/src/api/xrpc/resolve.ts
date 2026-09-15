@@ -70,6 +70,8 @@ async function computeResolveResponse(
       // TN-API-003 fields — null on parse failure (subject can't be resolved):
       subjectId: null,
       reviewCount: 0,
+      peerReviewCount: 0,
+      importedReviewCount: 0,
       lastAttestedAt: null,
       // Legacy fields:
       subjectType: 'unknown',
@@ -101,6 +103,8 @@ async function computeResolveResponse(
       return {
         subjectId,
         reviewCount: 0,
+        peerReviewCount: 0,
+        importedReviewCount: 0,
         lastAttestedAt: null,
         subjectType: subjectRef.type,
         trustLevel: 'none',
@@ -179,6 +183,12 @@ async function computeResolveResponse(
     //     always wins. V2 fills this when the merge resolver lands.
     subjectId,
     reviewCount: scores?.totalAttestations ?? 0,
+    // D4 — how much of that count is testimony and how much a registered
+    // per-market feed contributed. A caller ranking on `reviewCount` alone
+    // would rank a cold start the same as a settled reputation, which is
+    // exactly what the feeds exist to avoid being mistaken for.
+    peerReviewCount: scores?.peerReviewCount ?? 0,
+    importedReviewCount: scores?.importedReviewCount ?? 0,
     lastAttestedAt: scores?.lastAttestationAt
       ? scores.lastAttestationAt.toISOString()
       : null,

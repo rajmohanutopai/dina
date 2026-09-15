@@ -36,6 +36,8 @@ import { confirmDecision } from '../services/confirm_decision';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
+import { SafeCardRenderer } from './SafeCardRenderer';
+
 export type { InboxEntry, ResolvedInboxEntry };
 
 /** What `useApprovalInbox` exposes to the Activity tab. */
@@ -47,7 +49,11 @@ export interface ApprovalInbox {
   loading: boolean;
   error: string | null;
   supportsSessionScope: (item: InboxEntry) => boolean;
+  /** §15.5 — may this plugin card offer "Allow for 24 hours"? (read/quote at Core's MODERATE only) */
+  supportsAllow24h: (item: InboxEntry) => boolean;
   approve: (item: InboxEntry, scope?: 'single' | 'session') => void;
+  /** Approve a plugin card AND mint a 24 h window grant for its scope. */
+  approveAllow24h: (item: InboxEntry) => void;
   deny: (item: InboxEntry) => void;
   reload: () => Promise<void>;
 }
@@ -145,18 +151,17 @@ export function useApprovalInbox(): ApprovalInbox {
 
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
-      const headline =
+      const namesCapability =
         entry.kind === 'intent_validation' ||
         entry.kind === 'remote_coding_gate' ||
-        entry.kind === 'agent_action'
-          ? `${verb} "${entry.capability}"?`
-          : `${verb} "${entry.serviceName || entry.capability}"?`;
-      const subline =
-        entry.kind === 'intent_validation' ||
-        entry.kind === 'remote_coding_gate' ||
-        entry.kind === 'agent_action'
-          ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
-          : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
+        entry.kind === 'agent_action' ||
+        entry.kind === 'plugin_invocation';
+      const headline = namesCapability
+        ? `${verb} "${entry.capability}"?`
+        : `${verb} "${entry.serviceName || entry.capability}"?`;
+      const subline = namesCapability
+        ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
+        : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
       // confirm on web (RN-Web's Alert.alert is a no-op — without this the
       // web thin-client's Approve/Deny confirm never appears; F4).
@@ -214,6 +219,18 @@ export function useApprovalInbox(): ApprovalInbox {
     [refreshResolved],
   );
 
+  /**
+   * §15.5 "Allow for 24 hours" — approve this invocation and mint a 24-hour
+   * window grant for its scope. Offered only where Core says a grant can
+   * silence the capability (`supportsAllow24h`).
+   */
+  const handleApproveAllow24h = useCallback(
+    (item: InboxEntry) => {
+      confirmAndRun(item, 'Approve', () => approvePending(item.id, item.kind, undefined, 'window_24h'));
+    },
+    [confirmAndRun],
+  );
+
   const handleApprove = useCallback(
     (item: InboxEntry) => {
       // Kinds without a session-scope choice — single confirmation flow.
@@ -257,10 +274,25 @@ export function useApprovalInbox(): ApprovalInbox {
     loading,
     error,
     supportsSessionScope,
+    supportsAllow24h,
     approve,
+    approveAllow24h: handleApproveAllow24h,
     deny,
     reload: load,
   };
+}
+
+/**
+ * §15.5: "Allow for 24 hours appears only where the class and constraints
+ * permit it." A 24-hour window is a bounded grant, so §8 permits it on any
+ * class (a HIGH capability still cards its first invocations under it); what
+ * no grant can ever silence is a `sensitive`/`regulated` capability or a
+ * sensitive-persona scope — those card every time, and offering a window
+ * there would promise a silence that never comes. Core says which is which
+ * (`grant_can_silence` in the card policy); the phone never guesses.
+ */
+export function supportsAllow24h(item: InboxEntry): boolean {
+  return item.kind === 'plugin_invocation' && item.grantCanSilence === true;
 }
 
 /**
@@ -274,6 +306,7 @@ export function ApprovalActionCard({
   supportsSessionScope,
   onApprove,
   onApproveSimple,
+  onAllow24h,
   onDeny,
 }: {
   entry: InboxEntry;
@@ -281,6 +314,8 @@ export function ApprovalActionCard({
   supportsSessionScope: boolean;
   onApprove: (scope: 'single' | 'session') => void;
   onApproveSimple: () => void;
+  /** §15.5 — present only when `supportsAllow24h(entry)`; the card shows the button iff given. */
+  onAllow24h?: () => void;
   onDeny: () => void;
 }): React.JSX.Element {
   const item = entry;
@@ -301,6 +336,11 @@ export function ApprovalActionCard({
     item.kind === 'agent_action';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
+  // PLUGIN_ARCHITECTURE §15.5 — a plugin invocation card shows the consented
+  // action class as its tag, the EXACT outbound params, Core's reason for the
+  // card, and the effect/retry statement. All of it is Dina-owned chrome read
+  // off the pinned envelope; nothing on it was written by the plugin.
+  const isPlugin = item.kind === 'plugin_invocation';
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
   // the exact mode in the headline (trusted chrome) so a WRITE request can never
@@ -309,18 +349,20 @@ export function ApprovalActionCard({
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
     ? 'Agent action approval'
-    : isStagingAccess
-      ? 'Memory access approval'
-      : isVaultWrite
-        ? 'Vault WRITE approval'
-        : isVaultRead
-          ? 'Vault read approval'
-          : item.serviceName || 'Unnamed service';
-  const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : item.capability;
+    : isPlugin
+      ? 'Plugin action approval'
+      : isStagingAccess
+        ? 'Memory access approval'
+        : isVaultWrite
+          ? 'Vault WRITE approval'
+          : isVaultRead
+            ? 'Vault read approval'
+            : item.serviceName || 'Unnamed service';
+  const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : isPlugin ? (item.effect?.actionClass ?? '') : item.capability;
   const tagStyle =
-    isIntent && item.riskLevel === 'HIGH'
+    (isIntent || isPlugin) && item.riskLevel === 'HIGH'
       ? [styles.capability, styles.riskHigh]
-      : isIntent && item.riskLevel === 'MODERATE'
+      : (isIntent || isPlugin) && item.riskLevel === 'MODERATE'
         ? [styles.capability, styles.riskModerate]
         : styles.capability;
   const requesterPrefix = isIntent
@@ -344,7 +386,26 @@ export function ApprovalActionCard({
         </Text>
         <Text style={tagStyle}>{tagText}</Text>
       </View>
-      {isIntent ? <Text style={styles.intentAction}>{item.capability}</Text> : null}
+      {isIntent || isPlugin ? (
+        <Text style={styles.intentAction} testID={isPlugin ? `approvals-plugin-capability-${item.id}` : undefined}>
+          {item.capability}
+        </Text>
+      ) : null}
+      {isPlugin ? (
+        <>
+          <Text style={styles.riskHint} testID={`approvals-plugin-why-${item.id}`}>
+            {item.description}
+          </Text>
+          <Text style={styles.riskHint} testID={`approvals-plugin-effect-${item.id}`}>
+            {pluginEffectStatement(item.effect)}
+          </Text>
+          {pluginContextStatement(item.contextSummary) !== '' ? (
+            <Text style={styles.riskHint} testID={`approvals-plugin-context-${item.id}`}>
+              {pluginContextStatement(item.contextSummary)}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
       {riskHint !== null ? <Text style={styles.riskHint}>{riskHint}</Text> : null}
       {item.requesterDID !== '' ? (
         <Text style={styles.requester} numberOfLines={1}>
@@ -354,7 +415,9 @@ export function ApprovalActionCard({
       {item.paramsPreview !== '' ? (
         <Text
           style={styles.paramsPreview}
-          numberOfLines={item.kind === 'agent_action' ? undefined : 3}
+          // The exact outbound params are the gate (§11.5): never clipped.
+          numberOfLines={item.kind === 'agent_action' || isPlugin ? undefined : 3}
+          testID={isPlugin ? `approvals-plugin-params-${item.id}` : undefined}
         >
           {item.paramsPreview}
         </Text>
@@ -378,6 +441,25 @@ export function ApprovalActionCard({
         >
           <Text style={styles.denyText}>Deny</Text>
         </Pressable>
+        {onAllow24h !== undefined && (
+          // PLUGIN_ARCHITECTURE §15.5 — approve this invocation AND let the
+          // same scope run silent for 24 hours. Offered only where Core says
+          // a grant can silence this capability (see supportsAllow24h).
+          <Pressable
+            testID={`approvals-allow-24h-${item.id}`}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.button,
+              styles.approveOnceButton,
+              pressed && styles.pressed,
+              busy && styles.disabled,
+            ]}
+            disabled={busy}
+            onPress={onAllow24h}
+          >
+            <Text style={styles.approveOnceText}>Allow 24h</Text>
+          </Pressable>
+        )}
         {supportsSessionScope && (
           // dina_details §13.4 inline 3-button — `Approve Once`
           // grants single-use (`scope='single'`); the right-hand
@@ -434,17 +516,22 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
     item.kind === 'agent_action';
   const isStagingAccess = item.kind === 'staging_persona_access';
   const isVaultRead = item.kind === 'vault_read';
+  // §15.5 — a resolved plugin invocation still names WHAT was decided: the
+  // capability and its pinned action class, so two rows never read alike.
+  const isPlugin = item.kind === 'plugin_invocation';
   // PLG-29 #1: mirror the pending card — a resolved WRITE grant must read WRITE.
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
     ? 'Agent action approval'
-    : isStagingAccess
-      ? 'Memory access approval'
-      : isVaultWrite
-        ? 'Vault WRITE approval'
-        : isVaultRead
-          ? 'Vault read approval'
-          : item.serviceName || 'Unnamed service';
+    : isPlugin
+      ? `Plugin action approval · ${item.effect?.actionClass ?? ''}`.replace(/ · $/, '')
+      : isStagingAccess
+        ? 'Memory access approval'
+        : isVaultWrite
+          ? 'Vault WRITE approval'
+          : isVaultRead
+            ? 'Vault read approval'
+            : item.serviceName || 'Unnamed service';
   // PLG-31 #14/#16: the badge is the OWNER DECISION. `unknown` (outcome_unknown)
   // gets its own non-committal "Unconfirmed" badge — never folded into "Denied".
   const outcomeStyle =
@@ -479,8 +566,30 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         <Text style={outcomeStyle}>{outcomeLabel}</Text>
       </View>
       {executionNote !== null ? <Text style={styles.riskHint}>{executionNote}</Text> : null}
-      {isIntent && item.capability !== '' ? (
-        <Text style={styles.intentAction}>{item.capability}</Text>
+      {(isIntent || isPlugin) && item.capability !== '' ? (
+        <Text style={styles.intentAction} testID={isPlugin ? `approvals-resolved-plugin-capability-${item.id}` : undefined}>
+          {item.capability}
+        </Text>
+      ) : null}
+      {isPlugin && item.resultLines !== undefined ? (
+        // §15.6 — the runner's answer. Through the card template the manifest
+        // declared and the owner consented to when there is one (Core filled
+        // and validated it in untrusted mode: no badges, no links, no
+        // plugin-authored anything beyond the pinned layout), and on the
+        // label: value floor when there is not.
+        <View testID={`approvals-resolved-plugin-result-${item.id}`}>
+          {item.resultCard !== undefined ? (
+            <SafeCardRenderer spec={item.resultCard} />
+          ) : item.resultLines.length === 0 ? (
+            <Text style={styles.riskHint}>The plugin answered with no fields.</Text>
+          ) : (
+            item.resultLines.map((line, i) => (
+              <Text key={i} style={styles.paramsPreview}>
+                {line}
+              </Text>
+            ))
+          )}
+        </View>
       ) : null}
       {item.paramsPreview !== '' ? (
         <Text
@@ -502,6 +611,37 @@ export function formatResolvedAt(ms: number, now: number = Date.now()): string {
   if (delta < 3600) return `${Math.round(delta / 60)}m ago`;
   if (delta < 86400) return `${Math.round(delta / 3600)}h ago`;
   return `${Math.round(delta / 86400)}d ago`;
+}
+
+/**
+ * §15.5 — "whether an external action may occur and whether retries are
+ * idempotent", in the owner's words, from the pinned action class.
+ */
+export function pluginEffectStatement(effect: InboxEntry['effect']): string {
+  if (effect === undefined) return '';
+  const effectful = effect.actionClass === 'write' || effect.actionClass === 'booking' || effect.actionClass === 'agentic';
+  const action = effectful
+    ? 'An external action may occur.'
+    : effect.actionClass === 'payment'
+      ? 'Payment — never allowed for a plugin.'
+      : 'Reads only; nothing outside is changed.';
+  const retry = effect.retryIdempotent
+    ? 'A retry after a lost connection is safe.'
+    : 'Not retried automatically if the connection is lost.';
+  return `${action} ${retry}`;
+}
+
+/**
+ * §11 — what Dina attached to the ask beyond the params the owner can read
+ * above. Counts and categories, in the owner's words: the facts themselves
+ * are already on the card, and printing them twice would be the leak.
+ */
+export function pluginContextStatement(summary: InboxEntry['contextSummary']): string {
+  if (summary === undefined) return '';
+  if (summary.itemCount === 0) return 'Dina attached nothing of yours to this.';
+  const names = summary.categories.map((c) => c.replace(/_/g, ' ')).join(', ');
+  const facts = summary.itemCount === 1 ? '1 detail' : `${summary.itemCount} details`;
+  return `Dina also attached ${facts} you have stated (${names}).`;
 }
 
 function shortenDID(did: string): string {

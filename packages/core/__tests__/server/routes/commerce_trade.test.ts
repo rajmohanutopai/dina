@@ -15,6 +15,7 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { InMemoryDeclineDocumentRepository } from '../../../src/commerce/decline_documents';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import {
@@ -22,6 +23,7 @@ import {
   verifyInboundDeliveryReceipt,
   verifyInboundPaymentNote,
 } from '../../../src/commerce/trade_ledger';
+import { InMemoryTradeSpoolRepository } from '../../../src/commerce/trade_spool';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -31,6 +33,8 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  moneyClosed,
+  moneyOpen,
 } from '../../commerce/helpers';
 
 const hash: Sha256Fn = (data) => new Uint8Array(createHash('sha256').update(data).digest());
@@ -69,6 +73,7 @@ function makeAcceptedAck(): OrderAcknowledgement {
 
 let router: CoreRouter;
 let tradeDocs: InMemoryTradeDocumentRepository;
+let declineDocs: InMemoryDeclineDocumentRepository;
 let receipts: InMemoryCommerceReceiptRepository;
 
 function owner(path: string, body?: Record<string, unknown>): CoreRequest {
@@ -90,6 +95,7 @@ function owner(path: string, body?: Record<string, unknown>): CoreRequest {
 beforeEach(() => {
   setNodeDID(SUPPLIER_DID);
   tradeDocs = new InMemoryTradeDocumentRepository();
+  declineDocs = new InMemoryDeclineDocumentRepository();
   receipts = new InMemoryCommerceReceiptRepository();
   // The supplier retains the order, the bound quote and its own accepted
   // acknowledgement — all under the ORDER'S buyer key, which is how the
@@ -136,7 +142,9 @@ beforeEach(() => {
     createdAt: T0,
   });
   installCommerceRuntime({
-    tradeDocuments: tradeDocs,
+    money: moneyOpen({ tradeDocuments: tradeDocs }),
+    tradeSpool: new InMemoryTradeSpoolRepository(),
+    declineDocuments: declineDocs,
     receipts,
     nodeDid: () => SUPPLIER_DID,
     now: () => T0,
@@ -330,6 +338,114 @@ describe('POST /v1/commerce/trade/quote-decline', () => {
       }),
     );
     expect(unknown.status).toBe(404);
+  });
+});
+
+describe('the money line (§5.B1 Cut 3): no active Commerce Pack', () => {
+  beforeEach(() => {
+    installCommerceRuntime({
+      money: moneyClosed('pack_paused'),
+      declineDocuments: declineDocs,
+      receipts,
+      // The inbox's money-free stores, empty: what it lists with the pack closed.
+      orderDrafts: { list: () => [] },
+      tenders: { listTenders: () => [] },
+      pendingDecisions: { list: () => [] },
+      nodeDid: () => SUPPLIER_DID,
+      now: () => T0,
+    } as unknown as CommerceRuntime);
+  });
+
+  it('every khata and revenue-share route refuses with ONE shape', async () => {
+    const posts: [string, Record<string, unknown>][] = [
+      ['/v1/commerce/trade/delivery-note', {
+        counterparty_did: BUYER_DID,
+        purchase_order_id: ORDER.purchase_order_id,
+        supplier_order_id: 'so-1',
+        lines: [],
+      }],
+      ['/v1/commerce/trade/delivery-receipt', { delivery_note_digest: 'x', lines: [] }],
+      ['/v1/commerce/trade/payment-note', {
+        supplier_did: SUPPLIER_DID,
+        amount: { currency: 'INR', minor_units: '1' },
+        method: 'cash',
+      }],
+      ['/v1/commerce/trade/payment-ack', { payment_note_digest: 'x', kind: 'received' }],
+      ['/v1/commerce/trade/resend', { record_digest: 'x' }],
+      ['/v1/commerce/trade/revshare/propose', {
+        counterparty_did: BUYER_DID,
+        self_role: 'host',
+        share_bps: 100,
+        period: 'monthly',
+        cash_handler: 'host',
+        currency: 'INR',
+        effective_from: '2026-01-01',
+      }],
+      ['/v1/commerce/trade/revshare/decide', { proposal_digest: 'x', kind: 'accepted' }],
+      ['/v1/commerce/trade/revshare/terminate', { proposal_digest: 'x' }],
+      ['/v1/commerce/trade/revshare/settle', {
+        proposal_digest: 'x',
+        period_start: '2026-01-01',
+        period_end: '2026-01-31',
+        gross_minor_units: '100',
+      }],
+      ['/v1/commerce/trade/revshare/ack-settlement', { settlement_digest: 'x', kind: 'accepted' }],
+    ];
+    for (const [routePath, body] of posts) {
+      const res = await router.handle(owner(routePath, body));
+      expect({ routePath, status: res.status }).toEqual({ routePath, status: 409 });
+      expect(res.body).toMatchObject({ error: 'commerce_pack_inactive', reason: 'pack_paused' });
+    }
+    const gets: [string, Record<string, string>][] = [
+      ['/v1/commerce/trade/statement', { counterparty_did: BUYER_DID, currency: 'INR' }],
+      ['/v1/commerce/trade/unanswered', { counterparty_did: BUYER_DID }],
+      ['/v1/commerce/trade/books-export', { currency: 'INR' }],
+      ['/v1/commerce/trade/revshare/statement', { proposal_digest: 'x' }],
+    ];
+    for (const [routePath, query] of gets) {
+      const res = await router.handle({ ...owner(routePath, {}), method: 'GET', query } as CoreRequest);
+      expect({ routePath, status: res.status }).toEqual({ routePath, status: 409 });
+      expect(res.body).toMatchObject({ error: 'commerce_pack_inactive', reason: 'pack_paused' });
+    }
+    // Fourteen money routes, every one refused before any side effect.
+    expect(posts.length + gets.length).toBe(14);
+  });
+
+  it('the inbox still answers, ordered, and says the khata rows are absent', async () => {
+    installCommerceRuntime({
+      money: moneyClosed('pack_paused'),
+      declineDocuments: declineDocs,
+      receipts,
+      orderDrafts: { list: () => [] },
+      // Two money-free items seeded OUT of order: the clerk's queue must not
+      // depend on plugin state.
+      tenders: { listTenders: () => [{ tenderId: 't-late', expiresAt: T0 + 60_000, createdAt: T0 }] },
+      pendingDecisions: { list: () => [{ buyerDid: BUYER_DID, purchaseOrderId: 'po-early', createdAt: T0 - 100 }] },
+      nodeDid: () => SUPPLIER_DID,
+      now: () => T0,
+    } as unknown as CommerceRuntime);
+    const inbox = await router.handle({
+      ...owner('/v1/commerce/trade/inbox', {}),
+      method: 'GET',
+      query: {},
+    } as CoreRequest);
+    expect(inbox.status).toBe(200);
+    expect(inbox.body).toMatchObject({ ok: true, money_available: false });
+    const items = (inbox.body as { items: { kind: string; created_at: number }[] }).items;
+    expect(items.map((item) => item.kind)).toEqual(['pending_decision', 'open_tender']);
+    expect(items.map((item) => item.created_at)).toEqual([T0 - 100, T0]);
+  });
+
+  it('the money-free decline still authors — the kernel path does not need the pack', async () => {
+    const declined = await router.handle(
+      owner('/v1/commerce/trade/quote-decline', {
+        request_id: REQUEST.request_id,
+        buyer_did: BUYER_DID,
+        reason_code: 'capacity',
+      }),
+    );
+    expect(declined.status).toBe(200);
+    expect(declineDocs.answersTo(REQUEST.request_digest)).toHaveLength(1);
   });
 });
 

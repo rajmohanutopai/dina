@@ -558,3 +558,267 @@ describe('DELETE /v1/contacts/:did (remove a contact)', () => {
     expect(called).toBe(false);
   });
 });
+
+/**
+ * §5.D — the counterparty's paper identity on the contact row. The route maps
+ * the snake_case wire onto the domain call, applies the three fields in ONE
+ * call (so a caller correcting two of them sees both findings), and answers a
+ * refusal with the findings rather than a bare 400.
+ */
+describe('PUT /v1/contacts/:did — the paper identity', () => {
+  const DID = 'did:plc:chairmaker99';
+  const GSTIN = '27AAPFU0939F1ZV';
+
+  /**
+   * A fake that can COMMIT must also be able to JUDGE: the route checks both
+   * stores before writing either, so a fixture that only injected the setter
+   * would silently reach the real directory.
+   */
+  function handlersWithPaper(findings: { refusal: string; field: string; detail: string }[] = []) {
+    const calls: { did: string; identity: unknown }[] = [];
+    const handlers = makeContactsHandlers({
+      getContact: (did) => (did === DID ? contactFixture(DID, 'ChairMaker') : null),
+      setPreferredFor: () => undefined,
+      checkPaperIdentity: () => findings as never,
+      checkContactChannels: () => [],
+      setContactChannels: () => [],
+      setPaperIdentity: (did, identity) => {
+        calls.push({ did, identity });
+        return findings as never;
+      },
+    });
+    return { handlers, calls };
+  }
+
+  it('maps the wire onto the domain call — snake_case in, camelCase out, one call for all three fields', async () => {
+    const { handlers, calls } = handlersWithPaper();
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({
+          legal_name: 'ChairMaker Industries LLP',
+          registrations: [{ scheme: 'gstin', value: GSTIN }],
+          billing_address: {
+            line1: '4 Kalasipalya Road',
+            city: 'Bengaluru',
+            region: 'Karnataka',
+            postal_code: '560002',
+            country: 'IN',
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      did: DID,
+      identity: {
+        legalName: 'ChairMaker Industries LLP',
+        registrations: [{ scheme: 'gstin', value: GSTIN }],
+        billingAddress: {
+          line1: '4 Kalasipalya Road',
+          city: 'Bengaluru',
+          region: 'Karnataka',
+          postalCode: '560002',
+          country: 'IN',
+        },
+      },
+    });
+  });
+
+  it('passes only the fields the caller named — the others are left alone', async () => {
+    const { handlers, calls } = handlersWithPaper();
+    await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ registrations: [] }),
+      }),
+    );
+    expect(calls[0].identity).toEqual({ registrations: [] });
+  });
+
+  it('clears the billing address with an explicit null', async () => {
+    const { handlers, calls } = handlersWithPaper();
+    await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ billing_address: null }),
+      }),
+    );
+    expect(calls[0].identity).toEqual({ billingAddress: null });
+  });
+
+  it('answers a domain refusal with its findings, so the owner sees every problem at once', async () => {
+    const { handlers } = handlersWithPaper([
+      { refusal: 'malformed_registration', field: 'registrations[0]', detail: 'the gstin does not pass its own format check' },
+      { refusal: 'malformed_address', field: 'billing_address.country', detail: 'country must be an ISO-3166-1 alpha-2 code, e.g. IN or US' },
+    ]);
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }], billing_address: { line1: 'x', city: 'y', country: 'India' } }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = res.body as { error: string; findings: { field: string }[] };
+    expect(body.error).toBe('identity_invalid');
+    expect(body.findings.map((f) => f.field)).toEqual(['registrations[0]', 'billing_address.country']);
+  });
+
+  it.each([
+    [{ legal_name: 42 }, 'legal_name must be a string'],
+    [{ registrations: 'gstin' }, 'registrations must be an array'],
+    [{ registrations: [{ scheme: 'gstin' }] }, 'each registration needs a string scheme and value'],
+  ])('refuses a malformed body (%j) before the domain is called', async (patch, message) => {
+    const { handlers, calls } = handlersWithPaper();
+    const res = await handlers.updateContact(
+      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody(patch) }),
+    );
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toContain(message);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('does not touch the paper identity when the body names none of its fields', async () => {
+    const { handlers, calls } = handlersWithPaper();
+    const res = await handlers.updateContact(
+      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ preferred_for: ['chairs'] }) }),
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('passes the channels to the people-graph writer, tri-state like the rest', async () => {
+    const calls: { did: string; channels: unknown }[] = [];
+    const handlers = makeContactsHandlers({
+      getContact: (did) => (did === DID ? contactFixture(DID, 'ChairMaker') : null),
+      checkContactChannels: () => [],
+      setContactChannels: (did, channels) => {
+        calls.push({ did, channels });
+        return [];
+      },
+    });
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ phone: '+91 98450 12345', email: null }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ did: DID, channels: { phone: '+91 98450 12345', email: null } }]);
+  });
+
+  it('answers a channel refusal with its findings', async () => {
+    const handlers = makeContactsHandlers({
+      getContact: () => contactFixture(DID, 'ChairMaker'),
+      checkContactChannels: () => [
+        { refusal: 'malformed_channel', field: 'phone', detail: 'a phone must be 8–15 digits' } as never,
+      ],
+      setContactChannels: () => [],
+    });
+    const res = await handlers.updateContact(
+      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ phone: 'call me' }) }),
+    );
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe('identity_invalid');
+  });
+
+  it('refuses a channel that is not a string or null before the domain is called', async () => {
+    const calls: unknown[] = [];
+    const handlers = makeContactsHandlers({
+      getContact: () => contactFixture(DID, 'ChairMaker'),
+      checkContactChannels: () => [],
+      setContactChannels: (did, channels) => {
+        calls.push({ did, channels });
+        return [];
+      },
+    });
+    const res = await handlers.updateContact(
+      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ phone: 42 }) }),
+    );
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('writes NEITHER store when one of them objects — the same refusal means the same thing', async () => {
+    const written: string[] = [];
+    const handlers = makeContactsHandlers({
+      getContact: () => contactFixture(DID, 'ChairMaker'),
+      checkPaperIdentity: () => [],
+      // The channels object: the paper identity must not be committed either.
+      checkContactChannels: () => [
+        { refusal: 'malformed_channel', field: 'phone', detail: 'a phone must be 8–15 digits' } as never,
+      ],
+      setPaperIdentity: () => {
+        written.push('paper');
+        return [];
+      },
+      setContactChannels: () => {
+        written.push('channels');
+        return [];
+      },
+    });
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ legal_name: 'ChairMaker Industries LLP', phone: 'call me' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe('identity_invalid');
+    expect(written).toEqual([]);
+  });
+
+  it('commits both stores when both are happy', async () => {
+    const written: string[] = [];
+    const handlers = makeContactsHandlers({
+      getContact: () => contactFixture(DID, 'ChairMaker'),
+      checkPaperIdentity: () => [],
+      checkContactChannels: () => [],
+      setPaperIdentity: () => {
+        written.push('paper');
+        return [];
+      },
+      setContactChannels: () => {
+        written.push('channels');
+        return [];
+      },
+    });
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ legal_name: 'ChairMaker Industries LLP', phone: '+919845012345' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(written).toEqual(['paper', 'channels']);
+  });
+
+  it('404s for an unknown contact before any identity work', async () => {
+    const { handlers, calls } = handlersWithPaper();
+    const res = await handlers.updateContact(
+      req({
+        method: 'PUT',
+        path: '/v1/contacts/did:plc:nobody',
+        params: { did: 'did:plc:nobody' },
+        ...jsonBody({ legal_name: 'Nobody Ltd' }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+});

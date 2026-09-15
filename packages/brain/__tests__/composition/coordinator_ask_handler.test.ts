@@ -20,7 +20,7 @@
 
 import { createPersona, resetPersonaState, clearVaults, storeItem } from '@dina/core';
 
-import { getThread, resetThreads } from '../../src/chat/thread';
+import { getThread, readLifecycle, resetThreads } from '../../src/chat/thread';
 import {
   buildAgenticAskPipeline,
   type BuildAgenticAskPipelineInput,
@@ -99,11 +99,43 @@ function fakeAppView(): BuildAgenticAskPipelineInput['appViewClient'] {
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },
+    async searchCatalog() {
+      return [];
+    },
+    async getProfile() {
+      return null;
+    },
     async resolveTrust() {
       return {} as never;
     },
     async searchTrust() {
       return {} as never;
+    },
+  };
+}
+
+/** An AppView whose catalog search returns two suppliers of ONE product, so a
+ *  scripted `search_products` tool call produces a real where-to-buy card. */
+function catalogAppView(): BuildAgenticAskPipelineInput['appViewClient'] {
+  const supplier = (supplierDid: string, minorUnits: string) => ({
+    supplierDid,
+    serviceUri: `at://${supplierDid}/svc`,
+    serviceRkey: 'self',
+    product: { scheme: 'gtin', value: '08901234567890' },
+    catalogSnapshotRef: `snap-${supplierDid}`,
+    matchedFields: ['identifier'],
+    indicativePrice: { currency: 'INR', minorUnits },
+    fulfilmentRegions: [{ scheme: 'iso-3166-2', value: 'IN-KA' }],
+    generatedAt: '2026-08-08T10:00:00.000Z',
+    retrievalScoreBp: 6000,
+  });
+  return {
+    ...fakeAppView(),
+    async searchCatalog() {
+      return [supplier('did:plc:sellerA', '50000'), supplier('did:plc:sellerB', '90000')];
+    },
+    async getProfile() {
+      return { overallTrustScore: 0.8 };
     },
   };
 }
@@ -142,8 +174,14 @@ function makeFakeCoreClient(): {
     if (t) t.status = s;
   };
   const client = {
+    // §6 plugin tools — nothing installed in this fixture; an ask is refused.
+    async listPluginToolCapabilities() { return []; },
+    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
     async findContactsByPreference() {
       return [];
+    },
+    async contactLookup() {
+      return null;
     },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
@@ -174,12 +212,16 @@ function makeFakeCoreClient(): {
   return { client, tasks };
 }
 
-function buildCoord(llm: LLMProvider, fastPathMs: number) {
+function buildCoord(
+  llm: LLMProvider,
+  fastPathMs: number,
+  appViewClient: BuildAgenticAskPipelineInput['appViewClient'] = fakeAppView(),
+) {
   const { client } = makeFakeCoreClient();
   const pipeline = buildAgenticAskPipeline({
     llm,
     providerName: 'gemini',
-    appViewClient: fakeAppView(),
+    appViewClient,
     orchestratorHandle: fakeOrchestrator(),
     coreClient: client,
     cloudConsentGranted: true,
@@ -563,6 +605,83 @@ describe('createCoordinatorAskHandler — async window deferral', () => {
         capability: 'com.acme.widget_price',
         query: 'who serves com.acme.widget_price?',
       });
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe('createCoordinatorAskHandler — commerce comparison card', () => {
+  function commerceCards() {
+    return getThread(THREAD).filter((m) => readLifecycle(m)?.kind === 'commerce_comparison');
+  }
+
+  it('posts exactly one commerce_comparison card on the fast path', async () => {
+    const llm = makeScripted();
+    llm.push(
+      toolCallResp({ id: 'tc-1', name: 'search_products', arguments: { query: 'oak chair' } }),
+      answerResp('Here are the best options I found.'),
+    );
+
+    const coord = buildCoord(llm.provider, 5_000, catalogAppView());
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: coord,
+      requesterDid: REQUESTER,
+    });
+
+    try {
+      const r = await handler('best oak chair');
+      // The narrative is returned (the orchestrator posts it); the card is
+      // posted by the bridge as its own lifecycle message.
+      expect(r.response).toBe('Here are the best options I found.');
+      const cards = commerceCards();
+      expect(cards).toHaveLength(1);
+      const first = cards[0];
+      if (first === undefined) throw new Error('expected one commerce card');
+      const lc = readLifecycle(first);
+      expect(lc?.kind).toBe('commerce_comparison');
+      if (lc?.kind === 'commerce_comparison') {
+        expect((lc.cardSpec as { version?: number }).version).toBe(1);
+      }
+    } finally {
+      dispose();
+    }
+  });
+
+  it('posts exactly one commerce_comparison card on the deferred path (no double-post)', async () => {
+    const scripted = makeScripted();
+    scripted.push(
+      toolCallResp({ id: 'tc-1', name: 'search_products', arguments: { query: 'oak chair' } }),
+      answerResp('Here are the best options I found.'),
+    );
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow: LLMProvider = {
+      ...scripted.provider,
+      chat: async (...a) => {
+        await gate;
+        return scripted.provider.chat(...a);
+      },
+    };
+
+    // fastPathMs=1 forces the deferred/async delivery path.
+    const coord = buildCoord(slow, 1, catalogAppView());
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: coord,
+      requesterDid: REQUESTER,
+    });
+
+    try {
+      const r = await handler('best oak chair');
+      expect(r.response).toBe(''); // deferred → placeholder posted, no synchronous answer
+      release();
+      for (let i = 0; i < 10; i++) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      // Exactly one card lands via the deferred branch — never two for one ask.
+      expect(commerceCards()).toHaveLength(1);
     } finally {
       dispose();
     }

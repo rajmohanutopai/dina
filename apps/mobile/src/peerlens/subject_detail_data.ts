@@ -159,6 +159,40 @@ export interface SubjectDetailDisplay {
    * out the current subject.
    */
   readonly alternatives: readonly SubjectAlternative[];
+  /**
+   * **D4.** Reviews a registered per-market feed contributed, grouped by
+   * source and credited. Separate from the three ring lists because a feed is
+   * not a reviewer — the rings are people the viewer can place in their own
+   * graph. Empty on a node that admits no feed, which is every node until an
+   * operator has read a feed's terms.
+   */
+  readonly importedSources: readonly ImportedSourceCredit[];
+}
+
+/**
+ * **D4.** One source's contribution to a subject, as the card credits it.
+ *
+ * The Deep Link Default in one object: the source's own name, how many of
+ * this subject's reviews came from it, and a link back to the original so the
+ * reader can go and read it there. Dina credits sources rather than
+ * extracting from them, and a rating seeded from somebody else's corpus
+ * without saying whose corpus it was would be extracting.
+ */
+export interface ImportedSourceCredit {
+  readonly feed: string;
+  /** The source's name; null when this node no longer registers the feed. */
+  readonly name: string | null;
+  /** The source's own site; null when unregistered. Always https when present. */
+  readonly homepage: string | null;
+  readonly market: string | null;
+  readonly count: number;
+  /** The most recent few, each linking back to the original review. */
+  readonly latest: readonly {
+    readonly uri: string;
+    readonly text: string | null;
+    readonly sentiment: string;
+    readonly url: string;
+  }[];
 }
 
 /**
@@ -202,6 +236,12 @@ export interface SubjectDetailInput {
    * synthetic test inputs; defaults to `false` in the derivation.
    */
   readonly tombstoned?: boolean;
+  /**
+   * **D4.** What registered feeds contributed, straight off the wire.
+   * Optional: an older AppView returns no such field, and a node that admits
+   * no feed returns an empty list — both read as "nothing to credit".
+   */
+  readonly imported?: readonly ImportedSourceCredit[];
   /** Identifier (ASIN, ISBN, etc.) when the subject ref carries one. */
   readonly subjectIdentifier?: string;
   /** DID when the subject ref is a `did:` reference. */
@@ -417,6 +457,8 @@ export function deriveSubjectDetail(
     fofReviews: fof,
     strangerReviews: strangers,
     alternatives: deriveAlternatives(input.alternatives, currentSubjectId(input)),
+    // D4 — credited, bounded, and only where the link back is followable.
+    importedSources: deriveImportedSources(input.imported),
   };
 }
 
@@ -582,3 +624,41 @@ function bandForScore(
   if (!Number.isFinite(score)) return 'unrated';
   return trustBandFor(score);
 }
+
+
+/**
+ * **D4.** Normalise the wire's imported-source groups for rendering.
+ *
+ * Drops a group with nothing to show and a link that is not https — the
+ * credit has to be followable, and a card that offered a tap going somewhere
+ * else would be the opposite of crediting a source. Ordered by contribution
+ * so the source that fed the most sits first, and bounded so a subject with
+ * many feeds does not turn the detail screen into a directory.
+ */
+function deriveImportedSources(
+  raw: readonly ImportedSourceCredit[] | undefined,
+): readonly ImportedSourceCredit[] {
+  if (raw === undefined) return [];
+  const out: ImportedSourceCredit[] = [];
+  for (const group of raw) {
+    if (out.length >= MAX_IMPORTED_SOURCES) break;
+    const count = clampNonNegative(group.count);
+    if (count === 0) continue;
+    const latest = group.latest
+      .filter((entry) => /^https:\/\//i.test(entry.url))
+      .slice(0, MAX_IMPORTED_LATEST);
+    out.push({
+      feed: group.feed,
+      name: group.name,
+      homepage: /^https:\/\//i.test(group.homepage ?? '') ? group.homepage : null,
+      market: group.market,
+      count,
+      latest,
+    });
+  }
+  return out.sort((a, b) => b.count - a.count);
+}
+
+/** How many sources a subject's card credits, and how many reviews each shows. */
+const MAX_IMPORTED_SOURCES = 5;
+const MAX_IMPORTED_LATEST = 3;

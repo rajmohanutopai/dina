@@ -17,6 +17,7 @@ export * from './quote_family';
 export * from './status_chain';
 export * from './commerce_order';
 export * from './runtime';
+export * from './trade_spool';
 export * from './invite_compose';
 export * from './invite_store';
 export {
@@ -37,6 +38,11 @@ export * from './sweepers';
 export * from './catalog_import';
 export * from './catalog_leakage';
 export * from './offer_ranking';
+export * from './catalog_offers';
+// Re-exported so kernel consumers (e.g. the Brain research tool) get the
+// commerce quantity/money types through `@dina/core` without depending on
+// `@dina/commerce-protocol` directly.
+export type { Quantity, Money } from '@dina/commerce-protocol';
 export * from './probing_resistance';
 export * from './product_evidence';
 export * from './quote_fanout';
@@ -54,6 +60,7 @@ export * from './continuity_release_sweeper';
 export * from './catalog_feed_policy';
 export * from './catalog_ingest';
 export * from './rehydrate';
+export * from './money_rehydrate';
 export * from './buyer_reconciliation';
 export * from './buyer_orders';
 export * from './acting_install';
@@ -65,8 +72,10 @@ export * from './held_evidence_verifier';
 export * from './reconcile_poller';
 export * from './reconcile_sweeper';
 export * from './comparison_card';
+export * from './money_display';
 export * from './commerce_settings';
 export * from './settings_store';
+export * from './trade_identity';
 export * from './supplier_inbox';
 export * from './install_plan';
 export * from './staff_authority';

@@ -53,12 +53,12 @@ import { acknowledgementToResult } from './buyer_reconciliation';
 import { SUBMIT_ORDER_CAPABILITY } from './buyer_sender';
 import { verifyInboundStatus, type EnvelopeEvidence } from './buyer_status';
 import { isCommerceCapability } from './capability_names';
+import { verifyInboundQuoteDecline } from './decline_documents';
 import { recordCommerceEvent } from './observability';
 import { applyReconcileAnswer } from './reconcile_poller';
 import { ORDER_RECONCILE_CAPABILITY } from './reconcile_sweeper';
 import { getCommerceRuntime } from './runtime';
 import { noteTenderQuoteSettled } from './tender';
-import { verifyInboundQuoteDecline } from './trade_ledger';
 import { admitSupplierRecords } from './watermark_gate';
 
 import type { BuyerOrderRecord } from './buyer_reconciliation';
@@ -544,7 +544,7 @@ function applyInboundQuote(args: {
       senderDid: args.supplierDid,
       selfDid: nodeDid,
       decline: declineCandidate,
-      repository: runtime.tradeDocuments,
+      repository: runtime.declineDocuments,
       readRequest: (requestId) => runtime.buyerQuoteRequests.get(requestId),
       evidenceJson: '{}',
       nowMs: args.nowMs,

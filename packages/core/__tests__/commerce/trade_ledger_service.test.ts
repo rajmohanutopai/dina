@@ -16,12 +16,16 @@ import {
 } from '@dina/commerce-protocol';
 
 import {
+  authorQuoteDecline,
+  InMemoryDeclineDocumentRepository,
+  verifyInboundQuoteDecline,
+} from '../../src/commerce/decline_documents';
+import {
   InMemoryTradeDocumentRepository,
   verifyInboundDeliveryNote,
   verifyInboundDeliveryReceipt,
   verifyInboundPaymentAck,
   verifyInboundPaymentNote,
-  verifyInboundQuoteDecline,
 } from '../../src/commerce/trade_ledger';
 import { TradeLedgerService } from '../../src/commerce/trade_ledger_service';
 
@@ -167,8 +171,7 @@ describe('authoring runs the receiver rules on itself', () => {
     expect(!second.ok && second.refusal).toContain('first answer stands');
   });
 
-  it('declineQuote refuses a second decline for one request', () => {
-    const { service } = makeSide(SUPPLIER);
+  it('authorQuoteDecline refuses a second decline for one request', () => {
     const request = {
       protocol_version: '1.0',
       request_id: 'req-1',
@@ -176,8 +179,11 @@ describe('authoring runs the receiver rules on itself', () => {
       buyer_did: BUYER,
       supplier_did: SUPPLIER,
     } as unknown as QuoteRequest;
-    expect(service.declineQuote({ request, reasonCode: 'capacity' }).ok).toBe(true);
-    const second = service.declineQuote({ request, reasonCode: 'policy' });
+    const repo = new InMemoryDeclineDocumentRepository();
+    const author = (reasonCode: string) =>
+      authorQuoteDecline({ request, reasonCode, nodeDid: SUPPLIER, nowMs: T0, repository: repo });
+    expect(author('capacity').ok).toBe(true);
+    const second = author('policy');
     expect(!second.ok && second.refusal).toContain('already has a decline');
   });
 });
@@ -342,7 +348,6 @@ describe('the two-node journey — both sides fold to IDENTICAL numbers', () => 
   });
 
   it('a decline authored by the supplier verifies at the buyer', () => {
-    const supplier = makeSide(SUPPLIER);
     const request = {
       protocol_version: '1.0',
       request_id: 'req-1',
@@ -350,16 +355,22 @@ describe('the two-node journey — both sides fold to IDENTICAL numbers', () => 
       buyer_did: BUYER,
       supplier_did: SUPPLIER,
     } as unknown as QuoteRequest;
-    const decline = supplier.service.declineQuote({ request, reasonCode: 'out_of_region' });
+    const decline = authorQuoteDecline({
+      request,
+      reasonCode: 'out_of_region',
+      nodeDid: SUPPLIER,
+      nowMs: T0,
+      repository: new InMemoryDeclineDocumentRepository(),
+    });
     expect(decline.ok).toBe(true);
     if (!decline.ok) return;
-    const buyer = makeSide(BUYER);
+    const buyerDeclines = new InMemoryDeclineDocumentRepository();
     expect(
       verifyInboundQuoteDecline({
         senderDid: SUPPLIER,
         selfDid: BUYER,
         decline: decline.document,
-        repository: buyer.repo,
+        repository: buyerDeclines,
         readRequest: (id) => (id === 'req-1' ? request : null),
         evidenceJson: '{}',
         nowMs: T0,

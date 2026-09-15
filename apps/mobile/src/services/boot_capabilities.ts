@@ -75,11 +75,13 @@ import {
   reconcileDefaultAgentGatingPolicies,
   setOutboxRedeliverFn,
   setPluginDeviceVerifier,
+  setRepoProofVerifier,
+  startAbandonedInstallSweeper,
   startOutboxDrainer,
   storeItem,
   type DrainerHandle,
 } from '@dina/core';
-import { listActiveDevices } from '@dina/core/devices';
+import { listActiveDevices, revokePluginDeviceForTeardown } from '@dina/core/devices';
 import { DIDResolver, hydrateDeviceRegistry, getDeviceByDID } from '@dina/core/runtime';
 import { makeSendD2D, makeOutboxRedeliver } from '@dina/home-node';
 import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
@@ -103,6 +105,7 @@ import {
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
+import { makeMobileRepoProofVerifier } from './repo_proof_wiring';
 import { loadRolePreference } from './role_preference';
 
 import type { NodeRole } from './bootstrap';
@@ -119,6 +122,21 @@ let outboxDrainer: DrainerHandle | null = null;
 function restartOutboxDrainer(): void {
   outboxDrainer?.stop();
   outboxDrainer = startOutboxDrainer();
+}
+
+/**
+ * Abandoned plugin-install sweeper (PLUGIN_ARCHITECTURE §15.3): a pending
+ * install the owner walked away from expires, and the runner device paired to
+ * it is revoked. Same module-scope restart guard as the drainer.
+ */
+let abandonedInstallSweeper: { stop: () => void } | null = null;
+function restartAbandonedInstallSweeper(): void {
+  abandonedInstallSweeper?.stop();
+  abandonedInstallSweeper = startAbandonedInstallSweeper({
+    revokeDevice: revokePluginDeviceForTeardown,
+    onError: (err) =>
+      console.warn('[boot] abandoned plugin-install sweep failed', err instanceof Error ? err.message : String(err)),
+  });
 }
 
 /**
@@ -397,6 +415,12 @@ export async function buildBootInputs(
     const device = getDeviceByDID(did);
     return device !== null && !device.revoked && device.role === 'plugin';
   });
+  restartAbandonedInstallSweeper();
+  // §5.C1-mobile: the repo-proof verifier — the shared chain over the audited
+  // AT-Protocol stack (`@dina/net-expo/repo_proof`), wired only after it has
+  // verified a fixture repo ON THIS DEVICE (self-check). Without it
+  // `beginInstall` fails closed and the Plugins door stays shut and says so.
+  setRepoProofVerifier(await makeMobileRepoProofVerifier());
 
   // Dev-only contact seed: when EXPO_PUBLIC_DINA_DEV_CONTACT is set,
   // pre-populate the in-memory directory at boot so end-to-end smoke
@@ -1055,7 +1079,8 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
  * `findContactsByPreference`, so we expose a minimal surface.
  */
 function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
-  AskCoordinatorCoreClient {
+  AskCoordinatorCoreClient &
+  Pick<import('@dina/core').CoreClient, 'listPluginToolCapabilities' | 'invokePluginTool' | 'contactLookup'> {
   // All methods proxy through the booted node's coreClient. The node is
   // always available by the time these are called (the pipeline is only
   // invoked mid-ask, well after boot). Returning [] / null on the cold
@@ -1068,6 +1093,21 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
   return {
     async findContactsByPreference(category: string) {
       return node()?.coreClient.findContactsByPreference(category) ?? [];
+    },
+    // §5.A6 — `search_products` names a seller the owner already knows.
+    // Cold path: no directory yet, so the seller stays unnamed.
+    async contactLookup(query: string) {
+      return (await node()?.coreClient.contactLookup(query)) ?? null;
+    },
+    // §6 — `/ask` into installed plugins. Cold path: nothing installed, and an
+    // ask before boot is a typed refusal the loop relays, never a throw.
+    async listPluginToolCapabilities() {
+      return (await node()?.coreClient.listPluginToolCapabilities()) ?? [];
+    },
+    async invokePluginTool(input: import('@dina/core').InvokePluginToolInput) {
+      const n = node();
+      if (n === null) return { ok: false as const, code: 'registry_unavailable', message: 'DinaNode not booted' };
+      return n.coreClient.invokePluginTool(input);
     },
     async listServiceOffers(params?: { providerDid?: string; capability?: string }) {
       return (await node()?.coreClient.listServiceOffers(params)) ?? [];

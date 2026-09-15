@@ -13,6 +13,8 @@
  * Source: core/internal/adapter/pii/scrubber.go
  */
 
+import { isAadhaarNumber, isPan } from './checksums';
+
 export interface PIIMatch {
   type: string;
   start: number;
@@ -48,7 +50,7 @@ const PATTERNS: PatternDef[] = [
   // Credit card — 13-19 continuous digits. Luhn validated.
   {
     type: 'CREDIT_CARD',
-    regex: /\b(\d[ \-]?){12,18}\d\b/g,
+    regex: /\b(\d[ -]?){12,18}\d\b/g,
     validate: luhnCheck,
   },
   // Bank account — 16 consecutive digits without a CC prefix (catch-all).
@@ -77,13 +79,13 @@ const PATTERNS: PatternDef[] = [
   // Email — standard RFC-ish pattern
   {
     type: 'EMAIL',
-    regex: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+    regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
   },
   // Phone — International: +CC followed by digits and separators.
   // Matches Go: \+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d
   {
     type: 'PHONE',
-    regex: /\+\d{1,3}[\s.\-]\d[\d\s.\-]{6,12}\d/g,
+    regex: /\+\d{1,3}[\s.-]\d[\d\s.-]{6,12}\d/g,
   },
   // Phone — US format: optional +1, area code with optional parens/dots/dashes
   {
@@ -99,7 +101,7 @@ const PATTERNS: PatternDef[] = [
   // Matches Go: \b[6-9]\d{4}[\s-]?\d{5}\b
   {
     type: 'PHONE',
-    regex: /\b[6-9]\d{4}[\s\-]?\d{5}\b/g,
+    regex: /\b[6-9]\d{4}[\s-]?\d{5}\b/g,
   },
   // Address — US street address: number + street name + type suffix.
   // Matches Go: \d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Street|...)
@@ -110,19 +112,19 @@ const PATTERNS: PatternDef[] = [
   },
   // Aadhaar — 12 digits optionally separated by spaces or dashes: NNNN NNNN NNNN
   // Fixed: now accepts dash separators (matching Go: \d{4}[\s-]?\d{4}[\s-]?\d{4})
+  // §5.D3: the Verhoeff check digit and the 2–9 lead are what UIDAI issues; a
+  // twelve-digit reference that fails them is a number, not a person.
   {
     type: 'AADHAAR',
-    regex: /\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g,
-    validate: (m: string) => {
-      const digits = m.replace(/[\s\-]/g, '');
-      // Aadhaar is exactly 12 digits, doesn't start with 0 or 1
-      return digits.length === 12 && digits[0] !== '0' && digits[0] !== '1';
-    },
+    regex: /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g,
+    validate: (m: string) => isAadhaarNumber(m.replace(/[\s-]/g, '')),
   },
-  // PAN — Indian tax ID: AAAAA0000A (5 letters, 4 digits, 1 letter)
+  // PAN — Indian tax ID: AAAAA0000A (5 letters, 4 digits, 1 letter); the fourth
+  // letter is the holder type from a closed set (§5.D3).
   {
     type: 'PAN',
     regex: /\b[A-Z]{5}\d{4}[A-Z]\b/g,
+    validate: isPan,
   },
   // IFSC — Indian bank branch code: 4 letters, 0, 6 alphanumeric
   {
@@ -263,7 +265,7 @@ function resolveOverlaps(matches: PIIMatch[]): PIIMatch[] {
 
 /** Luhn algorithm for credit card validation. */
 function luhnCheck(value: string): boolean {
-  const digits = value.replace(/[\s\-]/g, '');
+  const digits = value.replace(/[\s-]/g, '');
   if (digits.length < 13 || digits.length > 19) return false;
   if (!/^\d+$/.test(digits)) return false;
 

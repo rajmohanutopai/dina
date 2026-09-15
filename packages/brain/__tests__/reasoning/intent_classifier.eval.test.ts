@@ -2,14 +2,16 @@
  * LIVE intent-classifier routing eval (costs money — gated OFF by default).
  *
  * Runs real-world queries through the REAL `IntentClassifier` against a LIVE
- * Gemini model and asserts each routes to the expected substrate. This is a
+ * model and asserts each routes to the expected substrate. This is a
  * non-deterministic, paid eval — deliberately NOT part of the normal unit
  * suite (it `describe.skip`s itself unless explicitly enabled), so `npm test`
  * / CI stay free + deterministic.
  *
- * Run it on demand:
- *   RUN_INTENT_EVAL=1 GEMINI_API_KEY=… npx jest intent_classifier.eval --runInBand
- *   # optional: EVAL_MODEL=gemini-2.5-pro to eval a different model
+ * Run it on demand (OpenRouter is the default provider — the owner's decision
+ * of 2026-09-13; Gemini when EVAL_PROVIDER=gemini and a Gemini key is set):
+ *   RUN_INTENT_EVAL=1 OPENROUTER_API_KEY=… npx jest intent_classifier.eval --runInBand
+ *   RUN_INTENT_EVAL=1 EVAL_PROVIDER=gemini GEMINI_API_KEY=… npx jest intent_classifier.eval --runInBand
+ *   # optional: EVAL_MODEL=<model id> to eval a different model
  *
  * Why a live test (not a fixture): the thing under test is whether the prompt
  * makes a real model route correctly — a recorded fixture would only re-assert
@@ -20,11 +22,18 @@
  */
 import { GoogleGenAI } from '@google/genai';
 
+import { DEFAULT_OPENROUTER_LITE_MODEL } from '../../src/constants';
+import { OpenRouterAdapter } from '../../src/llm/adapters/openrouter';
 import { IntentClassifier, type IntentSource } from '../../src/reasoning/intent_classifier';
 
-const API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+const PROVIDER = (process.env.EVAL_PROVIDER ?? 'openrouter').trim().toLowerCase();
+const API_KEY =
+  PROVIDER === 'gemini'
+    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    : (process.env.DINA_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '');
 const ENABLED = process.env.RUN_INTENT_EVAL === '1' && API_KEY !== '';
-const MODEL = process.env.EVAL_MODEL ?? 'gemini-2.5-flash';
+// The production tier for `intent_classification` is the lite model.
+const MODEL = process.env.EVAL_MODEL ?? (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_OPENROUTER_LITE_MODEL);
 
 /** Skip the whole suite unless explicitly opted in with a key present. */
 const suite = ENABLED ? describe : describe.skip;
@@ -59,6 +68,13 @@ const CASES: readonly EvalCase[] = [
   { kind: 'peerlens', q: 'Which ergonomic office chair should I buy?', expect: 'peerlens' },
   { kind: 'peerlens', q: 'Are the Sony WH-1000XM5 headphones worth it?', expect: 'peerlens' },
   { kind: 'peerlens', q: 'What do people think of the new Dyson vacuum?', expect: 'peerlens' },
+  // ── products (offers across suppliers — the research loop, §5.A1). A product
+  //    compared across suppliers is NOT a named store's live state; "where can I
+  //    buy" may honestly carry both, so only the first two exclude the store path.
+  { kind: 'products', q: 'best ergonomic office chair for me', expect: 'products', notExpect: 'provider_services' },
+  { kind: 'products', q: 'compare prices for a 1TB NVMe SSD', expect: 'products', notExpect: 'provider_services' },
+  { kind: 'products', q: 'where can I buy a Prestige 3-litre pressure cooker?', expect: 'products' },
+  { kind: 'products', q: 'which running shoes should I get', expect: 'products' },
   // ── provider services (live / local / commercial state) ──
   {
     kind: 'service',
@@ -87,11 +103,26 @@ const CASES: readonly EvalCase[] = [
   },
 ];
 
-suite('IntentClassifier — live routing eval', () => {
-  let client: GoogleGenAI | null = null;
-  const getClient = (): GoogleGenAI => {
-    if (client === null) client = new GoogleGenAI({ apiKey: API_KEY });
-    return client;
+suite(`IntentClassifier — live routing eval (${PROVIDER} ${MODEL})`, () => {
+  let gemini: GoogleGenAI | null = null;
+  let openrouter: OpenRouterAdapter | null = null;
+
+  /** One live call, by provider. */
+  const callOnce = async (system: string, prompt: string): Promise<string> => {
+    if (PROVIDER === 'gemini') {
+      if (gemini === null) gemini = new GoogleGenAI({ apiKey: API_KEY });
+      const res = await gemini.models.generateContent({
+        model: MODEL,
+        contents: prompt,
+        config: { systemInstruction: system, temperature: 0 },
+      });
+      return res.text ?? '';
+    }
+    if (openrouter === null) openrouter = new OpenRouterAdapter({ apiKey: API_KEY, defaultModel: MODEL });
+    // The production budget (`buildLightweightLLMCall`): a reasoning model
+    // spends tokens thinking before the JSON, and 512 leaves it with none.
+    const res = await openrouter.chat([{ role: 'user', content: prompt }], { systemPrompt: system, temperature: 0, maxTokens: 2048 });
+    return res.content;
   };
 
   /** Live model call with a small retry on transient API errors (not on routing). */
@@ -99,12 +130,7 @@ suite('IntentClassifier — live routing eval', () => {
     let lastErr: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await getClient().models.generateContent({
-          model: MODEL,
-          contents: prompt,
-          config: { systemInstruction: system, temperature: 0 },
-        });
-        return res.text ?? '';
+        return await callOnce(system, prompt);
       } catch (e) {
         lastErr = e;
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -125,6 +151,7 @@ suite('IntentClassifier — live routing eval', () => {
       expect(out.sources).toContain(want);
       if (notExpect !== undefined) expect(out.sources).not.toContain(notExpect);
     },
-    30_000,
+    // A reasoning model thinks before the JSON; one slow call must not read as a routing failure.
+    90_000,
   );
 });

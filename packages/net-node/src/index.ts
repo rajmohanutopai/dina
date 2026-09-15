@@ -598,3 +598,12 @@ export function computeReconnectDelay(
   // uncapped step could otherwise spike above max.
   return Math.max(0, Math.min(max, Math.floor(jittered)));
 }
+
+// The production repo-proof verifier (§5.C1) — inject at boot via
+// `setRepoProofVerifier`. Loads ESM-only `@atproto` at runtime.
+export { createRepoProofVerifier } from './repo_proof_verifier';
+export type {
+  RepoProofVerifierDeps,
+  FetchLike as RepoProofFetchLike,
+  DidDoc as RepoProofDidDoc,
+} from './repo_proof_verifier';

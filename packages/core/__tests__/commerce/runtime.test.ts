@@ -25,6 +25,11 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { KERNEL_REFERENCE_KEY_ID } from '../../src/commerce/reference_install';
+import {
+  BUYER_REFERENCE_MANIFEST,
+  SUPPLIER_REFERENCE_MANIFEST,
+} from '../../src/commerce/reference_manifests';
 import {
   DEFAULT_DECISION_TIMEOUT_MS,
   createCommerceRuntime,
@@ -45,6 +50,7 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { BUYER_DID, SUPPLIER_DID, makeOrder, makeQuoteRequest, makeSignedQuote } from './helpers';
 
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
+import type { PluginTrustAnchor } from '@dina/protocol';
 
 const T_ADMIT = Date.parse('2026-08-07T12:30:00.000Z');
 
@@ -618,4 +624,168 @@ describe('commerce obligations gate the plugin uninstall (§16.4)', () => {
     });
     expect(runtime.inFlightCount()).toBe(0);
   });
+});
+
+describe('the money line (§5.B1 Cut 3): money() follows the Commerce Pack install', () => {
+  let fixture: Fixture;
+  const now = T_ADMIT;
+
+  beforeEach(() => {
+    fixture = openDb();
+  });
+  afterEach(() => {
+    setPluginInstallRepository(null);
+    installCommerceRuntime(null);
+    fixture.cleanup();
+  });
+
+  function build(): CommerceRuntime {
+    return createCommerceRuntime({
+      adapter: fixture.adapter,
+      supplierDid: () => SUPPLIER_DID,
+      currentEpoch: () => '1',
+      now: () => now,
+    });
+  }
+
+  /**
+   * A pack install as `reference_install.ts` mints it: the node's own DID as
+   * publisher under the local publisher key. Overrides let a test stage a
+   * look-alike that must NOT open the money line.
+   */
+  function stagePack(
+    installs: SQLitePluginInstallRepository,
+    overrides: {
+      manifest?: typeof BUYER_REFERENCE_MANIFEST;
+      publisherDid?: string;
+      trustAnchor?: PluginTrustAnchor;
+    } = {},
+  ): string {
+    const manifest = overrides.manifest ?? BUYER_REFERENCE_MANIFEST;
+    return installs.createPending({
+      publisherDid: overrides.publisherDid ?? SUPPLIER_DID,
+      pluginId: manifest.plugin_id,
+      label: '',
+      executionMode: 'runner',
+      currentCid: 'bafyreibuyerreference',
+      currentVersion: manifest.version,
+      manifest,
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: Object.fromEntries(
+        manifest.capabilities.map((c, i) => [c.id, String(i).repeat(64)]),
+      ),
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+      trustAnchor: overrides.trustAnchor ?? { kind: 'local_publisher_key', keyId: KERNEL_REFERENCE_KEY_ID },
+      pendingExpiresAtSec: Math.floor(now / 1000) + 900,
+      nowMs: now,
+    });
+  }
+  const stageBuyerPack = (installs: SQLitePluginInstallRepository): string => stagePack(installs);
+
+  it('is closed with no registry and with no pack installed', () => {
+    setPluginInstallRepository(null);
+    const runtime = build();
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+
+    setPluginInstallRepository(new SQLitePluginInstallRepository(fixture.adapter));
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+  });
+
+  it('opens on an ACTIVE pack, names the closed state otherwise, and closes again after uninstall', async () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+
+    const installId = stageBuyerPack(installs);
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_pending' });
+
+    expect(installs.activate(installId, 'did:key:zbuyerrunner', now)).toBe(true);
+    const open = runtime.money();
+    expect(open.available).toBe(true);
+    if (open.available) {
+      expect(open.installId).toBe(installId);
+      // The same stores every call — one ledger, not one per resolution.
+      const again = runtime.money();
+      expect(again.available && again.stores.tradeDocuments).toBe(open.stores.tradeDocuments);
+    }
+
+    expect(installs.pause(installId, now, 'manual')).toBe(true);
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_paused' });
+    expect(installs.resume(installId, now)).toBe(true);
+    expect(runtime.money().available).toBe(true);
+
+    await uninstall(installId, now, async () => ({ durable: true }));
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+  });
+
+  it('a second, closed pack does not shut an active one', () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const first = stageBuyerPack(installs);
+    installs.activate(first, 'did:key:zbuyerrunner', now);
+    stageBuyerPack(installs); // a second install of the pack, still pending
+    expect(runtime.money().available).toBe(true);
+  });
+
+  it('an active SUPPLIER pack opens the line; a paused supplier pack does not close an active buyer pack', () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const supplier = stagePack(installs, { manifest: SUPPLIER_REFERENCE_MANIFEST });
+    installs.activate(supplier, 'did:key:zsupplierrunner', now);
+    expect(runtime.money().available).toBe(true);
+
+    installs.pause(supplier, now, 'manual');
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_paused' });
+    const buyer = stageBuyerPack(installs);
+    installs.activate(buyer, 'did:key:zbuyerrunner', now);
+    expect(runtime.money().available).toBe(true);
+  });
+
+  it('an active plugin that is NOT a commerce pack leaves the line closed', () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const other = stagePack(installs, {
+      manifest: { ...BUYER_REFERENCE_MANIFEST, plugin_id: 'com.acme.widget' },
+    });
+    installs.activate(other, 'did:key:zwidgetrunner', now);
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+  });
+
+  it('a look-alike with the first-party id under a repo-proof anchor leaves the line closed', () => {
+    // Only the owner's reference ceremony mints the local_publisher_key anchor;
+    // a release that arrived through a repo proof is somebody else's, whatever
+    // id it claims (and `beginInstall` refuses the namespace anyway).
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const repoProof = stagePack(installs, { trustAnchor: { kind: 'repo_proof' } });
+    installs.activate(repoProof, 'did:key:zrepoproofrunner', now);
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+  });
+
+  it('the publisher DID is not compared — an identity upgrade after install keeps the ledger open', () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const installed = stagePack(installs, { publisherDid: 'did:key:z6MkOldIdentity' });
+    installs.activate(installed, 'did:key:zbuyerrunner', now);
+    expect(runtime.money().available).toBe(true);
+  });
+
+  it('a revoked tombstone with no other pack yields pack_revoked', async () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    const installId = stageBuyerPack(installs);
+    installs.bindPendingDevice(installId, 'did:key:zbuyerrunner', now);
+    // A pending uninstall whose device revoke is not durable leaves a tombstone.
+    await uninstall(installId, now, async () => ({ durable: false }));
+    expect(installs.getById(installId)?.status).toBe('revoked');
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_revoked' });
+  });
+
 });

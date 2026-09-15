@@ -445,6 +445,11 @@ describe('commerce aggregate boundary', () => {
       // or TWO live conversations for one supplier reads as NO DRAFT
       // rather than a draft this build half-believes.
       'order_draft_store.ts',
+      // The MONEY rehydrators (khata + revenue-share), carved out of
+      // `rehydrate.ts` so the money-free path reaches no money wire (§5.B2).
+      // Same discipline, same module class: every parse runs straight back
+      // through the ingress validator.
+      'money_rehydrate.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -478,6 +483,8 @@ describe('commerce aggregate boundary', () => {
   it('every exported commerce symbol is either wired or listed as not yet wired', () => {
     const NOT_YET_WIRED = new Map<string, string>([
       ['trade_ledger.ts:InMemoryTradeDocumentRepository', 'test double'],
+      ['decline_documents.ts:InMemoryDeclineDocumentRepository', 'test double'],
+      ['trade_spool.ts:InMemoryTradeSpoolRepository', 'test double'],
       ['tender.ts:InMemoryTenderRepository', 'test double'],
       ['staff_grants.ts:InMemoryStaffGrantRepository', 'test double'],
       ['staff_pins.ts:InMemoryStaffPinRepository', 'test double'],

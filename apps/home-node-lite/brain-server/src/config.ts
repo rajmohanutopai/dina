@@ -170,6 +170,16 @@ function readEndpoints(env: NodeJS.ProcessEnv) {
   }
 }
 
+/**
+ * The LLM slice of the config alone, validated — for a harness that needs the
+ * server's provider selection (`DINA_BRAIN_LLM_PROVIDER` + the matching key and
+ * model variables) without the rest of a server's environment. Throws the same
+ * way `loadConfig` would when the named provider lacks its key.
+ */
+export function loadLLMConfig(env: NodeJS.ProcessEnv = process.env): BrainServerConfig['llm'] {
+  return LLMSchema.parse(readLLM(env));
+}
+
 function readLLM(env: NodeJS.ProcessEnv) {
   const provider = (env.DINA_BRAIN_LLM_PROVIDER ?? 'none').trim().toLowerCase();
   if (provider === 'none') {

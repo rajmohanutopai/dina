@@ -32,6 +32,7 @@ import {
   isReviewsLane,
   isServicesLane,
   scopeToolsForLane,
+  PRODUCTS_BEFORE_PROVIDERS_LINE,
   PROVIDER_SERVICES_ROUTING_BLOCK,
 } from './forced_lane';
 import {
@@ -181,6 +182,12 @@ export function formatIntentHintBlock(hint: IntentClassification): string {
   if (hint.sources.includes('provider_services')) {
     lines.push('');
     lines.push(PROVIDER_SERVICES_ROUTING_BLOCK);
+    // A product question the classifier also sent to the provider path:
+    // the offers are the answer; the provider path serves a named store only.
+    if (hint.sources.includes('products')) {
+      lines.push('');
+      lines.push(PRODUCTS_BEFORE_PROVIDERS_LINE);
+    }
   }
 
   lines.push('');

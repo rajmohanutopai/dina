@@ -25,7 +25,6 @@ import {
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
 import { getInviteService } from '../commerce/invite_compose';
-import { applyInboundTradeDocument } from '../commerce/trade_ingress';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
 import {
   evaluateServiceIngressBypass,
@@ -60,6 +59,7 @@ import { quarantineMessage } from './quarantine';
 import { receiveAndStage } from './receive';
 import { emitServiceOfferReceived } from './service_offer_events';
 import { verifyMessage } from './signature';
+import { applyInboundTradeDocumentVia } from './trade_ingress_seam';
 
 export type ReceivePipelineAction = 'staged' | 'quarantined' | 'dropped' | 'ephemeral' | 'bypassed';
 
@@ -672,16 +672,20 @@ export function receiveD2D(
         body: message.body,
       },
     });
-    const settled = applyInboundTradeDocument({
+    // §5.B1 — through the SEAM, not the money engine. Core's transport
+    // decides what a message is; what a khata document means is the money
+    // engine's, registered at boot. With none registered the answer is
+    // `unavailable` and the document is dropped by name.
+    const settled = applyInboundTradeDocumentVia({
       senderDid: message.from,
       body: parsedTrade,
       evidenceJson: tradeEvidence,
       nowMs: Date.now(),
     });
-    if (settled.outcome === 'applied' || settled.outcome === 'duplicate') {
+    if (settled.outcome === 'applied' || settled.outcome === 'duplicate' || settled.outcome === 'spooled') {
       appendAudit(
         message.from,
-        'd2d_recv_trade_applied',
+        settled.outcome === 'spooled' ? 'd2d_recv_trade_spooled' : 'd2d_recv_trade_applied',
         message.to,
         `outcome=${settled.outcome} kind=${settled.kind ?? ''} id=${message.id}`,
       );
@@ -691,7 +695,10 @@ export function receiveD2D(
         messageType: message.type,
         senderDID: message.from,
         signatureValid: true,
-        reason: `commerce.trade ${settled.outcome} to the trade ledger`,
+        reason:
+          settled.outcome === 'spooled'
+            ? 'commerce.trade spooled for the Commerce Pack'
+            : `commerce.trade ${settled.outcome} to the trade ledger`,
       };
     }
     // METADATA ONLY — outcome, kind and message id; never the document,

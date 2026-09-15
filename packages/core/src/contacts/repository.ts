@@ -26,6 +26,13 @@
  * acceptable). Pinned in `__tests__/port_async_gate.test.ts` EXEMPTED list.
  */
 
+import {
+  normalisePostalAddress,
+  normaliseTaxRegistrations,
+  type PostalAddress,
+  type TaxRegistration,
+} from '../commerce/trade_identity';
+
 import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
 
 import type {
@@ -98,8 +105,8 @@ export class SQLiteContactRepository implements ContactRepository {
       normalisePreferredForCategories(contact.preferredFor ?? []),
     );
     this.db.execute(
-      `INSERT INTO contacts (person_id, display_name, trust_level, sharing_tier, relationship, data_responsibility, notes, created_at, updated_at, preferred_for)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO contacts (person_id, display_name, trust_level, sharing_tier, relationship, data_responsibility, notes, created_at, updated_at, preferred_for, legal_name, registrations, billing_address)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         contact.personId,
         contact.displayName,
@@ -111,6 +118,9 @@ export class SQLiteContactRepository implements ContactRepository {
         contact.createdAt,
         contact.updatedAt,
         preferredForJson,
+        contact.legalName ?? '',
+        JSON.stringify(contact.registrations ?? []),
+        contact.billingAddress === undefined ? '' : JSON.stringify(contact.billingAddress),
       ],
     );
     for (const alias of contact.aliases) {
@@ -159,6 +169,20 @@ export class SQLiteContactRepository implements ContactRepository {
     if (updates.notes !== undefined) {
       sets.push('notes = ?');
       params.push(updates.notes);
+    }
+    // §5.D — the paper identity. Each field is written only when the caller
+    // named it, so an update of one leaves the others as stored.
+    if (updates.legalName !== undefined) {
+      sets.push('legal_name = ?');
+      params.push(updates.legalName);
+    }
+    if (updates.registrations !== undefined) {
+      sets.push('registrations = ?');
+      params.push(JSON.stringify(updates.registrations));
+    }
+    if ('billingAddress' in updates) {
+      sets.push('billing_address = ?');
+      params.push(updates.billingAddress === undefined ? '' : JSON.stringify(updates.billingAddress));
     }
     sets.push('updated_at = ?');
     params.push(Date.now());
@@ -273,7 +297,39 @@ function rowToContact(row: DBRow, aliases: string[]): Contact {
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     preferredFor: decodePreferredFor(String(row.preferred_for ?? '[]')),
+    ...decodePaperIdentity(row),
   };
+}
+
+/**
+ * The stored paper identity (§5.D). A row written before migration v44, or one
+ * hand-edited into nonsense, reads as "not stated" rather than throwing: the
+ * directory refuses bad input where the owner types it, and a read path that
+ * panics on an old row would take the whole contact list down with it.
+ */
+function decodePaperIdentity(row: DBRow): Pick<Contact, 'legalName' | 'registrations' | 'billingAddress'> {
+  const legalName = String(row.legal_name ?? '');
+  const registrations = decodeJson<TaxRegistration[]>(String(row.registrations ?? '[]'), []);
+  const billingAddress = decodeJson<PostalAddress | null>(String(row.billing_address ?? ''), null);
+  return {
+    ...(legalName !== '' ? { legalName } : {}),
+    ...(Array.isArray(registrations) && registrations.length > 0
+      ? { registrations: normaliseTaxRegistrations(registrations) }
+      : {}),
+    ...(billingAddress !== null && typeof billingAddress === 'object'
+      ? { billingAddress: normalisePostalAddress(billingAddress) }
+      : {}),
+  };
+}
+
+function decodeJson<T>(raw: string, fallback: T): T {
+  const trimmed = raw.trim();
+  if (trimmed === '' || trimmed === 'null') return fallback;
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 /**

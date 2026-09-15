@@ -591,6 +591,20 @@ function finishBegin(
   if (!vetted.ok) return vetted;
   const { manifest, digests } = vetted;
 
+  // Iter 17: the first-party plugin-id namespace is RESERVED. A third-party
+  // release that names itself `com.dinakernel.commerce.buyer` would otherwise be
+  // indistinguishable, by id, from the reference pack — and the money line
+  // (RESEARCHER_KERNEL §5.B1 Cut 3) opens on the pack's identity. The reference
+  // packs install under the local publisher key, never through a repo proof.
+  if (trustAnchor.kind !== 'local_publisher_key' && isFirstPartyPluginId(manifest.plugin_id)) {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: `plugin id "${manifest.plugin_id}" is in the reserved first-party namespace`,
+      transient: false,
+    };
+  }
+
   // PLG-30 #15: `createPending` is the one persistence I/O step in finishBegin,
   // and it was the only step outside the typed-result boundary — a disk-full /
   // closed-DB / unexpected-constraint throw here would escape the documented
@@ -660,6 +674,25 @@ export function setPluginDeviceVerifier(v: VerifyPluginDevice | null): void {
  * Runner installs pass the paired instance device DID; interpreted
  * installs pass undefined (no pairing leg at all, §7).
  */
+/**
+ * Bind a runner device named by the OWNER to a pending install — the
+ * first-party commerce ceremony's shape (the operator pairs the runner on
+ * `/v1/pair`, then names its DID). Refused unless the wired device verifier
+ * vouches for it: a real, unrevoked, role='plugin' registry entry. Without
+ * that check a mistyped or non-plugin DID became a teardown target — decline
+ * and the abandoned sweep durably revoke whatever the row names. Fail-closed:
+ * no verifier, no bind. The general marketplace route does not use this; there
+ * Core binds the device that consumed the install's pairing code (§15.3).
+ */
+export function bindVerifiedRunnerDevice(installId: string, deviceDid: string, nowMs: number): boolean {
+  const installs = getPluginInstallRepository();
+  if (installs === null) return false;
+  if (deviceDid === '' || pluginDeviceVerifier === null || !pluginDeviceVerifier(deviceDid)) {
+    return false;
+  }
+  return installs.bindPendingDevice(installId, deviceDid, nowMs);
+}
+
 export function confirmConsent(
   installId: string,
   deviceDid: string | undefined,
@@ -975,9 +1008,16 @@ export async function uninstall(
   //     skip pending). Otherwise, on either failure exit below (no callback /
   //     non-durable revoke) the row stays `pending` and confirmConsent→activate's
   //     `status='pending'` CAS can still bring it live AFTER the owner uninstalled
-  //     it. markRevoked is scoped to pending, so it never clobbers the paused row.
+  //     it.
+  //   - Iter 17: the PAUSED row the two steps above leave behind is tombstoned
+  //     too. Otherwise a non-durable device revoke on an ACTIVE install kept a
+  //     paused row with a NULL expiry, which the abandoned-install sweep (keyed
+  //     on `pending_expires_at`) could never reach — so the "retained for the
+  //     sweeper" retry never happened and the runner credential stayed live.
+  //     The tombstone stamps the expiry, so the sweep retries the revoke and
+  //     removes the row once it lands.
   // The raw-status probe + remove() below are status-agnostic, so they still fire
-  // correctly on the now paused/revoked row (a no-device install removes inline).
+  // correctly on the now revoked row (a no-device install removes inline).
   if (!installs.pause(installId, nowMs, 'device_revoked')) {
     installs.escalatePauseReason(installId, 'device_revoked', nowMs);
   }
@@ -1087,9 +1127,66 @@ export async function sweepAbandonedInstalls(
     // means it raced live → leave it, don't report it swept.
     if (installs.removeIfStatus(ref.installId, ['pending', 'revoked'])) {
       swept.push(ref);
+      // A `revoked` tombstone is an uninstall the owner already decided and a
+      // device revoke that only now landed: close the decision log the way the
+      // inline path does. An abandoned pending was never consented, so it
+      // leaves no record — there was no decision to close.
+      if (status === 'revoked') {
+        recordDecisionSafe({ installId: ref.installId, decision: 'uninstalled', nowSec });
+      }
     }
   }
   return swept;
+}
+
+/** Sweep cadence: a fifth of `PENDING_INSTALL_TTL_SEC`, so an abandoned pending is gone within ~18 min. */
+export const ABANDONED_INSTALL_SWEEP_MS = (PENDING_INSTALL_TTL_SEC / 5) * 1000;
+
+/**
+ * Run `sweepAbandonedInstalls` on a fixed cadence. Neither host ran the sweep
+ * before (§14 / PLUGIN_ARCHITECTURE §15.3: expiry and cancellation converge on
+ * one cleanup path), so an abandoned pending install — and the runner device
+ * paired to it — outlived its 15-minute window until the next uninstall. One
+ * sweep runs immediately so a restart cleans up what the last session left.
+ * Overlapping ticks are skipped; an error is reported, never thrown.
+ */
+export function startAbandonedInstallSweeper(opts: {
+  revokeDevice: RevokeDeviceByDid;
+  intervalMs?: number;
+  now?: () => number;
+  onSwept?: (refs: PluginInstallRef[]) => void;
+  onError?: (err: unknown) => void;
+}): { stop: () => void } {
+  const now = opts.now ?? (() => Date.now());
+  let inFlight = false;
+  const tick = (): void => {
+    if (inFlight) return;
+    inFlight = true;
+    void sweepAbandonedInstalls(Math.floor(now() / 1000), opts.revokeDevice)
+      .then((refs) => {
+        if (refs.length > 0) opts.onSwept?.(refs);
+      })
+      .catch((err: unknown) => opts.onError?.(err))
+      .finally(() => {
+        inFlight = false;
+      });
+  };
+  tick();
+  const timer = setInterval(tick, opts.intervalMs ?? ABANDONED_INSTALL_SWEEP_MS);
+  // A background sweep must never keep a Node process alive on its own.
+  (timer as { unref?: () => void }).unref?.();
+  return {
+    stop: () => {
+      clearInterval(timer);
+    },
+  };
+}
+
+/** The plugin-id namespace only the kernel's own reference packs may use. */
+export const FIRST_PARTY_PLUGIN_ID_PREFIX = 'com.dinakernel.';
+
+export function isFirstPartyPluginId(pluginId: string): boolean {
+  return pluginId.startsWith(FIRST_PARTY_PLUGIN_ID_PREFIX);
 }
 
 /**
@@ -1105,6 +1202,7 @@ export async function sweepAbandonedInstalls(
  * No I/O and no persistence: it takes bytes and returns either the normalized
  * manifest with its digests, or the same typed failure an install would give.
  */
+
 export function vetReleaseManifest(
   rawManifest: PluginManifest,
 ):

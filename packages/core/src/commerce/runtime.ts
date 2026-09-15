@@ -21,6 +21,8 @@
  * before the epoch exists must fail, not silently sign at a guessed epoch.
  */
 
+import { setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
+import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
 import { tier0TxRunner } from '../run/tx';
 
 import { CommerceAdmissionEngine } from './admission';
@@ -47,6 +49,7 @@ import {
 import { CommerceOrderStore } from './commerce_order';
 import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
+import { SQLiteDeclineDocumentRepository } from './decline_documents';
 import {
   SQLiteIdempotencyEvidenceRepository,
   type IdempotencyEvidenceRepository,
@@ -81,6 +84,7 @@ import { QuoteFamilyStore } from './quote_family';
 import { SQLiteCommerceQuoteLedgerRepository } from './quote_ledger';
 import { SQLiteCommerceReceiptRepository } from './receipts';
 import { CommerceReconciliationService } from './reconciliation_service';
+import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
 import {
   SQLiteRevshareDocumentRepository,
   type RevshareDocumentRepository,
@@ -95,10 +99,14 @@ import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository 
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
+import { installTradeContextSources } from './trade_context_sources';
+import { applyInboundTradeDocument } from './trade_ingress';
 import { SQLiteTradeDocumentRepository } from './trade_ledger';
+import { SQLiteTradeSpoolRepository, type TradeSpoolRepository } from './trade_spool';
 import { CommerceTransaction } from './transaction';
 import { SQLiteCommerceEpochWatermarkRepository } from './watermarks';
 
+import type { DeclineDocumentRepository } from './decline_documents';
 import type { LifecycleEngineDeps } from './lifecycle_engine';
 import type { CommerceReceiptRepository } from './receipts';
 import type { TenderRepository } from './tender';
@@ -193,11 +201,27 @@ export interface CommerceRuntime {
   /** §5.1 — the BUYER lane's aggregate: one photographed page, whole. */
   orderDrafts: OrderDraftRepository;
   /**
-   * TRADE_FIRST_STRATEGY §4.2/§4.3 — the khata ledger: delivery notes,
-   * receipts, payment notes/acks and quote declines, both directions,
-   * retained with their envelope evidence.
+   * THE MONEY LINE (RESEARCHER_KERNEL_ARCHITECTURE §5.B1 Cut 3). The khata
+   * ledger (delivery notes, receipts, payment notes/acks) and the revenue-share
+   * ledger are the Commerce Pack's, and this node may only touch them while a
+   * first-party Commerce Pack install is `active`. Resolved on EVERY call from
+   * the plugin registry, so an uninstall, pause or revoke takes effect on the
+   * next request with nothing to remember. Callers on the money-free path (the
+   * decline store below, tenders, quotes, orders, catalogs) never come here.
    */
-  tradeDocuments: TradeDocumentRepository;
+  money: () => CommerceMoneyAccess;
+  /**
+   * The money-FREE quote-decline store (§5.B1 Cut 1) — kept kernel-side when the
+   * money engine moves to the Commerce Pack. The tender / buyer-response decline
+   * path reads and writes here, never through the money stores.
+   */
+  declineDocuments: DeclineDocumentRepository;
+  /**
+   * Mail for a closed money line (§5.B1 Cut 3): khata documents that arrived
+   * while no Commerce Pack was active, held unverified and replayed through the
+   * verifiers once it is. Kernel-side — it holds nothing the node believes.
+   */
+  tradeSpool: TradeSpoolRepository;
   /** §3.2 — the private-tender aggregate: N requests, one comparison. */
   tenders: TenderRepository;
   /** TRADE_FIRST_STRATEGY §6.2 — value-capped, install-scoped staff grants. */
@@ -212,8 +236,6 @@ export interface CommerceRuntime {
   attributionBoundary: AttributionBoundaryRepository;
   /** §8 — the invite exchanges, keyed by nonce. */
   invites: InviteRepository;
-  /** §5 — the revenue-share chain's document ledger. */
-  revshareDocuments: RevshareDocumentRepository;
   /** One transaction across ledger claims and draft writes (§4.2). */
   runInTransaction: (body: () => void) => void;
   /** The runtime's clock — injected at composition, shared by every store. */
@@ -365,6 +387,93 @@ export type CommerceAvailability =
       detail: string;
     };
 
+/** The money stores the Commerce Pack owns (§5.B1). */
+export interface CommerceMoneyStores {
+  /**
+   * TRADE_FIRST_STRATEGY §4.2/§4.3 — the khata ledger: delivery notes,
+   * receipts, payment notes/acks, both directions, retained with their
+   * envelope evidence.
+   */
+  tradeDocuments: TradeDocumentRepository;
+  /** §5 — the revenue-share chain's document ledger. */
+  revshareDocuments: RevshareDocumentRepository;
+}
+
+export type CommerceMoneyUnavailableReason =
+  | 'pack_not_installed'
+  | 'pack_pending'
+  | 'pack_paused'
+  | 'pack_revoked';
+
+/**
+ * Whether this node may hold money right now. `unavailable` is a typed answer,
+ * never a throw: a route says so with a refusal, the D2D ingress drops the
+ * document with a named outcome, and the money-free path never asks.
+ */
+export type CommerceMoneyAccess =
+  | { available: true; stores: CommerceMoneyStores; installId: string }
+  | { available: false; reason: CommerceMoneyUnavailableReason; detail: string };
+
+const COMMERCE_PACK_IDS: ReadonlySet<string> = new Set([
+  SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+  BUYER_REFERENCE_MANIFEST.plugin_id,
+]);
+
+/**
+ * Resolve the money line from the plugin registry: an `active` first-party
+ * Commerce Pack (buyer or supplier — a node holds money on whichever side it
+ * trades) opens the stores; any other status, or no pack at all, closes them.
+ * When several packs exist, the best status wins (an active buyer pack is not
+ * closed by a paused supplier pack) — the SAME khata stores serve both sides.
+ *
+ * FIRST-PARTY is proven, not named: the install must carry the reference
+ * packs' `local_publisher_key` anchor — the one anchor only the owner's own
+ * reference ceremony mints (`reference_install.ts`; `beginInstall` refuses it).
+ * A plugin id alone is a string any release could claim; `finishBegin` also
+ * refuses the first-party namespace on a repo proof, so a foreign release can
+ * never reach `active` under it. The publisher DID is deliberately NOT
+ * compared: it is the owner's DID at install time, and an identity upgrade
+ * (did:key → did:plc) must not close the ledger.
+ */
+export function resolveCommerceMoney(stores: CommerceMoneyStores): CommerceMoneyAccess {
+  const installs = getPluginInstallRepository();
+  if (installs === null) {
+    return {
+      available: false,
+      reason: 'pack_not_installed',
+      detail: 'plugin registry not wired — no Commerce Pack can be active',
+    };
+  }
+  const packs = installs
+    .list()
+    .filter(
+      (install) =>
+        COMMERCE_PACK_IDS.has(install.pluginId) && install.trustAnchor.kind === 'local_publisher_key',
+    );
+  const active = packs.find((install) => install.status === 'active');
+  if (active !== undefined) return { available: true, stores, installId: active.installId };
+  if (packs.length === 0) {
+    return {
+      available: false,
+      reason: 'pack_not_installed',
+      detail: 'no Commerce Pack is installed on this node',
+    };
+  }
+  // Name the closed state nearest to open, so the surface says the most useful
+  // thing: consent is pending → finish it; paused → resume it; revoked → reinstall.
+  const statuses = new Set(packs.map((install) => install.status));
+  const nearest: PluginInstallStatus = statuses.has('pending')
+    ? 'pending'
+    : statuses.has('paused')
+      ? 'paused'
+      : 'revoked';
+  return {
+    available: false,
+    reason: `pack_${nearest}`,
+    detail: `the Commerce Pack install is ${nearest}, not active`,
+  };
+}
+
 /** Message from a thrown thunk, without assuming it threw an Error. */
 function thrownDetail(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -434,6 +543,12 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
 
   const credentials = new SQLiteCredentialStore(inputs.adapter);
 
+  // Built once; OPENED per call by the money line (§5.B1 Cut 3).
+  const moneyStores: CommerceMoneyStores = {
+    tradeDocuments: new SQLiteTradeDocumentRepository(inputs.adapter),
+    revshareDocuments: new SQLiteRevshareDocumentRepository(inputs.adapter),
+  };
+
   return {
     families,
     chains,
@@ -445,13 +560,14 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     imageArtifacts: new SQLiteCommerceImageArtifactRepository(inputs.adapter),
     egressAuthorizations: new SQLiteImageEgressAuthorizationRepository(inputs.adapter),
     orderDrafts: new SQLiteOrderDraftRepository(inputs.adapter),
-    tradeDocuments: new SQLiteTradeDocumentRepository(inputs.adapter),
+    money: () => resolveCommerceMoney(moneyStores),
+    declineDocuments: new SQLiteDeclineDocumentRepository(inputs.adapter),
+    tradeSpool: new SQLiteTradeSpoolRepository(inputs.adapter),
     tenders: new SQLiteTenderRepository(inputs.adapter),
     staffGrants: new SQLiteStaffGrantRepository(inputs.adapter),
     staffPins: new SQLiteStaffPinRepository(inputs.adapter),
     attributionBoundary: new SQLiteAttributionBoundaryRepository(inputs.adapter),
     invites: new SQLiteInviteRepository(inputs.adapter),
-    revshareDocuments: new SQLiteRevshareDocumentRepository(inputs.adapter),
     runInTransaction: (body) => { inputs.adapter.transaction(body); },
     now,
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
@@ -564,6 +680,17 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
         // keeps every test able to place the world at any instant.
         (deviceDid, pin) => verifyStaffPinGated(value.staffPins, deviceDid, pin, value.now()),
   );
+  // PLUGIN_ARCHITECTURE §11 — the stores a country pack's filing reads. Here
+  // for the same reason as the two above: the sources must die with the
+  // runtime, or a projection would read a settings store whose vault is shut.
+  installTradeContextSources(value === null ? null : value.settings);
+  // §5.B1 — the money engine's inbound seam. Core's D2D pipeline asks a
+  // registered handler what a khata document means; registering it here ties
+  // it to the runtime's own life, so a node with no commerce storage answers
+  // `unavailable` by name instead of reaching into a money engine that is not
+  // there. When the engine moves to the Commerce Pack this line moves with
+  // it — the seam stays in Core, the knowledge does not.
+  setTradeDocumentIngress(value === null ? null : (args) => applyInboundTradeDocument(args));
 }
 
 /** Null until commerce storage is initialised. Callers must fail closed. */

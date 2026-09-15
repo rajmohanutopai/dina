@@ -28,9 +28,13 @@
 
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
-import { WorkflowConflictError } from './core-client';
+import { parseInvokePluginToolResponse, updateContactBody, WorkflowConflictError } from './core-client';
 
 import type {
+  ApproveWorkflowTaskOptions,
+  InvokePluginToolInput,
+  InvokePluginToolResult,
+  PluginToolCapability,
   CoreClient,
   CoreHealth,
   VaultQuery,
@@ -142,6 +146,13 @@ export class CoreHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * Core's own answer, when it sent one. A refusal is often STRUCTURED —
+     * `{error:'identity_invalid', findings:[…]}` names the field the owner
+     * must fix — and a caller that only learns the status has to show them a
+     * blank failure where a correction belongs.
+     */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = 'CoreHttpError';
@@ -752,13 +763,44 @@ export class HttpCoreTransport implements CoreClient {
 
   // ─── Workflow task state transitions ─────────────────────────────────
 
-  async approveWorkflowTask(
-    id: string,
-    opts?: { scope?: 'single' | 'session' },
-  ): Promise<WorkflowTask> {
-    const body: Record<string, unknown> | undefined =
-      opts?.scope !== undefined ? { scope: opts.scope } : undefined;
-    return this.workflowAction(id, 'approve', body);
+  async listPluginToolCapabilities(): Promise<PluginToolCapability[]> {
+    const raw = await this.call<{ capabilities?: PluginToolCapability[] }>(
+      'GET',
+      '/v1/plugins/tool-capabilities',
+      undefined,
+      undefined,
+      'listPluginToolCapabilities()',
+    );
+    return Array.isArray(raw.capabilities) ? raw.capabilities : [];
+  }
+
+  async invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult> {
+    const body: Record<string, unknown> = {
+      install_id: input.installId,
+      capability_id: input.capabilityId,
+      params: input.params,
+      ...(input.paramCategories !== undefined ? { param_categories: input.paramCategories } : {}),
+    };
+    // Refusals (400/403/404/409) are typed answers the loop relays, not faults.
+    const res = await this.callRaw('POST', '/v1/plugins/tool-invoke', undefined, body);
+    const text = res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+    let parsed: unknown = undefined;
+    try {
+      parsed = text === '' ? undefined : JSON.parse(text);
+    } catch {
+      parsed = undefined;
+    }
+    return parseInvokePluginToolResponse(res.status, parsed);
+  }
+
+  async approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask> {
+    const body: Record<string, unknown> = {
+      ...(opts?.scope !== undefined ? { scope: opts.scope } : {}),
+      ...(opts?.pluginGrant !== undefined
+        ? { plugin_grant: { type: opts.pluginGrant.type, ...(opts.pluginGrant.hours !== undefined ? { hours: opts.pluginGrant.hours } : {}) } }
+        : {}),
+    };
+    return this.workflowAction(id, 'approve', Object.keys(body).length > 0 ? body : undefined);
   }
 
   async cancelWorkflowTask(id: string, reason = ''): Promise<WorkflowTask> {
@@ -1280,10 +1322,7 @@ export class HttpCoreTransport implements CoreClient {
     if (typeof did !== 'string' || did.trim() === '') {
       throw new Error('updateContact: did is required');
     }
-    const body: Record<string, unknown> = {};
-    if (updates.preferredFor !== undefined) {
-      body.preferred_for = [...updates.preferredFor];
-    }
+    const body = updateContactBody(updates);
     await this.call<unknown>(
       'PUT',
       `/v1/contacts/${encodeURIComponent(did.trim())}`,
@@ -1387,6 +1426,7 @@ export class HttpCoreTransport implements CoreClient {
       throw new CoreHttpError(
         `HttpCoreTransport: ${ctx} failed ${res.status} — ${err}`,
         res.status,
+        parsed,
       );
     }
     return parsed as T;

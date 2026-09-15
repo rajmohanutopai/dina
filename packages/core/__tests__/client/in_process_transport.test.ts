@@ -694,7 +694,27 @@ function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
       if (mutator !== undefined) mutator(task, body);
       return { status: 200, body: { task } };
     };
-  r.post('/v1/workflow/tasks/:id/approve', transition('queued'), { auth: 'public' });
+  // §6 — the two Brain-facing plugin verbs, answering by a caller-set shape.
+  r.get('/v1/plugins/tool-capabilities', async () => ({ status: 200, body: { capabilities: [{ install_id: 'pli', capability_id: 'cap' }] } }), { auth: 'public' });
+  r.post(
+    '/v1/plugins/tool-invoke',
+    async (req) => {
+      const body = req.body as Record<string, unknown>;
+      if (body.capability_id === 'refuse-me') return { status: 409, body: { ok: false, code: 'not_a_tool', message: 'nope' } };
+      if (body.capability_id === 'garble-me') return { status: 202, body: 'not an object' };
+      return { status: 202, body: { ok: true, mode: 'approval_required', task_id: 'plgx_1', execution_id: 'plgx_1', card: { risk_level: 'MODERATE', reasons: ['r'], params_text: JSON.stringify(body.params) } } };
+    },
+    { auth: 'public' },
+  );
+  r.post(
+    '/v1/workflow/tasks/:id/approve',
+    transition('queued', (task, body) => {
+      // Records the approve body so the wire mapping of `ApproveWorkflowTaskOptions`
+      // (scope, plugin_grant) is asserted at the seam Core parses.
+      task.approve_body = body;
+    }),
+    { auth: 'public' },
+  );
   r.post(
     '/v1/workflow/tasks/:id/cancel',
     transition('cancelled', (task, body) => {
@@ -1537,6 +1557,32 @@ describe('InProcessTransport (task 1.30)', () => {
     });
     const r = await t.approveWorkflowTask('wf-approve');
     expect(r.status).toBe('queued');
+  });
+
+  it('approveWorkflowTask maps pluginGrant + scope to the snake_case wire body Core parses (§15.5)', async () => {
+    const t = new InProcessTransport(buildRouter());
+    await t.createWorkflowTask({ id: 'wf-grant', kind: 'delegation', description: 'g', payload: '{}', initialState: 'pending_approval' });
+    await t.approveWorkflowTask('wf-grant', { pluginGrant: { type: 'window', hours: 24 } });
+    let after = (await t.getWorkflowTask('wf-grant')) as unknown as { approve_body?: unknown };
+    expect(after.approve_body).toEqual({ plugin_grant: { type: 'window', hours: 24 } });
+
+    await t.createWorkflowTask({ id: 'wf-grant2', kind: 'delegation', description: 'g', payload: '{}', initialState: 'pending_approval' });
+    await t.approveWorkflowTask('wf-grant2', { scope: 'session', pluginGrant: { type: 'window' } });
+    after = (await t.getWorkflowTask('wf-grant2')) as unknown as { approve_body?: unknown };
+    // No `hours` key when none was given — Core applies its own default.
+    expect(after.approve_body).toEqual({ scope: 'session', plugin_grant: { type: 'window' } });
+  });
+
+  it('invokePluginTool / listPluginToolCapabilities ride the two §6 verbs and type every answer', async () => {
+    const t = new InProcessTransport(buildRouter());
+    await expect(t.listPluginToolCapabilities()).resolves.toEqual([{ install_id: 'pli', capability_id: 'cap' }]);
+    const card = await t.invokePluginTool({ installId: 'pli', capabilityId: 'cap', params: { utr: '1' }, paramCategories: ['payment'] });
+    expect(card).toMatchObject({ ok: true, mode: 'approval_required', taskId: 'plgx_1', card: { riskLevel: 'MODERATE', paramsText: '{"utr":"1"}' } });
+    const refused = await t.invokePluginTool({ installId: 'pli', capabilityId: 'refuse-me', params: {} });
+    expect(refused).toEqual({ ok: false, code: 'not_a_tool', message: 'nope' });
+    // Accepted (202) but unreadable: a task exists — reported as such, never as a refusal.
+    const garbled = await t.invokePluginTool({ installId: 'pli', capabilityId: 'garble-me', params: {} });
+    expect(garbled).toMatchObject({ ok: false, code: 'response_malformed' });
   });
 
   it('cancelWorkflowTask with reason round-trips reason in body', async () => {

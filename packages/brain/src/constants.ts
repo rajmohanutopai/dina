@@ -33,6 +33,15 @@ export const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
 export const DEFAULT_LOCAL_MODEL = 'llama-3n';
 export const DEFAULT_EMBED_MODEL = 'text-embedding-3-small';
 export const DEFAULT_MAX_TOKENS = 4096;
+/**
+ * Output budget for the small structured calls (intent classification, the
+ * pre-flight retrieval planner, reminder/identity extraction). A REASONING
+ * model spends output tokens thinking before it writes the JSON, and on the
+ * production credits model 512 left it none — the planner answered an empty
+ * string and silently pre-fetched nothing (Iter 31). 2048 leaves room for the
+ * thinking and the answer.
+ */
+export const SMALL_TASK_MAX_TOKENS = 2048;
 
 // ---------------------------------------------------------------
 // Per-provider primary/lite/heavy tiers (PC-BRAIN-17)

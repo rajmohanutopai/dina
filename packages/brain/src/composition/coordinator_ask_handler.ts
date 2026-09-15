@@ -49,6 +49,7 @@ import {
   findMessageByAskId,
   findMessageByTaskId,
   updateAskLifecycle,
+  type CommerceComparisonLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import {
@@ -284,6 +285,11 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       const answerText = extractAnswerText(parsed);
       const serviceQueries = extractServiceQueries(parsed);
       const missingCapabilities = extractMissingCapabilities(parsed, tracking.query);
+      // A money-free where-to-buy card from the product-research loop (§5.A5).
+      // Posted as its own card ahead of the narrative in EVERY completion branch,
+      // so a research turn that also (say) dispatched a service query still shows
+      // its comparison. The narrative is the answer; this is the evidence.
+      postCommerceCard(targetThread, parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
@@ -414,6 +420,10 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     // Submission produced a terminal answer in the fast-path window.
     if (result.kind === 'fast_path' && result.body.status === 'complete') {
       const answer = result.body.answer ?? {};
+      // Post the where-to-buy card directly (the orchestrator posts the
+      // narrative bubble from `response` after we return). Same card, whether
+      // the answer settled in the fast-path window or the deferred path.
+      postCommerceCard(callerThread, answer);
       return {
         response: extractAnswerText(answer),
         sources: reviewSourcesFor(answer),
@@ -603,6 +613,37 @@ function extractServiceQueries(value: unknown): {
     });
   }
   return out;
+}
+
+/**
+ * Lift the money-free comparison `CardSpec` off a completed answer, if the
+ * product-research loop produced one. Defensive — a malformed shape returns
+ * `undefined` so the bridge simply posts no card.
+ */
+function extractCommerceCard(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const card = (value as Record<string, unknown>).commerceCard;
+  if (typeof card !== 'object' || card === null) return undefined;
+  return card as Record<string, unknown>;
+}
+
+/**
+ * Post the where-to-buy comparison as a `commerce_comparison` lifecycle card,
+ * when the answer carries one. Terminal and synchronous — the card is already
+ * resolved, so it is never patched in place. `cardId` is a UI index key only
+ * (uniqueness, not security), so a timestamp + random suffix is enough.
+ */
+function postCommerceCard(threadId: string, answer: unknown): void {
+  const cardSpec = extractCommerceCard(answer);
+  if (cardSpec === undefined) return;
+  const cardId = `commerce_comparison:${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+  const lifecycle: CommerceComparisonLifecycle = {
+    kind: 'commerce_comparison',
+    status: 'ready',
+    cardId,
+    cardSpec,
+  };
+  addLifecycleMessage(threadId, '', lifecycle);
 }
 
 function extractMissingCapabilities(

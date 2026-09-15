@@ -10,6 +10,33 @@ export const CONSTANTS = {
   EVIDENCE_MULTIPLIER: 1.3,
   VERIFIED_MULTIPLIER: 1.5,
   BILATERAL_MULTIPLIER: 1.4,
+  /**
+   * D4 — the fixed weight an IMPORTED review carries in a subject's rating.
+   *
+   * Fixed, and deliberately not derived from anything: a feed publisher's own
+   * trust score must never flow into the reviews it imports, or an operator
+   * could vouch for their own feed and have somebody else's stars speak with
+   * a peer's authority. Small enough that a handful of peer reviews outweigh
+   * a corpus of imports; large enough that a market with nothing else has
+   * something to rank by, which is the whole point of the cold start.
+   */
+  IMPORTED_REVIEW_WEIGHT: 0.2,
+  /**
+   * D4 — the most weighted mass every imported review for ONE subject may
+   * contribute, together.
+   *
+   * A per-review weight alone bounds nothing: a feed that publishes ten
+   * thousand reviews of one supplier would swamp any number of people who
+   * actually dealt with them, and a rating nobody's testimony can move is
+   * the Dead Internet with a citation. The ceiling is about five vouched
+   * peer reviews' worth — enough to answer a market with nothing, never
+   * enough to bury the market once it has someone.
+   *
+   * Applied by SCALING, not by dropping rows: the imports keep their
+   * internal balance of positive and negative, and the result does not
+   * depend on which order the rows came back in.
+   */
+  MAX_IMPORTED_WEIGHT: 4.0,
 
   // Graph
   MAX_GRAPH_DEPTH: 2,

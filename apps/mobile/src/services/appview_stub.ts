@@ -225,6 +225,16 @@ export class AppViewStub {
   async searchTrust(): Promise<{ results: []; cursor: undefined; totalEstimate: number }> {
     return { results: [], cursor: undefined, totalEstimate: 0 };
   }
+
+  /** No catalog in this build — the research tool gets an empty shortlist. */
+  async searchCatalog(): Promise<never[]> {
+    return [];
+  }
+
+  /** No trust data — the ranker treats every seller as "no history". */
+  async getProfile(): Promise<null> {
+    return null;
+  }
 }
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {

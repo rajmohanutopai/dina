@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   attestations,
@@ -11,6 +11,7 @@ import {
 import { getCachedGraphContext } from '@/api/middleware/graph-context-cache.js'
 import { normalizeHandle } from '@/util/handle_normalize.js'
 import { resolveCanonicalChain } from '@/db/queries/subjects.js'
+import { reviewFeed } from '@/config/review-feeds.js'
 
 /**
  * `com.dinakernel.peerlens.subjectGet` (TN-API-002 / Plan §6.2).
@@ -108,11 +109,59 @@ export interface ReviewerEntry {
   }
 }
 
+/**
+ * D4 — reviews this subject has from a registered per-market feed, grouped by
+ * the feed that published them.
+ *
+ * Separate from `reviewers` because a feed is not a reviewer. The roster is
+ * people the viewer can place in their own graph — themselves, their
+ * contacts, a stranger — and a source that republished a hundred reviews is
+ * none of those. Grouping by feed is also what lets a surface credit the
+ * source once and link back to it, which is the Deep Link Default: Dina
+ * credits sources rather than extracting from them.
+ */
+export interface ImportedReviewGroup {
+  /** The registered feed id. */
+  feed: string
+  /** The name a card credits; null when the feed is no longer registered. */
+  name: string | null
+  /** Where the reader goes to see the source itself; null when unregistered. */
+  homepage: string | null
+  /** The market the feed serves; null when unregistered. */
+  market: string | null
+  /** How many of this subject's shown reviews came from this feed. */
+  count: number
+  /** The most recent few, each with the deep link back to the original. */
+  latest: {
+    uri: string
+    text: string | null
+    sentiment: string
+    createdAt: string
+    /** The original review, at the source. Always https. */
+    url: string
+  }[]
+}
+
+/** How many imported reviews a single feed shows on a subject's card. */
+const MAX_IMPORTED_PER_FEED = 5
+/** How many distinct feeds a subject's card credits. */
+const MAX_IMPORTED_FEEDS = 5
+
 export interface SubjectGetResponse {
   subject: SubjectRefShape | null
   score: number | null
   band: PeerlensBand
+  /**
+   * TESTIMONY only (D4). The roster renders exactly these, and a count that
+   * included imports would say "5 reviewers" over four rendered rows — the
+   * bug the redaction filters below are already careful about. What a feed
+   * contributed is counted separately, in `imported`.
+   */
   reviewCount: number
+  /** D4 — what registered feeds contributed, grouped and credited. */
+  imported: ImportedReviewGroup[]
+  /** D4 — the total across `imported`, for a surface that only needs the number. */
+  importedReviewCount: number
   reviewers: {
     /**
      * The viewer's own attestations (when the user reviewed this
@@ -237,6 +286,8 @@ export async function subjectGet(
       score: null,
       band: 'unrated',
       reviewCount: 0,
+      imported: [],
+      importedReviewCount: 0,
       reviewers: { self: [], contacts: [], extended: [], strangers: [] },
       cursor: null,
       tombstoned: false,
@@ -270,6 +321,8 @@ export async function subjectGet(
       score: null,
       band: 'unrated',
       reviewCount: 0,
+      imported: [],
+      importedReviewCount: 0,
       reviewers: { self: [], contacts: [], extended: [], strangers: [] },
       cursor: null,
       tombstoned: true,
@@ -310,6 +363,10 @@ export async function subjectGet(
           eq(attestations.isRevoked, false),
           eq(attestations.isTakedownByModerator, false),
           isNull(didRedactions.did),
+          // D4 — the roster is people. An import is a source's republished
+          // review, and it reaches the reader through `imported`, credited
+          // to the feed that published it.
+          isNull(attestations.sourceFeed),
         ),
       )
       .orderBy(desc(attestations.recordCreatedAt))
@@ -324,11 +381,18 @@ export async function subjectGet(
           eq(attestations.isRevoked, false),
           eq(attestations.isTakedownByModerator, false),
           isNull(didRedactions.did),
+          // Matches the roster's filter exactly, for the reason the comment
+          // above gives: a count that disagrees with what is rendered is the
+          // "5 reviewers, 4 rows" bug wearing a different hat.
+          isNull(attestations.sourceFeed),
         ),
       ),
   ])
 
   const reviewCount = countRow?.c ?? 0
+  // D4 — what registered feeds contributed, credited to their source.
+  const imported = await importedReviewGroups(db, subjectId)
+  const importedReviewCount = imported.reduce((sum, group) => sum + group.count, 0)
 
   if (attRows.length === 0) {
     return {
@@ -336,6 +400,8 @@ export async function subjectGet(
       score,
       band: trustBandFor(score),
       reviewCount,
+      imported,
+      importedReviewCount,
       reviewers: { self: [], contacts: [], extended: [], strangers: [] },
       cursor: null,
       tombstoned: false,
@@ -405,6 +471,8 @@ export async function subjectGet(
     score,
     band: trustBandFor(score),
     reviewCount,
+    imported,
+    importedReviewCount,
     reviewers: {
       self: sortReviewers(self).slice(0, MAX_REVIEWERS_PER_GROUP),
       contacts: sortReviewers(contacts).slice(0, MAX_REVIEWERS_PER_GROUP),
@@ -415,4 +483,79 @@ export async function subjectGet(
     tombstoned: false,
     scoreVersion,
   }
+}
+
+
+/**
+ * D4 — this subject's imported reviews, grouped by the feed that published
+ * them and credited with a deep link back.
+ *
+ * The feed's NAME and HOMEPAGE come from this node's registry, never from the
+ * record: a publisher naming itself in its own records would be naming itself
+ * in Dina's chrome. A feed that has since been de-registered still shows its
+ * reviews — they were admitted when they landed — but with `name` and
+ * `homepage` null, so a surface says which feed by its id and credits nothing
+ * this node no longer stands behind.
+ */
+async function importedReviewGroups(
+  db: DrizzleDB,
+  subjectId: string,
+): Promise<ImportedReviewGroup[]> {
+  const rows = await db
+    .select({
+      uri: attestations.uri,
+      text: attestations.text,
+      sentiment: attestations.sentiment,
+      recordCreatedAt: attestations.recordCreatedAt,
+      sourceFeed: attestations.sourceFeed,
+      sourceJson: attestations.sourceJson,
+    })
+    .from(attestations)
+    .where(
+      and(
+        eq(attestations.subjectId, subjectId),
+        eq(attestations.isRevoked, false),
+        eq(attestations.isTakedownByModerator, false),
+        isNotNull(attestations.sourceFeed),
+      ),
+    )
+    .orderBy(desc(attestations.recordCreatedAt))
+    .limit(MAX_REVIEWER_TOTAL)
+
+  const byFeed = new Map<string, ImportedReviewGroup>()
+  for (const row of rows) {
+    const feedId = row.sourceFeed
+    if (feedId === null) continue
+    let group = byFeed.get(feedId)
+    if (group === undefined) {
+      if (byFeed.size >= MAX_IMPORTED_FEEDS) continue
+      const registered = reviewFeed(feedId)
+      group = {
+        feed: feedId,
+        name: registered?.name ?? null,
+        homepage: registered?.homepage ?? null,
+        market: registered?.market ?? null,
+        count: 0,
+        latest: [],
+      }
+      byFeed.set(feedId, group)
+    }
+    group.count += 1
+    if (group.latest.length >= MAX_IMPORTED_PER_FEED) continue
+    // The deep link is the record's own — that is the point of carrying it —
+    // but it reached the row through a gate that required https, and the
+    // check is repeated rather than assumed: a row written before the gate,
+    // or by a path that skipped it, must not put an arbitrary scheme in
+    // front of a reader.
+    const url = (row.sourceJson as { url?: unknown } | null)?.url
+    if (typeof url !== 'string' || !/^https:\/\//i.test(url)) continue
+    group.latest.push({
+      uri: row.uri,
+      text: row.text,
+      sentiment: row.sentiment,
+      createdAt: row.recordCreatedAt.toISOString(),
+      url,
+    })
+  }
+  return [...byFeed.values()].sort((a, b) => b.count - a.count)
 }

@@ -23,16 +23,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
+import { readQuoteDecline, validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
+import { SUPPLIER_REFERENCE_MANIFEST } from '../../src/commerce/reference_manifests';
 import {
   createCommerceRuntime,
   installCommerceRuntime,
   type CommerceRuntime,
 } from '../../src/commerce/runtime';
+import { validatePluginResult } from '../../src/plugins/dispatch';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -222,17 +224,90 @@ describe('what the seam refuses', () => {
     expect(runtime.receipts.get(request.request_digest)).toBeNull();
   });
 
-  it('passes a DECLINE through as the runner’s own answer', () => {
+  it('seals a DECLINE as a QuoteDecline that REPLACES the runner’s answer, and replays it (§3.4)', () => {
     // "We are not quoting this" is an answer. Withholding it would read to the
-    // buyer exactly like a supplier that never replied.
+    // buyer exactly like a supplier that never replied — and the runner's own
+    // unsigned words would arrive unverifiable and be dropped. So Core seals it.
     const request = makeQuoteRequest();
     const decision = answerQuoteRequest(
       request,
       JSON.stringify({ can_supply: false, decline_reason: 'out of stock' }),
     );
 
-    expect(decision).toEqual({ kind: 'passthrough' });
+    expect(decision.kind).toBe('replace');
+    const wire = JSON.parse((decision as { kind: 'replace'; json: string }).json) as { decline: unknown };
+    const read = readQuoteDecline(wire.decline, hash);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.decline).toMatchObject({
+      request_id: request.request_id,
+      request_digest: request.request_digest,
+      buyer_did: request.buyer_did,
+      supplier_did: SUPPLIER_DID,
+      reason_code: 'out of stock',
+    });
+    // Retained on the money-free decline slice, outbound — no quote family.
+    const held = runtime.declineDocuments.answersTo(request.request_digest);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ direction: 'outbound', counterpartyDid: request.buyer_did });
     expect(runtime.families.load(`q:${request.request_digest.slice(0, 32)}`)).toBeNull();
+
+    // A repeated request replays the SAME decline — never a second digest.
+    const again = answerQuoteRequest(
+      request,
+      JSON.stringify({ can_supply: false, decline_reason: 'still out of stock' }),
+    );
+    const againWire = JSON.parse((again as { kind: 'replace'; json: string }).json) as { decline: { decline_digest: string } };
+    expect(againWire.decline.decline_digest).toBe(read.decline.decline_digest);
+    expect(runtime.declineDocuments.answersTo(request.request_digest)).toHaveLength(1);
+  });
+
+  it('the PINNED request-quote result schema admits the decline shape Core seals', () => {
+    // On the plugin lane the runner's completion meets the pinned schema BEFORE
+    // Core sees it. A decline carries no `lines`; requiring them refused every
+    // decline at the door and the transformer's tests never noticed.
+    const requestQuote = SUPPLIER_REFERENCE_MANIFEST.capabilities.find((c) =>
+      c.id.endsWith('request-quote'),
+    );
+    if (requestQuote === undefined) throw new Error('reference manifest lost request-quote');
+    const pinned = requestQuote.result_schema;
+    expect(validatePluginResult(JSON.stringify({ can_supply: false, decline_reason: 'out of stock' }), pinned).ok).toBe(true);
+    expect(validatePluginResult(JSON.stringify({ can_supply: false }), pinned).ok).toBe(true);
+    // A supply still needs its lines — the bound moved to Core, not away.
+    expect(answerQuoteRequest(makeQuoteRequest(), JSON.stringify({ can_supply: true }))).toEqual({
+      kind: 'withhold',
+      reason: 'terms_unusable',
+    });
+  });
+
+  it('a request already DECLINED is never quoted afterwards — the retained decline replays', () => {
+    const request = makeQuoteRequest();
+    const declined = answerQuoteRequest(request, JSON.stringify({ can_supply: false, decline_reason: 'capacity' }));
+    expect(declined.kind).toBe('replace');
+    const first = JSON.parse((declined as { kind: 'replace'; json: string }).json) as { decline: { decline_digest: string } };
+
+    // The runner changes its mind on a redelivered request.
+    const later = answerQuoteRequest(request, runnerTerms());
+    expect(later.kind).toBe('replace');
+    const wire = JSON.parse((later as { kind: 'replace'; json: string }).json) as { decline?: { decline_digest: string }; quote_id?: string };
+    expect(wire.decline?.decline_digest).toBe(first.decline.decline_digest);
+    expect(wire.quote_id).toBeUndefined();
+    expect(runtime.families.load(`q:${request.request_digest.slice(0, 32)}`)).toBeNull();
+  });
+
+  it('a decline with no stated reason, or an over-long one, still seals within the wire bound', () => {
+    const bare = answerQuoteRequest(makeQuoteRequest(), JSON.stringify({ can_supply: false }));
+    expect(bare.kind).toBe('replace');
+    const bareWire = JSON.parse((bare as { kind: 'replace'; json: string }).json) as { decline: { reason_code: string } };
+    expect(bareWire.decline.reason_code).toBe('declined');
+
+    const long = answerQuoteRequest(
+      makeQuoteRequest({ request_id: 'req-long' }),
+      JSON.stringify({ can_supply: false, decline_reason: 'x'.repeat(500) }),
+    );
+    expect(long.kind).toBe('replace');
+    const longWire = JSON.parse((long as { kind: 'replace'; json: string }).json) as { decline: { reason_code: string } };
+    expect(longWire.decline.reason_code).toHaveLength(64);
   });
 
   it('refuses to sign before an epoch is published (§16.2)', () => {

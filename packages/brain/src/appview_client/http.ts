@@ -219,6 +219,41 @@ export interface SearchPeerlensParams {
 }
 
 /** Configuration for `AppViewClient`. */
+/**
+ * A commerce catalog candidate, coerced from the AppView snake_case wire shape
+ * (`com.dinakernel.commerce.searchCatalog`). INDICATIVE, never a commitment:
+ * the price is indicative and `retrievalScoreBp` is recall confidence, not the
+ * buyer's ranking (that runs in the buyer's node against the offers).
+ */
+export interface CommerceCatalogCandidate {
+  supplierDid: string;
+  serviceUri: string;
+  serviceRkey: string;
+  product: { scheme: string; value: string; issuerDid?: string; variantDigest?: string };
+  catalogSnapshotRef: string;
+  matchedFields: string[];
+  indicativePrice?: { currency: string; minorUnits: string };
+  fulfilmentRegions: { scheme: string; value: string; issuerDid?: string }[];
+  generatedAt: string;
+  validUntil?: string;
+  retrievalScoreBp: number;
+}
+
+/**
+ * Parameters for `searchCatalog`. `identifiers`/`categories` become REPEATED
+ * query params on the wire (`?identifier=a&identifier=b`) — the AppView
+ * `queryList` contract, which accepts one value or many.
+ */
+export interface SearchCatalogParams {
+  q?: string;
+  /** Product identifiers, each `scheme:value[:issuer_did]`. */
+  identifiers?: string[];
+  categories?: string[];
+  region?: string;
+  supplier?: string;
+  limit?: number;
+}
+
 export interface AppViewClientOptions {
   /** Base URL of the AppView (trailing slash stripped). */
   appViewURL: string;
@@ -471,12 +506,79 @@ export class AppViewClient {
     };
   }
 
+  /**
+   * Search PUBLISHED supplier catalogs for a product
+   * (`com.dinakernel.commerce.searchCatalog`, §10.5). Returns bounded,
+   * INDICATIVE candidate references — nothing here is a commitment, and the
+   * `retrievalScoreBp` is recall confidence, not the buyer's ranking (that runs
+   * in the buyer's node against the offers). An empty list means "no matches",
+   * not an error. Throws `AppViewError` on HTTP failure past the retry budget.
+   */
+  async searchCatalog(params: SearchCatalogParams): Promise<CommerceCatalogCandidate[]> {
+    const query: Record<string, string | string[]> = {};
+    if (params.q !== undefined && params.q !== '') query.q = params.q;
+    if (params.identifiers !== undefined && params.identifiers.length > 0) {
+      query.identifier = params.identifiers;
+    }
+    if (params.categories !== undefined && params.categories.length > 0) {
+      query.category = params.categories;
+    }
+    if (params.region !== undefined && params.region !== '') query.region = params.region;
+    if (params.supplier !== undefined && params.supplier !== '') query.supplier = params.supplier;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+
+    const body = await this.get('/xrpc/com.dinakernel.commerce.searchCatalog', query);
+    const candidates = (body as { candidates?: unknown }).candidates;
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .map(coerceCatalogCandidate)
+      .filter((c): c is CommerceCatalogCandidate => c !== null);
+  }
+
+  /**
+   * Numeric trust for a single DID (`com.dinakernel.peerlens.getProfile`). The
+   * research ranker needs the score as a NUMBER (`overallTrustScore`, 0..1),
+   * which `resolveTrust`/`searchTrust` do not expose — they return a trust
+   * LEVEL string. Returns `null` when the DID has no profile; the score itself
+   * may be `null` (a known DID with no history). Both mean "no trust input" to
+   * the ranker, which must not be scored as zero (§13.4). Throws `AppViewError`
+   * on HTTP failure.
+   */
+  async getProfile(did: string): Promise<{ overallTrustScore: number | null } | null> {
+    if (!did) {
+      throw new AppViewError(
+        'getProfile: did is required',
+        null,
+        '/xrpc/com.dinakernel.peerlens.getProfile',
+      );
+    }
+    const body = await this.get('/xrpc/com.dinakernel.peerlens.getProfile', { did });
+    if (body === null || typeof body !== 'object') return null;
+    const score = (body as Record<string, unknown>).overallTrustScore;
+    return { overallTrustScore: typeof score === 'number' ? score : null };
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
 
-  private async get(path: string, query: Record<string, string>): Promise<unknown> {
-    const qs = new URLSearchParams(query).toString();
+  private async get(
+    path: string,
+    query: Record<string, string | string[]>,
+  ): Promise<unknown> {
+    // A value may be an ARRAY (a repeated query param, e.g. `?identifier=a&
+    // identifier=b`, which the AppView `queryList` contract expects) or a
+    // single string. `append` builds the repeated form; a single string keeps
+    // its one occurrence, so every existing caller is unchanged.
+    const usp = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (Array.isArray(value)) {
+        for (const item of value) usp.append(key, item);
+      } else {
+        usp.set(key, value);
+      }
+    }
+    const qs = usp.toString();
     const url = `${this.appViewURL}${path}${qs ? '?' + qs : ''}`;
 
     let lastError: AppViewError | null = null;
@@ -528,6 +630,63 @@ function isServiceProfile(x: unknown): x is ServiceProfile {
     r.capabilities.every((c) => typeof c === 'string') &&
     typeof r.isDiscoverable === 'boolean'
   );
+}
+
+/**
+ * Coerce one AppView snake_case catalog candidate into the local camelCase
+ * shape. Returns `null` for a row missing the fields the bridge needs
+ * (supplier, service URI, snapshot ref, a `{scheme,value}` product) rather than
+ * passing a half-formed candidate downstream — a dropped malformed row is
+ * honest; a candidate with an empty supplier is a phantom offer.
+ */
+function coerceCatalogCandidate(raw: unknown): CommerceCatalogCandidate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const supplierDid = r.supplier_did;
+  const serviceUri = r.service_uri;
+  const catalogSnapshotRef = r.catalog_snapshot_ref;
+  const product = r.product as Record<string, unknown> | undefined;
+  if (
+    typeof supplierDid !== 'string' ||
+    typeof serviceUri !== 'string' ||
+    typeof catalogSnapshotRef !== 'string' ||
+    !product ||
+    typeof product.scheme !== 'string' ||
+    typeof product.value !== 'string'
+  ) {
+    return null;
+  }
+  const price = r.indicative_price as Record<string, unknown> | undefined;
+  const regions = Array.isArray(r.fulfilment_regions) ? r.fulfilment_regions : [];
+  return {
+    supplierDid,
+    serviceUri,
+    serviceRkey: typeof r.service_rkey === 'string' ? r.service_rkey : '',
+    product: {
+      scheme: product.scheme,
+      value: product.value,
+      ...(typeof product.issuer_did === 'string' ? { issuerDid: product.issuer_did } : {}),
+      ...(typeof product.variant_digest === 'string'
+        ? { variantDigest: product.variant_digest }
+        : {}),
+    },
+    catalogSnapshotRef,
+    matchedFields: Array.isArray(r.matched_fields) ? (r.matched_fields as string[]) : [],
+    ...(price && typeof price.currency === 'string' && typeof price.minor_units === 'string'
+      ? { indicativePrice: { currency: price.currency, minorUnits: price.minor_units } }
+      : {}),
+    fulfilmentRegions: regions
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+      .filter((x) => typeof x.scheme === 'string' && typeof x.value === 'string')
+      .map((x) => ({
+        scheme: x.scheme as string,
+        value: x.value as string,
+        ...(typeof x.issuer_did === 'string' ? { issuerDid: x.issuer_did } : {}),
+      })),
+    generatedAt: typeof r.generated_at === 'string' ? r.generated_at : '',
+    ...(typeof r.valid_until === 'string' ? { validUntil: r.valid_until } : {}),
+    retrievalScoreBp: typeof r.retrieval_score_bp === 'number' ? r.retrieval_score_bp : 0,
+  };
 }
 
 /**

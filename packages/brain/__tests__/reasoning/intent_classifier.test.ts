@@ -16,6 +16,7 @@ import { CATALOG_CAPABILITIES } from '@dina/protocol';
 import {
   IntentClassifier,
   INTENT_CLASSIFIER_SYSTEM_PROMPT,
+  INTENT_SOURCES,
   parseIntentClassification,
   renderTocForPrompt,
   type IntentClassification,
@@ -97,6 +98,22 @@ describe('parseIntentClassification — coerce', () => {
     // older model checkpoint emitting the old enum still routes the
     // user's question correctly during the rename window.
     expect(parseIntentClassification(raw).sources).toEqual(['vault', 'peerlens']);
+  });
+
+  it('accepts the products source (§5.A1 — offers across suppliers) beside peerlens', () => {
+    const raw = JSON.stringify({
+      sources: ['peerlens', 'products'],
+      relevant_personas: [],
+      toc_evidence: {},
+      temporal: 'comparative',
+      reasoning_hint: '',
+    });
+    expect(parseIntentClassification(raw).sources).toEqual(['peerlens', 'products']);
+    expect(INTENT_SOURCES).toContain('products');
+    // The prompt the model reads names the source and tells it from a named store's live state.
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('"products"');
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/A PRODUCT compared across suppliers[\s\S]*is "products"/);
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/NOT "provider_services", which is a NAMED store/);
   });
 
   it('passes the modern peerlens source through unchanged', () => {

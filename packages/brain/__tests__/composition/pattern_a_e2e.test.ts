@@ -149,6 +149,12 @@ function fakeAppView(): BuildAgenticAskPipelineInput['appViewClient'] {
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },
+    async searchCatalog() {
+      return [];
+    },
+    async getProfile() {
+      return null;
+    },
     async resolveTrust() {
       return {} as unknown as Awaited<
         ReturnType<NonNullable<BuildAgenticAskPipelineInput['appViewClient']['resolveTrust']>>
@@ -191,6 +197,10 @@ function makeFakeWorkflowCoreClient(): {
   const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
   const client = {
     async findContactsByPreference() { return []; },
+    async contactLookup() { return null; },
+    // §6 plugin tools — nothing installed in this fixture; an ask is refused.
+    async listPluginToolCapabilities() { return []; },
+    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
       const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };

@@ -187,8 +187,9 @@ export interface PluginInstallRepository {
    * uninstall stays `pending` — and `activate`'s `status='pending'` CAS
    * (confirmConsent) can still bring it live AFTER the owner uninstalled it.
    * Flipping it to `revoked` makes `activate` and `resume` refuse it while the
-   * teardown's raw-status probe + `remove` still fire. No-op for non-pending
-   * rows. Returns true if it changed a row.
+   * teardown's raw-status probe + `remove` still fire. Applies to `pending` and
+   * `paused` rows (uninstall pauses an active row first); no-op for `active`
+   * and already-`revoked` rows. Returns true if it changed a row.
    */
   markRevoked(installId: string, nowMs: number): boolean;
   /**
@@ -734,21 +735,26 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
   }
 
   markRevoked(installId: string, nowMs: number): boolean {
-    // PLG-27 #4: tombstone a PENDING install to `revoked` during uninstall so
-    // confirmConsent→activate (WHERE status='pending') can never bring it live
-    // afterwards. Scoped to `status='pending'` so it never clobbers an active
-    // (→paused) or already-revoked row; `pause_reason` is set for parity with the
-    // device-revoke hold used on active rows.
+    // PLG-27 #4: tombstone an install to `revoked` during uninstall so
+    // confirmConsent→activate (WHERE status='pending') and resume (WHERE
+    // status='paused') can never bring it live afterwards. `pause_reason` is set
+    // for parity with the device-revoke hold used on active rows.
     // PLG-28 #3: RETAIN `pending_expires_at` (set it to now, in seconds) rather
     // than nulling it — that way the abandoned-install sweep can still reach this
     // tombstone (it selects on `pending_expires_at`) to FINISH the outstanding
     // device revoke if the uninstall's revoke failed / had no callback. Nulling
     // it (the original PLG-27 #4 behavior) evicted the row from the only automatic
     // retry, orphaning the paired plugin device credential.
+    // Iter 17: ALSO the `paused` row an uninstall of an ACTIVE install leaves
+    // behind (uninstall pauses first). Scoped to pending only, the tombstone
+    // skipped it, so a non-durable device revoke on an active install left a
+    // paused row with a NULL expiry that no sweep could ever see — the 409
+    // "retained for the sweeper" promised a retry that never ran. An
+    // already-revoked row is left alone (idempotent).
     const affected = this.db.run(
       `UPDATE plugin_installs
        SET status = 'revoked', pause_reason = 'device_revoked', pending_expires_at = ?, updated_at = ?
-       WHERE install_id = ? AND status = 'pending'`,
+       WHERE install_id = ? AND status IN ('pending', 'paused')`,
       [Math.floor(nowMs / 1000), nowMs, installId],
     );
     return affected > 0;

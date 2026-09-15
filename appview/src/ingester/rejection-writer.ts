@@ -53,6 +53,12 @@ export type RejectionReason =
   // and `feature_off` (global kill-switch); this is per-host.
   // Mirrored on mobile in `OutboxRejectReason`.
   | 'pds_suspended'
+  // D4 — the record claims to be a review imported from a per-market feed,
+  // and this node does not admit it: no such feed is registered, or the repo
+  // publishing it is not that feed's publisher. Distinct from
+  // `schema_invalid` (the block was well-formed) because the refusal is
+  // about this node's AGREEMENTS, not the record's shape.
+  | 'import_not_admitted'
 
 /** Subset of HandlerContext — the pieces a rejection writer actually needs. */
 export interface RejectionContext {

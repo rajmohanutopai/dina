@@ -30,6 +30,13 @@ import {
   addContactIfNotExists,
   hydrateContactDirectory,
   setPreferredFor,
+  setPaperIdentity,
+  getPaperIdentity,
+  checkPaperIdentity,
+  setContactChannels,
+  getContactChannels,
+  checkContactChannels,
+  establishContact,
   type Contact,
 } from '../../src/contacts/directory';
 import { rebuildContactProjections, mergeContactPersons } from '../../src/contacts/directory';
@@ -860,6 +867,7 @@ describe('Contact Directory', () => {
         findByContactDid: () => null,
         resolveByIdentity: () => null,
         upsertIdentity: stub('upsertIdentity'),
+        removeIdentity: stub('removeIdentity') as unknown as PeopleRepository['removeIdentity'],
         listIdentities: () => [],
         confirmPerson: stub('confirmPerson'),
         rejectPerson: stub('rejectPerson'),
@@ -877,9 +885,7 @@ describe('Contact Directory', () => {
       };
     }
 
-    function makeSpyPeopleRepo(
-      sink: { did: string; displayName: string }[],
-    ): PeopleRepository {
+    function makeSpyPeopleRepo(sink: { did: string; displayName: string }[]): PeopleRepository {
       return makeStubPeopleRepo({
         upsertContactPerson: (did: string, displayName: string) => {
           sink.push({ did, displayName });
@@ -1161,9 +1167,9 @@ describe('Contact Directory', () => {
         vault.linkSubjectSync('item-pref', loser.personId, { source: 'manual' });
 
         // Sanity: the loser's note is retrievable BEFORE the merge.
-        expect(
-          vault.getItemsForPersonSync(loser.personId, 10).map((i) => i.id),
-        ).toEqual(['item-pref']);
+        expect(vault.getItemsForPersonSync(loser.personId, 10).map((i) => i.id)).toEqual([
+          'item-pref',
+        ]);
 
         mergeContactPersons(keep.personId, loser.personId);
 
@@ -1190,7 +1196,11 @@ describe('Contact Directory', () => {
         expect(getPeopleRepository()?.getPerson(loser.personId)?.status).toBe('rejected');
         expect(getContact('did:plc:loser')?.personId).toBe(keep.personId);
         // Only the survivor remains as a live person.
-        expect(getPeopleRepository()?.listPeople().map((p) => p.personId)).toEqual([keep.personId]);
+        expect(
+          getPeopleRepository()
+            ?.listPeople()
+            .map((p) => p.personId),
+        ).toEqual([keep.personId]);
       } finally {
         setVaultRepository('general', null);
       }
@@ -1207,9 +1217,242 @@ describe('Contact Directory', () => {
       getPeopleRepository()?.upsertIdentity(personId!, 'did', 'did:plc:alice-laptop', {
         verified: true,
       });
-      expect(getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice-laptop')?.personId).toBe(
-        personId,
+      expect(
+        getPeopleRepository()?.resolveByIdentity('did', 'did:plc:alice-laptop')?.personId,
+      ).toBe(personId);
+    });
+  });
+
+  /**
+   * §5.D — the counterparty's paper identity, stored on the contact and
+   * validated IN THE DOMAIN (an in-process caller on the phone reaches
+   * `setPaperIdentity` directly, so the checksum cannot live only at the route).
+   * The identity round-trips through the real SQLite contact repository, so the
+   * v44 columns are exercised, not just the in-memory cache.
+   */
+  describe('the paper identity of a counterparty', () => {
+    const DID = 'did:plc:chairmaker99';
+    const GSTIN = '27AAPFU0939F1ZV';
+    const ADDRESS = {
+      line1: '4 Kalasipalya Road',
+      city: 'Bengaluru',
+      region: 'Karnataka',
+      postalCode: '560002',
+      country: 'IN',
+    };
+
+    beforeEach(() => {
+      addContact(DID, 'ChairMaker', 'verified');
+    });
+
+    it('starts empty — a node trades with a counterparty whose paper identity it never needed', () => {
+      expect(getPaperIdentity(DID)).toEqual({
+        legalName: '',
+        registrations: [],
+        billingAddress: null,
+      });
+    });
+
+    it('stores a stated identity and reads it back through SQLite', () => {
+      expect(
+        setPaperIdentity(DID, {
+          legalName: '  ChairMaker   Industries LLP ',
+          registrations: [{ scheme: 'gstin', value: GSTIN.toLowerCase() } as never],
+          billingAddress: ADDRESS,
+        }),
+      ).toEqual([]);
+      // Re-hydrate from the durable store so the columns, not the cache, answer.
+      resetContactDirectory();
+      hydrateContactDirectory();
+      expect(getPaperIdentity(DID)).toEqual({
+        legalName: 'ChairMaker Industries LLP',
+        registrations: [{ scheme: 'gstin', value: GSTIN }],
+        billingAddress: ADDRESS,
+      });
+    });
+
+    it('checkPaperIdentity judges without writing', () => {
+    expect(checkPaperIdentity(DID, { legalName: 'ChairMaker Industries LLP' })).toEqual([]);
+    expect(getPaperIdentity(DID).legalName).toBe('');
+    expect(
+      checkPaperIdentity(DID, { registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' } as never] }).map(
+        (f) => f.refusal,
+      ),
+    ).toEqual(['malformed_registration']);
+  });
+
+  it('refuses a mistyped registration and writes NOTHING — not the good fields either', () => {
+      expect(setPaperIdentity(DID, { legalName: 'ChairMaker Industries LLP' })).toEqual([]);
+      const findings = setPaperIdentity(DID, {
+        legalName: 'Renamed Industries',
+        registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' } as never],
+      });
+      expect(findings.map((f) => f.refusal)).toEqual(['malformed_registration']);
+      const stored = getPaperIdentity(DID);
+      expect(stored.legalName).toBe('ChairMaker Industries LLP');
+      expect(stored.registrations).toEqual([]);
+    });
+
+    it('is tri-state per field: unnamed fields are left alone, an empty value clears', () => {
+      setPaperIdentity(DID, {
+        legalName: 'ChairMaker Industries LLP',
+        registrations: [{ scheme: 'gstin', value: GSTIN } as never],
+        billingAddress: ADDRESS,
+      });
+      // Name only the registrations: the other two survive.
+      setPaperIdentity(DID, { registrations: [] });
+      expect(getPaperIdentity(DID)).toEqual({
+        legalName: 'ChairMaker Industries LLP',
+        registrations: [],
+        billingAddress: ADDRESS,
+      });
+      // An explicit null clears the address.
+      setPaperIdentity(DID, { billingAddress: null });
+      expect(getPaperIdentity(DID).billingAddress).toBeNull();
+    });
+
+    it('survives re-establishing the contact — a re-add is not a way to wipe a filing identity', () => {
+      setPaperIdentity(DID, { registrations: [{ scheme: 'gstin', value: GSTIN } as never] });
+      addContactIfNotExists(DID, 'ChairMaker', 'trusted');
+      establishContact(DID, 'ChairMaker', { relationship: 'colleague' });
+      expect(getPaperIdentity(DID).registrations).toEqual([{ scheme: 'gstin', value: GSTIN }]);
+    });
+
+    it('throws for an unknown contact rather than inventing a row', () => {
+      expect(() => setPaperIdentity('did:plc:nobody', { legalName: 'Nobody Ltd' })).toThrow(
+        /not found/,
       );
+    });
+
+    it('reads a row that predates the v44 columns as "not stated", never a crash', () => {
+      // What a pre-migration row looks like once the columns are added with their
+      // defaults: empty text, an empty list, no address.
+      const personId = getContact(DID)?.personId ?? '';
+      adapter.execute(
+        "UPDATE contacts SET legal_name = '', registrations = '[]', billing_address = '' WHERE person_id = ?",
+        [personId],
+      );
+      resetContactDirectory();
+      hydrateContactDirectory();
+      expect(getPaperIdentity(DID)).toEqual({
+        legalName: '',
+        registrations: [],
+        billingAddress: null,
+      });
+    });
+
+    describe('the channels a rail would message', () => {
+    it('start empty and round-trip through the PEOPLE GRAPH, canonicalised', () => {
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+      expect(setContactChannels(DID, { phone: '+91 98450 12345', email: '  Sales@ChairMaker.example  ' })).toEqual([]);
+      expect(getContactChannels(DID)).toEqual({ phone: '+919845012345', email: 'sales@chairmaker.example' });
+      // The contact row holds none of it — the people graph does.
+      const personId = getContact(DID)?.personId ?? '';
+      expect(
+        getPeopleRepository()
+          ?.listIdentities(personId)
+          .filter((i) => i.identityType === 'phone')
+          .map((i) => i.identityValue),
+      ).toEqual(['+919845012345']);
+    });
+
+    it('replacing a number removes the old binding — one phone, not a history', () => {
+      setContactChannels(DID, { phone: '+919845012345' });
+      setContactChannels(DID, { phone: '+919845099999' });
+      const personId = getContact(DID)?.personId ?? '';
+      expect(
+        getPeopleRepository()
+          ?.listIdentities(personId)
+          .filter((i) => i.identityType === 'phone')
+          .map((i) => i.identityValue),
+      ).toEqual(['+919845099999']);
+      expect(getContactChannels(DID).phone).toBe('+919845099999');
+    });
+
+    it('an empty string or null clears one channel and leaves the other', () => {
+      setContactChannels(DID, { phone: '+919845012345', email: 'sales@chairmaker.example' });
+      setContactChannels(DID, { phone: '' });
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: 'sales@chairmaker.example' });
+      setContactChannels(DID, { email: null });
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+    });
+
+    it.each([
+      ['phone', '12345'],
+      ['phone', '+9198450123456789012'],
+      ['phone', 'call me'],
+      // Judged as TYPED: the canonicaliser strips non-digits, so a sentence
+      // with a number in it would otherwise be stored as a diallable number.
+      ['phone', 'call me on 98450 12345 tomorrow at 9'],
+      ['phone', '9845012345 x123'],
+      ['phone', 'ask Sancho 9845012345'],
+      ['email', 'sales@chairmaker'],
+      ['email', 'not an address'],
+      ['email', 'a@b.c d'],
+    ])('refuses a malformed %s without echoing it, and writes nothing', (field, value) => {
+      const findings = setContactChannels(DID, { [field]: value } as { phone?: string; email?: string });
+      expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
+      expect(findings[0].detail).not.toContain(value);
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+    });
+
+    it('refuses a number another live person already holds — re-pointing an identity is a merge, not an edit', () => {
+      addContact('did:plc:otherseller', 'Other Seller', 'verified');
+      expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
+      const findings = setContactChannels(DID, { phone: '+91 98450 12345' });
+      expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
+      expect(getContactChannels(DID).phone).toBeNull();
+      expect(getContactChannels('did:plc:otherseller').phone).toBe('+919845012345');
+      // The refusal names neither the number nor the other person's id: both
+      // are PII, and the owner needs neither to know what to do.
+      expect(findings[0].detail).not.toContain('9845012345');
+      expect(findings[0].detail).not.toContain(getContact('did:plc:otherseller')?.personId ?? 'person');
+      expect(findings[0].detail).toMatch(/merge/);
+    });
+
+    it('a conflicted phone refuses the WHOLE save — the e-mail beside it is not written', () => {
+      setContactChannels(DID, { email: 'old@chairmaker.example' });
+      addContact('did:plc:otherseller', 'Other Seller', 'verified');
+      expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
+      const findings = setContactChannels(DID, {
+        phone: '+919845012345',
+        email: 'new@chairmaker.example',
+      });
+      expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
+      // Nothing was written: the e-mail is what it was.
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: 'old@chairmaker.example' });
+    });
+
+    it('a malformed phone refuses the WHOLE save — an e-mail in the same call is not written', () => {
+      const findings = setContactChannels(DID, { phone: 'call me', email: 'sales@chairmaker.example' });
+      expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
+      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+    });
+
+    it('checkContactChannels judges without writing', () => {
+      expect(checkContactChannels(DID, { phone: '+919845012345' })).toEqual([]);
+      expect(getContactChannels(DID).phone).toBeNull();
+      expect(checkContactChannels(DID, { phone: 'call me' }).map((f) => f.refusal)).toEqual(['malformed_channel']);
+    });
+
+    it('throws for an unknown contact', () => {
+      expect(() => setContactChannels('did:plc:nobody', { phone: '+919845012345' })).toThrow(/not found/);
+    });
+  });
+
+  it('reads a hand-edited nonsense row as "not stated", never a crash', () => {
+      const personId = getContact(DID)?.personId ?? '';
+      adapter.execute(
+        "UPDATE contacts SET registrations = 'not json', billing_address = '{oops' WHERE person_id = ?",
+        [personId],
+      );
+      resetContactDirectory();
+      hydrateContactDirectory();
+      expect(getPaperIdentity(DID)).toEqual({
+        legalName: '',
+        registrations: [],
+        billingAddress: null,
+      });
     });
   });
 });

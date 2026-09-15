@@ -12,6 +12,7 @@ export {
 } from './registry';
 export type {
   PluginInstall,
+  PluginInstallRef,
   PluginInstallRepository,
   PluginInstallStatus,
   PluginPendingDecision,
@@ -52,12 +53,19 @@ export type { PluginDecision, PluginDecisionKind, PluginDecisionRepository } fro
 // invite-bootstrap/debug caller import it directly from `install_service`).
 export {
   beginInstall,
+  bindVerifiedRunnerDevice,
   confirmConsent,
   declineConsent,
   uninstall,
   sweepAbandonedInstalls,
+  startAbandonedInstallSweeper,
+  ABANDONED_INSTALL_SWEEP_MS,
+  PluginCommerceObligationError,
+  FIRST_PARTY_PLUGIN_ID_PREFIX,
+  isFirstPartyPluginId,
   terminateInstallInFlight,
   setRepoProofVerifier,
+  getRepoProofVerifier,
   setPluginDeviceVerifier,
   NODE_SUPPORTED_FEATURES,
   PENDING_INSTALL_TTL_SEC,
@@ -72,6 +80,33 @@ export type {
 
 export { claimPluginTask, STALE_AUTHORITY } from './claim_guard';
 export type { PluginClaimResult } from './claim_guard';
+export { issueRunnerPairingCode, runnerPairingState } from './runner_pairing';
+export type { RunnerPairingState } from './runner_pairing';
+// §9.1 — the owner-side dispatch producer: one task on the plugin lane,
+// queued (silent) or pending_approval (card); the decision helpers the
+// workflow approve/cancel verbs use on a carded invocation.
+export {
+  approvedInvocationCount,
+  createApprovalGrant,
+  DEFAULT_CARD_TTL_SECONDS,
+  DEFAULT_SILENT_TTL_SECONDS,
+  invocationIdentity,
+  invokeToolCapability,
+  isPluginInvocationTask,
+  MAX_APPROVAL_WINDOW_HOURS,
+  parseApprovalGrantRequest,
+  recordInvocationDecision,
+} from './invoke';
+export type {
+  ApprovalGrantRequest,
+  InvocationCardFacts,
+  InvocationTaskCreator,
+  InvokePolicy,
+  InvokeRefusalCode,
+  InvokeToolCapabilityArgs,
+  InvokeToolCapabilityDeps,
+  InvokeToolCapabilityResult,
+} from './invoke';
 
 export {
   assessParamsEgress,
@@ -208,5 +243,26 @@ export type {
 } from './provider_ingress';
 export { PluginRunner } from './runner_sdk';
 export type { RunnerJob, RunnerClaim, RunnerAnswer, RunnerSdkOptions } from './runner_sdk';
-export { projectContextForCapability } from './context_projection';
-export type { ContextProjection, ProjectableItem, ProjectionRefusal } from './context_projection';
+export {
+  projectContextForCapability,
+  projectInvocationContext,
+  projectedCategories,
+  projectionDigest,
+} from './context_projection';
+export type {
+  ContextProjection,
+  ProjectedItem,
+  ProjectionRefusal,
+  ProjectionRefusalReason,
+} from './context_projection';
+export { buildPluginResultCard } from './result_card';
+export type { PluginResultTask } from './result_card';
+export { CONTEXT_TEMPLATE_VERSION } from './context_templates';
+export type { ContextFieldClass, ContextTemplateField, DateClass } from './context_templates';
+export { clearContextSources, setContextSource } from './context_sources';
+export type {
+  ContextCandidate,
+  ContextSource,
+  ContextSourceRequest,
+  InvocationSubject,
+} from './context_sources';

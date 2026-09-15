@@ -51,6 +51,9 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
           // TN-V2-RANK-006 — pulled so per-category recency-decay
           // applies to subject scores symmetrically with author trust.
           category: attestations.category,
+          // D4 — testimony or import. Decides the weight, the multipliers
+          // that apply, and whether this row counts toward confidence.
+          sourceFeed: attestations.sourceFeed,
         })
         .from(attestations)
         .where(
@@ -99,6 +102,7 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
         dimensionsJson: a.dimensionsJson as unknown[] | undefined,
         domain: a.domain,
         category: a.category,
+        sourceFeed: a.sourceFeed,
       }))
 
       const result = aggregateSubjectSentiment(aggregationInput)
@@ -135,6 +139,11 @@ export async function refreshSubjectScores(db: DrizzleDB): Promise<void> {
           verifiedAttestationCount: result.verifiedCount,
           lastAttestationAt: result.lastAttestationAt,
           attestationVelocity: result.velocity,
+          // D4 — how much of this subject's rating is testimony and how much
+          // was imported. A read surface that could not tell them apart
+          // would show a cold start as a settled reputation.
+          peerReviewCount: result.peerCount,
+          importedReviewCount: result.importedCount,
           needsRecalc: false,
           computedAt: new Date(),
         })

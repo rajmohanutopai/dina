@@ -121,6 +121,14 @@ export const attestationHandler: RecordHandler = {
     // synchronous (no I/O, ~1–2 ms per call), so we run it
     // unconditionally — caching by record CID would only matter at
     // ingest rates we don't see in practice.
+    // D4 — where this review came from. The gate in the consumer has already
+    // refused any `source` block this node does not admit, so a block that
+    // reaches here names a registered feed published by its own publisher.
+    // The feed id rides a column because every score-path predicate keys on
+    // it; the rest is JSONB because nothing filters on it.
+    const sourceFeed = record.source?.feed ?? null
+    const sourceJson = record.source ?? null
+
     const detectionInput =
       record.text && record.text.trim().length > 0
         ? record.text
@@ -172,6 +180,8 @@ export const attestationHandler: RecordHandler = {
         bilateralReviewJson: record.bilateralReview ?? null,
         tags: record.tags ?? null,
         text: record.text ?? null,
+        sourceFeed,
+        sourceJson,
         searchContent,
         language,
         namespace,
@@ -217,6 +227,8 @@ export const attestationHandler: RecordHandler = {
           bilateralReviewJson: record.bilateralReview ?? null,
           tags: record.tags ?? null,
           text: record.text ?? null,
+          sourceFeed,
+          sourceJson,
           searchContent,
           language,
           namespace,
@@ -275,7 +287,20 @@ export const attestationHandler: RecordHandler = {
       // Add trust edge only for positive attestations of DID subjects (HIGH-07).
       // `addTrustEdge` reads `ctx.db`; substitute the tx-scoped db so the
       // insert lands in the same transaction as the rest of this flow.
-      if (record.sentiment === 'positive' && record.subject.type === 'did' && record.subject.did) {
+      //
+      // D4 — an IMPORT creates no edge. A trust edge says "this DID vouched
+      // for that one", and a feed republishing somebody else's review has
+      // vouched for nobody. Letting one through would put the feed into the
+      // trust graph as a node with an edge to everything it ever mentioned —
+      // inflating `inboundEdgeCount` on every subject and bending the
+      // viewer's own contacts/fof walk around a source that is not a person.
+      // The rating may move; the graph may not.
+      if (
+        sourceFeed === null &&
+        record.sentiment === 'positive' &&
+        record.subject.type === 'did' &&
+        record.subject.did
+      ) {
         await addTrustEdge(
           { ...ctx, db: txDb },
           {

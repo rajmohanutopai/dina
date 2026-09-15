@@ -22,6 +22,7 @@ import {
   getApprovalLifecycle,
   listPendingApprovals,
   listResolvedApprovals,
+  pluginResultLines,
   resetInboxCoreClient,
   setInboxCoreClient,
   type InboxCoreClient,
@@ -183,6 +184,135 @@ describe('useServiceInbox', () => {
       state: 'pending_approval',
       limit: 7,
     });
+    // §15.5 — carded plugin invocations are delegation tasks parked pending_approval.
+    expect(listSpy).toHaveBeenCalledWith({
+      kind: 'delegation',
+      state: 'pending_approval',
+      limit: 7,
+    });
+  });
+
+  it('a carded plugin invocation is listed from its PINNED envelope; a non-plugin delegation is not', async () => {
+    const envelope = {
+      type: 'plugin_invocation',
+      install_id: 'pli_1',
+      capability_id: 'com.dinakernel.country.in.upi-payment-status',
+      params: { utr: '314159265358', expected_amount: { currency: 'INR', minor_units: '250000' } },
+      context: [],
+      manifest_cid: 'bafy',
+      approved_scope_hash: 'a'.repeat(64),
+      schema_snapshot: null,
+      config_revision: 1,
+      execution_id: 'plgx_1',
+      idempotency_key: 'khata:payment-status:abc',
+      action_class: 'read',
+      effects_idempotency: 'supported',
+      authorization_kind: 'card',
+    };
+    const plugin = makeTask({
+      id: 'plgx_1',
+      kind: 'delegation',
+      description: 'plugin invocation com.dinakernel.country.in.upi-payment-status',
+      payload: JSON.stringify(envelope),
+      // Core's card facts: the risk IT decided and why it carded.
+      policy: JSON.stringify({
+        type: 'plugin_invocation_card',
+        risk_level: 'HIGH',
+        reasons: ['High-risk action — requires explicit user approval with explanation'],
+        grant_can_silence: false,
+      }),
+    });
+    const agentDelegation = makeTask({ id: 'agent-1', kind: 'delegation', payload: JSON.stringify({ type: 'agent_task' }) });
+    setInboxCoreClient({
+      listWorkflowTasks: jest.fn(async (q: { kind: string }) => (q.kind === 'delegation' ? [plugin, agentDelegation] : [])),
+      approveWorkflowTask: jest.fn(),
+      cancelWorkflowTask: jest.fn(),
+      sendServiceRespond: jest.fn(),
+    } as unknown as InboxCoreClient);
+    const entries = await listPendingApprovals();
+    expect(entries.map((e) => e.id)).toEqual(['plgx_1']);
+    const entry = entries[0];
+    expect(entry?.kind).toBe('plugin_invocation');
+    expect(entry?.capability).toBe('com.dinakernel.country.in.upi-payment-status');
+    // The reason and the level are CORE'S (a regulated read is HIGH there),
+    // never re-derived on the phone from the action class.
+    expect(entry?.description).toBe('High-risk action — requires explicit user approval with explanation');
+    expect(entry?.riskLevel).toBe('HIGH');
+    // The EXACT outbound params, not a summary.
+    expect(entry?.paramsPreview).toContain('314159265358');
+    expect(entry?.paramsPreview).toContain('250000');
+    expect(entry?.effect).toEqual({ actionClass: 'read', retryIdempotent: true, installId: 'pli_1' });
+    // A regulated read: Core says no grant could ever silence it.
+    expect(entry?.grantCanSilence).toBe(false);
+  });
+
+  it('approvePending forwards the 24 h window grant only for a plugin invocation', async () => {
+    const approveSpy = jest.fn().mockResolvedValue(makeTask({ id: 'plgx_1', status: 'queued' }));
+    setInboxCoreClient({
+      listWorkflowTasks: jest.fn(async () => []),
+      approveWorkflowTask: approveSpy,
+      cancelWorkflowTask: jest.fn(),
+      sendServiceRespond: jest.fn(),
+    } as unknown as InboxCoreClient);
+    await approvePending('plgx_1', 'plugin_invocation', undefined, 'window_24h');
+    expect(approveSpy).toHaveBeenLastCalledWith('plgx_1', { pluginGrant: { type: 'window', hours: 24 } });
+    // A non-plugin kind never carries a plugin grant, whatever the caller asked.
+    await approvePending('t-1', 'intent_validation', 'single', 'window_24h');
+    expect(approveSpy).toHaveBeenLastCalledWith('t-1', { scope: 'single' });
+    await approvePending('t-2', 'plugin_invocation');
+    expect(approveSpy).toHaveBeenLastCalledWith('t-2', undefined);
+  });
+
+  it("pluginResultLines renders a completed plugin invocation's validated answer as bounded label: value lines — scalars only, no plugin layout", () => {
+    const base = { payload: JSON.stringify({ type: 'plugin_invocation', capability_id: 'c' }) };
+    expect(
+      pluginResultLines({
+        ...base,
+        status: 'completed',
+        result: JSON.stringify({ status: 'settled', settled_at: '2026-09-13T10:00:00Z', amount: { currency: 'INR', minor_units: '250000' }, refs: ['a', 'b'], flag: true, missing: null }),
+      }),
+    ).toEqual(['status: settled', 'settled_at: 2026-09-13T10:00:00Z', 'amount: details', 'refs: 2 items', 'flag: true', 'missing: —']);
+    // A long string is cut; a wide object is capped with an ellipsis line.
+    const wide = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, 'x'.repeat(200)]));
+    const lines = pluginResultLines({ ...base, status: 'completed', result: JSON.stringify(wide) }) ?? [];
+    expect(lines).toHaveLength(13);
+    expect(lines[12]).toBe('…');
+    expect(lines[0]?.length).toBeLessThanOrEqual('k0: '.length + 120);
+    // Keys are the runner's bytes too: bounded, and control/bidi/newline characters never reach the row.
+    const hostile = pluginResultLines({
+      ...base,
+      status: 'completed',
+      result: JSON.stringify({ ['k'.repeat(80)]: 'v', 'a\u202eb\nc': 'x\u0000y\nz' }),
+    }) ?? [];
+    expect(hostile[0]?.startsWith(`${'k'.repeat(39)}…: v`)).toBe(true);
+    expect(hostile[1]).toBe('a b c: x y z');
+    // No control or bidi character survives (checked by code point, not a regex).
+    expect([...hostile.join('')].some((ch) => (ch.codePointAt(0) ?? 0x20) < 0x20 || ch === '\u202e')).toBe(false);
+    // Not completed, not a plugin task, or an unreadable result → nothing / no lines.
+    expect(pluginResultLines({ ...base, status: 'failed', result: '{"status":"settled"}' })).toBeUndefined();
+    expect(pluginResultLines({ payload: '{"type":"intent_validation"}', status: 'completed', result: '{}' })).toBeUndefined();
+    expect(pluginResultLines({ ...base, status: 'completed', result: 'not json' })).toEqual([]);
+  });
+
+  it('a plugin task with no Core card facts shows no level and no reason rather than a phone-invented one', async () => {
+    const plugin = makeTask({
+      id: 'plgx_2',
+      kind: 'delegation',
+      description: 'plugin invocation com.acme.widget.read',
+      payload: JSON.stringify({ type: 'plugin_invocation', capability_id: 'com.acme.widget.read', install_id: 'pli_2', params: {}, action_class: 'write' }),
+      policy: '',
+    });
+    setInboxCoreClient({
+      listWorkflowTasks: jest.fn(async (q: { kind: string }) => (q.kind === 'delegation' ? [plugin] : [])),
+      approveWorkflowTask: jest.fn(),
+      cancelWorkflowTask: jest.fn(),
+      sendServiceRespond: jest.fn(),
+    } as unknown as InboxCoreClient);
+    const [entry] = await listPendingApprovals();
+    expect(entry?.riskLevel).toBeUndefined();
+    expect(entry?.description).toBe('');
+    expect(entry?.grantCanSilence).toBeUndefined();
+    expect(entry?.effect?.actionClass).toBe('write');
   });
 
   it('truncates long params previews with ellipsis', async () => {
@@ -501,7 +631,7 @@ describe('useServiceInbox', () => {
       });
       setInboxCoreClient(client);
       const entries = await listResolvedApprovals();
-      const states = calls.filters.map((f) => f.state).sort();
+      const states = [...new Set(calls.filters.map((f) => f.state))].sort();
       expect(states).toEqual([
         'cancelled',
         'completed',
@@ -514,8 +644,12 @@ describe('useServiceInbox', () => {
       // The Completed tab is the inverse of the Pending tab — it must
       // never re-query the pending bucket.
       expect(states).not.toContain('pending_approval');
-      // Every fan-out query carries kind=approval.
-      expect(calls.filters.every((f) => f.kind === 'approval')).toBe(true);
+      // §15.5: every state is read for approval tasks AND for delegation tasks
+      // (a plugin invocation rides a delegation) — one query per kind per state.
+      for (const state of states) {
+        expect(calls.filters.filter((f) => f.state === state).map((f) => f.kind).sort()).toEqual(['approval', 'delegation']);
+      }
+      // A non-plugin delegation never leaks into the approvals history.
       expect(entries.map((e) => e.id).sort()).toEqual(['c1', 'f1', 'q1', 'r1', 'rec1', 'x1']);
     });
 

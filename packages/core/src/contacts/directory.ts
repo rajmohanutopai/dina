@@ -26,6 +26,16 @@
  */
 
 import {
+  normaliseLegalName,
+  normalisePostalAddress,
+  normaliseTaxRegistrations,
+  validatePostalAddress,
+  validateTaxRegistrations,
+  type PostalAddress,
+  type TaxRegistration,
+  type TradeIdentityFinding,
+} from '../commerce/trade_identity';
+import {
   addContact as addEgressGateContact,
   removeContact as removeEgressGateContact,
   clearGateContacts as clearEgressGateContacts,
@@ -35,6 +45,7 @@ import {
   removeKnownContact,
   clearKnownContacts as clearSourceTrustContacts,
 } from '../peerlens/source_trust';
+import { canonicalizeIdentityValue } from '../people/domain';
 import { getPeopleRepository, type PeopleRepository } from '../people/repository';
 import { getVaultRepository, listVaultPersonas } from '../vault/repository';
 
@@ -110,6 +121,16 @@ export interface Contact {
    * choice of whom to route through.
    */
   preferredFor?: string[];
+  /**
+   * §5.D — who this counterparty is on a FILING, when the owner has told us.
+   * The khata identifies them by DID; an e-way bill names their GSTIN, an
+   * invoice their registered name and billing address. Absent means "not
+   * stated", which is a real state: a node trades with a counterparty whose
+   * paper identity it has never needed.
+   */
+  legalName?: string;
+  registrations?: TaxRegistration[];
+  billingAddress?: PostalAddress;
 }
 
 /** In-memory contact policy store, keyed by person_id (source of truth). */
@@ -252,6 +273,11 @@ export function establishContact(
     // undefined and [] as the same "no preferences" state); only carry
     // an existing list forward. Matches the pre-redesign behaviour.
     preferredFor: existing?.preferredFor,
+    // §5.D — the paper identity is set through `setPaperIdentity`, never as a
+    // side effect of re-establishing a contact; carried forward untouched.
+    ...(existing?.legalName !== undefined ? { legalName: existing.legalName } : {}),
+    ...(existing?.registrations !== undefined ? { registrations: existing.registrations } : {}),
+    ...(existing?.billingAddress !== undefined ? { billingAddress: existing.billingAddress } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -775,6 +801,230 @@ export function mergeContactPersons(keepPersonId: string, mergePersonId: string)
  * valid "clear all preferences" operation. Throws when the contact
  * doesn't exist.
  */
+/**
+ * The counterparty's paper identity (§5.D), as the owner states it.
+ *
+ * VALIDATED IN THE DOMAIN, not only at the route: an in-process caller on the
+ * phone reaches this function directly, and a GSTIN that fails its checksum
+ * must be refused wherever it is typed. Returns the findings rather than
+ * throwing, so a caller can show the owner every problem at once; on a refusal
+ * NOTHING is written.
+ *
+ * Tri-state per field, like `preferredFor`: `undefined` leaves it alone, an
+ * empty value clears it, a value replaces it.
+ */
+export interface PaperIdentityInput {
+  legalName?: string;
+  registrations?: readonly TaxRegistration[];
+  billingAddress?: PostalAddress | null;
+}
+
+/**
+ * Judge a paper identity WITHOUT writing it. A trade-details save is two
+ * stores (the contact row and the people graph), so a caller that wants the
+ * whole save to be all-or-nothing checks both halves first and commits only
+ * when neither objects.
+ */
+export function checkPaperIdentity(did: string, identity: PaperIdentityInput): TradeIdentityFinding[] {
+  return judgePaperIdentity(did, identity).findings;
+}
+
+/** The normalised fields and what is wrong with them, in one pass. */
+function judgePaperIdentity(
+  did: string,
+  identity: PaperIdentityInput,
+): { findings: TradeIdentityFinding[]; next: Partial<Contact>; contact: Contact } {
+  const contact = getContact(did);
+  if (!contact) throw new Error(`contacts: "${did}" not found`);
+
+  const findings: TradeIdentityFinding[] = [];
+  const next: Partial<Contact> = {};
+
+  if (identity.legalName !== undefined) {
+    next.legalName = normaliseLegalName(identity.legalName);
+  }
+  if (identity.registrations !== undefined) {
+    const registrations = normaliseTaxRegistrations(identity.registrations);
+    findings.push(...validateTaxRegistrations(registrations, 'registrations'));
+    next.registrations = registrations;
+  }
+  if (identity.billingAddress !== undefined) {
+    if (identity.billingAddress === null) {
+      next.billingAddress = undefined;
+    } else {
+      const address = normalisePostalAddress(identity.billingAddress);
+      findings.push(...validatePostalAddress(address, 'billing_address'));
+      next.billingAddress = address;
+    }
+  }
+  return { findings, next, contact };
+}
+
+export function setPaperIdentity(did: string, identity: PaperIdentityInput): TradeIdentityFinding[] {
+  const { findings, next, contact } = judgePaperIdentity(did, identity);
+  if (findings.length > 0) return findings;
+
+  const personId = contact.personId;
+  const updated: Contact = {
+    ...contact,
+    ...next,
+    updatedAt: Date.now(),
+  };
+  // Durable first, memory second — the same order every write here keeps.
+  getContactRepository()?.update(personId, updated);
+  contactsByPerson.set(personId, updated);
+  return [];
+}
+
+/**
+ * The channels a counterparty answers on (§5.D): a phone for a WhatsApp
+ * reminder, an e-mail for a notice. Stored in the PEOPLE GRAPH's identity slot
+ * (`person_identities`), not on the contact row — the people graph is the hub
+ * that already owns "which identifiers are this person", and a phone number
+ * copied onto a contact policy would be a second place for the same fact to
+ * live and drift.
+ *
+ * Validated and canonicalised here (`canonicalizeIdentityValue` decides the
+ * stored form). Replacing a channel removes the old binding, because "this is
+ * their number" and "that one is not" are two facts and an upsert alone would
+ * leave both bound for ever. A value already held by a DIFFERENT person is
+ * refused by the repository (`(type, value)` is globally unique) and surfaces
+ * here as a finding rather than silently re-pointing a live identity.
+ */
+export interface ContactChannelsInput {
+  phone?: string | null;
+  email?: string | null;
+}
+
+/** Judge the channels WITHOUT writing them — the all-or-nothing companion. */
+export function checkContactChannels(did: string, channels: ContactChannelsInput): TradeIdentityFinding[] {
+  return judgeContactChannels(did, channels).findings;
+}
+
+/**
+ * What each named channel would become, and what is wrong with it. EVERY check
+ * happens here, before a single write: a value the merge guard would refuse is
+ * found by asking the people graph who holds it, not by letting the write
+ * throw halfway through the loop.
+ */
+function judgeContactChannels(
+  did: string,
+  channels: ContactChannelsInput,
+): { findings: TradeIdentityFinding[]; writes: { type: 'phone' | 'email'; value: string | null }[]; personId: string } {
+  const contact = getContact(did);
+  if (!contact) throw new Error(`contacts: "${did}" not found`);
+  const peopleRepo = requirePeopleRepo();
+
+  const findings: TradeIdentityFinding[] = [];
+  const writes: { type: 'phone' | 'email'; value: string | null }[] = [];
+  for (const type of ['phone', 'email'] as const) {
+    const raw = channels[type];
+    if (raw === undefined) continue;
+    if (raw === null || raw.trim() === '') {
+      writes.push({ type, value: null });
+      continue;
+    }
+    // Judge the RAW input, then canonicalise. The people graph's canonicaliser
+    // strips every non-digit from a phone, so "call me on 98450 12345 later"
+    // would otherwise survive as a number a rail could dial.
+    const malformed =
+      type === 'phone' ? !isDiallableInput(raw) : !isEmailAddress(canonicalizeIdentityValue(type, raw));
+    if (malformed) {
+      findings.push({
+        refusal: 'malformed_channel',
+        field: type,
+        // The VALUE is not echoed — a counterparty's number is their PII and
+        // findings ride logs and cards.
+        detail:
+          type === 'phone'
+            ? 'a phone must be 8–15 digits, optionally with a leading + country code'
+            : 'an e-mail must look like name@host.tld',
+      });
+      continue;
+    }
+    const canonical = canonicalizeIdentityValue(type, raw);
+    // The people graph holds an identifier for exactly one person. Re-pointing
+    // a live one is a MERGE decision, not an edit — asked here, so a refusal
+    // never lands after another channel has already been written.
+    const holder = peopleRepo.resolveByIdentity(type, canonical);
+    if (holder !== null && holder.personId !== contact.personId) {
+      findings.push({
+        refusal: 'channel_held_by_another_person',
+        field: type,
+        // Neither the value nor the other person's id: both are PII, and the
+        // owner does not need either to know what to do.
+        detail: 'another contact already has this one — merge the two people first',
+      });
+      continue;
+    }
+    writes.push({ type, value: canonical });
+  }
+  return { findings, writes, personId: contact.personId };
+}
+
+export function setContactChannels(did: string, channels: ContactChannelsInput): TradeIdentityFinding[] {
+  const { findings, writes, personId } = judgeContactChannels(did, channels);
+  // ONE exit: a refusal writes nothing at all, the same contract the paper
+  // identity keeps.
+  if (findings.length > 0) return findings;
+  const peopleRepo = requirePeopleRepo();
+
+  for (const write of writes) {
+    const existing = peopleRepo
+      .listIdentities(personId)
+      .filter((identity) => identity.identityType === write.type);
+    if (write.value !== null) peopleRepo.upsertIdentity(personId, write.type, write.value);
+    // Drop every OTHER value of this channel: one phone, one e-mail.
+    for (const identity of existing) {
+      if (identity.identityValue === write.value) continue;
+      peopleRepo.removeIdentity(personId, write.type, identity.identityValue);
+    }
+  }
+  return [];
+}
+
+/** The channels stated for this counterparty, or null where none is. */
+export function getContactChannels(did: string): { phone: string | null; email: string | null } {
+  const contact = getContact(did);
+  const peopleRepo = getPeopleRepository();
+  if (contact === null || peopleRepo === null) return { phone: null, email: null };
+  const identities = peopleRepo.listIdentities(contact.personId);
+  const pick = (type: 'phone' | 'email'): string | null =>
+    identities.find((identity) => identity.identityType === type)?.identityValue ?? null;
+  return { phone: pick('phone'), email: pick('email') };
+}
+
+/**
+ * A number a rail could dial or message, as the OWNER typed it: digits with
+ * the punctuation a phone number carries, an optional leading `+`, and 8–15
+ * digits once the punctuation is gone. Judged before canonicalisation, which
+ * would otherwise turn a sentence into a number.
+ */
+function isDiallableInput(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!/^\+?[0-9 ()./-]+$/.test(trimmed)) return false;
+  return /^\+?[0-9]{8,15}$/.test(canonicalizeIdentityValue('phone', trimmed));
+}
+
+/** Deliberately loose: an address a notice can be sent to, not an RFC parser. */
+function isEmailAddress(canonical: string): boolean {
+  return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(canonical) && canonical.length <= 254;
+}
+
+/** The counterparty's paper identity, or the empty form when none was stated. */
+export function getPaperIdentity(did: string): {
+  legalName: string;
+  registrations: TaxRegistration[];
+  billingAddress: PostalAddress | null;
+} {
+  const contact = getContact(did);
+  return {
+    legalName: contact?.legalName ?? '',
+    registrations: contact?.registrations ?? [],
+    billingAddress: contact?.billingAddress ?? null,
+  };
+}
+
 export function setPreferredFor(did: string, categories: readonly string[]): void {
   const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);

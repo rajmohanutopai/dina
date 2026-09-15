@@ -218,6 +218,22 @@ export interface SubjectGetResponse {
    * AppView builds (pre-tombstone) default to `false` on this side.
    */
   tombstoned?: boolean;
+  /**
+   * **D4.** Reviews a registered per-market feed contributed, grouped by
+   * source. Optional: an older AppView has no such field, and a node that
+   * admits no feed returns an empty list. Never mixed into `reviewers` — a
+   * feed is a source, not a person in the viewer's graph.
+   */
+  imported?: {
+    feed: string;
+    name: string | null;
+    homepage: string | null;
+    market: string | null;
+    count: number;
+    latest: { uri: string; text: string | null; sentiment: string; createdAt: string; url: string }[];
+  }[];
+  /** **D4.** The total across `imported`, when the AppView reports it. */
+  importedReviewCount?: number;
   reviewers: {
     /**
      * The viewer's own attestations on this subject, when they

@@ -15,16 +15,24 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { ed25519 } from '@noble/curves/ed25519.js';
+
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import {
-  SQLitePluginInstallRepository,
-  setPluginDeviceVerifier,
-  setPluginInstallRepository,
-} from '../../../src/plugins';
+import { resetCallerTypeState } from '../../../src/auth/caller_type';
 import { referenceManifestCid } from '../../../src/commerce/reference_install';
 import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_manifests';
-import { clearPairingState, setNodeDID } from '../../../src/pairing/ceremony';
+import { getDeviceByDID, resetDeviceRegistry } from '../../../src/devices/registry';
+import { SQLiteDeviceRepository, setDeviceRepository } from '../../../src/devices/repository';
+import { publicKeyToMultibase } from '../../../src/identity/did';
+import { clearPairingState, completePairing, generatePairingCode, setNodeDID } from '../../../src/pairing/ceremony';
+import {
+  SQLitePluginGrantRepository,
+  SQLitePluginInstallRepository,
+  setPluginDeviceVerifier,
+  setPluginGrantRepository,
+  setPluginInstallRepository,
+} from '../../../src/plugins';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import { applyMigrations } from '../../../src/storage/migration';
@@ -32,7 +40,16 @@ import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 const SUPPLIER = 'did:plc:chairmaker99';
-const RUNNER_DEVICE = 'did:key:zSupplierRunnerDevice';
+/** The supplier's runner, paired for real with its own key (role `plugin`). */
+let RUNNER_DEVICE = '';
+function pairRunner(): string {
+  const seed = new Uint8Array(32);
+  crypto.getRandomValues(seed);
+  const publicKey = ed25519.getPublicKey(seed);
+  const { code } = generatePairingCode({ deviceName: 'supplier-runner', role: 'plugin', scope: 'runner' });
+  completePairing(code, 'supplier-runner', publicKeyToMultibase(publicKey), 'plugin', 'runner');
+  return `did:key:${publicKeyToMultibase(publicKey)}`;
+}
 
 let dir: string;
 let adapter: NodeSQLiteAdapter;
@@ -62,16 +79,26 @@ beforeEach(() => {
   });
   applyMigrations(adapter, IDENTITY_MIGRATIONS);
   setPluginInstallRepository(new SQLitePluginInstallRepository(adapter));
-  // The boot-wired registry check: only the runner device this suite pairs.
-  setPluginDeviceVerifier((did) => did === RUNNER_DEVICE);
+  setPluginGrantRepository(new SQLitePluginGrantRepository(adapter));
+  setDeviceRepository(new SQLiteDeviceRepository(adapter));
+  // The boot-wired registry check: a REAL, unrevoked, role='plugin' device.
+  setPluginDeviceVerifier((did) => {
+    const device = getDeviceByDID(did);
+    return device !== null && !device.revoked && device.role === 'plugin';
+  });
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
   setNodeDID(SUPPLIER);
+  RUNNER_DEVICE = pairRunner();
 });
 
 afterEach(() => {
   clearPairingState();
+  resetDeviceRegistry();
+  resetCallerTypeState();
+  setDeviceRepository(null);
   setPluginDeviceVerifier(null);
+  setPluginGrantRepository(null);
   setPluginInstallRepository(null);
   adapter.close();
   rmSync(dir, { recursive: true, force: true });
@@ -189,13 +216,62 @@ describe('the ceremony', () => {
     await router.handle(
       post('/v1/commerce/install/confirm', { install_id: installId, device_did: RUNNER_DEVICE }),
     );
+    expect(getDeviceByDID(RUNNER_DEVICE)?.revoked).toBe(false);
     const retired = await router.handle(
       post('/v1/commerce/install/retire', { install_id: installId }),
     );
     expect(retired.status).toBe(200);
+    expect(retired.body).toMatchObject({ ok: true, removed: true, deviceRevoked: true });
+    // The runner's credential is durably revoked — in the registry and in SQL.
+    expect(getDeviceByDID(RUNNER_DEVICE)?.revoked).toBe(true);
+    const row = adapter.query('SELECT revoked FROM paired_devices WHERE did = ?', [RUNNER_DEVICE]);
+    expect(row.map((r) => Number(r.revoked))).toEqual([1]);
     const again = await begin('supplier');
     expect(again.body.status).toBe('pending');
     expect(again.body.install_id).not.toBe(installId);
+  });
+
+  it('bind_device refuses a DID that is not a real plugin device (§15.3 — never a teardown target)', async () => {
+    const { body } = await begin('supplier');
+    const installId = body.install_id as string;
+    const bound = await router.handle(
+      post('/v1/commerce/install/bind_device', { install_id: installId, device_did: 'did:key:zNotPaired' }),
+    );
+    expect(bound.status).toBe(409);
+    expect(bound.body).toMatchObject({ error: 'bind_refused' });
+  });
+
+  it('retire whose device revoke is not durable answers 409 teardown_incomplete and keeps the row', async () => {
+    const { body } = await begin('supplier');
+    const installId = body.install_id as string;
+    await router.handle(
+      post('/v1/commerce/install/bind_device', { install_id: installId, device_did: RUNNER_DEVICE }),
+    );
+    await router.handle(
+      post('/v1/commerce/install/confirm', { install_id: installId, device_did: RUNNER_DEVICE }),
+    );
+    // A device repository whose revoke cannot land.
+    const real = new SQLiteDeviceRepository(adapter);
+    setDeviceRepository({
+      register: (device) => real.register(device),
+      get: (deviceId) => real.get(deviceId),
+      getByPublicKey: (key) => real.getByPublicKey(key),
+      getByDID: (did) => real.getByDID(did),
+      list: () => real.list(),
+      touch: (deviceId, lastSeen) => real.touch(deviceId, lastSeen),
+      revoke: async () => {
+        throw new Error('disk full');
+      },
+    });
+    const retired = await router.handle(
+      post('/v1/commerce/install/retire', { install_id: installId }),
+    );
+    expect(retired.status).toBe(409);
+    expect(retired.body).toMatchObject({ error: 'teardown_incomplete', removed: false });
+    // Tombstoned, not live: the sweep will retry the revoke.
+    expect(getDeviceByDID(RUNNER_DEVICE)?.revoked).toBe(true); // access cut in memory
+    const rows = adapter.query('SELECT status FROM plugin_installs WHERE install_id = ?', [installId]);
+    expect(rows.map((r) => String(r.status))).toEqual(['revoked']);
   });
 
   it('buyer and supplier are two separate installs (§18.1)', async () => {

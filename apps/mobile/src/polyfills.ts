@@ -20,6 +20,20 @@ import { Platform } from 'react-native';
 
 import { setKDFOverride } from '@dina/core';
 
+// `Buffer` global (RESEARCHER_KERNEL §5.C1-mobile). The repo-proof verifier's
+// audited AT-Protocol stack (`@dina/net-expo/repo_proof`, statically bundled)
+// reads a CAR varint with `Buffer.concat` on the READ path (`@atproto/repo`
+// car.js), and `@atproto/lex-data` prefers Buffer when present. Neither Hermes
+// nor a browser ships one, so this runs on EVERY platform, before the module
+// graph below evaluates `@atproto/*`. Guarded: a runtime that already has a
+// Buffer is left alone. `apps/mobile/__tests__/polyfills_buffer.test.ts` pins
+// that this file is what installs it.
+if (typeof (globalThis as { Buffer?: unknown }).Buffer === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Buffer } = require('buffer') as { Buffer: unknown };
+  (globalThis as { Buffer?: unknown }).Buffer = Buffer;
+}
+
 if (Platform.OS !== 'web') {
   // `crypto.getRandomValues` is used by `@noble/ciphers/utils.js::randomBytes`
   // and every other noble/scure helper our crypto stack (aesgcm, ed25519,

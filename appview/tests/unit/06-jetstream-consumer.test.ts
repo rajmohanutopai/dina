@@ -172,6 +172,7 @@ vi.mock('ws', () => ({
 // Now import the consumer after all mocks are set
 import { JetstreamConsumer } from '@/ingester/jetstream-consumer.js'
 import { clearFlagCache } from '@/ingester/feature-flag-cache.js'
+import { setReviewFeedRegistry } from '@/config/review-feeds.js'
 
 // ── Test fixtures ─────────────────────────────────────────────────────
 
@@ -308,6 +309,107 @@ describe('SS6.1 JetstreamConsumer -- processEvent routing', () => {
   it('UT-JC-001: kind = "commit", operation = "create" -> handleCreateOrUpdate', async () => {
     // Description: Valid create event
     // Expected: handleCreateOrUpdate called, which calls handler.handleCreate
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitCreate())
+    expect(mockHandleCreate).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * D4 — the imported-review gate. A record carrying a `source` block says it
+   * is a review a per-market feed observed elsewhere, not testimony. It must
+   * come from a registered feed AND from that feed's own publisher; without
+   * the second, any node could stamp a review site's name on its own opinion
+   * and have Dina's chrome credit the source for it.
+   */
+  it('refuses an import from an unregistered feed — and this node registers none by default', async () => {
+    setReviewFeedRegistry([])
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        createdAt: now,
+        source: {
+          feed: 'in.example-reviews',
+          market: 'IN',
+          url: 'https://reviews.example/in/1',
+          observedAt: now,
+        },
+      },
+    })
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitCreate())
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+  })
+
+  it('refuses an import from a repo that is not the feed’s publisher', async () => {
+    setReviewFeedRegistry([
+      {
+        id: 'in.example-reviews',
+        publisherDid: 'did:plc:feedpublisher',
+        market: 'IN',
+        name: 'Example Reviews India',
+        licence: 'agreement-2026-04',
+        homepage: 'https://reviews.example/in',
+      },
+    ])
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        createdAt: now,
+        source: {
+          feed: 'in.example-reviews',
+          market: 'IN',
+          url: 'https://reviews.example/in/1',
+          observedAt: now,
+        },
+      },
+    })
+    const { processEvent } = createTestConsumer()
+    // makeCommitCreate() publishes from did:plc:author, not the feed's DID.
+    await processEvent(makeCommitCreate())
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+    setReviewFeedRegistry([])
+  })
+
+  it('admits an import the feed’s own publisher wrote', async () => {
+    setReviewFeedRegistry([
+      {
+        id: 'in.example-reviews',
+        publisherDid: 'did:plc:author',
+        market: 'IN',
+        name: 'Example Reviews India',
+        licence: 'agreement-2026-04',
+        homepage: 'https://reviews.example/in',
+      },
+    ])
+    mockValidateRecord.mockReturnValue({
+      success: true,
+      data: {
+        subject: { type: 'did', did: 'did:plc:abc' },
+        category: 'quality',
+        sentiment: 'positive',
+        createdAt: now,
+        source: {
+          feed: 'in.example-reviews',
+          market: 'IN',
+          url: 'https://reviews.example/in/1',
+          observedAt: now,
+        },
+      },
+    })
+    const { processEvent } = createTestConsumer()
+    await processEvent(makeCommitCreate())
+    expect(mockHandleCreate).toHaveBeenCalledTimes(1)
+    setReviewFeedRegistry([])
+  })
+
+  it('a record with NO source block is testimony and passes the gate untouched', async () => {
+    setReviewFeedRegistry([])
     const { processEvent } = createTestConsumer()
     await processEvent(makeCommitCreate())
     expect(mockHandleCreate).toHaveBeenCalledTimes(1)

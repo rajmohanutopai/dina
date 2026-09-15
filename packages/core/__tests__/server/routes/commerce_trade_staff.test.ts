@@ -27,6 +27,7 @@ import {
   InMemoryTradeDocumentRepository,
   verifyInboundDeliveryNote,
 } from '../../../src/commerce/trade_ledger';
+import { InMemoryTradeSpoolRepository } from '../../../src/commerce/trade_spool';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -38,6 +39,7 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  moneyOpen,
 } from '../../commerce/helpers';
 
 const hash: Sha256Fn = (data) => new Uint8Array(createHash('sha256').update(data).digest());
@@ -145,7 +147,8 @@ beforeEach(() => {
   boundary = new InMemoryAttributionBoundaryRepository();
   orderDrafts = new InMemoryOrderDraftRepository();
   installCommerceRuntime({
-    tradeDocuments: tradeDocs,
+    money: moneyOpen({ tradeDocuments: tradeDocs }),
+    tradeSpool: new InMemoryTradeSpoolRepository(),
     staffGrants,
     receipts,
     attributionBoundary: boundary,

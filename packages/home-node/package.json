@@ -21,6 +21,10 @@
     "./chat-runtime": {
       "types": "./chat-runtime.ts",
       "default": "./chat-runtime.ts"
+    },
+    "./repo_proof_chain": {
+      "types": "./repo_proof_chain.ts",
+      "default": "./repo_proof_chain.ts"
     }
   },
   "sideEffects": false,

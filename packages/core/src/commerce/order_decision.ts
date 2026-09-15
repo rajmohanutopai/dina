@@ -560,9 +560,11 @@ export function transformInboundOrderResult(args: {
       nowMs,
     });
     if (issued.kind === 'signed') return { kind: 'replace', json: issued.quoteJson };
-    // A decline is the runner's own answer and travels unchanged; see
-    // `settleInboundQuote`.
-    if (issued.kind === 'declined') return { kind: 'passthrough' };
+    // A decline is sealed by Core too (§3.4): the runner's unsigned refusal
+    // would arrive at the buyer unverifiable and be dropped as unreadable, so
+    // the retained `QuoteDecline` replaces it on the wire — the buyer's tender
+    // then reads "declined: <reason>" instead of a member that never replied.
+    if (issued.kind === 'declined') return { kind: 'replace', json: issued.declineJson };
     return { kind: 'withhold', reason: issued.refusal };
   }
 

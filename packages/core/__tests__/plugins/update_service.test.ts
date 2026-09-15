@@ -224,6 +224,50 @@ afterEach(() => {
 
 const rkeyOf = (cid: string): string => releaseRkeyFromCid(cid) as string;
 
+describe('prepareUpdate — what may be updated at all', () => {
+  it('refuses an install that did not arrive through a repo proof (a local_publisher_key reference pack)', async () => {
+    // The update path keeps the row's anchor while replacing its manifest. A
+    // reference pack anchored "this build vouches for these bytes" must not end
+    // up vouching for bytes fetched from a PDS — it updates with the app.
+    const local = installs.createPending({
+      publisherDid: PUBLISHER,
+      pluginId: 'com.dinakernel.commerce.supplier',
+      label: '',
+      executionMode: 'runner',
+      currentCid: FROM_CID,
+      currentVersion: '1.0.0',
+      manifest: manifest({ plugin_id: 'com.dinakernel.commerce.supplier' }),
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: { 'com.acme.supplier.catalog': 'h'.repeat(64) },
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+      trustAnchor: { kind: 'local_publisher_key', keyId: 'dina-kernel-reference' },
+      pendingExpiresAtSec: Math.floor(T0 / 1000) + 900,
+      nowMs: T0,
+    });
+    installs.activate(local, 'did:key:zlocalrunner', T0);
+    const repo = repoWith([
+      { did: PUBLISHER, cid: TO_CID, record: manifest({ plugin_id: 'com.dinakernel.commerce.supplier', version: '1.1.0' }) },
+    ]);
+    setRepoProofVerifier(repo.verifier);
+
+    const result = await prepareUpdate({
+      installId: local,
+      rkey: rkeyOf(TO_CID),
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('authenticity_failed');
+      expect(result.message).toMatch(/updates with the build/);
+    }
+    // Refused before the verifier was even asked.
+    expect(repo.asked).toEqual([]);
+    expect(installs.getById(local)?.trustAnchor).toEqual({ kind: 'local_publisher_key', keyId: 'dina-kernel-reference' });
+  });
+});
+
 describe('prepareUpdate — whose repo is asked', () => {
   it('asks the INSTALL publisher, not a caller-named one', async () => {
     // The single most important line in the flow. A caller-named publisher

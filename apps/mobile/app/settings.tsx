@@ -318,6 +318,18 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Trade</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* §5.D — the node's own business on paper: what a country pack's
+            filing prints (an e-way bill names YOUR GSTIN as well as theirs). */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/business-identity')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Business identity"
+          testID="settings-row-business-identity"
+        >
+          <Text style={styles.rowLabel}>Business identity</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* §6 — staff grants: scoped, value-capped authority for the shop's
             other hands. */}
         <TouchableOpacity
@@ -358,6 +370,16 @@ export default function SettingsScreen() {
           testID="settings-row-agents"
         >
           <Text style={styles.rowLabel}>Agents</Text>
+          <Text style={styles.rowValue}>{'\u203A'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/plugins')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Plugins"
+          testID="settings-row-plugins"
+        >
+          <Text style={styles.rowLabel}>Plugins</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
         <TouchableOpacity

@@ -21,8 +21,16 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { registerDevice as registerDeviceAuth } from '../auth/caller_type';
-import { registerDevice as persistDevice } from '../devices/registry';
+import {
+  PAIRING_CODE_TTL_S,
+  PAIRING_MAX_PENDING,
+  PAIRING_CODE_LENGTH,
+  PAIRING_CODE_ALPHABET,
+  PAIRING_SECRET_BYTES,
+} from '../constants';
+import { registerDevice as persistDevice, revokeDevice } from '../devices/registry';
 import { multibaseToPublicKey , deriveDIDKey } from '../identity/did';
+import { getPluginInstallRepository } from '../plugins/registry';
 
 export interface PairingCode {
   code: string; // 8-char Crockford-Base32 string
@@ -33,14 +41,6 @@ export interface PairingResult {
   deviceId: string;
   nodeDID: string;
 }
-
-import {
-  PAIRING_CODE_TTL_S,
-  PAIRING_MAX_PENDING,
-  PAIRING_CODE_LENGTH,
-  PAIRING_CODE_ALPHABET,
-  PAIRING_SECRET_BYTES,
-} from '../constants';
 
 const CODE_TTL_SECONDS = PAIRING_CODE_TTL_S;
 const MAX_PENDING_CODES = PAIRING_MAX_PENDING;
@@ -69,6 +69,16 @@ interface PendingCode {
   role?: import('../devices/registry').DeviceRole;
   /** Item C — agent_scope the enrolling authority stamps at INITIATE. */
   scope?: import('../auth/agent_scope').AgentScope;
+  /**
+   * PLUGIN_ARCHITECTURE §15.3 — a code issued for ONE pending runner install.
+   * `completePairing` binds the device that uses it to exactly that install,
+   * in Core, before the code is consumed; the install's row is then the only
+   * place the bound device lives, and a device DID typed at the final button
+   * is never accepted in its place. A code whose install is gone, expired, or
+   * already bound to a different device refuses to pair at all, so no plugin
+   * device can exist that no install references.
+   */
+  pluginInstallId?: string;
 }
 
 const pendingCodes = new Map<string, PendingCode>();
@@ -121,6 +131,8 @@ export function generatePairingCode(
     deviceName?: string;
     role?: import('../devices/registry').DeviceRole;
     scope?: import('../auth/agent_scope').AgentScope;
+    /** §15.3 — bind whoever uses this code to this pending runner install. */
+    pluginInstallId?: string;
   } = {},
 ): PairingCode {
   if (!nodeDID) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
@@ -166,6 +178,7 @@ export function generatePairingCode(
     deviceName: intent.deviceName,
     role: intent.role,
     scope: intent.scope,
+    ...(intent.pluginInstallId !== undefined ? { pluginInstallId: intent.pluginInstallId } : {}),
   });
 
   return { code, expiresAt };
@@ -182,10 +195,16 @@ export function getPairingIntent(code: string): {
   deviceName?: string;
   role?: import('../devices/registry').DeviceRole;
   scope?: import('../auth/agent_scope').AgentScope;
+  pluginInstallId?: string;
 } | null {
   const pending = pendingCodes.get(code);
   if (!pending) return null;
-  return { deviceName: pending.deviceName, role: pending.role, scope: pending.scope };
+  return {
+    deviceName: pending.deviceName,
+    role: pending.role,
+    scope: pending.scope,
+    ...(pending.pluginInstallId !== undefined ? { pluginInstallId: pending.pluginInstallId } : {}),
+  };
 }
 
 /**
@@ -239,16 +258,75 @@ export function completePairing(
   }
   const deviceDID = deriveDIDKey(pubKey);
 
+  // §15.3 — a runner code pairs ONLY into its pending install. Checked before
+  // any registration so a late runner (the owner declined, the install expired
+  // or was swept, a second code already bound another device) never becomes a
+  // plugin device that nothing references. The code is spent either way: the
+  // install it was issued for cannot take a device any more.
+  if (pending.pluginInstallId !== undefined) {
+    const refusal = runnerInstallRefusal(pending.pluginInstallId, deviceDID);
+    if (refusal !== null) {
+      pendingCodes.delete(code);
+      throw new Error(`pairing: ${refusal}`);
+    }
+  }
+
   // Persist device in device registry with caller-specified role + scope
   const device = persistDevice(deviceName, publicKeyMultibase, role, scope);
 
   // Register device DID for auth resolution (callerType = 'device')
   registerDeviceAuth(deviceDID, deviceName);
 
+  if (pending.pluginInstallId !== undefined) {
+    const installs = getPluginInstallRepository();
+    const nowMs = Date.now();
+    let bound = false;
+    try {
+      bound = installs !== null && installs.bindPendingDevice(pending.pluginInstallId, deviceDID, nowMs);
+    } catch (err) {
+      // A storage fault (busy, I/O) is transient and not the runner's doing:
+      // undo the registration so no unreferenced plugin device survives, keep
+      // the code live so the same runner can retry, and surface the fault.
+      revokeDevice(device.deviceId);
+      throw new Error(`pairing: runner bind failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // The pre-check above makes a refusal here a race (a rival code bound first
+    // between the two calls). Undo the registration so the loser leaves no
+    // device behind, and spend the code.
+    if (!bound) {
+      revokeDevice(device.deviceId);
+      pendingCodes.delete(code);
+      throw new Error('pairing: runner could not be bound to its install');
+    }
+  }
+
   // Mark code as used (single-use) — only after the device is registered.
   pending.used = true;
 
   return { deviceId: device.deviceId, nodeDID: nodeDID! };
+}
+
+/**
+ * Why a runner may NOT pair into `installId` right now, or null when it may:
+ * the install must exist, still be `pending`, not have expired, and either be
+ * unbound or already bound to this same device (an idempotent retry).
+ */
+function runnerInstallRefusal(installId: string, deviceDid: string): string | null {
+  const installs = getPluginInstallRepository();
+  if (installs === null) return 'plugin registry not wired';
+  const install = installs.getById(installId);
+  if (install === null) return 'plugin install no longer pending';
+  if (install.status !== 'pending') return `plugin install is ${install.status}, not pending`;
+  if (
+    install.pendingExpiresAt !== undefined &&
+    install.pendingExpiresAt <= Math.floor(Date.now() / 1000)
+  ) {
+    return 'plugin install request expired';
+  }
+  if (install.deviceDid !== undefined && install.deviceDid !== '' && install.deviceDid !== deviceDid) {
+    return 'plugin install already bound to another runner';
+  }
+  return null;
 }
 
 /**
@@ -262,7 +340,21 @@ export function completePairing(
  */
 export function restorePairingCode(code: string): void {
   const pending = pendingCodes.get(code);
-  if (pending) pending.used = false;
+  if (pending === undefined) return;
+  // A runner code is only worth restoring while its install can still take a
+  // runner. The durable-persist rollback revokes the device, and that revoke's
+  // cascade removes the pending install the device was bound to — so a restored
+  // runner code would promise a retry that `completePairing` must refuse. Spend
+  // it instead; the owner starts the ceremony again with a fresh install.
+  if (pending.pluginInstallId !== undefined) {
+    const installs = getPluginInstallRepository();
+    const install = installs?.getById(pending.pluginInstallId) ?? null;
+    if (install === null || install.status !== 'pending') {
+      pendingCodes.delete(code);
+      return;
+    }
+  }
+  pending.used = false;
 }
 
 /**

@@ -1,21 +1,36 @@
 # Decision Memo: Commerce as a Dina Plugin Pack
 
-**Status:** Proposed decision for independent review
+**Status:** Proposed decision — **boundary revised 2026-08-30: the money line supersedes this memo (see the banner below).**
 
 **Date:** 2026-08-06
 
 **Detailed design:** `COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
 
+> **⚠️ Boundary revised — 2026-08-30. The money line supersedes this memo.**
+> The authoritative boundary now lives in `RESEARCHER_KERNEL_ARCHITECTURE.md`: the
+> dividing line is **money**, not "commerce." Money-free product search, catalogs,
+> quotes, comparison, and orders stay in the **kernel** (Dina Core — the
+> diligent-researcher base vision); only the **money** — the running-balance/khata
+> ledger, payments, collections, reconciliation, revenue-share, and lending — is
+> the optional **Commerce Pack** plugin. §1 below is updated to this boundary. The
+> decision-history stages further down record the earlier "all commerce →
+> Buyer/Supplier plugins" framing and are kept as history, **superseded on the
+> boundary**; read "Buyer/Supplier plugin" there as "the money-free parts are
+> kernel; only the money is the pack."
+
 ## 1. The Decision in One Paragraph
 
-Dina should remain a general AI control plane and open service network. Retail
-and procurement should be implemented as an optional **Commerce Pack**, not as
-commerce-specific behavior inside Dina Core. The pack should contain separate
-Buyer and Supplier runner plugins that share one commerce protocol. Products
-should be published as catalog data, while live price checks, quotes, orders,
-and status updates should use Dina Services and durable workflows. Dina Core
-should continue to own identity, private-context projection, authorization,
-approvals, signing, D2D transport, and effect safety.
+Dina remains a general AI control plane and open service network. The commerce
+boundary is drawn at **money**. The money-free machinery — product identity and
+catalogs, discovery and search, quotes, comparison, ranking, and money-free
+orders (the close) — stays in **Dina Core (the kernel)**, because it *is* the
+diligent-researcher base vision. Only the **money** — the running-balance/khata
+ledger, payments, collections, reconciliation, revenue-share, and lending —
+moves into an optional **Commerce Pack** plugin, over one shared commerce
+protocol. Products are published as catalog data; live price checks and quotes
+are money-free Core services. Dina Core continues to own identity,
+private-context projection, authorization, approvals, signing, D2D transport,
+and effect safety — plus the money-free commerce mechanism.
 
 ## Decision History: How We Arrived Here
 

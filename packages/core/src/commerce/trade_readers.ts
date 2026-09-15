@@ -20,7 +20,7 @@ import {
   type Sha256Fn,
 } from './rehydrate';
 
-import type { CommerceRuntime } from './runtime';
+import type { CommerceMoneyStores, CommerceRuntime } from './runtime';
 import type { PurchaseOrderProposal, SignedQuote } from '@dina/commerce-protocol';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -121,16 +121,17 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
  */
 export function tradeOrientations(
   runtime: CommerceRuntime,
+  money: CommerceMoneyStores,
   counterpartyDid: string,
 ): { supplier: boolean; buyer: boolean } {
   const readers = tradeRelationshipReaders(runtime);
   let supplier = readers.listAcceptedOrderIds(counterpartyDid, 'supplier').length > 0;
   let buyer = readers.listAcceptedOrderIds(counterpartyDid, 'buyer').length > 0;
-  for (const row of runtime.tradeDocuments.listByCounterparty(counterpartyDid, 'delivery_note')) {
+  for (const row of money.tradeDocuments.listByCounterparty(counterpartyDid, 'delivery_note')) {
     if (row.direction === 'outbound') supplier = true;
     else buyer = true;
   }
-  for (const row of runtime.tradeDocuments.listByCounterparty(counterpartyDid, 'payment_ack')) {
+  for (const row of money.tradeDocuments.listByCounterparty(counterpartyDid, 'payment_ack')) {
     if (row.direction === 'outbound') supplier = true;
     else buyer = true;
   }

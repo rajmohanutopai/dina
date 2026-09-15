@@ -15,7 +15,9 @@
  *   5. Post-publish refinement LLMs (reminder planner, identity
  *      extractor) registered on the shared router.
  *   6. Tool registry — 5 vault tools + geocode + trust-network +
- *      search-provider-services + query-service + find-preferred-provider.
+ *      search-provider-services + query-service + find-preferred-provider
+ *      + the product research pair (search_products / recommend_offer)
+ *      + the plugin pair (list_plugin_capabilities / invoke_plugin).
  *
  * **Why this lives in `packages/brain/`**: everything here is
  * Brain-scoped logic that both the mobile app (RN / Expo) and the
@@ -42,6 +44,7 @@
 
 import { getMemoryService } from '@dina/core';
 
+import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
@@ -52,6 +55,17 @@ import { createGuardScanner } from '../reasoning/guard_scanner';
 import { IntentClassifier } from '../reasoning/intent_classifier';
 import { createSearchPeerlensTool } from '../reasoning/peerlens_tool';
 import { createFindPersonTool } from '../reasoning/people_tool';
+import {
+  createInvokePluginTool,
+  createListPluginCapabilitiesTool,
+  type PluginToolCoreClient,
+} from '../reasoning/plugin_tools';
+import {
+  createProductResearchTools,
+  createResearchCache,
+  type ProductToolCoreClient,
+  type ResearchCache,
+} from '../reasoning/product_tools';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import {
   createGeocodeTool,
@@ -90,17 +104,23 @@ export interface BuildAgenticAskPipelineInput {
     Parameters<typeof createSearchCapabilitiesTool>[0]['appViewClient'] &
     Parameters<typeof createSearchPeerlensTool>[0]['appViewClient'] &
     Parameters<typeof createQueryServiceTool>[0]['appViewClient'] &
+    Parameters<typeof createProductResearchTools>[0]['appViewClient'] &
     Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'];
   /** Lazy orchestrator handle for `query_service` — callers wire a thunk-backed
    *  proxy when the orchestrator is constructed later in the boot sequence. */
   orchestratorHandle: Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
   /**
-   * Core client — combines the `find_preferred_provider` tool surface with
-   * the vault-read approval workflow task methods. The full `CoreClient`
-   * (InProcessTransport or HttpCoreTransport) satisfies both.
+   * Core client — combines the `find_preferred_provider` tool surface, the
+   * vault-read approval workflow task methods, the plugin tool surface
+   * (§6: `list_plugin_capabilities` / `invoke_plugin`) and the one contact
+   * read `search_products` makes to name a seller the owner knows (§5.A6).
+   * The full `CoreClient` (InProcessTransport or HttpCoreTransport)
+   * satisfies all four.
    */
   coreClient: Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
-    VaultApprovalWorkflowClient;
+    VaultApprovalWorkflowClient &
+    PluginToolCoreClient &
+    ProductToolCoreClient;
   /**
    * Workflow surface for `delegate_to_agent` — narrower than the full
    * `BrainCoreClient` so a host that hasn't paired any agents can omit
@@ -262,6 +282,10 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
   // (askId, requesterDid). Without an `approvalManager` the static
   // registry has no guard — sensitive personas surface as
   // `accessible:false` rather than bailing the loop.
+  //
+  // One research cache for every registry this pipeline builds (§5.A6): a
+  // `research_id` minted before a Pattern A pause resolves after the resume.
+  const researchCache: ResearchCache = createResearchCache();
   const buildToolsWithGuard = (guard?: VaultPersonaGuard, sessionName?: string): ToolRegistry => {
     const reg = new ToolRegistry();
     reg.register(createListPersonasTool());
@@ -276,6 +300,23 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         logger: input.logger,
       }),
     );
+    // `search_products` — the consumer research loop (§5.A): compare offers for
+    // a product across suppliers, ranked by price/lead-time/seller-trust, and
+    // hand off to where-to-buy. Money-free (never completes a purchase); runs
+    // the pure @dina/core engines over AppView catalog offers + seller trust.
+    // …and `recommend_offer`, which commits the loop's preference-weighed pick
+    // to the card the owner sees (§5.A6). The two share the PIPELINE's research
+    // cache, not this registry's: the coordinator rebuilds the registry on a
+    // Pattern A resume, and the research_id in the resumed transcript must
+    // still resolve.
+    const research = createProductResearchTools({
+      appViewClient: input.appViewClient,
+      core: input.coreClient,
+      cache: researchCache,
+      logger: input.logger,
+    });
+    reg.register(research.searchProducts);
+    reg.register(research.recommendOffer);
     reg.register(createSearchCapabilitiesTool({ appViewClient: input.appViewClient }));
     reg.register(
       createSearchProviderServicesTool({
@@ -301,6 +342,11 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         logger: input.logger,
       }),
     );
+    // PLUGIN_ARCHITECTURE §6 — `/ask` into the owner's installed plugins
+    // (country-pack rails, third-party tools): list what is consented, ask one
+    // capability to run. Core gates every ask; the owner decides on the phone.
+    reg.register(createListPluginCapabilitiesTool({ core: input.coreClient, logger: input.logger }));
+    reg.register(createInvokePluginTool({ core: input.coreClient, logger: input.logger }));
     // `classify_intent` — lets the agent re-evaluate routing when the
     // plan has shifted mid-loop (gathered new context, found unexpected
     // results). Pre-loop classification still runs as the soft prime;
@@ -396,7 +442,7 @@ function buildLightweightLLMCall(
         messages: [{ role: 'user', content: prompt }],
         ...(system !== '' ? { systemPrompt: system } : {}),
         temperature: 0.1,
-        maxTokens: 2048,
+        maxTokens: SMALL_TASK_MAX_TOKENS,
       });
       return response.content;
     } catch {
@@ -419,7 +465,7 @@ function buildIntentClassifier(router: LLMRouter): IntentClassifier {
         messages: [{ role: 'user', content: userPrompt }],
         systemPrompt,
         temperature: 0.1,
-        maxTokens: 1024,
+        maxTokens: SMALL_TASK_MAX_TOKENS,
       });
       return response.content;
     },

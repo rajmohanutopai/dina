@@ -98,13 +98,18 @@ describe('Tier 2 PII Pattern Recognizers', () => {
 
   describe('detectIndianPII', () => {
     it('detects Aadhaar number', () => {
-      const matches = detectIndianPII('Aadhaar: 2345 6789 0123');
+      const matches = detectIndianPII('Aadhaar: 2345 6789 0124');
       expect(matches.some((m) => m.entity_type === 'AADHAAR_NUMBER')).toBe(true);
     });
 
     it('detects PAN', () => {
-      const matches = detectIndianPII('PAN: ABCDE1234F');
+      const matches = detectIndianPII('PAN: ABCPE1234F');
       expect(matches.some((m) => m.entity_type === 'IN_PAN')).toBe(true);
+    });
+
+    it('is checksum-honest like Tier 1 (§5.D3): a bad Aadhaar check digit or a non-holder PAN letter is not PII', () => {
+      expect(detectIndianPII('ref 2345 6789 0123').some((m) => m.entity_type === 'AADHAAR_NUMBER')).toBe(false);
+      expect(detectIndianPII('lot ABCDE1234F').some((m) => m.entity_type === 'IN_PAN')).toBe(false);
     });
 
     it('detects IFSC code', () => {

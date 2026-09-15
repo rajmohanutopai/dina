@@ -144,7 +144,26 @@ const boundedIsoDate = isoDateString.refine(
 // requires resolving the author's DID document.
 const namespaceFragment = z.string().min(1).max(255)
 
+/**
+ * D4 — the SOURCE block an imported review carries. Present means this record
+ * is not testimony: a registered per-market feed observed a review somewhere
+ * and published it, with a deep link back so Dina credits the source rather
+ * than extracting from it. Absent — the normal case — means a peer wrote it.
+ *
+ * Shape only here. Whether the feed is registered, and whether the repo
+ * publishing it is that feed's publisher, is the ingest gate's job: those are
+ * questions about this node's agreements, which a schema cannot answer.
+ */
+const reviewSourceSchema = z.object({
+  feed: z.string().min(1).max(64).regex(/^[a-z0-9]+(\.[a-z0-9-]+)*$/, 'feed must be a lowercase dotted id'),
+  market: z.string().regex(/^[A-Z]{2}$/, 'market must be an ISO-3166-1 alpha-2 code'),
+  url: z.string().min(1).max(2048).regex(/^https:\/\//i, 'the deep link back must be https'),
+  observedAt: boundedIsoDate,
+})
+
 const attestationSchema = z.object({
+  // D4 — present iff this record is an import rather than testimony.
+  source: reviewSourceSchema.optional(),
   subject: subjectRefSchema,
   category: z.string().min(1).max(200),
   sentiment: z.enum(['positive', 'neutral', 'negative']),

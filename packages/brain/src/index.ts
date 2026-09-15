@@ -345,6 +345,7 @@ export { formatServiceQueryResult } from './service/result_formatter';
 export type { ServiceQueryEventDetails } from './service/result_formatter';
 export { buildResultCardSpec } from './service/result_card_mapper';
 export type { ResultCardInput } from './service/result_card_mapper';
+export { buildComparisonCardSpec } from './service/comparison_card_spec';
 export { rankCandidates, pickTopCandidate, haversineKm } from './service/candidate_ranker';
 export type {
   RankedCandidate,

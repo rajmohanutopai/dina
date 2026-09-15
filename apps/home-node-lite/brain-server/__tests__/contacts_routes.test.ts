@@ -95,6 +95,104 @@ describe('Brain server — /api/v1/contacts HTTP wiring', () => {
     }
   });
 
+  /**
+   * §5.D — the web half of the trade-details capture path. Without these two
+   * routes the web screen read an empty form over a contact Core holds and
+   * saved into a 404, silently.
+   */
+  it('GET /contacts/lookup resolves one contact from Core', async () => {
+    const core = new MockCoreClient();
+    core.contactLookupResult = { 'did:plc:abc': contact({ did: 'did:plc:abc', legalName: 'ChairMaker LLP' }) };
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/contacts/lookup?q=did:plc:abc' });
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { contact: Contact }).contact.legalName).toBe('ChairMaker LLP');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('GET /contacts/lookup refuses an empty q', async () => {
+    const app = makeApp(new MockCoreClient());
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/contacts/lookup?q=%20' });
+      expect(res.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('PUT /contacts/:did forwards the tri-state wire to CoreClient.updateContact', async () => {
+    const core = new MockCoreClient();
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/contacts/did:plc:abc',
+        payload: {
+          legal_name: 'ChairMaker LLP',
+          registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZV' }],
+          billing_address: { line1: '4 Kalasipalya Road', city: 'Bengaluru', postal_code: '560002', country: 'IN' },
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      const call = core.calls.find((c) => c.method === 'updateContact');
+      expect(call?.args[0]).toBe('did:plc:abc');
+      expect(call?.args[1]).toEqual({
+        legalName: 'ChairMaker LLP',
+        registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZV' }],
+        billingAddress: { line1: '4 Kalasipalya Road', city: 'Bengaluru', postalCode: '560002', country: 'IN' },
+      });
+      // Absent fields stay absent: a tri-state wire must not become a clear.
+      expect(call?.args[1]).not.toHaveProperty('phone');
+      expect(call?.args[1]).not.toHaveProperty('preferredFor');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('PUT /contacts/:did passes Core’s refusal FINDINGS through, not a bare 502', async () => {
+    const core = new MockCoreClient();
+    core.throwOn.updateContact = Object.assign(new Error('refused'), {
+      status: 400,
+      body: {
+        error: 'identity_invalid',
+        findings: [{ refusal: 'malformed_registration', field: 'registrations[0]', detail: 'bad' }],
+      },
+    });
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/contacts/did:plc:abc',
+        payload: { registrations: [{ scheme: 'gstin', value: 'nope' }] },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = res.json() as { error: string; findings: { field: string }[] };
+      expect(body.error).toBe('identity_invalid');
+      expect(body.findings[0].field).toBe('registrations[0]');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('PUT /contacts/:did answers 502 when Core is unreachable (no findings to show)', async () => {
+    const core = new MockCoreClient();
+    core.throwOn.updateContact = new Error('socket hang up');
+    const app = makeApp(core);
+    try {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/api/v1/contacts/did:plc:abc',
+        payload: { legal_name: 'x' },
+      });
+      expect(res.statusCode).toBe(502);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('DELETE is idempotent — { deleted: false } when the DID was not a contact', async () => {
     const core = new MockCoreClient();
     core.listContactsResult = [];

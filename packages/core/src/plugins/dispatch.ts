@@ -463,17 +463,25 @@ export function contextScopeViolation(
   // (card numbers, SSNs, API keys) is within the count ceiling yet must never
   // flow to a runner unscrubbed — the same regulated-egress rule the params
   // channel enforces (§11.5). Shape-agnostic scan of every scalar + field name.
-  const regulated = contextRegulatedContent(context);
+  const regulated = regulatedContentIn(context);
   if (regulated.length > 0) {
     return `context carries raw regulated content (${regulated.join(', ')}) — projection must scrub before dispatch`;
   }
   return null;
 }
 
-/** Regulated PII entity types + secret-token shapes present anywhere in the
- *  context corpus — the subset that must be scrubbed out of any projected
- *  context (Round-5 #7). Reuses the params-channel scanner + detectors. */
-function contextRegulatedContent(context: unknown): string[] {
+/**
+ * Regulated PII entity types + secret-token shapes present anywhere in the
+ * context corpus — the subset that must be scrubbed out of any projected
+ * context (Round-5 #7). Reuses the params-channel scanner + detectors.
+ *
+ * Exported so the PRODUCER can run the same scan the backstop runs
+ * (`context_projection.ts`). One detector, two callers: a projector that
+ * judged regulated content by its own rules would eventually disagree with
+ * the gate that refuses the envelope, and the disagreement would show up as a
+ * whole task failing rather than one field being held back.
+ */
+export function regulatedContentIn(context: unknown): string[] {
   const parts: string[] = [];
   collectScanText(context, parts);
   const joined = parts.join('\n');
@@ -567,6 +575,10 @@ export function buildPluginEnvelope(args: {
     manifest_cid: args.install.currentCid,
     approved_scope_hash: approvedScopeHash,
     schema_snapshot: cap.result_schema ?? null,
+    // §15.6 — pin the card template beside the result schema. The owner
+    // approved an answer arriving in THIS shape; an update that rewrites the
+    // card must not re-frame an answer already in flight.
+    ...(cap.card !== undefined ? { card_snapshot: cap.card } : {}),
     config_revision: args.install.configRevision,
     execution_id: args.executionId,
     idempotency_key: args.idempotencyKey,

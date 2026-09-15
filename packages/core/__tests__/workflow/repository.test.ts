@@ -266,6 +266,45 @@ describe('WorkflowRepository — subscribeApprovalCreated', () => {
     expect(seen).toHaveLength(0);
   });
 
+  it('PLUGIN_ARCHITECTURE §15.5 — fires for a plugin invocation parked pending_approval on its lane, and only then', () => {
+    const r = buildRepo();
+    const seen: WorkflowTask[] = [];
+    r.subscribeApprovalCreated((t) => {
+      seen.push(t);
+    });
+    const envelope = JSON.stringify({ type: 'plugin_invocation', install_id: 'pli_1', capability_id: 'com.acme.x' });
+    // A carded invocation: the owner must decide — the inbox must wake.
+    r.create(
+      baseTask({
+        id: 'plgx_card',
+        kind: WorkflowTaskKind.Delegation,
+        status: WorkflowTaskState.PendingApproval,
+        payload: envelope,
+        requested_runner: 'plugin:pli_1',
+      }),
+    );
+    // A silent (grant-authorized) invocation is already queued for the runner — nothing to decide.
+    r.create(
+      baseTask({
+        id: 'plgx_silent',
+        kind: WorkflowTaskKind.Delegation,
+        status: WorkflowTaskState.Queued,
+        payload: envelope,
+        requested_runner: 'plugin:pli_1',
+      }),
+    );
+    // A non-plugin delegation parked pending_approval is not an owner card either.
+    r.create(
+      baseTask({
+        id: 'del_pending',
+        kind: WorkflowTaskKind.Delegation,
+        status: WorkflowTaskState.PendingApproval,
+        payload: JSON.stringify({ type: 'agent_task' }),
+      }),
+    );
+    expect(seen.map((t) => t.id)).toEqual(['plgx_card']);
+  });
+
   it('multiple subscribers all receive the event independently', () => {
     const r = buildRepo();
     const a: string[] = [];

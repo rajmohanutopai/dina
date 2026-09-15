@@ -35,6 +35,7 @@ export type {
   PluginAdvisory,
 } from './types';
 
+export { cardTemplateSlot, cardTemplateSlots, fillCardTemplate } from './card_template';
 export { normalizeStringSet, normalizePluginManifest, normalizePluginAdvisory } from './normalize';
 
 export { hasUnsafeText } from './text_safety';

@@ -37,6 +37,7 @@ import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
 import { getProfile as getTrustProfile } from '../src/peerlens/appview_runtime';
 import { confirmDecision } from '../src/services/confirm_decision';
+import { chooseContactAction } from '../src/services/contact_action';
 import { buildContactCard } from '../src/services/contact_card';
 import { deleteContact, loadContacts } from '../src/services/contacts_source';
 import { getDisplayNameOverride } from '../src/services/display_name_override';
@@ -122,6 +123,18 @@ export default function PeopleScreen() {
 
   const onLongPress = useCallback(
     (contact: Contact) => {
+      // Two things an owner does to a contact from the list: state the trade
+      // details a filing needs (§5.D), or remove them. Ask which, rather than
+      // making a long-press mean "delete" alone.
+      void chooseContactAction(contact.displayName || 'contact').then((action) => {
+        if (action === 'trade') {
+          router.push({
+            pathname: '/contact-trade-details' as never,
+            params: { did: contact.did, name: contact.displayName },
+          } as never);
+          return;
+        }
+        if (action !== 'remove') return;
       // `confirmDecision` is platform-split: native → Alert.alert, web →
       // window.confirm (RN-Web's Alert.alert is a no-op, so a bare Alert would
       // never show the dialog on the web thin-client — the delete could never
@@ -129,19 +142,20 @@ export default function PeopleScreen() {
       // from the authoritative in-process directory, web hits the Core-backed
       // DELETE proxy. Refresh only when Core/the store confirms the removal, so
       // we never claim a removal that won't stick.
-      void confirmDecision(
-        `Remove ${contact.displayName || 'contact'}?`,
-        "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your contact list.",
-        'Remove',
-        true,
-      ).then((confirmed) => {
-        if (!confirmed) return;
-        void deleteContact(contact.did).then((removed) => {
-          if (removed) refresh();
+        void confirmDecision(
+          `Remove ${contact.displayName || 'contact'}?`,
+          "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your contact list.",
+          'Remove',
+          true,
+        ).then((confirmed) => {
+          if (!confirmed) return;
+          void deleteContact(contact.did).then((removed) => {
+            if (removed) refresh();
+          });
         });
       });
     },
-    [refresh],
+    [refresh, router],
   );
 
   return (
@@ -546,7 +560,7 @@ function ContactRow({
         testID={`people-contact-row-${contact.did}`}
         accessibilityRole="button"
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-        accessibilityLabel={`Open chat with ${contact.displayName}. Long-press to remove.`}
+        accessibilityLabel={`Open chat with ${contact.displayName}. Long-press for trade details or to remove.`}
         onLongPress={() => onLongPress(contact)}
         delayLongPress={400}
       >

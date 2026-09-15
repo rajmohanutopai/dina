@@ -41,19 +41,15 @@ import {
   readDeliveryReceipt,
   readPaymentAcknowledgement,
   readPaymentNote,
-  readQuoteDecline,
   tradeRecordDigest,
   verifyDeliveryReceiptAgainstNote,
   verifyPaymentAckAgainstNote,
-  verifyQuoteDeclineAgainstRequest,
   verifyConversationVersion,
   type DeliveryNote,
   type DeliveryReceipt,
   type PaymentAcknowledgement,
   type PaymentNote,
   type PurchaseOrderProposal,
-  type QuoteDecline,
-  type QuoteRequest,
   type Sha256Fn,
   type TradeDigestDomain,
 } from '@dina/commerce-protocol';
@@ -63,8 +59,7 @@ import {
   rehydrateDeliveryReceipt,
   rehydratePaymentAck,
   rehydratePaymentNote,
-  rehydrateQuoteDecline,
-} from './rehydrate';
+} from './money_rehydrate';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -74,7 +69,26 @@ const hash: Sha256Fn = (data) => sha256(data);
 // Store
 // ---------------------------------------------------------------------------
 
-export type TradeDocumentKind = TradeDigestDomain;
+/**
+ * The KHATA document kinds — the money ledger's contract. `quote_decline` is a
+ * digest domain the protocol shares with this ledger's documents, but it is
+ * NOT a khata document: the money-free decline slice lives in
+ * `decline_documents.ts` (§5.B1 Cut 1/2) with its own table. Narrowed by type
+ * so no reader can route a decline through the money store again; legacy
+ * decline rows the v42 migration left in `commerce_trade_documents` are
+ * unreadable here (`rehydrateTradeDocument` refuses them) and never enumerated
+ * by a khata kind.
+ */
+export type TradeDocumentKind = Exclude<TradeDigestDomain, 'quote_decline'>;
+export const TRADE_DOCUMENT_KINDS: readonly TradeDocumentKind[] = [
+  'delivery_note',
+  'delivery_receipt',
+  'payment_note',
+  'payment_ack',
+];
+export function isTradeDocumentKind(value: unknown): value is TradeDocumentKind {
+  return typeof value === 'string' && (TRADE_DOCUMENT_KINDS as readonly string[]).includes(value);
+}
 export type TradeDocumentDirection = 'inbound' | 'outbound';
 
 export interface TradeDocumentRow {
@@ -116,7 +130,6 @@ export class TradeLedgerIntegrityError extends Error {}
 export function rehydrateTradeDocument(
   row: TradeDocumentRow,
 ):
-  | { kind: 'quote_decline'; document: QuoteDecline }
   | { kind: 'delivery_note'; document: DeliveryNote }
   | { kind: 'delivery_receipt'; document: DeliveryReceipt }
   | { kind: 'payment_note'; document: PaymentNote }
@@ -130,11 +143,6 @@ export function rehydrateTradeDocument(
     return rehydrated.value as T;
   };
   switch (row.kind) {
-    case 'quote_decline': {
-      const read = rehydrateQuoteDecline(row.recordJson, hash);
-      const document = bind(read, read.ok ? read.value.decline_digest : '');
-      return { kind: row.kind, document };
-    }
     case 'delivery_note': {
       const read = rehydrateDeliveryNote(row.recordJson, hash);
       const document = bind(read, read.ok ? read.value.note_digest : '');
@@ -155,6 +163,10 @@ export function rehydrateTradeDocument(
       const document = bind(read, read.ok ? read.value.ack_digest : '');
       return { kind: row.kind, document };
     }
+    default:
+      // A legacy `quote_decline` row (pre-v42) or a foreign kind: not a khata
+      // document, so the money ledger refuses to read it.
+      return fail('not a khata document kind');
   }
 }
 
@@ -311,8 +323,6 @@ export interface TradeIngest {
 
 /** Injected: the retained, validated order this side holds. */
 export type RetainedOrderReader = (purchaseOrderId: string) => PurchaseOrderProposal | null;
-/** Injected: the retained request a decline claims to answer. */
-export type RetainedRequestReader = (requestId: string) => QuoteRequest | null;
 
 function applied(digest: string): TradeIngest {
   return { outcome: 'applied', recordDigest: digest };
@@ -599,59 +609,6 @@ export function verifyInboundPaymentAck(args: {
   return stored ? applied(digest) : { outcome: 'duplicate', recordDigest: digest };
 }
 
-/**
- * Inbound QuoteDecline, at the BUYER. The retained request must exist,
- * the sender must be the supplier it addressed, and the §3.4 binding
- * rules apply. ONE decline per request.
- */
-export function verifyInboundQuoteDecline(args: {
-  senderDid: string;
-  selfDid: string;
-  decline: unknown;
-  repository: TradeDocumentRepository;
-  readRequest: RetainedRequestReader;
-  evidenceJson: string;
-  nowMs: number;
-}): TradeIngest {
-  const read = readQuoteDecline(args.decline, hash);
-  if (!read.ok) return { outcome: 'unreadable', detail: read.error };
-  const decline = read.decline;
-
-  const request = args.readRequest(decline.request_id);
-  if (request === null) {
-    return { outcome: 'refused', detail: `decline: no retained request ${decline.request_id}` };
-  }
-  if (request.supplier_did !== args.senderDid) {
-    return { outcome: 'not_ours', detail: 'decline: sender is not the request supplier' };
-  }
-  if (request.buyer_did !== args.selfDid) {
-    return { outcome: 'not_ours', detail: 'decline: this node is not the request buyer' };
-  }
-  const bindError = verifyQuoteDeclineAgainstRequest(decline, request);
-  if (bindError) return { outcome: 'refused', detail: bindError };
-
-  const digest = tradeRecordDigest('quote_decline', decline, hash);
-  const existing = args.repository.answersTo(decline.request_digest, 'quote_decline');
-  if (existing.length > 0) {
-    return existing.some((row) => row.recordDigest === digest)
-      ? { outcome: 'duplicate', recordDigest: digest }
-      : {
-          outcome: 'conflict',
-          detail: 'decline: the request already has a different decline — the first answer stands',
-          recordDigest: existing[0]?.recordDigest ?? '',
-        };
-  }
-
-  const stored = args.repository.put({
-    recordDigest: digest,
-    kind: 'quote_decline',
-    counterpartyDid: args.senderDid,
-    purchaseOrderId: '',
-    answersDigest: decline.request_digest,
-    direction: 'inbound',
-    recordJson: JSON.stringify(decline),
-    evidenceJson: args.evidenceJson,
-    createdAt: args.nowMs,
-  });
-  return stored ? applied(digest) : { outcome: 'duplicate', recordDigest: digest };
-}
+// The inbound QuoteDecline verifier moved to `decline_documents.ts` (§5.B1
+// Cut 1) — a decline carries no money, so it stays in the kernel when the money
+// engine moves out.

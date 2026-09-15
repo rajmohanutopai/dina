@@ -585,6 +585,7 @@ export * from './d2d/gates';
 export type { EgressCheckResult } from './d2d/gates';
 export * from './d2d/signature';
 export * from './pii/patterns';
+export { isAadhaarNumber, isGstin, isPan, verhoeffValid, PAN_HOLDER_TYPES } from './pii/checksums';
 // PIIScrubResult here is the HTTP-wire shape re-exported via the
 // client block below — not the raw scrubber's per-entity result. The
 // raw type (`ScrubResult`) is an internal detail consumers reach via
@@ -885,7 +886,30 @@ export { installCommerceObserver, recordCommerceEvent } from './commerce/observa
 export type { CommerceEvent, CommerceEventName, CommerceObserver } from './commerce/observability';
 // §18.1 — the first-party commerce install step (PC-9a): mobile drives the
 // same ceremony in-process that the server drives over its owner routes.
-export { beginReferenceInstall, referenceManifestCid } from './commerce/reference_install';
+export {
+  beginFirstPartyInstall,
+  beginReferenceInstall,
+  FIRST_PARTY_MANIFESTS,
+  isFirstPartyManifestId,
+  referenceManifestCid,
+} from './commerce/reference_install';
+export type { FirstPartyPluginId } from './commerce/reference_install';
+export {
+  COUNTRY_PACK_IDS,
+  COUNTRY_PACK_MANIFESTS,
+  COUNTRY_PACKS,
+  INDIA_PACK_MANIFEST,
+  USA_PACK_MANIFEST,
+  isCountryPack,
+} from './commerce/country_packs';
+export type { CountryPack } from './commerce/country_packs';
+// §6 — the `/v1/plugins/tool-invoke` reply parser and its "accepted but
+// unreadable" code, shared by both transports and read by Brain's tool.
+export {
+  INVOKE_PLUGIN_RESPONSE_MALFORMED,
+  parseInvokePluginToolResponse,
+  updateContactBody,
+} from './client/core-client';
 export { planCommerceInstall, roleIsInstalled } from './commerce/install_plan';
 export type { CommerceRole, InstallChoice } from './commerce/install_plan';
 export {
@@ -977,6 +1001,12 @@ export {
   removeAlias,
   resetContactDirectory,
   resolveByName,
+  setPaperIdentity,
+  getPaperIdentity,
+  checkPaperIdentity,
+  setContactChannels,
+  getContactChannels,
+  checkContactChannels,
   updateContact,
 } from './contacts/directory';
 export type { Relationship, DataResponsibility } from './contacts/directory';
@@ -1351,6 +1381,10 @@ export type {
   ListWorkflowEventsOptions,
   FailWorkflowEventOptions,
   ListWorkflowTasksFilter,
+  ApproveWorkflowTaskOptions,
+  PluginToolCapability,
+  InvokePluginToolInput,
+  InvokePluginToolResult,
   CreateWorkflowTaskResult,
   MemoryTouchParams,
   MemoryTouchResult,
@@ -1408,9 +1442,12 @@ export type {
   OrderSendAnswer,
   OrderSubmitAnswer,
   PhotoCaptureResult,
+  SettingsFindingDto,
   StaffGrantEntry,
+  BusinessIdentityAnswer,
   TradeDocumentAnswer,
   TradeInboxItemDto,
+  TradeReminderAnswer,
   TradeStatementAnswer,
 } from './client/owner-commerce-client';
 export type { CatalogDraft, DraftRow } from './commerce/catalog_draft_store';

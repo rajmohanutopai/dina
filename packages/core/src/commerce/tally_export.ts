@@ -19,40 +19,12 @@
  * proposed, pending or disputed reaches the books.
  */
 
-import { moneyMinorUnits, type Money } from '@dina/commerce-protocol';
-
+import { formatMoneyAmount } from './money_display';
 import { rehydrateAcknowledgement, rehydratePurchaseOrder } from './rehydrate';
 import { rehydrateTradeDocument } from './trade_ledger';
 
 import type { Sha256Fn } from './rehydrate';
-import type { CommerceRuntime } from './runtime';
-
-/**
- * Minor-unit exponents for the currencies the trade actually runs in.
- * Two is the ISO-4217 default; zero-exponent currencies are listed so a
- * yen amount never gains phantom decimals. Anything unknown uses 2 and
- * the caller can extend the table when a new market demands it.
- */
-const CURRENCY_EXPONENTS: Record<string, number> = {
-  INR: 2,
-  USD: 2,
-  EUR: 2,
-  GBP: 2,
-  AED: 2,
-  JPY: 0,
-  KRW: 0,
-};
-
-/** Minor units → the decimal string Tally expects. */
-function tallyAmount(money: Money): string {
-  const exponent = CURRENCY_EXPONENTS[money.currency] ?? 2;
-  const minor = moneyMinorUnits(money);
-  if (exponent === 0) return minor.toString();
-  const divisor = 10n ** BigInt(exponent);
-  const whole = minor / divisor;
-  const fraction = (minor % divisor).toString().padStart(exponent, '0');
-  return `${whole.toString()}.${fraction}`;
-}
+import type { CommerceMoneyStores, CommerceRuntime } from './runtime';
 
 /** The five XML entities; Tally XML is plain XML. */
 function xmlEscape(value: string): string {
@@ -85,6 +57,7 @@ function tallyDate(iso: string): string {
 /** Assemble the voucher list from this node's retained, settled facts. */
 export function collectTallyVouchers(
   runtime: CommerceRuntime,
+  money: CommerceMoneyStores,
   args: { currency: string },
   sha256: Sha256Fn,
 ): TallyVoucher[] {
@@ -115,7 +88,7 @@ export function collectTallyVouchers(
       vchType: supplierSide ? 'Sales' : 'Purchase',
       date: tallyDate(ack.value.accepted_at ?? ack.value.issued_at),
       partyLedger: supplierSide ? order.value.buyer_did : order.value.supplier_did,
-      amount: tallyAmount(order.value.approved_total),
+      amount: formatMoneyAmount(order.value.approved_total),
       currency: args.currency,
       narration: `dina order ${order.value.purchase_order_id} digest ${order.value.order_digest}`,
     });
@@ -125,7 +98,7 @@ export function collectTallyVouchers(
   // acknowledged (Receipt); this node's OWN payment notes debit it
   // (Payment). Inbound acks confirm money this node paid, which the
   // payment-note leg already carries — one voucher per rupee.
-  for (const row of runtime.tradeDocuments.listByKind('payment_ack', 'outbound')) {
+  for (const row of money.tradeDocuments.listByKind('payment_ack', 'outbound')) {
     try {
       const read = rehydrateTradeDocument(row);
       if (read.kind !== 'payment_ack' || read.document.kind !== 'received') continue;
@@ -134,7 +107,7 @@ export function collectTallyVouchers(
         vchType: 'Receipt',
         date: tallyDate(read.document.acknowledged_at),
         partyLedger: row.counterpartyDid,
-        amount: tallyAmount(read.document.amount_received),
+        amount: formatMoneyAmount(read.document.amount_received),
         currency: args.currency,
         narration: `dina payment ack ${read.document.payment_ack_id} digest ${read.document.ack_digest}`,
       });
@@ -142,7 +115,7 @@ export function collectTallyVouchers(
       // A row this build cannot re-verify never reaches the books.
     }
   }
-  for (const row of runtime.tradeDocuments.listByKind('payment_note', 'outbound')) {
+  for (const row of money.tradeDocuments.listByKind('payment_note', 'outbound')) {
     try {
       const read = rehydrateTradeDocument(row);
       if (read.kind !== 'payment_note') continue;
@@ -151,7 +124,7 @@ export function collectTallyVouchers(
         vchType: 'Payment',
         date: tallyDate(read.document.paid_at),
         partyLedger: read.document.supplier_did,
-        amount: tallyAmount(read.document.amount),
+        amount: formatMoneyAmount(read.document.amount),
         currency: args.currency,
         narration: `dina payment note ${read.document.payment_note_id} digest ${read.document.note_digest}`,
       });

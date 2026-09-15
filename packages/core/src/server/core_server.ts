@@ -11,6 +11,10 @@
  * target, not something the mobile app ships with.
  */
 
+import { setDeviceRoleResolver, setDeviceScopeResolver } from '../auth/caller_type';
+import { CORE_DEFAULT_PORT } from '../constants';
+import { getDeviceByDID } from '../devices/registry';
+
 import { CoreRouter } from './router';
 import { registerAgentAuditRoutes } from './routes/agent_audit';
 import { registerAgentFacadeRoutes, type AgentFacadeHandlers } from './routes/agent_facades';
@@ -30,6 +34,7 @@ import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerDevicesRoutes } from './routes/devices';
+import { registerHostOperationRoutes } from './routes/host_operations';
 import { registerIntentRoutes } from './routes/intent';
 import { registerMemoryRoutes } from './routes/memory';
 import { registerNotificationRoutes } from './routes/notifications';
@@ -37,7 +42,8 @@ import { registerPairRoutes } from './routes/pair';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
 import { registerPIIRoutes } from './routes/pii';
-import { registerHostOperationRoutes } from './routes/host_operations';
+import { registerPluginInstallRoutes } from './routes/plugin_install';
+import { registerPluginInvokeRoutes } from './routes/plugin_invoke';
 import { registerPluginUpdateRoutes } from './routes/plugin_updates';
 import { registerPolicyRoutes } from './routes/policy';
 import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
@@ -58,9 +64,6 @@ import { registerWatchRoutes } from './routes/watch';
 import { registerWorkflowRoutes } from './routes/workflow';
 
 export { setAskRouteHandler, type AskRouteHandler };
-import { setDeviceRoleResolver, setDeviceScopeResolver } from '../auth/caller_type';
-import { getDeviceByDID } from '../devices/registry';
-import { CORE_DEFAULT_PORT } from '../constants';
 export const DEFAULT_PORT = CORE_DEFAULT_PORT;
 export const HEALTHZ_PATH = '/healthz';
 
@@ -126,6 +129,8 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // a list of which orders this node cannot answer for is a map of where the
   // supplier is vulnerable.
   registerCommerceRoutes(router, options.ownerCapability);
+  registerPluginInstallRoutes(router, options.ownerCapability);
+  registerPluginInvokeRoutes(router, options.ownerCapability);
   registerPluginUpdateRoutes(router, options.ownerCapability);
   registerHostOperationRoutes(router, options.ownerCapability);
   registerServiceQueryRoutes(router, options.serviceQuery);

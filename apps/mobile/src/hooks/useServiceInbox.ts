@@ -13,8 +13,10 @@
  */
 
 import { markNotificationRead } from '@dina/brain/notifications';
+import { buildPluginResultCard } from '@dina/core';
 
 import type { CoreClient, WorkflowTask } from '@dina/core';
+import type { CardSpec } from '@dina/protocol';
 
 /**
  * Approval-task variants the inbox knows how to render.
@@ -46,6 +48,8 @@ export type InboxEntryKind =
   | 'vault_read'
   | 'remote_coding_gate'
   | 'agent_action'
+  /** PLUGIN_ARCHITECTURE §15.5 — a carded plugin invocation: the exact envelope a runner would claim. */
+  | 'plugin_invocation'
   | 'unknown';
 
 export interface InboxEntry {
@@ -72,6 +76,24 @@ export interface InboxEntry {
    * never under-state the authority being granted).
    */
   accessMode?: 'read' | 'write';
+  /**
+   * plugin_invocation only — the effect statement (§15.5), read off the PINNED
+   * envelope: the consented action class, and whether a retry after a lost
+   * lease is safe (the capability declared idempotency).
+   */
+  effect?: { actionClass: string; retryIdempotent: boolean; installId: string };
+  /**
+   * plugin_invocation only — Core's word on whether a standing approval could
+   * ever silence this capability (§8). Drives "Allow for 24 hours" (§15.5).
+   */
+  grantCanSilence?: boolean;
+  /**
+   * plugin_invocation only — §11: what Dina's OWN projection added beyond the
+   * params, as counts and category names. The owner is told a filing carries
+   * two business-registry facts; the facts themselves are already in the
+   * params preview, and a second copy here would make the card the leak.
+   */
+  contextSummary?: { categories: string[]; itemCount: number };
   createdAt: number;
   expiresAt?: number;
 }
@@ -124,8 +146,21 @@ export class InboxNotConfiguredError extends Error {
  */
 export async function listPendingApprovals(limit = 50): Promise<InboxEntry[]> {
   const c = requireClient();
-  const tasks = await c.listWorkflowTasks({ kind: 'approval', state: 'pending_approval', limit });
-  return tasks.map(toEntry).sort((a, b) => a.createdAt - b.createdAt);
+  const [approvals, delegations] = await Promise.all([
+    c.listWorkflowTasks({ kind: 'approval', state: 'pending_approval', limit }),
+    // §15.5 — a carded plugin invocation is ONE delegation task parked
+    // `pending_approval` on its plugin lane (the same task the runner later
+    // claims). Only tasks carrying the pinned plugin envelope belong here.
+    c.listWorkflowTasks({ kind: 'delegation', state: 'pending_approval', limit }),
+  ]);
+  return [...approvals, ...delegations.filter(isPluginInvocation)]
+    .map(toEntry)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** Is this task a plugin invocation (§9.1 pinned envelope)? Decided by the payload type alone. */
+export function isPluginInvocation(task: Pick<WorkflowTask, 'payload'>): boolean {
+  return safeParse(task.payload).type === 'plugin_invocation';
 }
 
 /**
@@ -151,9 +186,82 @@ export type ResolvedInboxEntry = InboxEntry & {
   outcome: ApprovalOutcome;
   /** PLG-31 #16: the execution result, separate from the owner decision. */
   executionResult?: ExecutionResult;
+  /**
+   * plugin_invocation only, on a COMPLETED task (§15.6): the runner's answer
+   * as Dina-owned `label: value` lines over the fields the pinned result
+   * schema admitted — Core's `/complete` refused anything outside it. Scalars
+   * only, bounded in count and length; nested values are named, not shown.
+   * This is untrusted-mode rendering: the plugin gets no layout, no links, no
+   * badges — the owner reads facts in Dina's chrome.
+   */
+  resultLines?: string[];
+  /**
+   * plugin_invocation only, on a COMPLETED task (§15.6): the runner's answer
+   * rendered through the card TEMPLATE the manifest declared and the owner
+   * consented to, filled from the same schema-validated fields and passed
+   * through `validateCardSpec` in untrusted mode. Core builds it
+   * (`buildPluginResultCard`) so the phone and the web render the same bytes
+   * and neither decides what is safe. Absent when the capability declares no
+   * template, which is when `resultLines` is what the owner reads.
+   */
+  resultCard?: CardSpec;
   /** When the approval reached its terminal state (task.updated_at). */
   resolvedAt: number;
 };
+
+const MAX_RESULT_LINES = 12;
+const MAX_RESULT_VALUE_CHARS = 120;
+const MAX_RESULT_KEY_CHARS = 40;
+
+/** One line of text: control, bidi and zero-width characters dropped, newlines folded, bounded. */
+function oneLine(text: string, max: number): string {
+  // eslint-disable-next-line no-control-regex
+  const flat = text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** The validated result of a completed plugin invocation, flattened to bounded lines. */
+export function pluginResultLines(task: Pick<WorkflowTask, 'status' | 'result' | 'payload'>): string[] | undefined {
+  if (task.status !== 'completed' || !isPluginInvocation(task)) return undefined;
+  const parsed = safeParse(task.result ?? '');
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(parsed)) {
+    if (lines.length >= MAX_RESULT_LINES) {
+      lines.push('…');
+      break;
+    }
+    let shown: string;
+    if (value === null || value === undefined) shown = '—';
+    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') shown = String(value);
+    else if (Array.isArray(value)) shown = `${value.length} item${value.length === 1 ? '' : 's'}`;
+    else shown = 'details';
+    // Key and value are both the runner's bytes: one clean, bounded line each.
+    lines.push(`${oneLine(key, MAX_RESULT_KEY_CHARS)}: ${oneLine(shown, MAX_RESULT_VALUE_CHARS)}`);
+  }
+  return lines;
+}
+
+/**
+ * How a completed plugin invocation answers (§15.6): through the card
+ * TEMPLATE the manifest declared and the owner consented to when there is
+ * one, and on the `label: value` floor when there is not.
+ *
+ * Core builds the card (`buildPluginResultCard`) — the phone decides nothing
+ * about what is safe to render, which is §15.13's rule: policy duplicated
+ * across two clients is policy that diverges. The lines are kept either way,
+ * so a template that renders to nothing still leaves the owner an answer.
+ */
+function pluginAnswer(
+  task: WorkflowTask,
+): { resultLines?: string[]; resultCard?: CardSpec } {
+  if (!isPluginInvocation(task) || task.status !== 'completed') return {};
+  const card = buildPluginResultCard({
+    status: task.status,
+    payload: task.payload,
+    ...(task.result !== undefined ? { result: task.result } : {}),
+  });
+  return { resultLines: pluginResultLines(task) ?? [], ...(card !== null ? { resultCard: card } : {}) };
+}
 
 /**
  * The set of `state` values that count as "no longer pending" — i.e.
@@ -199,12 +307,20 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
   // state hides real denials/failures). Now: if EVERY state fails, throw so the
   // caller surfaces a real error instead of an empty-looking "no history"; if only
   // SOME fail, keep the partial result but log which states were lost.
+  // Plugin invocations ride `delegation` tasks (§15.5), so each state is read
+  // for both kinds; only delegations carrying the plugin envelope are kept.
+  // Doubles the fan-out on the web thin client — the Completed tab is a cold
+  // path, and a single multi-kind query stays the fix if it ever isn't.
+  const queries = RESOLVED_APPROVAL_STATES.flatMap((state) => [
+    { kind: 'approval' as const, state },
+    { kind: 'delegation' as const, state },
+  ]);
   const settled = await Promise.allSettled(
-    RESOLVED_APPROVAL_STATES.map((state) =>
-      c.listWorkflowTasks({ kind: 'approval', state: state as WorkflowTask['status'], limit }),
-    ),
+    queries.map((q) => c.listWorkflowTasks({ kind: q.kind, state: q.state as WorkflowTask['status'], limit })),
   );
-  const failedStates = RESOLVED_APPROVAL_STATES.filter((_, i) => settled[i]?.status === 'rejected');
+  const failedStates = [
+    ...new Set(queries.filter((_, i) => settled[i]?.status === 'rejected').map((q) => q.state)),
+  ];
   if (failedStates.length === RESOLVED_APPROVAL_STATES.length) {
     const first = settled.find((s) => s.status === 'rejected') as PromiseRejectedResult | undefined;
     throw first?.reason instanceof Error
@@ -216,7 +332,9 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
       `[inbox] resolved-history is INCOMPLETE — ${failedStates.length} state fetch(es) failed: ${failedStates.join(', ')}`,
     );
   }
-  const batches = settled.map((s) => (s.status === 'fulfilled' ? s.value : []));
+  const batches = settled.map((s, i) =>
+    s.status !== 'fulfilled' ? [] : queries[i]?.kind === 'delegation' ? s.value.filter(isPluginInvocation) : s.value,
+  );
   const merged: ResolvedInboxEntry[] = [];
   for (const tasks of batches) {
     for (const task of tasks) {
@@ -224,6 +342,7 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
         ...toEntry(task),
         outcome: outcomeForTask(task),
         executionResult: executionResultForTask(task),
+        ...pluginAnswer(task),
         resolvedAt: task.updated_at ?? task.created_at,
       });
     }
@@ -364,10 +483,21 @@ export async function approvePending(
   taskId: string,
   kind: InboxEntryKind = 'service_query',
   scope?: 'single' | 'session',
+  /**
+   * PLUGIN_ARCHITECTURE §15.5 "Allow for 24 hours" — only a plugin invocation
+   * takes it; Core mints the window grant beside the approval and refuses it
+   * on any other task.
+   */
+  pluginGrant?: 'window_24h',
 ): Promise<WorkflowTask> {
   const c = requireClient();
-  void kind; // all kinds are workflow tasks; kept for UI discriminator use only
-  const out = await c.approveWorkflowTask(taskId, scope !== undefined ? { scope } : undefined);
+  const opts = {
+    ...(scope !== undefined ? { scope } : {}),
+    ...(pluginGrant === 'window_24h' && kind === 'plugin_invocation'
+      ? { pluginGrant: { type: 'window' as const, hours: 24 } }
+      : {}),
+  };
+  const out = await c.approveWorkflowTask(taskId, Object.keys(opts).length > 0 ? opts : undefined);
   // The workflow approval inbox bridge writes a notification at task
   // CREATE with `id === task.id`. The bridge does not (yet) listen for
   // task RESOLUTION, so without this the tab-bar badge would still
@@ -420,7 +550,10 @@ export async function denyPending(
     kind === 'vault_read' ||
     kind === 'intent_validation' ||
     kind === 'remote_coding_gate' ||
-    kind === 'staging_persona_access'
+    kind === 'staging_persona_access' ||
+    // §15.5 — a denied plugin invocation is a cancelled task; Core records
+    // the owner's decision and the runner simply never sees it.
+    kind === 'plugin_invocation'
   ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
@@ -470,6 +603,32 @@ function toEntry(task: WorkflowTask): InboxEntry {
   const parsed = safeParse(task.payload);
   const payloadType = typeof parsed.type === 'string' ? parsed.type : '';
 
+  if (payloadType === 'plugin_invocation') {
+    // Everything on this card is Dina-owned: the PINNED envelope (§9.1) gives
+    // the exact params that will ship, the consented action class and the
+    // install; Core's card facts (`policy`: the risk IT decided and why it
+    // carded) give the level and the reason. Nothing the plugin wrote — not
+    // its display names, not its rationale — reaches the chrome, and the
+    // phone never re-derives a risk Core already decided.
+    const capability = typeof parsed.capability_id === 'string' ? parsed.capability_id : '';
+    const installId = typeof parsed.install_id === 'string' ? parsed.install_id : '';
+    const actionClass = typeof parsed.action_class === 'string' ? parsed.action_class : 'unknown';
+    const card = readCardPolicy(task.policy);
+    return {
+      id: task.id,
+      kind: 'plugin_invocation',
+      capability,
+      serviceName: 'Plugin action',
+      description: card?.reasons.join('; ') ?? '',
+      requesterDID: '',
+      paramsPreview: 'params' in parsed ? JSON.stringify(parsed.params, null, 2) : '',
+      ...(card !== null ? { riskLevel: card.riskLevel, grantCanSilence: card.grantCanSilence } : {}),
+      ...(card?.contextSummary !== undefined ? { contextSummary: card.contextSummary } : {}),
+      effect: { actionClass, retryIdempotent: parsed.effects_idempotency === 'supported', installId },
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
   if (payloadType === 'intent_validation') {
     const action = typeof parsed.action === 'string' ? parsed.action : '';
     const target = typeof parsed.target === 'string' ? parsed.target : '';
@@ -631,6 +790,46 @@ function normaliseRiskLevel(raw: unknown): InboxEntry['riskLevel'] | undefined {
   if (typeof raw !== 'string') return undefined;
   if (raw === 'SAFE' || raw === 'MODERATE' || raw === 'HIGH' || raw === 'BLOCKED') return raw;
   return undefined;
+}
+
+/**
+ * Core's card facts for a carded plugin invocation (`plugins/invoke.ts`,
+ * `PLUGIN_INVOCATION_CARD_POLICY`): the risk level Core decided and the
+ * reasons it carded. Absent on a task that ran silent, or on an older row.
+ */
+function readCardPolicy(raw: string): {
+  riskLevel: InboxEntry['riskLevel'];
+  reasons: string[];
+  grantCanSilence: boolean;
+  contextSummary?: { categories: string[]; itemCount: number };
+} | null {
+  const parsed = safeParse(raw);
+  if (parsed.type !== 'plugin_invocation_card') return null;
+  const riskLevel = normaliseRiskLevel(parsed.risk_level);
+  const reasons = Array.isArray(parsed.reasons) ? parsed.reasons.filter((r): r is string => typeof r === 'string') : [];
+  if (riskLevel === undefined) return null;
+  const context = readContextSummary(parsed.context);
+  return {
+    riskLevel,
+    reasons,
+    grantCanSilence: parsed.grant_can_silence === true,
+    ...(context !== null ? { contextSummary: context } : {}),
+  };
+}
+
+/**
+ * §11's projection summary off the card facts. A task written before the
+ * projector existed carries none, which is why absence reads as "not stated"
+ * rather than as a proven zero.
+ */
+function readContextSummary(raw: unknown): { categories: string[]; itemCount: number } | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const value = raw as { categories?: unknown; item_count?: unknown };
+  if (!Array.isArray(value.categories) || !value.categories.every((c) => typeof c === 'string')) return null;
+  if (typeof value.item_count !== 'number' || !Number.isInteger(value.item_count) || value.item_count < 0) {
+    return null;
+  }
+  return { categories: value.categories as string[], itemCount: value.item_count };
 }
 
 function safeParse(raw: string): Record<string, unknown> {

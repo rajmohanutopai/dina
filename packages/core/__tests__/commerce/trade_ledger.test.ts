@@ -18,8 +18,6 @@ import {
   type PaymentAcknowledgement,
   type PaymentNote,
   type PurchaseOrderProposal,
-  type QuoteDecline,
-  type QuoteRequest,
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
@@ -33,7 +31,6 @@ import {
   verifyInboundDeliveryReceipt,
   verifyInboundPaymentAck,
   verifyInboundPaymentNote,
-  verifyInboundQuoteDecline,
   type TradeDocumentRepository,
 } from '../../src/commerce/trade_ledger';
 import { applyMigrations } from '../../src/storage/migration';
@@ -129,28 +126,8 @@ function sealedAck(
   } as unknown as PaymentAcknowledgement;
 }
 
-function sealedDecline(overrides: Partial<QuoteDecline> = {}): QuoteDecline {
-  const draft = {
-    protocol_version: '1.0',
-    decline_id: `dec-${randomBytes(4).toString('hex')}`,
-    request_id: 'req-1',
-    request_digest: 'e'.repeat(64),
-    buyer_did: BUYER,
-    supplier_did: SUPPLIER,
-    reason_code: 'capacity',
-    issued_at: '2026-08-17T10:00:00.000Z',
-    ...overrides,
-  };
-  return { ...draft, decline_digest: tradeRecordDigest('quote_decline', draft, hash) } as QuoteDecline;
-}
-
-const retainedRequest = {
-  protocol_version: '1.0',
-  request_id: 'req-1',
-  request_digest: 'e'.repeat(64),
-  buyer_did: BUYER,
-  supplier_did: SUPPLIER,
-} as unknown as QuoteRequest;
+// The inbound QuoteDecline verifier + its store moved to
+// `decline_documents.test.ts` (§5.B1 Cut 1) — a decline carries no money.
 
 // ---------------------------------------------------------------------------
 // Both backends, one body
@@ -406,35 +383,4 @@ describe.each(backends)('trade ledger ($name)', ({ make }) => {
     });
   });
 
-  describe('inbound QuoteDecline (at the buyer)', () => {
-    const ingestDecline = (
-      decline: QuoteDecline,
-      extra: Partial<Parameters<typeof verifyInboundQuoteDecline>[0]> = {},
-    ) =>
-      verifyInboundQuoteDecline({
-        senderDid: SUPPLIER,
-        selfDid: BUYER,
-        decline,
-        repository: repo,
-        readRequest: (id) => (id === 'req-1' ? retainedRequest : null),
-        evidenceJson: '{}',
-        nowMs: T0,
-        ...extra,
-      });
-
-    it('applies once per request; a different second decline conflicts', () => {
-      const decline = sealedDecline();
-      expect(ingestDecline(decline).outcome).toBe('applied');
-      expect(ingestDecline(decline).outcome).toBe('duplicate');
-      expect(ingestDecline(sealedDecline({ reason_code: 'policy' })).outcome).toBe('conflict');
-    });
-
-    it('binds: unknown request, wrong sender, digest mismatch', () => {
-      expect(ingestDecline(sealedDecline({ request_id: 'req-9' })).outcome).toBe('refused');
-      expect(ingestDecline(sealedDecline(), { senderDid: BUYER }).outcome).toBe('not_ours');
-      expect(ingestDecline(sealedDecline({ request_digest: 'f'.repeat(64) })).detail).toContain(
-        'request_digest',
-      );
-    });
-  });
 });

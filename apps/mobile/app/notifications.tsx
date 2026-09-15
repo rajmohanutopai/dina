@@ -339,6 +339,9 @@ export default function NotificationsScreen(): React.JSX.Element {
                 supportsSessionScope={approvals.supportsSessionScope(entry)}
                 onApprove={(scope) => approvals.approve(entry, scope)}
                 onApproveSimple={() => approvals.approve(entry)}
+                {...(approvals.supportsAllow24h(entry)
+                  ? { onAllow24h: () => approvals.approveAllow24h(entry) }
+                  : {})}
                 onDeny={() => approvals.deny(entry)}
               />
             );

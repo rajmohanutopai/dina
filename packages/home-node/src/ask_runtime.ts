@@ -1,6 +1,7 @@
 import {
   buildAgenticAskPipeline,
   buildAgenticExecuteFn,
+  buildAskRetrievalPlannerCall,
   buildPreFlightPersonaAllowed,
   createAskCoordinator,
   DEFAULT_ASK_SYSTEM_PROMPT,
@@ -218,21 +219,11 @@ export function buildHomeNodeAskRuntime(
     const installedPersonas = options.installedPersonas!;
     const fetchers = options.retrievalFetchers!;
     const ownerDid = options.ownerDid;
-    const router = pipeline.router;
-    const llmCall = async (system: string, prompt: string): Promise<string> => {
-      try {
-        const response = await router.chat({
-          taskType: 'intent_classification',
-          messages: [{ role: 'user', content: prompt }],
-          ...(system !== '' ? { systemPrompt: system } : {}),
-          temperature: 0.1,
-          maxTokens: 512,
-        });
-        return response.content;
-      } catch {
-        return '';
-      }
-    };
+    // The planner's LLM call is the shared builder — one budget and one
+    // response schema for both hosts (a local copy once capped it at 512
+    // tokens, which a reasoning model spent thinking; the plan came back
+    // empty and the pre-fetch silently did nothing).
+    const llmCall = buildAskRetrievalPlannerCall(pipeline.router);
     preFlight = async (question, ctx): Promise<PreFlightRetrievalResult | null> => {
       try {
         const personas = installedPersonas();

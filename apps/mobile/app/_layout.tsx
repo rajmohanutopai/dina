@@ -1138,6 +1138,16 @@ export default function RootLayout() {
                   }}
                 />
                 <Tabs.Screen
+                  name="plugins"
+                  options={{
+                    title: 'Plugins',
+                    // Hidden from the tab bar — reached via drill-down from Settings.
+                    // Third-party plugin install / consent / uninstall (§5.C2).
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
                   name="ai-providers"
                   options={{
                     title: 'AI providers',
@@ -1166,6 +1176,26 @@ export default function RootLayout() {
                   options={{
                     title: 'Add Contact',
                     // Reached via the People tab's "+ Add" button; no tab of its own.
+                    href: null,
+
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="contact-trade-details"
+                  options={{
+                    title: 'Trade details',
+                    // Reached by long-pressing a contact; no tab of its own.
+                    href: null,
+
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="business-identity"
+                  options={{
+                    title: 'Business identity',
+                    // Reached from Settings; no tab of its own.
                     href: null,
 
                     headerLeft: renderHeaderBackButton,

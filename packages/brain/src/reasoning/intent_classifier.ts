@@ -6,7 +6,7 @@
  * a structured routing hint:
  *
  *   sources            — which substrates the reasoning agent should
- *                        consult (vault / peerlens /
+ *                        consult (vault / peerlens / products /
  *                        provider_services / general_knowledge).
  *   relevant_personas  — the personas whose vault context is worth
  *                        loading first.
@@ -33,10 +33,11 @@ import { extractJSON } from '../llm/output_parser';
 
 import type { TocEntry } from '@dina/core';
 
-/** One of the four substrates the reasoning agent can consult. */
+/** One of the five substrates the reasoning agent can consult. */
 export const INTENT_SOURCES = [
   'vault',
   'peerlens',
+  'products',
   'provider_services',
   'general_knowledge',
 ] as const;
@@ -117,6 +118,13 @@ Output schema (every key required):
                                people in the user's trust graph). Use
                                when the question is about buying,
                                vendor reputation, or product comparison.
+        "products"           — offers for a PRODUCT across suppliers on
+                               the Dina network (catalog listings with
+                               indicative prices and seller trust). Use
+                               with "peerlens" when the question is
+                               about buying, comparing, or finding where
+                               to buy a specific product ("best X for
+                               me", "compare prices for X").
         "provider_services"  — live services on the Dina network
                                (bus ETAs, appointment status, etc.)
         "general_knowledge"  — facts the LLM itself knows
@@ -155,6 +163,12 @@ ${ROUTABLE_CAPABILITY_LINES}
           lawyer", "my accountant") — the downstream agent resolves the
           user's preferred contact for that category; you don't need to
           resolve the specific provider here.
+  - A PRODUCT compared across suppliers ("best X for me", "compare
+    prices for X", "where can I buy X") is "products" (with "peerlens"
+    for the reviews) — NOT "provider_services", which is a NAMED store,
+    place or provider's live state ("is the corner bakery open", "price
+    of X at Reliance Digital"). Include both only when the query names
+    both a product to compare and a specific store to ask.
   - Treat a query as purely informational (sources =
     ["vault","general_knowledge"], no "provider_services") ONLY when it
     is general factual knowledge with no live, local, or commercial

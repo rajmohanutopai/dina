@@ -35,10 +35,8 @@ import {
   validateDeliveryReceipt,
   validatePaymentAcknowledgement,
   validatePaymentNote,
-  validateQuoteDecline,
   verifyDeliveryReceiptAgainstNote,
   verifyPaymentAckAgainstNote,
-  verifyQuoteDeclineAgainstRequest,
   type DeliveryNote,
   type DeliveryNoteLine,
   type DeliveryReceipt,
@@ -50,8 +48,6 @@ import {
   type PaymentMethod,
   type PaymentNote,
   type PurchaseOrderProposal,
-  type QuoteDecline,
-  type QuoteRequest,
   type Sha256Fn,
   type SignedQuote,
   type TradeFoldResult,
@@ -218,50 +214,9 @@ export class TradeLedgerService {
     return { ok: true, document: ack };
   }
 
-  /** Decline a quote request (supplier side, §3.4). */
-  declineQuote(args: {
-    request: QuoteRequest;
-    reasonCode: string;
-  }): TradeAuthorOutcome<QuoteDecline> {
-    if (args.request.supplier_did !== this.deps.nodeDid()) {
-      return { ok: false, refusal: 'this node is not the request supplier' };
-    }
-    const existing = this.deps.documents.answersTo(args.request.request_digest, 'quote_decline');
-    if (existing.length > 0) {
-      return { ok: false, refusal: 'the request already has a decline' };
-    }
-    const draft = {
-      protocol_version: args.request.protocol_version,
-      decline_id: mintId('dec'),
-      request_id: args.request.request_id,
-      request_digest: args.request.request_digest,
-      buyer_did: args.request.buyer_did,
-      supplier_did: args.request.supplier_did,
-      reason_code: args.reasonCode,
-      issued_at: isoNow(this.deps.now()),
-    };
-    const decline = {
-      ...draft,
-      decline_digest: tradeRecordDigest('quote_decline', draft, hash),
-    } as QuoteDecline;
-    const shapeError = validateQuoteDecline(decline, hash);
-    if (shapeError) return { ok: false, refusal: shapeError };
-    const bindError = verifyQuoteDeclineAgainstRequest(decline, args.request);
-    if (bindError) return { ok: false, refusal: bindError };
-
-    this.deps.documents.put({
-      recordDigest: decline.decline_digest,
-      kind: 'quote_decline',
-      counterpartyDid: args.request.buyer_did,
-      purchaseOrderId: '',
-      answersDigest: args.request.request_digest,
-      direction: 'outbound',
-      recordJson: JSON.stringify(decline),
-      evidenceJson: '{}',
-      createdAt: this.deps.now(),
-    });
-    return { ok: true, document: decline };
-  }
+  // `declineQuote` moved to `decline_documents.ts` as `authorQuoteDecline`
+  // (§5.B1 Cut 1b) — a decline carries no money, so both its authoring and its
+  // verification stay in the kernel when the khata service extracts.
 
   // -------------------------------------------------------------------------
   // Authoring — buyer side
@@ -379,6 +334,59 @@ export class TradeLedgerService {
     }
     // One currency per quote (§9.1) — the total's currency IS the quote's.
     return { ok: true, value: { currency: quote.total.currency, minor_units: rendered.value } };
+  }
+
+  /**
+   * The value of a DISPATCH, priced against the bound quote (§5.D).
+   *
+   * An e-way bill declares the consignment's value and an invoice the
+   * delivered value; both are "what was sent", priced by the same per-line
+   * rule the §6.5 cap and the §4.5 dues use — so a filing can never quote a
+   * figure the khata would not.
+   *
+   * Works on a note this node AUTHORED (the supplier's own dispatch) or one it
+   * received: the filing hooks ask about the former, the buyer-side ones may
+   * ask about the latter.
+   */
+  priceDeliveryNote(args: {
+    deliveryNoteDigest: string;
+  }): { ok: true; value: Money } | { ok: false; refusal: string } {
+    const noteRow = this.deps.documents.get(args.deliveryNoteDigest);
+    if (noteRow === null || noteRow.kind !== 'delivery_note') {
+      return { ok: false, refusal: 'no retained delivery note with that digest' };
+    }
+    const note = rehydrateTradeDocument(noteRow);
+    if (note.kind !== 'delivery_note') return { ok: false, refusal: 'retained row is not a note' };
+    const quote = this.deps.readBoundQuote(noteRow.counterpartyDid, note.document.purchase_order_id);
+    if (quote === null) {
+      return { ok: false, refusal: 'no bound quote — the dispatch value cannot be established' };
+    }
+    // A dispatch line states what was SENT; the pricer takes an accepted
+    // quantity. Same arithmetic, different word for the same number.
+    return this.priceAcceptedLines(
+      quote,
+      note.document.lines.map((line) => ({
+        line_id: line.line_id,
+        accepted_quantity: line.delivered_quantity,
+      })),
+    );
+  }
+
+  /**
+   * The payment terms the bound quote carries for this order (§4.5), or null
+   * when there is no bound quote or it states none. Read-only: the terms are
+   * the supplier's signed word, never re-derived here.
+   */
+  paymentTerms(args: {
+    counterpartyDid: string;
+    purchaseOrderId: string;
+  }): { creditDays: number; dueBasis: string; currency: string } | null {
+    const quote = this.deps.readBoundQuote(args.counterpartyDid, args.purchaseOrderId);
+    const terms = quote?.payment_terms;
+    if (quote === undefined || quote === null || terms?.credit_days === undefined || terms.due_basis === undefined) {
+      return null;
+    }
+    return { creditDays: terms.credit_days, dueBasis: terms.due_basis, currency: quote.total.currency };
   }
 
   /** Assert a payment made (buyer side). Relationship-scoped (§4.4). */

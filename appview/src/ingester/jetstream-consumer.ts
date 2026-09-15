@@ -31,6 +31,7 @@ import {
 } from './pds-suspension-gate.js'
 import { env } from '@/config/env.js'
 import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
+import { refuseImportedReview, type ImportRefusal } from '@/config/review-feeds.js'
 import { ingesterCursor } from '@/db/schema/index.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -140,6 +141,40 @@ function secureSpoolWrite(filePath: string, data: string): void {
   } finally {
     closeSync(fd)
   }
+}
+
+/**
+ * D4 — is this validated record a refused import?
+ *
+ * Null means the record may proceed: either it carries no `source` block at
+ * all (testimony, the normal case) or it names a feed this node admits from
+ * the repo that publishes it. Anything else names the refusal and the feed,
+ * which is all the rejection log needs — the record's own content never
+ * reaches it.
+ */
+function refuseImportedSource(
+  did: string,
+  record: unknown,
+): { refusal: ImportRefusal; feed: string } | null {
+  if (record === null || typeof record !== 'object') return null
+  const source = (record as { source?: unknown }).source
+  if (source === undefined || source === null || typeof source !== 'object') return null
+  const block = source as { feed?: unknown; market?: unknown; url?: unknown; observedAt?: unknown }
+  // The schema already bounded every field; anything else here would be a
+  // record that never passed validation.
+  if (
+    typeof block.feed !== 'string' ||
+    typeof block.market !== 'string' ||
+    typeof block.url !== 'string' ||
+    typeof block.observedAt !== 'string'
+  ) {
+    return { refusal: 'feed_not_registered', feed: '' }
+  }
+  const refusal = refuseImportedReview({
+    source: { feed: block.feed, market: block.market, url: block.url, observedAt: block.observedAt },
+    repoDid: did,
+  })
+  return refusal === null ? null : { refusal, feed: block.feed }
 }
 
 export class JetstreamConsumer {
@@ -614,6 +649,32 @@ export class JetstreamConsumer {
         )
         return
       }
+    }
+
+    // D4 — the IMPORTED-REVIEW gate. A record carrying a `source` block says
+    // it is not testimony but a review a per-market feed observed elsewhere.
+    // Two things must hold before this node shows it with that source's name
+    // under it: the feed must be one whose terms this node has agreed to
+    // (`setReviewFeedRegistry`), and the repo publishing it must BE that
+    // feed's publisher. Without the second, any node could stamp "imported
+    // from a review site" on its own opinion and have Dina's own chrome
+    // vouch for the lie.
+    //
+    // Runs after schema validation (so `source` is bounds-checked) and
+    // before handler dispatch (so a refused import never reaches a subject
+    // row, a dirty flag, or a score).
+    const importRefusal = refuseImportedSource(did, validation.data)
+    if (importRefusal !== null) {
+      await recordRejection(
+        { db: this.db, logger, metrics, traceId },
+        {
+          atUri: uri,
+          did,
+          reason: 'import_not_admitted',
+          detail: { refusal: importRefusal.refusal, feed: importRefusal.feed },
+        },
+      )
+      return
     }
 
     const handler = routeHandler(collection)

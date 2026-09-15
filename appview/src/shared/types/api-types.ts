@@ -10,6 +10,16 @@ export interface ResolveResponse {
   subjectId: string | null
   /** Total attestations for the canonical subject; 0 when subjectId is null. */
   reviewCount: number
+  /**
+   * D4 — the split behind `reviewCount`. `peerReviewCount` is testimony:
+   * someone who wrote the record into their own repo, whose trust can be
+   * checked and whose vouches can be walked. `importedReviewCount` came from
+   * a registered per-market review feed, credited and deep-linked, and it
+   * moves a rating without ever moving a trust ring. A caller ranking on the
+   * total alone would read a cold start as a settled reputation.
+   */
+  peerReviewCount: number
+  importedReviewCount: number
   /** ISO datetime of the most recent attestation; null when no attestations. */
   lastAttestedAt: string | null
   /**

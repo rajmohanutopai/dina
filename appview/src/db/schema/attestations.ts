@@ -168,8 +168,30 @@ export const attestations = pgTable('attestations', {
   isTakedownByModerator: boolean('is_takedown_by_moderator').default(false).notNull(),
   takedownReason: text('takedown_reason'),
   takedownAt: timestamp('takedown_at'),
+  // ── Imported review provenance (D4) ───────────────────────────────
+  // NULL is the normal case and means testimony: a peer wrote this
+  // record into their own repo. A non-NULL `source_feed` means the row
+  // came from a registered per-market feed, and the scorer treats it
+  // as a rating input that carries NO trust — it never moves a DID's
+  // PeerLens score and never counts toward a subject's confidence
+  // (`review-feeds.ts` explains why at length).
+  //
+  // Two columns rather than one JSONB: the feed id is what every
+  // predicate keys on — "peer reviews only" on the score path, "which
+  // feeds fed this subject" on the read path — so it is a plain
+  // indexed text column, and the rest of the block (the deep link the
+  // card credits, the market, when the feed observed it) rides as
+  // JSONB because nothing filters on it.
+  sourceFeed: text('source_feed'),
+  sourceJson: jsonb('source_json'),
 }, (table) => [
   index('attestations_author_idx').on(table.authorDid),
+  // Partial: imported rows are the minority and every query that uses
+  // this column asks either "is it NULL" (the score paths) or "which
+  // feed" (the read path), so the index only needs the non-NULL rows.
+  index('attestations_source_feed_idx')
+    .on(table.sourceFeed)
+    .where(sql`${table.sourceFeed} IS NOT NULL`),
   index('attestations_subject_idx').on(table.subjectId),
   index('attestations_sentiment_idx').on(table.sentiment),
   index('attestations_domain_idx').on(table.domain),

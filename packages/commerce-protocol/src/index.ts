@@ -33,5 +33,7 @@ export * from './photo_draft';
 export * from './dues';
 export * from './invite_documents';
 export * from './revenue_share';
+export * from './quote_decline';
+export * from './trade_digest';
 export * from './trade_documents';
 export * from './trade_fold';

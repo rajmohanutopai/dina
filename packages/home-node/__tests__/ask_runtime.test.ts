@@ -137,6 +137,10 @@ function stubCore(): CoreClient {
 function stubHandleCore() {
   return {
     findContactsByPreference: jest.fn(async () => []),
+    contactLookup: jest.fn(async () => null),
+    // §6 plugin tools — nothing installed in this fixture.
+    listPluginToolCapabilities: jest.fn(async () => []),
+    invokePluginTool: jest.fn(async () => ({ ok: false as const, code: 'install_unknown', message: 'none' })),
     createWorkflowTask: jest.fn(async () => ({ task: {} as never, deduped: false })),
     getWorkflowTask: jest.fn(async () => null),
     completeWorkflowTask: jest.fn(async () => ({}) as never),

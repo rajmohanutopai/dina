@@ -39,6 +39,7 @@ import {
 } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { INDIA_PACK_MANIFEST, USA_PACK_MANIFEST } from '../../src/commerce/country_packs';
 import {
   BUYER_REFERENCE_MANIFEST,
   SUPPLIER_REFERENCE_MANIFEST,
@@ -55,6 +56,7 @@ import {
   setRepoProofVerifier,
 } from '../../src/plugins/install_service';
 import {
+  getPluginInstallRepository,
   SQLitePluginInstallRepository,
   setPluginInstallRepository,
 } from '../../src/plugins/registry';
@@ -130,9 +132,17 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * Every manifest the build ships under `com.dinakernel.*`: the two commerce
+ * packs and the two country packs (§5.D). Each meets the same gates — the
+ * validator, the reserved-namespace refusal, a stranger's renamed copy
+ * installing, the content-address check — so one table drives them all.
+ */
 const PACKS: [string, PluginManifest][] = [
   ['supplier', SUPPLIER_REFERENCE_MANIFEST],
   ['buyer', BUYER_REFERENCE_MANIFEST],
+  ['country/in', INDIA_PACK_MANIFEST],
+  ['country/us', USA_PACK_MANIFEST],
 ];
 
 describe('the shipped reference packs', () => {
@@ -142,7 +152,27 @@ describe('the shipped reference packs', () => {
     expect(validatePluginManifest(manifest).ok).toBe(true);
   });
 
-  it.each(PACKS)('%s: installs through the real door, by AT-URI', async (_name, manifest) => {
+  it.each(PACKS)('%s: the reserved first-party id is refused at the third-party door', async (_name, manifest) => {
+    // Iter 17: `com.dinakernel.*` may only enter through the owner's reference
+    // ceremony (local publisher key). A stranger publishing our manifest
+    // verbatim — same id — is refused as inauthentic, never staged.
+    const release = publishRelease(manifest);
+    repoServing([{ ...release, record: manifest }]);
+    const begun = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey: release.rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
+    expect(begun.ok).toBe(false);
+    if (!begun.ok) expect(begun.code).toBe('authenticity_failed');
+    expect(getPluginInstallRepository()?.list() ?? []).toEqual([]);
+  });
+
+  it.each(PACKS)('%s: installs through the real door, by AT-URI', async (_name, reference) => {
+    // What a third-party author does: copy our manifest under THEIR id. Every
+    // other gate a stranger's pack meets, this copy meets.
+    const manifest = { ...reference, plugin_id: reference.plugin_id.replace('com.dinakernel.', 'com.acme.') };
     const release = publishRelease(manifest);
     repoServing([{ ...release, record: manifest }]);
 
@@ -219,11 +249,14 @@ describe('the shipped reference packs', () => {
     // consent authority over both sides of a trade: revoking selling would
     // revoke buying, and a compromised supplier runner would carry buyer
     // authority.
-    const supplier = publishRelease(SUPPLIER_REFERENCE_MANIFEST);
-    const buyer = publishRelease(BUYER_REFERENCE_MANIFEST);
+    // A third-party pair, shaped exactly like ours, under its own namespace.
+    const supplierManifest = { ...SUPPLIER_REFERENCE_MANIFEST, plugin_id: 'com.acme.commerce.supplier' };
+    const buyerManifest = { ...BUYER_REFERENCE_MANIFEST, plugin_id: 'com.acme.commerce.buyer' };
+    const supplier = publishRelease(supplierManifest);
+    const buyer = publishRelease(buyerManifest);
     repoServing([
-      { ...supplier, record: SUPPLIER_REFERENCE_MANIFEST },
-      { ...buyer, record: BUYER_REFERENCE_MANIFEST },
+      { ...supplier, record: supplierManifest },
+      { ...buyer, record: buyerManifest },
     ]);
 
     const ids: string[] = [];

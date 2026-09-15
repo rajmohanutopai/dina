@@ -1264,3 +1264,80 @@ describe('deriveSubjectDetail — viewerDid override', () => {
     expect(detail.header.ringCounts.strangers).toBe(1);
   });
 });
+
+/**
+ * D4 — the imported-source credit. A rating seeded from somebody else's
+ * corpus has to say whose corpus it was and link back to it (the Deep Link
+ * Default), and it must never read as another ring of people.
+ */
+describe('imported sources', () => {
+  const GROUP = {
+    feed: 'in.example-reviews',
+    name: 'Example Reviews India',
+    homepage: 'https://reviews.example/in',
+    market: 'IN',
+    count: 12,
+    latest: [
+      { uri: 'at://x/1', text: 'Sturdy', sentiment: 'positive', url: 'https://reviews.example/in/1' },
+      { uri: 'at://x/2', text: null, sentiment: 'negative', url: 'https://reviews.example/in/2' },
+    ],
+  };
+
+  it('is empty when the AppView reported none — every node until an operator registers a feed', () => {
+    expect(deriveSubjectDetail(makeInput()).importedSources).toEqual([]);
+    expect(deriveSubjectDetail(makeInput({ imported: [] })).importedSources).toEqual([]);
+  });
+
+  it('carries the source name, its count, and the links back', () => {
+    const detail = deriveSubjectDetail(makeInput({ imported: [GROUP] }));
+    expect(detail.importedSources).toHaveLength(1);
+    expect(detail.importedSources[0]?.name).toBe('Example Reviews India');
+    expect(detail.importedSources[0]?.count).toBe(12);
+    expect(detail.importedSources[0]?.latest.map((e) => e.url)).toEqual([
+      'https://reviews.example/in/1',
+      'https://reviews.example/in/2',
+    ]);
+  });
+
+  it('never mixes into the ring lists — a feed is a source, not a person', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({ imported: [GROUP], reviews: [makeReview({ ring: 'contact' })] }),
+    );
+    expect(detail.friendsReviews).toHaveLength(1);
+    expect(detail.fofReviews).toHaveLength(0);
+    expect(detail.strangerReviews).toHaveLength(0);
+  });
+
+  it('drops a link that is not https — the credit has to be followable', () => {
+    const detail = deriveSubjectDetail(
+      makeInput({
+        imported: [
+          {
+            ...GROUP,
+            homepage: 'http://reviews.example/in',
+            latest: [
+              { uri: 'at://x/1', text: 'a', sentiment: 'positive', url: 'http://reviews.example/in/1' },
+              { uri: 'at://x/2', text: 'b', sentiment: 'positive', url: 'https://reviews.example/in/2' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(detail.importedSources[0]?.homepage).toBeNull();
+    expect(detail.importedSources[0]?.latest.map((e) => e.uri)).toEqual(['at://x/2']);
+  });
+
+  it('orders by contribution and bounds how many sources a card credits', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ ...GROUP, feed: `feed${i}`, count: i + 1 }));
+    const detail = deriveSubjectDetail(makeInput({ imported: many }));
+    expect(detail.importedSources).toHaveLength(5);
+    expect(detail.importedSources[0]?.count).toBeGreaterThan(
+      detail.importedSources[4]?.count ?? 0,
+    );
+  });
+
+  it('drops a group that contributed nothing rather than crediting a source for zero', () => {
+    const detail = deriveSubjectDetail(makeInput({ imported: [{ ...GROUP, count: 0 }] }));
+    expect(detail.importedSources).toEqual([]);
+  });
+});

@@ -17,10 +17,12 @@
  * uses), so the §5 content-address invariant holds here too: the stored
  * address IS the hash of what was installed.
  *
- * FIRST-PARTY ONLY, BY CONSTRUCTION. The role is the whole input; the
- * manifest comes from the compiled-in table. No caller-supplied manifest
+ * FIRST-PARTY ONLY, BY CONSTRUCTION. A shipped plugin id is the whole
+ * input; the manifest comes from the compiled-in table (`FIRST_PARTY_MANIFESTS`:
+ * the two commerce packs, the two country packs). No caller-supplied manifest
  * can reach this path, so it cannot become a side door around the P0
- * third-party install flow (repo proofs, marketplace consent screens).
+ * third-party install flow (repo proofs, marketplace consent screens) — the
+ * same reason `beginInstallVerified` stays off the package surface.
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -34,14 +36,32 @@ import {
   type BeginInstallResult,
 } from '../plugins/install_service';
 
+import { COUNTRY_PACK_IDS, INDIA_PACK_MANIFEST, USA_PACK_MANIFEST } from './country_packs';
 import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
 
 import type { CommerceRole } from './install_plan';
 import type { PluginManifest } from '@dina/protocol';
 
-const MANIFEST_BY_ROLE: Readonly<Record<CommerceRole, PluginManifest>> = {
-  buyer: BUYER_REFERENCE_MANIFEST,
-  supplier: SUPPLIER_REFERENCE_MANIFEST,
+/**
+ * Every manifest this build ships and vouches for, by plugin id. The type is
+ * the closed set of ids, so a caller cannot name a manifest that is not here.
+ */
+export const FIRST_PARTY_MANIFESTS = {
+  [BUYER_REFERENCE_MANIFEST.plugin_id]: BUYER_REFERENCE_MANIFEST,
+  [SUPPLIER_REFERENCE_MANIFEST.plugin_id]: SUPPLIER_REFERENCE_MANIFEST,
+  [COUNTRY_PACK_IDS.in]: INDIA_PACK_MANIFEST,
+  [COUNTRY_PACK_IDS.us]: USA_PACK_MANIFEST,
+} as const satisfies Readonly<Record<string, PluginManifest>>;
+
+export type FirstPartyPluginId = keyof typeof FIRST_PARTY_MANIFESTS;
+
+export function isFirstPartyManifestId(value: unknown): value is FirstPartyPluginId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(FIRST_PARTY_MANIFESTS, value);
+}
+
+const PLUGIN_ID_BY_ROLE: Readonly<Record<CommerceRole, FirstPartyPluginId>> = {
+  buyer: BUYER_REFERENCE_MANIFEST.plugin_id,
+  supplier: SUPPLIER_REFERENCE_MANIFEST.plugin_id,
 };
 
 /** The consent-facing name of the build's own vouching authority. */
@@ -75,7 +95,41 @@ export function beginReferenceInstall(args: {
   publisherDid: string;
   nowMs: number;
 }): BeginInstallResult {
-  const manifest = MANIFEST_BY_ROLE[args.role];
+  return beginFirstPartyInstall({
+    pluginId: PLUGIN_ID_BY_ROLE[args.role],
+    publisherDid: args.publisherDid,
+    nowMs: args.nowMs,
+  });
+}
+
+/**
+ * The ONE door every first-party manifest enters through (the commerce packs
+ * above, the country packs in `country_packs.ts`): the build vouches for the
+ * manifest bytes under the local publisher key, and the same pending → pair →
+ * consent machinery a third-party release meets takes over from there. Nothing
+ * else may mint a `local_publisher_key` anchor, which is what lets the money
+ * line (`runtime.money()`) and the first-party id namespace trust it.
+ *
+ * The input is a SHIPPED PLUGIN ID, never a manifest: this function is on the
+ * package surface, and a manifest parameter would let any in-process caller
+ * install arbitrary bytes under the kernel's vouching key with no verifier —
+ * the side door Round-5 #1 closed. An id outside the table (only reachable by
+ * casting) is refused as inauthentic, never staged.
+ */
+export function beginFirstPartyInstall(args: {
+  pluginId: FirstPartyPluginId;
+  publisherDid: string;
+  nowMs: number;
+}): BeginInstallResult {
+  if (!isFirstPartyManifestId(args.pluginId)) {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: 'not a plugin this build ships',
+      transient: false,
+    };
+  }
+  const manifest: PluginManifest = FIRST_PARTY_MANIFESTS[args.pluginId];
   const attestation = attestVerifiedRelease({
     cid: referenceManifestCid(manifest),
     publisherDid: args.publisherDid,

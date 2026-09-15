@@ -523,3 +523,128 @@ describe('AppViewClient', () => {
     });
   });
 });
+
+describe('AppViewClient — commerce catalog + profile trust', () => {
+  const CANDIDATE = {
+    supplier_did: 'did:plc:chairmaker99',
+    service_uri: 'at://did:plc:chairmaker99/com.dinakernel.service.profile/self',
+    service_rkey: 'self',
+    product: { scheme: 'gtin', value: '08901234567890' },
+    catalog_snapshot_ref: 'bafysnap',
+    matched_fields: ['identifier'],
+    indicative_price: { currency: 'INR', minor_units: '50000' },
+    fulfilment_regions: [{ scheme: 'iso-3166-2', value: 'IN-KA' }],
+    generated_at: '2026-08-08T10:00:00.000Z',
+    retrieval_score_bp: 6000,
+  };
+
+  describe('searchCatalog', () => {
+    it('coerces snake_case candidates into the local camelCase shape', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { candidates: [CANDIDATE], examined: 1, suppressed_below_trust_floor: 0 }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const [cand] = await c.searchCatalog({ q: 'oak chair' });
+      expect(cand.supplierDid).toBe('did:plc:chairmaker99');
+      expect(cand.indicativePrice).toEqual({ currency: 'INR', minorUnits: '50000' });
+      expect(cand.product).toEqual({ scheme: 'gtin', value: '08901234567890' });
+      expect(cand.fulfilmentRegions).toEqual([{ scheme: 'iso-3166-2', value: 'IN-KA' }]);
+      expect(cand.retrievalScoreBp).toBe(6000);
+      expect(cand.validUntil).toBeUndefined();
+    });
+
+    it('sends identifiers and categories as REPEATED query params', async () => {
+      const { fetchFn, calls } = makeFetch([jsonResponse(200, { candidates: [] })]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      await c.searchCatalog({ identifiers: ['gtin:1', 'gtin:2'], categories: ['a', 'b'], limit: 5 });
+      const url = calls[0];
+      expect(url).toContain('/xrpc/com.dinakernel.commerce.searchCatalog');
+      expect(url).toContain('identifier=gtin%3A1');
+      expect(url).toContain('identifier=gtin%3A2');
+      expect(url).toContain('category=a');
+      expect(url).toContain('category=b');
+      expect(url).toContain('limit=5');
+    });
+
+    it('drops a malformed candidate rather than passing a phantom offer', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { candidates: [CANDIDATE, { supplier_did: 'did:plc:x' }] }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const result = await c.searchCatalog({ q: 'x' });
+      expect(result).toHaveLength(1);
+      expect(result[0].supplierDid).toBe('did:plc:chairmaker99');
+    });
+
+    it('returns [] when the response has no candidates array', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, {})]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      expect(await c.searchCatalog({ q: 'x' })).toEqual([]);
+    });
+
+    it('coerces the optional fields (validUntil, region issuer, scoped product) when present', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, {
+          candidates: [
+            {
+              ...CANDIDATE,
+              valid_until: '2026-09-01T00:00:00.000Z',
+              fulfilment_regions: [{ scheme: 'iso-3166-2', value: 'IN-KA', issuer_did: 'did:plc:reg' }],
+              product: {
+                scheme: 'manufacturer_sku',
+                value: 'SKU1',
+                issuer_did: 'did:plc:m',
+                variant_digest: 'v1',
+              },
+            },
+          ],
+        }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const [cand] = await c.searchCatalog({ q: 'x' });
+      expect(cand.validUntil).toBe('2026-09-01T00:00:00.000Z');
+      expect(cand.fulfilmentRegions[0]).toEqual({
+        scheme: 'iso-3166-2',
+        value: 'IN-KA',
+        issuerDid: 'did:plc:reg',
+      });
+      expect(cand.product).toEqual({
+        scheme: 'manufacturer_sku',
+        value: 'SKU1',
+        issuerDid: 'did:plc:m',
+        variantDigest: 'v1',
+      });
+    });
+  });
+
+  describe('getProfile', () => {
+    it('returns the numeric overallTrustScore', async () => {
+      const { fetchFn, calls } = makeFetch([
+        jsonResponse(200, { did: 'did:plc:s', overallTrustScore: 0.72, handle: 's' }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const profile = await c.getProfile('did:plc:s');
+      expect(profile).toEqual({ overallTrustScore: 0.72 });
+      expect(calls[0]).toContain('/xrpc/com.dinakernel.peerlens.getProfile');
+      expect(calls[0]).toContain('did=did%3Aplc%3As');
+    });
+
+    it('maps a known DID with no score to null (never scored as zero)', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, { did: 'did:plc:s', overallTrustScore: null })]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      expect(await c.getProfile('did:plc:s')).toEqual({ overallTrustScore: null });
+    });
+
+    it('returns null when the DID has no profile', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, null)]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      expect(await c.getProfile('did:plc:missing')).toBeNull();
+    });
+
+    it('rejects an empty did', async () => {
+      const { fetchFn } = makeFetch([jsonResponse(200, {})]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      await expect(c.getProfile('')).rejects.toThrow(/did is required/);
+    });
+  });
+});

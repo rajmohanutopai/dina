@@ -631,6 +631,27 @@ describe('formatIntentHintBlock', () => {
     expect(block).toContain('"provider_services"');
   });
 
+  it('when the classifier names products AND provider_services, the offers come first and the provider "STOP" applies to its own path (§5.A1)', () => {
+    const both: IntentClassification = {
+      sources: ['peerlens', 'products', 'provider_services'],
+      relevant_personas: [],
+      toc_evidence: {},
+      temporal: 'live_state',
+      reasoning_hint: '',
+    };
+    const block = formatIntentHintBlock(both);
+    expect(block).toContain('Path 1:');
+    expect(block).toContain('This question also names products');
+    expect(block).toMatch(/search_products FIRST/);
+    expect(block).toMatch(/never to search_products or recommend_offer/);
+    // Products alone add no provider block and no products line.
+    const alone: IntentClassification = { ...both, sources: ['peerlens', 'products'] };
+    const soloBlock = formatIntentHintBlock(alone);
+    expect(soloBlock).not.toContain('Path 1:');
+    expect(soloBlock).not.toContain('This question also names products');
+    expect(soloBlock).toContain('"products"');
+  });
+
   it('PC-BRAIN-08: does NOT emit the Path 1 / Path 2 block when sources lack provider_services', () => {
     const hint: IntentClassification = {
       sources: ['vault'],

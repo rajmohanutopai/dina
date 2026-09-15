@@ -69,4 +69,33 @@ config.resolver.extraNodeModules = {
   path: path.resolve(projectRoot, 'src/shims/empty.js'),
 };
 
+// 7. The repo-proof verifier's audited AT-Protocol stack (§5.C1-mobile,
+//    `@dina/net-expo/repo_proof`). Three imports in that tree are Node-only and
+//    unused by the verification path; each maps to a shim that satisfies the
+//    import and throws (or stays silent) if ever called at runtime:
+//      - `node:timers/promises` — `@atproto/repo` yields the event loop while
+//        reading a CAR; shimmed with RN's own `setImmediate`.
+//      - `node:dns/promises`    — `@atproto/identity` handle resolution
+//        (never used: the verifier resolves DIDs).
+//      - `@atproto/common`      — one `subsystemLogger` import in
+//        `@atproto/repo`, whose real barrel drags pino + node streams.
+//    `extraNodeModules` cannot express the `node:` protocol or a scoped
+//    package alias, so this is a resolveRequest hook that hands everything else
+//    to Metro's default resolver.
+const SHIMS = {
+  'node:timers/promises': path.resolve(projectRoot, 'src/shims/node_timers_promises.js'),
+  'timers/promises': path.resolve(projectRoot, 'src/shims/node_timers_promises.js'),
+  'node:dns/promises': path.resolve(projectRoot, 'src/shims/node_dns_promises.js'),
+  'dns/promises': path.resolve(projectRoot, 'src/shims/node_dns_promises.js'),
+  '@atproto/common': path.resolve(projectRoot, 'src/shims/atproto_common.js'),
+};
+const defaultResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const shim = SHIMS[moduleName];
+  if (shim !== undefined) return { type: 'sourceFile', filePath: shim };
+  return defaultResolveRequest
+    ? defaultResolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

@@ -36,6 +36,10 @@ describe('parentRouteFor', () => {
       expect(parentRouteFor('/admin')).toBe('/settings');
     });
 
+    it('plugins → /settings', () => {
+      expect(parentRouteFor('/plugins')).toBe('/settings');
+    });
+
     it('paired-devices (Agents) → /settings', () => {
       expect(parentRouteFor('/paired-devices')).toBe('/settings');
     });

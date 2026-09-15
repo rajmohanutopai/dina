@@ -22,8 +22,12 @@
 import { WorkflowConflictError } from '@dina/core';
 
 import type {
+  ApproveWorkflowTaskOptions,
   CoreClient,
   CoreHealth,
+  InvokePluginToolInput,
+  InvokePluginToolResult,
+  PluginToolCapability,
   VaultQuery,
   VaultQueryResult,
   VaultQueryItem,
@@ -666,10 +670,26 @@ export class MockCoreClient implements CoreClient {
     });
   }
 
-  async approveWorkflowTask(
-    id: string,
-    opts?: { scope?: 'single' | 'session' },
-  ): Promise<WorkflowTask> {
+  /** §6 — the tool capabilities a test declares installed (none by default). */
+  pluginToolCapabilities: PluginToolCapability[] = [];
+  /** §6 — what `invokePluginTool` answers; default: a card the owner must answer. */
+  invokePluginToolResult: InvokePluginToolResult = {
+    ok: true,
+    mode: 'approval_required',
+    taskId: 'plgx_mock',
+    executionId: 'plgx_mock',
+    card: { riskLevel: 'MODERATE', reasons: ['mock: the owner decides'], paramsText: '{}' },
+  };
+
+  async listPluginToolCapabilities(): Promise<PluginToolCapability[]> {
+    return this.dispatch('listPluginToolCapabilities', [], () => this.pluginToolCapabilities);
+  }
+
+  async invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult> {
+    return this.dispatch('invokePluginTool', [input], () => this.invokePluginToolResult);
+  }
+
+  async approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask> {
     return this.workflowAction(
       'approveWorkflowTask',
       id,

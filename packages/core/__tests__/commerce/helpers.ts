@@ -4,35 +4,14 @@
  * construction, §9.1-consistent arithmetic).
  */
 
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import { base64 } from '@scure/base';
-
-import { buildMessageJSON } from '@dina/protocol';
-
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
-
-import { getPublicKey, sign } from '../../src/crypto/ed25519';
-import {
-  BUYER_REFERENCE_MANIFEST,
-  SUPPLIER_REFERENCE_MANIFEST,
-} from '../../src/commerce/reference_manifests';
-import {
-  SQLitePluginInstallRepository,
-  getPluginInstallRepository,
-  setPluginInstallRepository,
-  type PluginInstallRepository,
-} from '../../src/plugins/registry';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
-
-import type { RetainedEnvelope } from '@dina/commerce-protocol';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+import { base64 } from '@scure/base';
 
 import {
   commerceRecordDigest,
@@ -42,10 +21,13 @@ import {
   type DeliveryProjection,
   type PurchaseOrderProposal,
   type QuoteRequest,
+  type RetainedEnvelope,
   type Sha256Fn,
   type SignedQuote,
   type SignedQuoteLine,
 } from '@dina/commerce-protocol';
+import { buildMessageJSON } from '@dina/protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
   CommerceAdmissionEngine,
@@ -62,6 +44,28 @@ import {
   type CommerceQuoteLedgerRepository,
   type CommerceStatusHeadRepository,
 } from '../../src/commerce';
+import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
+import {
+  BUYER_REFERENCE_MANIFEST,
+  SUPPLIER_REFERENCE_MANIFEST,
+} from '../../src/commerce/reference_manifests';
+import { InMemoryRevshareDocumentRepository } from '../../src/commerce/revshare_ledger';
+import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
+import { getPublicKey, sign } from '../../src/crypto/ed25519';
+import {
+  SQLitePluginInstallRepository,
+  getPluginInstallRepository,
+  setPluginInstallRepository,
+  type PluginInstallRepository,
+} from '../../src/plugins/registry';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
+
+import type {
+  CommerceMoneyAccess,
+  CommerceMoneyStores,
+  CommerceMoneyUnavailableReason,
+} from '../../src/commerce/runtime';
 
 export const hash: Sha256Fn = (data) => sha256(data);
 
@@ -528,4 +532,26 @@ export function registerBuyerPack(
     installScopeHash,
     configRevision: String(held.configRevision),
   };
+}
+
+/**
+ * The money line OPEN (§5.B1 Cut 3) — for a test that exercises the khata or
+ * revenue-share stores. Stores default to fresh in-memory ones.
+ */
+export function moneyOpen(stores: Partial<CommerceMoneyStores> = {}): () => CommerceMoneyAccess {
+  const full: CommerceMoneyStores = {
+    tradeDocuments: stores.tradeDocuments ?? new InMemoryTradeDocumentRepository(),
+    revshareDocuments: stores.revshareDocuments ?? new InMemoryRevshareDocumentRepository(),
+  };
+  return () => ({ available: true, stores: full, installId: 'install-commerce-pack' });
+}
+
+/**
+ * The money line CLOSED — no active Commerce Pack. The money-free path (quotes,
+ * declines, tenders, orders, catalogs) must run exactly the same under this.
+ */
+export function moneyClosed(
+  reason: CommerceMoneyUnavailableReason = 'pack_not_installed',
+): () => CommerceMoneyAccess {
+  return () => ({ available: false, reason, detail: `test: ${reason}` });
 }

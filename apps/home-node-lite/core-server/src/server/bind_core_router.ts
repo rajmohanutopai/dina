@@ -206,6 +206,13 @@ function isOwnerSurfacePath(p: string): boolean {
     // prefix the seller and buyer lanes were reachable only in-process,
     // which the first live server run surfaced.
     p.startsWith('/v1/commerce/') ||
+    // The plugin owner surface (§5.C2: install / consent / uninstall, updates,
+    // host operations). Same shape as commerce: every route re-validates the
+    // capability with its own `ownerOnlyGuard`; runner traffic never arrives
+    // here — it rides the signed device lane. Without this prefix the routes
+    // were reachable only in-process, exactly the defect the commerce lanes
+    // hit on their first live server run.
+    p.startsWith('/v1/plugins/') ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
     (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))

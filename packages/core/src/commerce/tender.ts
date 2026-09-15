@@ -38,8 +38,8 @@ import {
 } from '@dina/commerce-protocol';
 
 import { requestQuote, type QuoteRequestLineInput } from './buyer_quote_request';
+import { rehydrateDeclineDocument } from './decline_documents';
 import { getCommerceRuntime } from './runtime';
-import { rehydrateTradeDocument } from './trade_ledger';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -406,16 +406,16 @@ export function compareTender(args: {
 
   const members: TenderMemberComparison[] = [];
   for (const member of runtime.tenders.listMembers(args.tenderId)) {
-    // Declined? The ledger holds the verified answer.
-    const declines = runtime.tradeDocuments.answersTo(member.requestDigest, 'quote_decline');
+    // Declined? The decline ledger holds the verified answer.
+    const declines = runtime.declineDocuments.answersTo(member.requestDigest);
     const declineRow = declines[0];
     if (declineRow !== undefined) {
-      // Through the one stored-record reader, never a bare parse.
-      const decline = rehydrateTradeDocument(declineRow);
+      // Through the decline store's rehydrate, never a bare parse.
+      const decline = rehydrateDeclineDocument(declineRow);
       members.push({
         supplier_did: member.supplierDid,
         state: 'declined',
-        reason_code: decline.kind === 'quote_decline' ? decline.document.reason_code : 'policy',
+        reason_code: decline.reason_code,
       });
       continue;
     }

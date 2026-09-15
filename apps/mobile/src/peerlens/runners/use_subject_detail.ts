@@ -112,6 +112,9 @@ function mapToInput(response: SubjectGetResponse): SubjectDetailInput {
     tombstoned: response.tombstoned ?? false,
     subjectDid: subject?.did,
     subjectIdentifier: firstIdentifier,
+    // D4 — what registered feeds contributed, carried through for the
+    // credit. Absent on an older AppView, empty on a node that admits none.
+    imported: response.imported ?? [],
   };
 }
 

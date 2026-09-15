@@ -75,6 +75,13 @@ export function makeFakePeopleRepo(): PeopleRepository {
       }
       return out;
     },
+    removeIdentity(personId: string, identityType: string, identityValue: string): boolean {
+      // This fake tracks only DID bindings (that is all the contact directory
+      // asks of it); other channels were never stored, so removing one is a
+      // truthful "there was nothing to remove".
+      if (identityType !== 'did') return false;
+      return didToPerson.get(identityValue) === personId && didToPerson.delete(identityValue);
+    },
     upsertIdentity(personId: string, identityType: string, identityValue: string): void {
       if (identityType === 'did') didToPerson.set(identityValue, personId);
     },

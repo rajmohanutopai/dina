@@ -37,6 +37,30 @@ const KIND_LABEL: Record<string, string> = {
 
 const ROLE_LABEL: Record<string, string> = { buyer: 'Buying', supplier: 'Supplying' };
 
+/**
+ * §5.D — the country pack's rail check for a payment note, in the owner's
+ * words. Dina-owned copy over Core's state name and the schema's enum answer;
+ * nothing the runner wrote is shown. The rail informs — the owner still acks.
+ */
+export function railCheckLabel(check: NonNullable<TradeInboxItemDto['rail_check']>): string {
+  switch (check.state) {
+    case 'awaiting_owner':
+      return 'Rail check waiting for your approval in Activity';
+    case 'asked':
+      return 'Rail check asked — awaiting the runner';
+    case 'answered':
+      return check.answer === 'settled'
+        ? 'Rail says: settled'
+        : check.answer === 'pending'
+          ? 'Rail says: not yet settled'
+          : check.answer === 'failed'
+            ? 'Rail says: payment failed'
+            : 'Rail could not confirm this payment';
+    case 'closed':
+      return 'Rail check did not complete';
+  }
+}
+
 function shortDid(did: string): string {
   return did.length > 20 ? `${did.slice(0, 12)}…${did.slice(-4)}` : did;
 }
@@ -47,6 +71,8 @@ export default function TradeScreen(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statementFor, setStatementFor] = useState<string | null>(null);
+  /** The due currently being asked about, so the row can say so. */
+  const [remindingKey, setRemindingKey] = useState<string | null>(null);
   const [statements, setStatements] = useState<TradeStatementAnswer[] | null>(null);
 
   const reload = useCallback(async () => {
@@ -118,6 +144,58 @@ export default function TradeScreen(): React.ReactElement {
 
   const counterparties = [...new Set(items.map((i) => i.counterparty_did).filter((d) => d !== ''))];
 
+  /**
+   * §5.D — ask the counterparty for a matured payment. Owner-initiated: this
+   * runs because they tapped this row. Core derives the amount itself and the
+   * ask then cards, so the answer here is "staged" or the reason there is
+   * nothing to stage (no pack, no phone or e-mail on their contact).
+   */
+  const remind = useCallback(
+    async (
+      counterpartyDid: string | null,
+      purchaseOrderId: string,
+      dueAt: string,
+      currency: string,
+    ): Promise<void> => {
+      if (counterpartyDid === null) return;
+      setRemindingKey(`${purchaseOrderId}-${dueAt}`);
+      try {
+        const client = getOwnerCommerceClient();
+        if (client === null) {
+          Alert.alert('Not ready', 'Dina is still starting up. Reopen and try again.');
+          return;
+        }
+        const answer = await client.remindCounterparty({
+          counterpartyDid,
+          purchaseOrderId,
+          dueAt,
+          currency,
+        });
+        // Two different things happen on success: the usual case cards for the
+        // owner, and a standing grant can let it go straight out. Saying
+        // "waiting for you" when it already went is the kind of small lie that
+        // makes an owner stop trusting the screen.
+        Alert.alert(
+          answer.ok
+            ? answer.mode === 'dispatched'
+              ? 'Reminder sent'
+              : 'Reminder waiting for you'
+            : 'Nothing to send',
+          answer.ok
+            ? answer.mode === 'dispatched'
+              ? 'It went out under the standing approval you gave this capability.'
+              : 'Approve it in Activity → Needs action and the pack will send it.'
+            : reminderReason(answer.reason),
+        );
+      } catch (err) {
+        Alert.alert('Could not ask', err instanceof Error ? err.message : String(err));
+      } finally {
+        setRemindingKey(null);
+      }
+    },
+    [],
+  );
+
   return (
     <View style={styles.container} testID="trade-screen">
       <Stack.Screen options={{ title: 'Trade' }} />
@@ -170,6 +248,11 @@ export default function TradeScreen(): React.ReactElement {
                 {ROLE_LABEL[item.role]}
                 {item.counterparty_did !== '' ? ` · ${shortDid(item.counterparty_did)}` : ''}
               </Text>
+              {item.rail_check !== undefined ? (
+                <Text style={styles.itemMeta} testID={`trade-rail-check-${item.subject}`}>
+                  {railCheckLabel(item.rail_check)}
+                </Text>
+              ) : null}
             </View>
             <Text style={styles.chev}>›</Text>
           </Pressable>
@@ -228,14 +311,31 @@ export default function TradeScreen(): React.ReactElement {
                       </Text>
                     )}
                     {answer.dues.map((due) => (
-                      <Text
-                        key={`${due.purchase_order_id}-${due.due_at}`}
-                        style={due.overdue ? styles.overdue : styles.statementLine}
-                      >
-                        {due.overdue ? 'Overdue' : 'Due'}{' '}
-                        {new Date(due.due_at).toLocaleDateString()}: ₹
-                        {(Number(due.amount.minor_units) / 100).toFixed(2)}
-                      </Text>
+                      <View key={`${due.purchase_order_id}-${due.due_at}`} style={styles.dueRow}>
+                        <Text style={due.overdue ? styles.overdue : styles.statementLine}>
+                          {due.overdue ? 'Overdue' : 'Due'}{' '}
+                          {new Date(due.due_at).toLocaleDateString()}: ₹
+                          {(Number(due.amount.minor_units) / 100).toFixed(2)}
+                        </Text>
+                        {/* §4.5 — the owner ASKS; Dina never nags. The button
+                            exists only on a matured due, and only when this
+                            node is the one owed (the supplier's side). */}
+                        {due.overdue && answer.role === 'supplier' && (
+                          <Pressable
+                            testID={`trade-remind-${due.purchase_order_id}-${due.due_at}`}
+                            accessibilityRole="button"
+                            disabled={remindingKey !== null}
+                            onPress={() => {
+                              void remind(statementFor, due.purchase_order_id, due.due_at, due.amount.currency);
+                            }}
+                            style={({ pressed }) => [styles.remind, pressed && { opacity: 0.85 }]}
+                          >
+                            <Text style={styles.remindText}>
+                              {remindingKey === `${due.purchase_order_id}-${due.due_at}` ? 'Asking…' : 'Remind'}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
                     ))}
                     {answer.dues.length === 0 && (
                       <Text style={styles.itemMeta}>No derived dues.</Text>
@@ -249,6 +349,32 @@ export default function TradeScreen(): React.ReactElement {
       </ScrollView>
     </View>
   );
+}
+
+/**
+ * A refusal in Dina's words. Each reason names something the OWNER can fix —
+ * state a channel, install a pack — never an internal failure.
+ */
+export function reminderReason(reason: string): string {
+  switch (reason) {
+    case 'no_channel':
+      return 'No phone or e-mail on their contact yet. Add one under Trade details.';
+    case 'no_active_pack':
+    case 'pack_has_no_reminder':
+      return 'No country pack that can send a reminder is installed.';
+    case 'no_derived_due':
+      return 'That due is no longer on the statement. Reopen it to see where the account stands.';
+    case 'nothing_outstanding':
+      return 'The ledger says they owe nothing right now, so there is nothing to ask for.';
+    case 'no_retained_order':
+      return 'The order behind this due is not retained here, so a reminder would name nothing.';
+    case 'unfoldable':
+      return 'The statement will not fold right now, so Dina cannot tell what is still owed.';
+    case 'no_workflow':
+      return 'Dina is still starting up. Reopen and try again.';
+    default:
+      return `Dina could not stage the reminder (${reason}).`;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -300,6 +426,15 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   statementLine: { ...textStyles.body, color: colors.textPrimary, marginTop: spacing.xs },
+  dueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  remind: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  remindText: { ...textStyles.caption, color: colors.textPrimary },
   disputed: { ...textStyles.body, color: colors.error, marginTop: spacing.xs },
   overdue: { ...textStyles.body, color: colors.error, marginTop: spacing.xs, fontWeight: '600' },
 });

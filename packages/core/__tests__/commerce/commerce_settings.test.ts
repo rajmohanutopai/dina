@@ -12,8 +12,10 @@ import { validateMoney } from '@dina/commerce-protocol';
 import {
   effectiveFanoutCeiling,
   quoteAdmissibility,
+  validateBusinessSettings,
   validateBuyerSettings,
   validateSupplierSettings,
+  type BusinessSettings,
   type BuyerSettings,
   type SupplierSettings,
 } from '../../src/commerce/commerce_settings';
@@ -299,6 +301,73 @@ describe('whether this supplier is quoting right now (§19)', () => {
  * gate refusals. A tampered `quoteAccess: "anyone"` on a paused listing is a
  * supplier answering customers they closed the door on.
  */
+const GSTIN = '27AAPFU0939F1ZV';
+
+function business(overrides: Partial<BusinessSettings> = {}): BusinessSettings {
+  return {
+    legalName: 'Utopai Furniture LLP',
+    registrations: [{ scheme: 'gstin', value: GSTIN }],
+    address: { line1: '12 Nehru Road', city: 'Bengaluru', region: 'Karnataka', postalCode: '560001', country: 'IN' },
+    ...overrides,
+  };
+}
+
+describe('the node’s own business, on paper (§5.D)', () => {
+  it('accepts a complete identity', () => {
+    expect(validateBusinessSettings(business())).toEqual({ ok: true });
+  });
+
+  it('holds an identity with no address — a khata needs none; only a filing does', () => {
+    expect(validateBusinessSettings(business({ address: undefined }))).toEqual({ ok: true });
+  });
+
+  it('holds an identity with no registrations at all: a business that files nothing yet', () => {
+    expect(validateBusinessSettings(business({ registrations: [] }))).toEqual({ ok: true });
+  });
+
+  it('refuses an empty legal name — a filing prints a name', () => {
+    const verdict = validateBusinessSettings(business({ legalName: '   ' }));
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('expected refusal');
+    expect(verdict.findings.map((f) => f.refusal)).toContain('empty_legal_name');
+  });
+
+  it('refuses a mistyped GSTIN rather than storing it — the checksum is the point', () => {
+    const verdict = validateBusinessSettings(
+      business({ registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }] }),
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('expected refusal');
+    expect(verdict.findings.map((f) => f.refusal)).toEqual(['malformed_registration']);
+  });
+
+  it('refuses an address a document could not print', () => {
+    const verdict = validateBusinessSettings(
+      business({ address: { line1: '', city: 'Bengaluru', country: 'India' } }),
+    );
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('expected refusal');
+    expect(verdict.findings.map((f) => f.field).sort()).toEqual(['address.country', 'address.line1']);
+  });
+
+  it('refuses a credential-shaped key: settings print on documents, they never hold secrets', () => {
+    const verdict = validateBusinessSettings({
+      ...business(),
+      api_key: 'sk-not-here',
+    } as unknown as BusinessSettings);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('expected refusal');
+    expect(verdict.findings.map((f) => f.refusal)).toContain('credential_material_present');
+  });
+
+  it('refuses a body whose containers are the wrong shape, before any field rule runs', () => {
+    const verdict = validateBusinessSettings({ legalName: 'x', registrations: 'gstin' } as unknown as BusinessSettings);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) throw new Error('expected refusal');
+    expect(verdict.findings.map((f) => f.refusal)).toEqual(['wrong_field_shape']);
+  });
+});
+
 describe('the settings store', () => {
   it('refuses to write settings it would refuse to read', async () => {
     const { InMemoryCommerceSettingsRepository } =
@@ -324,6 +393,54 @@ describe('the settings store', () => {
     if (!read.ok) throw new Error('expected settings');
     expect(read.settings.currency).toBe('INR');
   });
+
+  it('stores the NORMALISED business identity — what was judged is what is kept', async () => {
+    const { InMemoryCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+    const store = new InMemoryCommerceSettingsRepository();
+    expect(store.readBusiness()).toEqual({ ok: false, absent: true });
+    expect(
+      store.writeBusiness(
+        business({
+          legalName: '  Utopai   Furniture  LLP ',
+          registrations: [{ scheme: 'GSTIN' as never, value: GSTIN.toLowerCase() }],
+        }),
+      ),
+    ).toEqual({ ok: true });
+    const read = store.readBusiness();
+    expect(read.ok).toBe(true);
+    if (!read.ok) throw new Error('expected settings');
+    expect(read.settings.legalName).toBe('Utopai Furniture LLP');
+    expect(read.settings.registrations).toEqual([{ scheme: 'gstin', value: GSTIN }]);
+  });
+
+  it('refuses to write a business identity it would refuse to read, and stores nothing', async () => {
+    const { InMemoryCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+    const store = new InMemoryCommerceSettingsRepository();
+    expect(store.writeBusiness(business({ legalName: '' })).ok).toBe(false);
+    expect(store.readBusiness()).toEqual({ ok: false, absent: true });
+  });
+
+  it.each([['null'], ['"a string"'], ['[]'], ['7']])(
+    'a stored row whose JSON is %s REFUSES rather than throwing out of the read',
+    async (settingsJson) => {
+      const { SQLiteCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+      // The store's contract: a row that no longer validates is refused, never
+      // partially believed — and never a 500 out of a read.
+      const adapter = {
+        query: () => [{ settings_json: settingsJson }],
+        run: () => ({ rowsAffected: 1 }),
+        execute: () => undefined,
+      };
+      const store = new SQLiteCommerceSettingsRepository(adapter as never);
+      for (const read of [store.readBusiness(), store.readBuyer(), store.readSupplier()]) {
+        expect(read.ok).toBe(false);
+        if (read.ok) throw new Error('expected a refusal');
+        expect(read.absent).toBe(false);
+        if (read.absent) throw new Error('expected findings');
+        expect(read.findings.length).toBeGreaterThan(0);
+      }
+    },
+  );
 
   it('round-trips supplier settings', async () => {
     const { InMemoryCommerceSettingsRepository } =

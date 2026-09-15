@@ -109,6 +109,20 @@ describe('Authorization Matrix', () => {
       path: '/v1/d2d/quarantine/accept',
       label: 'Admin → d2d/quarantine/accept',
     },
+    // PLUGIN_ARCHITECTURE §6 — Brain routes `/ask` into installed plugins
+    // through two narrow verbs; the producer gates every ask.
+    {
+      caller: 'brain',
+      method: 'GET',
+      path: '/v1/plugins/tool-capabilities',
+      label: 'Brain → plugins/tool-capabilities (what /ask may route to)',
+    },
+    {
+      caller: 'brain',
+      method: 'POST',
+      path: '/v1/plugins/tool-invoke',
+      label: 'Brain → plugins/tool-invoke (gated by the producer)',
+    },
   ];
 
   for (const { caller, method, path, label } of allowedCases) {
@@ -255,6 +269,24 @@ describe('Authorization Matrix', () => {
       label: 'Connector x d2d/quarantine/block',
     },
   ];
+
+  // Brain reaches ONLY the two §6 verbs under /v1/plugins/: install, consent,
+  // uninstall, the owner's invoke, updates and host operations stay off-limits
+  // (owner-only in-handler AND unlisted here — fail-closed twice).
+  for (const path of [
+    '/v1/plugins/invoke',
+    '/v1/plugins/install/begin',
+    '/v1/plugins/install/confirm',
+    '/v1/plugins/install/country_pack',
+    '/v1/plugins/host-operations/decide',
+    '/v1/plugins/tool-invoke/extra',
+  ]) {
+    deniedCases.push({ caller: 'brain', method: 'POST', path, label: `Brain x ${path}` });
+  }
+  for (const caller of ['agent', 'plugin', 'connector'] as CallerType[]) {
+    deniedCases.push({ caller, method: 'POST', path: '/v1/plugins/tool-invoke', label: `${caller} x plugins/tool-invoke` });
+    deniedCases.push({ caller, method: 'GET', path: '/v1/plugins/tool-capabilities', label: `${caller} x plugins/tool-capabilities` });
+  }
 
   for (const { caller, method, path, label } of deniedCases) {
     it(`denies: ${label}`, () => {

@@ -2131,6 +2131,40 @@ describe('§2.6 Trust Edge Sync', () => {
     expect(CONSTANTS.EDGE_WEIGHT_COSIGN).toBe(0.7)
   })
 
+  /**
+   * D4 — an IMPORTED review creates no trust edge.
+   *
+   * An edge says "this DID vouched for that one". A feed republishing
+   * somebody else's review has vouched for nobody, and an edge would put the
+   * source into the trust graph with a line to everything it ever mentioned:
+   * inflating `inboundEdgeCount` on every subject and bending the viewer's
+   * own contacts/fof walk around something that is not a person. The rating
+   * may move; the graph may not.
+   */
+  it('an imported positive attestation of a DID subject creates NO trust edge (D4)', async () => {
+    const ctx = mockHandlerCtx()
+    await attestationHandler.handleCreate(ctx, {
+      uri: 'at://did:plc:feedpublisher/com.dinakernel.peerlens.attestation/tidI',
+      did: 'did:plc:feedpublisher',
+      collection: 'com.dinakernel.peerlens.attestation',
+      rkey: 'tidI',
+      cid: 'cidI',
+      record: {
+        subject: { type: 'did', did: 'did:plc:target' },
+        category: 'quality',
+        sentiment: 'positive',
+        createdAt: now,
+        source: {
+          feed: 'in.example-reviews',
+          market: 'IN',
+          url: 'https://reviews.example/in/1',
+          observedAt: now,
+        },
+      },
+    })
+    expect(addTrustEdgeCalls).toHaveLength(0)
+  })
+
   // TRACE: {"suite": "APPVIEW", "case": "0158", "section": "01", "sectionName": "General", "title": "UT-TE-008: positive attestation DID subject -> weight 0.3"}
   it('UT-TE-008: positive attestation DID subject -> weight 0.3', async () => {
     // Input: DID-type subject, positive sentiment

@@ -39,7 +39,7 @@ import {
 import {
   rehydrateRevshareDocument,
   type RehydratedRevshare,
-} from './rehydrate';
+} from './money_rehydrate';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 

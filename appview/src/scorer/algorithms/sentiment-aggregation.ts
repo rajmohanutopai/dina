@@ -20,6 +20,16 @@ export interface AttestationForAggregation {
    * paths use the same half-life lookup.
    */
   category?: string | null
+  /**
+   * D4 — the feed this review was imported from, or null/absent for
+   * testimony. A non-null value changes three things and only three: the
+   * weight is the fixed `IMPORTED_REVIEW_WEIGHT` rather than the author's
+   * trust, the verified/bilateral multipliers do not apply (a feed neither
+   * cosigns nor gets verified), and the review does not count toward
+   * confidence. See `config/review-feeds.ts` for why a rating may move and a
+   * trust ring may not.
+   */
+  sourceFeed?: string | null
 }
 
 export interface SentimentAggregation {
@@ -36,6 +46,10 @@ export interface SentimentAggregation {
   verifiedCount: number
   lastAttestationAt: Date | null
   velocity: number
+  /** D4 — testimony: someone the owner could reach wrote this. */
+  peerCount: number
+  /** D4 — imported from a registered per-market feed. */
+  importedCount: number
   /**
    * Count of dimension entries DROPPED because they didn't resolve to a
    * canonical dimension in their category's vocabulary (Part 2, P1e). The
@@ -57,12 +71,19 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
       authenticityConsensus: null, authenticityConfidence: null,
       wouldRecommendRate: null, verifiedCount: 0,
       lastAttestationAt: null, velocity: 0,
+      peerCount: 0, importedCount: 0,
     }
   }
 
   let positive = 0, neutral = 0, negative = 0
   let weightedPositive = 0, weightedTotal = 0
   let verifiedCount = 0
+  let importedCount = 0
+  // D4 — imports accumulate SEPARATELY so their combined mass can be capped
+  // before it joins the rating. Capping per-row would not bound anything: a
+  // feed that publishes ten thousand reviews of one supplier would still
+  // swamp everyone who actually dealt with them.
+  let importedWeightedPositive = 0, importedWeightedTotal = 0
   const dimensionSummary: Record<string, { exceeded: number; met: number; below: number; failed: number }> = {}
   let droppedUnknownDimensions = 0
 
@@ -73,7 +94,9 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     else if (a.sentiment === 'neutral') neutral++
     else if (a.sentiment === 'negative') negative++
 
-    if (a.isVerified) verifiedCount++
+    // A verification confirms testimony; an import has none to confirm, so
+    // it never counts here whatever its row says.
+    if (a.isVerified && a.sourceFeed == null) verifiedCount++
 
     // Weighted score — TS1 fix: include verified + bilateral multipliers
     // to match the formula in peerlens-score.ts (was missing 2.1x for
@@ -85,15 +108,36 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     // half-lives apply when present.
     const recency = Math.exp(-ageDays / halflifeForCategory(a.category))
     const evidence = a.evidenceJson?.length ? CONSTANTS.EVIDENCE_MULTIPLIER : 1.0
-    const verified = a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0
-    const bilateral = a.hasCosignature ? CONSTANTS.BILATERAL_MULTIPLIER : 1.0
-    let authorWeight = a.authorTrustScore ?? 0.0
-    if (!a.authorHasInboundVouch) authorWeight = 0.0
+    // D4 — an IMPORT is not testimony, so none of the multipliers that
+    // measure testimony apply to it. It cannot be cosigned (a feed has no
+    // counterparty to cosign with) and cannot be verified (nobody can
+    // confirm somebody else's star rating), so those stay at 1.0 even if a
+    // row somehow carried the flags. Its weight is the fixed
+    // IMPORTED_REVIEW_WEIGHT and never the publisher's trust score: a feed
+    // that got itself vouched must not thereby speak as a peer.
+    const imported = a.sourceFeed != null && a.sourceFeed !== ''
+    if (imported) importedCount++
+    const verified = !imported && a.isVerified ? CONSTANTS.VERIFIED_MULTIPLIER : 1.0
+    const bilateral = !imported && a.hasCosignature ? CONSTANTS.BILATERAL_MULTIPLIER : 1.0
+    let authorWeight: number
+    if (imported) {
+      authorWeight = CONSTANTS.IMPORTED_REVIEW_WEIGHT
+    } else {
+      authorWeight = a.authorTrustScore ?? 0.0
+      if (!a.authorHasInboundVouch) authorWeight = 0.0
+    }
 
     const weight = recency * evidence * verified * bilateral * authorWeight
-    if (a.sentiment === 'positive') weightedPositive += weight
-    else if (a.sentiment === 'neutral') weightedPositive += weight * 0.5
-    weightedTotal += weight
+    let contributionPositive = 0
+    if (a.sentiment === 'positive') contributionPositive = weight
+    else if (a.sentiment === 'neutral') contributionPositive = weight * 0.5
+    if (imported) {
+      importedWeightedPositive += contributionPositive
+      importedWeightedTotal += weight
+    } else {
+      weightedPositive += contributionPositive
+      weightedTotal += weight
+    }
 
     // Dimensions — Part 2, Layer 3 (read-side safety net). Canonicalize
     // each dimension WITHIN this attestation's category BEFORE grouping,
@@ -127,14 +171,31 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
   }
 
   const total = attestations.length
+  const peerCount = total - importedCount
+
+  // D4 — fold the imports in under their ceiling. SCALED rather than
+  // truncated: the imports keep their own balance of positive and negative,
+  // and the answer does not depend on which order the rows came back in,
+  // which dropping "everything past the twentieth" would.
+  const importedScale =
+    importedWeightedTotal > CONSTANTS.MAX_IMPORTED_WEIGHT
+      ? CONSTANTS.MAX_IMPORTED_WEIGHT / importedWeightedTotal
+      : 1
+  weightedPositive += importedWeightedPositive * importedScale
+  weightedTotal += importedWeightedTotal * importedScale
+
   const weightedScore = weightedTotal > 0 ? weightedPositive / weightedTotal : 0.5
 
-  // Confidence based on volume
+  // Confidence based on volume — of TESTIMONY (D4). A hundred imported
+  // reviews and nobody the owner can reach is not a confident answer, it is
+  // a cold start with a rating on it, and a confidence number that could not
+  // tell the two apart would be the single most misleading figure on the
+  // card.
   let confidence = 0
-  if (total >= 100) confidence = 0.95
-  else if (total >= 30) confidence = 0.8
-  else if (total >= 10) confidence = 0.6
-  else if (total >= 3) confidence = 0.4
+  if (peerCount >= 100) confidence = 0.95
+  else if (peerCount >= 30) confidence = 0.8
+  else if (peerCount >= 10) confidence = 0.6
+  else if (peerCount >= 3) confidence = 0.4
   else confidence = 0.2
 
   // Velocity: attestations per day over last 30 days
@@ -155,5 +216,7 @@ export function aggregateSubjectSentiment(attestations: AttestationForAggregatio
     verifiedCount,
     lastAttestationAt: lastDate,
     velocity,
+    peerCount,
+    importedCount,
   }
 }

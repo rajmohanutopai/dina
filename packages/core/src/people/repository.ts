@@ -106,6 +106,13 @@ export interface PeopleRepository {
     opts?: { verified?: boolean; primary?: boolean },
   ): void;
   /**
+   * Remove one identity binding from a person. Returns false when the person
+   * held no such identity. Needed because replacing a channel is TWO facts —
+   * the new number is theirs, the old one is not — and an upsert alone would
+   * leave the old row bound to the same person for ever.
+   */
+  removeIdentity(personId: string, identityType: string, identityValue: string): boolean;
+  /**
    * All identities bound to a person, primary first. Used by the
    * contact directory to build its `did → person_id` index and to
    * enumerate a person's DIDs when syncing/removing D2D projections.
@@ -463,6 +470,20 @@ export class SQLitePeopleRepository implements PeopleRepository {
       opts?.primary ?? false,
       nowSec,
     );
+  }
+
+  removeIdentity(personId: string, identityType: string, identityValue: string): boolean {
+    const canonical = canonicalizeIdentityValue(identityType, identityValue);
+    const existing = this.db.query(
+      'SELECT 1 FROM person_identities WHERE person_id = ? AND identity_type = ? AND identity_value = ?',
+      [personId, identityType, canonical],
+    );
+    if (existing.length === 0) return false;
+    this.db.execute(
+      'DELETE FROM person_identities WHERE person_id = ? AND identity_type = ? AND identity_value = ?',
+      [personId, identityType, canonical],
+    );
+    return true;
   }
 
   listIdentities(personId: string): PersonIdentity[] {

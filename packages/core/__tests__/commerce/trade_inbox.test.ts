@@ -13,6 +13,9 @@ import { tradeRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
 
 import { buildTradeInbox } from '../../src/commerce/trade_inbox';
 import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
+import { InMemoryTradeSpoolRepository } from '../../src/commerce/trade_spool';
+
+import { moneyClosed, moneyOpen } from './helpers';
 
 import type { CommerceRuntime } from '../../src/commerce/runtime';
 
@@ -27,7 +30,8 @@ function runtimeStub(): CommerceRuntime {
     orderDrafts: { list: () => [] },
     tenders: { listTenders: () => [] },
     pendingDecisions: { list: () => [] },
-    tradeDocuments: docs,
+    money: moneyOpen({ tradeDocuments: docs }),
+    tradeSpool: new InMemoryTradeSpoolRepository(),
   } as unknown as CommerceRuntime;
 }
 
@@ -200,7 +204,8 @@ describe('the buyer-side and supplier-side queue kinds', () => {
       pendingDecisions: {
         list: () => [{ buyerDid: BUYER, purchaseOrderId: 'po-9', createdAt: T0 }],
       },
-      tradeDocuments: docs,
+      money: moneyOpen({ tradeDocuments: docs }),
+      tradeSpool: new InMemoryTradeSpoolRepository(),
     } as unknown as CommerceRuntime;
 
     const items = buildTradeInbox(runtime, T0).items;
@@ -218,5 +223,25 @@ describe('the buyer-side and supplier-side queue kinds', () => {
     );
     // The expired tender never surfaces.
     expect(items.map((item) => item.subject)).not.toContain('tender-dead');
+  });
+});
+
+describe('the money line (§5.B1 Cut 3)', () => {
+  it('with no active Commerce Pack the khata rows are absent — and the inbox says so', () => {
+    putNote({ value: '1', unit_code: 'kg' });
+    const closed = {
+      orderDrafts: { list: () => [] },
+      tenders: { listTenders: () => [] },
+      pendingDecisions: { list: () => [] },
+      money: moneyClosed(),
+    } as unknown as CommerceRuntime;
+    const inbox = buildTradeInbox(closed, T0);
+    expect(inbox.moneyAvailable).toBe(false);
+    expect(inbox.items.map((item) => item.kind)).not.toContain('unreceipted_delivery');
+
+    // The same note IS waiting once the pack is active.
+    const open = buildTradeInbox(runtimeStub(), T0);
+    expect(open.moneyAvailable).toBe(true);
+    expect(open.items.map((item) => item.kind)).toContain('unreceipted_delivery');
   });
 });

@@ -43,6 +43,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import {
   commerceRecordDigest,
   computeLineSubtotal,
+  MAX_TRADE_REASON_CODE_LENGTH,
   termsDigestInput,
   validateQuoteRequest,
   validateSignedQuote,
@@ -54,6 +55,7 @@ import {
   type QuoteRequest,
 } from '@dina/commerce-protocol';
 
+import { authorQuoteDecline, rehydrateDeclineDocument } from './decline_documents';
 import { getCommerceRuntime } from './runtime';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -81,13 +83,16 @@ export type QuoteIssuanceOutcome =
   /** Core signed it; this JSON replaces the runner's answer on the wire. */
   | { kind: 'signed'; quoteJson: string }
   /**
-   * The runner declined the business. A decline is an ANSWER, not a fault:
-   * there is no record to sign and nothing for Core to improve on, so the
-   * runner's own words travel unchanged. Refusing here instead would turn "we
-   * are not quoting this" into silence, which reads to a buyer exactly like a
-   * supplier that never replied.
+   * The runner declined the business. A decline is an ANSWER, not a fault, and
+   * refusing here would turn "we are not quoting this" into silence, which
+   * reads to a buyer exactly like a supplier that never replied. It is ALSO a
+   * document: Core seals the runner's refusal into a `QuoteDecline` (§3.4),
+   * retains it in the kernel decline store, and this JSON — `{ decline }`, the
+   * shape the buyer's quote-lane ingress reads — replaces the runner's answer
+   * on the wire. The runner's own words would arrive unverifiable and be
+   * dropped as unreadable; a repeated request replays the retained decline.
    */
-  | { kind: 'declined' }
+  | { kind: 'declined'; declineJson: string }
   | { kind: 'withhold'; refusal: QuoteIssuanceRefusal };
 
 interface RunnerLine {
@@ -102,6 +107,8 @@ function readRunnerTerms(
 ): {
   canSupply: boolean;
   lines: RunnerLine[];
+  /** The runner's stated reason when it declines (free text, bounded on seal). */
+  declineReason?: string;
   validUntil?: string;
   maxUses?: string;
   paymentTerms?: Record<string, unknown>;
@@ -115,7 +122,15 @@ function readRunnerTerms(
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const record = parsed as Record<string, unknown>;
   if (typeof record.can_supply !== 'boolean') return null;
-  if (!record.can_supply) return { canSupply: false, lines: [] };
+  if (!record.can_supply) {
+    return {
+      canSupply: false,
+      lines: [],
+      ...(typeof record.decline_reason === 'string' && record.decline_reason.trim() !== ''
+        ? { declineReason: record.decline_reason.trim() }
+        : {}),
+    };
+  }
   if (!Array.isArray(record.lines)) return null;
   const lines: RunnerLine[] = [];
   for (const entry of record.lines) {
@@ -230,7 +245,16 @@ export function settleInboundQuote(args: {
 
   const terms = readRunnerTerms(args.runnerResultJson);
   if (terms === null) return { kind: 'withhold', refusal: 'terms_unusable' };
-  if (!terms.canSupply) return { kind: 'declined' };
+  if (!terms.canSupply) {
+    return sealDecline(request, terms.declineReason, supplierDid, args.nowMs, runtime);
+  }
+  // ONE answer per request, whichever came first. A request this node already
+  // DECLINED is not quoted on a retry, even if the runner has changed its mind:
+  // the buyer's tender holds the decline, and a quote it never sees would be
+  // capacity nobody can spend. Replay the retained decline instead.
+  if (runtime.declineDocuments.answersTo(request.request_digest).length > 0) {
+    return sealDecline(request, undefined, supplierDid, args.nowMs, runtime);
+  }
 
   // EVERY REQUESTED LINE, PRICED. A runner that answers a subset has not
   // quoted the request the buyer asked; returning a partial quote would let
@@ -339,4 +363,49 @@ function sumLineSubtotals(lines: readonly SignedQuoteLine[]): Money | null {
     minor += BigInt(line.line_subtotal.minor_units);
   }
   return { currency, minor_units: minor.toString(10) };
+}
+
+/** `reason_code` is bounded on the wire; a runner's free text is trimmed to fit. */
+const DECLINE_REASON_FALLBACK = 'declined';
+
+/**
+ * Trim to the wire bound (counted in UTF-16 units, as the validator counts)
+ * without leaving a lone high surrogate at the cut; an empty result falls
+ * back so the document always carries a reason.
+ */
+function trimReasonCode(reason: string): string {
+  let trimmed = reason.slice(0, MAX_TRADE_REASON_CODE_LENGTH);
+  if (/[\uD800-\uDBFF]$/.test(trimmed)) trimmed = trimmed.slice(0, -1);
+  return trimmed === '' ? DECLINE_REASON_FALLBACK : trimmed;
+}
+
+/**
+ * Seal the runner's refusal as a `QuoteDecline` on the money-free decline slice
+ * (§5.B1) and hand back the wire JSON the buyer's quote-lane ingress reads. A
+ * repeated request (the buyer retrying, the transport redelivering) replays the
+ * retained decline — the same discipline the signed quote follows above — so a
+ * decline is never re-minted with a second digest.
+ */
+function sealDecline(
+  request: QuoteRequest,
+  reason: string | undefined,
+  supplierDid: string,
+  nowMs: number,
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+): QuoteIssuanceOutcome {
+  const held = runtime.declineDocuments.answersTo(request.request_digest)[0];
+  if (held !== undefined) {
+    const read = rehydrateDeclineDocument(held);
+    return { kind: 'declined', declineJson: JSON.stringify({ decline: read }) };
+  }
+  const reasonCode = trimReasonCode(reason ?? DECLINE_REASON_FALLBACK);
+  const authored = authorQuoteDecline({
+    request,
+    reasonCode,
+    nodeDid: supplierDid,
+    nowMs,
+    repository: runtime.declineDocuments,
+  });
+  if (!authored.ok) return { kind: 'withhold', refusal: 'registration_refused' };
+  return { kind: 'declined', declineJson: JSON.stringify({ decline: authored.document }) };
 }

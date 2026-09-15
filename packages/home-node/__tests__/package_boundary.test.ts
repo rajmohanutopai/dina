@@ -43,6 +43,13 @@ describe('@dina/home-node package boundaries', () => {
         types: './chat-runtime.ts',
         default: './chat-runtime.ts',
       },
+      // RESEARCHER_KERNEL §5.C1 — the platform-neutral repo-proof chain (and
+      // its self-check), reached by the network adapters through a root-level
+      // entry so a CommonJS consumer never imports the ESM barrel.
+      './repo_proof_chain': {
+        types: './repo_proof_chain.ts',
+        default: './repo_proof_chain.ts',
+      },
     });
   });
 });

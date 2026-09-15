@@ -100,6 +100,12 @@ function fakeAppView(): BuildAgenticAskPipelineInput['appViewClient'] {
     async isDiscoverable() {
       return { isDiscoverable: false, capabilities: [] };
     },
+    async searchCatalog() {
+      return [];
+    },
+    async getProfile() {
+      return null;
+    },
     async resolveTrust() {
       return {} as never;
     },
@@ -141,8 +147,14 @@ function makeFakeCoreClient(): AskCoordinatorCoreClient &
     if (t) t.status = status;
   };
   return {
+    // §6 plugin tools — nothing installed in this fixture; an ask is refused.
+    async listPluginToolCapabilities() { return []; },
+    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
     async findContactsByPreference() {
       return [];
+    },
+    async contactLookup() {
+      return null;
     },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) {

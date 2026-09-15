@@ -32,6 +32,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@dina/storage-node": "*",
     "@types/jest": "^29.5.0",
     "@types/node": "^22",
     "jest": "^29.7.0",

@@ -39,6 +39,14 @@ export interface RelatedAttestation {
 /** com.dinakernel.peerlens.attestation */
 export interface Attestation {
   subject: SubjectRef
+  /**
+   * D4 — present iff this record is an IMPORT rather than testimony: a
+   * registered per-market review feed observed a review elsewhere and
+   * published it with a deep link back. Absent is the normal case and means
+   * a peer wrote it into their own repo. The scorer treats the two
+   * differently on purpose — see `config/review-feeds.ts`.
+   */
+  source?: { feed: string; market: string; url: string; observedAt: string }
   category: string
   sentiment: 'positive' | 'neutral' | 'negative'
   dimensions?: DimensionRating[]

@@ -10,7 +10,7 @@ import {
 } from '../src/digests';
 import { inviteRecordDigest } from '../src/invite_documents';
 import { revshareRecordDigest } from '../src/revenue_share';
-import { tradeRecordDigest } from '../src/trade_documents';
+import { tradeRecordDigest } from '../src/trade_digest';
 
 const hash = (data: Uint8Array) => sha256(data);
 

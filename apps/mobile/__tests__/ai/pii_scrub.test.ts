@@ -126,9 +126,9 @@ describe('PII Scrubbing', () => {
     });
 
     it('scrubs Aadhaar with dash separators', () => {
-      const result = scrubPII('Aadhaar: 2345-6789-0123');
+      const result = scrubPII('Aadhaar: 2345-6789-0124');
       expect(result.scrubbed).toContain('[AADHAAR_1]');
-      expect(result.scrubbed).not.toContain('2345-6789-0123');
+      expect(result.scrubbed).not.toContain('2345-6789-0124');
     });
   });
 

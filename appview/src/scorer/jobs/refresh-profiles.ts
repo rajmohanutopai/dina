@@ -1,4 +1,4 @@
-import { eq, sql, and, inArray, isNotNull } from 'drizzle-orm'
+import { eq, sql, and, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import {
   didProfiles,
@@ -245,6 +245,14 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
         and(
           inArray(attestations.subjectId, subjectIds),
           eq(attestations.isRevoked, false),
+          // D4 — an IMPORTED review never moves a DID's PeerLens score.
+          // This is the line that keeps a cold-started market from being a
+          // bootstrapped-trust market: a rating may be seeded from a
+          // registered feed, a trust ring may not. Without it, importing a
+          // corpus would mint reputation for every DID in it, and the Dead
+          // Internet Filter would be defending against exactly what Dina
+          // had just done to itself.
+          isNull(attestations.sourceFeed),
         )
       )
 
@@ -339,11 +347,18 @@ async function gatherTrustScoreInputs(db: DrizzleDB, did: string): Promise<Trust
   const activeFlagCount = flagRows.length
   const flagSeverities = flagRows.map(f => f.severity)
 
-  // Attestations BY this DID (as author)
+  // Attestations BY this DID (as author).
+  //
+  // D4 — imports do not count. A feed publisher republishing ten thousand
+  // reviews is not ten thousand times a reviewer, and `totalAttestationsBy`
+  // feeds the reviewer component of the trust score. Excluding them here is
+  // the author-side half of the same rule the subject-side query enforces:
+  // an import may seed a rating; it may never mint reputation, for the
+  // subject or for the publisher.
   const attestationsByRows = await db
     .select({ uri: attestations.uri, evidenceJson: attestations.evidenceJson })
     .from(attestations)
-    .where(eq(attestations.authorDid, did))
+    .where(and(eq(attestations.authorDid, did), isNull(attestations.sourceFeed)))
 
   const totalAttestationsBy = attestationsByRows.length
   const withEvidenceCount = attestationsByRows.filter(

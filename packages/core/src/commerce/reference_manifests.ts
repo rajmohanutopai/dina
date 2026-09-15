@@ -111,7 +111,12 @@ const QUOTE_PARAMS = {
  */
 const QUOTE_RESULT = {
   type: 'object',
-  required: ['can_supply', 'lines'],
+  // `lines` travels only with a supply: a decline is `{ can_supply: false,
+  // decline_reason }` and carries none (Core seals it as a QuoteDecline, §3.4).
+  // Requiring `lines` here refused every decline at the pinned-schema check
+  // BEFORE Core could seal it. `readRunnerTerms` withholds a supply without
+  // lines as `terms_unusable`, so the bound is still enforced where it applies.
+  required: ['can_supply'],
   properties: {
     can_supply: { type: 'boolean' },
     decline_reason: { type: 'string' },

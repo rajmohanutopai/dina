@@ -92,21 +92,26 @@ const FIXTURES: Fixture[] = [
     mustContainTokens: ['[ADDRESS_1]'],
     mustNotContain: ['42 Baker Street'],
   },
-  // Go fixture: Aadhaar (Indian 12-digit ID).
+  // Go fixture: Aadhaar (Indian 12-digit ID). DELIBERATE DIVERGENCE from the
+  // oracle (§5.D3): the TS scrubber is checksum-honest — it requires UIDAI's
+  // Verhoeff check digit, so the Go fixture's `2345 6789 0123` (bad check digit)
+  // is a number, not a person, here. Parity holds on every VALID Aadhaar, which
+  // is what the oracle's rule was for; the sample below is Verhoeff-valid.
   {
     name: 'Aadhaar',
     goRef: 'TestPII_5_AADHAAR',
-    input: 'Aadhaar: 2345 6789 0123 (reference)',
+    input: 'Aadhaar: 2345 6789 0124 (reference)',
     mustContainTokens: ['[AADHAAR_1]'],
-    mustNotContain: ['2345 6789 0123'],
+    mustNotContain: ['2345 6789 0124'],
   },
-  // Go fixture: PAN (Indian tax ID).
+  // Go fixture: PAN (Indian tax ID). Same divergence: the fourth letter must be
+  // a holder type (P = individual); the oracle's `ABCDE1234F` (D) is not a PAN.
   {
     name: 'PAN',
     goRef: 'TestPII_5_PAN',
-    input: 'PAN ABCDE1234F attached',
+    input: 'PAN ABCPE1234F attached',
     mustContainTokens: ['[PAN_1]'],
-    mustNotContain: ['ABCDE1234F'],
+    mustNotContain: ['ABCPE1234F'],
   },
   // Go fixture: IFSC (Indian bank branch code).
   {

@@ -37,6 +37,7 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 
 import { FEATURE_NAMES } from '@dina/core';
@@ -48,6 +49,7 @@ import { useSubjectDetail } from '../../src/peerlens/runners/use_subject_detail'
 import { trustBandFor, type PeerlensBand } from '../../src/peerlens/score_helpers';
 import {
   deriveSubjectDetail,
+  type ImportedSourceCredit,
   type SubjectAlternative,
   type SubjectDetailInput,
 } from '../../src/peerlens/subject_detail_data';
@@ -491,6 +493,16 @@ export default function SubjectDetailScreen(
         onPressOwnReviewEdit={onPressOwnReviewEdit}
         viewerDid={viewerDidProp}
       />
+      {/* D4 — what a registered per-market feed contributed, credited to
+          its source with a link back (the Deep Link Default: Dina credits
+          sources rather than extracting from them). Below the rings on
+          purpose: these are not people the viewer can reach, and a rating
+          seeded from a corpus has to say so rather than pass for testimony.
+          Hidden entirely when nothing was imported, which is every node
+          until an operator registers a feed. */}
+      {detail.importedSources.length > 0 && (
+        <ImportedSourcesSection sources={detail.importedSources} />
+      )}
       {/* TN-V2-RANK-014 — alternatives strip below the reviews. The
           strip's existence signals "if this subject doesn't fit you,
           here are 3 trusted alternatives in the same category". Hide
@@ -505,6 +517,60 @@ export default function SubjectDetailScreen(
         />
       )}
     </ScrollView>
+  );
+}
+
+interface ImportedSourcesSectionProps {
+  readonly sources: readonly ImportedSourceCredit[];
+}
+
+/**
+ * D4 — the credit. Each source gets its name, how many of this subject's
+ * reviews it contributed, and a tap that opens the original where it was
+ * written. The heading says what these are in plain words, because a reader
+ * who mistook them for neighbours' reviews would be misreading the one thing
+ * the section exists to be honest about.
+ */
+function ImportedSourcesSection(props: ImportedSourcesSectionProps): React.ReactElement {
+  const { sources } = props;
+  const total = sources.reduce((sum, source) => sum + source.count, 0);
+  return (
+    <View style={styles.importedSection} testID="subject-detail-imported">
+      <Text style={styles.importedTitle}>
+        {total === 1 ? '1 review from elsewhere' : `${total} reviews from elsewhere`}
+      </Text>
+      <Text style={styles.importedSubtitle}>
+        Published by a review source, not by anyone in your network. They colour the
+        rating; they do not earn trust.
+      </Text>
+      {sources.map((source) => (
+        <View key={source.feed} style={styles.importedSource} testID={`subject-detail-imported-${source.feed}`}>
+          <Text style={styles.importedSourceName}>
+            {source.name ?? source.feed}
+            {source.market !== null ? ` · ${source.market}` : ''}
+          </Text>
+          <Text style={styles.importedCount}>
+            {source.count === 1 ? '1 review' : `${source.count} reviews`}
+          </Text>
+          {source.latest.map((entry) => (
+            <Pressable
+              key={entry.uri}
+              onPress={() => void Linking.openURL(entry.url)}
+              accessibilityRole="link"
+              accessibilityLabel={`Read this review at ${source.name ?? source.feed}`}
+              testID={`subject-detail-imported-link-${entry.uri}`}
+              style={({ pressed }) => [styles.importedLink, pressed && styles.alternativeCardPressed]}
+            >
+              <Text style={styles.importedLinkText} numberOfLines={2}>
+                {entry.text !== null && entry.text.trim() !== ''
+                  ? entry.text
+                  : `Read this ${entry.sentiment} review at the source`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -991,6 +1057,27 @@ const styles = StyleSheet.create({
   // The cards are sized to fit 3 abreast on a phone (each ~ 1/3 of
   // the screen width minus gutters). On wider screens flex-wrap
   // takes over so the strip degrades gracefully.
+  // D4 — the imported-source credit sits between the rings and the
+  // alternatives, set apart so it never reads as another ring.
+  importedSection: {
+    marginTop: spacing.lg,
+    gap: spacing.xs,
+  },
+  importedTitle: textStyles.bodyStrong,
+  importedSubtitle: { ...textStyles.caption, color: colors.textSecondary },
+  importedSource: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgCard,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    gap: spacing.xs,
+  },
+  importedSourceName: textStyles.bodyStrong,
+  importedCount: { ...textStyles.caption, color: colors.textSecondary },
+  importedLink: { paddingVertical: spacing.xs },
+  importedLinkText: { ...textStyles.body, color: colors.accent },
   alternativesStrip: {
     marginTop: spacing.lg,
     gap: spacing.sm,

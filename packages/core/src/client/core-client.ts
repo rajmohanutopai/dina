@@ -40,6 +40,107 @@
  * Method surface grows per task 1.29 — intentionally sparse here to
  * validate the interface-injection pattern before expanding coverage.
  */
+/**
+ * What an approval may carry beyond the decision. `scope` is the agent
+ * session-scope choice; `pluginGrant` (PLUGIN_ARCHITECTURE §15.5 "Allow for
+ * 24 hours") asks Core to mint a window grant alongside a plugin-invocation
+ * approval — Core validates it and refuses it on a task that is not a plugin
+ * invocation or is no longer pending.
+ */
+/** One routable plugin capability (§6), snake_case as on the wire. */
+export interface PluginToolCapability {
+  install_id: string;
+  plugin_id: string;
+  plugin_display_name: string;
+  capability_id: string;
+  display_name: string;
+  action_class: string;
+  privacy_class: string;
+  params_schema: unknown;
+  data_scope_categories: string[];
+}
+
+export interface InvokePluginToolInput {
+  installId: string;
+  capabilityId: string;
+  params: unknown;
+  /** The classifier's categories for the params (§11.5); unclassified non-empty params card. */
+  paramCategories?: string[];
+}
+
+export type InvokePluginToolResult =
+  | { ok: true; mode: 'dispatched'; taskId: string; executionId: string; grantId?: string }
+  | {
+      ok: true;
+      mode: 'approval_required';
+      taskId: string;
+      executionId: string;
+      card: { riskLevel: string; reasons: string[]; paramsText: string };
+    }
+  | { ok: false; code: string; message: string };
+
+/**
+ * The `/v1/plugins/tool-invoke` answer, typed; a refusal is a value, not a throw.
+ *
+ * A 2xx whose body cannot be read as one of the two answers is NOT a refusal:
+ * Core answers 2xx only after it has staged the task, so a card is already
+ * waiting or a dispatch already left. It is reported as `response_malformed`
+ * with a message that says so — a caller that read it as "refused" would ask
+ * again and stage a second task for the same question.
+ */
+export const INVOKE_PLUGIN_RESPONSE_MALFORMED = 'response_malformed';
+
+export function parseInvokePluginToolResponse(status: number, raw: unknown): InvokePluginToolResult {
+  const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  if (status >= 200 && status < 300) {
+    const taskId = typeof r.task_id === 'string' ? r.task_id : '';
+    const executionId = typeof r.execution_id === 'string' ? r.execution_id : '';
+    if (r.ok === true && r.mode === 'dispatched' && taskId !== '') {
+      return {
+        ok: true,
+        mode: 'dispatched',
+        taskId,
+        executionId,
+        ...(typeof r.grant_id === 'string' ? { grantId: r.grant_id } : {}),
+      };
+    }
+    if (r.ok === true && r.mode === 'approval_required' && taskId !== '') {
+      const card = (r.card !== null && typeof r.card === 'object' ? r.card : {}) as Record<string, unknown>;
+      return {
+        ok: true,
+        mode: 'approval_required',
+        taskId,
+        executionId,
+        card: {
+          riskLevel: typeof card.risk_level === 'string' ? card.risk_level : 'MODERATE',
+          reasons: Array.isArray(card.reasons) ? card.reasons.filter((x): x is string => typeof x === 'string') : [],
+          paramsText: typeof card.params_text === 'string' ? card.params_text : '',
+        },
+      };
+    }
+    return {
+      ok: false,
+      code: INVOKE_PLUGIN_RESPONSE_MALFORMED,
+      message: `Core accepted the ask (HTTP ${status}) but its reply could not be read. Do not ask again: check Activity → Needs action for the card, or Completed for the result.`,
+    };
+  }
+  return {
+    ok: false,
+    code: typeof r.code === 'string' ? r.code : typeof r.error === 'string' ? r.error : `http_${status}`,
+    message:
+      typeof r.message === 'string'
+        ? r.message
+        : typeof r.error === 'string'
+          ? r.error
+          : `plugin invoke failed (${status})`,
+  };
+}
+
+export interface ApproveWorkflowTaskOptions {
+  scope?: 'single' | 'session';
+  pluginGrant?: { type: 'window'; hours?: number };
+}
+
 export interface CoreClient {
   /**
    * Sanity probe — returns Core's liveness + DID identity snapshot.
@@ -386,6 +487,20 @@ export interface CoreClient {
   listWorkflowTasks(filter: ListWorkflowTasksFilter): Promise<WorkflowTask[]>;
 
   /**
+   * PLUGIN_ARCHITECTURE §6 — every consented `tool` capability on an active
+   * plugin install: what `/ask` may route to. `GET /v1/plugins/tool-capabilities`.
+   */
+  listPluginToolCapabilities(): Promise<PluginToolCapability[]>;
+
+  /**
+   * §6/§9.1 — ask an installed capability to run. Core gates the ask: a
+   * card the owner answers (`approval_required`), or a silent dispatch under a
+   * grant the owner minted (`dispatched`). Brain never decides the card. The
+   * result rides the task (`getWorkflowTask`). `POST /v1/plugins/tool-invoke`.
+   */
+  invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult>;
+
+  /**
    * Fetch a single workflow task by id. Returns `null` on 404 (unknown
    * id) rather than throwing — matches the `serviceConfig` /
    * `scratchpadResume` / `acknowledgeWorkflowEvent` non-exceptional
@@ -418,7 +533,7 @@ export interface CoreClient {
    *               Only effective on `intent_validation` tasks; all other
    *               kinds behave as 'single'.
    */
-  approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask>;
+  approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask>;
 
   /** POST /v1/workflow/tasks/:id/cancel — any active state → cancelled. */
   cancelWorkflowTask(id: string, reason?: string): Promise<WorkflowTask>;
@@ -1426,6 +1541,64 @@ export interface UpdateContactParams {
    * trimmed + deduped) so callers can pass raw strings.
    */
   preferredFor?: string[];
+  /**
+   * §5.D — the counterparty's paper identity: what a filing prints about them.
+   * Tri-state per field, like `preferredFor`: `undefined` leaves it alone, an
+   * empty value clears it, a value replaces it. Core refuses a registration
+   * that fails its scheme's own check (a GSTIN checksum, a PAN holder type)
+   * and answers with the findings — it never stores a mistyped number.
+   */
+  legalName?: string;
+  registrations?: { scheme: string; value: string }[];
+  billingAddress?: {
+    line1: string;
+    line2?: string;
+    city: string;
+    region?: string;
+    postalCode?: string;
+    country: string;
+  } | null;
+  /**
+   * §5.D — the channels a rail would message (a WhatsApp reminder, an e-mail
+   * notice). Stored in the people graph's identity slot, not on the contact
+   * row. `null` or `''` clears one.
+   */
+  phone?: string | null;
+  email?: string | null;
+}
+
+/**
+ * The wire body for `PUT /v1/contacts/:did` (snake_case, tri-state per field).
+ * Shared by both transports so the two cannot drift — the same reason the
+ * paper identity has one definition in the domain (§5.D).
+ */
+export function updateContactBody(updates: UpdateContactParams): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  // Tri-state: only include the field when the caller explicitly passed it.
+  // `[]` means "clear" (sent as []), non-empty replaces, `undefined` is
+  // don't-touch (field omitted from body).
+  if (updates.preferredFor !== undefined) body.preferred_for = [...updates.preferredFor];
+  if (updates.legalName !== undefined) body.legal_name = updates.legalName;
+  if (updates.registrations !== undefined) {
+    body.registrations = updates.registrations.map((r) => ({ scheme: r.scheme, value: r.value }));
+  }
+  if (updates.billingAddress !== undefined) {
+    const address = updates.billingAddress;
+    body.billing_address =
+      address === null
+        ? null
+        : {
+            line1: address.line1,
+            ...(address.line2 !== undefined ? { line2: address.line2 } : {}),
+            city: address.city,
+            ...(address.region !== undefined ? { region: address.region } : {}),
+            ...(address.postalCode !== undefined ? { postal_code: address.postalCode } : {}),
+            country: address.country,
+          };
+  }
+  if (updates.phone !== undefined) body.phone = updates.phone;
+  if (updates.email !== undefined) body.email = updates.email;
+  return body;
 }
 
 // ─── Policy management types ────────────────────────────────────────────────

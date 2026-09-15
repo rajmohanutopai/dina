@@ -10,8 +10,16 @@ import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { resetAuditState } from '../../src/audit/service';
 import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
-import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import {
+  getCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceMoneyAccess,
+  type CommerceRuntime,
+} from '../../src/commerce/runtime';
+import { buildTradeInbox } from '../../src/commerce/trade_inbox';
+import { applyInboundTradeDocument, drainTradeSpool } from '../../src/commerce/trade_ingress';
 import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
+import { InMemoryTradeSpoolRepository, MAX_TRADE_SPOOL_ROWS } from '../../src/commerce/trade_spool';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { addContact, clearGatesState } from '../../src/d2d/gates';
@@ -28,6 +36,8 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  moneyClosed,
+  moneyOpen,
 } from './helpers';
 
 const OWNER_CAP = 'test-owner-capability-secret';
@@ -59,7 +69,10 @@ function owner(path: string, body: Record<string, unknown>): CoreRequest {
 }
 
 /** Install a runtime holding the retained ORDER + QUOTE + acceptance. */
-function installNode(nodeDid: string): InMemoryTradeDocumentRepository {
+function installNode(
+  nodeDid: string,
+  money: () => CommerceMoneyAccess = moneyOpen(),
+): InMemoryTradeDocumentRepository {
   const tradeDocs = new InMemoryTradeDocumentRepository();
   const receipts = new InMemoryCommerceReceiptRepository();
   receipts.put({
@@ -72,13 +85,28 @@ function installNode(nodeDid: string): InMemoryTradeDocumentRepository {
     evidenceJson: '{}',
     createdAt: T0,
   });
-  installCommerceRuntime({
-    tradeDocuments: tradeDocs,
+  installCommerceRuntime(nodeRuntime(nodeDid, receipts, tradeDocs, money, new InMemoryTradeSpoolRepository()));
+  return tradeDocs;
+}
+
+/** The node's runtime: the money line resolves per call; an OPEN line serves THIS node's khata store. */
+function nodeRuntime(
+  nodeDid: string,
+  receipts: InMemoryCommerceReceiptRepository,
+  tradeDocs: InMemoryTradeDocumentRepository,
+  money: () => CommerceMoneyAccess,
+  tradeSpool: InMemoryTradeSpoolRepository,
+): CommerceRuntime {
+  return {
+    money: () => {
+      const line = money();
+      return line.available ? { ...line, stores: { ...line.stores, tradeDocuments: tradeDocs } } : line;
+    },
     receipts,
+    tradeSpool,
     nodeDid: () => nodeDid,
     now: () => T0,
-  } as unknown as CommerceRuntime);
-  return tradeDocs;
+  } as unknown as CommerceRuntime;
 }
 
 afterEach(() => {
@@ -200,6 +228,179 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     expect(replay.action).toBe('bypassed');
     expect(replay.reason).toContain('duplicate');
     expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+  });
+
+  it('with no active Commerce Pack the push is SPOOLED, not retained; it lands once the pack is active (§5.B1 Cut 3)', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    // Build the buyer's stores once so the same node can flip its money line.
+    const tradeDocs = new InMemoryTradeDocumentRepository();
+    const receipts = new InMemoryCommerceReceiptRepository();
+    receipts.put({
+      recordDigest: ORDER.order_digest,
+      domain: 'order',
+      buyerDid: ORDER.buyer_did,
+      quoteId: ORDER.quote_id,
+      purchaseOrderId: ORDER.purchase_order_id,
+      recordJson: JSON.stringify(ORDER),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    const spool = new InMemoryTradeSpoolRepository();
+    const line = { open: false };
+    installCommerceRuntime(
+      nodeRuntime(BUYER_DID, receipts, tradeDocs, () => (line.open ? moneyOpen()() : moneyClosed('pack_paused')()), spool),
+    );
+    addContact(SUPPLIER_DID);
+
+    // Closed: accepted for later, verified by nobody, retained nowhere.
+    const closed = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
+    expect(closed.action).toBe('bypassed');
+    expect(closed.reason).toContain('spooled');
+    expect(tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+    expect(spool.count()).toBe(1);
+
+    // The pack comes back: the next ingress replays the mail through the
+    // verifiers first — the retained row carries the ORIGINAL envelope evidence.
+    line.open = true;
+    const replayed = applyInboundTradeDocument({
+      senderDid: SUPPLIER_DID,
+      body: { nonsense: true },
+      evidenceJson: '{}',
+      nowMs: T0 + 1,
+    });
+    expect(replayed.outcome).toBe('unreadable'); // the trigger document itself
+    expect(spool.count()).toBe(0);
+    const rows = tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.counterpartyDid).toBe(SUPPLIER_DID);
+    const evidence = JSON.parse(rows[0]?.evidenceJson ?? '{}') as { envelope: { body: string; from: string } };
+    expect(evidence.envelope.from).toBe(SUPPLIER_DID);
+    expect(evidence.envelope.body).toBe(wireBody);
+  });
+
+  it('the inbox drains the spool too, so a resumed pack sees what waited', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    const tradeDocs = new InMemoryTradeDocumentRepository();
+    const receipts = new InMemoryCommerceReceiptRepository();
+    receipts.put({
+      recordDigest: ORDER.order_digest,
+      domain: 'order',
+      buyerDid: ORDER.buyer_did,
+      quoteId: ORDER.quote_id,
+      purchaseOrderId: ORDER.purchase_order_id,
+      recordJson: JSON.stringify(ORDER),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    const spool = new InMemoryTradeSpoolRepository();
+    const line = { open: false };
+    const runtime = {
+      ...nodeRuntime(BUYER_DID, receipts, tradeDocs, () => (line.open ? moneyOpen()() : moneyClosed()()), spool),
+      orderDrafts: { list: () => [] },
+      tenders: { listTenders: () => [] },
+      pendingDecisions: { list: () => [] },
+    } as unknown as CommerceRuntime;
+    installCommerceRuntime(runtime);
+    addContact(SUPPLIER_DID);
+    receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
+    expect(spool.count()).toBe(1);
+
+    line.open = true;
+    const inbox = buildTradeInbox(runtime, T0 + 1);
+    expect(spool.count()).toBe(0);
+    expect(inbox.items.map((item) => item.kind)).toContain('unreceipted_delivery');
+  });
+
+  it('a replayed document is stamped with ITS arrival time, not the moment the pack reopened', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    const tradeDocs = new InMemoryTradeDocumentRepository();
+    const receipts = new InMemoryCommerceReceiptRepository();
+    receipts.put({
+      recordDigest: ORDER.order_digest,
+      domain: 'order',
+      buyerDid: ORDER.buyer_did,
+      quoteId: ORDER.quote_id,
+      purchaseOrderId: ORDER.purchase_order_id,
+      recordJson: JSON.stringify(ORDER),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    const spool = new InMemoryTradeSpoolRepository();
+    const ARRIVED = T0 + 5_000;
+    spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: ARRIVED });
+    installCommerceRuntime(nodeRuntime(BUYER_DID, receipts, tradeDocs, moneyOpen(), spool));
+    const line = moneyOpen()();
+    if (!line.available) throw new Error('unreachable');
+    // The pack reopens much later.
+    drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
+    const rows = tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.createdAt).toBe(ARRIVED);
+  });
+
+  it('a spooled row that makes a verifier THROW is dropped, not replayed forever', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    const tradeDocs = new InMemoryTradeDocumentRepository();
+    const receipts = new InMemoryCommerceReceiptRepository();
+    receipts.put({
+      recordDigest: ORDER.order_digest,
+      domain: 'order',
+      buyerDid: ORDER.buyer_did,
+      quoteId: ORDER.quote_id,
+      purchaseOrderId: ORDER.purchase_order_id,
+      recordJson: JSON.stringify(ORDER),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    const spool = new InMemoryTradeSpoolRepository();
+    // The same well-formed note twice: the FIRST replay hits a receipt store
+    // whose order reader throws (a corrupt row); the second must still land.
+    spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: T0 });
+    spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: T0 + 1 });
+    let throwOnce = true;
+    const poisonedReceipts = new Proxy(receipts, {
+      get(target, prop, receiver) {
+        if (prop === 'listByOrder') {
+          return (buyerKey: string, purchaseOrderId: string) => {
+            if (throwOnce) {
+              throwOnce = false;
+              throw new Error('corrupt receipt row');
+            }
+            return target.listByOrder(buyerKey, purchaseOrderId);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    installCommerceRuntime(nodeRuntime(BUYER_DID, poisonedReceipts, tradeDocs, moneyOpen(), spool));
+
+    const line = moneyOpen()();
+    if (!line.available) throw new Error('unreachable');
+    const summary = drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
+    expect(summary).toMatchObject({ replayed: 2, faulted: 1, applied: 1 });
+    expect(spool.count()).toBe(0);
+    expect(tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+  });
+
+  it('a full spool refuses the newest document and keeps the oldest', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    const spool = new InMemoryTradeSpoolRepository();
+    for (let i = 0; i < MAX_TRADE_SPOOL_ROWS; i++) {
+      spool.put({ senderDid: SUPPLIER_DID, bodyJson: '{}', evidenceJson: '{}', receivedAt: T0 });
+    }
+    installCommerceRuntime(
+      nodeRuntime(BUYER_DID, new InMemoryCommerceReceiptRepository(), new InMemoryTradeDocumentRepository(), moneyClosed(), spool),
+    );
+    addContact(SUPPLIER_DID);
+    const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
+    expect(result.action).toBe('dropped');
+    expect(result.reason).toContain('spool full');
+    expect(spool.count()).toBe(MAX_TRADE_SPOOL_ROWS);
   });
 
   it('a stranger’s push drops before any verifier runs', async () => {

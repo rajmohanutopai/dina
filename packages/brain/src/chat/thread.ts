@@ -216,7 +216,24 @@ export interface ReviewDraftLifecycle {
 }
 
 /**
- * Discriminated union for `metadata.lifecycle`. Four kinds today:
+ * `commerce_comparison` lifecycle metadata
+ * (RESEARCHER_KERNEL_ARCHITECTURE.md §5.A4/A5). Posted by the chat bridge when
+ * the research loop's `search_products` tool produced a money-free where-to-buy
+ * card. Synchronous and terminal — the card is already resolved, so the only
+ * status is `ready` and it is never patched in place. `cardSpec` is the
+ * validated CardSpec, kept as a generic object so this type stays free of a
+ * `@dina/protocol` import (the same loose-typing as `review_draft.values`); the
+ * renderer re-validates it as untrusted at the boundary.
+ */
+export interface CommerceComparisonLifecycle {
+  kind: 'commerce_comparison';
+  status: 'ready';
+  cardId: string;
+  cardSpec: Record<string, unknown>;
+}
+
+/**
+ * Discriminated union for `metadata.lifecycle`. Kinds today:
  *   - `service_query` — workflow tasks for D2D capability calls.
  *   - `missing_capability` — empty service-discovery result with a
  *                            first-party developer onboarding card.
@@ -224,6 +241,8 @@ export interface ReviewDraftLifecycle {
  *                      timeout + pending_approval flows).
  *   - `reasoning_job` — Core-owned connected-Brain Ask lifecycle.
  *   - `review_draft`  — chat-driven `/ask write a review of <X>` flow.
+ *   - `commerce_comparison` — money-free where-to-buy card from the
+ *                            product-research loop.
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
  */
@@ -232,7 +251,8 @@ export type MessageLifecycle =
   | MissingCapabilityLifecycle
   | AskPendingLifecycle
   | ReasoningJobLifecycle
-  | ReviewDraftLifecycle;
+  | ReviewDraftLifecycle
+  | CommerceComparisonLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -708,6 +728,9 @@ export function addLifecycleMessage(
     case 'review_draft':
       key = lifecycle.draftId;
       break;
+    case 'commerce_comparison':
+      key = lifecycle.cardId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -765,6 +788,11 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
   if (lc.kind === 'review_draft') {
     if (typeof lc.draftId !== 'string' || lc.draftId === '') return null;
     return lc as unknown as ReviewDraftLifecycle;
+  }
+  if (lc.kind === 'commerce_comparison') {
+    if (typeof lc.cardId !== 'string' || lc.cardId === '') return null;
+    if (typeof lc.cardSpec !== 'object' || lc.cardSpec === null) return null;
+    return lc as unknown as CommerceComparisonLifecycle;
   }
   return null;
 }

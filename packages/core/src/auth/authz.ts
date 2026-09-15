@@ -134,6 +134,23 @@ const AUTHZ_RULES: {
   // run. On the signed HTTP surface no caller resolves to `owner` in V1, so
   // this rule denies every signed caller here (defense-in-depth); the
   // in-process owner path is enforced additionally by the in-handler guard.
+  // PLUGIN_ARCHITECTURE §6 — Brain routes `/ask` into installed plugins
+  // through two narrow verbs: list the consented tool capabilities, and ask
+  // for one to run. The producer gates every ask (a card the OWNER answers, or
+  // a grant the owner minted); Brain may not decide the card (workflow verbs
+  // refuse it). Every other `/v1/plugins/*` route stays owner-only in-handler.
+  {
+    prefix: '/v1/plugins/tool-capabilities',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['brain', 'owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/plugins/tool-invoke',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['brain', 'owner', 'admin', 'device']),
+  },
   { prefix: '/v1/run', allowed: new Set(['owner']) },
   // OWNER-ONLY (PSVC-4). Watch/subscription management is the subscriber's own
   // standing work — same boundary as /v1/run: every signed caller is denied

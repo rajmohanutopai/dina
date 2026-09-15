@@ -105,6 +105,16 @@ interface ProfileRow {
  */
 let _capturedAttRowWhereFilter: unknown = undefined
 
+/** D4 — one imported-review row as the roll-up query projects it. */
+interface ImportedRow {
+  uri: string
+  text: string | null
+  sentiment: string
+  recordCreatedAt: Date
+  sourceFeed: string | null
+  sourceJson: unknown
+}
+
 /**
  * Stub the four query shapes the handler issues, routed by table
  * identity:
@@ -124,6 +134,8 @@ function stubDb(opts: {
    */
   attCount?: number
   profileRows?: ProfileRow[]
+  /** D4 — rows the imported-review roll-up sees. */
+  importedRows?: ImportedRow[]
 }): DrizzleDB {
   return {
     // `resolveCanonicalChain` is mocked at the module level (see
@@ -141,6 +153,14 @@ function stubDb(opts: {
         typeof sel === 'object' &&
         sel !== undefined &&
         'c' in (sel as Record<string, unknown>)
+      // D4 — the third shape against `attestations`: the imported-review
+      // roll-up. It names `sourceFeed` in its projection and nothing else
+      // does, which is the same discriminator trick `isCount` uses.
+      const isImported =
+        sel !== null &&
+        typeof sel === 'object' &&
+        sel !== undefined &&
+        'sourceFeed' in (sel as Record<string, unknown>)
       return {
         from: (table: unknown) => {
           if (table === subjects) {
@@ -171,6 +191,18 @@ function stubDb(opts: {
                 ],
               })
               return countAfterJoin()
+            }
+            if (isImported) {
+              // Imported roll-up: where → orderBy → limit, no join. Kept
+              // separate so it does not overwrite the roster's captured
+              // filter — the two ask different questions.
+              return {
+                where: () => ({
+                  orderBy: () => ({
+                    limit: async () => opts.importedRows ?? [],
+                  }),
+                }),
+              }
             }
             // Row-projection query: leftJoin → where → orderBy → limit.
             // The filter is captured into the closure-local

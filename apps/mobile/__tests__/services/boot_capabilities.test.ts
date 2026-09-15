@@ -11,6 +11,33 @@
  * null in tests), and AppView network calls are stubbed explicitly.
  */
 
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { ed25519 } from '@noble/curves/ed25519.js';
+
+import {
+  applyMigrations,
+  clearPairingState,
+  completePairing,
+  generatePairingCode,
+  IDENTITY_MIGRATIONS,
+  publicKeyToMultibase,
+  resetCallerTypeState,
+  setNodeDID,
+  SQLitePluginGrantRepository,
+  SQLitePluginInstallRepository,
+  getRepoProofVerifier,
+  setPluginGrantRepository,
+  setPluginInstallRepository,
+  setRepoProofVerifier,
+} from '@dina/core';
+import { getDeviceByDID, resetDeviceRegistry } from '@dina/core/devices';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
+import { SQLiteDeviceRepository, setDeviceRepository } from '../../../core/src/devices/repository';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { AppViewStub } from '../../src/services/appview_stub';
 import { buildBootInputs, resolveStagingEnrichmentLLM } from '../../src/services/boot_capabilities';
@@ -104,6 +131,127 @@ describe('buildBootInputs — device-role resolver (round-5 #4)', () => {
     // DID resolves to null. Role-value mapping for a registered plugin/agent
     // device is the same closure covered by core's caller_type tests.
     expect(inputs.deviceRoleResolver!('did:key:zunregistered')).toBeNull();
+  });
+});
+
+describe('buildBootInputs — the abandoned-install sweeper (PLUGIN_ARCHITECTURE §15.3)', () => {
+  let dir: string;
+  let adapter: NodeSQLiteAdapter;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'mobile-boot-sweeper-'));
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+    });
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    setPluginInstallRepository(new SQLitePluginInstallRepository(adapter));
+    setPluginGrantRepository(new SQLitePluginGrantRepository(adapter));
+    setDeviceRepository(new SQLiteDeviceRepository(adapter));
+    setNodeDID('did:key:z6MkPhoneNode');
+  });
+
+  afterEach(() => {
+    setPluginInstallRepository(null);
+    setPluginGrantRepository(null);
+    setDeviceRepository(null);
+    clearPairingState();
+    resetDeviceRegistry();
+    resetCallerTypeState();
+    adapter.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a stale pending install with a paired runner is swept at boot: row gone, device revoked in SQL', async () => {
+    const installs = new SQLitePluginInstallRepository(adapter);
+    const nowMs = Date.now();
+    const installId = installs.createPending({
+      publisherDid: 'did:plc:acme',
+      pluginId: 'com.acme.widget',
+      label: '',
+      executionMode: 'runner',
+      currentCid: 'bafyreicid1',
+      currentVersion: '1.0.0',
+      manifest: {
+        $type: 'com.dinakernel.plugin.release',
+        plugin_id: 'com.acme.widget',
+        version: '1.0.0',
+        display_name: 'Widget',
+        execution: { mode: 'runner' },
+        capabilities: [],
+      } as never,
+      installScopeHash: 's'.repeat(64),
+      capabilityHashes: {},
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'p'.repeat(64),
+      trustAnchor: { kind: 'repo_proof' },
+      pendingExpiresAtSec: Math.floor(nowMs / 1000) + 900,
+      nowMs,
+    });
+    // A runner pairs into it (Core binds it), then the owner walks away past the window.
+    const privateKey = new Uint8Array(32).fill(23);
+    const publicKey = ed25519.getPublicKey(privateKey);
+    const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+    completePairing(code, 'runner', publicKeyToMultibase(publicKey), 'plugin', 'runner');
+    const runnerDid = `did:key:${publicKeyToMultibase(publicKey)}`;
+    expect(installs.getById(installId)?.deviceDid).toBe(runnerDid);
+    adapter.execute('UPDATE plugin_installs SET pending_expires_at = ? WHERE install_id = ?', [
+      Math.floor(nowMs / 1000) - 60,
+      installId,
+    ]);
+
+    // Boot: the sweeper's first tick runs at once, with the durable revoker.
+    await buildBootInputs({ activeProvider: 'none' });
+    for (let i = 0; i < 100 && installs.getById(installId) !== null; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(installs.getById(installId)).toBeNull();
+    expect(getDeviceByDID(runnerDid)?.revoked).toBe(true);
+    const rows = adapter.query('SELECT revoked FROM paired_devices WHERE did = ?', [runnerDid]);
+    expect(rows.map((r) => Number(r.revoked))).toEqual([1]);
+  });
+});
+
+describe('buildBootInputs — the repo-proof verifier (§5.C1-mobile)', () => {
+  beforeEach(() => {
+    // Earlier boots in this file leave a verifier wired; start from none.
+    setRepoProofVerifier(null);
+  });
+  afterEach(() => {
+    setRepoProofVerifier(null);
+  });
+
+  it('wires a repo-proof verifier at boot once the self-check passes, so the Plugins door opens; it fails CLOSED, never trust-on-first-use', async () => {
+    expect(getRepoProofVerifier()).toBeNull();
+    await buildBootInputs({ activeProvider: 'none' });
+    const verifier = getRepoProofVerifier();
+    expect(verifier).not.toBeNull();
+    if (verifier === null) throw new Error('unreachable');
+    // The jest stand-in for `@dina/net-expo/repo_proof` passes its self-check
+    // and answers like an unreachable publisher; the boot wrapper passes the
+    // typed failure through.
+    const result = await verifier({ did: 'did:plc:acme', collection: 'com.dinakernel.plugin.release', rkey: 'x' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.transient).toBe(true);
+  });
+
+  it('a device that fails the self-check boots with NO verifier: the door stays closed rather than calling releases inauthentic', async () => {
+    // The mapper hands the wiring the `__mocks__` module as its REAL import;
+    // reach the same instance, not the auto-mock registry's copy.
+    const netExpo = jest.requireActual('@dina/net-expo/repo_proof') as {
+      selfCheckRepoProofVerifier: () => Promise<{ ok: boolean; fault?: string }>;
+    };
+    const original = netExpo.selfCheckRepoProofVerifier;
+    netExpo.selfCheckRepoProofVerifier = async () => ({ ok: false, fault: 'record_malformed' });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await buildBootInputs({ activeProvider: 'none' });
+      expect(getRepoProofVerifier()).toBeNull();
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('self-check failed'))).toBe(true);
+    } finally {
+      netExpo.selfCheckRepoProofVerifier = original;
+      warn.mockRestore();
+    }
   });
 });
 

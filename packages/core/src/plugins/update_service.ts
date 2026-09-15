@@ -207,6 +207,21 @@ export async function prepareUpdate(args: {
       transient: false,
     };
   }
+  // Iter 17: an install that did NOT arrive through a repo proof (the owner's
+  // own reference packs, anchored `local_publisher_key` — "this build vouches
+  // for the bytes it shipped with") never takes bytes from a PDS record. The
+  // update path keeps the row's anchor while replacing its manifest, so a repo
+  // proof accepted here would leave a first-party row vouching for foreign
+  // bytes — the mislabel the anchor check below exists to prevent. Those packs
+  // update by upgrading the app.
+  if (install.trustAnchor.kind !== 'repo_proof') {
+    return {
+      ok: false,
+      code: 'authenticity_failed',
+      message: `an install anchored "${install.trustAnchor.kind}" updates with the build, never by repo proof`,
+      transient: false,
+    };
+  }
 
   const verifier = getRepoProofVerifier();
   if (verifier === null) {
