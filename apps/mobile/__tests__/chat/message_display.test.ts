@@ -65,3 +65,15 @@ describe('message_display — commerce_comparison wiring', () => {
     expect(chatRowKind('service-query')).toBe('service-query');
   });
 });
+
+describe('message_display — group_plan wiring (GROUP_COORDINATION §9)', () => {
+  beforeEach(() => resetThreads());
+
+  it('classifies a group_plan lifecycle message to the group-plan branch and row kind', () => {
+    addLifecycleMessage('t', '', { kind: 'group_plan', status: 'open', planId: 'gp_1', intent: "Emma's birthday" });
+    const thread = getThread('t');
+    const msg = thread[thread.length - 1] as ChatMessage;
+    expect(toDisplayType(msg)).toBe('group-plan');
+    expect(chatRowKind('group-plan')).toBe('group-plan');
+  });
+});

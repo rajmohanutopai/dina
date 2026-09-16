@@ -341,6 +341,7 @@ export function ApprovalActionCard({
   // card, and the effect/retry statement. All of it is Dina-owned chrome read
   // off the pinned envelope; nothing on it was written by the plugin.
   const isPlugin = item.kind === 'plugin_invocation';
+  const isDisclosure = item.kind === 'disclosure_review';
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
   // the exact mode in the headline (trusted chrome) so a WRITE request can never
@@ -349,7 +350,9 @@ export function ApprovalActionCard({
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
     ? 'Agent action approval'
-    : isPlugin
+    : isDisclosure
+      ? 'Share a household need?'
+      : isPlugin
       ? 'Plugin action approval'
       : isStagingAccess
         ? 'Memory access approval'

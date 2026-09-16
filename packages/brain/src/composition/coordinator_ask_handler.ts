@@ -50,6 +50,7 @@ import {
   findMessageByTaskId,
   updateAskLifecycle,
   type CommerceComparisonLifecycle,
+  type GroupPlanLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import {
@@ -290,6 +291,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // so a research turn that also (say) dispatched a service query still shows
       // its comparison. The narrative is the answer; this is the evidence.
       postCommerceCard(targetThread, parsed);
+      postGroupPlanCard(targetThread, parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
@@ -424,6 +426,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // narrative bubble from `response` after we return). Same card, whether
       // the answer settled in the fast-path window or the deferred path.
       postCommerceCard(callerThread, answer);
+      postGroupPlanCard(callerThread, answer);
       return {
         response: extractAnswerText(answer),
         sources: reviewSourcesFor(answer),
@@ -642,6 +645,26 @@ function postCommerceCard(threadId: string, answer: unknown): void {
     status: 'ready',
     cardId,
     cardSpec,
+  };
+  addLifecycleMessage(threadId, '', lifecycle);
+}
+
+/**
+ * Post the organizer's plan card (GROUP_COORDINATION §9) when the answer
+ * carries a plan `coordinate_group` opened. The card is a view keyed by the
+ * plan id: it reads the fold from Core itself, so nothing here is patched.
+ */
+function postGroupPlanCard(threadId: string, answer: unknown): void {
+  if (typeof answer !== 'object' || answer === null) return;
+  const raw = (answer as Record<string, unknown>).groupPlan;
+  if (typeof raw !== 'object' || raw === null) return;
+  const { planId, intent } = raw as { planId?: unknown; intent?: unknown };
+  if (typeof planId !== 'string' || planId === '') return;
+  const lifecycle: GroupPlanLifecycle = {
+    kind: 'group_plan',
+    status: 'open',
+    planId,
+    intent: typeof intent === 'string' ? intent : '',
   };
   addLifecycleMessage(threadId, '', lifecycle);
 }

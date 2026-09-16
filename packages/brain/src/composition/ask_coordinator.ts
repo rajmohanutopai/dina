@@ -538,6 +538,14 @@ export function translateLoopResult(
     if (commerceCard !== undefined) {
       answer.commerceCard = commerceCard;
     }
+    // GROUP_COORDINATION §9 — a plan `coordinate_group` opened rides beside
+    // the narrative so the chat bridge can post the organizer's plan card. Like
+    // the comparison card it does not suppress the prose: the model's one-line
+    // ack is the answer, the card is where the replies land.
+    const groupPlan = extractGroupPlanFromToolCalls(result.toolCalls);
+    if (groupPlan !== undefined) {
+      answer.groupPlan = groupPlan;
+    }
     // Provenance for the chat source pill: how many network ("ranked") reviews
     // from other Dinas informed this answer. The mobile bubble turns the count
     // into a label (Ranked reviews ≥ 3, Network reviews 1–2). 0 ⇒ no pill.
@@ -693,6 +701,21 @@ function extractServiceQueriesFromToolCalls(toolCalls: AgenticLoopResult['toolCa
 
 /** The two research tools whose result carries the comparison card. */
 const COMMERCE_CARD_TOOLS = new Set(['search_products', 'recommend_offer']);
+
+/** The plan a successful `coordinate_group` call opened: its id and intent, for the card. */
+function extractGroupPlanFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): { planId: string; intent: string } | undefined {
+  for (let i = toolCalls.length - 1; i >= 0; i--) {
+    const call = toolCalls[i];
+    if (call.name !== 'coordinate_group' || !call.outcome.success) continue;
+    const result = call.outcome.result as { plan_id?: unknown; intent?: unknown } | null;
+    if (result === null || typeof result !== 'object') continue;
+    if (typeof result.plan_id !== 'string' || result.plan_id === '') continue;
+    return { planId: result.plan_id, intent: typeof result.intent === 'string' ? result.intent : '' };
+  }
+  return undefined;
+}
 
 /**
  * Mine the last successful research call for its money-free comparison card

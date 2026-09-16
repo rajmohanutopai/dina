@@ -597,6 +597,7 @@ export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekee
 export {
   checkSharingPolicy,
   filterByTier,
+  getSharingPolicy,
   getSharingTier,
   setSharingPolicy,
 } from './gatekeeper/sharing';
@@ -1385,6 +1386,9 @@ export type {
   PluginToolCapability,
   InvokePluginToolInput,
   InvokePluginToolResult,
+  OpenGroupPlanClientInput,
+  OpenGroupPlanClientResult,
+  GroupPlanHandleWire,
   CreateWorkflowTaskResult,
   MemoryTouchParams,
   MemoryTouchResult,
@@ -1430,6 +1434,11 @@ export {
   InProcessOwnerCommerceClient,
   OwnerCommerceHttpError,
 } from './client/owner-commerce-client';
+// GROUP_COORDINATION §9 — the organizer's decisions on a plan, owner-marked.
+export {
+  InProcessOwnerCoordinationClient,
+  OwnerCoordinationHttpError,
+} from './client/owner-coordination-client';
 export type {
   DraftAnswer,
   InviteListEntry,
@@ -1634,6 +1643,7 @@ export {
 // Plugin substrate (docs/PLUGIN_ARCHITECTURE.md): dynamic registry,
 // grants (constraints + per-execution consumption), decision log.
 export * from './plugins';
+export * from './coordination';
 
 // Connected-agent Brain contracts and broker.
 export * from './reasoning/domain';

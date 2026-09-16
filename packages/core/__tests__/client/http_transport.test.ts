@@ -1080,6 +1080,61 @@ describe('HttpCoreTransport (task 1.31)', () => {
     }
   });
 
+  it('openGroupPlan sends the snake_case plan body and reads the plan back; a refusal is a value; getGroupPlan reads or nulls (GROUP_COORDINATION §11)', async () => {
+    const plan = {
+      plan_id: 'gp_1',
+      intent: 'x',
+      state: 'proposing',
+      window_seconds: 60,
+      round: 1,
+      round_opened_at: 1,
+      window_closes_at: 60_001,
+      created_at: 1,
+      updated_at: 1,
+      candidates: [{ start: 'Sat 26' }],
+      chosen: null,
+      fold: null,
+      guests: [],
+      requirements: [],
+    };
+    const opened = makeStubClient(() => ({ status: 201, headers: {}, body: new TextEncoder().encode(JSON.stringify({ plan })) }));
+    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: opened.client, signer: makeStubSigner().signer });
+    const out = await t.openGroupPlan({
+      intent: 'x',
+      guests: [{ contactDid: 'did:plc:garcia' }, { contactDid: 'did:plc:miller', required: false }],
+      candidates: [{ start: 'Sat 26' }],
+      windowSeconds: 60,
+    });
+    expect(opened.calls[0]?.url).toBe('http://core/v1/coordination/plans');
+    const body = opened.calls[0]?.init.body;
+    expect(body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body))).toEqual({
+      intent: 'x',
+      guests: [{ contact_did: 'did:plc:garcia' }, { contact_did: 'did:plc:miller', required: false }],
+      candidates: [{ start: 'Sat 26' }],
+      window_seconds: 60,
+    });
+    expect(out).toEqual({ ok: true, plan });
+
+    const refused = makeStubClient(() => ({ status: 400, headers: {}, body: new TextEncoder().encode(JSON.stringify({ error: 'too_many_guests', detail: '9 guests' })) }));
+    const t2 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: refused.client, signer: makeStubSigner().signer });
+    await expect(t2.openGroupPlan({ intent: 'x', guests: [], candidates: [] })).resolves.toEqual({ ok: false, refusal: 'too_many_guests', detail: '9 guests' });
+
+    const read = makeStubClient((call) =>
+      call.url.endsWith('/gp_1')
+        ? ok({ plan })
+        : { status: 404, headers: {}, body: new TextEncoder().encode(JSON.stringify({ error: 'not_found' })) },
+    );
+    const t3 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: read.client, signer: makeStubSigner().signer });
+    await expect(t3.getGroupPlan('gp_1')).resolves.toEqual(plan);
+    expect(read.calls[0]?.url).toBe('http://core/v1/coordination/plans/gp_1');
+    await expect(t3.getGroupPlan('nope')).resolves.toBeNull();
+
+    const handles = makeStubClient(() => ok({ plans: [{ plan_id: 'gp_1', intent: 'x', state: 'settled', round: 2, chosen: { start: 'Sat 26' }, updated_at: 1 }, { bad: true }] }));
+    const t4 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: handles.client, signer: makeStubSigner().signer });
+    await expect(t4.listGroupPlanHandles()).resolves.toEqual([{ plan_id: 'gp_1', intent: 'x', state: 'settled', round: 2, chosen: { start: 'Sat 26' }, updated_at: 1 }]);
+    expect(handles.calls[0]?.url).toBe('http://core/v1/coordination/handles');
+  });
+
   it('invokePluginTool sends the narrow snake_case body; listPluginToolCapabilities reads the list', async () => {
     const { client, calls } = makeStubClient(() => ok({ ok: true, mode: 'dispatched', task_id: 't', execution_id: 't' }));
     const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });

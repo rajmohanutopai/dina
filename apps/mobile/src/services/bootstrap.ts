@@ -54,6 +54,8 @@ import {
   onGrantRequestPending,
   onServiceOfferReceived,
   onServiceConfigChanged,
+  coordinationWorkflowHooks,
+  wireGroupCoordinationOfferReplay,
   registerDevice as registerDeviceDID,
   registerPublicKeyResolver,
   registerService,
@@ -741,6 +743,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // the missing commerce ticks: the shared plane is server-only and the
     // phone composes its own service.
     ingressResultTransformer: transformInboundOrderResult,
+    // GROUP_COORDINATION §6 — the disclosure gate and the handler that
+    // releases what it held, from the one factory both roots call.
+    ...coordinationWorkflowHooks(),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the
     // feature itself. A withheld answer leaves no stash, no send and nothing
@@ -1212,6 +1217,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       });
     });
     globalDisposers.push(unsubscribeOfferReplay);
+    // GROUP_COORDINATION §5: a guest asked for reach through the same
+    // preflight is queried the moment the offer lands, within the round's
+    // window. The read path is the fallback; this is the trigger.
+    globalDisposers.push(wireGroupCoordinationOfferReplay());
     // Cross-identity hygiene: drop any stashed intent on teardown so a stale
     // preflight can never auto-fire under a different identity after a switch.
     globalDisposers.push(() => resetPendingPreflights());

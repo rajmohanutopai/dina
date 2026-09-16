@@ -51,6 +51,12 @@ import { registerIdentityExtractor } from '../pipeline/identity_extraction';
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { createDraftReviewTool } from '../reasoning/draft_review_tool';
+import {
+  createCoordinateGroupTool,
+  createGroupPlanHandoffTool,
+  type CoordinateGroupCoreClient,
+  type GroupPlanHandoffCoreClient,
+} from '../reasoning/group_tools';
 import { createGuardScanner } from '../reasoning/guard_scanner';
 import { IntentClassifier } from '../reasoning/intent_classifier';
 import { createSearchPeerlensTool } from '../reasoning/peerlens_tool';
@@ -120,7 +126,9 @@ export interface BuildAgenticAskPipelineInput {
   coreClient: Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
     VaultApprovalWorkflowClient &
     PluginToolCoreClient &
-    ProductToolCoreClient;
+    ProductToolCoreClient &
+    CoordinateGroupCoreClient &
+    GroupPlanHandoffCoreClient;
   /**
    * Workflow surface for `delegate_to_agent` — narrower than the full
    * `BrainCoreClient` so a host that hasn't paired any agents can omit
@@ -347,6 +355,14 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // capability to run. Core gates every ask; the owner decides on the phone.
     reg.register(createListPluginCapabilitiesTool({ core: input.coreClient, logger: input.logger }));
     reg.register(createInvokePluginTool({ core: input.coreClient, logger: input.logger }));
+    // GROUP_COORDINATION §11 — "plan X with A, B and C": ONE tool hands the
+    // guest list and candidates to Core, which fans out, bounds, collapses and
+    // folds. The model never sees a per-guest dispatch; `query_service` keeps
+    // refusing a second dispatch per capability per turn.
+    reg.register(createCoordinateGroupTool({ core: input.coreClient, logger: input.logger }));
+    // §10 — what a settled plan yields for the vendor lane: the chosen slot
+    // and de-identified requirements, and nothing about the households.
+    reg.register(createGroupPlanHandoffTool({ core: input.coreClient, logger: input.logger }));
     // `classify_intent` — lets the agent re-evaluate routing when the
     // plan has shifted mid-loop (gathered new context, found unexpected
     // results). Pre-loop classification still runs as the soft prime;

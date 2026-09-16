@@ -162,6 +162,34 @@ const AUTHZ_RULES: {
   // paired agent. Same boundary as /v1/run and /v1/watch: no signed caller
   // resolves to `owner`, so every signed caller is denied here.
   { prefix: '/v1/commerce', allowed: new Set(['owner']) },
+  // OWNER-ONLY (GROUP_COORDINATION §7, §12). A group plan is the organizer's
+  // private memory of who was asked and what each household chose to
+  // disclose — never a guest's, a vendor's, a plugin's or an agent's to read.
+  // Same boundary as /v1/run, /v1/watch and /v1/commerce.
+  // …with two doors for Brain (§11): open a plan, read its fold. Exact and
+  // method-bound, like the plugin tool-invoke rows, so no decision route
+  // inherits the admission; the handlers re-check the same two shapes.
+  {
+    prefix: '/v1/coordination/plans',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['brain', 'owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/coordination/plans/',
+    method: 'GET',
+    singleSegmentTail: true,
+    allowed: new Set(['brain', 'owner', 'admin', 'device']),
+  },
+  // …and the handles list: id, intent, state and chosen slot per plan — no
+  // guest, reply or disclosure — so a later turn can find the plan it means.
+  {
+    prefix: '/v1/coordination/handles',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['brain', 'owner', 'admin', 'device']),
+  },
+  { prefix: '/v1/coordination', allowed: new Set(['owner']) },
   // Connected-agent policy is owner-only in-handler. Signed access is limited
   // to the node's own admin/device DID; the handler verifies the exact DID.
   { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },

@@ -28,6 +28,7 @@ export type DisplayType =
   | 'review-draft'
   | 'quarantine-request'
   | 'commerce-comparison'
+  | 'group-plan'
   | 'nudge'
   | 'reminder'
   | 'briefing';
@@ -104,6 +105,12 @@ export function toDisplayType(m: ChatMessage): DisplayType {
   if (m.type === 'dina' && lifecycle?.kind === 'commerce_comparison') {
     return 'commerce-comparison';
   }
+  // group_plan card — the organizer's plan (GROUP_COORDINATION §9): a view
+  // keyed by the plan id that reads the fold from Core and carries the
+  // organizer's decisions. Renders beside the one-line ack the loop wrote.
+  if (m.type === 'dina' && lifecycle?.kind === 'group_plan') {
+    return 'group-plan';
+  }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
@@ -125,6 +132,8 @@ export function chatRowKind(displayType: DisplayType): string {
       return 'service-query';
     case 'commerce-comparison':
       return 'commerce-comparison';
+    case 'group-plan':
+      return 'group-plan';
     case 'quarantine-request':
       return 'quarantine';
     case 'ask-approval':

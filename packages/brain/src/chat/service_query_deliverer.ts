@@ -98,6 +98,15 @@ export function createServiceQueryDeliverer(
     }
     const originChannel = extractOriginChannel(task.payload);
 
+    // GROUP_COORDINATION §5/§9 — a spoke of a group plan (`group_plan:<id>`)
+    // has no card of its own: the plan card is its surface, and Core folds
+    // every spoke's outcome behind one shared window. A card here would show
+    // this household's outcome at the moment it landed, with its reason —
+    // exactly what the collapse rule forbids. Nothing is posted.
+    if (task.kind === 'service_query' && originChannel.startsWith('group_plan:')) {
+      return;
+    }
+
     // #6 — a WATCH poll result (`watch:<subscription_id>`) is a standing-
     // subscription arrival, NOT a chat turn: route it to the notification-inbox
     // sink (silence classifier + `push` notification, PUSH §8) instead of a main-

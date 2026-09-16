@@ -408,3 +408,46 @@ describe('Authorization Matrix', () => {
     }
   });
 });
+
+describe('Group coordination rows (GROUP_COORDINATION §7, §11)', () => {
+  const OPEN: [string, string] = ['POST', '/v1/coordination/plans'];
+  const READ: [string, string] = ['GET', '/v1/coordination/plans/gp_1'];
+  const HANDLES: [string, string] = ['GET', '/v1/coordination/handles'];
+  const decisions: [string, string][] = [
+    ['GET', '/v1/coordination/plans'],
+    ['POST', '/v1/coordination/plans/gp_1/choose'],
+    ['POST', '/v1/coordination/plans/gp_1/widen'],
+    ['POST', '/v1/coordination/plans/gp_1/optional'],
+    ['POST', '/v1/coordination/plans/gp_1/abandon'],
+    ['DELETE', '/v1/coordination/plans/gp_1'],
+  ];
+
+  it('the owner reaches every route', () => {
+    for (const [m, p] of [OPEN, READ, HANDLES, ...decisions]) expect(isAuthorized('owner', m, p)).toBe(true);
+  });
+
+  it('Brain, a paired device and admin reach the three doors — open, read, handles — and no decision', () => {
+    for (const caller of ['brain', 'device', 'admin'] as CallerType[]) {
+      expect(isAuthorized(caller, ...OPEN)).toBe(true);
+      expect(isAuthorized(caller, ...READ)).toBe(true);
+      expect(isAuthorized(caller, ...HANDLES)).toBe(true);
+      for (const [m, p] of decisions) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+    }
+  });
+
+  it('an agent, a plugin, a connector and a service reach nothing', () => {
+    for (const caller of ['agent', 'plugin', 'connector', 'service'] as CallerType[]) {
+      for (const [m, p] of [OPEN, READ, HANDLES, ...decisions]) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+    }
+  });
+
+  it('the doors are exact: a wrong verb, a sub-path or a deeper tail inherits nothing', () => {
+    expect(isAuthorized('brain', 'GET', '/v1/coordination/plans')).toBe(false);
+    expect(isAuthorized('brain', 'POST', '/v1/coordination/plans/gp_1')).toBe(false);
+    expect(isAuthorized('brain', 'GET', '/v1/coordination/plans/gp_1/choose')).toBe(false);
+    expect(isAuthorized('brain', 'POST', '/v1/coordination/plans/extra')).toBe(false);
+    expect(isAuthorized('brain', 'GET', '/v1/coordination')).toBe(false);
+    expect(isAuthorized('brain', 'POST', '/v1/coordination/handles')).toBe(false);
+    expect(isAuthorized('brain', 'GET', '/v1/coordination/handles/x')).toBe(false);
+  });
+});

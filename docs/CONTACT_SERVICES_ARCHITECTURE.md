@@ -54,7 +54,7 @@ The grant mechanism is shared, but the *product category* is deliberately narrow
 3. **Introductions** — "connect me with someone who does Y." Rides the people graph + approval.
 4. **Vouch / endorsement** — "vouch for me." PeerLens trust network; the `peerlens.vouch` message family already exists.
 
-Later (each more sensitive or more failure-prone, so not V1): **personal status / ETA** (the strongest V1.1 candidate, but location-sensitive — must not default broadly), **shared preferences/facts** (close contacts only), **group coordination**, **family/care check-ins**.
+Later (each more sensitive or more failure-prone, so not V1): **personal status / ETA** (the strongest V1.1 candidate, but location-sensitive — must not default broadly), **shared preferences/facts** (close contacts only), **group coordination** (designed 2026-09-15 as a star of 1:1 exchanges folded on the organizer's node — `docs/GROUP_COORDINATION_ARCHITECTURE.md`), **family/care check-ins**.
 
 **Two things stay OUT of this model:**
 - **Provider services** — salon slots, bus ETA, store stock, clinic availability, order/package status. Provider↔customer, even when `known_only`. They live in the services tab.

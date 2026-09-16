@@ -52,6 +52,7 @@ import {
   setWatchService,
   setWorkflowRepository,
   setWorkflowService,
+  coordinationWorkflowHooks,
   transformInboundOrderResult,
   type ServiceQueryBody,
   type ServiceResponseBody,
@@ -207,6 +208,11 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
     // capability it does not own, and `withhold` when it owns the answer and
     // cannot record one.
     ingressResultTransformer: transformInboundOrderResult,
+    // GROUP_COORDINATION §6 — a household disclosure leaves only under the
+    // contact's sharing tier, and a health kind only after the owner's yes.
+    // Both hooks come from ONE factory so neither host can wire the gate and
+    // forget the decision handler that releases what it held.
+    ...coordinationWorkflowHooks(),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator
     // sees orders lapse and nothing says why.

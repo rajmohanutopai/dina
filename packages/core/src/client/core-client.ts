@@ -136,6 +136,44 @@ export function parseInvokePluginToolResponse(status: number, raw: unknown): Inv
   };
 }
 
+// ─── Group coordination (GROUP_COORDINATION §9, §11) ──────────────────────
+
+/** What `coordinate_group` hands Core: the organizer's guests and candidates. */
+export interface OpenGroupPlanClientInput {
+  intent: string;
+  guests: { contactDid: string; required?: boolean }[];
+  candidates: { start: string; end?: string; note?: string }[];
+  windowSeconds?: number;
+}
+
+/** `POST /v1/coordination/plans`, typed; a refusal is a value, not a throw. */
+export type OpenGroupPlanClientResult =
+  | { ok: true; plan: GroupPlanWire }
+  | { ok: false; refusal: string; detail?: string };
+
+export { readGroupPlanHandles };
+
+export function parseOpenGroupPlanResponse(status: number, raw: unknown): OpenGroupPlanClientResult {
+  const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  if (status >= 200 && status < 300) {
+    const plan = readGroupPlanWire(r.plan);
+    if (plan !== null) return { ok: true, plan };
+    // Core answers 2xx only after the plan exists and the first round went
+    // out: an unreadable reply is not a refusal, and asking again would fan
+    // out twice.
+    return {
+      ok: false,
+      refusal: 'response_malformed',
+      detail: `Core opened the plan (HTTP ${status}) but its reply could not be read. Do not ask again; the plan is in Activity.`,
+    };
+  }
+  return {
+    ok: false,
+    refusal: typeof r.error === 'string' ? r.error : `http_${status}`,
+    ...(typeof r.detail === 'string' ? { detail: r.detail } : {}),
+  };
+}
+
 export interface ApproveWorkflowTaskOptions {
   scope?: 'single' | 'session';
   pluginGrant?: { type: 'window'; hours?: number };
@@ -499,6 +537,27 @@ export interface CoreClient {
    * result rides the task (`getWorkflowTask`). `POST /v1/plugins/tool-invoke`.
    */
   invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult>;
+
+  /**
+   * GROUP_COORDINATION §11 — open a group plan: Core fans out one
+   * `availability_coordination` spoke per guest, bounded, and folds on read.
+   * `POST /v1/coordination/plans`. The refusal is a value the tool relays.
+   */
+  openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult>;
+
+  /**
+   * The plan folded as of now, or null on 404. `GET /v1/coordination/plans/:id`.
+   * Decisions (choose, widen, drop, stop) are the owner's and are not on this
+   * client; they ride the owner-marked coordination client.
+   */
+  getGroupPlan(planId: string): Promise<GroupPlanWire | null>;
+
+  /**
+   * Recent plans as HANDLES — id, intent, state, chosen slot; nothing about
+   * who is in them. `GET /v1/coordination/handles`. How a turn with no memory
+   * of the turn that opened a plan finds the plan the owner means.
+   */
+  listGroupPlanHandles(): Promise<GroupPlanHandleWire[]>;
 
   /**
    * Fetch a single workflow task by id. Returns `null` on 404 (unknown
@@ -1486,6 +1545,15 @@ export interface MemoryTouchResult {
   /** Diagnostic reason populated when `status === 'skipped'`. */
   reason?: string;
 }
+
+/** The group plan on the wire (GROUP_COORDINATION §9), shared with the routes. */
+import {
+  readGroupPlanHandles,
+  readGroupPlanWire,
+  type GroupPlanHandleWire,
+  type GroupPlanWire,
+} from '../coordination/plan_wire';
+export type { GroupPlanHandleWire, GroupPlanWire };
 
 /** Re-export `Contact` so consumers find it on `@dina/core`'s public
  *  barrel without deep-importing from `contacts/directory`. */

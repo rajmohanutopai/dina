@@ -361,6 +361,46 @@ describe('useServiceInbox', () => {
     expect(entry.kind).toBe('service_query');
   });
 
+  it('classifies a held disclosure review with kind=disclosure_review, listing the exact lines that would leave (GROUP_COORDINATION §6)', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'disclosure-review-exec-1',
+          description: 'Tell Mike about a household dietary need?',
+          payload: JSON.stringify({
+            type: 'disclosure_review',
+            execution_task_id: 'exec-1',
+            context: {
+              taskId: 'exec-1',
+              fromDID: 'did:plc:mike',
+              queryId: 'q-1',
+              capability: 'availability_coordination',
+              ttlSeconds: 120,
+              serviceName: "The Millers' Dina",
+            },
+            disclosures: [{ kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' }],
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('disclosure_review');
+    expect(entry.requesterDID).toBe('did:plc:mike');
+    expect(entry.capability).toBe('availability_coordination');
+    expect(entry.description).toBe('Tell Mike about a household dietary need?');
+    expect(entry.paramsPreview).toBe('dietary: someone in the household is gluten-free');
+  });
+
+  it('denyPending(disclosure_review) cancels without service.respond — Core releases the reply without the disclosure', async () => {
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('disclosure-review-exec-1', 'denied_by_operator', 'disclosure_review');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled).toEqual([{ id: 'disclosure-review-exec-1', reason: 'denied_by_operator' }]);
+    expect(markNotificationRead).toHaveBeenCalledWith('disclosure-review-exec-1');
+  });
+
   it('classifies intent_validation approvals with kind=intent_validation', async () => {
     // POST /v1/intent/validate raises an approval task with this
     // payload shape: type='intent_validation', action, target,

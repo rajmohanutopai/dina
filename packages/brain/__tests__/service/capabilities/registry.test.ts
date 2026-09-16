@@ -5,7 +5,7 @@
  * brain/src/service/capabilities/eta_query.py.
  */
 
-import { isOfficialCapability } from '@dina/protocol';
+import { CATALOG_CAPABILITIES, isOfficialCapability } from '@dina/protocol';
 
 import {
   EtaQueryParamsSchema,
@@ -71,6 +71,19 @@ describe('capabilities registry', () => {
         cap?.resultSchema as { properties?: { status?: { enum?: string[] } } }
       ).properties?.status?.enum;
       expect(resultEnum).toEqual(['accepted', 'counter', 'needs_more_info']);
+    });
+
+    it('availability_coordination schemas match the protocol catalog copy byte for byte (the discovery menu and the validator must agree)', () => {
+      const cap = getCapability('availability_coordination');
+      const catalog = CATALOG_CAPABILITIES.find((c) => c.id === 'availability_coordination');
+      expect(catalog).toBeDefined();
+      expect(JSON.stringify(cap?.paramsSchema)).toBe(JSON.stringify(catalog?.params_schema));
+      expect(JSON.stringify(cap?.resultSchema)).toBe(JSON.stringify(catalog?.result_schema));
+      // The result carries the household disclosure (GROUP_COORDINATION §6), about one thing only.
+      const about = (
+        cap?.resultSchema as { properties?: { disclosures?: { items?: { properties?: { about?: { enum?: string[] } } } } } }
+      ).properties?.disclosures?.items?.properties?.about?.enum;
+      expect(about).toEqual(['household']);
     });
   });
 

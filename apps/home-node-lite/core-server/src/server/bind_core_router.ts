@@ -213,6 +213,10 @@ function isOwnerSurfacePath(p: string): boolean {
     // were reachable only in-process, exactly the defect the commerce lanes
     // hit on their first live server run.
     p.startsWith('/v1/plugins/') ||
+    // The group-coordination owner surface (GROUP_COORDINATION §7): every
+    // route re-validates the capability with its own owner guard; guest
+    // traffic never arrives here — it rides the 1:1 service lane.
+    p.startsWith('/v1/coordination/') ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
     (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))

@@ -40,6 +40,11 @@ export {
   resetServiceOfferReceivedListeners,
 } from './src/d2d/service_offer_events';
 export type { ServiceOfferReceivedEvent } from './src/d2d/service_offer_events';
+export {
+  replayOfferForOpenPlans,
+  wireGroupCoordinationOfferReplay,
+} from './src/coordination/group_coordination_service';
+export { coordinationWorkflowHooks } from './src/coordination/disclosure_egress';
 export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
 export { getNodeDID, setNodeDID,
@@ -174,6 +179,11 @@ export {
   InProcessOwnerCommerceClient,
   OwnerCommerceHttpError,
 } from './src/client/owner-commerce-client';
+// GROUP_COORDINATION §9 — the organizer's decisions on a plan, owner-marked.
+export {
+  InProcessOwnerCoordinationClient,
+  OwnerCoordinationHttpError,
+} from './src/client/owner-coordination-client';
 export type {
   DraftAnswer,
   OrderApproveAnswer,

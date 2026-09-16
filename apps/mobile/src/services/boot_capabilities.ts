@@ -1080,7 +1080,16 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
  */
 function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
   AskCoordinatorCoreClient &
-  Pick<import('@dina/core').CoreClient, 'listPluginToolCapabilities' | 'invokePluginTool' | 'contactLookup'> {
+  Pick<
+    import('@dina/core').CoreClient,
+    | 'listPluginToolCapabilities'
+    | 'invokePluginTool'
+    | 'contactLookup'
+    | 'listContacts'
+    | 'openGroupPlan'
+    | 'getGroupPlan'
+    | 'listGroupPlanHandles'
+  > {
   // All methods proxy through the booted node's coreClient. The node is
   // always available by the time these are called (the pipeline is only
   // invoked mid-ask, well after boot). Returning [] / null on the cold
@@ -1111,6 +1120,23 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
     },
     async listServiceOffers(params?: { providerDid?: string; capability?: string }) {
       return (await node()?.coreClient.listServiceOffers(params)) ?? [];
+    },
+    // GROUP_COORDINATION §11 — `coordinate_group` names guests from the
+    // contact directory and hands the plan to Core. Cold path: no contacts
+    // yet, and an ask before boot is a typed refusal the loop relays.
+    async listContacts() {
+      return (await node()?.coreClient.listContacts()) ?? [];
+    },
+    async openGroupPlan(input: import('@dina/core').OpenGroupPlanClientInput) {
+      const n = node();
+      if (n === null) return { ok: false as const, refusal: 'not_wired', detail: 'DinaNode not booted' };
+      return n.coreClient.openGroupPlan(input);
+    },
+    async getGroupPlan(planId: string) {
+      return (await node()?.coreClient.getGroupPlan(planId)) ?? null;
+    },
+    async listGroupPlanHandles() {
+      return (await node()?.coreClient.listGroupPlanHandles()) ?? [];
     },
     async createWorkflowTask(input: import('@dina/core').CreateWorkflowTaskInput) {
       const n = node();

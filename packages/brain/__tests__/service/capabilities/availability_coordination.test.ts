@@ -63,6 +63,49 @@ describe('availability_coordination — result', () => {
     expect(validateAvailabilityCoordinationResult({ status: 'booked' })).not.toBeNull();
   });
 
+  describe('household disclosures (GROUP_COORDINATION §6, rule 6)', () => {
+    it('are optional and additive — a reply without them stays valid', () => {
+      expect(validateAvailabilityCoordinationResult({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] })).toBeNull();
+    });
+
+    it('accept every kind, about the household', () => {
+      for (const kind of ['dietary', 'accessibility', 'transport', 'note']) {
+        expect(
+          validateAvailabilityCoordinationResult({
+            status: 'accepted',
+            disclosures: [{ kind, text: 'someone in the household is gluten-free', about: 'household' }],
+          }),
+        ).toBeNull();
+      }
+    });
+
+    it('`about` admits one value — the wire cannot carry a named person', () => {
+      for (const about of ['Lily', 'child', 'me', '', undefined]) {
+        expect(
+          validateAvailabilityCoordinationResult({
+            status: 'accepted',
+            disclosures: [{ kind: 'dietary', text: 'gluten-free', about }],
+          }),
+        ).not.toBeNull();
+      }
+    });
+
+    it('refuses a kind outside the four, and a disclosure with no text', () => {
+      expect(
+        validateAvailabilityCoordinationResult({
+          status: 'accepted',
+          disclosures: [{ kind: 'medical', text: 'x', about: 'household' }],
+        }),
+      ).not.toBeNull();
+      expect(
+        validateAvailabilityCoordinationResult({
+          status: 'accepted',
+          disclosures: [{ kind: 'dietary', about: 'household' }],
+        }),
+      ).not.toBeNull();
+    });
+  });
+
   it('rejects a missing status (the only required field)', () => {
     expect(validateAvailabilityCoordinationResult({ accepted_slots: [{ start: 'x' }] })).not.toBeNull();
   });

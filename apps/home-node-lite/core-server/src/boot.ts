@@ -75,6 +75,8 @@ import {
   startCommerceSweepers,
   type CommerceSweepers,
   getWorkflowService,
+  coordinationWorkflowHooks,
+  wireGroupCoordinationOfferReplay,
   defaultPluginCompletionHandler,
   getPluginHostRuntime,
   getPluginInstallRepository,
@@ -629,6 +631,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
             ),
         }),
         repository: localWorkflowRepository,
+        // GROUP_COORDINATION §6 — the same gate and release handler the full
+        // plane installs, so a disclosure never rides out ungated in the
+        // window between this line and `wireWorkflowPlane`.
+        ...coordinationWorkflowHooks(),
       });
       setWorkflowService(localWorkflowService);
       localTaskExpiry = new TaskExpirySweeper({
@@ -898,6 +904,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
       logger,
     });
+    // GROUP_COORDINATION §5: a guest asked for reach through the 1:1 preflight
+    // is queried the moment the offer lands, within the round's window. The
+    // read path is the fallback; this is the trigger. Process-lifetime, like
+    // every other module singleton this boot installs.
+    wireGroupCoordinationOfferReplay();
   }
 
   const reasoningWorkflowService = getWorkflowService();

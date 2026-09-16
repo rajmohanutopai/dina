@@ -28,13 +28,11 @@ import { getServiceGrantRepository } from '../../service/service_grant_repositor
 import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
 import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/repository';
 import { getWorkflowService } from '../../workflow/service';
+import { requireAgentSession } from '../agent_session_guard';
 
 import { getD2DSender } from './d2d_msg';
-import { requireAgentSession } from '../agent_session_guard';
+
 import type { ServiceQueryBody } from '../../d2d/service_bodies';
-
-
-
 import type { CoreRouter } from '../router';
 
 /** Inject-time sender contract. Wiring provides this; handler stays pure. */
@@ -97,6 +95,7 @@ export function computeIdempotencyKey(
   serviceUri?: string,
   grantId?: string,
   requesterPrincipal?: string,
+  dedupeScope?: string,
 ): string {
   // Namespace the dedupe key by `schema_hash` when present (review #8).
   // Two requests targeting the same (to_did, capability, params) but
@@ -130,7 +129,13 @@ export function computeIdempotencyKey(
     requesterPrincipal !== undefined && requesterPrincipal !== ''
       ? `|requester=${requesterPrincipal}`
       : '';
-  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}${requesterFragment}`;
+  // A caller that owns a CONVERSATION of queries — a group plan's round, where
+  // N guests are asked one question — scopes dedupe to that conversation, so
+  // the same question asked of the same guest by two plans (or two rounds)
+  // never merges into one task and one shared reply.
+  const scopeFragment =
+    dedupeScope !== undefined && dedupeScope !== '' ? `|scope=${dedupeScope}` : '';
+  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}${requesterFragment}${scopeFragment}`;
   return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
@@ -256,6 +261,12 @@ export interface SubmitServiceQueryOptions {
    */
   requesterAgentDid?: string;
   requesterSessionId?: string;
+  /**
+   * Dedupe scope for a caller that owns a conversation of queries (a group
+   * plan's round). Folded into the idempotency key; absent for the ordinary
+   * 1:1 path, which keeps its dedupe identity unchanged.
+   */
+  dedupeScope?: string;
 }
 
 /**
@@ -297,8 +308,8 @@ export async function submitServiceQuery(
   ) {
     return { status: 500, body: { error: 'incomplete requester principal' } };
   }
-  const requesterDid = hasRequester ? options.requesterAgentDid! : '';
-  const requesterSession = hasRequester ? options.requesterSessionId! : '';
+  const requesterDid = hasRequester ? (options.requesterAgentDid ?? '') : '';
+  const requesterSession = hasRequester ? (options.requesterSessionId ?? '') : '';
   const requesterPrincipal = hasRequester
     ? `${requesterDid}\u0000${requesterSession}`
     : undefined;
@@ -311,9 +322,20 @@ export async function submitServiceQuery(
     q.service_uri,
     q.grant_id,
     requesterPrincipal,
+    options.dedupeScope,
   );
   const repo: WorkflowRepository = service.store();
-  const existing = repo.getActiveByIdempotencyKey(idemKey);
+  // A SCOPED query names one question to one guest in one round, so a hit in
+  // ANY state means "already asked this round": a completed task carries the
+  // reply the caller has yet to read, a failed one already resolves with the
+  // window. A resume after a crash between the send and the caller's own
+  // record therefore re-links to the task on the wire instead of asking the
+  // guest twice. The ordinary 1:1 path keeps its active-only dedupe.
+  const lookup = (): ReturnType<WorkflowRepository['getByIdempotencyKey']> =>
+    options.dedupeScope !== undefined && options.dedupeScope !== ''
+      ? repo.getByIdempotencyKey(idemKey)
+      : repo.getActiveByIdempotencyKey(idemKey);
+  const existing = lookup();
   if (existing !== null) {
     return {
       status: 200,
@@ -359,7 +381,7 @@ export async function submitServiceQuery(
     });
   } catch (err) {
     if (err instanceof WorkflowConflictError) {
-      const raced = repo.getActiveByIdempotencyKey(idemKey);
+      const raced = lookup();
       if (raced !== null) {
         return {
           status: 200,
@@ -394,7 +416,9 @@ export async function submitServiceQuery(
     } catch {
       /* fail-fail is non-fatal — sweeper handles stuck tasks */
     }
-    return { status: 502, body: { error: `send failed: ${msg}` } };
+    // The task exists (failed) and is named, so a caller that keeps its own
+    // record of what it sent can point at it.
+    return { status: 502, body: { error: `send failed: ${msg}`, task_id: taskId } };
   }
 
   void repo.transition(taskId, WorkflowTaskState.Created, WorkflowTaskState.Running, Date.now());

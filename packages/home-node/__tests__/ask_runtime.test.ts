@@ -141,6 +141,11 @@ function stubHandleCore() {
     // §6 plugin tools — nothing installed in this fixture.
     listPluginToolCapabilities: jest.fn(async () => []),
     invokePluginTool: jest.fn(async () => ({ ok: false as const, code: 'install_unknown', message: 'none' })),
+    // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
+    listContacts: jest.fn(async () => []),
+    openGroupPlan: jest.fn(async () => ({ ok: false as const, refusal: 'not_wired' })),
+    getGroupPlan: jest.fn(async () => null),
+    listGroupPlanHandles: jest.fn(async () => []),
     createWorkflowTask: jest.fn(async () => ({ task: {} as never, deduped: false })),
     getWorkflowTask: jest.fn(async () => null),
     completeWorkflowTask: jest.fn(async () => ({}) as never),

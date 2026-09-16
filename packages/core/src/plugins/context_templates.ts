@@ -37,7 +37,10 @@
  * reading an old entry knows which table produced it.
  */
 
+import { oneLine } from '../util/one_line';
+
 import type { ActionClass } from '@dina/protocol';
+
 
 /** Bump when a template gains, loses, or re-classes a field. */
 export const CONTEXT_TEMPLATE_VERSION = 1;
@@ -191,21 +194,9 @@ export function dateClassOf(atMs: number, nowMs: number): DateClass {
   return 'older';
 }
 
-/**
- * One bounded line — no control characters, no bidi overrides (a reversed
- * legal name would misread on the owner's card as much as in a runner's log),
- * no essay.
- */
+/** One bounded line — the shared sanitiser, at this table's text ceiling. */
 export function oneLineText(value: string): string {
-  return (
-    value
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
-      .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, MAX_TEXT_FIELD_CHARS)
-  );
+  return oneLine(value, MAX_TEXT_FIELD_CHARS);
 }
 
 /**

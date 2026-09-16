@@ -26,14 +26,25 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.31.
  */
 
+import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
-import { parseInvokePluginToolResponse, updateContactBody, WorkflowConflictError } from './core-client';
+
+import {
+  parseInvokePluginToolResponse,
+  parseOpenGroupPlanResponse,
+  updateContactBody,
+  WorkflowConflictError,
+} from './core-client';
 
 import type {
   ApproveWorkflowTaskOptions,
   InvokePluginToolInput,
   InvokePluginToolResult,
+  OpenGroupPlanClientInput,
+  OpenGroupPlanClientResult,
+  GroupPlanHandleWire,
+  GroupPlanWire,
   PluginToolCapability,
   CoreClient,
   CoreHealth,
@@ -791,6 +802,51 @@ export class HttpCoreTransport implements CoreClient {
       parsed = undefined;
     }
     return parseInvokePluginToolResponse(res.status, parsed);
+  }
+
+  async openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult> {
+    const body: Record<string, unknown> = {
+      intent: input.intent,
+      guests: input.guests.map((g) => ({
+        contact_did: g.contactDid,
+        ...(g.required !== undefined ? { required: g.required } : {}),
+      })),
+      candidates: input.candidates,
+      ...(input.windowSeconds !== undefined ? { window_seconds: input.windowSeconds } : {}),
+    };
+    // Refusals (400/403/409/503) are typed answers the tool relays, not faults.
+    const res = await this.callRaw('POST', '/v1/coordination/plans', undefined, body);
+    const text = res.body.byteLength > 0 ? new TextDecoder().decode(res.body) : '';
+    let parsed: unknown = undefined;
+    try {
+      parsed = text === '' ? undefined : JSON.parse(text);
+    } catch {
+      parsed = undefined;
+    }
+    return parseOpenGroupPlanResponse(res.status, parsed);
+  }
+
+  async getGroupPlan(planId: string): Promise<GroupPlanWire | null> {
+    const res = await this.callRaw(
+      'GET',
+      `/v1/coordination/plans/${encodeURIComponent(planId)}`,
+      undefined,
+      undefined,
+    );
+    if (res.status === 404) return null;
+    const raw = this.parseOk<{ plan?: unknown }>(res, `getGroupPlan(id=${planId})`);
+    return readGroupPlanWire(raw.plan);
+  }
+
+  async listGroupPlanHandles(): Promise<GroupPlanHandleWire[]> {
+    const raw = await this.call<{ plans?: unknown }>(
+      'GET',
+      '/v1/coordination/handles',
+      undefined,
+      undefined,
+      'listGroupPlanHandles()',
+    );
+    return readGroupPlanHandles(raw.plans);
   }
 
   async approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask> {

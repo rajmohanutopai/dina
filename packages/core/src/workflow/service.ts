@@ -320,7 +320,35 @@ export interface WorkflowServiceOptions {
   onIngressResultWithheld?:
     | ((args: { taskId: string; capability: string; fromDid: string; reason: string }) => void)
     | null;
+  /**
+   * The last word on a service response before it is staged for the wire,
+   * on BOTH bridge branches (delegation and plugin ingress), after the
+   * commerce transformer. Core's egress policy for what a provider's answer
+   * may carry lives here — e.g. a household disclosure that the contact's
+   * sharing tier does not admit, or one that needs the owner's yes first
+   * (GROUP_COORDINATION §6). Same three answers as the transformer, same
+   * fail-closed rule: a throw withholds.
+   */
+  responseEgressGate?: ResponseEgressGate | null;
+  /**
+   * Told when an approval task is decided through the service — approved
+   * (→ queued) or denied (cancelled from pending_approval) — so a Core-owned
+   * approval that has no runner to claim it can be acted on where the
+   * decision lands, whichever route or command delivered it. Injected like
+   * the plugin completion handler: the workflow layer owns the ORDERING
+   * (transition, then tell), not the meaning. A throw is the handler's own.
+   */
+  approvalDecisionHandler?: ApprovalDecisionHandler | null;
 }
+
+/** See `WorkflowServiceOptions.responseEgressGate`. */
+export type ResponseEgressGate = (ctx: ServiceQueryBridgeContext) => IngressResultDecision;
+
+/** See `WorkflowServiceOptions.approvalDecisionHandler`. */
+export type ApprovalDecisionHandler = (args: {
+  task: WorkflowTask;
+  decision: 'approved' | 'denied';
+}) => void;
 
 /**
  * What the buyer should actually receive for a completed ingress result.
@@ -398,6 +426,8 @@ export class WorkflowService {
     WorkflowServiceOptions['onIngressResultWithheld']
   > | null;
   private readonly pluginCompletionHandler: PluginCompletionHandler | null;
+  private readonly responseEgressGate: ResponseEgressGate | null;
+  private readonly approvalDecisionHandler: ApprovalDecisionHandler | null;
   /**
    * Task IDs whose bridge-send is currently in flight — either the
    * detached initial send fired by `bridgeServiceQueryCompletion`, or
@@ -445,6 +475,8 @@ export class WorkflowService {
     this.ingressResultTransformer = options.ingressResultTransformer ?? null;
     this.onIngressResultWithheld = options.onIngressResultWithheld ?? null;
     this.pluginCompletionHandler = options.pluginCompletionHandler ?? null;
+    this.responseEgressGate = options.responseEgressGate ?? null;
+    this.approvalDecisionHandler = options.approvalDecisionHandler ?? null;
   }
 
   /** Expose the underlying repository for callers that need read access (e.g. sweepers). */
@@ -535,7 +567,23 @@ export class WorkflowService {
       );
     }
     const updated = this.repo.getById(id);
+    this.noticeApprovalDecision(updated ?? task, 'approved');
     return updated ?? task;
+  }
+
+  /**
+   * A decided approval is told to the injected handler AFTER the transition
+   * landed, and a throw there is the handler's own — it can never unwind a
+   * decision the owner already made.
+   */
+  private noticeApprovalDecision(task: WorkflowTask, decision: 'approved' | 'denied'): void {
+    const handler = this.approvalDecisionHandler;
+    if (handler === null || task.kind !== WorkflowTaskKind.Approval) return;
+    try {
+      handler({ task, decision });
+    } catch {
+      /* the handler owns its own reporting */
+    }
   }
 
   /**
@@ -644,20 +692,33 @@ export class WorkflowService {
    * still leaves a retryable record.
    */
   private bridgeServiceQueryCompletion(task: WorkflowTask, resultJSON: string): void {
-    const send = this.responseBridgeSender;
-    if (send === null) return;
+    if (this.responseBridgeSender === null) return;
     if (task.kind !== WorkflowTaskKind.Delegation) return;
-    // THE codec (`@dina/protocol`) — same parser the consumer + tier1
-    // runner use, so a payload field can't exist for one hop and not
-    // another. Null = not a service execution (other delegation kinds)
-    // or unanswerable (missing identity fields) — nothing to bridge.
-    // §11.2a: a provider-ingress PLUGIN task carries its correlation in
-    // the plugin envelope's `service_ingress` block instead — second
-    // recognizer, same bridge, same durability semantics.
+    const ctx = this.outgoingContextFor(task, resultJSON);
+    if (ctx === null) return;
+    const gated = this.applyEgressGate(ctx);
+    if (gated === null) return;
+    this.dispatchBridge(task, gated);
+  }
+
+  /**
+   * The response a completed service task is about to send, before the
+   * egress gate: its identity from the task's own payload, and its bytes
+   * after the commerce transformer where the plugin lane owns them. Null when
+   * the task is not a service execution or cannot be answered. Public so a
+   * held response can be REBUILT from the task Core stored rather than from
+   * anything a card carried.
+   *
+   * THE codec (`@dina/protocol`) — same parser the consumer + tier1 runner
+   * use, so a payload field can't exist for one hop and not another. §11.2a:
+   * a provider-ingress PLUGIN task carries its correlation in the plugin
+   * envelope's `service_ingress` block instead — second recognizer, same
+   * bridge, same durability semantics.
+   */
+  outgoingContextFor(task: WorkflowTask, resultJSON: string): ServiceQueryBridgeContext | null {
     const payload = parseServiceQueryExecutionPayload(task.payload);
-    let ctx: ServiceQueryBridgeContext;
     if (payload !== null) {
-      ctx = {
+      return {
         taskId: task.id,
         fromDID: payload.from_did,
         queryId: payload.query_id,
@@ -667,82 +728,138 @@ export class WorkflowService {
         serviceName: payload.service_name ?? '',
         schemaSnapshot: payload.schema_snapshot,
       };
-    } else {
-      const envelope = parsePluginEnvelope(task.payload);
-      const ingress = envelope?.service_ingress;
-      if (envelope === null || ingress === undefined) return;
-      // §9.9 — for an order this replaces the runner's decision with the
-      // acknowledgement Core signed. A throw must not lose a completion that
-      // already landed, so the original result is sent if the seam fails.
-      //
-      // A THROW FAILS CLOSED, and this CORRECTS the reasoning that stood here
-      // before. It said a crashed seam "has told us nothing and dropping a
-      // landed completion is the worse failure", and treated a throw as
-      // `passthrough`. That was wrong in the way that costs money.
-      //
-      // A throw and a refusal differ in what they tell US and agree on the
-      // only thing that reaches the buyer: Core did not produce an
-      // authoritative record. §9.12 is explicit that a supplier plugin emits
-      // an unsigned CANDIDATE and cannot make it authoritative — so answering
-      // `submit_order` with the runner's raw JSON tells the buyer their order
-      // was decided at precisely the moment this node failed to decide it.
-      // Failing open is worst exactly when it matters most.
-      //
-      // Nor is a completion actually lost. The task is already CAS-confirmed
-      // in the workflow store; what is withheld is the RESPONSE, and §12.7's
-      // buyer reconcile exists for the unanswered submission. The observer
-      // below is what stops this being silent.
-      let outgoing = resultJSON;
-      if (this.ingressResultTransformer !== null) {
-        let decision: IngressResultDecision;
-        try {
-          decision = this.ingressResultTransformer({
-            capability: ingress.capability,
-            capabilityId: envelope.capability_id,
-            fromDid: ingress.from_did,
-            params: envelope.params,
-            resultJSON,
-          });
-        } catch (error) {
-          decision = {
-            kind: 'withhold',
-            reason: `transformer_threw: ${error instanceof Error ? error.message : String(error)}`,
-          };
-        }
-        // Same exit as "not a service execution" above: no stash, no send, no
-        // in-flight claim. Nothing is left for the sweeper to retry, because
-        // there is nothing pending — the answer is deliberately absent.
-        if (decision.kind === 'withhold') {
-          // Observed BEFORE the return, and never allowed to turn a
-          // deliberate silence into a thrown completion.
-          try {
-            this.onIngressResultWithheld?.({
-              taskId: task.id,
-              capability: ingress.capability,
-              fromDid: ingress.from_did,
-              reason: decision.reason,
-            });
-          } catch {
-            /* an observer must not change the outcome it observes */
-          }
-          return;
-        }
-        if (decision.kind === 'replace') outgoing = decision.json;
+    }
+    const envelope = parsePluginEnvelope(task.payload);
+    const ingress = envelope?.service_ingress;
+    if (envelope === null || ingress === undefined) return null;
+    // §9.9 — for an order this replaces the runner's decision with the
+    // acknowledgement Core signed. A throw must not lose a completion that
+    // already landed, so the original result is sent if the seam fails.
+    //
+    // A THROW FAILS CLOSED, and this CORRECTS the reasoning that stood here
+    // before. It said a crashed seam "has told us nothing and dropping a
+    // landed completion is the worse failure", and treated a throw as
+    // `passthrough`. That was wrong in the way that costs money.
+    //
+    // A throw and a refusal differ in what they tell US and agree on the
+    // only thing that reaches the buyer: Core did not produce an
+    // authoritative record. §9.12 is explicit that a supplier plugin emits
+    // an unsigned CANDIDATE and cannot make it authoritative — so answering
+    // `submit_order` with the runner's raw JSON tells the buyer their order
+    // was decided at precisely the moment this node failed to decide it.
+    // Failing open is worst exactly when it matters most.
+    //
+    // Nor is a completion actually lost. The task is already CAS-confirmed
+    // in the workflow store; what is withheld is the RESPONSE, and §12.7's
+    // buyer reconcile exists for the unanswered submission. The observer
+    // below is what stops this being silent.
+    let outgoing = resultJSON;
+    if (this.ingressResultTransformer !== null) {
+      let decision: IngressResultDecision;
+      try {
+        decision = this.ingressResultTransformer({
+          capability: ingress.capability,
+          capabilityId: envelope.capability_id,
+          fromDid: ingress.from_did,
+          params: envelope.params,
+          resultJSON,
+        });
+      } catch (error) {
+        decision = {
+          kind: 'withhold',
+          reason: `transformer_threw: ${error instanceof Error ? error.message : String(error)}`,
+        };
       }
-      ctx = {
-        taskId: task.id,
-        fromDID: ingress.from_did,
-        queryId: ingress.query_id,
-        capability: ingress.capability,
-        ttlSeconds: ingress.ttl_seconds ?? 60,
-        resultJSON: outgoing,
-        serviceName: ingress.service_name ?? '',
-        ...(ingress.schema_snapshot !== undefined
-          ? { schemaSnapshot: ingress.schema_snapshot }
-          : {}),
+      // Same exit as "not a service execution" above: no stash, no send, no
+      // in-flight claim. Nothing is left for the sweeper to retry, because
+      // there is nothing pending — the answer is deliberately absent.
+      if (decision.kind === 'withhold') {
+        // Observed BEFORE the return, and never allowed to turn a
+        // deliberate silence into a thrown completion.
+        try {
+          this.onIngressResultWithheld?.({
+            taskId: task.id,
+            capability: ingress.capability,
+            fromDid: ingress.from_did,
+            reason: decision.reason,
+          });
+        } catch {
+          /* an observer must not change the outcome it observes */
+        }
+        return null;
+      }
+      if (decision.kind === 'replace') outgoing = decision.json;
+    }
+    return {
+      taskId: task.id,
+      fromDID: ingress.from_did,
+      queryId: ingress.query_id,
+      capability: ingress.capability,
+      ttlSeconds: ingress.ttl_seconds ?? 60,
+      resultJSON: outgoing,
+      serviceName: ingress.service_name ?? '',
+      ...(ingress.schema_snapshot !== undefined ? { schemaSnapshot: ingress.schema_snapshot } : {}),
+    };
+  }
+
+  /**
+   * The egress gate's three answers, applied to a built context. Null means
+   * the answer is deliberately absent — observed, like every other withheld
+   * result, and never turned into a thrown completion.
+   */
+  private applyEgressGate(ctx: ServiceQueryBridgeContext): ServiceQueryBridgeContext | null {
+    const gate = this.responseEgressGate;
+    if (gate === null) return ctx;
+    let decision: IngressResultDecision;
+    try {
+      decision = gate(ctx);
+    } catch (error) {
+      decision = {
+        kind: 'withhold',
+        reason: `egress_gate_threw: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+    if (decision.kind === 'withhold') {
+      try {
+        this.onIngressResultWithheld?.({
+          taskId: ctx.taskId,
+          capability: ctx.capability,
+          fromDid: ctx.fromDID,
+          reason: decision.reason,
+        });
+      } catch {
+        /* an observer must not change the outcome it observes */
+      }
+      return null;
+    }
+    return decision.kind === 'replace' ? { ...ctx, resultJSON: decision.json } : ctx;
+  }
 
+  /**
+   * The egress gate, for a response that leaves by a door other than a task
+   * completion — the owner's manual `/v1/service/respond`. Same three
+   * answers; null means the gate holds it and will release it itself.
+   */
+  gateOutgoingResponse(ctx: ServiceQueryBridgeContext): ServiceQueryBridgeContext | null {
+    return this.applyEgressGate(ctx);
+  }
+
+  /**
+   * Stage a context durably and fire the detached send for it. The tail of a
+   * completion's bridge, and the whole of a RELEASE: a response the egress
+   * gate held for the owner's decision comes back through here once decided.
+   * Returns false when the task the context names no longer exists.
+   */
+  releaseBridge(ctx: ServiceQueryBridgeContext): boolean {
+    const task = this.repo.getById(ctx.taskId);
+    if (task === null) return false;
+    this.dispatchBridge(task, ctx);
+    return true;
+  }
+
+  private dispatchBridge(task: WorkflowTask, ctx: ServiceQueryBridgeContext): void {
+    const send = this.responseBridgeSender;
+    if (send === null) return;
     const stashWritten = this.persistBridgeRecord(task, ctx, false);
 
     // Claim in-flight BEFORE firing the detached send (review #1).
@@ -816,7 +933,12 @@ export class WorkflowService {
     ) {
       throw new Error('service response task is not completed');
     }
-    this.persistBridgeRecord(task, ctx, true);
+    // The reasoning lane's commit leaves by the same gate as every other
+    // provider answer. A withheld commit is held by the gate's own card and
+    // released through `releaseBridge`; nothing is staged for the sweeper.
+    const gated = this.applyEgressGate(ctx);
+    if (gated === null) return;
+    this.persistBridgeRecord(task, gated, true);
   }
 
   private persistBridgeRecord(
@@ -1086,6 +1208,10 @@ export class WorkflowService {
       );
     }
     const updated = this.repo.getById(id);
+    // A cancel that lands on a PENDING approval is the owner's no.
+    if (task.status === WorkflowTaskState.PendingApproval) {
+      this.noticeApprovalDecision(updated ?? task, 'denied');
+    }
     return updated ?? task;
   }
 

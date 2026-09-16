@@ -37,6 +37,7 @@ import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
 import { InlineDemoServicePreviewCard } from '../src/components/InlineDemoServicePreviewCard';
+import { InlineGroupPlanCard } from '../src/components/InlineGroupPlanCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
@@ -386,6 +387,17 @@ export default function ChatScreen() {
         return (
           <View testID="chat-card-missing-capability">
             <InlineMissingCapabilityCard message={item} />
+          </View>
+        );
+      }
+      // group_plan card — the organizer's plan (GROUP_COORDINATION §9). A row
+      // per household, the folded slots, and the organizer's decisions; reads
+      // the plan from Core through the owner-marked client and refreshes while
+      // the plan is open.
+      if (item.displayType === 'group-plan') {
+        return (
+          <View testID="chat-card-group-plan">
+            <InlineGroupPlanCard message={item} />
           </View>
         );
       }

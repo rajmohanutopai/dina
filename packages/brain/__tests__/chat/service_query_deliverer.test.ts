@@ -206,3 +206,18 @@ describe('createServiceQueryDeliverer — watch-origin inbox routing (#6)', () =
     expect((getThread('main')?.length ?? 0)).toBeGreaterThan(0);
   });
 });
+
+describe('createServiceQueryDeliverer — group-plan spokes (GROUP_COORDINATION §5/§9)', () => {
+  it('posts NOTHING for a `group_plan:` origin — no card, no reason, no timing; the plan card is the surface', async () => {
+    const deliver = createServiceQueryDeliverer({ threadId: 'main', threadResolver });
+    for (const details of [
+      SUCCESS_DETAILS,
+      { response_status: 'unavailable', capability: 'availability_coordination', service_name: 'x', error: 'declined' },
+      { response_status: 'error', capability: 'availability_coordination', service_name: 'x', error: 'send_failed: relay refused' },
+    ] as ServiceQueryEventDetails[]) {
+      await deliver({ text: 'done', event: makeEvent(), task: makeTask('group_plan:gp_1'), details });
+    }
+    expect(getThread('main')).toHaveLength(0);
+    expect(getThread(PEER)).toHaveLength(0);
+  });
+});

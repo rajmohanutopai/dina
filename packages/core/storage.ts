@@ -17,6 +17,12 @@ export {
   setServiceOfferRepository,
   getServiceOfferRepository,
 } from './src/contacts/service_offers_repository';
+export {
+  SQLiteGroupPlanRepository,
+  setGroupPlanRepository,
+  getGroupPlanRepository,
+} from './src/coordination/group_plan_repository';
+export type { GroupPlanRepository } from './src/coordination/group_plan_repository';
 export type {
   ServiceOffer,
   ServiceOfferRepository,

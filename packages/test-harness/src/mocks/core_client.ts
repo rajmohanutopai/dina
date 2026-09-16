@@ -27,6 +27,10 @@ import type {
   CoreHealth,
   InvokePluginToolInput,
   InvokePluginToolResult,
+  OpenGroupPlanClientInput,
+  OpenGroupPlanClientResult,
+  GroupPlanHandleWire,
+  GroupPlanWire,
   PluginToolCapability,
   VaultQuery,
   VaultQueryResult,
@@ -687,6 +691,26 @@ export class MockCoreClient implements CoreClient {
 
   async invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult> {
     return this.dispatch('invokePluginTool', [input], () => this.invokePluginToolResult);
+  }
+
+  /** GROUP_COORDINATION §11 — what `openGroupPlan` answers; default: a refusal (no plan store). */
+  openGroupPlanResult: OpenGroupPlanClientResult = { ok: false, refusal: 'not_wired', detail: 'group plan store' };
+  /** What `getGroupPlan` answers; default: not found. */
+  getGroupPlanResult: GroupPlanWire | null = null;
+
+  async openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult> {
+    return this.dispatch('openGroupPlan', [input], () => this.openGroupPlanResult);
+  }
+
+  async getGroupPlan(planId: string): Promise<GroupPlanWire | null> {
+    return this.dispatch('getGroupPlan', [planId], () => this.getGroupPlanResult);
+  }
+
+  /** What `listGroupPlanHandles` answers; default: no plans. */
+  groupPlanHandles: GroupPlanHandleWire[] = [];
+
+  async listGroupPlanHandles(): Promise<GroupPlanHandleWire[]> {
+    return this.dispatch('listGroupPlanHandles', [], () => this.groupPlanHandles);
   }
 
   async approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask> {

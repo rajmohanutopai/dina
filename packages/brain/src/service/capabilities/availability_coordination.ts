@@ -58,6 +58,24 @@ export const AvailabilityCoordinationParamsSchema = {
 } as const;
 
 /**
+ * What a household chooses to say beyond its availability
+ * (GROUP_COORDINATION_ARCHITECTURE.md §6). Optional and additive: a 1:1 reply
+ * without it stays valid. `about` admits ONE value — the wire never carries a
+ * named individual — and the sender's Core decides whether a disclosure may
+ * leave at all (the contact's sharing tier, and the owner's yes for a health
+ * kind); this schema only says what shape one has.
+ */
+const DisclosureSchema = {
+  type: 'object',
+  required: ['kind', 'text', 'about'],
+  properties: {
+    kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
+    text: { type: 'string' },
+    about: { type: 'string', enum: ['household'] },
+  },
+} as const;
+
+/**
  * Result for `availability_coordination`. `status` is the only required field
  * (mirroring the family convention — an honest `needs_more_info` must not fail
  * validation for lacking slots):
@@ -75,6 +93,7 @@ export const AvailabilityCoordinationResultSchema = {
     counter_slots: { type: 'array', items: MeetingSlotSchema },
     message: { type: 'string' },
     as_of: { type: 'string' },
+    disclosures: { type: 'array', items: DisclosureSchema },
   },
 } as const;
 

@@ -158,6 +158,15 @@ export function getSharingTier(contactDID: string, category: string): SharingTie
 }
 
 /**
+ * The per-category policy AS SET, or undefined when none was set — unlike
+ * `getSharingTier`, which folds "unset" into `none`. A caller with a coarser
+ * fallback (the contact's own tier) needs to tell the two apart.
+ */
+export function getSharingPolicy(contactDID: string, category: string): SharingTier | undefined {
+  return policies.get(contactDID)?.get(category);
+}
+
+/**
  * Filter egress data based on sharing tier.
  *
  * Filtering rules:

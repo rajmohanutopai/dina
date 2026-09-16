@@ -34,6 +34,7 @@ import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
 } from '../../commerce/watermark_gate';
+import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
 import { getPluginGrantRepository } from '../../plugins/grants';
@@ -136,14 +137,16 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     const guard =
       ownerDecisionGuard(req) ??
       brainAgentTaskGuard(req, req.params.id ?? '') ??
-      brainPluginInvocationGuard(req, req.params.id ?? '');
+      brainPluginInvocationGuard(req, req.params.id ?? '') ??
+      brainDisclosureReviewGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, approveTask);
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
     const guard =
       ownerDecisionGuard(req) ??
       brainAgentTaskGuard(req, req.params.id ?? '') ??
-      brainPluginInvocationGuard(req, req.params.id ?? '');
+      brainPluginInvocationGuard(req, req.params.id ?? '') ??
+      brainDisclosureReviewGuard(req, req.params.id ?? '');
     return guard ?? runAction(req, cancelTask);
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
@@ -329,6 +332,13 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
     return j(400, { error: 'body must be a JSON object' });
   }
   const body = req.body as Record<string, unknown>;
+  const payloadType = safeParseBody(strField(body.payload, ''))?.type;
+  if (typeof payloadType === 'string' && CORE_MINTED_PAYLOAD_TYPES.has(payloadType)) {
+    return j(400, {
+      error: 'reserved_payload_type',
+      reason: `${payloadType} is minted by Core, never created through the API`,
+    });
+  }
   const input = {
     id: strField(body.id),
     kind: strField(body.kind),
@@ -1062,6 +1072,35 @@ function brainAgentTaskGuard(req: CoreRequest, id: string): CoreResponse | null 
   }
   return null;
 }
+
+/**
+ * GROUP_COORDINATION §6 — a held household health disclosure is released by
+ * the OWNER's yes and nobody else's. On the server split Brain is an
+ * untrusted tenant; its `brain` authority may approve its own service tasks
+ * but must never decide a `disclosure_review` card, in either direction.
+ * Decided on the task's real payload, not on a caller claim.
+ */
+function brainDisclosureReviewGuard(req: CoreRequest, id: string): CoreResponse | null {
+  if (req.callerType !== 'brain') return null;
+  const service = getWorkflowService();
+  if (service === null) return null; // runAction will surface the 503
+  const task = service.store().getById(id);
+  if (task !== null && safeParseBody(task.payload)?.type === DISCLOSURE_REVIEW_APPROVAL_TYPE) {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'brain cannot decide a household disclosure; owner decision required',
+    });
+  }
+  return null;
+}
+
+/**
+ * Payload types only Core mints. A caller that could create one of these
+ * through the API would be minting a decision card for the owner to answer
+ * on its behalf — a `disclosure_review` planted here would ask the owner to
+ * release a response that no execution produced.
+ */
+const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([DISCLOSURE_REVIEW_APPROVAL_TYPE]);
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
   const service = getWorkflowService();

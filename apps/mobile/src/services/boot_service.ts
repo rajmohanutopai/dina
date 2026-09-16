@@ -77,6 +77,7 @@ import {
   setRunService,
   wireRunPlaneNode,
   InProcessOwnerCommerceClient,
+  InProcessOwnerCoordinationClient,
   InProcessOwnerRunClient,
   createCoreRouter,
   createConnectedBrainAgentFacades,
@@ -114,6 +115,7 @@ import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from
 import { startMobileCommercePlane } from './commerce_plane';
 import { createDemoServiceResponder } from './demo_service_responder';
 import { setOwnerCommerceClient } from './owner_commerce_client';
+import { setOwnerCoordinationClient } from './owner_coordination_client';
 import { setOwnerRunClient } from './owner_run_client';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
@@ -468,6 +470,8 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     setOwnerRunClient(new InProcessOwnerRunClient(router, ownerCapability));
     // §4 (photo lanes) — the seller screens' draft dispatch, same boundary.
     setOwnerCommerceClient(new InProcessOwnerCommerceClient(router, ownerCapability));
+    // GROUP_COORDINATION §9 — the plan card's decisions, same boundary.
+    setOwnerCoordinationClient(new InProcessOwnerCoordinationClient(router, ownerCapability));
     setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
     setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
     setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));

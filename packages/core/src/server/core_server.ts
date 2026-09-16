@@ -34,6 +34,7 @@ import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
 import { registerDevicesRoutes } from './routes/devices';
+import { registerGroupCoordinationRoutes } from './routes/group_coordination';
 import { registerHostOperationRoutes } from './routes/host_operations';
 import { registerIntentRoutes } from './routes/intent';
 import { registerMemoryRoutes } from './routes/memory';
@@ -133,6 +134,10 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerPluginInvokeRoutes(router, options.ownerCapability);
   registerPluginUpdateRoutes(router, options.ownerCapability);
   registerHostOperationRoutes(router, options.ownerCapability);
+  // GROUP_COORDINATION §7/§9 — the organizer's plans: fan out, read the fold,
+  // choose, widen, drop from required, stop, delete. Owner-only in the authz
+  // matrix AND in-handler; guests reach this node only through the 1:1 lane.
+  registerGroupCoordinationRoutes(router, options.ownerCapability);
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

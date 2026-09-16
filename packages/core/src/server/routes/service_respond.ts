@@ -224,6 +224,51 @@ export function registerServiceRespondRoutes(
       d2dBody.card = response_body.card as ServiceResponseBody['card'];
     }
 
+    // 5b. GROUP_COORDINATION §6 — the owner's manual answer leaves by the
+    // same egress gate as every other provider answer. `null` means the gate
+    // holds it (a household health disclosure awaiting the owner's yes): the
+    // task completes with the answer STORED, the card releases it later
+    // through the bridge, and the caller learns the answer is held, not sent.
+    if (status === 'success') {
+      const gated = service.gateOutgoingResponse({
+        taskId: task_id,
+        fromDID,
+        queryId,
+        capability,
+        ttlSeconds,
+        resultJSON: JSON.stringify({
+          status: 'success',
+          result: d2dBody.result,
+          ...(d2dBody.card !== undefined ? { card: d2dBody.card } : {}),
+        }),
+        serviceName: payload.service_name ?? '',
+      });
+      if (gated === null) {
+        releaseProviderWindow(fromDID, queryId, capability);
+        void repo.setRunId(task_id, `svc-resp:${task_id}`, nowMsFn());
+        const heldId = repo.completeWithDetails(
+          task_id,
+          '',
+          'held',
+          JSON.stringify(d2dBody),
+          JSON.stringify({
+            response_status: status,
+            service_name: payload.service_name ?? '',
+            capability,
+            held: true,
+          }),
+          nowMsFn(),
+        );
+        if (heldId === 0) return j(500, { error: 'response held but task completion failed' });
+        return j(200, { status: 'held', task_id });
+      }
+      try {
+        d2dBody.result = (JSON.parse(gated.resultJSON) as { result?: unknown }).result;
+      } catch {
+        /* the gate answers JSON it built itself */
+      }
+    }
+
     // 6. Send.
     try {
       await sender(fromDID, MsgTypeServiceResponse, d2dBody);

@@ -246,13 +246,29 @@ export interface CommerceComparisonLifecycle {
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
  */
+/**
+ * `group_plan` lifecycle metadata (GROUP_COORDINATION §9) — the organizer's
+ * plan card. The card is a VIEW: it carries the plan id and the intent only,
+ * and reads the plan itself (guests, fold, window) from Core through the
+ * owner-marked coordination client, because the plan changes as replies land
+ * and the organizer decides. `status` is the plan's terminal-or-not: `open`
+ * while the organizer can still act, `closed` once settled or abandoned.
+ */
+export interface GroupPlanLifecycle {
+  kind: 'group_plan';
+  status: 'open' | 'closed';
+  planId: string;
+  intent: string;
+}
+
 export type MessageLifecycle =
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
   | AskPendingLifecycle
   | ReasoningJobLifecycle
   | ReviewDraftLifecycle
-  | CommerceComparisonLifecycle;
+  | CommerceComparisonLifecycle
+  | GroupPlanLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -731,6 +747,9 @@ export function addLifecycleMessage(
     case 'commerce_comparison':
       key = lifecycle.cardId;
       break;
+    case 'group_plan':
+      key = lifecycle.planId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -793,6 +812,12 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
     if (typeof lc.cardId !== 'string' || lc.cardId === '') return null;
     if (typeof lc.cardSpec !== 'object' || lc.cardSpec === null) return null;
     return lc as unknown as CommerceComparisonLifecycle;
+  }
+  if (lc.kind === 'group_plan') {
+    if (typeof lc.planId !== 'string' || lc.planId === '') return null;
+    if (typeof lc.intent !== 'string') return null;
+    if (lc.status !== 'open' && lc.status !== 'closed') return null;
+    return lc as unknown as GroupPlanLifecycle;
   }
   return null;
 }

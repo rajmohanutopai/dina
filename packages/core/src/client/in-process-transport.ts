@@ -25,15 +25,26 @@
 // client IS the phone's transport. Same @scure/base decode D2D uses.
 import { base64 } from '@scure/base';
 
+import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
-import { parseInvokePluginToolResponse, updateContactBody, WorkflowConflictError } from './core-client';
+
+import {
+  parseInvokePluginToolResponse,
+  parseOpenGroupPlanResponse,
+  updateContactBody,
+  WorkflowConflictError,
+} from './core-client';
 import { CoreHttpError } from './http-transport';
 
 import type {
   ApproveWorkflowTaskOptions,
   InvokePluginToolInput,
   InvokePluginToolResult,
+  OpenGroupPlanClientInput,
+  OpenGroupPlanClientResult,
+  GroupPlanHandleWire,
+  GroupPlanWire,
   PluginToolCapability,
   CoreClient,
   CoreHealth,
@@ -801,6 +812,35 @@ export class InProcessTransport implements CoreClient {
       blankRequest({ method: 'POST', path: '/v1/plugins/tool-invoke', body }),
     );
     return parseInvokePluginToolResponse(res.status, res.body);
+  }
+
+  async openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult> {
+    const body: Record<string, unknown> = {
+      intent: input.intent,
+      guests: input.guests.map((g) => ({
+        contact_did: g.contactDid,
+        ...(g.required !== undefined ? { required: g.required } : {}),
+      })),
+      candidates: input.candidates,
+      ...(input.windowSeconds !== undefined ? { window_seconds: input.windowSeconds } : {}),
+    };
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/coordination/plans', body }));
+    return parseOpenGroupPlanResponse(res.status, res.body);
+  }
+
+  async getGroupPlan(planId: string): Promise<GroupPlanWire | null> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` }),
+    );
+    if (res.status === 404) return null;
+    const raw = expectOk<{ plan?: unknown }>(res, `getGroupPlan(id=${planId})`);
+    return readGroupPlanWire(raw.plan);
+  }
+
+  async listGroupPlanHandles(): Promise<GroupPlanHandleWire[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/coordination/handles' }));
+    const raw = expectOk<{ plans?: unknown }>(res, 'listGroupPlanHandles()');
+    return readGroupPlanHandles(raw.plans);
   }
 
   async approveWorkflowTask(id: string, opts?: ApproveWorkflowTaskOptions): Promise<WorkflowTask> {

@@ -2633,6 +2633,26 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE contacts ADD COLUMN billing_address TEXT NOT NULL DEFAULT '';
     `,
   },
+  {
+    version: 45,
+    name: 'group_plans',
+    // GROUP_COORDINATION §7 — the organizer's memory of one group plan: N 1:1
+    // spokes and their replies, folded on this node and nowhere else. One JSON
+    // row per plan, read whole and written whole; the only column beyond the
+    // record is the state, so the open plans can be listed. Owner-private
+    // contact metadata, in the identity store beside the contacts and the
+    // offers it is made of; deleting a row deletes what guests disclosed for it.
+    sql: `
+      CREATE TABLE IF NOT EXISTS group_plans (
+        plan_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        plan_json TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_group_plans_state ON group_plans(state, updated_at);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

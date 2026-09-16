@@ -107,6 +107,11 @@ function fakeCoreClient(): Parameters<typeof buildAgenticAskPipeline>[0]['coreCl
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
     async listPluginToolCapabilities() { return []; },
     async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
+    async listContacts() { return []; },
+    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
+    async getGroupPlan() { return null; },
+    async listGroupPlanHandles() { return []; },
     async createWorkflowTask() { return { task: {} as unknown as WorkflowTask, deduped: false }; },
     async getWorkflowTask() { return null; },
     async completeWorkflowTask() { return {} as unknown as WorkflowTask; },
@@ -126,6 +131,11 @@ function makeFakeWorkflowCoreClient(): {
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
     async listPluginToolCapabilities() { return []; },
     async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
+    async listContacts() { return []; },
+    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
+    async getGroupPlan() { return null; },
+    async listGroupPlanHandles() { return []; },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
       const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
@@ -173,7 +183,7 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 18 agentic tools on the tool registry', () => {
+  it('registers all 20 agentic tools on the tool registry', () => {
     // 10 substrate / discovery tools (incl. search_capabilities — the
     // Layer-4 intent→canonical-capability discovery step that precedes
     // search_provider_services) + classify_intent (re-routing mid-loop)
@@ -182,19 +192,24 @@ describe('buildAgenticAskPipeline', () => {
     // me to X" — closes MT-15-I2) + the two PLUGIN_ARCHITECTURE §6 tools
     // (list_plugin_capabilities / invoke_plugin — `/ask` into the owner's
     // installed plugins, gated by Core) + recommend_offer (§5.A6 — the
-    // research loop commits its preference-weighed pick to the card). The
-    // full set is documented in composition/agentic_ask.ts.
+    // research loop commits its preference-weighed pick to the card) +
+    // coordinate_group (GROUP_COORDINATION §11 — the one tool that touches N
+    // contacts; Core fans out and folds) + group_plan_handoff (§10 — the slot
+    // and de-identified requirements a settled plan yields to the vendor
+    // lane). The full set is documented in composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
       [
         'browse_vault',
         'classify_intent',
+        'coordinate_group',
         'draft_review',
         'find_person',
         'find_preferred_provider',
         'geocode',
         'get_full_content',
+        'group_plan_handoff',
         'invoke_plugin',
         'list_personas',
         'list_plugin_capabilities',
@@ -208,7 +223,7 @@ describe('buildAgenticAskPipeline', () => {
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(18);
+    expect(pipeline.tools.size()).toBe(20);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {

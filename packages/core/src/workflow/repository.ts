@@ -166,6 +166,15 @@ export interface WorkflowRepository {
 
   /** Set internal_stash. Returns true if the row exists. */
   setInternalStash(id: string, stash: string | null, updatedAtMs: number): boolean;
+  /**
+   * Erase a TERMINAL task's stored result — the privacy scrub for a record
+   * whose owner has deleted what it carried (GROUP_COORDINATION §7: deleting
+   * a plan deletes what guests disclosed for it, and a spoke's completed
+   * reply is one of the places that text lives). The row, its events and
+   * its summary stay; the bytes go. False when the task is missing or still
+   * active — an active task's result is not history yet.
+   */
+  scrubResult(id: string, updatedAtMs: number): boolean;
 
   /**
    * Reschedule a poll-mode `watch` (PSVC-0). Sets `next_run_at` (SECONDS, the
@@ -768,6 +777,15 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const affected = this.db.run(
       `UPDATE workflow_tasks SET internal_stash = ?, updated_at = ? WHERE id = ?`,
       [stash, updatedAtMs, id],
+    );
+    return affected > 0;
+  }
+
+  scrubResult(id: string, updatedAtMs: number): boolean {
+    const affected = this.db.run(
+      `UPDATE workflow_tasks SET result = '', result_summary = 'scrubbed', updated_at = ?
+        WHERE id = ? AND state IN ('completed', 'failed', 'cancelled', 'outcome_unknown')`,
+      [updatedAtMs, id],
     );
     return affected > 0;
   }
@@ -1914,6 +1932,15 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     const t = this.tasks.get(id);
     if (t === undefined) return false;
     t.internal_stash = stash ?? undefined;
+    t.updated_at = updatedAtMs;
+    return true;
+  }
+
+  scrubResult(id: string, updatedAtMs: number): boolean {
+    const t = this.tasks.get(id);
+    if (t === undefined || !isTerminal(t.status as WorkflowTaskState)) return false;
+    t.result = '';
+    t.result_summary = 'scrubbed';
     t.updated_at = updatedAtMs;
     return true;
   }

@@ -50,6 +50,8 @@ export type InboxEntryKind =
   | 'agent_action'
   /** PLUGIN_ARCHITECTURE §15.5 — a carded plugin invocation: the exact envelope a runner would claim. */
   | 'plugin_invocation'
+  /** GROUP_COORDINATION §6 — a held reply that would carry a household health disclosure; yes sends it, no sends the reply without it. */
+  | 'disclosure_review'
   | 'unknown';
 
 export interface InboxEntry {
@@ -553,7 +555,11 @@ export async function denyPending(
     kind === 'staging_persona_access' ||
     // §15.5 — a denied plugin invocation is a cancelled task; Core records
     // the owner's decision and the runner simply never sees it.
-    kind === 'plugin_invocation'
+    kind === 'plugin_invocation' ||
+    // GROUP_COORDINATION §6 — a denied disclosure is a cancelled card; Core
+    // releases the held reply WITHOUT the disclosure, so the requester still
+    // hears the availability. No `unavailable` is sent.
+    kind === 'disclosure_review'
   ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
@@ -696,6 +702,33 @@ function toEntry(task: WorkflowTask): InboxEntry {
       requesterDID,
       paramsPreview: detail,
       riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'disclosure_review') {
+    // Core composed the description (who asks, which kinds); the lines are
+    // the exact disclosures that would leave. Deny sends the reply without them.
+    const context = parsed.context as { fromDID?: unknown; capability?: unknown } | undefined;
+    const capability = typeof context?.capability === 'string' ? context.capability : '';
+    const requesterDID = typeof context?.fromDID === 'string' ? context.fromDID : '';
+    const disclosures: unknown[] = Array.isArray(parsed.disclosures) ? parsed.disclosures : [];
+    const lines: string[] = [];
+    for (const d of disclosures) {
+      if (d === null || typeof d !== 'object') continue;
+      const { kind, text } = d as { kind?: unknown; text?: unknown };
+      if (typeof kind !== 'string' || typeof text !== 'string') continue;
+      lines.push(`${oneLine(kind, 20)}: ${oneLine(text, MAX_RESULT_VALUE_CHARS)}`);
+    }
+    return {
+      id: task.id,
+      kind: 'disclosure_review',
+      capability,
+      serviceName: 'Household disclosure',
+      description: task.description ?? '',
+      requesterDID,
+      paramsPreview: lines.join('\n'),
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

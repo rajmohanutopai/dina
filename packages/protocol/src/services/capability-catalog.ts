@@ -218,6 +218,17 @@ const AVAILABILITY_COORDINATION_PARAMS = Object.freeze({
     constraints: { type: 'string' },
   },
 });
+// A household's optional word beyond its availability (GROUP_COORDINATION §6).
+// `about` admits one value: the wire never carries a named individual.
+const HOUSEHOLD_DISCLOSURE = Object.freeze({
+  type: 'object',
+  required: ['kind', 'text', 'about'],
+  properties: {
+    kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
+    text: { type: 'string' },
+    about: { type: 'string', enum: ['household'] },
+  },
+});
 const AVAILABILITY_COORDINATION_RESULT = Object.freeze({
   type: 'object',
   required: ['status'],
@@ -227,6 +238,7 @@ const AVAILABILITY_COORDINATION_RESULT = Object.freeze({
     counter_slots: { type: 'array', items: MEETING_SLOT },
     message: { type: 'string' },
     as_of: { type: 'string' },
+    disclosures: { type: 'array', items: HOUSEHOLD_DISCLOSURE },
   },
 });
 
@@ -367,7 +379,7 @@ export const CATALOG_CAPABILITIES: readonly CapabilityDefinition[] = Object.free
     display_name: 'Find a time together',
     short_description: 'Coordinate a mutual meeting time with a contact.',
     default_instruction:
-      'Use my calendar and stated availability to propose times that work for me, and counter with alternatives when their suggestions do not fit. Never commit to a slot my vault shows as taken; the final booking waits for my approval.',
+      'Use my calendar and stated availability to propose times that work for me, and counter with alternatives when their suggestions do not fit. Never commit to a slot my vault shows as taken; the final booking waits for my approval. If the plan involves food, access or transport and my notes record a household need (a diet, a mobility need, who can drive), add it ONLY as a household disclosure in the disclosures field — never in the message or a slot note, so I can decide whether it leaves. Write the need itself as the text ("gluten-free", "step-free access", "we can drive one car"), never a name and never who it is for.',
     lifecycle: 'beta' as const,
     action_class: 'read' as const,
     privacy_class: 'personal' as const,

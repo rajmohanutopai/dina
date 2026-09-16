@@ -150,6 +150,11 @@ function makeFakeCoreClient(): AskCoordinatorCoreClient &
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
     async listPluginToolCapabilities() { return []; },
     async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
+    async listContacts() { return []; },
+    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
+    async getGroupPlan() { return null; },
+    async listGroupPlanHandles() { return []; },
     async findContactsByPreference() {
       return [];
     },

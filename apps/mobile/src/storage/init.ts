@@ -107,6 +107,7 @@ import {
   sweepRetention,
   SQLiteChatMessageRepository,
   SQLiteContactRepository,
+  SQLiteGroupPlanRepository,
   SQLiteServiceOfferRepository,
   SQLiteServiceDecisionRepository,
   SQLiteServiceGrantRepository,
@@ -140,6 +141,7 @@ import {
   setAuditRepository,
   setChatMessageRepository,
   setContactRepository,
+  setGroupPlanRepository,
   setServiceOfferRepository,
   setServiceDecisionRepository,
   setServiceGrantRepository,
@@ -273,6 +275,8 @@ export async function initializePersistence(
   setServiceOfferRepository(new SQLiteServiceOfferRepository(identityDB));
   setServiceDecisionRepository(new SQLiteServiceDecisionRepository(identityDB));
   setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
+  // Group plans (GROUP_COORDINATION §7): owner-private, in the identity store.
+  setGroupPlanRepository(new SQLiteGroupPlanRepository(identityDB));
   // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
   // grants (constraints, per-execution consumption) + owner-private
   // decision log.
@@ -880,6 +884,7 @@ export async function shutdownAllPersistence(): Promise<void> {
     resetContactDirectory();
     rebuildContactProjections();
     setContactRepository(null);
+    setGroupPlanRepository(null);
     setServiceOfferRepository(null);
     setServiceDecisionRepository(null);
     setServiceGrantRepository(null);
