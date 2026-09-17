@@ -47,6 +47,23 @@ describe('workflow service composition', () => {
       expect(body ?? '').toMatch(/(^|[\s{,])pluginCompletionHandler\s*:/);
     }
   });
+
+  it('runs every TaskExpirySweeper through a WorkflowService, never the bare repository', () => {
+    // GROUP_COORDINATION §6 — a lapsed disclosure review must still answer the
+    // requester without the fact. Only `WorkflowService.expireTasks` tells the
+    // decision handler about a lapse; a sweeper handed the repository flips
+    // the rows in silence and the held reply never leaves.
+    const source = readFileSync(BOOT, 'utf8');
+    const sweepers = [...source.matchAll(/new TaskExpirySweeper\(\{/g)];
+    expect(sweepers.length).toBeGreaterThan(0);
+    for (const match of sweepers) {
+      const body = balancedArgument(source, (match.index ?? 0) + match[0].length - 1) ?? '';
+      const repository = /(^|[\s{,])repository\s*:\s*([A-Za-z_$][\w$]*)/.exec(body);
+      expect(repository).not.toBeNull();
+      expect(repository?.[2]).toMatch(/Service$/);
+      expect(repository?.[2]).not.toMatch(/Repository/);
+    }
+  });
 });
 
 /**

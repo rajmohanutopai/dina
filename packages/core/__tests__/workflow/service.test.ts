@@ -223,6 +223,91 @@ describe('WorkflowService.approve', () => {
   });
 });
 
+describe('WorkflowService.expireTasks — silence past the deadline is a decision', () => {
+  function withHandler(nowMs = 1_700_000_000_000) {
+    const repo = new InMemoryWorkflowRepository();
+    const decisions: { id: string; decision: string; statusSeen: string }[] = [];
+    const service = new WorkflowService({
+      repository: repo,
+      nowMsFn: () => nowMs,
+      approvalDecisionHandler: ({ task, decision }) =>
+        decisions.push({ id: task.id, decision, statusSeen: task.status }),
+    });
+    return { repo, service, decisions, nowSec: Math.floor(nowMs / 1000) };
+  }
+
+  it('an approval still awaiting its owner lapses: the store fails it and the handler hears `lapsed` once', () => {
+    const { repo, service, decisions, nowSec } = withHandler();
+    service.create({
+      id: 'card',
+      kind: WorkflowTaskKind.Approval,
+      description: 'review',
+      payload: '{}',
+      initialState: WorkflowTaskState.PendingApproval,
+      expiresAtSec: nowSec + 10,
+    });
+    expect(service.expireTasks(nowSec + 5, (nowSec + 5) * 1000)).toEqual([]);
+    expect(decisions).toEqual([]);
+    const expired = service.expireTasks(nowSec + 10, (nowSec + 10) * 1000);
+    expect(expired.map((t) => t.id)).toEqual(['card']);
+    expect(repo.getById('card')?.status).toBe('failed');
+    expect(repo.getById('card')?.error).toBe('expired');
+    // The handler sees the task as it stood: pending, so it knows this was a lapse.
+    expect(decisions).toEqual([{ id: 'card', decision: 'lapsed', statusSeen: 'pending_approval' }]);
+    // Already terminal: a second sweep finds nothing and says nothing.
+    expect(service.expireTasks(nowSec + 20, (nowSec + 20) * 1000)).toEqual([]);
+    expect(decisions).toHaveLength(1);
+  });
+
+  it('an approved card whose execution overran, and a delegation past its TTL, expire without a decision', () => {
+    const { repo, service, decisions, nowSec } = withHandler();
+    service.create({
+      id: 'approved-card',
+      kind: WorkflowTaskKind.Approval,
+      description: 'review',
+      payload: '{}',
+      initialState: WorkflowTaskState.PendingApproval,
+      expiresAtSec: nowSec + 10,
+    });
+    service.approve('approved-card');
+    decisions.length = 0;
+    service.create({
+      id: 'query',
+      kind: WorkflowTaskKind.Delegation,
+      description: 'exec',
+      payload: '{}',
+      initialState: WorkflowTaskState.Queued,
+      expiresAtSec: nowSec + 10,
+    });
+    const expired = service.expireTasks(nowSec + 10, (nowSec + 10) * 1000);
+    expect(expired.map((t) => t.id).sort()).toEqual(['approved-card', 'query']);
+    expect(repo.getById('approved-card')?.status).toBe('failed');
+    expect(decisions).toEqual([]);
+  });
+
+  it('a handler that throws cannot undo the expiry', () => {
+    const repo = new InMemoryWorkflowRepository();
+    const nowSec = 1_700_000_000;
+    const service = new WorkflowService({
+      repository: repo,
+      nowMsFn: () => nowSec * 1000,
+      approvalDecisionHandler: () => {
+        throw new Error('handler bug');
+      },
+    });
+    service.create({
+      id: 'card',
+      kind: WorkflowTaskKind.Approval,
+      description: 'review',
+      payload: '{}',
+      initialState: WorkflowTaskState.PendingApproval,
+      expiresAtSec: nowSec + 1,
+    });
+    expect(() => service.expireTasks(nowSec + 1, (nowSec + 1) * 1000)).not.toThrow();
+    expect(repo.getById('card')?.status).toBe('failed');
+  });
+});
+
 describe('WorkflowService.complete / fail / cancel', () => {
   function seedRunning() {
     const ctx = setup();

@@ -211,8 +211,10 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
     // GROUP_COORDINATION §6 — a household disclosure leaves only under the
     // contact's sharing tier, and a health kind only after the owner's yes.
     // Both hooks come from ONE factory so neither host can wire the gate and
-    // forget the decision handler that releases what it held.
-    ...coordinationWorkflowHooks(),
+    // forget the decision handler that releases what it held; they read the
+    // service's own clock, so the review card's deadline and the sweep that
+    // lapses it agree on what time it is.
+    ...coordinationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator
     // sees orders lapse and nothing says why.
@@ -284,9 +286,11 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   });
   runtime.start();
 
-  // (F) Sweepers — task expiry, lease expiry, bridge retry.
+  // (F) Sweepers — task expiry, lease expiry, bridge retry. Expiry runs
+  // through the SERVICE so a lapsed approval reaches the decision handler
+  // (GROUP_COORDINATION §6: a held reply answers without the fact).
   const taskExpiry = new TaskExpirySweeper({
-    repository: opts.workflowRepository,
+    repository: workflowService,
     ...(opts.onTaskExpired === undefined ? {} : { onExpired: opts.onTaskExpired }),
     ...(opts.nowMsFn !== undefined ? { nowMsFn: opts.nowMsFn } : {}),
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),

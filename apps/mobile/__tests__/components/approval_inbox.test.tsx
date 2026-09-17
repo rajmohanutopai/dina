@@ -277,6 +277,62 @@ describe('Approval inbox inline in Activity — Needs action', () => {
   });
 });
 
+function disclosureReviewTask(id: string, createdAt: number): WorkflowTask {
+  return {
+    id,
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'normal',
+    description: 'Tell Mike about a household dietary need?',
+    payload: JSON.stringify({
+      type: 'disclosure_review',
+      execution_task_id: 'exec-1',
+      context: {
+        taskId: 'exec-1',
+        fromDID: 'did:plc:mike',
+        queryId: 'q-1',
+        capability: 'availability_coordination',
+        ttlSeconds: 120,
+        serviceName: "The Millers' Dina",
+      },
+      disclosures: [{ kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' }],
+    }),
+    result_summary: '',
+    policy: '',
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+}
+
+describe('Approval inbox inline in Activity — a refused decision is shown on the card', () => {
+  it("Core's refusal reason lands on the card instead of vanishing (an Alert is a no-op on the web)", async () => {
+    const stub = stubClient({ pending: [disclosureReviewTask('disclosure-review-exec-1', 1_000)] });
+    stub.cancel.mockRejectedValueOnce(
+      new Error('inbox: 403 {"error":"access_denied","reason":"brain cannot decide a household disclosure; owner decision required"}'),
+    );
+    setInboxCoreClient(stub.client);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Deny')?.onPress?.();
+    });
+    try {
+      const screen = render(<NotificationsScreen />);
+      await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+      fireEvent.press(screen.getByTestId('filter-needs_action'));
+      await act(async () => {
+        fireEvent.press(screen.getByTestId('approvals-deny-disclosure-review-exec-1'));
+      });
+      await waitFor(() => expect(screen.getByTestId('approvals-error-disclosure-review-exec-1')).toBeTruthy());
+      expect(screen.getByTestId('approvals-error-disclosure-review-exec-1').props.children).toMatch(/owner decision required/);
+      // The card stays: the decision did not land.
+      expect(screen.getByTestId('approvals-deny-disclosure-review-exec-1')).toBeTruthy();
+      // Only Alert.alert's confirm dialog was raised — never an error alert.
+      expect(alertSpy.mock.calls.map((c) => c[0])).not.toContain('Error');
+    } finally {
+      alertSpy.mockRestore();
+    }
+  });
+});
+
 describe('Approval inbox inline in Activity — a carded plugin invocation (§15.5)', () => {
   function pluginTask(id: string, status: WorkflowTask['status'] = 'pending_approval'): WorkflowTask {
     return {

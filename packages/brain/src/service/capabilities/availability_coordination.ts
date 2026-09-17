@@ -70,7 +70,10 @@ const DisclosureSchema = {
   required: ['kind', 'text', 'about'],
   properties: {
     kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
-    text: { type: 'string' },
+    text: {
+      type: 'string',
+      description: 'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
+    },
     about: { type: 'string', enum: ['household'] },
   },
 } as const;
@@ -93,7 +96,11 @@ export const AvailabilityCoordinationResultSchema = {
     counter_slots: { type: 'array', items: MeetingSlotSchema },
     message: { type: 'string' },
     as_of: { type: 'string' },
-    disclosures: { type: 'array', items: DisclosureSchema },
+    disclosures: {
+      type: 'array',
+      items: DisclosureSchema,
+      description: 'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
+    },
   },
 } as const;
 

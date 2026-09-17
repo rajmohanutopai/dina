@@ -82,6 +82,7 @@ import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
 import { registerContactApiRoutes } from './routes/contacts';
+import { registerCoordinationApiRoutes } from './routes/coordination';
 import { registerNotificationApiRoutes } from './routes/notifications';
 import { registerOwnerProxyRoutes } from './routes/owner_proxy';
 import { registerPeerlensProxyRoutes } from './routes/peerlens_proxy';
@@ -637,6 +638,11 @@ export async function bootServer(
     // this the SPA reads the empty in-browser store (F4 — "All caught up"
     // despite Core having pending agent-approval tasks).
     registerWorkflowApiRoutes(app, { core: clients.core });
+
+    // GROUP_COORDINATION §9 — the plan card's READ path on the web thin
+    // client, through Brain's own two doors (read a plan, list handles).
+    // Decisions stay on Core's owner surface; no capability transits Brain.
+    registerCoordinationApiRoutes(app, { core: clients.core });
 
     // Contact-directory data layer for the SPA's People/Talk screen (F4).
     registerContactApiRoutes(app, { core: clients.core });

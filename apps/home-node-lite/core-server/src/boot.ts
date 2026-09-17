@@ -638,7 +638,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       });
       setWorkflowService(localWorkflowService);
       localTaskExpiry = new TaskExpirySweeper({
-        repository: localWorkflowRepository,
+        // Through the service, so a lapsed disclosure review still answers.
+        repository: localWorkflowService,
         onError: (err) =>
           logger.warn(
             { err: err instanceof Error ? err.message : String(err) },

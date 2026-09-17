@@ -745,7 +745,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     ingressResultTransformer: transformInboundOrderResult,
     // GROUP_COORDINATION §6 — the disclosure gate and the handler that
     // releases what it held, from the one factory both roots call.
-    ...coordinationWorkflowHooks(),
+    ...coordinationWorkflowHooks({ nowMs: nowMsFn }),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the
     // feature itself. A withheld answer leaves no stash, no send and nothing
@@ -965,7 +965,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   //     service_query tasks past their ttl_seconds flip to `failed`
   //     and emit a workflow_event that reaches the chat surface.
   const taskExpiry = new TaskExpirySweeper({
-    repository: options.workflowRepository,
+    // Through the service (not the bare store) so a lapsed approval reaches the
+    // decision handler — a held household disclosure then answers without it.
+    repository: workflowService,
     nowMsFn,
     onExpired: (task) => reasoningBroker?.releaseSessionAuthorityForTask(task),
     setInterval: options.setInterval,

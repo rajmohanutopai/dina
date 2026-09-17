@@ -28,12 +28,15 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
-import { getContact, type GroupPlanWire } from '@dina/core';
 
+import { loadContacts } from '../services/contacts_source';
+import { getGroupPlanReader } from '../services/group_plan_reader';
 import { getOwnerCoordinationClient } from '../services/owner_coordination_client';
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
+
+import type { GroupPlanWire } from '@dina/core';
 
 export interface InlineGroupPlanCardProps {
   message: ChatMessage;
@@ -42,18 +45,71 @@ export interface InlineGroupPlanCardProps {
 /** How often an open plan re-reads its fold from Core (ms). */
 export const GROUP_PLAN_REFRESH_MS = 4_000;
 
-function householdName(did: string): string {
-  const name = getContact(did)?.displayName;
+/** Display names by DID, from the contact directory this surface reads (in-process on the phone, Core through Brain on the web). */
+type ContactNames = ReadonlyMap<string, string>;
+
+function householdName(did: string, contacts: ContactNames): string {
+  const name = contacts.get(did);
   if (name !== undefined && name.trim() !== '') return name;
   return did.length > 14 ? `${did.slice(0, 10)}…${did.slice(-4)}` : did;
 }
 
-function slotText(slot: { start: string; end?: string }): string {
-  return slot.end === undefined ? slot.start : `${slot.start} to ${slot.end}`;
+const ISO_SLOT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
+ * A slot's `start`/`end` are free text on the wire ("Sat 26"); the organizer's
+ * model often writes ISO timestamps instead. Those read as a date and a time
+ * here, in the offset they carry; anything else is shown as written. Exported
+ * for the test — the card is the only consumer.
+ */
+export function slotText(slot: { start: string; end?: string }): string {
+  const start = readableInstant(slot.start);
+  if (slot.end === undefined) return start;
+  const end = readableInstant(slot.end);
+  // Same day: "Sat 3 Oct 2026, 15:00 to 17:00" rather than the date twice.
+  const sameDay = ISO_SLOT.test(slot.start) && ISO_SLOT.test(slot.end) && slot.start.slice(0, 10) === slot.end.slice(0, 10);
+  return sameDay ? `${start} to ${end.slice(end.lastIndexOf(', ') + 2)}` : `${start} to ${end}`;
 }
 
-function names(dids: readonly string[]): string {
-  return dids.map(householdName).join(' and ');
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "2026-10-03T15:00:00+05:30" → "Sat 3 Oct 2026, 15:00"; the wall time as written, not shifted to this device. */
+function readableInstant(text: string): string {
+  if (!ISO_SLOT.test(text)) return text;
+  const [datePart, timePart] = text.split('T');
+  const [y, m, d] = datePart.split('-').map(Number);
+  const hhmm = timePart.slice(0, 5);
+  const day = DAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${day} ${d} ${MONTHS[m - 1]} ${y}, ${hhmm}`;
+}
+
+function names(dids: readonly string[], contacts: ContactNames): string {
+  return dids.map((did) => householdName(did, contacts)).join(' and ');
+}
+
+/**
+ * The names the card shows for households. Read once per card through the
+ * platform's contact source rather than the in-process directory, because on
+ * the web that directory is empty and the card would show DIDs (the People
+ * screen learned the same lesson, F4). A failed read leaves the DIDs.
+ */
+function useContactNames(): ContactNames {
+  const [contacts, setContacts] = useState<ContactNames>(() => new Map());
+  useEffect(() => {
+    let alive = true;
+    loadContacts()
+      .then((list) => {
+        if (alive) setContacts(new Map(list.map((c) => [c.did, c.displayName])));
+      })
+      .catch(() => {
+        /* the DIDs stand */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return contacts;
 }
 
 /** "Sun 27, Sun 4 Oct" → candidate slots; empty lines dropped. */
@@ -75,15 +131,18 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
   const [error, setError] = useState<string | null>(null);
   const [wider, setWider] = useState('');
   const alive = useRef(true);
+  const contacts = useContactNames();
 
   const refresh = useCallback(async (): Promise<void> => {
-    const client = getOwnerCoordinationClient();
-    if (client === null || planId === '') {
+    // Reading is Brain's authority (a door the web page reaches through
+    // Brain); deciding is the owner's. The two come from different places.
+    const reader = getGroupPlanReader();
+    if (reader === null || planId === '') {
       setUnreadable(true);
       return;
     }
     try {
-      const fresh = await client.get(planId);
+      const fresh = await reader.get(planId);
       if (!alive.current) return;
       setUnreadable(false);
       if (fresh === null) setMissing(true);
@@ -170,6 +229,9 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
     !plan.guests.some((g) => g.required && g.outcome === 'waiting');
   // A choice is a choice only when every required household said yes (§4).
   const canChoose = plan.state === 'folded' && fold?.state === 'converged';
+  // A choice is offered as "Choose …" only where this surface can carry it;
+  // the web page shows the same slots as plain text and points at the console.
+  const choosable = canChoose && client !== null;
   const emptiedBy = fold?.emptied_by ?? [];
   const unreachableRequired = plan.guests.filter((g) => g.required && g.outcome === 'unreachable').map((g) => g.contact_did);
   // The §13 moves after a round that did not converge: go ahead without the
@@ -183,16 +245,16 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
   if (plan.state === 'confirming' && roundClosed) {
     outcomeLine =
       emptiedBy.length > 0
-        ? `${names(emptiedBy)} can't make ${plan.chosen !== null ? slotText(plan.chosen) : 'it'} after all.`
-        : `Couldn't reach ${names(unreachableRequired)} to confirm.`;
+        ? `${names(emptiedBy, contacts)} can't make ${plan.chosen !== null ? slotText(plan.chosen) : 'it'} after all.`
+        : `Couldn't reach ${names(unreachableRequired, contacts)} to confirm.`;
   } else if (plan.state === 'confirming' && plan.chosen !== null) {
     outcomeLine = `Confirming ${slotText(plan.chosen)} with everyone…`;
   } else if (plan.state === 'folded' && !canChoose) {
     outcomeLine =
       emptiedBy.length > 0
-        ? `No slot works for ${names(emptiedBy)}.`
+        ? `No slot works for ${names(emptiedBy, contacts)}.`
         : unreachableRequired.length > 0
-          ? `Couldn't reach ${names(unreachableRequired)}.`
+          ? `Couldn't reach ${names(unreachableRequired, contacts)}.`
           : 'No slot works for everyone.';
   } else if (plan.state === 'proposing') {
     outcomeLine = 'Waiting for replies…';
@@ -212,7 +274,7 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
         <View key={g.contact_did} style={styles.guestRow} testID={`group-plan-guest-${planId}-${g.contact_did}`}>
           <Ionicons name={outcomeIcon(g.outcome)} size={16} color={outcomeColor(g.outcome)} />
           <Text style={styles.guestName} numberOfLines={1}>
-            {householdName(g.contact_did)}
+            {householdName(g.contact_did, contacts)}
             {g.required ? '' : ' (optional)'}
           </Text>
           <Text style={[styles.guestOutcome, { color: outcomeColor(g.outcome) }]}>{outcomeText(g)}</Text>
@@ -238,17 +300,17 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
             <TouchableOpacity
               key={slot.start}
               testID={`group-plan-choose-${planId}-${slot.start}`}
-              style={[styles.actionButton, styles.primaryButton, !canChoose || busy ? styles.disabled : null]}
-              disabled={!canChoose || busy || client === null}
+              style={[styles.actionButton, styles.primaryButton, !choosable || busy ? styles.disabled : null]}
+              disabled={!choosable || busy}
               onPress={() => {
                 // Guarded in the handler too: a slot that is not a choice must
                 // not act, whatever fires the press.
-                if (canChoose && !busy && client !== null) void decide(() => client.choose(planId, slot));
+                if (choosable && !busy && client !== null) void decide(() => client.choose(planId, slot));
               }}
               accessibilityRole="button"
-              accessibilityLabel={canChoose ? `Choose ${slotText(slot)}` : slotText(slot)}
+              accessibilityLabel={choosable ? `Choose ${slotText(slot)}` : slotText(slot)}
             >
-              <Text style={styles.primaryButtonText}>{canChoose ? `Choose ${slotText(slot)}` : slotText(slot)}</Text>
+              <Text style={styles.primaryButtonText}>{choosable ? `Choose ${slotText(slot)}` : slotText(slot)}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -265,7 +327,7 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
               onPress={() => void decide(() => client.makeOptional(planId, did))}
               accessibilityRole="button"
             >
-              <Text style={styles.actionText}>Go ahead without {householdName(did)}</Text>
+              <Text style={styles.actionText}>Go ahead without {householdName(did, contacts)}</Text>
             </TouchableOpacity>
           ))}
           <View style={styles.widenRow}>
@@ -306,6 +368,18 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
         >
           <Text style={styles.stopText}>{settled ? 'Cancel this plan' : 'Stop this plan'}</Text>
         </TouchableOpacity>
+      ) : null}
+      {!stopped && client === null && plan.state !== 'proposing' ? (
+        // The Brain-served web page holds no owner authority (§12.5, round-C):
+        // the fold is readable here, the decisions live on Core's own owner
+        // surface — the same line the run and watch UI draws.
+        <Text testID={`group-plan-owner-surface-${planId}`} style={styles.subtitle}>
+          {settled
+            ? 'Reopen with other dates or cancel from Core’s owner console.'
+            : canChoose
+              ? 'Choose, ask again or stop from Core’s owner console.'
+              : 'Ask again, go ahead without them or stop from Core’s owner console.'}
+        </Text>
       ) : null}
 
       {error !== null ? (

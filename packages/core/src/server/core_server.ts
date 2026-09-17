@@ -119,7 +119,9 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerD2DMsgRoutes(router);
   registerD2DQuarantineRoutes(router);
   registerServiceConfigRoutes(router);
-  registerWorkflowRoutes(router);
+  // The owner capability reaches only the approve/cancel decision (a server
+  // node's owner console settling a card Core refuses Brain); see the guard.
+  registerWorkflowRoutes(router, options.ownerCapability);
   registerRemoteApprovalRoutes(router);
   // Owner-only interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md
   // §12.5). Guarded by the authz matrix (/v1/run → owner) + an in-handler

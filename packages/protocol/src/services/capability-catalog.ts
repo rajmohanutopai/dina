@@ -225,7 +225,10 @@ const HOUSEHOLD_DISCLOSURE = Object.freeze({
   required: ['kind', 'text', 'about'],
   properties: {
     kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
-    text: { type: 'string' },
+    text: {
+      type: 'string',
+      description: 'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
+    },
     about: { type: 'string', enum: ['household'] },
   },
 });
@@ -238,7 +241,11 @@ const AVAILABILITY_COORDINATION_RESULT = Object.freeze({
     counter_slots: { type: 'array', items: MEETING_SLOT },
     message: { type: 'string' },
     as_of: { type: 'string' },
-    disclosures: { type: 'array', items: HOUSEHOLD_DISCLOSURE },
+    disclosures: {
+      type: 'array',
+      items: HOUSEHOLD_DISCLOSURE,
+      description: 'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
+    },
   },
 });
 

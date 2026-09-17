@@ -78,6 +78,12 @@ const STAT_PRIORITY = [
   'qty',
 ];
 const STALE_GENERATED_FIELDS = ['as_of', 'generated_at', 'updated_at', 'timestamp', 'observed_at'];
+/** Fields that name a row's leading text when a result carries a list of small objects. */
+const ROW_LEAD_FIELDS = ['time', 'start', 'name', 'title', 'label', 'date', 'slot'];
+/** Fields that name a row's secondary text. */
+const ROW_SUB_FIELDS = ['note', 'notes', 'description', 'detail', 'service', 'end'];
+/** Rows shown from one list; the rest is counted, never dropped in silence. */
+const MAX_LIST_ROWS = 6;
 const STALE_EXPIRES_FIELDS = ['expires_at', 'valid_until'];
 const STALE_TTL_FIELDS = ['ttl_seconds', 'ttl'];
 
@@ -156,6 +162,48 @@ function humanizeLabel(key: string): string {
 function humanizeValue(value: string): string {
   const spaced = value.replace(/_/g, ' ').trim();
   return spaced.length === 0 ? value : spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Rows for a list value: objects lead with a time/name field and carry a note; scalars stand alone. */
+function listRows(items: unknown[]): { text: string; sub?: string }[] {
+  const rows: { text: string; sub?: string }[] = [];
+  for (const item of items) {
+    if (isScalar(item)) {
+      const text = String(item).trim();
+      if (text !== '') rows.push({ text: humanizeValue(text) });
+      continue;
+    }
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
+    const o = item as Record<string, unknown>;
+    const scalars = Object.entries(o).filter(([, val]) => isScalar(val) && String(val).trim() !== '');
+    if (scalars.length === 0) continue;
+    const pick = (fields: readonly string[], skip: Set<string>): string | undefined => {
+      for (const f of fields) {
+        const hit = scalars.find(([key]) => !skip.has(key) && key.toLowerCase() === f);
+        if (hit) {
+          skip.add(hit[0]);
+          return String(hit[1]).trim();
+        }
+      }
+      return undefined;
+    };
+    const taken = new Set<string>();
+    const lead = pick(ROW_LEAD_FIELDS, taken);
+    const second = pick(ROW_LEAD_FIELDS, taken); // e.g. `date` next to `time`, `end` next to `start`
+    const sub = pick(ROW_SUB_FIELDS, taken);
+    const text =
+      lead !== undefined
+        ? second !== undefined
+          ? `${lead} · ${second}`
+          : lead
+        : scalars
+            .filter(([key]) => !taken.has(key))
+            .map(([key, val]) => `${humanizeLabel(key)}: ${String(val).trim()}`)
+            .join(' · ');
+    if (text === '') continue;
+    rows.push(sub !== undefined ? { text, sub } : { text });
+  }
+  return rows;
 }
 
 function isScalar(v: unknown): v is string | number | boolean {
@@ -367,6 +415,22 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
     const value = typeof v === 'string' ? v.trim() : String(v);
     if (value === '') continue;
     blocks.push({ kind: 'keyValue', label: humanizeLabel(k), value: humanizeValue(value) });
+    used.add(k);
+  }
+
+  // 8b) List — an array of small objects (appointment `slots`, quote `lines`,
+  //     `options`): one row each, led by its time/name and followed by its
+  //     note. Without this an availability answer that says WHEN in `slots`
+  //     rendered as "Status: Ok" alone (found on the group hand-off's first
+  //     live run). Arrays of scalars become one row per value.
+  for (const [k, v] of Object.entries(obj)) {
+    if (used.has(k) || !Array.isArray(v) || v.length === 0) continue;
+    const rows = listRows(v);
+    if (rows.length === 0) continue;
+    const shown = rows.slice(0, MAX_LIST_ROWS);
+    if (rows.length > MAX_LIST_ROWS) shown.push({ text: `and ${rows.length - MAX_LIST_ROWS} more` });
+    blocks.push({ kind: 'section', label: humanizeLabel(k) });
+    blocks.push({ kind: 'list', rows: shown });
     used.add(k);
   }
 

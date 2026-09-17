@@ -94,3 +94,13 @@ const httpInbox: InboxCoreClient = {
 export function resolveInboxCoreClient(_inProcess: InboxCoreClient): InboxCoreClient {
   return httpInbox;
 }
+
+/**
+ * The web page decides through Brain, never as the owner: an owner bearer
+ * must not transit a Brain-served page (`apps/home-node-lite/web/SECURITY.md`,
+ * round C). Core refuses a Brain caller the owner-only kinds — see
+ * `brainDisclosureReviewGuard` and its siblings in Core's workflow routes —
+ * so a card for one of those says where to decide instead of offering a
+ * button that cannot land.
+ */
+export const OWNER_DECIDES_ON_THIS_SURFACE = false;

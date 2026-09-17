@@ -69,6 +69,7 @@ import {
 } from '../../workflow/service';
 
 import { grantSessionApproval, grantVaultReadSessionApproval } from './intent';
+import { makeOwnerGuard } from './owner_guard';
 
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
@@ -112,7 +113,22 @@ function payloadDeclaresPluginType(payload: unknown): boolean {
   }
 }
 
-export function registerWorkflowRoutes(router: CoreRouter): void {
+/**
+ * @param ownerCapability — the boot-minted owner capability (§12.5). An
+ *   `owner`-marked caller (a server node's owner console presenting the
+ *   capability header on the approve/cancel surface) must carry exactly it;
+ *   absent a capability, owner-marked decisions are refused, fail closed. Every
+ *   other caller type is unaffected: the phone's in-process transport, a paired
+ *   device, admin, and Brain (where the card's kind allows Brain at all).
+ */
+export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: string): void {
+  const ownerConsole = makeOwnerGuard(ownerCapability, 'owner authorization required');
+  const decisionGuard = (req: CoreRequest): CoreResponse | null =>
+    ownerDecisionGuard(req) ??
+    (req.callerType === 'owner' ? ownerConsole(req) : null) ??
+    brainAgentTaskGuard(req, req.params.id ?? '') ??
+    brainPluginInvocationGuard(req, req.params.id ?? '') ??
+    brainDisclosureReviewGuard(req, req.params.id ?? '');
   router.post('/v1/workflow/tasks', createTask);
   router.get('/v1/workflow/tasks/:id', getTask);
   router.get('/v1/workflow/tasks', listTasks);
@@ -134,20 +150,10 @@ export function registerWorkflowRoutes(router: CoreRouter): void {
     return j(200, withPayloadType(task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
-    const guard =
-      ownerDecisionGuard(req) ??
-      brainAgentTaskGuard(req, req.params.id ?? '') ??
-      brainPluginInvocationGuard(req, req.params.id ?? '') ??
-      brainDisclosureReviewGuard(req, req.params.id ?? '');
-    return guard ?? runAction(req, approveTask);
+    return decisionGuard(req) ?? runAction(req, approveTask);
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
-    const guard =
-      ownerDecisionGuard(req) ??
-      brainAgentTaskGuard(req, req.params.id ?? '') ??
-      brainPluginInvocationGuard(req, req.params.id ?? '') ??
-      brainDisclosureReviewGuard(req, req.params.id ?? '');
-    return guard ?? runAction(req, cancelTask);
+    return decisionGuard(req) ?? runAction(req, cancelTask);
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
     const guard = agentCompletionGuard(req);
@@ -1027,6 +1033,8 @@ function ownerDecisionGuard(req: CoreRequest): CoreResponse | null {
       reason: `${req.callerType} callers cannot approve or deny tasks`,
     });
   }
+  // An `owner`-marked caller is re-validated against the capability by the
+  // guard composed in `registerWorkflowRoutes` — a stamp alone decides nothing.
   return null;
 }
 

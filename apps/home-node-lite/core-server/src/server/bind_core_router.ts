@@ -217,11 +217,22 @@ function isOwnerSurfacePath(p: string): boolean {
     // route re-validates the capability with its own owner guard; guest
     // traffic never arrives here — it rides the 1:1 service lane.
     p.startsWith('/v1/coordination/') ||
+    // The owner's decision on an approval card (approve / cancel = deny).
+    // The two verbs only: an owner console on a server node must be able to
+    // settle the cards Core refuses Brain — a household disclosure review
+    // (GROUP_COORDINATION §6), an agent-raised task, a plugin invocation —
+    // and nothing else on the workflow tree (create, claim, complete, fail)
+    // is the owner's to reach with this bearer. The handler re-validates the
+    // capability (`ownerDecisionGuard`), like every other owner route.
+    OWNER_DECISION_VERB.test(p) ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
     (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))
   );
 }
+
+/** `/v1/workflow/tasks/<id>/approve` or `/cancel` — one id segment, nothing after the verb. */
+const OWNER_DECISION_VERB = /^\/v1\/workflow\/tasks\/[^/]+\/(approve|cancel)$/;
 
 /** Timing-safe capability comparison (hash both sides to fixed length first). */
 export function ownerHeaderMatches(header: string | undefined, expected: string): boolean {

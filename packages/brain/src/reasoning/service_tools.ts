@@ -26,8 +26,6 @@ import type { AppViewClient, ServiceProfile } from '../appview_client/http';
 import type { ServiceQueryOrchestrator } from '../service/service_query_orchestrator';
 import type { Contact, ServiceOfferView } from '@dina/core';
 
-
-
 /**
  * Index a published-schema map (from an AppView service profile) by an
  * inbound `capability`, folding alias↔canonical. AppView re-keys schemas
@@ -176,6 +174,33 @@ export function createGeocodeTool(options: GeocodeToolOptions = {}): AgentTool {
   };
 }
 
+/**
+ * A viewer location as the model passed it, or none. Models fill `lat: 0,
+ * lng: 0` when the user named no place — null island, a point in the Gulf of
+ * Guinea no Dina user means — and a radius of 0 when they have none in mind.
+ * Either would turn a name-only search into "nothing within 50 km of nowhere"
+ * (found live: "ask Albert's Bakery again…" → provider not found). So (0, 0)
+ * is no location, a non-positive or non-finite radius is no radius, and a
+ * lone latitude or longitude is dropped: the AppView needs both or neither.
+ */
+export function viewerLocationFromArgs(args: Record<string, unknown>): {
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+} {
+  const lat = typeof args.lat === 'number' && Number.isFinite(args.lat) ? args.lat : undefined;
+  const lng = typeof args.lng === 'number' && Number.isFinite(args.lng) ? args.lng : undefined;
+  const radius =
+    typeof args.radius_km === 'number' && Number.isFinite(args.radius_km) && args.radius_km > 0
+      ? args.radius_km
+      : undefined;
+  const located = lat !== undefined && lng !== undefined && !(lat === 0 && lng === 0);
+  return {
+    ...(located ? { lat, lng } : {}),
+    ...(radius !== undefined ? { radiusKm: radius } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // search_capabilities (intent-based discovery — Layer 4)
 // ---------------------------------------------------------------------------
@@ -214,10 +239,19 @@ export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOpti
       properties: {
         intent: {
           type: 'string',
-          description: "The user's intent in natural language (e.g. 'when does bus 42 reach Castro').",
+          description:
+            "The user's intent in natural language (e.g. 'when does bus 42 reach Castro').",
         },
-        lat: { type: 'number', description: 'Optional viewer latitude.' },
-        lng: { type: 'number', description: 'Optional viewer longitude.' },
+        lat: {
+          type: 'number',
+          description:
+            'Viewer latitude, only when the user named a place; omit otherwise (never 0).',
+        },
+        lng: {
+          type: 'number',
+          description:
+            'Viewer longitude, only when the user named a place; omit otherwise (never 0).',
+        },
       },
       required: ['intent'],
     },
@@ -226,11 +260,8 @@ export function createSearchCapabilitiesTool(options: SearchCapabilitiesToolOpti
     }> {
       const intent = String(args.intent ?? '');
       if (intent === '') throw new Error('search_capabilities: intent is required');
-      const capabilities = await options.appViewClient.searchCapabilities({
-        intent,
-        lat: typeof args.lat === 'number' ? args.lat : undefined,
-        lng: typeof args.lng === 'number' ? args.lng : undefined,
-      });
+      const { lat, lng } = viewerLocationFromArgs(args);
+      const capabilities = await options.appViewClient.searchCapabilities({ intent, lat, lng });
       // Defense in depth: trust no remote AppView with the routing gate. Keep
       // only entries the LOCAL registry knows AND marks intent-routable; drop
       // custom/unknown NSIDs and subject-scoped officials a stale or hostile
@@ -305,9 +336,20 @@ export function createSearchProviderServicesTool(
           type: 'string',
           description: 'The capability name to search for (e.g. "eta_query", "price_check").',
         },
-        lat: { type: 'number', description: 'Optional viewer latitude for proximity ranking.' },
-        lng: { type: 'number', description: 'Optional viewer longitude for proximity ranking.' },
-        radius_km: { type: 'number', description: 'Optional search radius in kilometres.' },
+        lat: {
+          type: 'number',
+          description:
+            'Viewer latitude for proximity ranking, only when the user named a place; omit otherwise (never 0).',
+        },
+        lng: {
+          type: 'number',
+          description:
+            'Viewer longitude for proximity ranking, only when the user named a place; omit otherwise (never 0).',
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Search radius in kilometres, only with lat/lng; omit otherwise (never 0).',
+        },
         q: { type: 'string', description: 'Optional free-text match against service names.' },
       },
       required: ['capability'],
@@ -315,11 +357,10 @@ export function createSearchProviderServicesTool(
     async execute(args): Promise<LLMProfile[]> {
       const capability = String(args.capability ?? '');
       if (capability === '') throw new Error('search_provider_services: capability is required');
+      const where = viewerLocationFromArgs(args);
       const profiles = await options.appViewClient.searchServices({
         capability,
-        lat: typeof args.lat === 'number' ? args.lat : undefined,
-        lng: typeof args.lng === 'number' ? args.lng : undefined,
-        radiusKm: typeof args.radius_km === 'number' ? args.radius_km : undefined,
+        ...where,
         q: typeof args.q === 'string' ? args.q : undefined,
       });
       // Rank deterministically (trust + proximity) so the model is handed a
@@ -330,8 +371,8 @@ export function createSearchProviderServicesTool(
       // sender reliably queries the single best provider even when the
       // registry returns several (e.g. duplicate listings of the same salon).
       const viewer =
-        typeof args.lat === 'number' && typeof args.lng === 'number'
-          ? { lat: args.lat, lng: args.lng }
+        where.lat !== undefined && where.lng !== undefined
+          ? { lat: where.lat, lng: where.lng }
           : undefined;
       const ranked = rankCandidates(capability, profiles, {
         ...(viewer !== undefined ? { viewer } : {}),

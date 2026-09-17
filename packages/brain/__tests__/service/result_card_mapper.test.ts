@@ -2,6 +2,8 @@ import { describe, it, expect } from '@jest/globals';
 
 import { buildResultCardSpec } from '../../src/service/result_card_mapper';
 
+import type { CardBlock, ListBlock, SectionBlock } from '@dina/protocol';
+
 const kinds = (s: any) => s.blocks.map((b: any) => b.kind);
 const find = (s: any, kind: string) => s.blocks.find((b: any) => b.kind === kind);
 
@@ -67,6 +69,57 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     const kvLabels = spec!.blocks.filter((b: any) => b.kind === 'keyValue').map((b: any) => b.label);
     expect(kvLabels).toEqual(expect.arrayContaining(['Date', 'Time']));
     expect((find(spec, 'body') as any).text).toContain('insurance card');
+  });
+
+  it('appointment_availability with `slots` → one list row per slot led by its time, the note beneath (the answer itself, not just "Status: Ok")', () => {
+    // The bakery's live answer on the group hand-off: the WHEN lived only in
+    // `slots`, an array the scalar-only mapper dropped, so the card read
+    // "Status Ok · Date 2026-10-03" and nothing about 15:00.
+    const spec = buildResultCardSpec({
+      capability: 'appointment_availability',
+      serviceName: "Albert's Bakery",
+      result: {
+        status: 'ok',
+        date: '2026-10-03',
+        as_of: '2026-09-17',
+        slots: [
+          { date: '2026-10-03', time: '15:00', note: 'Cake tasting; gluten-free tasting portions are kept on hand.' },
+          { date: '2026-10-03', time: '16:00' },
+        ],
+      },
+    });
+    const blocks: CardBlock[] = spec?.blocks ?? [];
+    const list = blocks.find((b): b is ListBlock => b.kind === 'list');
+    expect(list?.rows).toEqual([
+      { text: '15:00 · 2026-10-03', sub: 'Cake tasting; gluten-free tasting portions are kept on hand.' },
+      { text: '16:00 · 2026-10-03' },
+    ]);
+    const section = blocks.find((b): b is SectionBlock => b.kind === 'section');
+    expect(section?.label).toBe('Slots');
+    // The list sits after the scalar rows and before any body text.
+    const order = blocks.map((b) => b.kind);
+    expect(order.indexOf('list')).toBeGreaterThan(order.indexOf('keyValue'));
+  });
+
+  it('a long list is capped with a count, arrays of scalars become rows, and an array of empty objects renders nothing', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ name: `Option ${i + 1}`, detail: `d${i + 1}` }));
+    const spec = buildResultCardSpec({
+      capability: 'price_check',
+      serviceName: 'Shop',
+      result: { status: 'ok', options: many, tags: ['gluten_free', 'nut_free'] },
+    });
+    const lists = (spec?.blocks ?? []).filter((b): b is ListBlock => b.kind === 'list');
+    expect(lists).toHaveLength(2);
+    expect(lists[0].rows).toHaveLength(7);
+    expect(lists[0].rows[6]).toEqual({ text: 'and 3 more' });
+    expect(lists[0].rows[0]).toEqual({ text: 'Option 1', sub: 'd1' });
+    expect(lists[1].rows).toEqual([{ text: 'Gluten free' }, { text: 'Nut free' }]);
+    const empty = buildResultCardSpec({
+      capability: 'price_check',
+      serviceName: 'Shop',
+      result: { status: 'ok', items: [{}, { nested: { x: 1 } }] },
+    });
+    expect((empty?.blocks ?? []).map((b) => b.kind)).not.toContain('list');
   });
 
   it('cancelled → critical-toned Status keyValue', () => {

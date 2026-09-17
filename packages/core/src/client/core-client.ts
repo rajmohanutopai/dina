@@ -151,7 +151,10 @@ export type OpenGroupPlanClientResult =
   | { ok: true; plan: GroupPlanWire }
   | { ok: false; refusal: string; detail?: string };
 
-export { readGroupPlanHandles };
+// A direct re-export: Metro's Babel transform resolves an `export { x }` of a
+// binding imported LATER in the file as undefined (tsc hoists, Babel does
+// not), and the web bundle is built through Babel.
+export { readGroupPlanHandles } from '../coordination/plan_wire';
 
 export function parseOpenGroupPlanResponse(status: number, raw: unknown): OpenGroupPlanClientResult {
   const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -1547,12 +1550,7 @@ export interface MemoryTouchResult {
 }
 
 /** The group plan on the wire (GROUP_COORDINATION §9), shared with the routes. */
-import {
-  readGroupPlanHandles,
-  readGroupPlanWire,
-  type GroupPlanHandleWire,
-  type GroupPlanWire,
-} from '../coordination/plan_wire';
+import { readGroupPlanWire, type GroupPlanHandleWire, type GroupPlanWire } from '../coordination/plan_wire';
 export type { GroupPlanHandleWire, GroupPlanWire };
 
 /** Re-export `Contact` so consumers find it on `@dina/core`'s public

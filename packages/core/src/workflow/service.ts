@@ -332,10 +332,11 @@ export interface WorkflowServiceOptions {
   responseEgressGate?: ResponseEgressGate | null;
   /**
    * Told when an approval task is decided through the service — approved
-   * (→ queued) or denied (cancelled from pending_approval) — so a Core-owned
+   * (→ queued), denied (cancelled from pending_approval), or lapsed (its
+   * deadline passed with no word, through `expireTasks`) — so a Core-owned
    * approval that has no runner to claim it can be acted on where the
-   * decision lands, whichever route or command delivered it. Injected like
-   * the plugin completion handler: the workflow layer owns the ORDERING
+   * decision lands, whichever route, command or sweep delivered it. Injected
+   * like the plugin completion handler: the workflow layer owns the ORDERING
    * (transition, then tell), not the meaning. A throw is the handler's own.
    */
   approvalDecisionHandler?: ApprovalDecisionHandler | null;
@@ -347,8 +348,11 @@ export type ResponseEgressGate = (ctx: ServiceQueryBridgeContext) => IngressResu
 /** See `WorkflowServiceOptions.approvalDecisionHandler`. */
 export type ApprovalDecisionHandler = (args: {
   task: WorkflowTask;
-  decision: 'approved' | 'denied';
+  decision: ApprovalDecision;
 }) => void;
+
+/** How an approval task left `pending_approval`: the owner's yes, their no, or silence past its deadline. */
+export type ApprovalDecision = 'approved' | 'denied' | 'lapsed';
 
 /**
  * What the buyer should actually receive for a completed ingress result.
@@ -485,6 +489,25 @@ export class WorkflowService {
   }
 
   /**
+   * Expire every non-terminal task past its deadline (the repository's own
+   * sweep), then tell the decision handler about each approval that lapsed —
+   * silence past the deadline is a decision the owner made by not making one,
+   * and what follows from it (a held reply answering without the fact) belongs
+   * where the yes and the no are handled, not at whichever root wired the
+   * sweeper. Returns what expired, as the repository does.
+   */
+  expireTasks(nowSec: number, nowMs: number): WorkflowTask[] {
+    // The repository hands back each task as it stood BEFORE the sweep, so
+    // an approval that lapsed is one still awaiting its owner; an approved
+    // card whose own execution overran its deadline is a failure, not a lapse.
+    const expired = this.repo.expireTasks(nowSec, nowMs);
+    for (const task of expired) {
+      if (task.status === WorkflowTaskState.PendingApproval) this.noticeApprovalDecision(task, 'lapsed');
+    }
+    return expired;
+  }
+
+  /**
    * Validate, create, and emit a `created` event for a new task.
    * Idempotency is enforced by the repository via the partial unique index;
    * duplicates raise `WorkflowConflictError`.
@@ -576,7 +599,7 @@ export class WorkflowService {
    * landed, and a throw there is the handler's own — it can never unwind a
    * decision the owner already made.
    */
-  private noticeApprovalDecision(task: WorkflowTask, decision: 'approved' | 'denied'): void {
+  private noticeApprovalDecision(task: WorkflowTask, decision: ApprovalDecision): void {
     const handler = this.approvalDecisionHandler;
     if (handler === null || task.kind !== WorkflowTaskKind.Approval) return;
     try {

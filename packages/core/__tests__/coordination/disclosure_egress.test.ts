@@ -12,6 +12,8 @@
 import { appendAudit, queryAudit, resetAuditState } from '../../src/audit/service';
 import {
   DISCLOSURE_REVIEW_APPROVAL_TYPE,
+  MIN_REVIEW_SEC,
+  REVIEW_LAPSE_MARGIN_SEC,
   coordinationWorkflowHooks,
   gateDisclosures,
   parseDisclosureReviewPayload,
@@ -25,19 +27,20 @@ import { registerWorkflowRoutes } from '../../src/server/routes/workflow';
 import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService, type ServiceQueryBridgeContext } from '../../src/workflow/service';
+import { TaskExpirySweeper } from '../../src/workflow/task_expiry_sweeper';
 
 import type { SharingTier } from '../../src/gatekeeper/sharing';
 
 const ORGANIZER = 'did:plc:mike';
 const T0 = 1_700_000_000_000;
 
-function executionPayload(capability = 'availability_coordination'): string {
+function executionPayload(capability = 'availability_coordination', ttlSeconds = 120): string {
   return JSON.stringify({
     type: 'service_query_execution',
     from_did: ORGANIZER,
     query_id: 'q-1',
     capability,
-    ttl_seconds: 120,
+    ttl_seconds: ttlSeconds,
     service_name: "The Millers' Dina",
     params: { intent: "Emma's birthday", candidate_slots: [{ start: 'Sat 26' }] },
   });
@@ -74,20 +77,21 @@ function harness(): Harness {
   return { service, repo, sent, tiers, clock };
 }
 
-function execTask(h: Harness, id = 'exec-1', capability?: string, expiresAtSec?: number): string {
+/** The provider's execution task: created when the query arrived, with the requester's 120 s TTL. */
+function execTask(h: Harness, id = 'exec-1', capability?: string, arrivedAtMs = h.clock.now, ttlSeconds = 120): string {
   h.repo.create({
     id,
     kind: WorkflowTaskKind.Delegation,
     status: WorkflowTaskState.Created,
     priority: WorkflowTaskPriority.Normal,
     description: 'exec',
-    payload: executionPayload(capability),
+    payload: executionPayload(capability, ttlSeconds),
     result_summary: '',
     policy: '',
     origin: 'd2d',
-    created_at: h.clock.now,
-    updated_at: h.clock.now,
-    ...(expiresAtSec !== undefined ? { expires_at: expiresAtSec } : {}),
+    created_at: arrivedAtMs,
+    updated_at: arrivedAtMs,
+    expires_at: Math.floor(arrivedAtMs / 1000) + ttlSeconds,
   });
   h.repo.transition(id, WorkflowTaskState.Created, WorkflowTaskState.Running, h.clock.now);
   return id;
@@ -181,7 +185,7 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
     h.tiers.set('general', 'full');
   });
 
-  it('the reply is HELD: nothing is sent, a review card stands, and it expires with the query', async () => {
+  it('the reply is HELD: nothing is sent, a review card stands, and it lapses a margin before the query does', async () => {
     const id = execTask(h);
     h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
     await flush(h);
@@ -190,7 +194,7 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
     expect(card).not.toBeNull();
     expect(card?.kind).toBe('approval');
     expect(card?.status).toBe('pending_approval');
-    expect(card?.expires_at).toBe(Math.floor(T0 / 1000) + 120);
+    expect(card?.expires_at).toBe(Math.floor(T0 / 1000) + 120 - REVIEW_LAPSE_MARGIN_SEC);
     expect(card?.description).toBe('Tell Mike about a household dietary need?');
     const payload = parseDisclosureReviewPayload(card?.payload ?? '');
     expect(payload?.type).toBe(DISCLOSURE_REVIEW_APPROVAL_TYPE);
@@ -212,23 +216,100 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
     expect(h.repo.getById(id)?.internal_stash).toBeUndefined();
   });
 
-  it('the card expires when the query does — the execution task’s deadline, not the moment the model finished', async () => {
+  it('the card’s deadline follows the query’s — its arrival plus the TTL, not the moment the model finished', async () => {
     const arrival = Math.floor(T0 / 1000) - 40; // the query arrived 40 s ago with a 120 s TTL
-    const id = execTask(h, 'exec-late', undefined, arrival + 120);
+    const id = execTask(h, 'exec-late', undefined, arrival * 1000);
     h.clock.now = T0 + 5_000; // the model took a while
     h.service.complete(id, JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }), 'ok');
     await flush(h);
-    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(arrival + 120);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(arrival + 120 - REVIEW_LAPSE_MARGIN_SEC);
   });
 
-  it('a yes that comes after the card lapsed releases nothing', async () => {
+  it('a manual claim’s lease on `expires_at` does not move the card’s deadline', async () => {
+    const id = 'exec-leased';
+    h.repo.create({
+      id,
+      kind: WorkflowTaskKind.Approval,
+      status: WorkflowTaskState.PendingApproval,
+      priority: WorkflowTaskPriority.Normal,
+      description: 'review',
+      payload: executionPayload(),
+      result_summary: '',
+      policy: '',
+      origin: 'd2d',
+      created_at: T0,
+      updated_at: T0,
+      expires_at: Math.floor(T0 / 1000) + 120,
+    });
+    // The owner claims it to answer by hand: the claim extends `expires_at` by its lease.
+    expect(h.repo.claimApprovalForExecution(id, 60, Math.floor(T0 / 1000))).toBe(true);
+    expect(h.repo.getById(id)?.expires_at).toBe(Math.floor(T0 / 1000) + 180);
+    // The manual answer leaves by the same gate the respond route calls.
+    const gated = h.service.gateOutgoingResponse({
+      taskId: id,
+      fromDID: ORGANIZER,
+      queryId: 'q-1',
+      capability: 'availability_coordination',
+      ttlSeconds: 120,
+      resultJSON: JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }),
+      serviceName: 'x',
+    });
+    expect(gated).toBeNull();
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(Math.floor(T0 / 1000) + 120 - REVIEW_LAPSE_MARGIN_SEC);
+  });
+
+  it('silence is a no: the card lapses through the sweeper and the availability leaves WITHOUT the fact, inside the window', async () => {
+    const id = execTask(h);
+    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], message: 'gluten-free please', disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    await flush(h);
+    expect(h.sent).toHaveLength(0);
+    const sweeper = new TaskExpirySweeper({ repository: h.service, nowMsFn: () => h.clock.now });
+    // One second before the card's deadline: nothing moves.
+    h.clock.now = T0 + (120 - REVIEW_LAPSE_MARGIN_SEC - 1) * 1000;
+    await sweeper.runTick();
+    await flush(h);
+    expect(h.sent).toHaveLength(0);
+    // At the deadline — still a margin before the query's own — the sweep releases.
+    h.clock.now = T0 + (120 - REVIEW_LAPSE_MARGIN_SEC) * 1000;
+    await sweeper.runTick();
+    await flush(h);
+    expect(h.sent).toHaveLength(1);
+    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(Math.floor(h.clock.now / 1000)).toBeLessThan(h.repo.getById(id)?.expires_at ?? Math.floor(T0 / 1000) + 120);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.status).toBe('failed');
+    expect(queryAudit({ action: 'disclosure_review_lapsed' })).toHaveLength(1);
+    // A late yes changes nothing: the card is gone and the requester heard once.
+    expect(() => h.service.approve(reviewTaskIdFor(id))).toThrow();
+    await flush(h);
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('a lapse through the bare repository releases nothing — only the service knows a lapse is a decision', async () => {
     const id = execTask(h);
     h.service.complete(id, JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }), 'ok');
     await flush(h);
     h.clock.now = T0 + 200_000;
     h.repo.expireTasks(Math.floor(h.clock.now / 1000), h.clock.now);
-    expect(() => h.service.approve(reviewTaskIdFor(id))).toThrow();
     await flush(h);
+    expect(h.sent).toHaveLength(0);
+    expect(queryAudit({ action: 'disclosure_review_lapsed' })).toHaveLength(0);
+  });
+
+  it('too little time to ask: the owner is not held up and the availability answers without the fact', async () => {
+    const id = execTask(h, 'exec-short', undefined, T0, REVIEW_LAPSE_MARGIN_SEC + MIN_REVIEW_SEC - 1);
+    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+    await flush(h);
+    expect(h.repo.getById(reviewTaskIdFor(id))).toBeNull();
+    expect(h.sent).toHaveLength(1);
+    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(queryAudit({ action: 'disclosure_review_unavailable' }).map((e) => e.detail)).toEqual(['reason=no_time_to_ask']);
+  });
+
+  it('exactly enough time to ask: the card stands', async () => {
+    const id = execTask(h, 'exec-just', undefined, T0, REVIEW_LAPSE_MARGIN_SEC + MIN_REVIEW_SEC);
+    h.service.complete(id, JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }), 'ok');
+    await flush(h);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(Math.floor(T0 / 1000) + MIN_REVIEW_SEC);
     expect(h.sent).toHaveLength(0);
   });
 
@@ -501,6 +582,43 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
     await flush(h);
     expect(h.sent).toHaveLength(2);
     expect(resultOf(h.sent[1])).toEqual({ status: 'accepted' });
+  });
+
+  it('a server node’s owner console decides the card with the capability; an owner stamp without it, or with the wrong one, is refused', async () => {
+    const console_ = new CoreRouter();
+    registerWorkflowRoutes(console_, 'cap-owner');
+    const withCard = async (id: string): Promise<string> => {
+      const exec = execTask(h, id);
+      h.service.complete(exec, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+      await flush(h);
+      return reviewTaskIdFor(exec);
+    };
+    const owner = (path: string, capability?: string): CoreRequest => ({
+      ...routeReq('POST', path, 'owner', {}),
+      ...(capability === undefined ? {} : { ownerCapability: capability }),
+    });
+    const card = await withCard('exec-console');
+    // The stamp alone decides nothing; the wrong capability decides nothing.
+    expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`))).status).toBe(403);
+    expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-other'))).status).toBe(403);
+    await flush(h);
+    expect(h.sent).toHaveLength(0);
+    expect(h.repo.getById(card)?.status).toBe('pending_approval');
+    // The exact capability approves: sent WITH the disclosure.
+    expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-owner'))).status).toBe(200);
+    await flush(h);
+    expect(h.sent).toHaveLength(1);
+    expect(resultOf(h.sent[0]).disclosures).toEqual([GLUTEN]);
+    // And cancels: sent WITHOUT.
+    const denied = await withCard('exec-console-deny');
+    expect((await console_.handle(owner(`/v1/workflow/tasks/${denied}/cancel`, 'cap-owner'))).status).toBe(200);
+    await flush(h);
+    expect(h.sent).toHaveLength(2);
+    expect(resultOf(h.sent[1])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    // A router registered with NO capability refuses every owner-marked decision, fail closed.
+    const unconfigured = await withCard('exec-unconfigured');
+    expect((await router.handle(owner(`/v1/workflow/tasks/${unconfigured}/approve`, 'cap-owner'))).status).toBe(403);
+    expect(h.repo.getById(unconfigured)?.status).toBe('pending_approval');
   });
 
   it('a review card cannot be minted through the create route, and a planted one releases nothing but the task’s own result', async () => {

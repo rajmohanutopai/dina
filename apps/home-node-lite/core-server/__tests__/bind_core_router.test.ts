@@ -396,4 +396,46 @@ describe('bindCoreRouter (task 4.13)', () => {
     ).toEqual({ caller: null });
     await app.close();
   });
+
+  it('stamps owner authority on the approve/cancel decision verbs and nowhere else on the workflow tree', async () => {
+    const coreRouter = new CoreRouter();
+    const project = (req: { callerType?: string }) => ({
+      status: 200,
+      body: { caller: req.callerType ?? null },
+    });
+    coreRouter
+      .post('/v1/workflow/tasks/:id/approve', project as never, { auth: 'public' })
+      .post('/v1/workflow/tasks/:id/cancel', project as never, { auth: 'public' })
+      .post('/v1/workflow/tasks/:id/complete', project as never, { auth: 'public' })
+      .post('/v1/workflow/tasks/claim', project as never, { auth: 'public' })
+      .post('/v1/workflow/tasks', project as never, { auth: 'public' })
+      .get('/v1/workflow/tasks/:id', project as never, { auth: 'public' });
+
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app, ownerCapability: 'owner-secret' });
+    const headers = { 'x-dina-owner-capability': 'owner-secret' };
+    const caller = async (method: 'GET' | 'POST', url: string): Promise<string | null> =>
+      (await app.inject({ method, url, headers, payload: method === 'POST' ? {} : undefined })).json().caller;
+
+    // GROUP_COORDINATION §6: an owner console must be able to settle a card
+    // Core refuses Brain — the disclosure review — and only that.
+    expect(await caller('POST', '/v1/workflow/tasks/disclosure-review-x/approve')).toBe('owner');
+    expect(await caller('POST', '/v1/workflow/tasks/disclosure-review-x/cancel')).toBe('owner');
+    expect(await caller('POST', '/v1/workflow/tasks/t-1/complete')).toBeNull();
+    expect(await caller('POST', '/v1/workflow/tasks/claim')).toBeNull();
+    expect(await caller('POST', '/v1/workflow/tasks')).toBeNull();
+    expect(await caller('GET', '/v1/workflow/tasks/t-1')).toBeNull();
+    // A wrong capability stamps nothing on the decision verbs either.
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/workflow/tasks/t-1/approve',
+          headers: { 'x-dina-owner-capability': 'wrong' },
+          payload: {},
+        })
+      ).json().caller,
+    ).toBeNull();
+    await app.close();
+  });
 });

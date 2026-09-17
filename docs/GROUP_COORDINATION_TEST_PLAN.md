@@ -189,7 +189,7 @@ Layers: **fold** (`group_fold.ts`), **plan** (`group_plan.ts` + repository), **s
 | X3 | Server binder owner-surface list includes `/v1/coordination/` | owner header stamps the caller | `owner_channel.test.ts` green (generic); **no direct pin** |
 | X4 | Lint/typecheck | clean on touched files (pre-existing errors elsewhere unchanged) | CI |
 
-## 9. Live verification — DONE 2026-09-16 (two nodes; the three-guest variant and a headless vendor remain)
+## 9. Live verification — DONE 2026-09-16 (two nodes; the three-guest variant is §12, a headless vendor remains)
 
 Run on `dina-nodes/` (alonso = organizer, sancho = guest) over the cloud relay, the guest's Brain on a real model, driven through `/v1/debug/dispatch`, the HTTP owner surface (capability header) and the Brain's `/api/v1/chat`.
 
@@ -222,3 +222,38 @@ Six lenses, two refuters per finding. 32 findings raised; 9 stood after two refu
 **Refuted and left as is:** the confirm round counting against the ceiling (the doc's "two by default, a third on the organizer's say"); `ready` at `confirming` on the hand-off (the note says the booking is on the organizer's say); the health gate keying off the model's `kind` (the schema's kind IS the category claim; a mislabelled fact is a model fault the owner's review of health kinds cannot catch by construction — recorded as an open question); `/v1/service/respond` ungated (now gated regardless).
 
 **Recorded, not built:** a plan Core persisted but never carded has no phone surface beyond the owner list route; the §13 cancel notice to answered guests; the "a family changes its mind" reconciliation on the guest's side.
+
+## 12. Web validation round — DONE 2026-09-17 (four nodes, the home-node-lite web page)
+
+Driven the way `dina_details.md` says to test: alonso's web chat at `:8401/web/` in Chrome, sancho's at `:8402/web/`, the bundle rebuilt (`expo export --platform web`) before every pass; guests set up as in §9 plus chairmaker (sibling, auto listing, "no dietary or access needs") and albert (no listing). Decisions the web page cannot carry went over the HTTP owner surface with the capability header.
+
+| Scenario | Observed |
+|---|---|
+| W1 §13.1 remember ×2, §13.2 ask | "Stored in General vault." twice; the ask joined both facts and flagged an older "niece Emma" note as a possible other Emma |
+| W2 §13.3 reminders | "Emma's birthday is on Nov 7th" → two auto reminders (Nov 3 heads-up, Nov 7) |
+| W3 §13.4 security | bank note → Finance vault (+ a Dec 1 reminder in `/finance`); HbA1c → Health vault; no approval prompt either time |
+| W4 §13.5 talk | NOT WORKING on the web, parked work per the spec: the 1:1 screen sends from the browser-local node ("denied at contact"), the People "YOU" card shows a stale browser-local identity, the chat header says a listed contact is "not in your contacts", and the guide's plain "Tell Sancho…" needs a mode chip and has no Brain route |
+| W5 reviews, services | Reviews: "no network reviews for that yet" (test appview has none); Services: discovery found the transit provider, sent the query, timed out honestly (no provider daemon running) |
+| W6 three-guest plan from `/ask` on the web | `coordinate_group` on the first turn; the card rendered through Brain's new read proxy; Albert (no listing) `unreachable`; Chairmaker answered at once; Sancho's reply held for review |
+| W7 FOUND: a "no needs" disclosure | chairmaker's model turned "we have no dietary or access needs" into two disclosures ("No dietary needs.", "No access needs."); the gate held them as health, nobody answered, the accepted availability was lost and the required guest folded `unreachable` |
+| W8 FOUND: a lapse answered nothing | the review card expired with the query, so a required guest who accepted every slot counted as silent because their owner did not tap in time |
+| W9 FOUND: the web review card | Approve opened a `window.confirm`, Core refused the Brain caller (403), and the error vanished in RN-Web's no-op `Alert` — a dead button |
+| W10 FOUND: no owner door on the server | `/v1/workflow/tasks/:id/approve` demanded a signed request; a lite node's owner had no capability-header way to settle a card Core refuses Brain, so the card's "owner console" line was untrue there |
+| W11 after the fixes, round 1 | chairmaker's model produced no `disclosures` field; sancho's card lapsed through the sweeper 43 s before the window and the honest `needs_more_info` (October outside its notes then) landed 32 s before close; names rendered on the web; ISO slots read as "Sat 3 Oct 2026, 15:00 to 16:00" |
+| W12 fresh plan, both required | approve over the owner surface (`x-dina-owner-capability`) → converged on both slots with `dietary ×1 gluten-free`; choose over the owner surface → confirm round; DENY over the owner surface → settled without the fact and without the slot note; the round-1 disclosure stands once |
+| W13 hand-off `/ask` on the web | "settled for Saturday, 3 October, 3:00–4:00pm… include one gluten-free tasting portion" — nothing about whose need |
+| W14 web review card after the fix | shows the lines that would leave and "Approve or deny from your phone or Core's owner console.", no buttons; a refused decision on any other kind now reads Core's reason on the card |
+
+| W15 the vendor lane over the test AppView | albert published "Albert's Bakery" (public, `appointment_availability` auto + `appointment_book` review, Castro service area); `com.dinakernel.service.search` indexed it within seconds with the matched capability and the published schema hash |
+| W16 hand-off `/ask` "find a bakery near the Castro… check they can host us then" | `group_plan_handoff` → `search_capabilities` → `search_provider_services` (found the bakery) → `query_service` with date 2026-10-03, 15:00–16:00 and "one gluten-free option"; the bakery's Dina answered on the Tier 1 lane |
+| W17 FOUND: the bakery said "unknown" | its instruction carried no `instructionUpdatedAt` (the phone editor stamps it; a raw PUT does not), so its model read the notes as "written at an unknown time" and fell back honestly; stamped → "3:00 PM is available" |
+| W18 FOUND: the answer's WHEN was not on the card | `slots` is an array; the generic result mapper kept scalars only, so the card read "Status Ok · Date" and nothing about 15:00 |
+| W19 FOUND: "provider not found" when the ask named no place | `DINA_AGENTIC_DEBUG=1` showed the model sent `lat: 0, lng: 0, radius_km: 0`; the AppView refused radius 0, the retry with 50 km searched around null island and found nothing |
+| W20 booking | `appointment_book` arrived as a review card on the bakery with "Party of 6; one gluten-free portion."; approved over the owner surface; the lite node ran it on its Tier 1 lane. First answer "unknown" (the facts lived only in the availability instruction, not the vault — Tier 1 keeps facts by remembering); after two `/remember` turns on albert: "Confirmed · 15:00 · 2026-10-03 · Cake tasting — party of 6, including one gluten-free portion" on the organizer's web card |
+| W21 after the fixes | the same no-place ask found the bakery on the first search call and its card listed "15:00 · 2026-10-03 — Cake tasting; gluten-free tasting portions are kept on hand." |
+
+**Fixed this round:** silence is a no — the card lapses a margin before the window and the sweeper's expiry runs through the service so the decision handler releases the availability without the fact (`WorkflowService.expireTasks`, `TaskExpirer`, three hosts pinned); no room to ask → answer without the fact at once; the deadline is arrival plus TTL, not a claim lease; the hooks share the service clock; `disclosures` and `text` carry a field description in both schema copies; the web plan card names households through the platform contact source, reads ISO slots, labels a slot "Choose" only where a choice can be carried, and its console note follows the state; the inbox surfaces refused decisions inline and the web review card says where to decide; the lite server's owner surface admits the approve/cancel verbs with in-handler re-validation; both discovery tools treat (0, 0) and a non-positive radius as no location (`viewerLocationFromArgs`); the generic result card renders list-valued fields (`slots`, `lines`, `options`) as rows under a section, capped at six with a count.
+
+**AppView:** nothing to deploy for this feature. The group lane never touches the AppView (known-only listings ride the D2D offer; spokes pin the offer's hash); the vendor lane reads listings the AppView already indexes. Noted: the test AppView's catalog snapshot is EMPTY (`com.dinakernel.catalog.capabilities` returns no capabilities) and its version stamp is an old dirty build — the phone's picker runs on its bundled catalog until `seed:catalog` is run at the next deploy.
+
+**Still owed:** Talk on the web (Phase 9 of the web plan); the web "YOU" card and chat-header identity (browser-local node vs the server's); a Brain restart on a lite node empties the web chat history (the SSE store is not rehydrated); a listing saved before a catalog schema change keeps its stored schema until the capability is removed and re-added in the editor.

@@ -193,6 +193,48 @@ describe('createSearchProviderServicesTool', () => {
     });
   });
 
+  it('null island and a zero radius are no location: a name-only search is not pinned to (0, 0) (found live: "ask Albert\'s Bakery again…")', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const tool = createSearchProviderServicesTool({
+      appViewClient: {
+        async searchServices(params) {
+          calls.push({ ...params });
+          return [sampleProfile];
+        },
+      },
+    });
+    // What the model sent live when the user named no place: lat 0, lng 0, radius 0 — the
+    // AppView answered 400; its retry with radius 50 searched 50 km around nowhere and found nothing.
+    await tool.execute({ capability: 'eta_query', lat: 0, lng: 0, radius_km: 0, q: "Albert's Bakery" });
+    expect(calls[0]).toEqual({ capability: 'eta_query', q: "Albert's Bakery" });
+    await tool.execute({ capability: 'eta_query', lat: 0, lng: 0, radius_km: 50, q: "Albert's Bakery" });
+    expect(calls[1]).toEqual({ capability: 'eta_query', radiusKm: 50, q: "Albert's Bakery" });
+    // A lone coordinate, a negative radius, and a non-finite value are dropped the same way.
+    await tool.execute({ capability: 'eta_query', lat: 37.77, radius_km: -3 });
+    expect(calls[2]).toEqual({ capability: 'eta_query', q: undefined });
+    await tool.execute({ capability: 'eta_query', lat: Number.NaN, lng: -122.41 });
+    expect(calls[3]).toEqual({ capability: 'eta_query', q: undefined });
+    // A real place still goes through, and the equator or the meridian alone is a real place.
+    await tool.execute({ capability: 'eta_query', lat: 0, lng: -78.5, radius_km: 5 });
+    expect(calls[4]).toEqual({ capability: 'eta_query', lat: 0, lng: -78.5, radiusKm: 5, q: undefined });
+  });
+
+  it('search_capabilities drops null island the same way', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const tool = createSearchCapabilitiesTool({
+      appViewClient: {
+        async searchCapabilities(params) {
+          calls.push({ ...params });
+          return [];
+        },
+      },
+    });
+    await tool.execute({ intent: 'a cake tasting slot', lat: 0, lng: 0 });
+    expect(calls[0]).toEqual({ intent: 'a cake tasting slot', lat: undefined, lng: undefined });
+    await tool.execute({ intent: 'a cake tasting slot', lat: 37.76, lng: -122.43 });
+    expect(calls[1]).toEqual({ intent: 'a cake tasting slot', lat: 37.76, lng: -122.43 });
+  });
+
   it('surfaces service_uri on the LLM profile so the model can pick a listing (#1)', async () => {
     const tool = createSearchProviderServicesTool({
       appViewClient: {

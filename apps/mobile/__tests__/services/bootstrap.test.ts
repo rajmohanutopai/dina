@@ -21,6 +21,8 @@ import {
   resetChatDefaults,
 } from '../../../brain/src/chat/orchestrator';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
+import { REVIEW_LAPSE_MARGIN_SEC, reviewTaskIdFor } from '../../../core/src/coordination/disclosure_egress';
+import { clearSharingPolicies, setSharingPolicy } from '../../../core/src/gatekeeper/sharing';
 import { deriveLocalServiceIdentity } from '../../../core/src/identity/local_service_identity';
 import {
   InMemoryReasoningBackendRepository,
@@ -390,6 +392,71 @@ describe('createNode — Response Bridge wiring', () => {
     expect(sent[0].to).toBe('did:plc:alice');
     expect((sent[0].body as { query_id: string }).query_id).toBe('q-1');
     await node.dispose();
+  });
+});
+
+describe('createNode — a lapsed disclosure review still answers (GROUP_COORDINATION §6)', () => {
+  it('the expiry sweeper runs through the WorkflowService: silence releases the availability without the fact', async () => {
+    const sent: { to: string; type: string; body: unknown }[] = [];
+    const repo = new InMemoryWorkflowRepository();
+    const clock = { now: 1_700_000_000_000 };
+    setSharingPolicy('did:plc:mike', 'health', 'full');
+    const node = await createNode(
+      baseOptions({
+        sendD2D: async (to, type, body) => {
+          sent.push({ to, type, body });
+        },
+        workflowRepository: repo,
+        nowMsFn: () => clock.now,
+      }),
+    );
+    try {
+      // The hooks reach the service through the Core global that `start()` installs.
+      await node.start();
+      node.workflowService.create({
+        id: 'svc-exec-held',
+        kind: 'delegation',
+        description: '',
+        payload: JSON.stringify({
+          type: 'service_query_execution',
+          from_did: 'did:plc:mike',
+          query_id: 'q-held',
+          capability: 'availability_coordination',
+          ttl_seconds: 300,
+          service_name: "The Millers' Dina",
+        }),
+      });
+      node.workflowService.complete(
+        'svc-exec-held',
+        JSON.stringify({
+          status: 'accepted',
+          accepted_slots: [{ start: 'Sat 3 Oct 3pm' }],
+          disclosures: [{ kind: 'dietary', text: 'gluten-free', about: 'household' }],
+        }),
+        'responded',
+      );
+      await new Promise((r) => setImmediate(r));
+      await node.workflowService.flushBridgeInFlight();
+      // Held: the owner is asked, nothing has left.
+      expect(sent).toHaveLength(0);
+      const card = repo.getById(reviewTaskIdFor('svc-exec-held'));
+      expect(card?.status).toBe('pending_approval');
+      expect(card?.expires_at).toBe(Math.floor(clock.now / 1000) + 300 - REVIEW_LAPSE_MARGIN_SEC);
+      // Nobody answers. The sweep past the card's deadline is the decision.
+      clock.now += (300 - REVIEW_LAPSE_MARGIN_SEC) * 1000;
+      await node.runners.taskExpiry.runTick();
+      await new Promise((r) => setImmediate(r));
+      await node.workflowService.flushBridgeInFlight();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].to).toBe('did:plc:mike');
+      const body = sent[0].body as { query_id: string; result: Record<string, unknown> };
+      expect(body.query_id).toBe('q-held');
+      expect(body.result).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 3 Oct 3pm' }] });
+      expect(JSON.stringify(sent[0].body)).not.toContain('gluten');
+    } finally {
+      clearSharingPolicies();
+      await node.dispose();
+    }
   });
 });
 

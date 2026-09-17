@@ -129,7 +129,8 @@ beforeEach(() => {
   router = new CoreRouter();
   registerPluginInstallRoutes(router, OWNER_CAP);
   registerPluginInvokeRoutes(router, OWNER_CAP);
-  registerWorkflowRoutes(router);
+  // As the assembly does: the owner console's decision on a card carries the capability.
+  registerWorkflowRoutes(router, OWNER_CAP);
 });
 
 afterEach(() => {

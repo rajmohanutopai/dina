@@ -16,8 +16,18 @@
 import type { WorkflowTask } from './domain';
 import type { WorkflowRepository } from './repository';
 
+/**
+ * Whoever expires the tasks. Hand the sweeper the `WorkflowService` wherever
+ * one exists: its `expireTasks` runs the repository's sweep AND tells the
+ * approval-decision handler about each card that lapsed, so a held answer
+ * that waited on the owner still leaves without the fact. The bare
+ * repository only flips the rows — right for a store with no service around
+ * it, wrong for a host that wired the hooks.
+ */
+export type TaskExpirer = Pick<WorkflowRepository, 'expireTasks'>;
+
 export interface TaskExpirySweeperOptions {
-  repository: WorkflowRepository;
+  repository: TaskExpirer;
   /** How often the sweeper runs. Default `30_000` ms. */
   intervalMs?: number;
   /** Wall-clock source (ms). Default `Date.now`. */
@@ -34,7 +44,9 @@ export interface TaskExpirySweeperOptions {
   clearInterval?: (handle: unknown) => void;
 }
 
-const DEFAULT_INTERVAL_MS = 30_000;
+/** How often the sweep runs unless told otherwise; a deadline may be honoured this late. */
+export const DEFAULT_TASK_EXPIRY_INTERVAL_MS = 30_000;
+const DEFAULT_INTERVAL_MS = DEFAULT_TASK_EXPIRY_INTERVAL_MS;
 
 export interface TaskExpirySweepResult {
   expired: WorkflowTask[];
@@ -42,7 +54,7 @@ export interface TaskExpirySweepResult {
 }
 
 export class TaskExpirySweeper {
-  private readonly repo: WorkflowRepository;
+  private readonly repo: TaskExpirer;
   private readonly intervalMs: number;
   private readonly nowMsFn: () => number;
   private readonly onExpired: (t: WorkflowTask) => void;

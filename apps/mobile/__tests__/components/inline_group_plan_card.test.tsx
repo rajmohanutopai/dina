@@ -14,7 +14,9 @@ import React from 'react';
 import { addLifecycleMessage, getThread, resetThreads, type ChatMessage } from '@dina/brain/chat';
 import { OwnerCoordinationHttpError, type GroupPlanWire, type InProcessOwnerCoordinationClient } from '@dina/core';
 
-import { InlineGroupPlanCard, parseCandidates } from '../../src/components/InlineGroupPlanCard';
+import { InlineGroupPlanCard, parseCandidates, slotText } from '../../src/components/InlineGroupPlanCard';
+import * as contactsSource from '../../src/services/contacts_source';
+import * as readerModule from '../../src/services/group_plan_reader';
 import { setOwnerCoordinationClient } from '../../src/services/owner_coordination_client';
 
 const THREAD = 't';
@@ -302,6 +304,72 @@ describe('InlineGroupPlanCard', () => {
     install(fakeClient(null));
     render(<InlineGroupPlanCard message={post('gp_gone')} />);
     await waitFor(() => expect(screen.getByText('This plan was deleted.')).toBeTruthy());
+  });
+
+  it('with no owner client (the Brain-served web page) the fold still renders and decisions point at Core’s owner console', async () => {
+    // The reader answers; the owner client is absent — the web posture.
+    const readOnly = fakeClient(
+      plan({
+        state: 'folded',
+        fold: { state: 'converged', agreed: [{ start: 'Sat 26' }], missing_required: [], emptied_by: [], optional_fit: {}, counters: {}, needs_more_info: [] },
+        guests: [
+          { contact_did: GARCIA, required: true, outcome: 'answered', reply: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] }, disclosures: [], spokes: [] },
+          { contact_did: MILLER, required: true, outcome: 'answered', reply: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] }, disclosures: [], spokes: [] },
+        ],
+      }),
+    );
+    jest.spyOn(readerModule, 'getGroupPlanReader').mockReturnValue({ get: readOnly.get });
+    setOwnerCoordinationClient(null);
+    render(<InlineGroupPlanCard message={post()} />);
+    await waitFor(() => expect(screen.getByTestId('group-plan-card-title-gp_1')).toBeTruthy());
+    expect(screen.getByText('Works for everyone required:')).toBeTruthy();
+    // The slot is shown as the slot, not as "Choose …": nothing here can carry a choice.
+    expect(screen.getByText('Sat 26')).toBeTruthy();
+    expect(screen.queryByText('Choose Sat 26')).toBeNull();
+    // No owner verbs render.
+    expect(screen.queryByTestId('group-plan-stop-gp_1')).toBeNull();
+    expect(screen.queryByTestId('group-plan-widen-gp_1')).toBeNull();
+    expect(screen.getByTestId('group-plan-owner-surface-gp_1')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('group-plan-choose-gp_1-Sat 26'));
+    });
+    expect(readOnly.calls).toEqual([]);
+    jest.restoreAllMocks();
+  });
+
+  it('names households from the platform’s contact source (Core through Brain on the web), and falls back to a short DID', async () => {
+    const contacts = jest.spyOn(contactsSource, 'loadContacts').mockResolvedValue([
+      { did: GARCIA, displayName: 'The Garcias', trustLevel: 'verified', addedAt: 1 } as unknown as Awaited<ReturnType<typeof contactsSource.loadContacts>>[number],
+    ]);
+    try {
+      const client = fakeClient(
+        plan({
+          state: 'folded',
+          fold: { state: 'waiting', agreed: [], missing_required: [MILLER], emptied_by: [], optional_fit: {}, counters: {}, needs_more_info: [] },
+          guests: [
+            { contact_did: GARCIA, required: true, outcome: 'answered', reply: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] }, disclosures: [], spokes: [] },
+            { contact_did: MILLER, required: true, outcome: 'unreachable', reply: null, disclosures: [], spokes: [] },
+          ],
+        }),
+      );
+      setOwnerCoordinationClient(client as unknown as InProcessOwnerCoordinationClient);
+      render(<InlineGroupPlanCard message={post()} />);
+      await waitFor(() => expect(screen.getByText('The Garcias')).toBeTruthy());
+      // A DID this short is shown whole; a real one is trimmed to its ends.
+      expect(screen.getByText('did:plc:miller')).toBeTruthy();
+      expect(screen.getByTestId('group-plan-outcome-gp_1').props.children).toMatch(/Couldn't reach did:plc:miller/);
+      expect(contacts).toHaveBeenCalledTimes(1);
+    } finally {
+      contacts.mockRestore();
+    }
+  });
+
+  it('shows an ISO slot as a day, date and wall time as written; free text stays as written', () => {
+    expect(slotText({ start: '2026-10-03T15:00:00+05:30', end: '2026-10-03T17:00:00+05:30' })).toBe('Sat 3 Oct 2026, 15:00 to 17:00');
+    expect(slotText({ start: '2026-10-03T15:00:00Z', end: '2026-10-04T09:30:00Z' })).toBe('Sat 3 Oct 2026, 15:00 to Sun 4 Oct 2026, 09:30');
+    expect(slotText({ start: '2026-10-10T15:00:00+05:30' })).toBe('Sat 10 Oct 2026, 15:00');
+    expect(slotText({ start: 'Sat 26' })).toBe('Sat 26');
+    expect(slotText({ start: 'Sat 26', end: '5pm' })).toBe('Sat 26 to 5pm');
   });
 
   it('parses the organizer’s dates one per comma or line', () => {

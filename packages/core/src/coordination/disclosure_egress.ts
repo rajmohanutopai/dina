@@ -15,7 +15,11 @@
  *   2. A health fact needs the owner's yes. Even under an admitting tier, a
  *      reply carrying a dietary or accessibility disclosure is HELD and the
  *      owner is asked once; a yes sends the reply with it, a no sends the
- *      availability without it. Nothing leaves while the card is open.
+ *      availability without it. Nothing leaves while the card is open, and
+ *      silence is a no: the card's deadline sits a margin before the
+ *      requester's window closes, and when it lapses the availability still
+ *      leaves, without the fact. The owner's `auto` policy already committed
+ *      the availability; only the fact ever waited on them.
  *   3. `about` is always `'household'`. Anything else is dropped before the
  *      tier is even consulted, and the drop is counted, never quoted.
  *
@@ -46,6 +50,7 @@ import {
   type ServiceQueryBridgeContext,
   type WorkflowService,
 } from '../workflow/service';
+import { DEFAULT_TASK_EXPIRY_INTERVAL_MS } from '../workflow/task_expiry_sweeper';
 
 import {
   GROUP_COORDINATION_CAPABILITY,
@@ -59,6 +64,15 @@ import { normaliseDisclosure, type Disclosure, type DisclosureKind } from './gro
 export { disclosureCategory, tierAdmitsDisclosure } from './disclosure_policy';
 
 export const DISCLOSURE_REVIEW_APPROVAL_TYPE = 'disclosure_review';
+
+/**
+ * The review card lapses this long before the requester's window closes:
+ * one sweep cadence for the expiry to be noticed, plus the relay hop, so the
+ * answer that follows a lapse still lands inside the window.
+ */
+export const REVIEW_LAPSE_MARGIN_SEC = Math.ceil(DEFAULT_TASK_EXPIRY_INTERVAL_MS / 1000) + 15;
+/** Under this much time to decide, the owner is not asked: the reply leaves without the fact. */
+export const MIN_REVIEW_SEC = 30;
 
 export interface DisclosureGateDeps {
   /** The sharing tier for a contact and category; the module globals by default. */
@@ -268,17 +282,41 @@ function describeReview(requester: string, kinds: DisclosureKind[]): string {
 }
 
 /**
- * Create the review card, or report that one already stands. The card
- * expires when the query does — the execution task's own deadline, which the
- * provider set from the requester's TTL on arrival — because past the
- * requester's window there is nothing to release. False when no card can be
- * made, so the caller answers without the fact rather than not at all.
+ * The query's own deadline: the task's creation (the query's arrival) plus
+ * the requester's TTL — the same authority `/v1/service/respond` uses. Not
+ * `expires_at`: a manual claim extends that by a lease the requester never
+ * granted.
+ */
+function queryDeadlineSec(task: WorkflowTask | null, ttlSeconds: number, nowSec: number): number {
+  const createdSec = task === null ? nowSec : Math.floor(task.created_at / 1000);
+  return createdSec + Math.max(1, ttlSeconds);
+}
+
+/**
+ * When the review card lapses: a margin before the query's deadline, so the
+ * answer a lapse releases still reaches the requester inside their window.
+ * Null when that leaves the owner too little time to be asked at all.
+ */
+function reviewDeadline(deadlineSec: number, nowSec: number): number | null {
+  const lapsesAt = deadlineSec - REVIEW_LAPSE_MARGIN_SEC;
+  return lapsesAt - nowSec < MIN_REVIEW_SEC ? null : lapsesAt;
+}
+
+/**
+ * Create the review card, or report that one already stands. False when no
+ * card can be made — no store, no time left to ask, a failed create — so the
+ * caller answers without the fact rather than not at all.
  */
 function holdForReview(ctx: ServiceQueryBridgeContext, gated: GatedDisclosures, deps: DisclosureGateDeps): boolean {
   const workflow = deps.workflow();
   if (workflow === null) return false;
+  const nowSec = Math.floor(deps.nowMs() / 1000);
   const execution = workflow.store().getById(ctx.taskId);
-  const expiresAtSec = execution?.expires_at ?? Math.floor(deps.nowMs() / 1000) + Math.max(1, ctx.ttlSeconds);
+  const expiresAtSec = reviewDeadline(queryDeadlineSec(execution, ctx.ttlSeconds, nowSec), nowSec);
+  if (expiresAtSec === null) {
+    appendAudit('disclosure_gate', 'disclosure_review_unavailable', ctx.taskId, `reason=no_time_to_ask`);
+    return false;
+  }
   const requester = deps.contactName(ctx.fromDID) ?? ctx.fromDID;
   const { resultJSON: _bytes, ...context } = ctx;
   const payload: DisclosureReviewPayload = {
@@ -361,10 +399,17 @@ function heldResult(workflow: WorkflowService, payload: DisclosureReviewPayload)
   return { task, resultJSON: task.result };
 }
 
+const DECISION_AUDIT = {
+  approved: 'disclosure_review_approved',
+  denied: 'disclosure_review_denied',
+  lapsed: 'disclosure_review_lapsed',
+} as const;
+
 /**
- * The owner decided. Yes releases the response with the disclosures; no
- * releases it without them. Either way the requester hears once, and what
- * they hear is what Core stored, gated again now.
+ * The owner decided, or let the card lapse. Yes releases the response with
+ * the disclosures; no — said, or by silence — releases it without them.
+ * Either way the requester hears once, and what they hear is what Core
+ * stored, gated again now.
  */
 export function makeDisclosureDecisionHandler(over: Partial<DisclosureGateDeps> = {}): ApprovalDecisionHandler {
   const deps = defaultDeps(over);
@@ -383,7 +428,7 @@ export function makeDisclosureDecisionHandler(over: Partial<DisclosureGateDeps> 
     }
     appendAudit(
       'disclosure_gate',
-      decision === 'approved' ? 'disclosure_review_approved' : 'disclosure_review_denied',
+      DECISION_AUDIT[decision],
       task.id,
       `disclosures=${payload.disclosures.length} released=${released ? 1 : 0}`,
     );

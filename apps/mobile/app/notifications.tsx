@@ -336,6 +336,7 @@ export default function NotificationsScreen(): React.JSX.Element {
               <ApprovalActionCard
                 entry={entry}
                 busy={approvals.busyId === entry.id}
+                actionError={approvals.actionErrors[entry.id] ?? null}
                 supportsSessionScope={approvals.supportsSessionScope(entry)}
                 onApprove={(scope) => approvals.approve(entry, scope)}
                 onApproveSimple={() => approvals.approve(entry)}

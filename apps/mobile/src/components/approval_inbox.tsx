@@ -19,7 +19,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 
 import { subscribeNotifications } from '@dina/brain/notifications';
 
@@ -33,6 +33,7 @@ import {
   type ResolvedInboxEntry,
 } from '../hooks/useServiceInbox';
 import { confirmDecision } from '../services/confirm_decision';
+import { OWNER_DECIDES_ON_THIS_SURFACE } from '../services/inbox_client_resolver';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
@@ -48,6 +49,12 @@ export interface ApprovalInbox {
   busyId: string | null;
   loading: boolean;
   error: string | null;
+  /**
+   * The last decision that Core refused or that failed to reach it, by entry
+   * id — shown on the card itself. An `Alert` is a no-op on the web, so a
+   * refused decision there used to vanish and the button read as dead.
+   */
+  actionErrors: Readonly<Record<string, string>>;
   supportsSessionScope: (item: InboxEntry) => boolean;
   /** §15.5 — may this plugin card offer "Allow for 24 hours"? (read/quote at Core's MODERATE only) */
   supportsAllow24h: (item: InboxEntry) => boolean;
@@ -69,6 +76,17 @@ export function useApprovalInbox(): ApprovalInbox {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const noteActionError = useCallback((id: string, message: string): void => {
+    setActionErrors((current) => ({ ...current, [id]: message }));
+  }, []);
+  const clearActionError = useCallback((id: string): void => {
+    setActionErrors((current) => {
+      if (!(id in current)) return current;
+      const { [id]: _gone, ...rest } = current;
+      return rest;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -168,18 +186,19 @@ export function useApprovalInbox(): ApprovalInbox {
       const ok = await confirmDecision(headline, subline, verb, verb === 'Deny');
       if (!ok) return;
       setBusyId(entry.id);
+      clearActionError(entry.id);
       try {
         await action();
         setPending((list) => list.filter((e) => e.id !== entry.id));
         // Pull the just-resolved task into the resolved history.
         void refreshResolved();
       } catch (err) {
-        Alert.alert('Error', (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
+        noteActionError(entry.id, (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
       } finally {
         setBusyId(null);
       }
     },
-    [refreshResolved],
+    [refreshResolved, clearActionError, noteActionError],
   );
 
   /**
@@ -207,16 +226,17 @@ export function useApprovalInbox(): ApprovalInbox {
   const runApprove = useCallback(
     (item: InboxEntry, scope: 'single' | 'session'): void => {
       setBusyId(item.id);
+      clearActionError(item.id);
       void approvePending(item.id, item.kind, scope)
         .then(() => {
           setPending((list) => list.filter((e) => e.id !== item.id));
           // Surface the approved task in the resolved history.
           void refreshResolved();
         })
-        .catch((err) => Alert.alert('Error', (err as Error).message ?? 'Failed to approve'))
+        .catch((err) => noteActionError(item.id, (err as Error).message ?? 'Failed to approve'))
         .finally(() => setBusyId(null));
     },
-    [refreshResolved],
+    [refreshResolved, clearActionError, noteActionError],
   );
 
   /**
@@ -226,7 +246,9 @@ export function useApprovalInbox(): ApprovalInbox {
    */
   const handleApproveAllow24h = useCallback(
     (item: InboxEntry) => {
-      confirmAndRun(item, 'Approve', () => approvePending(item.id, item.kind, undefined, 'window_24h'));
+      confirmAndRun(item, 'Approve', () =>
+        approvePending(item.id, item.kind, undefined, 'window_24h'),
+      );
     },
     [confirmAndRun],
   );
@@ -273,6 +295,7 @@ export function useApprovalInbox(): ApprovalInbox {
     busyId,
     loading,
     error,
+    actionErrors,
     supportsSessionScope,
     supportsAllow24h,
     approve,
@@ -303,6 +326,7 @@ export function supportsAllow24h(item: InboxEntry): boolean {
 export function ApprovalActionCard({
   entry,
   busy,
+  actionError = null,
   supportsSessionScope,
   onApprove,
   onApproveSimple,
@@ -311,6 +335,8 @@ export function ApprovalActionCard({
 }: {
   entry: InboxEntry;
   busy: boolean;
+  /** Core's own reason when the last decision on this card was refused, or why it never reached Core. */
+  actionError?: string | null;
   supportsSessionScope: boolean;
   onApprove: (scope: 'single' | 'session') => void;
   onApproveSimple: () => void;
@@ -342,6 +368,11 @@ export function ApprovalActionCard({
   // off the pinned envelope; nothing on it was written by the plugin.
   const isPlugin = item.kind === 'plugin_invocation';
   const isDisclosure = item.kind === 'disclosure_review';
+  // GROUP_COORDINATION §6: a household disclosure is released only by the
+  // owner, and a surface that decides through Brain (the web page) has no
+  // owner path — so it says where to decide rather than offering a button
+  // Core will refuse. The same posture as the plan card's decisions.
+  const decidableHere = !isDisclosure || OWNER_DECIDES_ON_THIS_SURFACE;
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
   // the exact mode in the headline (trusted chrome) so a WRITE request can never
@@ -353,15 +384,20 @@ export function ApprovalActionCard({
     : isDisclosure
       ? 'Share a household need?'
       : isPlugin
-      ? 'Plugin action approval'
-      : isStagingAccess
-        ? 'Memory access approval'
-        : isVaultWrite
-          ? 'Vault WRITE approval'
-          : isVaultRead
-            ? 'Vault read approval'
-            : item.serviceName || 'Unnamed service';
-  const tagText = isIntent && item.riskLevel !== undefined ? item.riskLevel : isPlugin ? (item.effect?.actionClass ?? '') : item.capability;
+        ? 'Plugin action approval'
+        : isStagingAccess
+          ? 'Memory access approval'
+          : isVaultWrite
+            ? 'Vault WRITE approval'
+            : isVaultRead
+              ? 'Vault read approval'
+              : item.serviceName || 'Unnamed service';
+  const tagText =
+    isIntent && item.riskLevel !== undefined
+      ? item.riskLevel
+      : isPlugin
+        ? (item.effect?.actionClass ?? '')
+        : item.capability;
   const tagStyle =
     (isIntent || isPlugin) && item.riskLevel === 'HIGH'
       ? [styles.capability, styles.riskHigh]
@@ -390,7 +426,10 @@ export function ApprovalActionCard({
         <Text style={tagStyle}>{tagText}</Text>
       </View>
       {isIntent || isPlugin ? (
-        <Text style={styles.intentAction} testID={isPlugin ? `approvals-plugin-capability-${item.id}` : undefined}>
+        <Text
+          style={styles.intentAction}
+          testID={isPlugin ? `approvals-plugin-capability-${item.id}` : undefined}
+        >
           {item.capability}
         </Text>
       ) : null}
@@ -429,79 +468,90 @@ export function ApprovalActionCard({
         {age}
         {ttl}
       </Text>
-      <View style={styles.actions}>
-        <Pressable
-          testID={`approvals-deny-${item.id}`}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.button,
-            styles.denyButton,
-            pressed && styles.pressed,
-            busy && styles.disabled,
-          ]}
-          disabled={busy}
-          onPress={onDeny}
-        >
-          <Text style={styles.denyText}>Deny</Text>
-        </Pressable>
-        {onAllow24h !== undefined && (
-          // PLUGIN_ARCHITECTURE §15.5 — approve this invocation AND let the
-          // same scope run silent for 24 hours. Offered only where Core says
-          // a grant can silence this capability (see supportsAllow24h).
+      {actionError !== null ? (
+        <Text style={styles.actionError} testID={`approvals-error-${item.id}`}>
+          {actionError}
+        </Text>
+      ) : null}
+      {!decidableHere ? (
+        <Text style={styles.ownerSurfaceNote} testID={`approvals-owner-surface-${item.id}`}>
+          Approve or deny from your phone or Core's owner console.
+        </Text>
+      ) : (
+        <View style={styles.actions}>
           <Pressable
-            testID={`approvals-allow-24h-${item.id}`}
+            testID={`approvals-deny-${item.id}`}
             accessibilityRole="button"
             style={({ pressed }) => [
               styles.button,
-              styles.approveOnceButton,
+              styles.denyButton,
               pressed && styles.pressed,
               busy && styles.disabled,
             ]}
             disabled={busy}
-            onPress={onAllow24h}
+            onPress={onDeny}
           >
-            <Text style={styles.approveOnceText}>Allow 24h</Text>
+            <Text style={styles.denyText}>Deny</Text>
           </Pressable>
-        )}
-        {supportsSessionScope && (
-          // dina_details §13.4 inline 3-button — `Approve Once`
-          // grants single-use (`scope='single'`); the right-hand
-          // `Approve` grants for the current dina session
-          // (`scope='session'`). Direct call paths — no popup.
-          <Pressable
-            testID={`approvals-approve-once-${item.id}`}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.button,
-              styles.approveOnceButton,
-              pressed && styles.pressed,
-              busy && styles.disabled,
-            ]}
-            disabled={busy}
-            onPress={() => onApprove('single')}
-          >
-            <Text style={styles.approveOnceText}>Approve Once</Text>
-          </Pressable>
-        )}
-        <Pressable
-          testID={`approvals-approve-${item.id}`}
-          accessibilityRole="button"
-          style={({ pressed }) => [
-            styles.button,
-            styles.approveButton,
-            pressed && styles.pressed,
-            busy && styles.disabled,
-          ]}
-          disabled={busy}
-          onPress={() => (supportsSessionScope ? onApprove('session') : onApproveSimple())}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={colors.white} />
-          ) : (
-            <Text style={styles.approveText}>Approve</Text>
+          {onAllow24h !== undefined && (
+            // PLUGIN_ARCHITECTURE §15.5 — approve this invocation AND let the
+            // same scope run silent for 24 hours. Offered only where Core says
+            // a grant can silence this capability (see supportsAllow24h).
+            <Pressable
+              testID={`approvals-allow-24h-${item.id}`}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.button,
+                styles.approveOnceButton,
+                pressed && styles.pressed,
+                busy && styles.disabled,
+              ]}
+              disabled={busy}
+              onPress={onAllow24h}
+            >
+              <Text style={styles.approveOnceText}>Allow 24h</Text>
+            </Pressable>
           )}
-        </Pressable>
-      </View>
+          {supportsSessionScope && (
+            // dina_details §13.4 inline 3-button — `Approve Once`
+            // grants single-use (`scope='single'`); the right-hand
+            // `Approve` grants for the current dina session
+            // (`scope='session'`). Direct call paths — no popup.
+            <Pressable
+              testID={`approvals-approve-once-${item.id}`}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.button,
+                styles.approveOnceButton,
+                pressed && styles.pressed,
+                busy && styles.disabled,
+              ]}
+              disabled={busy}
+              onPress={() => onApprove('single')}
+            >
+              <Text style={styles.approveOnceText}>Approve Once</Text>
+            </Pressable>
+          )}
+          <Pressable
+            testID={`approvals-approve-${item.id}`}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.button,
+              styles.approveButton,
+              pressed && styles.pressed,
+              busy && styles.disabled,
+            ]}
+            disabled={busy}
+            onPress={() => (supportsSessionScope ? onApprove('session') : onApproveSimple())}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Text style={styles.approveText}>Approve</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -570,7 +620,10 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
       </View>
       {executionNote !== null ? <Text style={styles.riskHint}>{executionNote}</Text> : null}
       {(isIntent || isPlugin) && item.capability !== '' ? (
-        <Text style={styles.intentAction} testID={isPlugin ? `approvals-resolved-plugin-capability-${item.id}` : undefined}>
+        <Text
+          style={styles.intentAction}
+          testID={isPlugin ? `approvals-resolved-plugin-capability-${item.id}` : undefined}
+        >
           {item.capability}
         </Text>
       ) : null}
@@ -622,7 +675,10 @@ export function formatResolvedAt(ms: number, now: number = Date.now()): string {
  */
 export function pluginEffectStatement(effect: InboxEntry['effect']): string {
   if (effect === undefined) return '';
-  const effectful = effect.actionClass === 'write' || effect.actionClass === 'booking' || effect.actionClass === 'agentic';
+  const effectful =
+    effect.actionClass === 'write' ||
+    effect.actionClass === 'booking' ||
+    effect.actionClass === 'agentic';
   const action = effectful
     ? 'An external action may occur.'
     : effect.actionClass === 'payment'
@@ -757,6 +813,15 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     letterSpacing: 0.2,
     marginBottom: spacing.sm,
+  },
+  actionError: {
+    ...textStyles.caption,
+    color: colors.error,
+    marginBottom: spacing.sm,
+  },
+  ownerSurfaceNote: {
+    ...textStyles.caption,
+    letterSpacing: 0.2,
   },
   actions: {
     flexDirection: 'row',
