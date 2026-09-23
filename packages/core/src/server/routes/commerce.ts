@@ -52,6 +52,7 @@ import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { base64 } from '@scure/base';
 
 import {
+  ORDER_ATTACHMENT_KINDS,
   commerceRecordDigest,
   computeProjectionDigest,
   conversationSnapshotDigest,
@@ -74,6 +75,7 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { appendAudit } from '../../audit/service';
 import { resolveActingInstall } from '../../commerce/acting_install';
 import {
   buildBuyerApprovalPayload,
@@ -124,6 +126,7 @@ import {
   getCatalogRecordReader,
   publishCatalogRecords,
 } from '../../commerce/catalog_record_writer';
+import { isRefreshableConnectorKind } from '../../commerce/catalog_source_bindings';
 import { effectiveFanoutCeiling } from '../../commerce/commerce_settings';
 import { buildComparisonCard } from '../../commerce/comparison_card';
 import {
@@ -159,12 +162,36 @@ import {
   newEgressAuthorizationId,
 } from '../../commerce/image_egress';
 import { planCommerceInstall, roleIsInstalled } from '../../commerce/install_plan';
+import {
+  ORDERS_EXPORT_DEFAULT_LIMIT,
+  ORDERS_EXPORT_MAX_LIMIT,
+  admitIntegrationCaller,
+  buildIntegrationStatus,
+  catalogSourceDigest,
+  describeDraftForIntegration,
+  listOrderDecisionEvents,
+  parseOrdersCursor,
+  type IntegrationScope,
+} from '../../commerce/integration';
+import {
+  SUPPLIER_PROPOSABLE_CONTROLS,
+  appliedRevisionOf,
+  listSettingsProposals,
+  proposeSupplierSettings,
+  unsupportedControls,
+} from '../../commerce/integration_settings';
 import { getInviteService } from '../../commerce/invite_compose';
 import { recordCommerceEvent } from '../../commerce/observability';
 import {
   newApprovalId,
   ORDER_APPROVAL_TTL_MS,
 } from '../../commerce/order_approvals';
+import {
+  attachOrderEvidence,
+  isSuppliedOrder,
+  listOrderAttachments,
+  pendingEvidenceRefs,
+} from '../../commerce/order_attachments';
 import {
   TRADE_INVITE_CAPABILITIES,
   settleInboundOrderDecision,
@@ -206,7 +233,12 @@ import {
   type AppViewAnswer,
 } from '../../commerce/relationship_resolver';
 import { RevshareService } from '../../commerce/revshare_service';
-import { commerceAvailability, getCommerceRuntime, type CommerceMoneyStores } from '../../commerce/runtime';
+import {
+  commerceAvailability,
+  getCommerceRuntime,
+  type CommerceMoneyStores,
+  type CommerceRuntime,
+} from '../../commerce/runtime';
 import { resolveServiceBinding } from '../../commerce/service_binding';
 import { applySkuMint } from '../../commerce/sku_mint';
 import { escalateStaffOperation } from '../../commerce/staff_escalation';
@@ -222,6 +254,7 @@ import { setStaffPin } from '../../commerce/staff_pins';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
 import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
 import { compareTender, createTender } from '../../commerce/tender';
+import { getTradeDocumentDispatcher, installTradeDocumentDispatcher } from '../../commerce/trade_dispatch';
 import { buildTradeInbox } from '../../commerce/trade_inbox';
 import { drainTradeSpool } from '../../commerce/trade_ingress';
 import {
@@ -240,12 +273,15 @@ import {
   uninstall,
 } from '../../plugins/install_service';
 import { getPluginInstallRepository } from '../../plugins/registry';
+import { WorkflowTaskState } from '../../workflow/domain';
+import { getWorkflowService } from '../../workflow/service';
 
 import { getD2DSender } from './d2d_msg';
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 import { teardownResponse } from './plugin_install';
 
 import type {
+  CatalogDraft,
   CatalogDraftRepository,
   ProvenanceClass,
 } from '../../commerce/catalog_draft_store';
@@ -467,6 +503,10 @@ function completeProjection(value: Record<string, unknown>): Record<string, unkn
  */
 type CommerceRouteCaller = { kind: 'owner' } | { kind: 'staff'; deviceDid: string };
 
+/** An integration's command id: a stable, log-safe token, never free text. */
+const COMMAND_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
 function staffOrOwnerCaller(
   req: CoreRequest,
   ownerGuard: OwnerGuard,
@@ -495,6 +535,7 @@ export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: str
   registerCredentialRoutes(router, ownerCapability);
   registerEffectRoutes(router, ownerCapability);
   registerTrustRoutes(router, ownerCapability);
+  registerIntegrationRoutes(router, ownerCapability);
 
   router.get('/v1/commerce/reconciliation', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
@@ -3511,9 +3552,14 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
         lineId: line.line_id,
         fulfilledQuantity: { value: line.fulfilled_quantity.value, unitCode: line.fulfilled_quantity.unit_code },
       }));
+      // Plan §3.3 — captured payments and started production the connector
+      // attached ride the next status as `evidence_refs`. Evidence only: the
+      // state came from the fulfilment decision above, never from here.
+      const evidenceRefs = evidenceRefsFor(runtime, result.buyerDid, result.purchaseOrderId);
       const signed = runtime.lifecycle.signStatusUpdate(result.buyerDid, result.purchaseOrderId, {
         state: result.decision.to,
         ...(lines === undefined ? {} : { lines }),
+        ...(evidenceRefs.length === 0 ? {} : { evidenceRefs }),
       });
       if ('error' in signed) {
         // REPORTED, NOT THROWN. The engine refuses a successor the chain will
@@ -4423,36 +4469,607 @@ function registerCatalogRoutes(router: CoreRouter, ownerCapability?: string): vo
  * items Core stored, which is what stops a caller substituting a set between
  * confirmation and publication.
  */
-function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGuard): void {
-  const draftService = (): CatalogDraftService | null => {
-    const runtime = getCommerceRuntime();
-    if (runtime === null) return null;
-    return new CatalogDraftService({
-      drafts: runtime.catalogDrafts,
-      pointers: runtime.catalogPointers,
-      sha256: hash,
-      now: () => Date.now(),
-      newClaimToken: () => `pcl_${bytesToHex(randomBytes(16))}`,
-      // NOT WIRED, AND FAILING CLOSED IS THE POINT. §10 item 9: the per-persona
-      // Argon2id verifier exists but has no production caller, no persistence
-      // and no mobile equivalent. Returning false makes every binding operation
-      // refuse, which is honest — a receipt minted without presence would
-      // record that the software asked itself.
-      userPresent: ownerPresentNowForRoutes,
-      publicationFence: () => publicationFence(),
-      attributionBoundary: runtime.attributionBoundary,
-      // The owner vouches on this surface; the staff confirm surface (§7)
-      // threads the staff device DID here when it lands.
-      vouchedBy: () => getNodeDID(),
-      publish: async ({ draft }) =>
-        // THE PUBLISHER IS A MODULE, not a closure in a route. As a closure it
-        // could not be reached by any test — the route wires presence to false
-        // and the suite installs no record writer — and three defects lived in
-        // it: no fence before the pointer, no record of what was published,
-        // and every failure reported as "not a lost swap".
-        publishHeldDraft({ fence: () => publicationFence(), recordPublication }, draft),
-    });
+/**
+ * The merchant integration surface (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2,
+ * Piece B). READS ONLY in this registrar: what a merchant's connector — a
+ * paired `staff` device holding owner-created `integration_*` grants — may
+ * learn from its own node. Each door names ONE scope and admits a staff
+ * caller only on a live grant for that scope on the supplier install; the
+ * owner passes as themself. Every other caller receives the owner guard's
+ * own refusal, so the refusal shape matches the rest of the commerce surface.
+ *
+ * The bodies are snake_case projections of `commerce/integration.ts`, which
+ * derives everything from retained rows. Nothing here decides, publishes or
+ * writes; those stay the owner's acts on their own routes.
+ */
+function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string): void {
+  const ownerOnlyGuard = makeOwnerGuard(
+    ownerCapability,
+    'only the owner or a granted integration device may use the integration surface',
+  );
+  const callerFor = (req: CoreRequest): CommerceRouteCaller | CoreResponse =>
+    staffOrOwnerCaller(req, ownerOnlyGuard);
+  const admit = (
+    runtime: CommerceRuntime,
+    caller: CommerceRouteCaller,
+    scope: IntegrationScope,
+  ): CoreResponse | null => {
+    const admitted = admitIntegrationCaller(runtime, caller, scope);
+    return admitted.ok ? null : { status: 403, body: { error: 'access_denied', reason: admitted.reason } };
   };
+
+  router.get('/v1/commerce/integration/status', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_status');
+    if (refused !== null) return refused;
+    const status = buildIntegrationStatus(runtime, caller);
+    return {
+      status: 200,
+      body: {
+        integration_api_version: status.apiVersion,
+        business_did: status.businessDid,
+        device_did: status.deviceDid,
+        grants: status.grants.map((g) => ({
+          device_did: g.deviceDid,
+          scope: g.scope,
+          installs: g.installs,
+          created_at: g.createdAt,
+        })),
+        catalogs: status.catalogs.map((c) => ({
+          catalog_id: c.catalogId,
+          state: c.state,
+          snapshot_sequence: c.snapshotSequence,
+          snapshot_digest: c.snapshotDigest,
+          published_at: c.publishedAtMs,
+        })),
+        settings_revision: status.settingsRevision,
+      },
+    };
+  });
+
+  router.get('/v1/commerce/integration/orders', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_orders_export');
+    if (refused !== null) return refused;
+    const rawCursor = req.query.cursor;
+    const after = rawCursor === undefined || rawCursor === '' ? null : parseOrdersCursor(rawCursor);
+    if (rawCursor !== undefined && rawCursor !== '' && after === null) {
+      return { status: 400, body: { error: 'invalid_cursor' } };
+    }
+    let limit = ORDERS_EXPORT_DEFAULT_LIMIT;
+    if (req.query.limit !== undefined) {
+      if (!/^\d{1,4}$/.test(req.query.limit)) return { status: 400, body: { error: 'invalid_limit' } };
+      limit = Number(req.query.limit);
+      if (limit < 1 || limit > ORDERS_EXPORT_MAX_LIMIT) return { status: 400, body: { error: 'invalid_limit' } };
+    }
+    const page = listOrderDecisionEvents(runtime, { after, limit });
+    return {
+      status: 200,
+      body: {
+        events: page.events.map((e) => ({
+          event_id: e.eventId,
+          decided_at: e.decidedAt,
+          decision: e.decision,
+          ...(e.reasonCode !== undefined ? { reason_code: e.reasonCode } : {}),
+          buyer_did: e.buyerDid,
+          purchase_order_id: e.purchaseOrderId,
+          order_digest: e.orderDigest,
+          quote_digest: e.quoteDigest,
+          acknowledgement_digest: e.acknowledgementDigest,
+          ...(e.supplierOrderId !== undefined ? { supplier_order_id: e.supplierOrderId } : {}),
+          ...(e.externalRef !== undefined ? { external_ref: e.externalRef } : {}),
+          order:
+            e.order === null
+              ? null
+              : {
+                  totals: e.order.totals,
+                  lines: e.order.lines.map((l) => ({
+                    line_id: l.lineId,
+                    quantity: l.quantity,
+                    ...(l.unitPrice !== undefined ? { unit_price: l.unitPrice } : {}),
+                  })),
+                  delivery_projection: e.order.deliveryProjection,
+                },
+        })),
+        next_cursor: page.nextCursor,
+        unreadable: page.unreadable,
+      },
+    };
+  });
+
+  // ── Piece A: the catalogue, read back and pulled again ─────────────────
+
+  const draftView = (draft: CatalogDraft): Record<string, unknown> => {
+    const view = describeDraftForIntegration(draft);
+    return {
+      draft_id: view.draftId,
+      catalog_id: view.catalogId,
+      state: view.state,
+      provenance_class: view.provenanceClass,
+      findings_count: view.findingsCount,
+      snapshot_digest: view.snapshotDigest,
+      snapshot_sequence: view.snapshotSequence,
+      created_at: view.createdAtMs,
+      updated_at: view.updatedAtMs,
+    };
+  };
+
+  router.get('/v1/commerce/integration/catalogs', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_catalog_refresh');
+    if (refused !== null) return refused;
+    const status = buildIntegrationStatus(runtime, caller);
+    return {
+      status: 200,
+      body: {
+        catalogs: status.catalogs.map((c) => ({
+          catalog_id: c.catalogId,
+          state: c.state,
+          snapshot_sequence: c.snapshotSequence,
+          snapshot_digest: c.snapshotDigest,
+          published_at: c.publishedAtMs,
+          bound: c.bound,
+        })),
+      },
+    };
+  });
+
+  router.get('/v1/commerce/integration/catalog/drafts', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_catalog_refresh');
+    if (refused !== null) return refused;
+    const catalogId = req.query.catalog_id;
+    if (catalogId === undefined || catalogId === '') {
+      return { status: 400, body: { error: 'catalog_id is required' } };
+    }
+    return {
+      status: 200,
+      body: { drafts: runtime.catalogDrafts.listByCatalog(catalogId).map(draftView) },
+    };
+  });
+
+  /**
+   * Pull the catalogue's OWNER-BOUND source again and leave a draft waiting
+   * for the owner's approval. The body names the catalogue and a command id;
+   * it can name no source, credential or operation — those are the binding's
+   * — and may name the digest it expects Dina to read, which is checked
+   * before a draft exists. The same command mints the same draft.
+   */
+  // Two POSTs with one command id in flight together must not both pull:
+  // the second waits for the first and answers with the same result.
+  const refreshInFlight = new Map<string, Promise<CoreResponse>>();
+  const runRefresh = async (req: CoreRequest): Promise<CoreResponse> => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_catalog_refresh');
+    if (refused !== null) return refused;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.catalog_id !== 'string' || body.catalog_id === '') {
+      return { status: 400, body: { error: 'catalog_id is required' } };
+    }
+    if (typeof body.command_id !== 'string' || !COMMAND_ID_RE.test(body.command_id)) {
+      return { status: 400, body: { error: 'command_id is required' } };
+    }
+    if (
+      body.source_digest !== undefined &&
+      (typeof body.source_digest !== 'string' || !SHA256_HEX_RE.test(body.source_digest))
+    ) {
+      return { status: 400, body: { error: 'source_digest must be a sha256 hex digest' } };
+    }
+    const expectedSourceDigest = typeof body.source_digest === 'string' ? body.source_digest : null;
+    const recorded = runtime.catalogRefreshCommands.get(body.command_id);
+    if (recorded !== null) {
+      // The same command again. Same content → the draft it minted, wherever
+      // the owner took it (a draft the owner deleted answers with its id
+      // alone); a different catalogue or precondition under the same id is
+      // a conflict, the B3 rule.
+      if (recorded.catalogId !== body.catalog_id || recorded.expectedSourceDigest !== expectedSourceDigest) {
+        return { status: 409, body: { ok: false, error: 'command_conflict', detail: 'this command id was used with different content' } };
+      }
+      const minted = runtime.catalogDrafts.get(recorded.draftId);
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          replayed: true,
+          source_digest: recorded.pullDigest,
+          draft_id: recorded.draftId,
+          draft: minted === null ? null : draftView(minted),
+        },
+      };
+    }
+    const binding = runtime.catalogSourceBindings.get(body.catalog_id);
+    if (binding === null) return { status: 404, body: { error: 'no_source_binding' } };
+    const owner = getNodeDID();
+    if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
+    const stored = runtime.settings.readSupplier();
+    if (!stored.ok) return { status: 409, body: { error: 'supplier_settings_unavailable' } };
+    const settings = stored.settings;
+    if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
+      return { status: 403, body: { error: 'acting_business_mismatch' } };
+    }
+    const draftId = `cdr_int_${bytesToHex(hash(new TextEncoder().encode(`${body.catalog_id}\n${body.command_id}`))).slice(0, 32)}`;
+    const svc = buildDraftService();
+    if (svc === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const loaded = await loadCatalogThroughConnector({
+      spec: {
+        kind: binding.kind,
+        credentialResource: binding.credentialResource,
+        operation: binding.operation,
+      },
+      installId:
+        binding.credentialResource === null
+          ? ''
+          : (runtime.credentials.describe(binding.credentialResource)?.installId ?? ''),
+      broker: runtime.broker,
+      defaultScheme: binding.defaultScheme,
+      supplierDid: owner,
+    });
+    if (!loaded.ok) {
+      return { status: 409, body: { ok: false, error: loaded.refusal, detail: loaded.error } };
+    }
+    const sourceDigest = catalogSourceDigest(loaded.source);
+    if (expectedSourceDigest !== null && expectedSourceDigest !== sourceDigest) {
+      return {
+        status: 409,
+        body: { ok: false, error: 'source_digest_mismatch', source_digest: sourceDigest },
+      };
+    }
+    const created = createCatalogDraft(draftIngressDeps(runtime.catalogDrafts, () => draftId), {
+      catalogId: body.catalog_id,
+      source: loaded.source,
+      defaultScheme: binding.defaultScheme,
+      identity: { supplierDid: owner, catalogId: body.catalog_id },
+      settings: {
+        categoryIds: settings.catalogCategoryIds ?? [],
+        fulfilmentRegions: settings.publicRegions,
+        ...(settings.tradingCurrency === undefined ? {} : { tradingCurrency: settings.tradingCurrency }),
+      },
+      provenanceClass: 'source_parsed',
+      extraction: null,
+    });
+    // `source_parsed` confirms without a receipt (nothing was inferred) and
+    // stops at `prepared`: approve needs the owner's presence, on their route.
+    // A refresh that does not reach `prepared` leaves nothing behind: the
+    // draft goes, the command is not recorded, and the same command id may
+    // try again once the source is fixed.
+    const confirmed = svc.confirm(created.draft.draftId);
+    if (!confirmed.ok) {
+      runtime.catalogDrafts.delete(created.draft.draftId);
+      return { status: 409, body: { ok: false, error: confirmed.refusal, detail: confirmed.error } };
+    }
+    const prepared = await svc.prepare(created.draft.draftId, {
+      protocolVersion: '1.0',
+      publishedAt: new Date(runtime.now()).toISOString(),
+      ...(binding.serviceRkey !== null ? { serviceRkey: binding.serviceRkey } : {}),
+    });
+    if (!prepared.ok) {
+      runtime.catalogDrafts.delete(created.draft.draftId);
+      return { status: 409, body: { ok: false, error: prepared.refusal, detail: prepared.error } };
+    }
+    runtime.catalogRefreshCommands.put({
+      commandId: body.command_id,
+      catalogId: body.catalog_id,
+      expectedSourceDigest,
+      pullDigest: sourceDigest,
+      draftId,
+      createdAt: runtime.now(),
+    });
+    appendAudit(
+      'integration',
+      'catalog_refresh_prepared',
+      draftId,
+      `catalog=${body.catalog_id} findings=${prepared.value.findings.length}`,
+    );
+    return {
+      status: 200,
+      body: { ok: true, replayed: false, source_digest: sourceDigest, draft: draftView(prepared.value) },
+    };
+  };
+  router.post('/v1/commerce/integration/catalog/refresh', async (req): Promise<CoreResponse> => {
+    const commandId = (req.body as { command_id?: unknown } | null)?.command_id;
+    if (typeof commandId !== 'string') return runRefresh(req);
+    const live = refreshInFlight.get(commandId);
+    if (live !== undefined) return live;
+    const run = runRefresh(req).finally(() => refreshInFlight.delete(commandId));
+    refreshInFlight.set(commandId, run);
+    return run;
+  });
+
+  // ── Piece C: order attachments ─────────────────────────────────────────
+  //
+  // A connector attaches evidence to an accepted order and Core pushes it to
+  // the buyer. INTEGRATION ONLY: the owner is not an integration and has no
+  // device to attribute the document to, so the owner's own caller is refused
+  // here — the one integration door where the owner does not pass as
+  // themself. Attribution is stamped from the CALLER; a `source` in the body
+  // is ignored.
+
+  router.post('/v1/commerce/integration/orders/attachments', async (req): Promise<CoreResponse> => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_trade_evidence');
+    if (refused !== null) return refused;
+    if (caller.kind !== 'staff') {
+      return { status: 403, body: { error: 'integration_device_required', reason: 'an attachment is a connector’s document; the owner is not one' } };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.command_id !== 'string' || !COMMAND_ID_RE.test(body.command_id)) {
+      return { status: 400, body: { error: 'command_id is required (1–128 chars: letters, digits, _ . : -)' } };
+    }
+    if (typeof body.order_digest !== 'string' || !SHA256_HEX_RE.test(body.order_digest)) {
+      return { status: 400, body: { error: 'order_digest must be a sha256 hex digest' } };
+    }
+    if (typeof body.kind !== 'string' || !(ORDER_ATTACHMENT_KINDS as readonly string[]).includes(body.kind)) {
+      return { status: 400, body: { error: `kind must be one of ${ORDER_ATTACHMENT_KINDS.join(' | ')}` } };
+    }
+    if (body.payload === null || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
+      return { status: 400, body: { error: 'payload must be an object' } };
+    }
+    if (typeof body.provider !== 'string' || body.provider === '') {
+      return { status: 400, body: { error: 'provider is required' } };
+    }
+    if (body.expires_at !== undefined && typeof body.expires_at !== 'string') {
+      return { status: 400, body: { error: 'expires_at, when present, must be an ISO-8601 UTC timestamp' } };
+    }
+    const money = runtime.money();
+    if (!money.available) return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
+    const outcome = attachOrderEvidence(runtime, money.stores, {
+      deviceDid: caller.deviceDid,
+      provider: body.provider,
+      commandId: body.command_id,
+      orderDigest: body.order_digest,
+      kind: body.kind,
+      payload: body.payload,
+      ...(typeof body.expires_at === 'string' ? { expiresAt: body.expires_at } : {}),
+    });
+    if (!outcome.ok) {
+      return { status: outcome.status, body: { ok: false, error: outcome.refusal, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) } };
+    }
+    // Retained first, pushed second, best-effort; a replay is never re-sent.
+    const dispatch = getTradeDocumentDispatcher();
+    const dispatched =
+      outcome.replayed || dispatch === null
+        ? false
+        : await dispatch(outcome.attachment.buyer_did, 'order_attachment', outcome.attachment);
+    return {
+      status: outcome.replayed ? 200 : 201,
+      body: { ok: true, replayed: outcome.replayed, dispatched, attachment: outcome.attachment },
+    };
+  });
+
+  router.get('/v1/commerce/integration/orders/attachments', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_trade_evidence');
+    if (refused !== null) return refused;
+    const orderDigest = req.query.order_digest;
+    if (orderDigest === undefined || !SHA256_HEX_RE.test(orderDigest)) {
+      return { status: 400, body: { error: 'order_digest must be a sha256 hex digest' } };
+    }
+    // A connector reads the orders this node SUPPLIES. On a node that also buys,
+    // the owner's door would show it the node's own suppliers' links and payment
+    // evidence — the owner's business, not the connector's.
+    if (caller.kind === 'staff' && !isSuppliedOrder(runtime, orderDigest)) {
+      return { status: 404, body: { error: 'unknown_order' } };
+    }
+    const money = runtime.money();
+    if (!money.available) return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
+    return {
+      status: 200,
+      body: {
+        attachments: listOrderAttachments(money.stores, orderDigest).map(({ row, attachment }) => ({
+          direction: row.direction,
+          created_at: row.createdAt,
+          attachment,
+        })),
+      },
+    };
+  });
+
+  // ── Piece B3: settings as proposals ────────────────────────────────────
+
+  router.get('/v1/commerce/integration/settings', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_settings_propose');
+    if (refused !== null) return refused;
+    const workflow = getWorkflowService();
+    const status = buildIntegrationStatus(runtime, caller);
+    return {
+      status: 200,
+      body: {
+        settings_revision: status.settingsRevision,
+        proposable_controls: SUPPLIER_PROPOSABLE_CONTROLS,
+        proposals:
+          workflow === null
+            ? []
+            : listSettingsProposals(workflow).map(({ task, payload }) => ({
+                command_id: payload.command_id,
+                task_id: task.id,
+                state: task.status,
+                expected_revision: payload.expected_revision,
+                proposed_by: payload.proposed_by,
+                created_at: task.created_at,
+                ...(task.status === WorkflowTaskState.Completed
+                  ? { applied_revision: appliedRevisionOf(task) }
+                  : {}),
+                ...(task.error !== undefined ? { detail: task.error } : {}),
+              })),
+      },
+    };
+  });
+
+  router.post('/v1/commerce/integration/settings/proposal', (req): CoreResponse => {
+    const caller = callerFor(req);
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const refused = admit(runtime, caller, 'integration_settings_propose');
+    if (refused !== null) return refused;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.command_id !== 'string' || !COMMAND_ID_RE.test(body.command_id)) {
+      return { status: 400, body: { error: 'command_id is required' } };
+    }
+    if (body.kind !== 'supplier') return { status: 400, body: { error: "kind must be 'supplier'" } };
+    if (typeof body.expected_revision !== 'string' || !SHA256_HEX_RE.test(body.expected_revision)) {
+      return { status: 400, body: { error: 'expected_revision must be the revision digest last read' } };
+    }
+    if (
+      body.controls === null ||
+      typeof body.controls !== 'object' ||
+      Array.isArray(body.controls) ||
+      Object.keys(body.controls as object).length === 0
+    ) {
+      return { status: 400, body: { error: 'controls must name at least one supported control' } };
+    }
+    const controls = body.controls as Record<string, unknown>;
+    const unsupported = unsupportedControls(controls);
+    if (unsupported.length > 0) {
+      return { status: 400, body: { error: 'unsupported_control', controls: unsupported.sort() } };
+    }
+    const outcome = proposeSupplierSettings(runtime, getWorkflowService(), {
+      commandId: body.command_id,
+      expectedRevision: body.expected_revision,
+      controls,
+      proposedBy: caller.kind === 'staff' ? caller.deviceDid : 'owner',
+    });
+    switch (outcome.kind) {
+      case 'pending':
+        return { status: 202, body: { state: 'pending_owner_approval', task_id: outcome.taskId } };
+      case 'applied':
+        return {
+          status: 200,
+          body: { state: 'applied', task_id: outcome.taskId, applied_revision: outcome.revision },
+        };
+      case 'closed':
+        return { status: 200, body: { state: outcome.state, task_id: outcome.taskId, detail: outcome.detail } };
+      case 'refused':
+        switch (outcome.refusal) {
+          case 'revision_conflict':
+            return {
+              status: 409,
+              body: { error: 'revision_conflict', current_revision: outcome.currentRevision },
+            };
+          case 'command_conflict':
+            return { status: 409, body: { error: 'command_conflict', detail: outcome.detail } };
+          case 'invalid_settings':
+            return { status: 400, body: { error: 'invalid_settings', findings: outcome.findings ?? [] } };
+          case 'unsupported_control':
+            return { status: 400, body: { error: 'unsupported_control', detail: outcome.detail } };
+          case 'settings_absent':
+            return { status: 409, body: { error: 'supplier_settings_unavailable' } };
+          case 'workflow_unavailable':
+            return { status: 503, body: { error: 'workflow service not wired' } };
+        }
+    }
+  });
+}
+
+// Eight lowercase letters, no digits. The modulo bias is irrelevant here:
+// this is a uniqueness tail, not a secret.
+function mintLetterTail(): string {
+  return Array.from(randomBytes(8), (b) => String.fromCharCode(97 + (b % 26))).join('');
+}
+
+/**
+ * The draft ingest's Core-owned facts (§10 item 8). Module scope so the owner's
+ * draft routes and the integration's refresh mint drafts the same way; a
+ * caller may pin the draft id (a refresh derives it from its command) and
+ * never anything else.
+ */
+function draftIngressDeps(drafts: CatalogDraftRepository, newDraftId?: () => string): DraftIngressDeps {
+  return {
+  drafts,
+  now: () => Date.now(),
+  newDraftId: newDraftId ?? (() => `cdr_${bytesToHex(randomBytes(16))}`),
+  // MINTED ONCE, HERE. `prepare` reads these back off the draft; nothing
+  // re-derives them, because a rebuild that re-mints either moves
+  // `snapshot_digest` out from under the owner's approval (§10 item 8).
+  stamp: () => ({
+    generatedAtIso: new Date().toISOString(),
+    // A CLOCK ALONE IS NOT AN IDENTITY. `item_revision` is what a consumer
+    // compares to decide whether a supplier's items changed, and two drafts
+    // minted in the same millisecond would carry the same one — so a second
+    // publication could read as "nothing moved". The random tail costs
+    // nothing and removes the case.
+    //
+    // SHAPED SO §12.1 CANNOT TRIP ON IT — the same contract as the `P-`
+    // assignment mint. Decimal epoch millis is 13 digits, and the phone
+    // scanner found a valid 10-digit span inside it on the first live
+    // photo-lane publish (model-derived drafts scan every field). Base36
+    // millis plus a letters-only tail caps any digit run at 8, below every
+    // personal-identifier pattern's minimum.
+    itemRevision: `${Date.now().toString(36)}-${mintLetterTail()}`,
+  }),
+};
+}
+
+/**
+ * The draft service as the owner's routes build it, at module scope so the
+ * integration's refresh drives the SAME state machine (confirm, prepare) and
+ * can never reach approve or publish by another path.
+ */
+function buildDraftService(): CatalogDraftService | null {
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return null;
+  return new CatalogDraftService({
+    drafts: runtime.catalogDrafts,
+    pointers: runtime.catalogPointers,
+    sha256: hash,
+    now: () => Date.now(),
+    newClaimToken: () => `pcl_${bytesToHex(randomBytes(16))}`,
+    // NOT WIRED, AND FAILING CLOSED IS THE POINT. §10 item 9: the per-persona
+    // Argon2id verifier exists but has no production caller, no persistence
+    // and no mobile equivalent. Returning false makes every binding operation
+    // refuse, which is honest — a receipt minted without presence would
+    // record that the software asked itself.
+    userPresent: ownerPresentNowForRoutes,
+    publicationFence: () => publicationFence(),
+    attributionBoundary: runtime.attributionBoundary,
+    // The owner vouches on this surface; the staff confirm surface (§7)
+    // threads the staff device DID here when it lands.
+    vouchedBy: () => getNodeDID(),
+    publish: async ({ draft }) =>
+      // THE PUBLISHER IS A MODULE, not a closure in a route. As a closure it
+      // could not be reached by any test — the route wires presence to false
+      // and the suite installs no record writer — and three defects lived in
+      // it: no fence before the pointer, no record of what was published,
+      // and every failure reported as "not a lost swap".
+      publishHeldDraft({ fence: () => publicationFence(), recordPublication }, draft),
+  });
+}
+
+/** The attachment digests a status for this order carries (plan §3.3); none while the money line is closed. */
+function evidenceRefsFor(runtime: CommerceRuntime, buyerDid: string, purchaseOrderId: string): string[] {
+  const money = runtime.money();
+  if (!money.available) return [];
+  const orderDigest = runtime.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest;
+  return orderDigest === undefined ? [] : pendingEvidenceRefs(money.stores, orderDigest);
+}
+
+function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGuard): void {
+  const draftService = (): CatalogDraftService | null => buildDraftService();
 
   const withDraftService = (
     handler: (svc: CatalogDraftService, body: Record<string, unknown>) => Promise<CoreResponse> | CoreResponse,
@@ -4746,35 +5363,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
    * capability can serialise model-extracted rows as CSV and come in through
    * the file route. Core cannot tell that file from one the seller typed.
    */
-  // Eight lowercase letters, no digits. The modulo bias is irrelevant here:
-  // this is a uniqueness tail, not a secret.
-  const mintLetterTail = (): string =>
-    Array.from(randomBytes(8), (b) => String.fromCharCode(97 + (b % 26))).join('');
-
-  const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps => ({
-    drafts,
-    now: () => Date.now(),
-    newDraftId: () => `cdr_${bytesToHex(randomBytes(16))}`,
-    // MINTED ONCE, HERE. `prepare` reads these back off the draft; nothing
-    // re-derives them, because a rebuild that re-mints either moves
-    // `snapshot_digest` out from under the owner's approval (§10 item 8).
-    stamp: () => ({
-      generatedAtIso: new Date().toISOString(),
-      // A CLOCK ALONE IS NOT AN IDENTITY. `item_revision` is what a consumer
-      // compares to decide whether a supplier's items changed, and two drafts
-      // minted in the same millisecond would carry the same one — so a second
-      // publication could read as "nothing moved". The random tail costs
-      // nothing and removes the case.
-      //
-      // SHAPED SO §12.1 CANNOT TRIP ON IT — the same contract as the `P-`
-      // assignment mint. Decimal epoch millis is 13 digits, and the phone
-      // scanner found a valid 10-digit span inside it on the first live
-      // photo-lane publish (model-derived drafts scan every field). Base36
-      // millis plus a letters-only tail caps any digit run at 8, below every
-      // personal-identifier pattern's minimum.
-      itemRevision: `${Date.now().toString(36)}-${mintLetterTail()}`,
-    }),
-  });
+  const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps => draftIngressDeps(drafts);
 
   const ingest = (
     provenanceClass: ProvenanceClass,
@@ -5259,6 +5848,26 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       // A deterministic parse inferred nothing, so there is no model to name.
       extraction: null,
     });
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.1 (A1) — the owner's bind is what a
+    // granted refresh pulls again; an upload has no source to remember.
+    const kind = body.kind as ConnectorKind;
+    if (isRefreshableConnectorKind(kind)) {
+      runtime.catalogSourceBindings.put({
+        catalogId: body.catalog_id,
+        kind,
+        credentialResource:
+          typeof body.credential_resource === 'string' ? body.credential_resource : null,
+        operation: typeof body.operation === 'string' ? body.operation : 'read_catalog',
+        defaultScheme: body.default_scheme,
+        serviceRkey:
+          typeof body.service_rkey === 'string' && body.service_rkey !== '' ? body.service_rkey : null,
+        boundAt: runtime.now(),
+      });
+    } else {
+      // An upload SUPERSEDES the source: a binding left behind would let a
+      // granted refresh pull from a feed the owner has moved away from.
+      runtime.catalogSourceBindings.delete(body.catalog_id);
+    }
     return { status: 200, body: { ok: true, draft: outcome.draft } };
   });
 
@@ -5352,6 +5961,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return false;
     }
   };
+  // The same best-effort push, reachable from the money modules that author
+  // a document outside a route (a PaymentNote on the owner's yes, §3.3).
+  installTradeDocumentDispatcher(dispatchTradeDocument);
 
   const tradeAnswerDispatched = async <T>(
     outcome: { ok: true; document: T } | { ok: false; refusal: string },

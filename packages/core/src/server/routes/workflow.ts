@@ -29,6 +29,8 @@ import {
   parseCodingGateApprovalPayload,
 } from '../../agent/coding_permit';
 import { getAgentGrantRepository } from '../../agent/grant_repository';
+import { ORDER_CHECKOUT_LINK_TYPE, PAYMENT_EVIDENCE_RECORD_TYPE } from '../../commerce/integration';
+import { INTEGRATION_SETTINGS_PROPOSAL_TYPE } from '../../commerce/integration_settings';
 import { getCommerceRuntime } from '../../commerce/runtime';
 import {
   admitSupplierRecords,
@@ -252,7 +254,13 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     // not reach an agent-origin task here either — same owner-authority rule as
     // /approve + /cancel (audit finding). A runner (agent/plugin) failing its
     // OWN claimed work is unaffected (the guard fires only for callerType brain).
-    const guard = brainAgentTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
+    // A Core-minted owner card (a disclosure review, a connector's settings
+    // proposal, an order attachment's question) is the OWNER's to decide in
+    // every direction — failing it from pending_approval would be Brain's no.
+    const guard =
+      brainAgentTaskGuard(req, req.params.id ?? '') ??
+      brainDisclosureReviewGuard(req, req.params.id ?? '') ??
+      agentCompletionGuard(req);
     const claimId = extractClaimId(req);
     if (claimId instanceof Object) return claimId;
     return (
@@ -1093,10 +1101,15 @@ function brainDisclosureReviewGuard(req: CoreRequest, id: string): CoreResponse 
   const service = getWorkflowService();
   if (service === null) return null; // runAction will surface the 503
   const task = service.store().getById(id);
-  if (task !== null && safeParseBody(task.payload)?.type === DISCLOSURE_REVIEW_APPROVAL_TYPE) {
+  const type = task === null ? undefined : safeParseBody(task.payload)?.type;
+  // Every Core-minted approval is the owner's alone: a household disclosure
+  // (GROUP_COORDINATION §6) and an integration's settings proposal
+  // (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2). One set names them, here and on
+  // the create route, so a new kind cannot be fenced on one side only.
+  if (typeof type === 'string' && CORE_MINTED_PAYLOAD_TYPES.has(type)) {
     return j(403, {
       error: 'access_denied',
-      reason: 'brain cannot decide a household disclosure; owner decision required',
+      reason: `brain cannot decide a ${type.replace(/_/g, ' ')}; owner decision required`,
     });
   }
   return null;
@@ -1108,7 +1121,14 @@ function brainDisclosureReviewGuard(req: CoreRequest, id: string): CoreResponse 
  * on its behalf — a `disclosure_review` planted here would ask the owner to
  * release a response that no execution produced.
  */
-const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([DISCLOSURE_REVIEW_APPROVAL_TYPE]);
+export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
+  DISCLOSURE_REVIEW_APPROVAL_TYPE,
+  INTEGRATION_SETTINGS_PROPOSAL_TYPE,
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — the two questions an order
+  // attachment puts to the owner; a yes to the second authors a PaymentNote.
+  ORDER_CHECKOUT_LINK_TYPE,
+  PAYMENT_EVIDENCE_RECORD_TYPE,
+]);
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
   const service = getWorkflowService();

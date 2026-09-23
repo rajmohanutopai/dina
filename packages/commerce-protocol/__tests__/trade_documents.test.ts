@@ -147,9 +147,9 @@ function makeAck(
 // ---------------------------------------------------------------------------
 
 describe('trade digest family', () => {
-  it('covers exactly the five trade domains', () => {
+  it('covers exactly the six trade domains', () => {
     expect([...TRADE_DIGEST_DOMAINS].sort()).toEqual(
-      ['delivery_note', 'delivery_receipt', 'payment_ack', 'payment_note', 'quote_decline'].sort(),
+      ['delivery_note', 'delivery_receipt', 'order_attachment', 'payment_ack', 'payment_note', 'quote_decline'].sort(),
     );
   });
 

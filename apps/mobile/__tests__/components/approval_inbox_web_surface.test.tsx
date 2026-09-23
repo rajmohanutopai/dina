@@ -58,6 +58,29 @@ const REVIEW = task(
   },
   'Tell Mike about a household dietary need?',
 );
+const PROPOSAL = task(
+  'integration-settings-abc',
+  {
+    type: 'integration_settings_proposal',
+    command_id: 'cmd-1',
+    kind: 'supplier',
+    expected_revision: 'a'.repeat(64),
+    controls: { orderAcceptance: 'auto' },
+    content_digest: 'b'.repeat(64),
+    proposed_by: 'did:key:zJiffy',
+  },
+  'Apply 1 supplier setting change(s) proposed by did:key:zJiffy?',
+);
+const CHECKOUT = task(
+  'order-checkout-abc',
+  { type: 'order_checkout_link', attachment_digest: 'a'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', session_ref: 'cs_1', url: 'https://pay.example.com/s/cs_1', amount: { currency: 'INR', minor_units: '50000' } },
+  'Pay INR 500.00 for order po-1 through clover?',
+);
+const PAYMENT = task(
+  'payment-evidence-def',
+  { type: 'payment_evidence_record', attachment_digest: 'b'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', provider_ref: 'ch_1', amount: { currency: 'INR', minor_units: '50000' } },
+  'Record INR 500.00 as paid for order po-1? clover reports it captured.',
+);
 const INTENT = task(
   'intent-1',
   { type: 'intent_validation', action: 'send_email', target: 'HR', agent_did: 'did:key:zAgentTest', risk_level: 'MODERATE' },
@@ -87,7 +110,7 @@ beforeEach(() => {
 
 describe('approval inbox on the web page (decides through Brain)', () => {
   it('a disclosure review shows what would leave and where to decide — no Approve, no Deny; other kinds keep their buttons', async () => {
-    const stub = stubClient([REVIEW, INTENT]);
+    const stub = stubClient([REVIEW, PROPOSAL, INTENT]);
     setInboxCoreClient(stub.client);
     const screen = render(<NotificationsScreen />);
     await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
@@ -100,8 +123,30 @@ describe('approval inbox on the web page (decides through Brain)', () => {
     );
     expect(screen.queryByTestId('approvals-approve-disclosure-review-exec-1')).toBeNull();
     expect(screen.queryByTestId('approvals-deny-disclosure-review-exec-1')).toBeNull();
+    // A connector's settings proposal is the owner's alone too (Core refuses Brain).
+    await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-integration-settings-abc')).toBeTruthy());
+    expect(screen.getByText('Apply a settings change?')).toBeTruthy();
+    expect(screen.getByText('orderAcceptance: "auto"')).toBeTruthy();
+    expect(screen.queryByTestId('approvals-approve-integration-settings-abc')).toBeNull();
     // An ordinary approval still decides from here.
     expect(screen.getByTestId('approvals-approve-intent-1')).toBeTruthy();
     expect(screen.getByTestId('approvals-deny-intent-1')).toBeTruthy();
+  });
+
+  it('the two order-attachment cards (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3) say where to decide; the payment link still opens from here — it is the client’s own act', async () => {
+    const stub = stubClient([CHECKOUT, PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-order-checkout-abc')).toBeTruthy());
+    expect(screen.getByText('Open the payment link?')).toBeTruthy();
+    expect(screen.getByTestId('approvals-open-link-order-checkout-abc')).toBeTruthy();
+    expect(screen.queryByTestId('approvals-approve-order-checkout-abc')).toBeNull();
+    expect(screen.queryByTestId('approvals-deny-order-checkout-abc')).toBeNull();
+    expect(screen.getByTestId('approvals-owner-surface-payment-evidence-def')).toBeTruthy();
+    expect(screen.getByText('Record this payment?')).toBeTruthy();
+    expect(screen.queryByTestId('approvals-approve-payment-evidence-def')).toBeNull();
+    expect(screen.queryByTestId('approvals-deny-payment-evidence-def')).toBeNull();
   });
 });

@@ -59,6 +59,17 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **ADDITIVE (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3)** — `OrderAttachment`:
+  evidence a supplier's INTEGRATION binds to an accepted order and pushes to
+  the buyer — `checkout_handoff` (an https link whose `amount` must equal the
+  accepted total), `payment_evidence` and `fulfilment_evidence` (a processor's
+  state with a monotonic `version`). Digest-sealed as the SIXTH trade-family
+  domain, `dina:commerce:trade:v1:order_attachment` (`attachment_digest`);
+  `source` always names an `integration` device and provider (attribution the
+  supplier node asserts, never authority); `verifyOrderAttachmentAgainstOrder`
+  is the pairwise binding both nodes run. It advances no `OrderState` and
+  folds into no balance: a buyer records a payment with their own
+  `PaymentNote`. The digest is vector-pinned in `order_attachment.test.ts`.
 - **ADDITIVE (TRADE_FIRST_STRATEGY)** — the khata document family:
   `DeliveryNote` / `DeliveryReceipt` / `PaymentNote` / `PaymentAcknowledgement`
   and `QuoteDecline`, each digest-sealed under its own

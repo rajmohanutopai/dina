@@ -2653,6 +2653,108 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_group_plans_state ON group_plans(state, updated_at);
     `,
   },
+  {
+    version: 46,
+    name: 'commerce_staff_grants_integration_scopes',
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 — an integration device is paired as
+    // staff and granted integration_* scopes. The grants table pins its scope
+    // vocabulary in a CHECK, and SQLite cannot ALTER a CHECK, so the table is
+    // REBUILT with the widened list and every row copied. Keep this list in
+    // lockstep with STAFF_SCOPES in commerce/staff_grants.ts: the code refuses
+    // an unknown scope first; the CHECK is the second wall, not the first.
+    sql: `
+      CREATE TABLE commerce_staff_grants_v46 (
+        device_did TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN
+          ('commerce_confirm', 'commerce_submit', 'commerce_receive_goods',
+           'integration_status', 'integration_orders_export',
+           'integration_catalog_refresh', 'integration_settings_propose',
+           'integration_trade_evidence')),
+        max_order_minor_units TEXT NOT NULL DEFAULT '',
+        currency TEXT NOT NULL DEFAULT '',
+        installs TEXT NOT NULL CHECK (installs IN ('buyer', 'supplier', 'both')),
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        PRIMARY KEY (device_did, scope)
+      );
+      INSERT INTO commerce_staff_grants_v46
+        (device_did, scope, max_order_minor_units, currency, installs, created_at, revoked_at)
+        SELECT device_did, scope, max_order_minor_units, currency, installs, created_at, revoked_at
+        FROM commerce_staff_grants;
+      DROP TABLE commerce_staff_grants;
+      ALTER TABLE commerce_staff_grants_v46 RENAME TO commerce_staff_grants;
+    `,
+  },
+  {
+    version: 47,
+    name: 'commerce_catalog_source_bindings',
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.1 (A1) — the owner's ONE act of
+    // binding a catalogue to a connector source, remembered so a granted
+    // integration may ask Dina to pull the SAME source again. One row per
+    // catalogue; the spec is exactly what the owner's `from_connector` call
+    // named (kind, credential resource, operation, default scheme, service
+    // rkey) and nothing a later caller supplies can widen it. The credential
+    // itself never sits here — only the broker resource's NAME.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_catalog_source_bindings (
+        catalog_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('spreadsheet_url', 'rest')),
+        credential_resource TEXT,
+        operation TEXT NOT NULL,
+        default_scheme TEXT NOT NULL CHECK (default_scheme IN ('gtin', 'sku')),
+        service_rkey TEXT,
+        bound_at INTEGER NOT NULL
+      );
+    `,
+  },
+  {
+    version: 48,
+    name: 'commerce_integration_evidence',
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 (A2) and §3.3 (Piece C).
+    //
+    // `commerce_catalog_refresh_commands` — a granted refresh is idempotent
+    // by the connector's `command_id`: the row remembers which draft the
+    // command minted, the digest the source had, and the precondition the
+    // caller named, so a replay answers with the same draft and a different
+    // precondition under the same id is a conflict. Only a refresh that
+    // reached `prepared` is recorded; a failed pull leaves nothing behind
+    // and the same command may be retried.
+    //
+    // `commerce_order_attachments` — connector evidence bound to an accepted
+    // order (checkout hand-off, payment and fulfilment state), retained on
+    // BOTH nodes with the envelope evidence, the commerce_trade_documents
+    // discipline (digest PK = idempotency). `command_id` is set only on the
+    // authoring supplier's rows; `source_device_did` is the paired staff
+    // device the supplier node attributes the document to.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_catalog_refresh_commands (
+        command_id TEXT PRIMARY KEY,
+        catalog_id TEXT NOT NULL,
+        expected_source_digest TEXT,
+        pull_digest TEXT NOT NULL,
+        draft_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commerce_order_attachments (
+        attachment_digest TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN
+          ('checkout_handoff', 'payment_evidence', 'fulfilment_evidence')),
+        order_digest TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        counterparty_did TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+        source_device_did TEXT NOT NULL,
+        command_id TEXT,
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_order_attachments_order
+        ON commerce_order_attachments(order_digest, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_order_attachments_command
+        ON commerce_order_attachments(command_id) WHERE command_id IS NOT NULL;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

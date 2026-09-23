@@ -59,6 +59,10 @@ const MONEY_MODULES: ReadonlySet<string> = new Set([
   // The khata's outward rails and its accounting export.
   'country_rails.ts',
   'tally_export.ts',
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — connector evidence on accepted
+  // orders and the outbound seam its decision handler pushes through.
+  'order_attachments.ts',
+  'trade_dispatch.ts',
 ]);
 
 /**

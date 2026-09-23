@@ -7,6 +7,8 @@
  * touch and which grant to spend it through.
  */
 
+import { tradeRecordDigest } from '@dina/commerce-protocol';
+
 import { CredentialBroker, type BrokeredExecutor } from '../../../src/commerce/credential_broker';
 import { InMemoryCredentialStore } from '../../../src/commerce/credential_store';
 import {
@@ -15,13 +17,26 @@ import {
   requiredRetentionMs,
 } from '../../../src/commerce/idempotency_evidence';
 import { InMemoryIdempotencyEvidenceRepository } from '../../../src/commerce/idempotency_store';
-import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import { InMemoryOrderAttachmentRepository } from '../../../src/commerce/order_attachments';
+import {
+  installCommerceRuntime,
+  type CommerceMoneyAccess,
+  type CommerceRuntime,
+} from '../../../src/commerce/runtime';
 import { clearPairingState, setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
+import { hash, moneyClosed, moneyOpen } from '../../commerce/helpers';
 
 /** What the sweep actually signed, and which orders the engine refused. */
-let signed: { buyerDid: string; purchaseOrderId: string; state: string }[] = [];
+let signed: {
+  buyerDid: string;
+  purchaseOrderId: string;
+  state: string;
+  evidenceRefs?: string[];
+}[] = [];
+/** The money line the sweep reads for evidence refs (§3.3); closed unless a test opens it. */
+let moneyAccess: () => CommerceMoneyAccess = moneyClosed();
 let signRefusals = new Map<string, string>();
 
 const OWNER_CAP = 'test-owner-capability-secret';
@@ -119,10 +134,22 @@ function install(options: { orderExists?: boolean; installId?: string } = {}): v
     // the cast hides". It records what it was asked to sign so the tests can
     // assert the chain actually MOVED, rather than that a decision was
     // computed and dropped — which is precisely the defect this wiring fixes.
+    // The sweep reads the money line for the evidence a connector attached
+    // (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3); closed here unless a test opens it.
+    money: () => moneyAccess(),
     lifecycle: {
-      signStatusUpdate: (buyerDid: string, poId: string, fields: { state: string }) => {
+      signStatusUpdate: (
+        buyerDid: string,
+        poId: string,
+        fields: { state: string; evidenceRefs?: string[] },
+      ) => {
         if (signRefusals.has(poId)) return { error: signRefusals.get(poId) as string };
-        signed.push({ buyerDid, purchaseOrderId: poId, state: fields.state });
+        signed.push({
+          buyerDid,
+          purchaseOrderId: poId,
+          state: fields.state,
+          ...(fields.evidenceRefs !== undefined ? { evidenceRefs: fields.evidenceRefs } : {}),
+        });
         chainStates.set(poId, fields.state);
         return { state: fields.state, sequence: String(signed.length) };
       },
@@ -140,6 +167,7 @@ beforeEach(() => {
   setNodeDID(SUPPLIER);
   signed = [];
   signRefusals = new Map();
+  moneyAccess = moneyClosed();
   executor = async () => ({ ok: true, result: { external_ref: 'SO-1' } });
   install();
   router = new CoreRouter();
@@ -502,6 +530,83 @@ describe('the fulfilment sweep (WS-9.5)', () => {
         ...body,
       }),
     );
+
+  it('a status the sweep signs carries the captured payment and started production a connector attached — and only those (§3.3)', async () => {
+    const attachments = new InMemoryOrderAttachmentRepository();
+    moneyAccess = moneyOpen({ orderAttachments: attachments });
+    let landedAt = 0; // each attachment lands after the last; the status lists them oldest first
+    const seal = (kind: string, payload: Record<string, unknown>, id: string): string => {
+      landedAt += 1;
+      const record = {
+        protocol_version: '1.0',
+        attachment_id: id,
+        purchase_order_id: 'po-1',
+        buyer_did: BUYER,
+        supplier_did: SUPPLIER,
+        order_digest: 'd'.repeat(64),
+        kind,
+        source: { kind: 'integration', device_did: 'did:key:zJiffy', provider: 'clover' },
+        payload,
+        issued_at: '2026-09-23T10:00:00.000Z',
+      };
+      const attachment = {
+        ...record,
+        attachment_digest: tradeRecordDigest('order_attachment', record, hash),
+      };
+      attachments.put({
+        attachmentDigest: attachment.attachment_digest,
+        kind: kind as never,
+        orderDigest: 'd'.repeat(64),
+        purchaseOrderId: 'po-1',
+        counterpartyDid: BUYER,
+        direction: 'outbound',
+        sourceDeviceDid: 'did:key:zJiffy',
+        commandId: id,
+        recordJson: JSON.stringify(attachment),
+        evidenceJson: '{}',
+        createdAt: landedAt,
+      });
+      return attachment.attachment_digest;
+    };
+    seal(
+      'payment_evidence',
+      {
+        provider_ref: 'ch_1',
+        amount: { currency: 'INR', minor_units: '500' },
+        state: 'authorized',
+        version: '1',
+      },
+      'a-1',
+    );
+    const captured = seal(
+      'payment_evidence',
+      {
+        provider_ref: 'ch_1',
+        amount: { currency: 'INR', minor_units: '500' },
+        state: 'captured',
+        version: '2',
+      },
+      'a-2',
+    );
+    const started = seal(
+      'fulfilment_evidence',
+      { provider_ref: 'job_1', state: 'production_started', version: '1' },
+      'a-3',
+    );
+    // Both orders share the double's digest; only po-1 moves in this sweep.
+    openOrders = [{ buyerDid: BUYER, purchaseOrderId: 'po-1', externalRef: 'SO-1' }];
+    executor = async () => ({ ok: true, result: { state: 'preparing' } });
+    const response = await sweep();
+    expect(response.status).toBe(200);
+    expect(signed).toEqual([
+      {
+        buyerDid: BUYER,
+        purchaseOrderId: 'po-1',
+        state: 'preparing',
+        evidenceRefs: [captured, started],
+      },
+    ]);
+  });
 
   it('reports one refused successor without hiding the others that moved', async () => {
     // A chain refuses a successor it will not take — a fork, a backwards

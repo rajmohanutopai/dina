@@ -14,6 +14,7 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { InMemoryOrderAttachmentRepository } from '../../src/commerce/order_attachments';
 import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { InMemoryRevshareDocumentRepository } from '../../src/commerce/revshare_ledger';
 import { collectTallyVouchers, renderTallyXml } from '../../src/commerce/tally_export';
@@ -43,7 +44,7 @@ function runtimeAs(self: string): CommerceRuntime {
 
 /** The money stores the route resolves before it calls the export. */
 function stores(): CommerceMoneyStores {
-  return { tradeDocuments: tradeDocs, revshareDocuments: new InMemoryRevshareDocumentRepository() };
+  return { tradeDocuments: tradeDocs, revshareDocuments: new InMemoryRevshareDocumentRepository(), orderAttachments: new InMemoryOrderAttachmentRepository() };
 }
 
 function retainOrder(): void {

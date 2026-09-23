@@ -12,6 +12,7 @@ import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js';
 import {
   readDeliveryNote,
   readDeliveryReceipt,
+  readOrderAttachment,
   readPaymentAcknowledgement,
   readPaymentNote,
   validateAgreementDecision,
@@ -24,6 +25,7 @@ import {
   type AgreementTermination,
   type DeliveryNote,
   type DeliveryReceipt,
+  type OrderAttachment,
   type PaymentAcknowledgement,
   type PaymentNote,
   type SettlementAcknowledgement,
@@ -70,6 +72,16 @@ export function rehydrateDeliveryReceipt(
   return read.ok
     ? { ok: true, value: read.receipt }
     : { ok: false, error: `stored delivery receipt failed validation: ${read.error}` };
+}
+
+/** An order attachment (plan §3.3) back through its validator — both nodes' rows. */
+export function rehydrateOrderAttachment(json: string, sha256: Sha256Fn): Rehydrated<OrderAttachment> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const read = readOrderAttachment(parsed.value, sha256);
+  return read.ok
+    ? { ok: true, value: read.attachment }
+    : { ok: false, error: `stored order attachment failed validation: ${read.error}` };
 }
 
 export function rehydratePaymentNote(json: string, sha256: Sha256Fn): Rehydrated<PaymentNote> {

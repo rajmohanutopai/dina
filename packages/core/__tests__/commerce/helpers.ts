@@ -25,6 +25,7 @@ import {
   type Sha256Fn,
   type SignedQuote,
   type SignedQuoteLine,
+  type OrderAcknowledgement,
 } from '@dina/commerce-protocol';
 import { buildMessageJSON } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
@@ -45,6 +46,7 @@ import {
   type CommerceStatusHeadRepository,
 } from '../../src/commerce';
 import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
+import { InMemoryOrderAttachmentRepository } from '../../src/commerce/order_attachments';
 import {
   BUYER_REFERENCE_MANIFEST,
   SUPPLIER_REFERENCE_MANIFEST,
@@ -191,6 +193,40 @@ export function makeSignedQuote(
     ...withTerms,
     quote_digest: commerceRecordDigest('quote', withTerms as Record<string, unknown>, hash),
   } as SignedQuote;
+}
+
+/**
+ * A digest-valid acknowledgement (§9.10) for one order. Defaults to
+ * `accepted`; pass `kind: 'rejected'` (+ `reason_code`) or `kind:
+ * 'counterproposal'` with a `replacement_quote` from `makeSignedQuote`.
+ * The digest is derived the way Core derives it, so a reader that
+ * re-validates (`rehydrateAcknowledgement`) accepts the fixture.
+ */
+export function makeAcknowledgement(
+  over: Partial<OrderAcknowledgement> & { purchase_order_id: string; order_digest: string },
+): OrderAcknowledgement {
+  const accepted =
+    over.kind === undefined || over.kind === 'accepted'
+      ? {
+          kind: 'accepted',
+          supplier_order_id: `so-${over.purchase_order_id}`,
+          accepted_quote_digest: 'b'.repeat(64),
+          accepted_at: '2026-09-23T10:00:00.000Z',
+        }
+      : {};
+  const { acknowledgement_digest: _stale, ...draft } = {
+    protocol_version: '1.0',
+    acknowledgement_id: `ack-${over.purchase_order_id}`,
+    buyer_did: BUYER_DID,
+    supplier_did: SUPPLIER_DID,
+    issued_at: '2026-09-23T10:00:00.000Z',
+    ...accepted,
+    ...over,
+  } as Record<string, unknown>;
+  return {
+    ...draft,
+    acknowledgement_digest: commerceRecordDigest('acknowledgement', draft, hash),
+  } as unknown as OrderAcknowledgement;
 }
 
 /** Revision N+1 extending `held` (same family). */
@@ -542,6 +578,7 @@ export function moneyOpen(stores: Partial<CommerceMoneyStores> = {}): () => Comm
   const full: CommerceMoneyStores = {
     tradeDocuments: stores.tradeDocuments ?? new InMemoryTradeDocumentRepository(),
     revshareDocuments: stores.revshareDocuments ?? new InMemoryRevshareDocumentRepository(),
+    orderAttachments: stores.orderAttachments ?? new InMemoryOrderAttachmentRepository(),
   };
   return () => ({ available: true, stores: full, installId: 'install-commerce-pack' });
 }

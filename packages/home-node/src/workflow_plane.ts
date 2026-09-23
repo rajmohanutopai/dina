@@ -52,7 +52,10 @@ import {
   setWatchService,
   setWorkflowRepository,
   setWorkflowService,
+  composeWorkflowHooks,
   coordinationWorkflowHooks,
+  integrationWorkflowHooks,
+  orderAttachmentWorkflowHooks,
   transformInboundOrderResult,
   type ServiceQueryBody,
   type ServiceResponseBody,
@@ -214,7 +217,11 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
     // forget the decision handler that releases what it held; they read the
     // service's own clock, so the review card's deadline and the sweep that
     // lapses it agree on what time it is.
-    ...coordinationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+    ...composeWorkflowHooks(
+      coordinationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+      integrationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+      orderAttachmentWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+    ),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator
     // sees orders lapse and nothing says why.

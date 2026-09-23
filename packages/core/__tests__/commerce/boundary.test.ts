@@ -450,6 +450,18 @@ describe('commerce aggregate boundary', () => {
       // Same discipline, same module class: every parse runs straight back
       // through the ingress validator.
       'money_rehydrate.ts',
+      // The settings-proposal card (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 B3):
+      // its payload is Core-minted and re-validated FIELD BY FIELD on every
+      // read. A miss reads as `command_conflict` — the command is refused and
+      // nothing is applied — and the decision handler FAILS the task rather
+      // than apply a payload it cannot read. The completion result is read
+      // toward the EMPTY answer: no revision rather than one nobody checked.
+      'integration_settings.ts',
+      // The same class of record (plan §3.3): the two Core-minted cards an
+      // order attachment raises. The payload is re-validated field by field
+      // and a miss reads as NO card — the handler does nothing — never as a
+      // PaymentNote authored on a payload nobody checked.
+      'order_attachments.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -512,6 +524,9 @@ describe('commerce aggregate boundary', () => {
       ['image_artifacts.ts:InMemoryCommerceImageArtifactRepository', 'test double'],
       ['sku_ledger.ts:InMemorySkuLedgerRepository', 'test double'],
       ['order_draft_store.ts:InMemoryOrderDraftRepository', 'test double'],
+      ['catalog_source_bindings.ts:InMemoryCatalogSourceBindingRepository', 'test double'],
+      ['catalog_refresh_commands.ts:InMemoryCatalogRefreshCommandRepository', 'test double'],
+      ['order_attachments.ts:InMemoryOrderAttachmentRepository', 'test double'],
       // §5.2 resolution (PC-6): the matcher, the closed-fields discovery
       // projection and authority-first hydration exist and are pinned by
       // `order_line_resolution.test.ts`; the buyer routes/surface that

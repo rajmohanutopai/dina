@@ -1,4 +1,4 @@
-import { isCurrencyCode, validateId } from '@dina/commerce-protocol';
+import { isCurrencyCode, validateId, validateRegionRef } from '@dina/commerce-protocol';
 
 import { checkCatalogFeedUrl } from './catalog_feed_policy';
 import { MAX_QUOTE_FANOUT } from './quote_fanout';
@@ -230,6 +230,7 @@ export type SettingsRefusal =
   | 'credential_material_present'
   | 'endpoint_url_refused'
   | 'endpoint_auth_incomplete'
+  | 'invalid_region'
   /** A request body with no content type, or a content type with no body. */
   | 'endpoint_request_incomplete'
   | 'empty_identity'
@@ -270,7 +271,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function structuralFindings(
   settings: Record<string, unknown>,
-  spec: readonly { field: string; kind: 'string' | 'number' | 'array' | 'record'; optional?: boolean }[],
+  spec: readonly { field: string; kind: 'string' | 'number' | 'boolean' | 'array' | 'record'; optional?: boolean }[],
 ): SettingsFinding[] {
   // A stored row hand-edited to `null` or a scalar reaches here: refuse it as
   // the wrong shape rather than reading fields off it and throwing.
@@ -297,6 +298,8 @@ function structuralFindings(
         ? typeof value === 'string'
         : kind === 'number'
           ? typeof value === 'number'
+          : kind === 'boolean'
+            ? typeof value === 'boolean'
           : kind === 'array'
             ? Array.isArray(value)
             : isPlainRecord(value);
@@ -470,9 +473,25 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
     { field: 'connectors', kind: 'array' },
     { field: 'catalogCategoryIds', kind: 'array', optional: true },
     { field: 'tradingCurrency', kind: 'string', optional: true },
+    // ABSENT IS FINE, PRESENT-AND-WRONG IS NOT (the tradingCurrency rule): a
+    // row that predates the field reads as before; a `"no"` or a `null` where
+    // a boolean gates cold invites or price publication is refused on write,
+    // which is where the settings-proposal door (JIFFY_MERCHANT_INTEGRATION
+    // _PLAN §3.2 B3) would otherwise let a device put one onto the owner's card.
+    { field: 'publishIndicativePrice', kind: 'boolean', optional: true },
+    { field: 'acceptColdInvites', kind: 'boolean', optional: true },
   ]);
   if (structural.length > 0) return { ok: false, findings: structural };
   const findings: SettingsFinding[] = [];
+
+  // A region is a wire value every published page carries; one the protocol
+  // refuses must not become policy here and a refusal downstream.
+  for (const [index, region] of settings.publicRegions.entries()) {
+    const invalid = validateRegionRef(region);
+    if (invalid !== null) {
+      findings.push({ refusal: 'invalid_region', field: `publicRegions[${index}]`, detail: invalid });
+    }
+  }
 
   if (settings.actingBusinessDid === '') {
     findings.push({

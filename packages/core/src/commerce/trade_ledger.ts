@@ -79,7 +79,8 @@ const hash: Sha256Fn = (data) => sha256(data);
  * unreadable here (`rehydrateTradeDocument` refuses them) and never enumerated
  * by a khata kind.
  */
-export type TradeDocumentKind = Exclude<TradeDigestDomain, 'quote_decline'>;
+/** The khata documents proper: the decline is money-free, the attachment is evidence (`order_attachments.ts`). */
+export type TradeDocumentKind = Exclude<TradeDigestDomain, 'quote_decline' | 'order_attachment'>;
 export const TRADE_DOCUMENT_KINDS: readonly TradeDocumentKind[] = [
   'delivery_note',
   'delivery_receipt',

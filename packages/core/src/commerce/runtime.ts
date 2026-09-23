@@ -25,6 +25,7 @@ import { setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
 import { tier0TxRunner } from '../run/tx';
 
+import { setAcceptanceObserver } from './acceptance_seam';
 import { CommerceAdmissionEngine } from './admission';
 import { CommerceAdmissionService } from './admission_service';
 import {
@@ -46,6 +47,14 @@ import {
   SQLiteCatalogPointerRepository,
   type CatalogPointerRepository,
 } from './catalog_pointer_store';
+import {
+  SQLiteCatalogRefreshCommandRepository,
+  type CatalogRefreshCommandRepository,
+} from './catalog_refresh_commands';
+import {
+  SQLiteCatalogSourceBindingRepository,
+  type CatalogSourceBindingRepository,
+} from './catalog_source_bindings';
 import { CommerceOrderStore } from './commerce_order';
 import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
@@ -68,6 +77,11 @@ import {
   SQLiteOrderApprovalRepository,
   type OrderApprovalRepository,
 } from './order_approvals';
+import {
+  SQLiteOrderAttachmentRepository,
+  raiseCardsForRetainedAttachments,
+  type OrderAttachmentRepository,
+} from './order_attachments';
 import {
   SQLiteOrderDraftRepository,
   type OrderDraftRepository,
@@ -182,6 +196,10 @@ export interface CommerceRuntime {
    * no caller carrying the CAS.
    */
   catalogPointers: CatalogPointerRepository;
+  /** JIFFY_MERCHANT_INTEGRATION_PLAN §3.1 — the owner's remembered connector source per catalogue, read by a granted refresh. */
+  catalogSourceBindings: CatalogSourceBindingRepository;
+  /** §3.2 A2 — what each granted refresh minted, by the connector's command id. */
+  catalogRefreshCommands: CatalogRefreshCommandRepository;
   /**
    * The photo-catalog lane's drafts (PCL-4). One row per publication attempt,
    * durable because the lane suspends on a person twice and a rebuild after a
@@ -397,6 +415,8 @@ export interface CommerceMoneyStores {
   tradeDocuments: TradeDocumentRepository;
   /** §5 — the revenue-share chain's document ledger. */
   revshareDocuments: RevshareDocumentRepository;
+  /** JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — connector evidence bound to accepted orders, both directions. */
+  orderAttachments: OrderAttachmentRepository;
 }
 
 export type CommerceMoneyUnavailableReason =
@@ -547,6 +567,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
   const moneyStores: CommerceMoneyStores = {
     tradeDocuments: new SQLiteTradeDocumentRepository(inputs.adapter),
     revshareDocuments: new SQLiteRevshareDocumentRepository(inputs.adapter),
+    orderAttachments: new SQLiteOrderAttachmentRepository(inputs.adapter),
   };
 
   return {
@@ -555,6 +576,8 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     orders,
     receipts,
     catalogPointers: new SQLiteCatalogPointerRepository(inputs.adapter),
+    catalogSourceBindings: new SQLiteCatalogSourceBindingRepository(inputs.adapter),
+    catalogRefreshCommands: new SQLiteCatalogRefreshCommandRepository(inputs.adapter),
     catalogDrafts: new SQLiteCatalogDraftRepository(inputs.adapter),
     skuLedger: new SQLiteSkuLedgerRepository(inputs.adapter),
     imageArtifacts: new SQLiteCommerceImageArtifactRepository(inputs.adapter),
@@ -691,6 +714,21 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
   // there. When the engine moves to the Commerce Pack this line moves with
   // it — the seam stays in Core, the knowledge does not.
   setTradeDocumentIngress(value === null ? null : (args) => applyInboundTradeDocument(args));
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's attachment that
+  // reached the buyer before the acceptance did waits, retained, for it.
+  setAcceptanceObserver(
+    value === null
+      ? null
+      : ({ buyerDid, purchaseOrderId, nowMs }) => {
+          const money = value.money();
+          if (!money.available) return;
+          const order = value.receipts
+            .listByOrder(buyerDid, purchaseOrderId)
+            .find((r) => r.domain === 'order');
+          if (order === undefined) return;
+          raiseCardsForRetainedAttachments(money.stores, order.recordDigest, nowMs);
+        },
+  );
 }
 
 /** Null until commerce storage is initialised. Callers must fail closed. */

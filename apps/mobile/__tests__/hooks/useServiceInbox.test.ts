@@ -392,6 +392,32 @@ describe('useServiceInbox', () => {
     expect(entry.paramsPreview).toBe('dietary: someone in the household is gluten-free');
   });
 
+  it('classifies an integration settings proposal: the controls as lines, the proposer as the requester (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2)', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'integration-settings-abc',
+          description: 'Apply 2 supplier setting change(s) proposed by did:key:zJiffy?',
+          payload: JSON.stringify({
+            type: 'integration_settings_proposal',
+            command_id: 'cmd-1',
+            kind: 'supplier',
+            expected_revision: 'a'.repeat(64),
+            controls: { orderAcceptance: 'auto', listingState: 'paused' },
+            content_digest: 'b'.repeat(64),
+            proposed_by: 'did:key:zJiffy',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.kind).toBe('integration_settings_proposal');
+    expect(entry.requesterDID).toBe('did:key:zJiffy');
+    expect(entry.capability).toBe('supplier settings');
+    expect(entry.paramsPreview).toBe('orderAcceptance: "auto"\nlistingState: "paused"');
+  });
+
   it('denyPending(disclosure_review) cancels without service.respond — Core releases the reply without the disclosure', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);
@@ -399,6 +425,50 @@ describe('useServiceInbox', () => {
     expect(calls.responded).toEqual([]);
     expect(calls.cancelled).toEqual([{ id: 'disclosure-review-exec-1', reason: 'denied_by_operator' }]);
     expect(markNotificationRead).toHaveBeenCalledWith('disclosure-review-exec-1');
+  });
+
+  it('denyPending(integration_settings_proposal) cancels without service.respond — a proposal has no requester to answer', async () => {
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('integration-settings-abc', 'denied_by_operator', 'integration_settings_proposal');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled).toEqual([{ id: 'integration-settings-abc', reason: 'denied_by_operator' }]);
+    expect(markNotificationRead).toHaveBeenCalledWith('integration-settings-abc');
+  });
+
+  it('classifies the two order-attachment cards: the supplier as requester, the amount and order as lines, the https link carried as-is (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3)', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'order-checkout-abc',
+          description: 'Pay INR 500.00 for order po-1 through clover?',
+          payload: JSON.stringify({ type: 'order_checkout_link', attachment_digest: 'a'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', session_ref: 'cs_1', url: 'https://pay.example.com/s/cs_1', amount: { currency: 'INR', minor_units: '50000' }, expires_at: '2027-02-01T00:00:00.000Z' }),
+          expires_at: 1_800_100_000,
+        }),
+        makeTask({
+          id: 'payment-evidence-def',
+          description: 'Record INR 500.00 as paid for order po-1? clover reports it captured.',
+          payload: JSON.stringify({ type: 'payment_evidence_record', attachment_digest: 'b'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', provider_ref: 'ch_1', amount: { currency: 'INR', minor_units: '50000' }, method: 'upi' }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [link, evidence] = await listPendingApprovals();
+    expect(link).toMatchObject({ kind: 'order_checkout_link', capability: 'clover', serviceName: 'Payment link', requesterDID: 'did:plc:supplier5678', linkUrl: 'https://pay.example.com/s/cs_1', expiresAt: 1_800_100_000 });
+    expect(link.paramsPreview).toBe('order po-1\nINR 500.00');
+    expect(evidence).toMatchObject({ kind: 'payment_evidence_record', capability: 'clover', serviceName: 'Payment reported', requesterDID: 'did:plc:supplier5678' });
+    expect(evidence.paramsPreview).toBe('order po-1\nINR 500.00\nref ch_1');
+    expect(evidence.linkUrl).toBeUndefined();
+  });
+
+  it('denyPending on either attachment card is a plain cancel — there is no requester to answer', async () => {
+    for (const [id, kind] of [['order-checkout-abc', 'order_checkout_link'], ['payment-evidence-def', 'payment_evidence_record']] as const) {
+      const { client, calls } = stubClient({});
+      setInboxCoreClient(client);
+      await denyPending(id, 'denied_by_operator', kind);
+      expect(calls.responded).toEqual([]);
+      expect(calls.cancelled).toEqual([{ id, reason: 'denied_by_operator' }]);
+    }
   });
 
   it('classifies intent_validation approvals with kind=intent_validation', async () => {

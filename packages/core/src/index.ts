@@ -213,12 +213,14 @@ export type {
 } from './review/publish_pipeline';
 export {
   WorkflowService,
+  composeWorkflowHooks,
   WorkflowValidationError,
   WorkflowTransitionError,
   setWorkflowService,
   getWorkflowService,
 } from './workflow/service';
 export type {
+  WorkflowHooks,
   WorkflowServiceOptions,
   CreateWorkflowTaskInput,
   ResponseBridgeSender,

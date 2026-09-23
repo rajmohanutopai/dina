@@ -127,6 +127,65 @@ const AUTHZ_RULES: {
     exact: true,
     allowed: new Set(['owner', 'staff']),
   },
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 — the integration surface. An
+  // integration device is paired as staff; the matrix opens each door to
+  // that caller class and the handler re-checks the LIVE grant for the
+  // door's own scope (`integration_*`). Exact + method-bound, like the trade
+  // rows above; nothing under `/v1/commerce/integration/` inherits.
+  {
+    prefix: '/v1/commerce/integration/status',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/orders',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/catalogs',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/catalog/drafts',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/catalog/refresh',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/settings',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/settings/proposal',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/orders/attachments',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/integration/orders/attachments',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
   // Interactive-run control (INTERACTIVE_SERVICES_ARCHITECTURE.md §12.5) —
   // OWNER-ONLY. Every /v1/run/* mutation rejects Brain/agent/plugin/service.
   // Only the owner principal (never `trustedInProcess`, never a signed

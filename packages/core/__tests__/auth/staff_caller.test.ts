@@ -170,6 +170,22 @@ describe('the SIGNED pipeline admits a staff device (the harnesses preset caller
     expect(r.callerType).toBe('staff');
   });
 
+  it('a signed staff device reaches every integration door the same way (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2)', () => {
+    for (const [method, path] of [
+      ['GET', '/v1/commerce/integration/status'],
+      ['GET', '/v1/commerce/integration/orders'],
+      ['GET', '/v1/commerce/integration/catalogs'],
+      ['GET', '/v1/commerce/integration/catalog/drafts'],
+      ['POST', '/v1/commerce/integration/catalog/refresh'],
+      ['GET', '/v1/commerce/integration/settings'],
+      ['POST', '/v1/commerce/integration/settings/proposal'],
+      ['POST', '/v1/commerce/integration/orders/attachments'],
+      ['GET', '/v1/commerce/integration/orders/attachments'],
+    ] as const) {
+      const r = authenticateRequest(signed(method, path));
+      expect([method, path, r.authenticated, r.callerType]).toEqual([method, path, true, 'staff']);
+    }
+  });
   it('the same signed device still refuses on an owner-only route (matrix, not mapping)', () => {
     const r = authenticateRequest(signed('GET', '/v1/commerce/trade/statement'));
     expect(r.authenticated).toBe(false);

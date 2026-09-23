@@ -52,6 +52,10 @@ export type InboxEntryKind =
   | 'plugin_invocation'
   /** GROUP_COORDINATION §6 — a held reply that would carry a household health disclosure; yes sends it, no sends the reply without it. */
   | 'disclosure_review'
+  /** JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 — a connector proposes supplier settings; the owner applies or not. */
+  | 'integration_settings_proposal'
+  | 'order_checkout_link'
+  | 'payment_evidence_record'
   | 'unknown';
 
 export interface InboxEntry {
@@ -96,6 +100,13 @@ export interface InboxEntry {
    * params preview, and a second copy here would make the card the leak.
    */
   contextSummary?: { categories: string[]; itemCount: number };
+  /**
+   * order_checkout_link only (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3): the
+   * processor's hosted checkout URL as Core retained it. The card opens it
+   * on an explicit tap and only when it is https; nothing else about the
+   * payment ever enters the app.
+   */
+  linkUrl?: string;
   createdAt: number;
   expiresAt?: number;
 }
@@ -216,6 +227,15 @@ const MAX_RESULT_VALUE_CHARS = 120;
 const MAX_RESULT_KEY_CHARS = 40;
 
 /** One line of text: control, bidi and zero-width characters dropped, newlines folded, bounded. */
+/** `{currency, minor_units}` as `INR 500.00`; '' when the shape is not money. */
+function moneyLine(value: unknown): string {
+  if (value === null || typeof value !== 'object') return '';
+  const m = value as { currency?: unknown; minor_units?: unknown };
+  if (typeof m.currency !== 'string' || typeof m.minor_units !== 'string' || !/^\d+$/.test(m.minor_units)) return '';
+  const padded = m.minor_units.padStart(3, '0');
+  return `${m.currency} ${padded.slice(0, -2)}.${padded.slice(-2)}`;
+}
+
 function oneLine(text: string, max: number): string {
   // eslint-disable-next-line no-control-regex
   const flat = text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -559,7 +579,17 @@ export async function denyPending(
     // GROUP_COORDINATION §6 — a denied disclosure is a cancelled card; Core
     // releases the held reply WITHOUT the disclosure, so the requester still
     // hears the availability. No `unavailable` is sent.
-    kind === 'disclosure_review'
+    kind === 'disclosure_review' ||
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 B3 — a denied settings proposal
+    // is a cancelled card; there is no D2D requester to tell, and a
+    // `service.respond` against it would claim the card off
+    // `pending_approval` and strand it in `queued`.
+    kind === 'integration_settings_proposal' ||
+    // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — the attachment cards have no
+    // D2D requester either: a dismissed link or a "no, don't record it" is a
+    // cancelled card and nothing more.
+    kind === 'order_checkout_link' ||
+    kind === 'payment_evidence_record'
   ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
@@ -729,6 +759,51 @@ function toEntry(task: WorkflowTask): InboxEntry {
       description: task.description ?? '',
       requesterDID,
       paramsPreview: lines.join('\n'),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'integration_settings_proposal') {
+    const controls = parsed.controls;
+    const lines: string[] = [];
+    if (controls !== null && typeof controls === 'object' && !Array.isArray(controls)) {
+      for (const [key, value] of Object.entries(controls as Record<string, unknown>)) {
+        lines.push(`${oneLine(key, 40)}: ${oneLine(JSON.stringify(value), MAX_RESULT_VALUE_CHARS)}`);
+      }
+    }
+    const proposedBy = typeof parsed.proposed_by === 'string' ? parsed.proposed_by : '';
+    return {
+      id: task.id,
+      kind: 'integration_settings_proposal',
+      capability: typeof parsed.kind === 'string' ? `${parsed.kind} settings` : 'settings',
+      serviceName: 'Settings change',
+      description: task.description ?? '',
+      requesterDID: proposedBy,
+      paramsPreview: lines.join('\n'),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — the two questions a connector's
+  // order attachment puts to the buyer. Both are Core-minted and decided by
+  // the owner alone; the supplier is the requester the card names.
+  if (payloadType === 'order_checkout_link' || payloadType === 'payment_evidence_record') {
+    const isLink = payloadType === 'order_checkout_link';
+    const provider = typeof parsed.provider === 'string' ? parsed.provider : '';
+    const orderId = typeof parsed.purchase_order_id === 'string' ? parsed.purchase_order_id : '';
+    const lines = [`order ${oneLine(orderId, 60)}`, moneyLine(parsed.amount)];
+    if (!isLink && typeof parsed.provider_ref === 'string') lines.push(`ref ${oneLine(parsed.provider_ref, 60)}`);
+    return {
+      id: task.id,
+      kind: isLink ? 'order_checkout_link' : 'payment_evidence_record',
+      capability: provider,
+      serviceName: isLink ? 'Payment link' : 'Payment reported',
+      description: task.description ?? '',
+      requesterDID: typeof parsed.supplier_did === 'string' ? parsed.supplier_did : '',
+      paramsPreview: lines.filter((l) => l !== '').join('\n'),
+      ...(isLink && typeof parsed.url === 'string' ? { linkUrl: parsed.url } : {}),
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

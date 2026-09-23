@@ -354,6 +354,42 @@ export type ApprovalDecisionHandler = (args: {
 /** How an approval task left `pending_approval`: the owner's yes, their no, or silence past its deadline. */
 export type ApprovalDecision = 'approved' | 'denied' | 'lapsed';
 
+/** The two hooks a feature contributes to the workflow service, as one value. */
+export interface WorkflowHooks {
+  responseEgressGate: ResponseEgressGate;
+  approvalDecisionHandler: ApprovalDecisionHandler;
+}
+
+/**
+ * Several features' hooks as the ONE pair the service accepts. Gates run in
+ * order and the first that does not answer `passthrough` decides — a second
+ * feature never sees a result the first already replaced or withheld, so the
+ * order is the order of authority. Decision handlers all run; each owns only
+ * the approval kinds it minted and ignores the rest, so the fan-out is a
+ * broadcast, and one handler's throw is its own (the service already
+ * swallows it) and never silences the next.
+ */
+export function composeWorkflowHooks(...parts: readonly WorkflowHooks[]): WorkflowHooks {
+  return {
+    responseEgressGate: (ctx) => {
+      for (const part of parts) {
+        const decision = part.responseEgressGate(ctx);
+        if (decision.kind !== 'passthrough') return decision;
+      }
+      return { kind: 'passthrough' };
+    },
+    approvalDecisionHandler: (args) => {
+      for (const part of parts) {
+        try {
+          part.approvalDecisionHandler(args);
+        } catch {
+          /* the handler owns its own reporting; the next still runs */
+        }
+      }
+    },
+  };
+}
+
 /**
  * What the buyer should actually receive for a completed ingress result.
  *

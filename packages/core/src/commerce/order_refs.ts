@@ -142,6 +142,17 @@ export interface CommerceOrderRefRepository {
   /** Reserved rows for the restart sweeper (§9.9 step 3). */
   listReserved(): CommerceOrderRef[];
   /**
+   * Decided references in a stable order — `(decided_at, order_digest)`
+   * ascending — starting strictly after `after`, at most `limit` rows. The
+   * integration export pages the supplier's decisions with this
+   * (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 B2): the order is total, so a
+   * replay from any cursor yields the same rows in the same order.
+   */
+  listDecidedAfter(
+    after: { decidedAt: number; orderDigest: string } | null,
+    limit: number,
+  ): CommerceOrderRef[];
+  /**
    * §12.7 (WS-9.5) — orders whose external effect produced a reference.
    *
    * These are the ones a fulfilment sweep can ask about: an order with no
@@ -325,6 +336,26 @@ export class SQLiteCommerceOrderRefRepository implements CommerceOrderRefReposit
     return this.db
       .query(`${SELECT} WHERE state = 'reserved' ORDER BY created_at`)
       .map(rowToOrderRef);
+  }
+
+  listDecidedAfter(
+    after: { decidedAt: number; orderDigest: string } | null,
+    limit: number,
+  ): CommerceOrderRef[] {
+    const rows =
+      after === null
+        ? this.db.query(
+            `${SELECT} WHERE state = 'decided' AND decided_at IS NOT NULL
+             ORDER BY decided_at, order_digest LIMIT ?`,
+            [limit],
+          )
+        : this.db.query(
+            `${SELECT} WHERE state = 'decided' AND decided_at IS NOT NULL
+               AND (decided_at > ? OR (decided_at = ? AND order_digest > ?))
+             ORDER BY decided_at, order_digest LIMIT ?`,
+            [after.decidedAt, after.decidedAt, after.orderDigest, limit],
+          );
+    return rows.map(rowToOrderRef);
   }
 
   listWithExternalRef(): CommerceOrderRef[] {
@@ -538,6 +569,30 @@ export class InMemoryCommerceOrderRefRepository implements CommerceOrderRefRepos
     return [...this.byOrderId.values()]
       .filter((r) => r.state === 'reserved')
       .sort((a, b) => a.createdAt - b.createdAt)
+      .map((r) => ({ ...r }));
+  }
+
+  listDecidedAfter(
+    after: { decidedAt: number; orderDigest: string } | null,
+    limit: number,
+  ): CommerceOrderRef[] {
+    return [...this.byOrderId.values()]
+      .filter(
+        (r): r is CommerceOrderRef & { decidedAt: number } =>
+          r.state === 'decided' && r.decidedAt !== null,
+      )
+      .filter(
+        (r) =>
+          after === null ||
+          r.decidedAt > after.decidedAt ||
+          (r.decidedAt === after.decidedAt && r.orderDigest > after.orderDigest),
+      )
+      .sort(
+        (a, b) =>
+          a.decidedAt - b.decidedAt ||
+          (a.orderDigest < b.orderDigest ? -1 : a.orderDigest > b.orderDigest ? 1 : 0),
+      )
+      .slice(0, limit)
       .map((r) => ({ ...r }));
   }
 

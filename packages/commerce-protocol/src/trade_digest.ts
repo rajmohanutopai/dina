@@ -30,6 +30,10 @@ export const TRADE_DIGEST_DOMAINS = [
   'delivery_receipt',
   'payment_note',
   'payment_ack',
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — connector evidence bound to an
+  // accepted order (`order_attachment.ts`). Trade-family because it is
+  // order-bound trade paper; NOT a khata document (it folds into nothing).
+  'order_attachment',
 ] as const;
 
 export type TradeDigestDomain = (typeof TRADE_DIGEST_DOMAINS)[number];
@@ -41,6 +45,7 @@ export const TRADE_DIGEST_FIELD_BY_DOMAIN: Readonly<Record<TradeDigestDomain, st
   delivery_receipt: 'receipt_digest',
   payment_note: 'note_digest',
   payment_ack: 'ack_digest',
+  order_attachment: 'attachment_digest',
 };
 
 /** Digest a record under a trade domain, excluding its own digest field. */
@@ -66,7 +71,14 @@ export function verifyTradeRecordDigest(
   if (typeof claimed !== 'string' || !/^[0-9a-f]{64}$/.test(claimed)) {
     return `digest: ${digestField} must be a 64-char lowercase hex string`;
   }
-  const recomputed = tradeRecordDigest(domain, record, sha256);
+  // A tolerated unknown field can carry a value with no canonical spelling
+  // (`1e400` parses to Infinity): a refusal, never an exception, on the way in.
+  let recomputed: string;
+  try {
+    recomputed = tradeRecordDigest(domain, record, sha256);
+  } catch {
+    return `digest: ${digestField} input is not canonicalizable`;
+  }
   if (claimed !== recomputed) {
     return `digest: ${digestField} does not match the canonical ${domain} recomputation`;
   }

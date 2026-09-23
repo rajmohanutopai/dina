@@ -75,7 +75,10 @@ import {
   startCommerceSweepers,
   type CommerceSweepers,
   getWorkflowService,
+  composeWorkflowHooks,
   coordinationWorkflowHooks,
+  integrationWorkflowHooks,
+  orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   defaultPluginCompletionHandler,
   getPluginHostRuntime,
@@ -634,7 +637,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // GROUP_COORDINATION §6 — the same gate and release handler the full
         // plane installs, so a disclosure never rides out ungated in the
         // window between this line and `wireWorkflowPlane`.
-        ...coordinationWorkflowHooks(),
+        ...composeWorkflowHooks(coordinationWorkflowHooks(), integrationWorkflowHooks(), orderAttachmentWorkflowHooks()),
       });
       setWorkflowService(localWorkflowService);
       localTaskExpiry = new TaskExpirySweeper({

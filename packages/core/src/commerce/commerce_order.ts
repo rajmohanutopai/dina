@@ -236,6 +236,14 @@ export class CommerceOrderStore {
     return this.deps.refs.listReserved();
   }
 
+  /** Decided references after a cursor, in `(decided_at, order_digest)` order (integration export). */
+  listDecidedAfter(
+    after: { decidedAt: number; orderDigest: string } | null,
+    limit: number,
+  ): CommerceOrderRef[] {
+    return this.deps.refs.listDecidedAfter(after, limit);
+  }
+
   /** §9.13 drain release — non-terminal count for a pinned major. */
   /** §16.4 — undecided orders: answers this supplier still owes. */
   countReserved(): number {

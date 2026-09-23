@@ -19,7 +19,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Linking } from 'react-native';
 
 import { subscribeNotifications } from '@dina/brain/notifications';
 
@@ -37,6 +37,7 @@ import { OWNER_DECIDES_ON_THIS_SURFACE } from '../services/inbox_client_resolver
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
+import { safeHttpsUrl } from './safe_url';
 import { SafeCardRenderer } from './SafeCardRenderer';
 
 export type { InboxEntry, ResolvedInboxEntry };
@@ -368,11 +369,21 @@ export function ApprovalActionCard({
   // off the pinned envelope; nothing on it was written by the plugin.
   const isPlugin = item.kind === 'plugin_invocation';
   const isDisclosure = item.kind === 'disclosure_review';
-  // GROUP_COORDINATION §6: a household disclosure is released only by the
-  // owner, and a surface that decides through Brain (the web page) has no
-  // owner path — so it says where to decide rather than offering a button
-  // Core will refuse. The same posture as the plan card's decisions.
-  const decidableHere = !isDisclosure || OWNER_DECIDES_ON_THIS_SURFACE;
+  const isSettingsProposal = item.kind === 'integration_settings_proposal';
+  // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's order attachment
+  // asks the buyer two things: open this payment link? record this as paid?
+  const isCheckoutLink = item.kind === 'order_checkout_link';
+  const isPaymentEvidence = item.kind === 'payment_evidence_record';
+  const checkoutUrl = isCheckoutLink ? safeHttpsUrl(item.linkUrl) : null;
+  // GROUP_COORDINATION §6 and JIFFY_MERCHANT_INTEGRATION_PLAN §3.2/§3.3: a
+  // household disclosure, a connector's settings proposal and the attachment
+  // cards are decided by the owner alone (Core refuses Brain), and a surface
+  // that decides through Brain (the web page) has no owner path — so it says
+  // where to decide rather than offering a button Core will refuse. Opening a
+  // payment link is the client's own act and stays available everywhere.
+  const decidableHere =
+    (!isDisclosure && !isSettingsProposal && !isCheckoutLink && !isPaymentEvidence) ||
+    OWNER_DECIDES_ON_THIS_SURFACE;
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
   // the exact mode in the headline (trusted chrome) so a WRITE request can never
@@ -383,15 +394,21 @@ export function ApprovalActionCard({
     ? 'Agent action approval'
     : isDisclosure
       ? 'Share a household need?'
-      : isPlugin
-        ? 'Plugin action approval'
-        : isStagingAccess
-          ? 'Memory access approval'
-          : isVaultWrite
-            ? 'Vault WRITE approval'
-            : isVaultRead
-              ? 'Vault read approval'
-              : item.serviceName || 'Unnamed service';
+      : isSettingsProposal
+        ? 'Apply a settings change?'
+        : isCheckoutLink
+          ? 'Open the payment link?'
+          : isPaymentEvidence
+            ? 'Record this payment?'
+            : isPlugin
+              ? 'Plugin action approval'
+              : isStagingAccess
+                ? 'Memory access approval'
+                : isVaultWrite
+                  ? 'Vault WRITE approval'
+                  : isVaultRead
+                    ? 'Vault read approval'
+                    : item.serviceName || 'Unnamed service';
   const tagText =
     isIntent && item.riskLevel !== undefined
       ? item.riskLevel
@@ -406,11 +423,15 @@ export function ApprovalActionCard({
         : styles.capability;
   const requesterPrefix = isIntent
     ? 'agent'
-    : isStagingAccess
-      ? 'source'
-      : isVaultRead
-        ? 'requester'
-        : 'from';
+    : isSettingsProposal
+      ? 'proposed by'
+      : isCheckoutLink || isPaymentEvidence
+        ? 'supplier'
+        : isStagingAccess
+          ? 'source'
+          : isVaultRead
+            ? 'requester'
+            : 'from';
   const riskHint =
     isIntent && item.riskLevel === 'MODERATE'
       ? 'Once per session'
@@ -449,6 +470,33 @@ export function ApprovalActionCard({
         </>
       ) : null}
       {riskHint !== null ? <Text style={styles.riskHint}>{riskHint}</Text> : null}
+      {isCheckoutLink || isPaymentEvidence ? (
+        <Text style={styles.riskHint} testID={`approvals-attachment-why-${item.id}`}>
+          {item.description}
+        </Text>
+      ) : null}
+      {isCheckoutLink ? (
+        // The client's own act: opens the processor's page and nothing else.
+        // Offered only for an https URL; no card data ever enters Dina.
+        checkoutUrl !== null ? (
+          <Pressable
+            testID={`approvals-open-link-${item.id}`}
+            accessibilityRole="link"
+            style={({ pressed }) => [styles.button, styles.linkButton, pressed && styles.pressed]}
+            onPress={() => {
+              void Linking.openURL(checkoutUrl).catch(() => {
+                /* opening is best-effort */
+              });
+            }}
+          >
+            <Text style={styles.linkText}>Open payment link</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.riskHint} testID={`approvals-link-refused-${item.id}`}>
+            The payment link is not an https address and will not be opened.
+          </Text>
+        )
+      ) : null}
       {item.requesterDID !== '' ? (
         <Text style={styles.requester} numberOfLines={1}>
           {requesterPrefix} {shortenDID(item.requesterDID)}
@@ -491,7 +539,7 @@ export function ApprovalActionCard({
             disabled={busy}
             onPress={onDeny}
           >
-            <Text style={styles.denyText}>Deny</Text>
+            <Text style={styles.denyText}>{isCheckoutLink ? 'Dismiss' : 'Deny'}</Text>
           </Pressable>
           {onAllow24h !== undefined && (
             // PLUGIN_ARCHITECTURE §15.5 — approve this invocation AND let the
@@ -547,7 +595,9 @@ export function ApprovalActionCard({
             {busy ? (
               <ActivityIndicator size="small" color={colors.white} />
             ) : (
-              <Text style={styles.approveText}>Approve</Text>
+              <Text style={styles.approveText}>
+                {isCheckoutLink ? 'Done' : isPaymentEvidence ? 'Record as paid' : 'Approve'}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -848,6 +898,14 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   approveText: textStyles.buttonSmall,
+  linkButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    marginTop: spacing.xs,
+  },
+  linkText: { ...textStyles.buttonSmall, color: colors.accent },
   // "Approve Once" — single-use action. Visually weighted between
   // Deny (destructive) and Approve (primary session) so the operator
   // can scan the row left-to-right with intent escalating per button.

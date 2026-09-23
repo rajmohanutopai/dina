@@ -451,3 +451,38 @@ describe('Group coordination rows (GROUP_COORDINATION §7, §11)', () => {
     expect(isAuthorized('brain', 'GET', '/v1/coordination/handles/x')).toBe(false);
   });
 });
+
+describe('Merchant integration rows (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2)', () => {
+  const doors: [string, string][] = [
+    ['GET', '/v1/commerce/integration/status'],
+    ['GET', '/v1/commerce/integration/orders'],
+    ['GET', '/v1/commerce/integration/catalogs'],
+    ['GET', '/v1/commerce/integration/catalog/drafts'],
+    ['POST', '/v1/commerce/integration/catalog/refresh'],
+    ['GET', '/v1/commerce/integration/settings'],
+    ['POST', '/v1/commerce/integration/settings/proposal'],
+    ['POST', '/v1/commerce/integration/orders/attachments'],
+    ['GET', '/v1/commerce/integration/orders/attachments'],
+  ];
+  it('the owner and a staff device reach every door; the handler owns the grant check', () => {
+    for (const caller of ['owner', 'staff'] as CallerType[]) {
+      for (const [m, p] of doors) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, true]);
+    }
+  });
+  it('Brain, admin, a plain device, an agent, a plugin, a connector and a service reach neither', () => {
+    for (const caller of ['brain', 'admin', 'device', 'agent', 'plugin', 'connector', 'service'] as CallerType[]) {
+      for (const [m, p] of doors) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+    }
+  });
+  it('the doors are exact: a wrong verb, a tail or a sibling inherits nothing', () => {
+    expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/status')).toBe(false);
+    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/orders/1')).toBe(false);
+    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration')).toBe(false);
+    expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/settings')).toBe(false);
+    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/catalog/refresh')).toBe(false);
+    expect(isAuthorized('staff', 'PUT', '/v1/commerce/integration/settings/proposal')).toBe(false);
+    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/settings/proposal/x')).toBe(false);
+    expect(isAuthorized('staff', 'PUT', '/v1/commerce/integration/orders/attachments')).toBe(false);
+    expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/orders/attachments/x')).toBe(false);
+  });
+});

@@ -54,7 +54,10 @@ import {
   onGrantRequestPending,
   onServiceOfferReceived,
   onServiceConfigChanged,
+  composeWorkflowHooks,
   coordinationWorkflowHooks,
+  integrationWorkflowHooks,
+  orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   registerDevice as registerDeviceDID,
   registerPublicKeyResolver,
@@ -745,7 +748,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     ingressResultTransformer: transformInboundOrderResult,
     // GROUP_COORDINATION §6 — the disclosure gate and the handler that
     // releases what it held, from the one factory both roots call.
-    ...coordinationWorkflowHooks({ nowMs: nowMsFn }),
+    ...composeWorkflowHooks(
+      coordinationWorkflowHooks({ nowMs: nowMsFn }),
+      integrationWorkflowHooks({ nowMs: nowMsFn }),
+      orderAttachmentWorkflowHooks({ nowMs: nowMsFn }),
+    ),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the
     // feature itself. A withheld answer leaves no stash, no send and nothing

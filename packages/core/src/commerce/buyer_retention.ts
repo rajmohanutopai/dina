@@ -24,6 +24,8 @@
  * is idempotent and a re-settle re-retains nothing.
  */
 
+import { notifyAcceptanceRetained } from './acceptance_seam';
+
 import type { BuyerOrderRecord } from './buyer_reconciliation';
 import type { CommerceRuntime } from './runtime';
 import type { PurchaseOrderProposal, SignedQuote } from '@dina/commerce-protocol';
@@ -81,5 +83,11 @@ export function retainAcceptedAcknowledgement(
     recordJson: JSON.stringify(record.acknowledgement),
     evidenceJson: '{}',
     createdAt: nowMs,
+  });
+  // Work that waited on this fact (an attachment that arrived first) may run now.
+  notifyAcceptanceRetained({
+    buyerDid: record.buyerDid,
+    purchaseOrderId: record.purchaseOrderId,
+    nowMs,
   });
 }

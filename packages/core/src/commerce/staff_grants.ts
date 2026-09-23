@@ -27,10 +27,26 @@ import { moneyMinorUnits, validateMoney, type Money } from '@dina/commerce-proto
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
+/**
+ * JIFFY_MERCHANT_INTEGRATION_PLAN §3.2 — the scopes an INTEGRATION device
+ * (a merchant's connector, paired as staff) may be granted. Uncapped: none of
+ * them moves money; each admits exactly one read or proposal surface, and
+ * publication, settings and order decisions stay the owner's acts.
+ */
+export const INTEGRATION_SCOPES = [
+  'integration_status',
+  'integration_orders_export',
+  'integration_catalog_refresh',
+  'integration_settings_propose',
+  'integration_trade_evidence',
+] as const;
+export type IntegrationScope = (typeof INTEGRATION_SCOPES)[number];
+
 export const STAFF_SCOPES = [
   'commerce_confirm',
   'commerce_submit',
   'commerce_receive_goods',
+  ...INTEGRATION_SCOPES,
 ] as const;
 export type StaffScope = (typeof STAFF_SCOPES)[number];
 
@@ -60,6 +76,8 @@ export interface StaffGrantRepository {
   put(grant: StaffGrant): void;
   get(deviceDid: string, scope: StaffScope): StaffGrant | null;
   listByDevice(deviceDid: string): StaffGrant[];
+  /** Every grant on the node, live and revoked — the owner's console and the integration status read. */
+  listAll(): StaffGrant[];
   /** Stamp every grant of a device revoked — device revocation calls this. */
   revokeDevice(deviceDid: string, atMs: number): void;
 }
@@ -95,6 +113,12 @@ export class SQLiteStaffGrantRepository implements StaffGrantRepository {
   listByDevice(deviceDid: string): StaffGrant[] {
     return this.db
       .query(`SELECT * FROM commerce_staff_grants WHERE device_did = ? ORDER BY scope`, [deviceDid])
+      .map(grantFromRow);
+  }
+
+  listAll(): StaffGrant[] {
+    return this.db
+      .query(`SELECT * FROM commerce_staff_grants ORDER BY device_did, scope`)
       .map(grantFromRow);
   }
 
@@ -142,6 +166,12 @@ export class InMemoryStaffGrantRepository implements StaffGrantRepository {
       .map((g) => ({ ...g }));
   }
 
+  listAll(): StaffGrant[] {
+    return [...this.rows.values()]
+      .sort((a, b) => a.deviceDid.localeCompare(b.deviceDid) || a.scope.localeCompare(b.scope))
+      .map((g) => ({ ...g }));
+  }
+
   revokeDevice(deviceDid: string, atMs: number): void {
     for (const [key, grant] of this.rows) {
       if (grant.deviceDid === deviceDid && grant.revokedAt === null) {
@@ -172,7 +202,7 @@ export function validateStaffGrantInput(args: {
     const moneyError = validateMoney(shaped);
     if (moneyError) return `staffGrant: ${moneyError}`;
   } else if (args.maxOrderMinorUnits !== undefined || args.currency !== undefined) {
-    return 'staffGrant: commerce_confirm carries no cap — money control lives at submit';
+    return `staffGrant: ${args.scope} carries no cap — money control lives at submit`;
   }
   return null;
 }

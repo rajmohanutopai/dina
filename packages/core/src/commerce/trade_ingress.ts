@@ -22,6 +22,7 @@
 
 import { askPaymentStatusRail } from './country_rails';
 import { rehydrateSpooledTradeBody } from './money_rehydrate';
+import { raiseOrderAttachmentCard, verifyInboundOrderAttachment } from './order_attachments';
 import {
   verifyInboundAgreementDecision,
   verifyInboundAgreementProposal,
@@ -41,7 +42,7 @@ import { tradeRelationshipReaders } from './trade_readers';
 
 
 /** The §4.2 document kinds a trade push may carry, by direction. */
-export const INBOUND_AT_BUYER = ['delivery_note', 'payment_ack'] as const;
+export const INBOUND_AT_BUYER = ['delivery_note', 'payment_ack', 'order_attachment'] as const;
 export const INBOUND_AT_SUPPLIER = ['delivery_receipt', 'payment_note'] as const;
 /** The §5 revenue-share chain rides the same lane — the §4 discipline. */
 export const REVSHARE_KINDS = [
@@ -214,6 +215,26 @@ function applyOne(
         ...verifyInboundDeliveryReceipt({ ...shared, receipt: read.document, readOrder }),
         kind: read.kind,
       };
+    case 'order_attachment': {
+      // Plan §3.3 — connector evidence on an accepted order. Verified against
+      // the order THIS buyer holds; a landed attachment raises the owner's
+      // question (open the link? record as paid?) and moves nothing itself.
+      const verdict = verifyInboundOrderAttachment({
+        senderDid: args.senderDid,
+        selfDid: runtime.nodeDid(),
+        attachment: read.document,
+        repository: stores.orderAttachments,
+        readOrder: readers.readOrder,
+        readAcceptance: readers.readAcceptance,
+        evidenceJson: args.evidenceJson,
+        nowMs: args.nowMs,
+      });
+      if (verdict.outcome === 'applied' && verdict.attachment !== undefined) {
+        raiseOrderAttachmentCard(stores, verdict.attachment, args.askAtMs);
+      }
+      const { attachment: _raised, ...ingest } = verdict;
+      return { ...ingest, kind: read.kind };
+    }
     case 'payment_note': {
       const verdict = verifyInboundPaymentNote({ ...shared, note: read.document });
       // §5.D — a note that landed asks the active country pack's status rail

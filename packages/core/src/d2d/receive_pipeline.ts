@@ -36,6 +36,7 @@ import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../serv
 import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { requesterWindow, setProviderWindow } from '../service/windows';
 import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
+import { oneLine } from '../util/one_line';
 import { WorkflowConflictError } from '../workflow/repository';
 import { getWorkflowService } from '../workflow/service';
 
@@ -703,11 +704,14 @@ export function receiveD2D(
     }
     // METADATA ONLY — outcome, kind and message id; never the document,
     // which is a counterparty's commercial content.
+    // The refusal's reason is a verifier's fixed sentence (a field name, a
+    // rule), never document content — kept on the audit row so a document
+    // that binds to nothing this node holds can be diagnosed from the node.
     appendAudit(
       message.from,
       'd2d_recv_trade_refused',
       message.to,
-      `outcome=${settled.outcome} kind=${settled.kind ?? ''} id=${message.id}`,
+      `outcome=${settled.outcome} kind=${settled.kind ?? ''} id=${message.id}${settled.detail !== undefined ? ` reason=${oneLine(settled.detail, 120)}` : ''}`,
     );
     return {
       action: 'dropped',

@@ -130,7 +130,13 @@ export {
   setWorkflowRepository,
 } from './src/workflow/repository';
 export type { WorkflowRepository } from './src/workflow/repository';
-export { WorkflowService, setWorkflowService, getWorkflowService } from './src/workflow/service';
+export {
+  WorkflowService,
+  composeWorkflowHooks,
+  setWorkflowService,
+  getWorkflowService,
+} from './src/workflow/service';
+export type { WorkflowHooks } from './src/workflow/service';
 export { TaskExpirySweeper } from './src/workflow/task_expiry_sweeper';
 
 // Interactive-run subsystem (INTERACTIVE_SERVICES_ARCHITECTURE.md §5..§13) —

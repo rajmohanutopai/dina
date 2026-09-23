@@ -16,6 +16,8 @@ import { setProviderWindow, releaseProviderWindow } from '../../service/windows'
 import { WorkflowTaskState, isTerminal } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
 
+import { CORE_MINTED_PAYLOAD_TYPES } from './workflow';
+
 import type { ServiceResponseBody } from '../../d2d/service_bodies';
 import type { CoreRouter } from '../router';
 
@@ -104,6 +106,28 @@ export function registerServiceRespondRoutes(
     if (!v.ok) return j(400, { error: v.error });
     const { task_id, response_body } = v.req;
     const repo = service.store();
+
+    // 0. A card Core minted for the OWNER (a household disclosure, a
+    //    connector's settings proposal) is not a service query and has no
+    //    peer to answer. Refused BEFORE the claim: claiming would move the
+    //    card off `pending_approval`, and the rollback lands it in `queued`,
+    //    where the owner's decision no longer reaches it and a claim route
+    //    could take it.
+    const preflight = repo.getById(task_id);
+    if (preflight !== null) {
+      let type: unknown;
+      try {
+        type = (JSON.parse(preflight.payload) as { type?: unknown }).type;
+      } catch {
+        type = undefined;
+      }
+      if (typeof type === 'string' && CORE_MINTED_PAYLOAD_TYPES.has(type)) {
+        return j(403, {
+          error: 'owner_decision_required',
+          reason: `a ${type.replace(/_/g, ' ')} is decided by the owner, not answered as a service query`,
+        });
+      }
+    }
 
     // 1. Atomic claim.
     const claimed = repo.claimApprovalForExecution(task_id, CLAIM_EXTENSION_SEC, nowSecFn());
