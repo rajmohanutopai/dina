@@ -22,13 +22,14 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
-import { importCatalogRows } from '../../src/commerce/catalog_import';
-import { sourceFromDraftRows } from '../../src/commerce/catalog_draft_ingest';
 import {
   assembleCatalogItems,
   type AssemblySettings,
   type AssemblyStamp,
 } from '../../src/commerce/catalog_assembler';
+import { createCatalogDraft, sourceFromDraftRows } from '../../src/commerce/catalog_draft_ingest';
+import { InMemoryCatalogDraftRepository } from '../../src/commerce/catalog_draft_store';
+import { importCatalogRows } from '../../src/commerce/catalog_import';
 import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
 
 
@@ -105,6 +106,51 @@ describe('what the assembler produces', () => {
     expect(result.items[0]?.fulfilment_regions).toEqual([{ scheme: 'country', value: 'IN' }]);
     // And the row's own free-text category reached nothing.
     expect(JSON.stringify(result.items[0])).not.toContain('Pickles & Preserves');
+  });
+
+  it('a non-model row narrows to a configured id it names, and keeps other text as a label only (JIFFY review item 10)', () => {
+    const s = settings({
+      categoryIds: ['food.bakery', 'food.preserves'],
+      rowCategories: true,
+    });
+    const result = assemble(
+      [
+        row({ category: 'food.preserves' }),
+        row({
+          product: { scheme: 'manufacturer_sku', value: 'CAKE-1', issuer_did: SUPPLIER },
+          category: '  Cakes & Pastries ',
+        }),
+        row({
+          product: { scheme: 'manufacturer_sku', value: 'JAR-1', issuer_did: SUPPLIER },
+          category: 'food.dairy',
+        }),
+        row({ product: { scheme: 'manufacturer_sku', value: 'BUN-1', issuer_did: SUPPLIER } }),
+      ],
+      s,
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.findings));
+    const [named, text, unknownId, none] = result.items;
+    // An id the seller configured: narrowed to it, no label.
+    expect(named?.category_ids).toEqual(['food.preserves']);
+    expect(named?.attributes).toBeUndefined();
+    // Free text: every configured id, the text as a label.
+    expect(text?.category_ids).toEqual(['food.bakery', 'food.preserves']);
+    expect(text?.attributes).toEqual({ section: 'Cakes & Pastries' });
+    // An id the seller did NOT configure is never promoted to one.
+    expect(unknownId?.category_ids).toEqual(['food.bakery', 'food.preserves']);
+    expect(unknownId?.attributes).toEqual({ section: 'food.dairy' });
+    expect(none?.category_ids).toEqual(['food.bakery', 'food.preserves']);
+    expect(none?.attributes).toBeUndefined();
+    for (const item of result.items) expect(validateCatalogItem(item)).toBeNull();
+  });
+
+  it('a long category text is clipped to the wire bound rather than refusing the row', () => {
+    const result = assemble(
+      [row({ category: 'x'.repeat(500) })],
+      settings({ rowCategories: true }),
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.findings));
+    expect(String(result.items[0]?.attributes?.section)).toHaveLength(200);
   });
 
   it('prices in the SUPPLIER’s currency, not one read off the page', () => {
@@ -449,5 +495,35 @@ describe('a photographed price list that names no currency', () => {
     expect(imported.ok).toBe(false);
     if (imported.ok) return;
     expect(imported.findings[0]).toMatchObject({ row: 2, column: 'list_price_minor_units' });
+  });
+});
+
+describe('the draft class decides whether a row category is read (JIFFY review item 10)', () => {
+  const deps = () => ({
+    drafts: new InMemoryCatalogDraftRepository(),
+    now: () => 1,
+    newDraftId: () => 'cdr-1',
+    stamp: () => STAMP,
+  });
+  const ingest = (provenanceClass: 'source_parsed' | 'model_derived') =>
+    createCatalogDraft(deps(), {
+      catalogId: CATALOG,
+      source: sourceFromDraftRows([
+        { row: 2, cells: { sku: 'JAR-1', name: 'Lime pickle', unit_code: 'each', category: 'food.preserves' } },
+      ]),
+      defaultScheme: 'sku',
+      identity: { supplierDid: SUPPLIER, catalogId: CATALOG },
+      settings: settings({ categoryIds: ['food.bakery', 'food.preserves'] }),
+      provenanceClass,
+      extraction: null,
+    });
+
+  it('a connector or CSV row narrows; a model-read row carries the seller’s ids unchanged', () => {
+    const parsed = ingest('source_parsed');
+    const read = ingest('model_derived');
+    if (!parsed.ok || !read.ok) throw new Error('ingest refused');
+    expect(parsed.draft.items[0]?.category_ids).toEqual(['food.preserves']);
+    expect(read.draft.items[0]?.category_ids).toEqual(['food.bakery', 'food.preserves']);
+    expect(read.draft.items[0]?.attributes).toBeUndefined();
   });
 });

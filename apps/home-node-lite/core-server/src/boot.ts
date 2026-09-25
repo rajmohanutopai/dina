@@ -113,7 +113,7 @@ import { wireCommerceEpoch } from './commerce/wire_epoch';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
 import { deriveIdentity } from './identity/derivations';
-import { loadOrGenerateSeed, type SeedSource } from './identity/master_seed';
+import { loadOrGenerateSeed, wrappedSeedPathOf, type SeedSource } from './identity/master_seed';
 import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
 import { createLogger } from './logger';
 import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
@@ -355,8 +355,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // secret only the owner knows, so there is nothing to prove and presence
   // stays unavailable. The lane then refuses, which is the correct answer for
   // a node that cannot tell its owner from anyone holding the disk.
-  if (identity.kind === 'wrapped' || identity.kind === 'loaded_wrapped') {
-    const wrappedPath = identity.wrappedPath;
+  const presenceSeedPath = wrappedSeedPathOf(identity);
+  if (presenceSeedPath !== undefined) {
+    const wrappedPath = presenceSeedPath;
     installOwnerPresenceVerifier(async (passphrase) => {
       // Read per attempt rather than caching: a passphrase change rewrites
       // this file, and a cached copy would keep accepting the old one.
@@ -397,7 +398,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       status: 'ok',
       elapsedMs: Date.now() - identityStart,
     });
-    if (identity.kind === 'generated') {
+    if (identity.kind === 'generated' && identity.recoveryPhrasePath === undefined) {
+      // Security mode from the first boot: no phrase file exists, because a
+      // plain copy would undo the wrapping. Say how to print it; never log it.
+      logger.warn(
+        'first-boot: generated a new master seed, stored wrapped. No recovery-phrase ' +
+          'file was written; print the phrase once with ' +
+          '`DINA_UNLOCK_PASSPHRASE=… npx tsx src/identity/recovery_phrase_tool.ts <vault_dir>` ' +
+          'and record it offline. It is never logged.',
+      );
+    } else if (identity.kind === 'generated') {
       // First-boot flow: a new master seed was generated. The recovery phrase
       // (the mnemonic) is the seed, so it is NEVER logged — it is written to a
       // 0o600 file (master_seed.ts). Log only the file PATH (metadata) so the
@@ -576,6 +586,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let reasoningCommitSupervisor: ReasoningCommitSupervisor | null = null;
   let localTaskExpiry: TaskExpirySweeper | undefined;
   let commerceSweepers: CommerceSweepers | undefined;
+  // The reference supplier runner (item 5) reaches this node's own routes in
+  // process; the router is built after the sweepers start, so the runner
+  // reads it per tick through this holder.
+  const inProcessRouter: { current: CoreRouter | null } = { current: null };
   let phoneApprovalManager: PhoneApprovalManager | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
 
@@ -765,6 +779,34 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
                   'commerce reconcile sweep failed',
                 ),
             },
+            supplierRunner: {
+              dispatch: () => {
+                const router = inProcessRouter.current;
+                if (router === null) return null;
+                return async ({ path, body, deviceDid }) => {
+                  const res = await router.handle({
+                    method: 'POST',
+                    path,
+                    query: {},
+                    // The routes read the authenticated DID from the header
+                    // the signed pipeline sets; in process it is stated here.
+                    headers: { 'x-did': deviceDid },
+                    body,
+                    rawBody: new Uint8Array(),
+                    params: {},
+                    trustedInProcess: true,
+                    callerType: 'plugin',
+                    callerDID: deviceDid,
+                  });
+                  return { status: res.status, body: res.body ?? null };
+                };
+              },
+              onError: (err) =>
+                logger.warn(
+                  { err: err instanceof Error ? err.message : String(err) },
+                  'reference supplier runner tick failed',
+                ),
+            },
           });
         }
         const reviewRepo = getReviewPublishRepository();
@@ -876,6 +918,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     status: 'ok',
     elapsedMs: Date.now() - coreRouterStart,
   });
+  inProcessRouter.current = coreRouter;
 
   // Workflow plane — wired post-core_router (the runtime's
   // InProcessTransport needs the router) but BEFORE fastify_start so

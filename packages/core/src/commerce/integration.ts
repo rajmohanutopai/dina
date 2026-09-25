@@ -39,6 +39,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { canonicalJson } from '@dina/protocol';
 
+import { findPublishedItem, publishedCatalogItems } from './published_catalog';
 import {
   rehydrateAcknowledgement,
   rehydratePurchaseOrder,
@@ -56,7 +57,13 @@ import type { CatalogRowSource } from './catalog_import';
 import type { CommerceOrderRef } from './order_refs';
 import type { CommerceRuntime } from './runtime';
 import type { ReadSettings } from './settings_store';
-import type { DeliveryProjection, Money, Quantity } from '@dina/commerce-protocol';
+import type {
+  CatalogItem,
+  DeliveryProjection,
+  Money,
+  ProductRef,
+  Quantity,
+} from '@dina/commerce-protocol';
 
 export type { IntegrationScope } from './staff_grants';
 
@@ -253,6 +260,14 @@ export function parseOrdersCursor(raw: string): OrdersCursor | null {
 
 export interface AcceptedOrderLine {
   lineId: string;
+  /** The product the order names, as signed on the order line. */
+  product: ProductRef;
+  /**
+   * The item's name in this node's live published catalogue. Absent when no
+   * published item matches (withdrawn, or renamed out of the catalogue): the
+   * product ref above is the identity, the name only a label.
+   */
+  name?: string;
   quantity: Quantity;
   /** From the bound quote's line of the same id; absent when the quote record is not held. */
   unitPrice?: Money;
@@ -295,6 +310,7 @@ export interface OrdersExportPage {
 function readOrderRecord(
   runtime: Pick<CommerceRuntime, 'receipts'>,
   ref: CommerceOrderRef,
+  catalog: readonly CatalogItem[],
 ): OrderDecisionEvent['order'] {
   // Both receipts come back THROUGH the ingress validators (`rehydrate.ts`),
   // which re-derive each record's digest: a stored order whose bytes no
@@ -314,8 +330,11 @@ function readOrderRecord(
     totals: order.value.approved_total,
     lines: order.value.accepted_lines.map((line) => {
       const unitPrice = unitPrices.get(line.line_id);
+      const item = findPublishedItem(catalog, line.product);
       return {
         lineId: line.line_id,
+        product: line.product,
+        ...(item !== null ? { name: item.name } : {}),
         quantity: line.quantity,
         ...(unitPrice !== undefined ? { unitPrice } : {}),
       };
@@ -331,10 +350,19 @@ function readOrderRecord(
  * re-read and a reconnecting reader loses nothing.
  */
 export function listOrderDecisionEvents(
-  runtime: Pick<CommerceRuntime, 'orders' | 'receipts'>,
+  runtime: Pick<CommerceRuntime, 'orders' | 'receipts'> &
+    Partial<Pick<CommerceRuntime, 'catalogPointers' | 'catalogDrafts'>>,
   page: { after: OrdersCursor | null; limit: number },
 ): OrdersExportPage {
   const refs = runtime.orders.listDecidedAfter(page.after, page.limit);
+  // Read once per page: every line's name comes from the same published bytes.
+  const catalog =
+    runtime.catalogPointers !== undefined && runtime.catalogDrafts !== undefined
+      ? publishedCatalogItems({
+          catalogPointers: runtime.catalogPointers,
+          catalogDrafts: runtime.catalogDrafts,
+        })
+      : [];
   const events: OrderDecisionEvent[] = [];
   let unreadable = 0;
   let last: CommerceOrderRef | null = null;
@@ -364,7 +392,7 @@ export function listOrderDecisionEvents(
       ...(ref.externalRef !== null && ref.externalRef !== ''
         ? { externalRef: ref.externalRef }
         : {}),
-      order: accepted ? readOrderRecord(runtime, ref) : null,
+      order: accepted ? readOrderRecord(runtime, ref, catalog) : null,
     });
   }
   return {

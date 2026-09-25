@@ -135,7 +135,16 @@ export function registerPairRoutes(router: CoreRouter): void {
       // that path (it also records the failed-attempt counter).
       const intent = getPairingIntent(code);
       const overrideName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
-      const deviceName = overrideName !== '' ? overrideName : (intent?.deviceName ?? '');
+      // A staff device's name is the owner's words: the settings card names
+      // the proposer by it (JIFFY review item 3), so a completing device may
+      // not rename itself there. Other roles keep the label override.
+      const ownerNamed =
+        intent?.role === 'staff' && intent.deviceName !== undefined && intent.deviceName !== '';
+      const deviceName = ownerNamed
+        ? (intent.deviceName as string)
+        : overrideName !== ''
+          ? overrideName
+          : (intent?.deviceName ?? '');
       // SECURITY: the role is a privilege boundary the admin fixes at
       // /v1/pair/initiate (which ALWAYS captures a role, defaulting to 'rich').
       // The completing device must NOT pick its own role — otherwise a code

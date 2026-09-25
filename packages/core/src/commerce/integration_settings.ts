@@ -73,6 +73,13 @@ export interface SettingsProposalPayload {
   content_digest: string;
   /** The device that proposed, or `owner` when the owner used the route. */
   proposed_by: string;
+  /**
+   * The name the owner gave that device when minting its setup code, read
+   * from the device registry at proposal time — so the card says who asked
+   * in words. Absent for the owner, and for a device the registry no longer
+   * holds. A label only: `proposed_by` is the identity.
+   */
+  proposed_by_name?: string;
 }
 
 export type ProposalRefusal =
@@ -126,6 +133,7 @@ export function parseSettingsProposalPayload(text: string): SettingsProposalPayl
   if (p.type !== INTEGRATION_SETTINGS_PROPOSAL_TYPE || p.kind !== 'supplier') return null;
   if (typeof p.command_id !== 'string' || typeof p.expected_revision !== 'string') return null;
   if (typeof p.content_digest !== 'string' || typeof p.proposed_by !== 'string') return null;
+  if (p.proposed_by_name !== undefined && typeof p.proposed_by_name !== 'string') return null;
   if (p.controls === null || typeof p.controls !== 'object' || Array.isArray(p.controls))
     return null;
   return p as SettingsProposalPayload;
@@ -217,6 +225,7 @@ export function proposeSupplierSettings(
     expectedRevision: string;
     controls: Record<string, unknown>;
     proposedBy: string;
+    proposedByName?: string;
   },
 ): ProposeOutcome {
   const unsupported = unsupportedControls(args.controls);
@@ -256,13 +265,18 @@ export function proposeSupplierSettings(
     controls: args.controls as SettingsProposalPayload['controls'],
     content_digest: digest,
     proposed_by: args.proposedBy,
+    ...(args.proposedByName !== undefined && args.proposedByName !== ''
+      ? { proposed_by_name: args.proposedByName }
+      : {}),
   };
+  const who =
+    payload.proposed_by_name !== undefined ? `"${payload.proposed_by_name}"` : args.proposedBy;
   const taskId = proposalTaskId(args.commandId);
   try {
     workflow.create({
       id: taskId,
       kind: WorkflowTaskKind.Approval,
-      description: `Apply ${Object.keys(args.controls).length} supplier setting change(s) proposed by ${args.proposedBy}?`,
+      description: `Apply ${Object.keys(args.controls).length} supplier setting change(s) proposed by ${who}?`,
       payload: JSON.stringify(payload),
       idempotencyKey: proposalIdempotencyKey(args.commandId),
       // The family key: every proposal card, whatever its state, is listed by it.

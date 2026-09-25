@@ -35,12 +35,14 @@ import { DispatchIntentSweeper } from './dispatch_intent_sweeper';
 import { CommerceEpochRevalidator } from './epoch_revalidator';
 import { InviteSweeper } from './invite_sweeper';
 import { ReconcilePollSweeper } from './reconcile_sweeper';
+import { SupplierReferenceRunner } from './supplier_runner';
 
 import type { CommerceAdmissionSweeperOptions } from './admission_sweeper';
 import type { ContinuityReleaseSweeperOptions } from './continuity_release_sweeper';
 import type { DispatchIntentSweeperOptions } from './dispatch_intent_sweeper';
 import type { CommerceEpochRevalidatorOptions } from './epoch_revalidator';
 import type { ReconcilePollSweeperOptions } from './reconcile_sweeper';
+import type { SupplierReferenceRunnerOptions } from './supplier_runner';
 
 export interface CommerceSweeperOptions {
   admission: Pick<
@@ -79,6 +81,12 @@ export interface CommerceSweeperOptions {
    * ticks quietly. Only cadence and observers configure.
    */
   invite?: Pick<import('./invite_sweeper').InviteSweeperOptions, 'intervalMs' | 'onSweep' | 'onError'>;
+  /**
+   * The reference supplier runner (item 5). Optional: a host that cannot
+   * reach its own routes in process leaves it out, and the pack then waits
+   * for an external runner. It idles until the owner pairs it to an install.
+   */
+  supplierRunner?: Pick<SupplierReferenceRunnerOptions, 'dispatch' | 'intervalMs' | 'onError'>;
   /** Injectable timer pair, shared by all five. Tests pass fakes. */
   setInterval?: CommerceAdmissionSweeperOptions['setInterval'];
   clearInterval?: CommerceAdmissionSweeperOptions['clearInterval'];
@@ -92,6 +100,7 @@ export interface CommerceSweepers {
   continuity: ContinuityReleaseSweeper | null;
   dispatch: DispatchIntentSweeper;
   invite: InviteSweeper;
+  supplierRunner: SupplierReferenceRunner | null;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
@@ -116,12 +125,17 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
       : new ContinuityReleaseSweeper({ ...options.continuity, ...timers });
   const dispatch = new DispatchIntentSweeper({ ...(options.dispatch ?? {}), ...timers });
   const invite = new InviteSweeper({ ...(options.invite ?? {}), ...timers });
+  const supplierRunner =
+    options.supplierRunner === undefined
+      ? null
+      : new SupplierReferenceRunner({ ...options.supplierRunner, ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
   continuity?.start();
   dispatch.start();
   invite.start();
+  supplierRunner?.start();
   return {
     admission,
     epoch,
@@ -129,7 +143,9 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     continuity,
     dispatch,
     invite,
+    supplierRunner,
     stop: () => {
+      supplierRunner?.stop();
       // All stopped even if an earlier one throws: a teardown that abandons a
       // later timer leaves a process that will not exit and a phone that keeps
       // polling a repo for an identity the user has switched away from.

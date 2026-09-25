@@ -355,6 +355,21 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     expect(caller.callerType).not.toBe('agent');
   });
 
+  it('a staff code keeps the owner’s name: the completing device cannot rename itself (JIFFY review item 3)', async () => {
+    const { code } = await initiate('Jiffy till connector', 'staff');
+    const staff = makeActor();
+    const resp = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code,
+        public_key: publicKeyToMultibase(staff.pub),
+        device_name: 'Owner',
+      }),
+    );
+    expect(resp.status).toBe(201);
+    // The owner card names a proposer by this label, so the owner's words stand.
+    expect(resolveCallerType(staff.did).name).toBe('Jiffy till connector');
+  });
+
   it('rejects an unknown code', async () => {
     const agent = makeActor();
     const resp = await router.handle(

@@ -72,10 +72,11 @@ function owner(path: string, body: Record<string, unknown>): CoreRequest {
 function installNode(
   nodeDid: string,
   money: () => CommerceMoneyAccess = moneyOpen(),
+  withOrder = true,
 ): InMemoryTradeDocumentRepository {
   const tradeDocs = new InMemoryTradeDocumentRepository();
   const receipts = new InMemoryCommerceReceiptRepository();
-  receipts.put({
+  if (withOrder) receipts.put({
     recordDigest: ORDER.order_digest,
     domain: 'order',
     buyerDid: ORDER.buyer_did,
@@ -406,11 +407,21 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
   it('a stranger’s push drops before any verifier runs', async () => {
     const wireBody = await authoredWireBody();
     setNodeDID(BUYER_DID);
-    const buyerDocs = installNode(BUYER_DID);
+    // This node holds no order with the sender: no contact, no counterparty.
+    const buyerDocs = installNode(BUYER_DID, moneyOpen(), false);
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
     expect(result.action).toBe('dropped');
-    expect(result.reason).toContain('not a known contact');
+    expect(result.reason).toContain('neither a known contact nor a trading counterparty');
     expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+  });
+
+  it('the supplier of an order this node holds is admitted though never a contact (review item 8)', async () => {
+    const wireBody = await authoredWireBody();
+    setNodeDID(BUYER_DID);
+    const buyerDocs = installNode(BUYER_DID);
+    const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
+    expect(result.action).toBe('bypassed');
+    expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
   });
 
   it('an unreadable body and an unbindable document drop with named outcomes', async () => {

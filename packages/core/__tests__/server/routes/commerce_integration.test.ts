@@ -7,17 +7,26 @@
  * malformed cursor or limit.
  */
 
-import { InMemoryCatalogDraftRepository } from '../../../src/commerce/catalog_draft_store';
+import {
+  InMemoryCatalogDraftRepository,
+  type CatalogDraft,
+} from '../../../src/commerce/catalog_draft_store';
 import { InMemoryCatalogPointerRepository } from '../../../src/commerce/catalog_pointer_store';
+import { buildCatalogSnapshot } from '../../../src/commerce/catalog_publisher';
 import { InMemoryCatalogRefreshCommandRepository } from '../../../src/commerce/catalog_refresh_commands';
 import { InMemoryCatalogSourceBindingRepository } from '../../../src/commerce/catalog_source_bindings';
 import { CommerceOrderStore } from '../../../src/commerce/commerce_order';
 import { encodeOrdersCursor } from '../../../src/commerce/integration';
 import { InMemoryCommerceOrderRefRepository } from '../../../src/commerce/order_refs';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
-import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import {
+  getCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../../src/commerce/runtime';
 import { InMemoryCommerceSettingsRepository } from '../../../src/commerce/settings_store';
 import { InMemoryStaffGrantRepository, type StaffScope } from '../../../src/commerce/staff_grants';
+import { registerDevice, resetDeviceRegistry } from '../../../src/devices/registry';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -26,11 +35,14 @@ import { WorkflowService, setWorkflowService } from '../../../src/workflow/servi
 import {
   BUYER_DID,
   SUPPLIER_DID,
+  hash,
   makeAcknowledgement,
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
 } from '../../commerce/helpers';
+
+import type { CatalogItem, ProductRef } from '@dina/commerce-protocol';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 const DEVICE = 'did:key:zJiffyIntegration';
@@ -40,6 +52,7 @@ let router: CoreRouter;
 let staffGrants: InMemoryStaffGrantRepository;
 let receipts: InMemoryCommerceReceiptRepository;
 let catalogPointers: InMemoryCatalogPointerRepository;
+let catalogDrafts: InMemoryCatalogDraftRepository;
 let catalogSourceBindings: InMemoryCatalogSourceBindingRepository;
 let orders: CommerceOrderStore;
 let settings: InMemoryCommerceSettingsRepository;
@@ -80,6 +93,50 @@ function grant(scope: StaffScope, installs: 'buyer' | 'supplier' | 'both' = 'sup
     installs,
     createdAt: T0,
     revokedAt: null,
+  });
+}
+
+/** A live catalogue with one item naming `product`, as the publisher leaves it. */
+function publishCatalogNaming(product: ProductRef | undefined, name: string): void {
+  if (product === undefined) throw new Error('test: no product');
+  const item: CatalogItem = {
+    product,
+    supplier_did: SUPPLIER_DID,
+    catalog_id: 'main',
+    item_revision: 'rev-1',
+    name,
+    category_ids: ['food.bakery'],
+    pack: { sell_unit: { value: '1', unit_code: 'each' } },
+    fulfilment_regions: [{ scheme: 'admin_area', value: 'US-CA' }],
+    freshness: { generated_at: '2026-08-08T08:00:00.000Z' },
+  };
+  const built = buildCatalogSnapshot({
+    supplierDid: SUPPLIER_DID,
+    catalogId: 'main',
+    protocolVersion: '1.0',
+    publishedAt: '2026-08-08T08:00:00.000Z',
+    items: [item],
+    previous: null,
+    sha256: hash,
+  });
+  if (!built.ok || built.snapshot === undefined || built.pages === undefined) {
+    throw new Error('test: snapshot did not build');
+  }
+  catalogDrafts.put({
+    draftId: 'cdr-1',
+    catalogId: 'main',
+    state: 'published',
+    held: { snapshot: built.snapshot, pages: built.pages, pointer: built.pointer },
+    createdAtMs: T0,
+    updatedAtMs: T0,
+  } as unknown as CatalogDraft);
+  catalogPointers.put({
+    catalogId: 'main',
+    pointer: built.pointer,
+    pointerCid: 'bafy-live',
+    snapshotDigest: built.snapshot.snapshot_digest,
+    withdrawn: false,
+    publishedAtMs: T0,
   });
 }
 
@@ -124,6 +181,7 @@ beforeEach(() => {
   staffGrants = new InMemoryStaffGrantRepository();
   receipts = new InMemoryCommerceReceiptRepository();
   catalogPointers = new InMemoryCatalogPointerRepository();
+  catalogDrafts = new InMemoryCatalogDraftRepository();
   catalogSourceBindings = new InMemoryCatalogSourceBindingRepository();
   orders = new CommerceOrderStore({
     refs: new InMemoryCommerceOrderRefRepository(),
@@ -135,7 +193,7 @@ beforeEach(() => {
     orders,
     receipts,
     catalogPointers,
-    catalogDrafts: new InMemoryCatalogDraftRepository(),
+    catalogDrafts,
     catalogSourceBindings,
     catalogRefreshCommands: new InMemoryCatalogRefreshCommandRepository(),
     settings,
@@ -153,6 +211,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetDeviceRegistry();
   installCommerceRuntime(null);
   setWorkflowService(null);
 });
@@ -319,6 +378,8 @@ describe('the orders export door', () => {
       lines: [
         {
           line_id: 'l1',
+          // The product rides on every line; with no published item, no name.
+          product: order.accepted_lines[0]?.product,
           quantity: order.accepted_lines[0]?.quantity,
           unit_price: quote.lines[0]?.unit_price,
         },
@@ -326,6 +387,13 @@ describe('the orders export door', () => {
       // The projection travels whole: the connector exists to deliver.
       delivery_projection: order.delivery,
     });
+
+    // Once the catalogue naming that product is live, the line carries its name.
+    publishCatalogNaming(order.accepted_lines[0]?.product, 'Birthday cake');
+    const named = await router.handle(device(ORDERS));
+    const line = (named.body as { events: { order: { lines: unknown[] } }[] }).events[0]?.order
+      .lines[0];
+    expect(line).toMatchObject({ line_id: 'l1', name: 'Birthday cake' });
   });
 
   it('refuses a malformed cursor or limit before touching the store', async () => {
@@ -542,6 +610,71 @@ describe('the settings doors', () => {
       ((await router.handle(deviceSettings())).body as { settings_revision: { supplier: string } })
         .settings_revision.supplier,
     ).toBe(revision);
+  });
+
+  it('the card and the listing name the proposing device by the name the owner gave it (review item 3)', async () => {
+    const paired = registerDevice('Jiffy till connector', 'zJiffyIntegration', 'staff');
+    expect(paired.did).toBe(DEVICE);
+    const revision = (
+      (await router.handle(deviceSettings())).body as { settings_revision: { supplier: string } }
+    ).settings_revision.supplier;
+    const res = await router.handle(
+      devicePropose({
+        command_id: 'c-named',
+        kind: 'supplier',
+        expected_revision: revision,
+        controls: { orderAcceptance: 'auto' },
+      }),
+    );
+    expect(res.status).toBe(202);
+    const task = workflow.store().getById((res.body as { task_id: string }).task_id);
+    expect(task?.description).toBe(
+      'Apply 1 supplier setting change(s) proposed by "Jiffy till connector"?',
+    );
+    expect(JSON.parse(task?.payload ?? '{}')).toMatchObject({
+      proposed_by: DEVICE,
+      proposed_by_name: 'Jiffy till connector',
+    });
+    const listed = (await router.handle(deviceSettings())).body as {
+      proposals: { proposed_by: string; proposed_by_name?: string }[];
+    };
+    expect(listed.proposals[0]).toMatchObject({
+      proposed_by: DEVICE,
+      proposed_by_name: 'Jiffy till connector',
+    });
+  });
+
+  it('a null revision answers supplier_settings_absent before the owner saves settings, and names the live revision after (review item 4)', async () => {
+    const withSettings = await router.handle(
+      devicePropose({
+        command_id: 'c-null',
+        kind: 'supplier',
+        expected_revision: null,
+        controls: { orderAcceptance: 'auto' },
+      }),
+    );
+    const revision = (
+      (await router.handle(deviceSettings())).body as { settings_revision: { supplier: string } }
+    ).settings_revision.supplier;
+    expect(withSettings.status).toBe(409);
+    expect(withSettings.body).toEqual({ error: 'revision_conflict', current_revision: revision });
+
+    settings = new InMemoryCommerceSettingsRepository();
+    installCommerceRuntime({ ...getCommerceRuntime(), settings } as unknown as CommerceRuntime);
+    expect(
+      ((await router.handle(deviceSettings())).body as { settings_revision: { supplier: unknown } })
+        .settings_revision.supplier,
+    ).toBeNull();
+    const absent = await router.handle(
+      devicePropose({
+        command_id: 'c-null',
+        kind: 'supplier',
+        expected_revision: null,
+        controls: { orderAcceptance: 'auto' },
+      }),
+    );
+    expect(absent.status).toBe(409);
+    expect(absent.body).toEqual({ error: 'supplier_settings_absent' });
   });
 
   it('the owner may propose on the same door, attributed as owner', async () => {

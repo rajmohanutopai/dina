@@ -406,6 +406,7 @@ describe('useServiceInbox', () => {
             controls: { orderAcceptance: 'auto', listingState: 'paused' },
             content_digest: 'b'.repeat(64),
             proposed_by: 'did:key:zJiffy',
+            proposed_by_name: 'Jiffy till connector',
           }),
         }),
       ],
@@ -414,6 +415,8 @@ describe('useServiceInbox', () => {
     const [entry] = await listPendingApprovals();
     expect(entry.kind).toBe('integration_settings_proposal');
     expect(entry.requesterDID).toBe('did:key:zJiffy');
+    // The name the owner gave the device rides beside the DID (review item 3).
+    expect(entry.requesterName).toBe('Jiffy till connector');
     expect(entry.capability).toBe('supplier settings');
     expect(entry.paramsPreview).toBe('orderAcceptance: "auto"\nlistingState: "paused"');
   });

@@ -135,3 +135,41 @@ Eight lenses (authz, idempotency, boundaries, privacy, protocol, data, card life
 | R9 | Attachment arrives before the acceptance | `applied` + `awaiting_acceptance`, no card; the retained acceptance raises it through `acceptance_seam.ts`; the sweep asks nothing twice | "an attachment that lands before the acceptance…" |
 | R10 | Two overlapping refreshes, one command id | one pull, identical answers, one draft; later call replays | `commerce_integration_refresh.test.ts` "two overlapping refreshes…" |
 | R11 | URL port > 65535, control/bidi character; zero-amount capture; `Infinity` in a tolerated field | refused by the validator with a reason (never a throw) | `order_attachment.test.ts` |
+
+## 10. The Jiffy agent's eleven items — built 2026-09-25
+
+| # | Scenario | Expected | Test |
+|---|---|---|---|
+| J1 | Accepted order exported | each line carries `product` as signed on the order; `name` once a live published item matches, absent otherwise | `commerce/integration.test.ts` "an accepted event carries the RETAINED order"; route test "an accepted event carries the retained order in snake_case…" |
+| J2 | Owner mints a staff code | 201 `dina1:` code naming the device; the pending code is role `staff`, no scope; 403 without the owner capability; 400 for an empty, over-64, control-character or non-string name | core-server `owner_setup.test.ts` "mints a named staff setup code…" |
+| J3 | Owner lists and revokes staff devices | status lists `staff_devices`; revoke is staff-only (404 for a coding agent), 503 when not durable, 204 when durable | core-server `owner_setup.test.ts` "lists staff devices and revokes only a staff device…" |
+| J4 | A staff device names itself at completion | the owner's name stands; other roles keep the label override | `server/routes/pair.test.ts` "a staff code keeps the owner's name…" |
+| J5 | A named device proposes settings | card description and payload name it (`proposed_by_name`), the listing carries it, the phone card reads "proposed by <name> (did…)" | route test "the card and the listing name the proposing device…"; phone `useServiceInbox.test.ts`, `approval_inbox_web_surface.test.tsx` |
+| J6 | `expected_revision: null` | 409 `supplier_settings_absent` before settings exist; 409 `revision_conflict` with the live revision after | route test "a null revision answers supplier_settings_absent…" |
+| J7 | Reference runner prices a quote | all lines or none; declines `not_in_catalog`, `no_published_price`, `unit_mismatch`, `below_minimum_order`; Core signs the quote | `commerce/supplier_runner.test.ts` |
+| J8 | Reference runner on the real workflow routes | idle with no task; ignores an operator's runner device; claims and completes for the Core-minted device; a Core-signed acknowledgement results | same, "the loop through the real workflow routes" |
+| J9 | Supplier pack consent | begin names the listing; bind the runner before confirm; confirm writes the self listing (unlisted when none, merged into a known_only one); a public self listing is refused, then confirms once moved; `bind_listing` re-binds; owner-only | `server/routes/commerce_install_reference.test.ts` |
+| J10 | Server buyer orders from a held quote | quotes listed with `expired`; `from_quote` needs presence, builds and verifies the order, holds the approval; `orders/submit` sends it; unknown 404, lapsed 409 `quote_expired`, no buyer pack refused | `server/routes/commerce_order_from_quote.test.ts` |
+| J11 | Trade document from a non-contact | admitted for an order-bound kind when the sender is the buyer of an order this node ACCEPTED or the supplier of an order it placed; a refused proposal's receipt admits nobody; revenue-share kinds stay contacts-only; a sender who is neither is dropped before any verifier | `commerce/trade_counterparty.test.ts`; `commerce/trade_transport.test.ts` "the supplier of an order this node holds is admitted…", "a stranger's push drops…" |
+| J15 | Two buyers share a purchase order id | the runner answers each buyer's own status; a third party learns nothing | `commerce/supplier_runner.test.ts` status case |
+| J12 | Row categories | a connector/CSV row naming a configured id narrows to it; other text rides as `attributes.section` (clipped to 200); an unconfigured id is never promoted; a model-read row carries the settings unchanged | `commerce/catalog_assembler.test.ts` "a non-model row narrows…", "the draft class decides…" |
+| J13 | First boot in security mode | with `DINA_UNLOCK_PASSPHRASE` only `wrapped_seed.bin` (0600) is written, no keyfile and no phrase file; `recoveryPhraseFromWrapped` gives the phrase back with the passphrase; the presence path exists from boot one; later boots unwrap the same seed, answer `wrapped` without the variable and refuse a wrong one; without the variable the keyfile path is unchanged | core-server `master_seed.test.ts` "security mode from the first boot" |
+| J14 | Owner-bound pull and MsgBox | recorded as the one exception in `dina_details.md` and plan §3.1 | documentation |
+
+Suites after this round and its review fixes: core 514 suites / 9682 tests, core-server 134 / 2851, phone 241 / 3470; workspace typecheck clean. Owed: a live server-to-server order on the bed (tender → `from_quote` → submit, the reference runner accepting, the Jiffy stand-in attaching).
+
+### 10.1 Live bed — run 2026-09-25 (four nodes restarted on this code)
+
+| # | Step | Result |
+|---|---|---|
+| JL1 | Retire alonso's supplier pack; begin → `bind_reference_runner` → confirm (naming the minted device) | ✅ consent names the self listing (unlisted, five capabilities); confirm answers `listing: { ok, rkey: self, discoverability: unlisted }` |
+| JL2 | sancho tenders 3 × `ALON-PLANK-2` to alonso | ✅ the reference runner claimed and completed in 0.5 s; sancho holds a Core-signed quote, ₹4,500 × 3 = ₹13,500; the list flags an old chairmaker quote `expired` |
+| JL3 | `from_quote` on sancho | ✅ refused `no_user_presence` until the passphrase proved presence; then order `po_e923…` held as an approval |
+| JL4 | `orders/submit` | ✅ the runner accepted in 0.4 s with `SO-B437780E73`; the acceptance reached sancho |
+| JL5 | alonso's export | ✅ the line carries `product` and `name: "Teak plank 8ft"` |
+| JL6 | Owner mints a staff code on alonso; the stand-in completes it sending `device_name: "Owner"` | ✅ stored as "Jiffy till connector"; listed in `staff_devices` |
+| JL7 | Grants (first carries the PIN), status | ✅ five scopes; status names the supplier settings revision |
+| JL8 | Proposal with `expected_revision: null`; a real proposal | ✅ `409 revision_conflict` with the live revision; `202`, card "…proposed by "Jiffy till connector"?", listing `proposed_by_name`; test card cancelled |
+| JL9 | Checkout link attached to the accepted order | ✅ alonso sent it (`d2d_send commerce.trade delivered=true`), sancho applied it and raised "Pay INR 13500.00 for order po_e923… through clover?" |
+
+Not driven live: counterparty admission between non-contacts (alonso and sancho are contacts; pinned by `trade_counterparty.test.ts`), a row-category refresh (the feed policy refuses a local source), and a first boot in security mode (needs a fresh node; pinned by `master_seed.test.ts`).

@@ -440,6 +440,18 @@ known_only is when i know that this user is authenticated to use my service - it
   - createSession later, so Dina can publish ATProto records again after restart
   - recovery, because the same recovery phrase re-derives the same PDS password
 
+# Transport: MsgBox, and one exception
+
+Every Dina-to-Dina message, every dina-agent or staff-device call and every remote client request travels through MsgBox: sealed box, identity binding, inner signature, then Core's normal router. Direct HTTP to a node's `core_url` is deprecated for all of these.
+
+The one exception is an outbound pull from an owner-bound source. When the owner binds a catalogue connector (`from_connector`, `kind: 'rest'`) and stores its credential in the broker, Core later fetches that endpoint over HTTPS itself, on the owner's schedule or when a granted connector asks for a refresh (`POST /v1/commerce/integration/catalog/refresh`). Why it is allowed:
+- The owner named the endpoint and the credential once, with presence, on their own surface; a refresh cannot name a different source, credential or operation.
+- It is an ordinary web fetch from the node to a third-party host, not a message between identities, so MsgBox has nothing to bind or seal.
+- The bearer token never appears in a URL and never leaves the broker for another origin.
+- What comes back is only a draft. It stops at `prepared` until the owner approves, so a pull can never publish.
+
+Nothing else takes this path. A connector that wants to send Dina something (evidence, a settings change) calls in as a paired staff device over MsgBox.
+
 # Testing Manual Release Tests
 We use Maestro to test the manual release tests - there is already maestro based test cases. Also, maestro is installed in this machine - if it is not found, it might be because you are not looking at the proper location (/opt/homebrew/opt/maestro/bin/maestro i think might have it)
 

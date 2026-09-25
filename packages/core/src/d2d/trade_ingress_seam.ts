@@ -76,3 +76,30 @@ export function applyInboundTradeDocumentVia(
   }
   return handler(args);
 }
+
+/**
+ * Review item 8 — who, besides a contact, may send a trade document: the
+ * COUNTERPARTY of an order this node accepted or placed, and only for the
+ * order-bound kinds. A customer who found a supplier on the AppView and
+ * ordered never exchanged contacts with them, yet the checkout link, the
+ * payment note and the khata documents that follow belong to that order.
+ * The revenue-share chain names no order and stays with contacts. Answered
+ * by the commerce runtime, which the transport may not import; with nothing
+ * registered the answer is no.
+ */
+export type TradeCounterpartyCheck = (senderDid: string, kind: string) => boolean;
+
+let counterparty: TradeCounterpartyCheck | null = null;
+
+export function setTradeCounterpartyCheck(next: TradeCounterpartyCheck | null): void {
+  counterparty = next;
+}
+
+export function isTradeCounterparty(senderDid: string, kind: string): boolean {
+  if (counterparty === null) return false;
+  try {
+    return counterparty(senderDid, kind);
+  } catch {
+    return false;
+  }
+}

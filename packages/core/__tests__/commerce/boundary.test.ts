@@ -1267,6 +1267,8 @@ describe('commerce aggregate boundary', () => {
       // Supplier side: names the capability this node SERVES.
       ['order_decision.ts', 'supplier serving the capability'],
       ['provider_ingress.ts', 'supplier plugin lane serving the capability'],
+      // Supplier side: binds the served capability to the pack in the listing.
+      ['supplier_listing.ts', 'supplier listing naming the capability it serves'],
     ]);
     const offenders: string[] = [];
     const REPO = path.join(CORE_SRC, '..', '..', '..');

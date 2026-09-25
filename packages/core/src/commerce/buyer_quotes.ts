@@ -42,6 +42,12 @@ export interface BuyerQuoteRepository {
   /** Every accepted revision of one quote, oldest first. */
   chain(supplierDid: string, quoteId: string): SignedQuote[];
   /**
+   * The head revision of every quote this node holds, newest first — what
+   * the owner can order from (review item 7). A row that fails re-validation
+   * is skipped, never half-read.
+   */
+  listHeads(limit: number): { supplierDid: string; quote: SignedQuote; acceptedAt: number }[];
+  /**
    * Record an accepted revision. Returns false when this revision number is
    * already taken — the primary key IS the compare-and-swap, so a second
    * successor of one head loses here rather than overwriting the first.
@@ -88,6 +94,28 @@ export class SQLiteBuyerQuoteRepository implements BuyerQuoteRepository {
       .map(rowToQuote);
   }
 
+  listHeads(limit: number): { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] {
+    const rows = this.db.query(
+      `SELECT q.supplier_did, q.quote_digest, q.record_json, q.accepted_at
+         FROM commerce_buyer_quotes q
+        WHERE q.revision_num = (
+          SELECT MAX(h.revision_num) FROM commerce_buyer_quotes h
+           WHERE h.supplier_did = q.supplier_did AND h.quote_id = q.quote_id)
+        ORDER BY q.accepted_at DESC, q.quote_digest
+        LIMIT ?`,
+      [limit],
+    );
+    const out: { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] = [];
+    for (const row of rows) {
+      try {
+        out.push({ supplierDid: String(row.supplier_did), quote: rowToQuote(row), acceptedAt: Number(row.accepted_at) });
+      } catch (err) {
+        if (!(err instanceof BuyerQuoteIntegrityError)) throw err;
+      }
+    }
+    return out;
+  }
+
   append(args: {
     supplierDid: string;
     quoteId: string;
@@ -118,6 +146,7 @@ export class SQLiteBuyerQuoteRepository implements BuyerQuoteRepository {
 /** Test double. A production caller would be the bug. */
 export class InMemoryBuyerQuoteRepository implements BuyerQuoteRepository {
   private readonly rows = new Map<string, SignedQuote[]>();
+  private readonly acceptedAt = new Map<string, number>();
 
   private key(supplierDid: string, quoteId: string): string {
     return `${supplierDid} ${quoteId}`;
@@ -129,11 +158,21 @@ export class InMemoryBuyerQuoteRepository implements BuyerQuoteRepository {
     );
   }
 
-  append(args: { supplierDid: string; quoteId: string; quote: SignedQuote }): boolean {
+  listHeads(limit: number): { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] {
+    const heads: { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] = [];
+    for (const [key, revisions] of this.rows) {
+      const head = [...revisions].sort((a, b) => Number(b.quote_revision) - Number(a.quote_revision))[0];
+      if (head !== undefined) heads.push({ supplierDid: key.split(' ')[0] ?? '', quote: head, acceptedAt: this.acceptedAt.get(head.quote_digest) ?? 0 });
+    }
+    return heads.sort((a, b) => b.acceptedAt - a.acceptedAt || a.quote.quote_digest.localeCompare(b.quote.quote_digest)).slice(0, limit);
+  }
+
+  append(args: { supplierDid: string; quoteId: string; quote: SignedQuote; acceptedAt?: number }): boolean {
     const k = this.key(args.supplierDid, args.quoteId);
     const held = this.rows.get(k) ?? [];
     if (held.some((entry) => entry.quote_revision === args.quote.quote_revision)) return false;
     this.rows.set(k, [...held, args.quote]);
+    this.acceptedAt.set(args.quote.quote_digest, args.acceptedAt ?? 0);
     return true;
   }
 }

@@ -64,6 +64,7 @@ import {
   validateDeliveryProjection,
   validateExtractionCommitment,
   validatePurchaseOrderProposal,
+  readPurchaseOrderProposal,
   type CatalogExtractionBinding,
   type CatalogItem,
   type CatalogPointer,
@@ -73,6 +74,7 @@ import {
   type OrderState,
   type PurchaseOrderProposal,
   type Sha256Fn,
+  type SignedQuote,
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../../audit/service';
@@ -171,6 +173,7 @@ import {
   describeDraftForIntegration,
   listOrderDecisionEvents,
   parseOrdersCursor,
+  settingsRevision,
   type IntegrationScope,
 } from '../../commerce/integration';
 import {
@@ -222,7 +225,7 @@ import { askReconcilePolls } from '../../commerce/reconcile_poller';
 import { makeServiceQueryReconcileSend } from '../../commerce/reconcile_sweeper';
 import { buildReconciliationCensus } from '../../commerce/reconciliation_census';
 import { beginReferenceInstall } from '../../commerce/reference_install';
-import { BUYER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
+import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
 import { rehydrateQuoteRequest } from '../../commerce/rehydrate';
 import {
   describeDisagreement,
@@ -252,6 +255,8 @@ import {
 } from '../../commerce/staff_grants';
 import { setStaffPin } from '../../commerce/staff_pins';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
+import { bindSupplierListing, describeSupplierListing } from '../../commerce/supplier_listing';
+import { bindReferenceRunner } from '../../commerce/supplier_runner';
 import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
 import { compareTender, createTender } from '../../commerce/tender';
 import { getTradeDocumentDispatcher, installTradeDocumentDispatcher } from '../../commerce/trade_dispatch';
@@ -264,7 +269,7 @@ import {
 } from '../../commerce/trade_ledger';
 import { TradeLedgerService } from '../../commerce/trade_ledger_service';
 import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
-import { revokePluginDeviceForTeardown } from '../../devices/registry';
+import { getDeviceByDID, revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
 import {
   bindVerifiedRunnerDevice,
@@ -272,7 +277,7 @@ import {
   PluginCommerceObligationError,
   uninstall,
 } from '../../plugins/install_service';
-import { getPluginInstallRepository } from '../../plugins/registry';
+import { getPluginInstallRepository, type PluginInstall } from '../../plugins/registry';
 import { WorkflowTaskState } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
 
@@ -752,6 +757,135 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * payload — so a caller that re-planned the order rebuilt both halves and
    * passed. Core now mints the payload here and keeps it; the send names it.
    */
+  /**
+   * Review item 7 — the quote-first buyer lane, for a node with no photo.
+   *
+   * `GET /v1/commerce/buyer/quotes` lists the head revision of every quote
+   * this node RECEIVED (the existing `/v1/commerce/quotes` lists quotes it
+   * issued). `POST /v1/commerce/orders/from_quote` builds the order from one
+   * of them — Core builds it, from the retained verified quote and its
+   * retained request, through the same builder the photo lane's approve uses
+   * — and retains the owner's approval; `/v1/commerce/orders/submit` sends
+   * it. A caller names a quote, never lines, prices or totals. Presence is
+   * required as on every approval that commits money.
+   */
+  router.get('/v1/commerce/buyer/quotes', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const requested = Number(req.query.limit ?? 50);
+    const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, 200) : 50;
+    const now = Date.now();
+    return {
+      status: 200,
+      body: {
+        quotes: runtime.buyerQuotes.listHeads(limit).map(({ supplierDid, quote, acceptedAt }) => ({
+          supplier_did: supplierDid,
+          quote_id: quote.quote_id,
+          quote_revision: quote.quote_revision,
+          quote_digest: quote.quote_digest,
+          request_id: quote.request_id,
+          total: quote.total,
+          valid_until: quote.valid_until,
+          expired: Date.parse(quote.valid_until) <= now,
+          received_at: acceptedAt,
+          lines: quote.lines.map((line) => ({
+            line_id: line.line_id,
+            product: line.offered_product,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+            line_subtotal: line.line_subtotal,
+            stock_status: line.stock_status,
+          })),
+        })),
+      },
+    };
+  });
+
+  router.post('/v1/commerce/orders/from_quote', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(Date.now())) {
+      return {
+        status: 403,
+        body: { error: 'no_user_presence', detail: 'approving an order needs a person present' },
+      };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.supplier_did !== 'string' || body.supplier_did === '') {
+      return { status: 400, body: { error: 'supplier_did is required' } };
+    }
+    if (typeof body.quote_id !== 'string' || body.quote_id === '') {
+      return { status: 400, body: { error: 'quote_id is required' } };
+    }
+    const chain = runtime.buyerQuotes.chain(body.supplier_did, body.quote_id);
+    const quote = chain[chain.length - 1];
+    if (quote === undefined) return { status: 404, body: { error: 'no_such_quote' } };
+    if (Date.parse(quote.valid_until) <= Date.now()) {
+      return { status: 409, body: { error: 'quote_expired', valid_until: quote.valid_until } };
+    }
+    const self = ownerDid();
+    if (self === null) return { status: 503, body: { error: 'node_identity_unavailable' } };
+    const installRepo = getPluginInstallRepository();
+    if (installRepo === null) return { status: 503, body: { error: 'install_registry_unavailable' } };
+    const activeBuyerInstall = installRepo
+      .list()
+      .find((i) => i.pluginId === BUYER_REFERENCE_MANIFEST.plugin_id && i.status === 'active');
+    if (activeBuyerInstall === undefined) {
+      return { status: 403, body: { error: 'buyer_pack_not_installed' } };
+    }
+    const built = buildOrderFromHeldQuote(runtime, quote, body.projection, Date.now());
+    if (!built.ok) return built.response;
+    const order = built.order;
+    const resolved = resolveActingInstall(
+      buyerApprovalContextFor({
+        self,
+        quote,
+        install: activeBuyerInstall,
+        vouchedBy: self,
+        attributionActive: runtime.attributionBoundary.crossedAt() !== null,
+      }),
+      BUYER_REFERENCE_MANIFEST.plugin_id,
+    );
+    if (!resolved.ok) {
+      return {
+        status: resolved.refusal === 'install_registry_unavailable' ? 503 : 403,
+        body: { error: resolved.refusal, detail: resolved.detail },
+      };
+    }
+    const payload = buildBuyerApprovalPayload(order, resolved.context);
+    if (!payload.ok) return { status: 422, body: { error: 'approval_incomplete', missing: payload.missing } };
+    const listing = resolveServiceBinding({
+      serviceUri: resolved.context.serviceUri,
+      supplierDid: order.supplier_did,
+      statedRkey: body.service_rkey,
+    });
+    if (!listing.ok) return { status: 400, body: { error: listing.refusal, detail: listing.detail } };
+    const now = Date.now();
+    const approvalId = newApprovalId();
+    const retained = runtime.orderApprovals.put({
+      approvalId,
+      order,
+      context: resolved.context,
+      serviceRkey: listing.serviceRkey,
+      createdAt: now,
+      expiresAt: now + ORDER_APPROVAL_TTL_MS,
+    });
+    if (!retained) return { status: 409, body: { error: 'approval_not_retained' } };
+    return {
+      status: 200,
+      body: {
+        approval_id: approvalId,
+        approved: payload.payload,
+        purchase_order_id: order.purchase_order_id,
+        expires_at: now + ORDER_APPROVAL_TTL_MS,
+      },
+    };
+  });
+
   router.post('/v1/commerce/orders/prepare', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
@@ -1830,69 +1964,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // priced, and the yardstick is the request THIS NODE retained when it
     // asked. On the draft path Core sent that request itself, so a missing
     // retained row is a broken node, not a documented skip: fail closed.
-    const retainedRequest = runtime.buyerQuoteRequests.get(quote.request_id);
-    if (retainedRequest === null) {
-      return { status: 409, body: { error: 'request_not_retained' } };
-    }
-    // The delivery is the projection the quote was PRICED against (the
-    // retained request) unless the surface deliberately EXTENDS it. A
-    // surface that omits the projection — the ask-time region isn't held
-    // once the RFQ goes out — approves against the priced region rather
-    // than a bogus default, which otherwise diverged and refused every
-    // approve as order_quote_mismatch.
-    const suppliedProjection =
-      body.projection !== null && typeof body.projection === 'object'
-        ? completeProjection(body.projection as Record<string, unknown>)
-        : null;
-    const projection =
-      suppliedProjection ??
-      completeProjection(retainedRequest.delivery.projection as unknown as Record<string, unknown>);
-    if (projection === null || typeof projection !== 'object') {
-      return { status: 400, body: { error: 'projection is required' } };
-    }
-    const invalidProjection = validateDeliveryProjection(projection, hash);
-    if (invalidProjection !== null) {
-      return { status: 400, body: { error: 'invalid_projection', detail: invalidProjection } };
-    }
-    const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
-    const orderDraftBody = {
-      // §9.13 — the ORDER answers in the conversation's dialect, which is
-      // the quote's. A hardcoded 1.0 here refused every 1.1 conversation
-      // the moment §4.5 terms arrived ("order_quote_mismatch"); the quote
-      // is Core's own verified record, so its version is the one fact.
-      protocol_version: quote.protocol_version,
-      purchase_order_id: purchaseOrderId,
-      buyer_did: quote.buyer_did,
-      supplier_did: quote.supplier_did,
-      quote_id: quote.quote_id,
-      quote_digest: quote.quote_digest,
-      accepted_lines: quote.lines.map((line) => ({
-        line_id: line.line_id,
-        product: line.offered_product,
-        quantity: line.quantity,
-      })),
-      delivery: projection as Record<string, unknown>,
-      approved_total: quote.total,
-      accepted_terms_digest: quote.terms_digest,
-      idempotency_key: purchaseOrderId,
-      submitted_at: new Date(Date.now()).toISOString(),
-    };
-    const order = {
-      ...orderDraftBody,
-      order_digest: commerceRecordDigest('order', orderDraftBody as Record<string, unknown>, hash),
-    } as unknown as PurchaseOrderProposal;
-    const invalidOrder = validatePurchaseOrderProposal(order, hash);
-    if (invalidOrder !== null) {
-      return { status: 422, body: { error: 'order_build_failed', detail: invalidOrder } };
-    }
-    const against = verifyOrderAgainstQuote(
-      order,
-      quote,
-      retainedRequest.delivery.projection as unknown as Record<string, unknown>,
-    );
-    if (against !== null) {
-      return { status: 409, body: { error: 'order_quote_mismatch', detail: against } };
-    }
+    const built0 = buildOrderFromHeldQuote(runtime, quote, body.projection, Date.now());
+    if (!built0.ok) return built0.response;
+    const order = built0.order;
 
     // §5.5 — THE DIVERGENCE WARNING, computed here because this response IS
     // the approval card's content: the buyer sees it exactly where they
@@ -1971,48 +2045,14 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
 
     // The retained-approval machinery, invoked INTERNALLY — Core derives
     // the card's context from the quote it verified.
-    const context: BuyerApprovalContext = {
-      actingBusinessDid: self,
-      principal: {
-        principalDid: self,
-        authorityDomain: BUYER_ORDER_AUTHORITY_DOMAIN,
-        policyRevision: null,
-      },
-      serviceUri: `at://${quote.supplier_did}/com.dinakernel.service.profile/self`,
-      displayedLabels: Object.fromEntries(
-        quote.lines.map((line) => [line.line_id, line.offered_product.value]),
-      ),
-      productKeys: Object.fromEntries(
-        quote.lines.map((line) => [
-          line.line_id,
-          `${line.offered_product.scheme}:${line.offered_product.value}`,
-        ]),
-      ),
-      linePrices: Object.fromEntries(quote.lines.map((line) => [line.line_id, line.unit_price])),
-      charges: [],
-      quoteRevision: Number(quote.quote_revision),
-      quoteExpiresAt: quote.valid_until,
-      // Core's own discovery, re-verified below — never a caller's claim.
-      install: {
-        installId: activeBuyerInstall.installId,
-        capabilityId: 'com.dinakernel.commerce.place-order',
-        manifestCid: activeBuyerInstall.currentCid,
-        installScopeHash: activeBuyerInstall.installScopeHash,
-        configRevision: String(activeBuyerInstall.configRevision),
-      },
+    const context = buyerApprovalContextFor({
+      self,
+      quote,
+      install: activeBuyerInstall,
       source,
-      // §6.4 — WHO vouched: the staff device DID on the staff path, the
-      // owner otherwise. Authority stays the owner's (the grant IS the
-      // owner's standing authorization); attribution names the human.
-      ...(runtime.attributionBoundary.crossedAt() === null
-        ? {}
-        : {
-            attribution: {
-              version: 2 as const,
-              vouchedBy: caller.kind === 'staff' ? caller.deviceDid : self,
-            },
-          }),
-    };
+      vouchedBy: caller.kind === 'staff' ? caller.deviceDid : self,
+      attributionActive: runtime.attributionBoundary.crossedAt() !== null,
+    });
     const resolvedInstall = resolveActingInstall(context, BUYER_REFERENCE_MANIFEST.plugin_id);
     if (!resolvedInstall.ok) {
       return {
@@ -2063,7 +2103,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         ok: true,
         approval_id: approvalId,
         approved: built.payload,
-        purchase_order_id: purchaseOrderId,
+        purchase_order_id: order.purchase_order_id,
         expires_at: now + ORDER_APPROVAL_TTL_MS,
         // §5.5 — per-line, beside the decision it informs.
         divergence,
@@ -2597,6 +2637,130 @@ function registerProcurementRoutes(router: CoreRouter, ownerCapability?: string)
  * fixing a settings screen one refusal at a time is an owner who gives up on
  * the third round trip.
  */
+/**
+ * Build the purchase order a HELD quote supports — the one construction both
+ * the photo lane's approve and the quote-first lane (`orders/from_quote`,
+ * review item 7) use. The quote is the buyer's own retained, verified copy;
+ * the delivery projection is the retained request's unless the owner supplies
+ * one; the order is validated and re-bound to the quote before anything is
+ * retained. A caller cannot hand in lines, prices or totals: they come from
+ * the quote the supplier signed.
+ */
+function buildOrderFromHeldQuote(
+  runtime: CommerceRuntime,
+  quote: SignedQuote,
+  suppliedProjectionRaw: unknown,
+  nowMs: number,
+): { ok: true; order: PurchaseOrderProposal } | { ok: false; response: CoreResponse } {
+  const refuse = (status: number, body: Record<string, unknown>) => ({
+    ok: false as const,
+    response: { status, body },
+  });
+  const retainedRequest = runtime.buyerQuoteRequests.get(quote.request_id);
+  if (retainedRequest === null) return refuse(409, { error: 'request_not_retained' });
+  const suppliedProjection =
+    suppliedProjectionRaw !== null && typeof suppliedProjectionRaw === 'object'
+      ? completeProjection(suppliedProjectionRaw as Record<string, unknown>)
+      : null;
+  const projection =
+    suppliedProjection ??
+    completeProjection(retainedRequest.delivery.projection as unknown as Record<string, unknown>);
+  if (projection === null || typeof projection !== 'object') {
+    return refuse(400, { error: 'projection is required' });
+  }
+  const invalidProjection = validateDeliveryProjection(projection, hash);
+  if (invalidProjection !== null) {
+    return refuse(400, { error: 'invalid_projection', detail: invalidProjection });
+  }
+  const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
+  const orderDraftBody = {
+    protocol_version: quote.protocol_version,
+    purchase_order_id: purchaseOrderId,
+    buyer_did: quote.buyer_did,
+    supplier_did: quote.supplier_did,
+    quote_id: quote.quote_id,
+    quote_digest: quote.quote_digest,
+    accepted_lines: quote.lines.map((line) => ({
+      line_id: line.line_id,
+      product: line.offered_product,
+      quantity: line.quantity,
+    })),
+    delivery: projection as Record<string, unknown>,
+    approved_total: quote.total,
+    accepted_terms_digest: quote.terms_digest,
+    idempotency_key: purchaseOrderId,
+    submitted_at: new Date(nowMs).toISOString(),
+  };
+  const read = readPurchaseOrderProposal(
+    {
+      ...orderDraftBody,
+      order_digest: commerceRecordDigest('order', orderDraftBody as Record<string, unknown>, hash),
+    },
+    hash,
+  );
+  if (!read.ok) return refuse(422, { error: 'order_build_failed', detail: read.error });
+  const against = verifyOrderAgainstQuote(
+    read.order,
+    quote,
+    retainedRequest.delivery.projection as unknown as Record<string, unknown>,
+  );
+  if (against !== null) return refuse(409, { error: 'order_quote_mismatch', detail: against });
+  return { ok: true, order: read.order };
+}
+
+/** The approval context for an order built from a held quote — one shape for both lanes. */
+function buyerApprovalContextFor(args: {
+  self: string;
+  quote: SignedQuote;
+  install: PluginInstall;
+  source?: BuyerApprovalContext['source'];
+  vouchedBy: string;
+  attributionActive: boolean;
+}): BuyerApprovalContext {
+  const { quote } = args;
+  return {
+    actingBusinessDid: args.self,
+    principal: {
+      principalDid: args.self,
+      authorityDomain: BUYER_ORDER_AUTHORITY_DOMAIN,
+      policyRevision: null,
+    },
+    serviceUri: `at://${quote.supplier_did}/com.dinakernel.service.profile/self`,
+    displayedLabels: Object.fromEntries(
+      quote.lines.map((line) => [line.line_id, line.offered_product.value]),
+    ),
+    productKeys: Object.fromEntries(
+      quote.lines.map((line) => [
+        line.line_id,
+        `${line.offered_product.scheme}:${line.offered_product.value}`,
+      ]),
+    ),
+    linePrices: Object.fromEntries(quote.lines.map((line) => [line.line_id, line.unit_price])),
+    charges: [],
+    quoteRevision: Number(quote.quote_revision),
+    quoteExpiresAt: quote.valid_until,
+    install: {
+      installId: args.install.installId,
+      capabilityId: 'com.dinakernel.commerce.place-order',
+      manifestCid: args.install.currentCid,
+      installScopeHash: args.install.installScopeHash,
+      configRevision: String(args.install.configRevision),
+    },
+    ...(args.source === undefined ? {} : { source: args.source }),
+    ...(args.attributionActive
+      ? { attribution: { version: 2 as const, vouchedBy: args.vouchedBy } }
+      : {}),
+  };
+}
+
+/** The name a freshly created supplier listing carries: the business's legal name when set. */
+function supplierListingName(): string {
+  const business = getCommerceRuntime()?.settings.readBusiness();
+  return business !== undefined && business.ok && business.settings.legalName.trim() !== ''
+    ? business.settings.legalName.trim()
+    : 'Commerce';
+}
+
 function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerOnlyGuard = makeOwnerGuard(
     ownerCapability,
@@ -2680,8 +2844,32 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
         plugin_id: pluginId,
         status: 'pending',
         consent: begun.consent,
+        // Item 6 — the consent names the listing the pack will join, before the yes.
+        ...(role === 'supplier' ? { listing: describeSupplierListing() } : {}),
       },
     };
+  });
+
+  /**
+   * Item 5 — pair the first-party reference runner to a PENDING supplier
+   * install, instead of an external runner through the admin ceremony. Core
+   * mints the device and keeps only its DID; consent is still `confirm`.
+   */
+  router.post('/v1/commerce/install/bind_reference_runner', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.install_id !== 'string' || body.install_id === '') {
+      return { status: 400, body: { error: 'install_id_required' } };
+    }
+    const bound = await bindReferenceRunner(body.install_id);
+    if (!bound.ok) {
+      return {
+        status: bound.refusal === 'install_not_found' ? 404 : 409,
+        body: { error: bound.refusal, ...(bound.detail !== undefined ? { detail: bound.detail } : {}) },
+      };
+    }
+    return { status: 200, body: { ok: true, device_did: bound.deviceDid } };
   });
 
   router.post('/v1/commerce/install/bind_device', async (req): Promise<CoreResponse> => {
@@ -2710,10 +2898,53 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
       return { status: 400, body: { error: 'install_id_required' } };
     }
     const deviceDid = typeof body.device_did === 'string' ? body.device_did : undefined;
+    const isSupplier =
+      getPluginInstallRepository()?.getById(body.install_id)?.pluginId ===
+      SUPPLIER_REFERENCE_MANIFEST.plugin_id;
+    // Item 6 — a public `self` listing cannot carry the commerce lanes; say so
+    // BEFORE consenting, so the owner never holds an active pack no buyer reaches.
+    if (isSupplier && describeSupplierListing().visibility === 'public') {
+      return {
+        status: 409,
+        body: {
+          error: 'self_listing_public',
+          detail: 'the self listing is public; move that service to its own rkey, then confirm again',
+        },
+      };
+    }
     const activated = confirmConsent(body.install_id, deviceDid, Date.now());
-    return activated
-      ? { status: 200, body: { ok: true, status: 'active' } }
-      : { status: 409, body: { error: 'consent_refused' } };
+    if (!activated) return { status: 409, body: { error: 'consent_refused' } };
+    if (!isSupplier) return { status: 200, body: { ok: true, status: 'active' } };
+    const listing = await bindSupplierListing({ installId: body.install_id, name: supplierListingName() });
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        status: 'active',
+        listing: listing.ok
+          ? { ok: true, rkey: listing.rkey, discoverability: listing.discoverability }
+          : { ok: false, error: listing.refusal, detail: listing.detail },
+      },
+    };
+  });
+
+  /** Item 6 — write (or rewrite) the listing binding for an ACTIVE supplier install. */
+  router.post('/v1/commerce/install/bind_listing', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.install_id !== 'string' || body.install_id === '') {
+      return { status: 400, body: { error: 'install_id_required' } };
+    }
+    const install = getPluginInstallRepository()?.getById(body.install_id) ?? null;
+    if (install === null) return { status: 404, body: { error: 'install_not_found' } };
+    if (install.pluginId !== SUPPLIER_REFERENCE_MANIFEST.plugin_id || install.status !== 'active') {
+      return { status: 409, body: { error: 'not_an_active_supplier_install' } };
+    }
+    const listing = await bindSupplierListing({ installId: install.installId, name: supplierListingName() });
+    return listing.ok
+      ? { status: 200, body: { ok: true, rkey: listing.rkey, discoverability: listing.discoverability } }
+      : { status: 409, body: { error: listing.refusal, detail: listing.detail } };
   });
 
   /**
@@ -4571,6 +4802,8 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
                   totals: e.order.totals,
                   lines: e.order.lines.map((l) => ({
                     line_id: l.lineId,
+                    product: l.product,
+                    ...(l.name !== undefined ? { name: l.name } : {}),
                     quantity: l.quantity,
                     ...(l.unitPrice !== undefined ? { unit_price: l.unitPrice } : {}),
                   })),
@@ -4910,6 +5143,9 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
                 state: task.status,
                 expected_revision: payload.expected_revision,
                 proposed_by: payload.proposed_by,
+                ...(payload.proposed_by_name !== undefined
+                  ? { proposed_by_name: payload.proposed_by_name }
+                  : {}),
                 created_at: task.created_at,
                 ...(task.status === WorkflowTaskState.Completed
                   ? { applied_revision: appliedRevisionOf(task) }
@@ -4932,6 +5168,16 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       return { status: 400, body: { error: 'command_id is required' } };
     }
     if (body.kind !== 'supplier') return { status: 400, body: { error: "kind must be 'supplier'" } };
+    // A null revision is what the status door reports before the owner has
+    // saved supplier settings. A proposal needs a base the owner set, so the
+    // answer names that, and names the revision to use if one exists now.
+    if (body.expected_revision === null) {
+      const read = runtime.settings.readSupplier();
+      const current = read.ok ? settingsRevision(read) : null;
+      return current === null
+        ? { status: 409, body: { error: 'supplier_settings_absent' } }
+        : { status: 409, body: { error: 'revision_conflict', current_revision: current } };
+    }
     if (typeof body.expected_revision !== 'string' || !SHA256_HEX_RE.test(body.expected_revision)) {
       return { status: 400, body: { error: 'expected_revision must be the revision digest last read' } };
     }
@@ -4953,6 +5199,9 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       expectedRevision: body.expected_revision,
       controls,
       proposedBy: caller.kind === 'staff' ? caller.deviceDid : 'owner',
+      ...(caller.kind === 'staff'
+        ? { proposedByName: getDeviceByDID(caller.deviceDid)?.deviceName ?? '' }
+        : {}),
     });
     switch (outcome.kind) {
       case 'pending':
@@ -4978,7 +5227,7 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
           case 'unsupported_control':
             return { status: 400, body: { error: 'unsupported_control', detail: outcome.detail } };
           case 'settings_absent':
-            return { status: 409, body: { error: 'supplier_settings_unavailable' } };
+            return { status: 409, body: { error: 'supplier_settings_absent' } };
           case 'workflow_unavailable':
             return { status: 503, body: { error: 'workflow service not wired' } };
         }
@@ -5291,6 +5540,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
                 ...(settings.tradingCurrency === undefined
                   ? {}
                   : { tradingCurrency: settings.tradingCurrency }),
+                rowCategories: draft.provenanceClass !== 'model_derived',
               },
               // The draft's OWN stamp. A repair is not a new draft, and
               // re-minting would move every item's revision and timestamp — and

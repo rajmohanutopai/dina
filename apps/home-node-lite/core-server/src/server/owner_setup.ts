@@ -27,6 +27,10 @@ interface OwnerSetupApp {
 
 export const OWNER_SETUP_PREFIX = '/v1/owner/setup';
 
+// Printable, no control characters: the name is shown on owner cards.
+// eslint-disable-next-line no-control-regex
+const STAFF_NAME_RE = /^[^\u0000-\u001f\u007f]{1,64}$/;
+
 export interface RegisterOwnerSetupOptions {
   enabled: boolean;
   ownerCapability: string;
@@ -56,6 +60,7 @@ export function registerOwnerSetupRoutes(
       home_did: nodeDID,
       msgbox_url: options.msgboxURL,
       coding_agents: codingAgents(),
+      staff_devices: staffDevices(),
       phone: options.phoneManager?.status() ?? unavailablePhoneStatus(),
     };
   });
@@ -101,6 +106,59 @@ export function registerOwnerSetupRoutes(
       // revokeDeviceDurable cuts access before persistence. Report the storage
       // failure honestly so the owner retries until the tombstone is durable.
       return reply.code(503).send({ error: 'coding_agent_revoke_not_durable' });
+    }
+    return reply.code(204).send();
+  });
+
+  // A staff device — a till, a connector such as Jiffy's — is named by the
+  // owner here, and that name is what an owner card shows when the device
+  // proposes a change. The code pairs a device with role `staff` and no
+  // authority: grants are a separate owner act on the commerce routes.
+  app.post(`${OWNER_SETUP_PREFIX}/staff`, async (req, reply) => {
+    const request = req as OwnerSetupRequest;
+    if (!requireOwner(request, reply, options.ownerCapability)) return;
+    noStore(reply);
+    const nodeDID = getNodeDID();
+    if (nodeDID === null) {
+      return reply.code(503).send({ error: 'Home Node identity is not ready' });
+    }
+    const body = isRecord(request.body) ? request.body : {};
+    const deviceName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
+    if (!STAFF_NAME_RE.test(deviceName)) {
+      return reply.code(400).send({
+        error: 'device_name is required: 1 to 64 printable characters',
+      });
+    }
+    try {
+      const { code, expiresAt } = generatePairingCode({ deviceName, role: 'staff' });
+      return reply.code(201).send({
+        setup_code: buildAgentSetupCode({
+          msgboxUrl: options.msgboxURL,
+          homenodeDid: nodeDID,
+          code,
+          deviceName,
+        }),
+        device_name: deviceName,
+        expires_at: expiresAt,
+      });
+    } catch {
+      return reply.code(503).send({ error: 'Could not create a setup code; retry shortly' });
+    }
+  });
+
+  app.delete(`${OWNER_SETUP_PREFIX}/staff/:deviceId`, async (req, reply) => {
+    const request = req as OwnerSetupRequest;
+    if (!requireOwner(request, reply, options.ownerCapability)) return;
+    noStore(reply);
+    const deviceId = request.params?.deviceId ?? '';
+    const device = deviceId === '' ? null : getDevice(deviceId);
+    if (device === null || device.revoked || device.role !== 'staff') {
+      return reply.code(404).send({ error: 'staff_device_not_found' });
+    }
+    // The revoke cascade ends the device's staff grants and presence too.
+    const result = await revokeDeviceDurable(device.deviceId);
+    if (!result.durable) {
+      return reply.code(503).send({ error: 'staff_device_revoke_not_durable' });
     }
     return reply.code(204).send();
   });
@@ -163,6 +221,18 @@ function unavailablePhoneStatus(): PhoneApprovalStatus {
 function codingAgents(): Record<string, unknown>[] {
   return listActiveDevices()
     .filter((device) => device.role === 'agent' && device.scope === 'coding')
+    .map((device) => ({
+      device_id: device.deviceId,
+      did: device.did,
+      name: device.deviceName,
+      created_at: device.createdAt,
+      last_seen: device.lastSeen,
+    }));
+}
+
+function staffDevices(): Record<string, unknown>[] {
+  return listActiveDevices()
+    .filter((device) => device.role === 'staff')
     .map((device) => ({
       device_id: device.deviceId,
       did: device.did,

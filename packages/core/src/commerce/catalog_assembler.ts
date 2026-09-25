@@ -20,6 +20,8 @@
  *   item_revision         minted once, here            (see below)
  *   freshness.generated_at minted once, here           (see below)
  *   category_ids          the seller's settings        — never the model
+ *                         (a non-model row may narrow to one configured id)
+ *   attributes.section    a non-model row's category text, as a label
  *   fulfilment_regions    the seller's settings        — never the model
  *   pack.sell_unit        unit_code + pack_size        → Quantity
  *   indicative_price      list_price + tradingCurrency → Money
@@ -39,6 +41,7 @@
  */
 
 import {
+  MAX_ATTRIBUTE_VALUE_LENGTH,
   isCurrencyCode,
   validateCatalogItem,
   type CatalogItem,
@@ -95,6 +98,15 @@ export interface AssemblySettings {
   fulfilmentRegions: readonly RegionRef[];
   /** Absent is legal until a row carries a price. */
   tradingCurrency?: string;
+  /**
+   * JIFFY review item 10: whether a row's `category` column is read at all.
+   * True only for rows no model produced (a connector, a CSV): such a row may
+   * narrow `category_ids` to ONE id the seller configured, and any other text
+   * rides as `attributes.section`, a label that governs nothing. A model's
+   * reading of a photograph never chooses a category, so the photo lane
+   * leaves this unset and its items carry the settings unchanged.
+   */
+  rowCategories?: boolean;
 }
 
 /**
@@ -112,10 +124,13 @@ export interface AssemblySettings {
  *
  * `Record<keyof CatalogItem, …>` so a field added to the wire type fails to
  * compile until someone says which side it falls on. That is the only reason
- * the unset ones are listed: `formulation_ref`, `relationship_claim_refs` and
- * `attributes` are never assigned below, and `row` is the fail-closed reading
- * of a field this lane does not yet set — it asks for a confirmation that is
- * not needed rather than skipping one that is.
+ * the unset ones are listed: `formulation_ref` and `relationship_claim_refs`
+ * are never assigned below, and `row` is the fail-closed reading of a field
+ * this lane does not yet set — it asks for a confirmation that is not needed
+ * rather than skipping one that is. `attributes` is assigned only from a
+ * non-model row's category text, so `row` is also its true origin.
+ * `category_ids` stays `minted`: every id is one the seller configured, and
+ * only a non-model row may narrow among them.
  */
 export const CATALOG_FIELD_ORIGIN: Readonly<Record<keyof CatalogItem, 'row' | 'minted'>> = {
   // Minted by the assembler or supplied by the seller's settings. None of
@@ -281,16 +296,27 @@ export function assembleCatalogItems(args: {
       continue;
     }
 
+    // Settings win for ids. A row naming one of them exactly narrows to it;
+    // any other text is kept as a label rather than dropped or promoted.
+    const rowCategory =
+      settings.rowCategories === true && source.category !== undefined
+        ? source.category.trim()
+        : '';
+    const narrowed = rowCategory !== '' && settings.categoryIds.includes(rowCategory);
+
     const item: CatalogItem = {
       product: source.product,
       supplier_did: identity.supplierDid,
       catalog_id: identity.catalogId,
       item_revision: stamp.itemRevision,
       name: source.name,
-      category_ids: [...settings.categoryIds],
+      category_ids: narrowed ? [rowCategory] : [...settings.categoryIds],
       pack: { sell_unit: sellUnit },
       fulfilment_regions: [...settings.fulfilmentRegions],
       freshness: { generated_at: stamp.generatedAtIso },
+      ...(rowCategory !== '' && !narrowed
+        ? { attributes: { section: rowCategory.slice(0, MAX_ATTRIBUTE_VALUE_LENGTH) } }
+        : {}),
       ...(source.brand === undefined ? {} : { brand: source.brand }),
       ...(source.description === undefined ? {} : { description: source.description }),
       ...(source.variant_of === undefined ? {} : { family_ref: source.variant_of }),

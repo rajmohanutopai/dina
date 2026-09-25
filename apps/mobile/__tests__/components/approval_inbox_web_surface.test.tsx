@@ -68,8 +68,9 @@ const PROPOSAL = task(
     controls: { orderAcceptance: 'auto' },
     content_digest: 'b'.repeat(64),
     proposed_by: 'did:key:zJiffy',
+    proposed_by_name: 'Jiffy till connector',
   },
-  'Apply 1 supplier setting change(s) proposed by did:key:zJiffy?',
+  'Apply 1 supplier setting change(s) proposed by "Jiffy till connector"?',
 );
 const CHECKOUT = task(
   'order-checkout-abc',
@@ -127,6 +128,8 @@ describe('approval inbox on the web page (decides through Brain)', () => {
     await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-integration-settings-abc')).toBeTruthy());
     expect(screen.getByText('Apply a settings change?')).toBeTruthy();
     expect(screen.getByText('orderAcceptance: "auto"')).toBeTruthy();
+    // The card names the device as the owner named it, beside its DID.
+    expect(screen.getByText(/^proposed by Jiffy till connector \(did:key:/)).toBeTruthy();
     expect(screen.queryByTestId('approvals-approve-integration-settings-abc')).toBeNull();
     // An ordinary approval still decides from here.
     expect(screen.getByTestId('approvals-approve-intent-1')).toBeTruthy();

@@ -528,6 +528,7 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
       lines: [
         {
           lineId: 'l1',
+          product: order.accepted_lines[0].product,
           quantity: order.accepted_lines[0].quantity,
           unitPrice: quote.lines[0].unit_price,
         },

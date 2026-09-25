@@ -95,10 +95,23 @@ list_price_minor_units, currency
 
 Rows are Clover-derived and allowlisted on Jiffy's side. Unknown columns are
 reported as findings against the shape, at row 1, and refuse nothing else.
+
+**Categories.** The owner's settings own category ids (`catalogCategoryIds`);
+a row never invents one. A row whose `category` is exactly one of those ids
+narrows that item's `category_ids` to it. Any other text, such as Clover's
+"Cakes & Pastries", rides on the item as `attributes.section` (clipped to 200
+characters), a label that governs nothing, and the item carries every
+configured id. This applies to connector and CSV rows only; a model reading a
+photograph never picks a category.
 The endpoint carries a source digest header so Dina's draft can record which
 bytes it read. Authentication is a bearer token per merchant, held in Dina's
 credential broker as a resource the owner created; the token never appears in
 a URL and never crosses an origin.
+
+**Transport exception.** The pull is an outbound HTTPS request from the
+owner's node to the endpoint the owner bound, not a D2D or agent message, so
+it does not travel through MsgBox. `dina_details.md` records this exception:
+an outbound pull from an owner-bound source.
 
 **What the owner does once, on their own surface.** Store the credential
 (`PUT /v1/commerce/credentials/:resource`), bind the source
@@ -136,12 +149,19 @@ owner); `published` shows the new `snapshot_sequence` (applied).
 
 ### 3.2 Piece B — integration scopes on the staff machinery
 
-**Identity.** Jiffy pairs ONE device per merchant node with role `staff`
-(`POST /v1/pair/initiate` by the owner, `POST /v1/pair/complete` by Jiffy with
-its own Ed25519 key). The device name is what the owner sees on every card
-("Jiffy integration"). Transport is the MsgBox RPC tunnel the dina-agent CLI
-already uses: sealed box, identity binding, inner signature, then the normal
-router. A revoked device loses every grant in one write (`revokeDevice`).
+**Identity.** Jiffy pairs ONE device per merchant node with role `staff`.
+The owner mints the code with `POST /v1/owner/setup/staff {device_name}`
+(owner capability header; the owner console's "Staff devices" section is the
+button), which answers `201 { setup_code: 'dina1:…', device_name, expires_at }`.
+Jiffy completes it with `POST /v1/pair/complete` and its own Ed25519 key. The
+name is 1 to 64 printable characters and is the owner's: a staff code ignores
+a `device_name` sent at completion, because every card the device raises
+names it ("Jiffy till connector"). `GET /v1/owner/setup/status` lists
+`staff_devices`; `DELETE /v1/owner/setup/staff/:device_id` revokes one, and a
+revoked device loses every grant and its PIN in one cascade. The admin-only
+`/v1/pair/initiate` still works; it is no longer the owner's path. Transport
+is the MsgBox RPC tunnel the dina-agent CLI already uses: sealed box,
+identity binding, inner signature, then the normal router.
 
 Why `staff` and not a new role: the staff class already has its own caller
 type mapped in the signed pipeline, its own rows in the authz matrix, the
@@ -168,8 +188,11 @@ Each route is exact and method-bound in `authz.ts` with `allowed:
 {'owner','staff'}`, and re-checks the live grant in the handler through the
 same gate `trade/inbox` uses (`runtime.staffGrants.listByDevice` → refuse
 `no live staff grant`). The owner creates the grants with the existing
-`POST /v1/commerce/staff-grants`; the owner console lists and revokes them
-with the existing routes. No new grant surface.
+`POST /v1/commerce/staff-grants { device_did, scope, installs, pin? }`, which
+needs owner presence. The FIRST grant for a device must carry `pin` (at least
+4 characters): it sets the device's presence PIN, and without it the answer is
+`400 pin_required`. Later grants may omit it or rotate it. The owner console
+lists and revokes grants with the existing routes. No new grant surface.
 
 **B1. Status read.**
 
@@ -207,7 +230,8 @@ decided_at
 buyer_did, purchase_order_id
 order_digest, quote_digest, acknowledgement_digest
 totals: { currency, minor_units }                                    // exact, from the bound quote
-lines: [{ line_id, quantity, unit_price }]
+lines: [{ line_id, product, name?, quantity, unit_price }]      // product as signed on the order;
+                                                                      // name from the live published catalogue
 delivery_projection                                                   // the permitted projection only
 supplier_order_id?                                                    // when the owner recorded one
 ```
@@ -228,10 +252,19 @@ unknown_order` with no detail.
 ```
 POST /v1/commerce/integration/settings/proposal
 { command_id, kind: 'supplier', expected_revision, controls: { ...allowlisted fields } }
-→ 202 { proposal_id, state: 'pending_owner_approval' }
-  | 200 { state: 'applied', revision }        // same command_id, already decided
-  | 409 revision_conflict | 409 command_conflict | 400 unsupported_control
+→ 202 { task_id, state: 'pending_owner_approval' }
+  | 200 { state: 'applied', task_id, applied_revision }   // same command_id, already decided
+  | 409 revision_conflict { current_revision } | 409 command_conflict
+  | 409 supplier_settings_absent | 400 unsupported_control | 400 invalid_settings
 ```
+
+A proposal needs a base the owner set: until the owner saves supplier
+settings, `settings_revision.supplier` reads `null`, and a proposal (with
+`expected_revision: null` or any digest) answers `409
+supplier_settings_absent`. A `null` sent after settings exist answers `409
+revision_conflict` with the revision to use. The card and the listing name
+the proposer by the owner's device name (`proposed_by_name`) beside its DID
+(`proposed_by`).
 
 The route validates the controls with `validateSupplierSettings` on the
 merged record, refuses any field outside a fixed allowlist (`unsupported
@@ -282,8 +315,11 @@ already has.
 
 **Supplier side.**
 
-- `POST /v1/commerce/integration/orders/:order_digest/attachments` — scope
-  `integration_trade_evidence`. The handler loads the order by digest from
+- `POST /v1/commerce/integration/orders/attachments { command_id,
+  order_digest, kind, provider, payload, expires_at? }` — scope
+  `integration_trade_evidence`. `provider` is required and must match
+  `[a-z0-9][a-z0-9_-]{0,63}` (e.g. `clover`); it becomes `source.provider`.
+  The handler loads the order by digest from
   the durable store (foreign or unknown → `404 unknown_order`), refuses a
   `checkout_handoff` whose `amount` or currency differs from the accepted
   total (`409 amount_mismatch`; a checkout can never change price, currency
@@ -463,3 +499,53 @@ bypass.
 Two things Jiffy can start before Phase 1 lands: the catalogue endpoint
 (Phase 0 needs nothing from Dina), and the MsgBox device client, which is the
 dina-agent CLI's transport and already documented in `cli/`.
+
+---
+
+## 8. After the first integration review (2026-09-25)
+
+The Jiffy agent's review found eleven gaps. The protocol fixes are folded into
+§3 above: product and name on exported lines, the owner's staff setup door,
+the device name on the settings card, `supplier_settings_absent`, the
+provider token, the first-grant PIN, categories, and the MsgBox exception.
+The four missing pieces are built as follows.
+
+- **A supplier that answers without a separate runner.** The supplier pack's
+  consent step can bind Core's own reference runner:
+  `POST /v1/commerce/install/bind_reference_runner { install_id }` (owner
+  only) mints a runner device inside Core, before confirm. The runner claims
+  tasks on the pack's plugin lane through the node's own
+  `/v1/workflow/tasks/claim` and `/complete` routes, so every guard still
+  runs and Core still signs. It prices a quote from the live published
+  catalogue at the published price per sell unit: all lines or none, and it
+  declines `not_in_catalog`, `no_published_price`, `unit_mismatch` or
+  `below_minimum_order`. It accepts submitted orders with an `SO-` reference,
+  answers status from the asking buyer's retained order (looked up by the
+  authenticated buyer and the purchase order id together, since buyers choose
+  their own ids), and agrees to every cancellation; Core's own cancellation
+  ruling still decides whether one stands. An operator
+  may still pair their own runner instead; the reference runner serves only
+  the device Core minted.
+- **Pack install writes the listing.** `begin` names the listing the consent
+  will write (`rkey: 'self'`, its visibility, the five commerce
+  capabilities). `confirm` binds those capabilities to the pack in the self
+  listing, unlisted when no listing exists. A public self listing is refused
+  (`409 self_listing_public`), because a public custom listing needs schemas
+  the commerce lanes do not publish. `POST /v1/commerce/install/bind_listing
+  { install_id }` re-binds for an install that is already active.
+- **A server buyer turns a quote into an order.** `GET
+  /v1/commerce/buyer/quotes` lists held quotes (latest revision each, with an
+  `expired` flag). `POST /v1/commerce/orders/from_quote { supplier_did,
+  quote_id, projection?, service_rkey? }` needs owner presence on a node that
+  can prove it (as `orders/prepare` does). It builds the
+  order Core would build from a draft, verifies it against the quote, and
+  holds it as an approval; the existing `POST /v1/commerce/orders/submit
+  { approval_id }` sends it. A lapsed quote answers `409 quote_expired`.
+- **Trade documents between non-contacts.** An order-bound `commerce.trade`
+  document (delivery note or receipt, payment note or acknowledgement, order
+  attachment) is admitted from a sender who is a contact OR a counterparty:
+  the buyer of an order this node ACCEPTED, or the supplier of an order this
+  node placed. A retained receipt alone does not count, because admission
+  keeps the receipt of every refused proposal and any peer can cause one of
+  those. The revenue-share chain names no order and stays with contacts. A
+  sender who is neither is dropped before any verifier runs.

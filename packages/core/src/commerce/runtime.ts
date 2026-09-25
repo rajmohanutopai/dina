@@ -21,7 +21,7 @@
  * before the epoch exists must fail, not silently sign at a guessed epoch.
  */
 
-import { setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
+import { setTradeCounterpartyCheck, setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
 import { tier0TxRunner } from '../run/tx';
 
@@ -114,6 +114,7 @@ import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
 import { installTradeContextSources } from './trade_context_sources';
+import { isOrderCounterparty } from './trade_counterparty';
 import { applyInboundTradeDocument } from './trade_ingress';
 import { SQLiteTradeDocumentRepository } from './trade_ledger';
 import { SQLiteTradeSpoolRepository, type TradeSpoolRepository } from './trade_spool';
@@ -714,6 +715,7 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
   // there. When the engine moves to the Commerce Pack this line moves with
   // it — the seam stays in Core, the knowledge does not.
   setTradeDocumentIngress(value === null ? null : (args) => applyInboundTradeDocument(args));
+  setTradeCounterpartyCheck(value === null ? null : (did, kind) => isOrderCounterparty(value, did, kind));
   // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's attachment that
   // reached the buyer before the acceptance did waits, retained, for it.
   setAcceptanceObserver(

@@ -69,6 +69,11 @@ export interface InboxEntry {
   description: string;
   /** service_query: requester DID. intent_validation: agent DID (when present). */
   requesterDID: string;
+  /**
+   * integration_settings_proposal only: the name the owner gave the proposing
+   * device when minting its setup code. A label beside the DID, never instead of it.
+   */
+  requesterName?: string;
   /** service_query: serialized params. intent_validation: target text. */
   paramsPreview: string;
   /** intent_validation only — surfaces SAFE/MODERATE/HIGH/BLOCKED. */
@@ -773,6 +778,8 @@ function toEntry(task: WorkflowTask): InboxEntry {
       }
     }
     const proposedBy = typeof parsed.proposed_by === 'string' ? parsed.proposed_by : '';
+    const proposedByName =
+      typeof parsed.proposed_by_name === 'string' ? oneLine(parsed.proposed_by_name, 60) : '';
     return {
       id: task.id,
       kind: 'integration_settings_proposal',
@@ -780,6 +787,7 @@ function toEntry(task: WorkflowTask): InboxEntry {
       serviceName: 'Settings change',
       description: task.description ?? '',
       requesterDID: proposedBy,
+      ...(proposedByName !== '' ? { requesterName: proposedByName } : {}),
       paramsPreview: lines.join('\n'),
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),

@@ -15,14 +15,12 @@
  *      has the seed. Target audience: single-operator VPS where
  *      filesystem access already implies full trust.
  *
- *   2. **Security** (task 4.53, PENDING here): seed wrapped with
- *      AES-256-GCM under an Argon2id-derived KEK from the operator
- *      passphrase, stored at `<vaultDir>/wrapped_seed.bin`. This
- *      module only handles convenience mode; wrapped-seed lands with
- *      task 4.53. The loader checks for both files and picks
- *      whichever is present — loading `wrapped_seed.bin` returns a
- *      `{kind: 'wrapped'}` placeholder that callers upstream of this
- *      module unwrap by prompting for the passphrase.
+ *   2. **Security** (task 4.53): seed wrapped with AES-256-GCM under
+ *      an Argon2id-derived KEK from the operator passphrase, stored at
+ *      `<vaultDir>/wrapped_seed.bin`. A first boot with
+ *      `DINA_UNLOCK_PASSPHRASE` set writes this form and no keyfile; a
+ *      later boot unwraps it with the same variable, or answers
+ *      `{kind: 'wrapped'}` (identity pending) when the variable is absent.
  *
  * **File-system safety**:
  *   - First-boot generation is atomic: generate → write to tmp →
@@ -45,11 +43,14 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import {
+  entropyToMnemonic,
   generateMnemonic as coreGenerateMnemonic,
   mnemonicToEntropy,
   readWrappedSeed,
+  serializeWrappedSeed,
   unwrapSeed,
   validateMnemonic,
+  wrapSeed,
 } from '@dina/core';
 
 /** Posix-mode-600 — owner read/write only. */
@@ -71,7 +72,23 @@ export const SEED_LEN_BYTES = 32;
 export const LEGACY_SEED_LEN_BYTES = 64;
 
 export type SeedSource =
-  | { kind: 'generated'; mnemonic: string; seed: Uint8Array; recoveryPhrasePath: string }
+  | {
+      kind: 'generated';
+      mnemonic: string;
+      seed: Uint8Array;
+      /**
+       * The 0600 phrase file, convenience mode only. A security-mode first
+       * boot writes no phrase: it is the seed in words, and a plain copy on
+       * disk would undo the wrapping. `recoveryPhraseFromWrapped` prints it.
+       */
+      recoveryPhrasePath?: string;
+      /**
+       * Set when the first boot ran in security mode (`DINA_UNLOCK_PASSPHRASE`
+       * set): the seed was written wrapped and no keyfile exists, so owner
+       * presence can be proved from the start.
+       */
+      wrappedPath?: string;
+    }
   | { kind: 'loaded_convenience'; seed: Uint8Array }
   /**
    * Task 4.53 (first slice): the wrapped seed UNWRAPPED at boot with the
@@ -85,6 +102,24 @@ export type SeedSource =
   | { kind: 'wrapped'; wrappedPath: string };
 
 /**
+ * The wrapped-seed file a presence proof checks a passphrase against, or
+ * undefined for a node whose seed sits in a plain keyfile (no secret only the
+ * owner knows, so presence stays unavailable). A security-mode first boot
+ * counts from that boot on.
+ */
+export function wrappedSeedPathOf(source: SeedSource): string | undefined {
+  switch (source.kind) {
+    case 'wrapped':
+    case 'loaded_wrapped':
+      return source.wrappedPath;
+    case 'generated':
+      return source.wrappedPath;
+    case 'loaded_convenience':
+      return undefined;
+  }
+}
+
+/**
  * Load the master seed from `vaultDir`, generating it on first boot.
  *
  * Priority order:
@@ -92,8 +127,10 @@ export type SeedSource =
  *      so the caller can prompt for the passphrase and unwrap (task 4.53).
  *   2. If `<vaultDir>/keyfile` exists → validate mode 600 + length, return
  *      `{kind: 'loaded_convenience', seed}`.
- *   3. Otherwise → generate a fresh mnemonic + seed, write the keyfile
- *      atomically with mode 600, return `{kind: 'generated', mnemonic, seed}`.
+ *   3. Otherwise → generate a fresh mnemonic + seed and persist it: wrapped
+ *      under `DINA_UNLOCK_PASSPHRASE` when that is set (security mode from the
+ *      first boot, no keyfile ever written), else the mode-600 keyfile. Return
+ *      `{kind: 'generated', mnemonic, seed}`, with `wrappedPath` when wrapped.
  *
  * On any file-system error, rejects — the process cannot start without
  * a valid seed.
@@ -141,13 +178,52 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
       `loadOrGenerateSeed: generated seed has wrong length (${seed.length}, want ${SEED_LEN_BYTES})`,
     );
   }
-  await writeKeyfileAtomic(keyfilePath, seed);
+  // SECURITY MODE FROM THE FIRST BOOT (JIFFY review item 11). With a
+  // passphrase supplied the seed is written only wrapped, in the format the
+  // branch above reads back, and the plain keyfile never exists — so a bed or
+  // a fresh server can prove owner presence without a migration step.
+  const passphrase = process.env.DINA_UNLOCK_PASSPHRASE ?? '';
+  let wrappedSeedPath: string | undefined;
+  if (passphrase !== '') {
+    const wrapped = await wrapSeed(passphrase, seed);
+    await atomicWrite(wrappedPath, Buffer.from(serializeWrappedSeed(wrapped)), KEYFILE_MODE);
+    wrappedSeedPath = wrappedPath;
+  } else {
+    await writeKeyfileAtomic(keyfilePath, seed);
+  }
+  if (wrappedSeedPath !== undefined) {
+    // No phrase file in security mode: the words ARE the seed. The operator
+    // prints them from the wrapped seed and the passphrase instead
+    // (`recoveryPhraseFromWrapped`, `identity/recovery_phrase_tool.ts`).
+    return { kind: 'generated', mnemonic, seed, wrappedPath: wrappedSeedPath };
+  }
   // Persist the human-readable recovery phrase to a 0o600 file (co-located,
   // atomic) so the operator can record it. It is NEVER logged — the mnemonic
   // is the seed. Written alongside the keyfile so a first boot always leaves a
   // recoverable phrase, independent of the caller.
   const recoveryPhrasePath = await writeRecoveryPhraseAtomic(vaultDir, mnemonic);
   return { kind: 'generated', mnemonic, seed, recoveryPhrasePath };
+}
+
+/**
+ * The recovery phrase of a security-mode node, read back from its wrapped
+ * seed. The phrase is the 32-byte seed in BIP-39 words, so nothing but the
+ * wrapped file and the passphrase is needed. A legacy 64-byte seed has no
+ * phrase to give back, and says so.
+ */
+export async function recoveryPhraseFromWrapped(
+  vaultDir: string,
+  passphrase: string,
+): Promise<string> {
+  if (passphrase === '') throw new Error('recoveryPhraseFromWrapped: passphrase is required');
+  const seed = await unwrapSeed(
+    passphrase,
+    readWrappedSeed(path.join(vaultDir, WRAPPED_SEED_NAME)),
+  );
+  if (seed.length !== SEED_LEN_BYTES) {
+    throw new Error('recoveryPhraseFromWrapped: this seed predates recovery phrases');
+  }
+  return entropyToMnemonic(seed);
 }
 
 /**

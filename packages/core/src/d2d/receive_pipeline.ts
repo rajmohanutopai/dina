@@ -60,7 +60,7 @@ import { quarantineMessage } from './quarantine';
 import { receiveAndStage } from './receive';
 import { emitServiceOfferReceived } from './service_offer_events';
 import { verifyMessage } from './signature';
-import { applyInboundTradeDocumentVia } from './trade_ingress_seam';
+import { applyInboundTradeDocumentVia, isTradeCounterparty } from './trade_ingress_seam';
 
 export type ReceivePipelineAction = 'staged' | 'quarantined' | 'dropped' | 'ephemeral' | 'bypassed';
 
@@ -635,12 +635,27 @@ export function receiveD2D(
   // already retained — a stranger's document binds to nothing and refuses.
   // Persisted in the TRADE LEDGER with its envelope evidence, never vaulted.
   if (message.type === MsgTypeCommerceTrade) {
-    if (!isContact) {
+    let parsedTrade: unknown;
+    try {
+      parsedTrade = JSON.parse(message.body);
+    } catch {
+      parsedTrade = null;
+    }
+    const tradeKind =
+      parsedTrade !== null &&
+      typeof parsedTrade === 'object' &&
+      typeof (parsedTrade as { kind?: unknown }).kind === 'string'
+        ? (parsedTrade as { kind: string }).kind
+        : '';
+    // A contact, or the counterparty of an order this node accepted or
+    // placed, for an order-bound kind (item 8): an order found through
+    // discovery is a trading relationship too.
+    if (!isContact && !isTradeCounterparty(message.from, tradeKind)) {
       appendAudit(
         message.from,
         'd2d_recv_trade_denied',
         message.to,
-        `reason=not_a_contact id=${message.id}`,
+        `reason=not_a_contact_or_counterparty id=${message.id}`,
       );
       return {
         action: 'dropped',
@@ -648,14 +663,8 @@ export function receiveD2D(
         messageType: message.type,
         senderDID: message.from,
         signatureValid: true,
-        reason: 'commerce.trade rejected: sender is not a known contact',
+        reason: 'commerce.trade rejected: sender is neither a known contact nor a trading counterparty',
       };
-    }
-    let parsedTrade: unknown;
-    try {
-      parsedTrade = JSON.parse(message.body);
-    } catch {
-      parsedTrade = null;
     }
     // §4.3's stored-verified rule: the retained evidence is the SIGNED
     // envelope in the six fields the signature covered, the same shape the

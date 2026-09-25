@@ -180,7 +180,7 @@ export function useApprovalInbox(): ApprovalInbox {
         : `${verb} "${entry.serviceName || entry.capability}"?`;
       const subline = namesCapability
         ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
-        : `${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
+        : `${entry.requesterName !== undefined ? `${entry.requesterName} · ` : ''}${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
       // confirm on web (RN-Web's Alert.alert is a no-op — without this the
       // web thin-client's Approve/Deny confirm never appears; F4).
@@ -499,7 +499,10 @@ export function ApprovalActionCard({
       ) : null}
       {item.requesterDID !== '' ? (
         <Text style={styles.requester} numberOfLines={1}>
-          {requesterPrefix} {shortenDID(item.requesterDID)}
+          {requesterPrefix}{' '}
+          {item.requesterName !== undefined
+            ? `${item.requesterName} (${shortenDID(item.requesterDID)})`
+            : shortenDID(item.requesterDID)}
         </Text>
       ) : null}
       {item.paramsPreview !== '' ? (
