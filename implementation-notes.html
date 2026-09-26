@@ -219,6 +219,48 @@
     </ul>
 
     <!-- ============================================================ -->
+    <h1 id="negotiation">
+      Negotiation <span class="status wip">ITEMS 1–9 BUILT · LIVE RUN DONE · DUAL REVIEW CLOSED AFTER ROUND 6 · UNCOMMITTED</span>
+    </h1>
+    <p class="meta">
+      Implementing <code>docs/NEGOTIATION_PLAN.md</code>: a buyer counters, a supplier answers with a revision inside
+      floors its owner set, a tender loop runs to ready, the owner awards, the losers hear "not awarded" and nothing more.
+      Item 10 (approval within a spending limit) deferred.
+    </p>
+
+    <h2>Design decisions</h2>
+    <ul>
+      <li><strong>A counter's answer is revision N+1 of the held quote</strong> — the existing chain rules check it on both sides; no second family per haggle.</li>
+      <li><strong>The floor stays in Core</strong> — the runner proposes, Core clamps to the owner's floors before signing; refusals never name a floor.</li>
+      <li><strong>Floors are judged from revision 1</strong>, rounded up, never above the first price, so rounds cannot compound a percentage.</li>
+      <li><strong>Between the floors the owner is asked</strong>; a yes authorises the price for the buyer's NEXT counter — no unsolicited revision is pushed.</li>
+      <li><strong>Counters pay probing budget</strong> and a per-buyer daily cap across all quotes.</li>
+      <li><strong>The loop is fixed rules in Core</strong> and ends at a ready tender; the award (presence) builds a held order through the <code>from_quote</code> builder.</li>
+      <li><strong>Requirement lines</strong> use the buyer's own <code>custom</code> placeholder at protocol 1.2; Core accepts a substitute only if it is a live published item.</li>
+    </ul>
+
+    <h2>Open questions</h2>
+    <ul>
+      <li>The tender-ready card only notifies; should approving it award the top offer (it would bypass presence on the server)?</li>
+      <li>Installs on supplier pack 1.0.0 decline counters until updated; should Core offer the update on the owner surface?</li>
+      <li>The reference matcher is word overlap within a category; a pack may use a model. Should Core cap how far a substitute's price may sit from the need?</li>
+    </ul>
+
+    <h2>Iterations</h2>
+    <p class="meta">Newest first.</p>
+    <ul>
+      <li><strong>Dual review round 6 (2026-09-26).</strong> 2 findings, fixed and pinned: clearances keyed by order + clerk; the clearance row is written first and is the record of the spend, so a crash leaves nothing reusable (<code>spentElsewhere</code> finishes the card).</li>
+      <li><strong>Dual review round 5 (2026-09-26).</strong> 3 findings (1 high), fixed and pinned: staff escalation cards are Core-minted (Brain can't mint, decide or plant one under the key); a spent card completes (history reads approved); the hold spends it and <code>commerce_staff_clearances</code> (v49) binds it to that one order, so a failed send keeps the yes.</li>
+      <li><strong>Dual review round 4 (2026-09-26).</strong> 4 findings (2 high), all fixed and pinned: the send spends the owner's card (<code>consumeStaffEscalation</code>), a clerk's direct send refuses draft-bound orders, one clock per tick, sweeps resend the tender's own latest counter.</li>
+      <li><strong>Staff award path (2026-09-26, after the review).</strong> A clerk with a buyer-side <code>commerce_submit</code> grant can read the ranking and held quotes, award, hold from a quote and send, inside the cap; over it, one owner card covers hold and send. Tender opening, comparison and counters stay owner-only.</li>
+      <li><strong>Dual review round 3 (2026-09-26).</strong> Claude passed; Codex found 4, all fixed and pinned: a loop counter holds the award through its resend's window, sweeps resend only the tender's own counters, the clock is re-read before each supplier, revision + replay answer in one transaction (<code>registerRevisionWithAnswer</code>).</li>
+      <li><strong>Dual review round 2 (2026-09-25).</strong> 8 findings, all fixed and pinned: in-flight only inside a window (+ resend on ready tenders), Brain redaction on every task-returning route, one counter id = one body, manual counter refused on a closed tender, reconcile replacement kept only when bound to the held order, target rechecked before each send, F14 test repaired; notice text corrected.</li>
+      <li><strong>Dual review round 1 (2026-09-25).</strong> Claude + Codex, 14 findings: 13 fixed and pinned (placeholder echo, loop vs award, refused settle answered, daily-cap reservation, floor raised between rounds holds, Brain sees no floors, replay before the probing gate, one resend, award replay, durable notices, reconcile counterproposal, phone card unclipped, target check first); the paused-listing notice claim corrected (§4.5 decision). A retained counter is re-checked before a resend. Suites: protocol 579, core 9732, home-node 31, core-server 2851, phone 3473; typecheck clean.</li>
+      <li><strong>Review + live bed (2026-09-25).</strong> An independent review found no path below the hard floor; fixed and pinned: round limit from the supplier's own records, <code>pending_owner</code> so an owner's yes reaches the loop, award refused while a counter is in flight, the notice ahead of the probing gate, revision validity kept to the head's, ranking never mixes currencies, answers bound to the countered quote, ambiguous counters block a second. The bed found three more: the listing binder pinned this build's manifest (not the install's), a silent supplier was countered again each round, and rounds that only waited on the owner used up the rounds so a late yes was lost — all fixed and pinned. Live: requirement tender to albert (1.1.0) and alonso (1.0.0), albert's owner approved ₹15,750 and it arrived; award, notice, order accepted. Suites: protocol 578, core 9719, home-node 31, core-server 2851, phone 3472; typecheck clean.</li>
+      <li><strong>Build (2026-09-25).</strong> Protocol: <code>CounterOffer</code> (eleventh digest domain, vector cross-checked in Python), <code>QuoteOutcomeNotice</code>, requirement lines at 1.2. Core: policy + clamp, counter lane in ingress and the result transform, owner price card fenced from Brain in three hosts, not-awarded notice answered by Core, counterproposal intake, tender policy + loop + ranking + award + manual counter routes, migration v49, manifest 1.1.0, phone cards. Found on the way: <code>from_quote</code> pinned the approval's listing to <code>self</code>. Suites: protocol 578, core 9709, home-node 31, core-server 2851, phone 241 files; typecheck clean.</li>
+    </ul>
+
+    <!-- ============================================================ -->
     <h1 id="jiffy-integration">
       Jiffy merchant integration <span class="status wip">PHASES 1–3 BUILT · LIVE RUN OWED</span>
     </h1>

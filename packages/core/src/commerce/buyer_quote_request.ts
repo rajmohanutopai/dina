@@ -45,9 +45,16 @@ const DEFAULT_REQUEST_VALIDITY_MS = 24 * 60 * 60 * 1000;
 
 export interface QuoteRequestLineInput {
   lineId: string;
-  product: ProductRef;
+  /** Absent only on a requirement line: the buyer's own placeholder is used. */
+  product?: ProductRef;
   quantity: Quantity;
   acceptableSubstitutions?: 'none' | 'equivalent' | 'supplier_may_propose';
+  /**
+   * NEGOTIATION_PLAN §4.6 — a need instead of a product. Such a line is sent
+   * with a `custom` placeholder this node issues and `supplier_may_propose`,
+   * and the request moves to protocol minor 1.2.
+   */
+  requirement?: { text: string; category_id?: string };
 }
 
 export type QuoteRequestOutcome =
@@ -101,18 +108,35 @@ export async function requestQuote(args: {
     // `payment_terms.due_basis` exists only at minor 1.1: a buyer asking
     // at 1.0 could never be quoted credit terms it can derive dues from.
     // Minors are additive, so a 1.1 question reads fine everywhere.
-    protocol_version: '1.1',
+    //
+    // NEGOTIATION_PLAN §4.6 — a requirement line exists only from 1.2, so a
+    // request carrying one asks at 1.2; every other request stays at 1.1.
+    protocol_version: args.lines.some((line) => line.requirement !== undefined) ? '1.2' : '1.1',
     request_id: args.requestId,
     buyer_did: runtime.nodeDid(),
     supplier_did: args.supplierDid,
-    lines: args.lines.map((line) => ({
-      line_id: line.lineId,
-      product: line.product,
-      requested_quantity: line.quantity,
-      ...(line.acceptableSubstitutions === undefined
-        ? {}
-        : { acceptable_substitutions: line.acceptableSubstitutions }),
-    })),
+    lines: args.lines.map((line) =>
+      line.requirement !== undefined
+        ? {
+            line_id: line.lineId,
+            product: {
+              scheme: 'custom' as const,
+              value: `req:${line.lineId}`,
+              issuer_did: runtime.nodeDid(),
+            },
+            requested_quantity: line.quantity,
+            acceptable_substitutions: 'supplier_may_propose' as const,
+            requirement: line.requirement,
+          }
+        : {
+            line_id: line.lineId,
+            product: line.product,
+            requested_quantity: line.quantity,
+            ...(line.acceptableSubstitutions === undefined
+              ? {}
+              : { acceptable_substitutions: line.acceptableSubstitutions }),
+          },
+    ),
     delivery: {
       projection: args.projection,
       ...(args.requiredBy === undefined ? {} : { required_by: args.requiredBy }),

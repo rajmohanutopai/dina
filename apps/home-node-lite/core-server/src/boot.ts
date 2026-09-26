@@ -78,6 +78,7 @@ import {
   composeWorkflowHooks,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
+  negotiationWorkflowHooks,
   orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   defaultPluginCompletionHandler,
@@ -651,7 +652,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // GROUP_COORDINATION §6 — the same gate and release handler the full
         // plane installs, so a disclosure never rides out ungated in the
         // window between this line and `wireWorkflowPlane`.
-        ...composeWorkflowHooks(coordinationWorkflowHooks(), integrationWorkflowHooks(), orderAttachmentWorkflowHooks()),
+        ...composeWorkflowHooks(
+          coordinationWorkflowHooks(),
+          integrationWorkflowHooks(),
+          orderAttachmentWorkflowHooks(),
+          negotiationWorkflowHooks(),
+        ),
       });
       setWorkflowService(localWorkflowService);
       localTaskExpiry = new TaskExpirySweeper({

@@ -283,6 +283,7 @@ describe('SQLite tender repository parity', () => {
       requestId: 'r1',
       requestDigest: 'a'.repeat(64),
       quoteId: '',
+      serviceRkey: 'self',
     });
     memory.setMemberQuote('r1', 'q1');
     expect(memory.memberByRequestId('r1')?.quoteId).toBe('q1');

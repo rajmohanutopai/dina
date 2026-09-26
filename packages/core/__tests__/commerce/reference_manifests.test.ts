@@ -68,10 +68,12 @@ describe('reference commerce manifests (§8.1, §8.2)', () => {
     expect(features(BUYER_REFERENCE_MANIFEST)).toEqual(['idempotent_retry', 'kind.tool']);
   });
 
-  it('declares the four §9.9–§9.11 supplier capabilities as provider kinds', () => {
+  it('declares the four §9.9–§9.11 supplier capabilities and the counter lane as provider kinds', () => {
     const caps = SUPPLIER_REFERENCE_MANIFEST.capabilities;
     expect(caps.map((c) => c.id).sort()).toEqual([
       'com.dinakernel.commerce.cancel-order',
+      // NEGOTIATION_PLAN §4.3 — pack 1.1.0.
+      'com.dinakernel.commerce.negotiate-quote',
       'com.dinakernel.commerce.order-status',
       'com.dinakernel.commerce.request-quote',
       'com.dinakernel.commerce.submit-order',

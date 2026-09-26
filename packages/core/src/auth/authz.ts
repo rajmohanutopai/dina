@@ -77,8 +77,9 @@ const AUTHZ_RULES: {
   // (scope, install role, value cap, currency, presence) on top; these
   // rows only open the door to it. Exact + method-bound throughout, so
   // no sub-path or other verb inherits the admission; every OTHER trade
-  // route (statement, books-export, tender, revshare, khata authoring)
-  // falls through to the owner-only commerce rule below.
+  // route (statement, books-export, opening or comparing a tender,
+  // revshare, khata authoring) falls through to the owner-only commerce
+  // rule below.
   {
     prefix: '/v1/commerce/trade/delivery-receipt',
     method: 'POST',
@@ -123,6 +124,40 @@ const AUTHZ_RULES: {
   },
   {
     prefix: '/v1/commerce/orders/decide',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  // NEGOTIATION_PLAN §4.7 — a clerk with a buyer-side `commerce_submit`
+  // grant awards a negotiated tender, or holds an order from a held quote,
+  // and sends it, inside the cap the owner set; the handlers re-check the
+  // live grant, presence and the cap, and send the owner a card above it.
+  {
+    prefix: '/v1/commerce/trade/tender/ranking',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/trade/tender/award',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/buyer/quotes',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/from_quote',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
+  {
+    prefix: '/v1/commerce/orders/submit',
     method: 'POST',
     exact: true,
     allowed: new Set(['owner', 'staff']),

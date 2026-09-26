@@ -55,6 +55,7 @@ import {
   composeWorkflowHooks,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
+  negotiationWorkflowHooks,
   orderAttachmentWorkflowHooks,
   transformInboundOrderResult,
   type ServiceQueryBody,
@@ -221,6 +222,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       coordinationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       integrationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       orderAttachmentWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+      negotiationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
     ),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator

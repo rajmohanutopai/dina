@@ -95,3 +95,6 @@ export * from './integration';
 export * from './integration_settings';
 export * from './trade_dispatch';
 export * from './order_attachments';
+export * from './negotiation_policy';
+export * from './negotiation_supplier';
+export * from './buyer_negotiation';

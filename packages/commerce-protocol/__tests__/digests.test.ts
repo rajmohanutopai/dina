@@ -38,11 +38,12 @@ describe('canonicalJson', () => {
 describe('commerce digest domains', () => {
   const payload = { alpha: '1', beta: ['x', 'y'] };
 
-  it('covers exactly the ten §9.12 domains', () => {
+  it('covers exactly the ten §9.12 domains plus the negotiation counter', () => {
     expect([...COMMERCE_DIGEST_DOMAINS].sort()).toEqual(
       [
         'acknowledgement',
         'cancellation',
+        'counter',
         'epoch',
         'order',
         'projection',

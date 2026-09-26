@@ -48,8 +48,9 @@ import {
 } from '@dina/commerce-protocol';
 
 import { FIRST_REPOLL_SECONDS } from './buyer_executor';
+import { recordCounterAnswer } from './buyer_negotiation';
 import { verifyInboundQuote } from './buyer_quotes';
-import { acknowledgementToResult } from './buyer_reconciliation';
+import { acknowledgementBindingFault, acknowledgementToResult } from './buyer_reconciliation';
 import { SUBMIT_ORDER_CAPABILITY } from './buyer_sender';
 import { verifyInboundStatus, type EnvelopeEvidence } from './buyer_status';
 import { isCommerceCapability } from './capability_names';
@@ -99,6 +100,8 @@ const ORDER_RECONCILE_LANE: ReadonlySet<string> = new Set([ORDER_RECONCILE_CAPAB
 const ORDER_STATUS_LANE: ReadonlySet<string> = new Set([ORDER_STATUS_CAPABILITY]);
 const REQUEST_QUOTE_LANE: ReadonlySet<string> = new Set([REQUEST_QUOTE_CAPABILITY]);
 const CANCEL_ORDER_LANE: ReadonlySet<string> = new Set([CANCEL_ORDER_CAPABILITY]);
+/** NEGOTIATION_PLAN §4.4 — the answer to a counter is a quote on the same chain. */
+const COUNTER_OFFER_LANE: ReadonlySet<string> = new Set(['counter_offer']);
 
 export type BuyerResponseOutcome =
   /** Not a commerce answer. The overwhelming majority of service responses. */
@@ -235,7 +238,8 @@ export function applyInboundBuyerResponse(args: {
   const isStatus = isCommerceCapability(ORDER_STATUS_LANE, response.capability);
   const isQuote = isCommerceCapability(REQUEST_QUOTE_LANE, response.capability);
   const isCancellation = isCommerceCapability(CANCEL_ORDER_LANE, response.capability);
-  if (!isSubmission && !isReconcile && !isStatus && !isQuote && !isCancellation) {
+  const isCounter = isCommerceCapability(COUNTER_OFFER_LANE, response.capability);
+  if (!isSubmission && !isReconcile && !isStatus && !isQuote && !isCancellation && !isCounter) {
     return 'not_commerce';
   }
   // Reported apart from `unknown_order`, because an operator watching every
@@ -249,7 +253,21 @@ export function applyInboundBuyerResponse(args: {
   // A supplier that answered `unavailable` or `error` has told us about ITSELF,
   // not about the order. Settling on that would turn "my runner is down" into a
   // commercial outcome; the order stays parked and the re-poll asks again.
-  if (response.status !== 'success') return 'not_an_answer';
+  if (response.status !== 'success') {
+    // A refused counter is still an answer to the loop: that supplier has
+    // said no to this round, and asking again at the same target would probe.
+    if (isCounter) {
+      recordCounterAnswer({
+        supplierDid: args.supplierDid,
+        counterId: response.query_id,
+        state: 'refused',
+        quoteId: '',
+        quoteDigest: '',
+        nowMs: args.nowMs,
+      });
+    }
+    return 'not_an_answer';
+  }
 
   // §16.2/§25.3 — THE COUNTERPARTY WATERMARK, on the lane records arrive by.
   //
@@ -316,6 +334,63 @@ export function applyInboundBuyerResponse(args: {
     return 'cancellation_not_applied';
   }
 
+  if (isCounter) {
+    // The quote inside is checked exactly as any quote is: against the
+    // request this node sent and the chain it holds, so a "revision" that
+    // does not extend the held head is a fork, not a better price.
+    const answer = response.result;
+    const quote =
+      answer !== null && typeof answer === 'object' && !Array.isArray(answer)
+        ? (answer as Record<string, unknown>).quote
+        : undefined;
+    const said = (name: string): unknown =>
+      answer !== null && typeof answer === 'object' && !Array.isArray(answer)
+        ? (answer as Record<string, unknown>)[name]
+        : undefined;
+    // Core's non-disclosing refusal after the runner: the supplier said no to
+    // this round, with no reason and no number. Final for the loop.
+    if (said('outcome') === 'refused') {
+      recordCounterAnswer({
+        supplierDid: args.supplierDid,
+        counterId: response.query_id,
+        state: 'refused',
+        quoteId: '',
+        quoteDigest: '',
+        nowMs: args.nowMs,
+      });
+      return 'not_an_answer';
+    }
+    const applied = applyInboundQuote({
+      supplierDid: args.supplierDid,
+      result: { quote },
+      nowMs: args.nowMs,
+    });
+    const field = (name: string): string =>
+      quote !== null && typeof quote === 'object'
+        ? String((quote as Record<string, unknown>)[name] ?? '')
+        : '';
+    const verified = applied === 'applied' || applied === 'no_change';
+    recordCounterAnswer({
+      supplierDid: args.supplierDid,
+      counterId: response.query_id,
+      // A hold with `pending_owner` lets the loop ask again once the
+      // supplier's owner has had a moment; a plain hold is final.
+      // A revision moved the price, owner or no owner; only a hold that
+      // waits on the supplier's owner is `pending` (ask again after a pause).
+      state: !verified
+        ? 'refused'
+        : applied === 'applied' && said('outcome') === 'revised'
+          ? 'revised'
+          : said('pending_owner') === true
+            ? 'pending'
+            : 'held',
+      quoteId: field('quote_id'),
+      quoteDigest: field('quote_digest'),
+      nowMs: args.nowMs,
+    });
+    return applied;
+  }
+
   if (isQuote) {
     return applyInboundQuote({
       supplierDid: args.supplierDid,
@@ -338,6 +413,36 @@ export function applyInboundBuyerResponse(args: {
     ? readReconcileResult(response.result)
     : readAcknowledgementAsResult(response.result);
   if (result === null) return 'unreadable';
+
+  // NEGOTIATION_PLAN §4.4 (item 7) — a supplier that COUNTERS an order sends
+  // a replacement quote inside its acknowledgement. It is kept only when the
+  // acknowledgement is valid AND about the order this node holds (the
+  // protocol's own binding: same order, lineage pointing at the countered
+  // quote, a fresh quote_id). Then it goes through the quote lane, verified
+  // exactly as any quote is (audience, sender, the retained request, the
+  // chain), and lands where `from_quote` and the tender comparison see it.
+  // Its outcome does not decide the order's: the acknowledgement settles
+  // below either way, and an unusable replacement leaves nothing new to
+  // order from.
+  //
+  // The same when the counterproposal is RECOVERED by reconciliation after
+  // the original answer was lost: the acknowledgement rides inside the
+  // reconcile result, and its replacement is just as orderable.
+  const acknowledgement = isReconcile
+    ? (response.result as Record<string, unknown>).acknowledgement
+    : response.result;
+  const replacement = replacementQuoteOf(acknowledgement);
+  if (replacement !== null) {
+    const runtime = getCommerceRuntime();
+    const record = runtime?.buyerOrders.get(args.supplierDid, response.query_id) ?? null;
+    if (
+      record !== null &&
+      validateOrderAcknowledgement(acknowledgement, hash) === null &&
+      acknowledgementBindingFault(record, acknowledgement as OrderAcknowledgement) === null
+    ) {
+      applyInboundQuote({ supplierDid: args.supplierDid, result: replacement, nowMs: args.nowMs });
+    }
+  }
 
   return applyReconcileAnswer({
     supplierDid: args.supplierDid,
@@ -475,6 +580,15 @@ function recordProtocolFault(
   const runtime = getCommerceRuntime();
   if (runtime === null) return;
   runtime.buyerOrders.put(supplierDid, { ...order, protocolFault: fault });
+}
+
+/** The replacement quote a `counterproposal` acknowledgement carries, if any. */
+function replacementQuoteOf(result: unknown): unknown {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) return null;
+  const record = result as Record<string, unknown>;
+  if (record.kind !== 'counterproposal') return null;
+  const replacement = record.replacement_quote;
+  return replacement !== null && typeof replacement === 'object' ? replacement : null;
 }
 
 /**

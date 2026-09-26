@@ -439,6 +439,45 @@ describe('useServiceInbox', () => {
     expect(markNotificationRead).toHaveBeenCalledWith('integration-settings-abc');
   });
 
+  it('classifies the negotiation cards: a lower price asked (buyer, asked / now / quoted) and a tender ready to award (NEGOTIATION_PLAN)', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'negotiation-price-abc',
+          description: 'A buyer asks for a lower price on quote q:1 (1 line(s)) below your automatic limit. Offer it?',
+          payload: JSON.stringify({
+            type: 'negotiation_price_approval',
+            quote_id: 'q:1',
+            buyer_did: 'did:plc:buyer',
+            currency: 'INR',
+            lines: [{ line_id: 'l1', asked_minor_units: '21000', signed_minor_units: '22000', quoted_minor_units: '24000' }],
+          }),
+        }),
+        makeTask({
+          id: 'tender-ready-t1',
+          description: 'Tender t1 is ready.',
+          payload: JSON.stringify({ type: 'tender_ready', tender_id: 't1', reason: 'settled', offers: 2, best_total_minor: '43200', currency: 'INR' }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const entries = await listPendingApprovals();
+    const price = entries.find((e) => e.id === 'negotiation-price-abc');
+    expect(price).toMatchObject({ kind: 'negotiation_price_approval', requesterDID: 'did:plc:buyer' });
+    expect(price?.paramsPreview).toBe('l1: asks INR 210.00 (now INR 220.00, quoted INR 240.00)');
+    const ready = entries.find((e) => e.id === 'tender-ready-t1');
+    expect(ready).toMatchObject({ kind: 'tender_ready', paramsPreview: '2 offer(s) within budget, best INR 432.00' });
+  });
+
+  it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('negotiation-price-abc', 'denied_by_operator', 'negotiation_price_approval');
+    await denyPending('tender-ready-t1', 'denied_by_operator', 'tender_ready');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled.map((c) => c.id)).toEqual(['negotiation-price-abc', 'tender-ready-t1']);
+  });
+
   it('classifies the two order-attachment cards: the supplier as requester, the amount and order as lines, the https link carried as-is (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3)', async () => {
     const { client } = stubClient({
       list: [

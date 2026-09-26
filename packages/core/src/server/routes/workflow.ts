@@ -31,7 +31,12 @@ import {
 import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { ORDER_CHECKOUT_LINK_TYPE, PAYMENT_EVIDENCE_RECORD_TYPE } from '../../commerce/integration';
 import { INTEGRATION_SETTINGS_PROPOSAL_TYPE } from '../../commerce/integration_settings';
+import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from '../../commerce/negotiation_policy';
 import { getCommerceRuntime } from '../../commerce/runtime';
+import {
+  STAFF_ESCALATION_APPROVAL_TYPE,
+  STAFF_ESCALATION_KEY_PREFIX,
+} from '../../commerce/staff_escalation';
 import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
@@ -56,6 +61,7 @@ import {
   WorkflowTaskKind,
   WorkflowTaskState,
   isTerminal,
+  type WorkflowEvent,
   type WorkflowTask,
 } from '../../workflow/domain';
 import {
@@ -149,7 +155,7 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     if (task === null) return j(404, { error: 'task not found' });
     const denied = agentReadGuard(req, task); // round-10 #2: own-task-only for agents
     if (denied !== null) return denied;
-    return j(200, withPayloadType(task));
+    return j(200, forCaller(req, task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
     return decisionGuard(req) ?? runAction(req, approveTask);
@@ -353,6 +359,12 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
       reason: `${payloadType} is minted by Core, never created through the API`,
     });
   }
+  // The escalation key namespace is Core's alone: a task created under one of
+  // its keys could stand where the owner's yes is looked for.
+  const idempotencyKey = optStrField(body.idempotency_key);
+  if (idempotencyKey !== undefined && idempotencyKey.startsWith(STAFF_ESCALATION_KEY_PREFIX)) {
+    return j(400, { error: 'reserved_idempotency_key', reason: 'this key namespace is minted by Core' });
+  }
   const input = {
     id: strField(body.id),
     kind: strField(body.kind),
@@ -372,7 +384,7 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
   };
   try {
     const task = service.create(input);
-    return j(201, { task: withPayloadType(task) });
+    return j(201, { task: forCaller(req, task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {
       return j(400, { error: err.message, field: err.field });
@@ -384,12 +396,68 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
         input.idempotencyKey !== ''
       ) {
         const existing = service.store().getActiveByIdempotencyKey(input.idempotencyKey);
-        if (existing !== null) return j(200, { task: withPayloadType(existing), deduped: true });
+        if (existing !== null) return j(200, { task: forCaller(req, existing), deduped: true });
       }
       return j(409, { error: err.message, code: err.code });
     }
     return j(500, { error: (err as Error).message });
   }
+}
+
+/**
+ * NEGOTIATION_PLAN §3 rule 1 — a supplier's price card carries the prices it
+ * asks the owner about, and one of them can be the hard floor. The floor is
+ * the owner's alone: Brain is an untrusted tenant and may learn a card
+ * exists, never the numbers on it. The owner's own surfaces (the phone's
+ * in-process inbox, the owner console) read it whole.
+ */
+function redactPriceCardForBrain(payload: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+  if (parsed === null || typeof parsed !== 'object') return payload;
+  const card = parsed as { type?: unknown; lines?: unknown };
+  if (card.type !== NEGOTIATION_PRICE_APPROVAL_TYPE) return payload;
+  const lines = Array.isArray(card.lines)
+    ? card.lines.map((line) =>
+        line !== null && typeof line === 'object'
+          ? { line_id: (line as { line_id?: unknown }).line_id }
+          : {},
+      )
+    : [];
+  return JSON.stringify({ ...card, lines, redacted: 'owner_only' });
+}
+
+/**
+ * EVERY route that returns a task goes through this, so no path — a read, a
+ * claim, `/running`, a deduped create, an action's echo — hands Brain a
+ * price card's numbers.
+ */
+function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown> {
+  const out = withPayloadType(task);
+  if (req.callerType !== 'brain' || typeof task.payload !== 'string') return out;
+  return { ...out, payload: redactPriceCardForBrain(task.payload) };
+}
+
+/** The same rule for the events feed, whose details can embed a task payload. */
+function eventForCaller(req: CoreRequest, event: WorkflowEvent): WorkflowEvent {
+  if (req.callerType !== 'brain' || typeof event.details !== 'string') return event;
+  let details: unknown;
+  try {
+    details = JSON.parse(event.details);
+  } catch {
+    return event;
+  }
+  if (details === null || typeof details !== 'object') return event;
+  const embedded = (details as { task_payload?: unknown }).task_payload;
+  if (typeof embedded !== 'string') return event;
+  const redacted = redactPriceCardForBrain(embedded);
+  return redacted === embedded
+    ? event
+    : { ...event, details: JSON.stringify({ ...details, task_payload: redacted }) };
 }
 
 async function getTask(req: CoreRequest): Promise<CoreResponse> {
@@ -401,7 +469,7 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   if (task === null) return j(404, { error: 'task not found' });
   const denied = agentReadGuard(req, task);
   if (denied !== null) return denied;
-  return j(200, { task: withPayloadType(task) });
+  return j(200, { task: forCaller(req, task) });
 }
 
 async function listTasks(req: CoreRequest): Promise<CoreResponse> {
@@ -415,7 +483,7 @@ async function listTasks(req: CoreRequest): Promise<CoreResponse> {
   const requested = Number(req.query.limit ?? 100);
   const limit = clampLimit(requested);
   const tasks = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
-  return j(200, { tasks: tasks.map(withPayloadType), count: tasks.length });
+  return j(200, { tasks: tasks.map((task) => forCaller(req, task)), count: tasks.length });
 }
 
 async function claimTask(req: CoreRequest): Promise<CoreResponse> {
@@ -475,7 +543,7 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
       leaseMs,
     });
     if (result.task === null) return j(204, undefined);
-    return j(200, withPayloadType(result.task));
+    return j(200, forCaller(req, result.task));
   }
   const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs, runnerFilter);
   if (task === null) return j(204, undefined);
@@ -487,7 +555,7 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   // (Go-Core parity) so the daemon's `build_task_prompt` augments the
   // LLM prompt with structured capability/params instead of falling
   // back to the abstract description.
-  return j(200, withPayloadType(task));
+  return j(200, forCaller(req, task));
 }
 
 async function heartbeatTask(req: CoreRequest): Promise<CoreResponse> {
@@ -558,7 +626,10 @@ async function listEvents(req: CoreRequest): Promise<CoreResponse> {
   const events = needsDeliveryOnly
     ? repo.listUndeliveredEvents(nowMs, since, limit)
     : repo.listAllEventsSince(since, limit);
-  return j(200, { events, count: events.length });
+  return j(200, {
+    events: events.map((event) => eventForCaller(req, event)),
+    count: events.length,
+  });
 }
 
 /**
@@ -1128,6 +1199,14 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   // attachment puts to the owner; a yes to the second authors a PaymentNote.
   ORDER_CHECKOUT_LINK_TYPE,
   PAYMENT_EVIDENCE_RECORD_TYPE,
+  // NEGOTIATION_PLAN §4.3 — "offer a price below your automatic limit?" is the
+  // supplier owner's alone; Brain may not answer it either way.
+  NEGOTIATION_PRICE_APPROVAL_TYPE,
+  // §4.5 — the buyer owner's "your tender is ready" notice.
+  TENDER_READY_TYPE,
+  // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
+  // cap. A yes lets money move: Brain may neither mint nor decide one.
+  STAFF_ESCALATION_APPROVAL_TYPE,
 ]);
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
@@ -1150,7 +1229,7 @@ async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResp
       callerType: req.callerType,
       callerDID: req.callerDID,
     })) as WorkflowTask;
-    return j(200, { task: withPayloadType(task) });
+    return j(200, { task: forCaller(req, task) });
   } catch (err) {
     if (err instanceof WorkflowValidationError) {
       const status = err.field === 'id' ? 404 : 400;

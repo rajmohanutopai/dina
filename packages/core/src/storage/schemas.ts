@@ -2755,6 +2755,120 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON commerce_order_attachments(command_id) WHERE command_id IS NOT NULL;
     `,
   },
+  {
+    version: 49,
+    name: 'commerce_negotiation',
+    // NEGOTIATION_PLAN §5. Appended rather than edited in: boot reads none of
+    // these, but an old dev node must still reach them by migrating.
+    //
+    // Supplier side —
+    // `commerce_negotiation_counters`: every counter a buyer sent, keyed by
+    //   the buyer and its own counter id (the replay key), with the answer
+    //   Core gave, so a repeat is answered the same way.
+    // `commerce_negotiation_approvals`: one owner question per quote line
+    //   whose buyer asked below the automatic limit, and the owner's answer.
+    // `commerce_quote_outcomes`: not-awarded notices; a closed quote takes no
+    //   more counters.
+    //
+    // Buyer side —
+    // `commerce_buyer_counters`: every counter this node sent and what came
+    //   back.
+    // `commerce_tender_negotiation`: a tender's policy and where the loop
+    //   and the award stand.
+    // `commerce_tender_notices`: each loser's not-awarded notice, written
+    //   with the award and retried until the transport takes it.
+    // `commerce_staff_clearances`: §4.7 — which held order an owner's yes
+    //   above a clerk's cap was spent on, so that order (and only it) may be
+    //   sent, and sent again after a failure, without a new card.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_negotiation_counters (
+        buyer_did TEXT NOT NULL,
+        counter_id TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        counter_digest TEXT NOT NULL,
+        counter_json TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (buyer_did, counter_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_negotiation_counters_buyer
+        ON commerce_negotiation_counters(buyer_did, created_at);
+      CREATE INDEX IF NOT EXISTS idx_negotiation_counters_quote
+        ON commerce_negotiation_counters(quote_id, round);
+      CREATE TABLE IF NOT EXISTS commerce_negotiation_approvals (
+        quote_id TEXT NOT NULL,
+        line_id TEXT NOT NULL,
+        buyer_did TEXT NOT NULL,
+        asked_minor_units TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'declined', 'withdrawn')),
+        task_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER,
+        PRIMARY KEY (quote_id, line_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_negotiation_approvals_task
+        ON commerce_negotiation_approvals(task_id);
+      CREATE TABLE IF NOT EXISTS commerce_quote_outcomes (
+        buyer_did TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('not_awarded')),
+        received_at INTEGER NOT NULL,
+        PRIMARY KEY (buyer_did, quote_id)
+      );
+      CREATE TABLE IF NOT EXISTS commerce_buyer_counters (
+        counter_id TEXT PRIMARY KEY,
+        tender_id TEXT NOT NULL DEFAULT '',
+        supplier_did TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('sent', 'revised', 'held', 'pending', 'refused', 'unsent')),
+        counter_json TEXT NOT NULL,
+        answer_digest TEXT NOT NULL DEFAULT '',
+        sent_at INTEGER NOT NULL,
+        answered_at INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX IF NOT EXISTS idx_buyer_counters_quote
+        ON commerce_buyer_counters(supplier_did, quote_id, round);
+      CREATE TABLE IF NOT EXISTS commerce_tender_negotiation (
+        tender_id TEXT PRIMARY KEY,
+        currency TEXT NOT NULL,
+        target_total_minor TEXT NOT NULL,
+        budget_ceiling_minor TEXT NOT NULL,
+        max_rounds INTEGER NOT NULL,
+        deadline_at INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('negotiating', 'ready', 'awarded', 'closed')),
+        awarded_supplier_did TEXT NOT NULL DEFAULT '',
+        approval_id TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tender_negotiation_state
+        ON commerce_tender_negotiation(state);
+      CREATE TABLE IF NOT EXISTS commerce_tender_notices (
+        tender_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sent', 'abandoned')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tender_id, supplier_did)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tender_notices_state
+        ON commerce_tender_notices(state, updated_at);
+      CREATE TABLE IF NOT EXISTS commerce_staff_clearances (
+        approval_id TEXT NOT NULL,
+        device_did TEXT NOT NULL,
+        escalation_id TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (approval_id, device_did)
+      );
+      ALTER TABLE commerce_tender_members ADD COLUMN service_rkey TEXT NOT NULL DEFAULT 'self';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

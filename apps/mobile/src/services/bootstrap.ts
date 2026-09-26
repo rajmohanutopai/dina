@@ -57,6 +57,7 @@ import {
   composeWorkflowHooks,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
+  negotiationWorkflowHooks,
   orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   registerDevice as registerDeviceDID,
@@ -752,6 +753,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       coordinationWorkflowHooks({ nowMs: nowMsFn }),
       integrationWorkflowHooks({ nowMs: nowMsFn }),
       orderAttachmentWorkflowHooks({ nowMs: nowMsFn }),
+      negotiationWorkflowHooks({ nowMs: nowMsFn }),
     ),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the

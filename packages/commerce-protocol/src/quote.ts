@@ -56,7 +56,22 @@ export interface QuoteRequestLine {
   product: ProductRef;
   requested_quantity: Quantity;
   acceptable_substitutions?: 'none' | 'equivalent' | 'supplier_may_propose';
+  /**
+   * NEGOTIATION_PLAN §4.6 — a NEED instead of a product, for goods no two
+   * suppliers share a code for ("floral celebration cake, 20 servings").
+   * The line's `product` is then the buyer's own placeholder (`custom`,
+   * issued by the buyer) and the supplier answers with its own item as a
+   * substitution. From protocol minor 1.2; requires `supplier_may_propose`.
+   */
+  requirement?: QuoteRequirement;
 }
+
+export interface QuoteRequirement {
+  text: string;
+  category_id?: string;
+}
+
+export const MAX_REQUIREMENT_TEXT_LENGTH = 200;
 
 export interface QuoteRequest {
   protocol_version: string;
@@ -122,6 +137,14 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
     ) {
       return 'quoteRequest.lines[].acceptable_substitutions: must be none | equivalent | supplier_may_propose';
     }
+    if (line.requirement !== undefined) {
+      const requirementError = validateRequirementLine(
+        line,
+        request.protocol_version,
+        request.buyer_did,
+      );
+      if (requirementError) return requirementError;
+    }
   }
   const dupErr = validateLineIds(request.lines as { line_id: string }[]);
   if (dupErr) return `quoteRequest.${dupErr}`;
@@ -160,6 +183,55 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
   }
 
   return verifyCommerceRecordDigest('request', request, sha256);
+}
+
+/**
+ * A requirement line (NEGOTIATION_PLAN §4.6): a bounded description, a
+ * placeholder product the BUYER issued (so no supplier's code is claimed),
+ * and substitution authority — a need with `none` could never be answered.
+ * Gated on minor 1.2 so a 1.1 conversation never grows a field its
+ * counterparty's validator did not pin (the `due_basis` precedent).
+ */
+function validateRequirementLine(
+  line: Record<string, unknown>,
+  protocolVersion: unknown,
+  buyerDid: unknown,
+): string | null {
+  const minor = Number(String(protocolVersion).split('.')[1] ?? '0');
+  if (!Number.isFinite(minor) || minor < 2) {
+    return 'quoteRequest.lines[].requirement: requires protocol minor >= 1.2';
+  }
+  if (!isRecord(line.requirement)) return 'quoteRequest.lines[].requirement: must be an object';
+  const requirement = line.requirement;
+  if (
+    typeof requirement.text !== 'string' ||
+    requirement.text.trim() === '' ||
+    requirement.text.length > MAX_REQUIREMENT_TEXT_LENGTH
+  ) {
+    return `quoteRequest.lines[].requirement.text: must be 1 to ${MAX_REQUIREMENT_TEXT_LENGTH} characters`;
+  }
+  // Bidi and control characters would let a need read differently than it is.
+  // eslint-disable-next-line no-control-regex -- control and bidi characters are the refusal
+  if (/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(requirement.text)) {
+    return 'quoteRequest.lines[].requirement.text: must not contain control or bidi characters';
+  }
+  if (requirement.category_id !== undefined) {
+    const err = validateId(requirement.category_id, 'quoteRequest.lines[].requirement.category_id');
+    if (err) return err;
+  }
+  for (const key of Object.keys(requirement)) {
+    if (key !== 'text' && key !== 'category_id') {
+      return `quoteRequest.lines[].requirement: unexpected field "${key}"`;
+    }
+  }
+  if (line.acceptable_substitutions !== 'supplier_may_propose') {
+    return 'quoteRequest.lines[].requirement: needs acceptable_substitutions "supplier_may_propose"';
+  }
+  const product = line.product as ProductRef;
+  if (product.scheme !== 'custom' || product.issuer_did !== buyerDid) {
+    return 'quoteRequest.lines[].requirement: the line product must be a custom placeholder issued by the buyer';
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +657,12 @@ export function verifyQuoteLinesAnswerRequest(
 
     if (!sameProduct(line.requested_product, source.product)) {
       return `quote.lines[${line.line_id}]: requested_product does not match the product the buyer asked for`;
+    }
+
+    // NEGOTIATION_PLAN §4.6 — a requirement line names the buyer's own
+    // placeholder, which is not goods. An answer must offer a real product.
+    if (source.requirement !== undefined && sameProduct(line.offered_product, source.product)) {
+      return `quote.lines[${line.line_id}]: answers a requirement with the buyer's placeholder, not a product`;
     }
 
     // Substitution authority is the buyer's to grant, and defaults to NONE.

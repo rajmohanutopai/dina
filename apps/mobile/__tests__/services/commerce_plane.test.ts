@@ -46,9 +46,11 @@ const BUSINESS_DID = 'did:plc:chairmakermobile000';
  * lifecycle lane for ever; and a dispatch intent's crash replay is what makes
  * "restart-recoverable from the row alone" true rather than aspirational, so
  * its tick is always-on rather than optional. The sixth is the §8 invite
- * sweep — the same always-on rule.
+ * sweep — the same always-on rule. The seventh is the NEGOTIATION_PLAN §4.5
+ * tender loop: a buyer's negotiated tender must keep moving on the phone,
+ * and with no policy anywhere it ticks quietly.
  */
-const COMMERCE_TICKS = 6;
+const COMMERCE_TICKS = 7;
 
 /** A fake AT Protocol repo: one record, CAS on the CID we handed out. */
 class FakeRepo {

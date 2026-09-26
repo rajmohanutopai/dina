@@ -772,7 +772,7 @@ per scope because two of the three operations carry no order total:
 | Scope | Operation | Cap basis |
 |---|---|---|
 | `commerce_confirm` | the draft vouch ceremony (pre-quote — no money exists yet) | no cap applies; scope + install-role check only. Money control lives at submit, which every confirmed draft must still pass. |
-| `commerce_submit` | buyer approve/submit; supplier order-accept | the bound quote/order total. A total whose currency differs from the grant currency ESCALATES to owner approval — minor units across currencies never compare, so the gate cannot decide alone. |
+| `commerce_submit` | buyer approve/submit, including a tender award and an order held from a quote (NEGOTIATION_PLAN §4.7); supplier order-accept | the bound quote/order total. A total whose currency differs from the grant currency ESCALATES to owner approval — minor units across currencies never compare, so the gate cannot decide alone. |
 | `commerce_receive_goods` | signing DeliveryReceipts | the receipt's value priced from the bound quote (receipt → note → order → quote makes this computable). Same currency rule: a mismatch escalates. |
 
 ```

@@ -15,12 +15,19 @@
  * APPROVAL IS READ BACK HERE, not consumed by state surgery. An
  * approved card sits `queued` (the one legal post-approval state), and
  * this function reports it as `approved` so the caller proceeds. The
- * authority is NOT explicitly marked used, and that is only safe
- * because every operation wired through this seam is single-use at the
- * domain (a delivery note takes ONE receipt — the one-answer rule), so
- * a standing approved card authorizes nothing after the operation
- * lands. A future capped scope without such an invariant must add
- * explicit consumption before reusing this seam.
+ * authority is NOT explicitly marked used where the operation is
+ * single-use at the domain (a delivery note takes ONE receipt — the
+ * one-answer rule), so a standing approved card authorizes nothing after
+ * the operation lands.
+ *
+ * A quote is NOT single-use (a pack may set `max_uses` above 1), so the
+ * purchasing doors (NEGOTIATION_PLAN §4.7) spend the card explicitly with
+ * `consumeStaffEscalation` when the hold it approved succeeds, and record
+ * the held order it was spent on (`commerce_staff_clearances`): one owner
+ * yes, one order.
+ *
+ * Only Core mints these cards: the workflow API refuses the payload type and
+ * the key namespace, and Brain may not decide one.
  */
 
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
@@ -61,6 +68,12 @@ export function escalateStaffOperation(args: {
   value: Money | null;
   reason: string;
   nowMs: number;
+  /**
+   * Is this card already spent, by a record the caller keeps (NEGOTIATION_PLAN
+   * §4.7's clearances)? A spent card is finished here — whatever state a
+   * crash left it in — and a new card is raised for the new question.
+   */
+  spentElsewhere?: (taskId: string) => boolean;
 }): StaffEscalationOutcome {
   const service = getWorkflowService();
   if (service === null) return { kind: 'unavailable' };
@@ -69,12 +82,24 @@ export function escalateStaffOperation(args: {
   const idemKey = `${STAFF_ESCALATION_APPROVAL_TYPE}:${args.deviceDid}:${args.scope}:${args.subject}:${valueKey}`;
   const existing = service.store().getActiveByIdempotencyKey(idemKey);
   if (existing !== null) {
-    // `pending_approval → queued` is the approve route's one transition,
-    // and nothing else claims these cards — so `queued` MEANS approved.
-    if (existing.status === WorkflowTaskState.Queued) {
-      return { kind: 'approved', taskId: existing.id };
+    // The card must be THIS question, minted here: a task under the key that
+    // is not a Core escalation for the same device, scope, subject and value
+    // is never read as the owner's yes. Fail closed — the operation refuses.
+    // (The API refuses both the payload type and the key namespace, and Brain
+    // may not decide the card, so this is defence behind those doors.)
+    if (!isThisEscalation(existing.payload, args)) return { kind: 'unavailable' };
+    if (args.spentElsewhere?.(existing.id) === true) {
+      // Spent, and a crash kept the card from saying so: finish it, then ask
+      // the owner afresh below.
+      if (!finishSpend(existing.id, args.nowMs)) return { kind: 'unavailable' };
+    } else {
+      // `pending_approval → queued` is the approve route's one transition,
+      // and nothing else claims these cards — so `queued` MEANS approved.
+      if (existing.status === WorkflowTaskState.Queued) {
+        return { kind: 'approved', taskId: existing.id };
+      }
+      return { kind: 'escalated', taskId: existing.id };
     }
-    return { kind: 'escalated', taskId: existing.id };
   }
 
   const payload: StaffEscalationPayload = {
@@ -103,4 +128,77 @@ export function escalateStaffOperation(args: {
     initialState: WorkflowTaskState.PendingApproval,
   });
   return { kind: 'escalated', taskId: id };
+}
+
+/** The idempotency-key namespace only this module mints; the workflow API refuses it. */
+export const STAFF_ESCALATION_KEY_PREFIX = `${STAFF_ESCALATION_APPROVAL_TYPE}:`;
+
+function isThisEscalation(
+  payloadJson: string | undefined,
+  args: { deviceDid: string; scope: StaffScope; subject: string; value: Money | null },
+): boolean {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(payloadJson ?? '');
+  } catch {
+    return false;
+  }
+  if (payload === null || typeof payload !== 'object') return false;
+  const card = payload as Partial<StaffEscalationPayload>;
+  const sameValue =
+    args.value === null
+      ? card.value === null
+      : card.value !== null &&
+        card.value !== undefined &&
+        card.value.currency === args.value.currency &&
+        card.value.minor_units === args.value.minor_units;
+  return (
+    card.type === STAFF_ESCALATION_APPROVAL_TYPE &&
+    card.device_did === args.deviceDid &&
+    card.scope === args.scope &&
+    card.subject === args.subject &&
+    sameValue
+  );
+}
+
+/**
+ * Mark an approved card spent (NEGOTIATION_PLAN §4.7): `queued → running` by
+ * compare-and-swap, then `completed` with a result naming what it was spent
+ * on, so the owner's history keeps reading "approved" (a completed approval),
+ * never "denied", and the card leaves the active set. The caller records the
+ * spend durably FIRST (the clearance row); this only brings the card's state
+ * into line. False when there is no workflow service or the card was not
+ * approved-and-unspent.
+ */
+export function consumeStaffEscalation(taskId: string, spentOn: string, nowMs: number): boolean {
+  const service = getWorkflowService();
+  if (service === null) return false;
+  try {
+    if (
+      !service.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs)
+    ) {
+      return false;
+    }
+    service.complete(taskId, JSON.stringify({ spent_on: spentOn }), `spent on ${spentOn}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Finish a spend a crash interrupted: from `queued` or `running` to `completed`. */
+function finishSpend(taskId: string, nowMs: number): boolean {
+  const service = getWorkflowService();
+  if (service === null) return false;
+  try {
+    const task = service.store().getById(taskId);
+    if (task === null) return false;
+    if (task.status === WorkflowTaskState.Queued) {
+      service.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
+    }
+    service.complete(taskId, JSON.stringify({ spent: true }), 'spent (finished after an interruption)');
+    return true;
+  } catch {
+    return false;
+  }
 }

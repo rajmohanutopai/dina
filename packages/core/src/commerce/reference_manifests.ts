@@ -95,6 +95,15 @@ const QUOTE_PARAMS = {
             properties: { scheme: { type: 'string' }, value: { type: 'string' } },
           },
           requested_quantity: QUANTITY_SCHEMA,
+          // NEGOTIATION_PLAN §4.6 — declared so a requirement line reaches
+          // the runner whole: a need the runner cannot read is a need it
+          // cannot answer.
+          acceptable_substitutions: { type: 'string' },
+          requirement: {
+            type: 'object',
+            required: ['text'],
+            properties: { text: { type: 'string' }, category_id: { type: 'string' } },
+          },
         },
       },
     },
@@ -131,7 +140,55 @@ const QUOTE_RESULT = {
           line_id: { type: 'string' },
           unit_price: MONEY_SCHEMA,
           quantity: QUANTITY_SCHEMA,
+          // §4.6 — the runner's own item for a requirement line, with one
+          // line saying why. Core accepts it only when it is an item of this
+          // supplier's live published catalogue.
+          offered_product: {
+            type: 'object',
+            required: ['scheme', 'value'],
+            properties: {
+              scheme: { type: 'string' },
+              value: { type: 'string' },
+              issuer_did: { type: 'string' },
+            },
+          },
+          substitution_evidence: { type: 'array', items: { type: 'string' } },
         },
+      },
+    },
+  },
+} as const;
+
+/**
+ * NEGOTIATION_PLAN §4.3 — a buyer's counter, with the quote it counters.
+ *
+ * Core adds `current_quote` before dispatch, from its own ledger: a runner
+ * holds no ledger, and a counter alone says nothing about the lines it moves.
+ */
+const NEGOTIATE_PARAMS = {
+  type: 'object',
+  required: ['counter', 'current_quote'],
+  properties: {
+    counter: { type: 'object' },
+    current_quote: { type: 'object' },
+  },
+} as const;
+
+/**
+ * The runner proposes, per line, the unit price it would move to — or
+ * `hold` to stand on the current quote. Core clamps every proposal to the
+ * owner's floors before anything is signed; a runner never sees a floor.
+ */
+const NEGOTIATE_RESULT = {
+  type: 'object',
+  properties: {
+    hold: { type: 'boolean' },
+    lines: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['line_id', 'unit_price'],
+        properties: { line_id: { type: 'string' }, unit_price: MONEY_SCHEMA },
       },
     },
   },
@@ -303,7 +360,9 @@ const CANCEL_RESULT = {
 export const SUPPLIER_REFERENCE_MANIFEST: PluginManifest = {
   $type: PLUGIN_NSIDS.release,
   plugin_id: 'com.dinakernel.commerce.supplier',
-  version: '1.0.0',
+  // 1.1.0 — NEGOTIATION_PLAN: `negotiate-quote`, and requirement lines on
+  // `request-quote`. Installs of 1.0.0 decline counters until updated.
+  version: '1.1.0',
   display_name: 'Commerce — Supplier',
   short_description: 'Answer buyers: quote, take orders, report status, rule on cancellations.',
   execution: { mode: 'runner' },
@@ -321,6 +380,19 @@ export const SUPPLIER_REFERENCE_MANIFEST: PluginManifest = {
       effects: { idempotency: 'supported' },
       params_schema: QUOTE_PARAMS,
       result_schema: QUOTE_RESULT,
+    },
+    {
+      id: 'com.dinakernel.commerce.negotiate-quote',
+      display_name: 'Answer a buyer counter-offer',
+      interaction: 'query',
+      // A price, like a quote: nothing is committed until an order.
+      action_class: 'quote',
+      privacy_class: 'personal',
+      kinds: ['provider'],
+      // Core replays by counter id, so a repeat never reaches the runner twice.
+      effects: { idempotency: 'supported' },
+      params_schema: NEGOTIATE_PARAMS,
+      result_schema: NEGOTIATE_RESULT,
     },
     {
       id: 'com.dinakernel.commerce.submit-order',

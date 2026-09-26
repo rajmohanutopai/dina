@@ -138,6 +138,7 @@ interface QuoteLineParam {
   line_id: string;
   product: ProductRef;
   requested_quantity: Quantity;
+  requirement?: { text: string; category_id?: string };
 }
 
 function readQuoteLines(params: unknown): QuoteLineParam[] | null {
@@ -154,7 +155,22 @@ function readQuoteLines(params: unknown): QuoteLineParam[] | null {
       return null;
     if (typeof product.scheme !== 'string' || typeof product.value !== 'string') return null;
     if (typeof quantity.value !== 'string' || typeof quantity.unit_code !== 'string') return null;
-    out.push({ line_id: line.line_id, product, requested_quantity: quantity });
+    const requirement = line.requirement as { text?: unknown; category_id?: unknown } | undefined;
+    out.push({
+      line_id: line.line_id,
+      product,
+      requested_quantity: quantity,
+      ...(requirement !== undefined && requirement !== null && typeof requirement.text === 'string'
+        ? {
+            requirement: {
+              text: requirement.text,
+              ...(typeof requirement.category_id === 'string'
+                ? { category_id: requirement.category_id }
+                : {}),
+            },
+          }
+        : {}),
+    });
   }
   return out;
 }
@@ -173,7 +189,14 @@ export function answerQuoteRequest(params: unknown, items: readonly CatalogItem[
   if (lines === null) return { ok: false, error: 'quote request: lines are unreadable' };
   const priced: Record<string, unknown>[] = [];
   for (const line of lines) {
-    const item = findPublishedItem(items, line.product);
+    // NEGOTIATION_PLAN §4.6 — a need, not a product: answer with our own item.
+    const matched =
+      line.requirement === undefined
+        ? null
+        : matchRequirement(items, line.requirement, line.requested_quantity.unit_code);
+    if (line.requirement !== undefined && matched === null)
+      return decline(`no_match: ${line.line_id}`);
+    const item = matched?.item ?? findPublishedItem(items, line.product);
     if (item === null) return decline(`not_in_catalog: ${line.line_id}`);
     if (item.indicative_price === undefined) return decline(`no_published_price: ${line.line_id}`);
     // The published price is per ONE sell unit; a line in another unit, or a
@@ -191,9 +214,87 @@ export function answerQuoteRequest(params: unknown, items: readonly CatalogItem[
       line_id: line.line_id,
       unit_price: item.indicative_price,
       quantity: line.requested_quantity,
+      ...(matched === null
+        ? {}
+        : { offered_product: item.product, substitution_evidence: [matched.evidence] }),
     });
   }
   return { ok: true, result: { can_supply: true, lines: priced } };
+}
+
+const STOP_WORDS = new Set([
+  'and',
+  'for',
+  'the',
+  'with',
+  'from',
+  'per',
+  'each',
+  'one',
+  'any',
+  'our',
+  'your',
+]);
+
+function words(text: string): string[] {
+  // Split on whitespace and punctuation rather than Unicode property escapes,
+  // which not every JS engine the phone runs supports. Quote and backtick are written as escapes so no reader of this file
+  // mistakes them for the start of a string.
+  return text
+    .toLowerCase()
+    .split(/[\s.,;:!?()[\]{}\u0022\u0027\u0060/\\|+*&%$#@^~<>=_-]+/)
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word) && !/^[0-9]+$/.test(word));
+}
+
+/**
+ * The reference matcher for a requirement line (§4.6): category first, then
+ * words the requirement shares with the item's name, description and
+ * section. Deterministic, and deliberately plain — a pack may do better. An
+ * item must share at least one word and be sold in the asked unit, one at a
+ * time; ties go to the lower price, then the product value.
+ */
+export function matchRequirement(
+  items: readonly CatalogItem[],
+  requirement: { text: string; category_id?: string },
+  unitCode: string,
+): { item: CatalogItem; evidence: string } | null {
+  const wanted = [...new Set(words(requirement.text))];
+  if (wanted.length === 0) return null;
+  let best: { item: CatalogItem; score: number } | null = null;
+  for (const item of items) {
+    if (item.pack.sell_unit.value !== '1' || item.pack.sell_unit.unit_code !== unitCode) continue;
+    if (
+      requirement.category_id !== undefined &&
+      !item.category_ids.includes(requirement.category_id)
+    ) {
+      continue;
+    }
+    if (item.indicative_price === undefined) continue;
+    const section = item.attributes?.section;
+    const have = new Set(
+      words(
+        [item.name, item.description ?? '', typeof section === 'string' ? section : ''].join(' '),
+      ),
+    );
+    const score = wanted.filter((word) => have.has(word)).length;
+    if (score === 0) continue;
+    if (
+      best === null ||
+      score > best.score ||
+      (score === best.score &&
+        (BigInt(item.indicative_price.minor_units) <
+          BigInt(best.item.indicative_price?.minor_units ?? '0') ||
+          (item.indicative_price.minor_units === best.item.indicative_price?.minor_units &&
+            item.product.value < best.item.product.value)))
+    ) {
+      best = { item, score };
+    }
+  }
+  if (best === null) return null;
+  return {
+    item: best.item,
+    evidence: `matched "${requirement.text.slice(0, 80)}" to "${best.item.name.slice(0, 80)}" (${String(best.score)} of ${String(wanted.length)} words)`,
+  };
 }
 
 /** This business's own reference for an order it takes — stable per purchase order. */
@@ -241,6 +342,51 @@ export function answerOrderStatus(
     : { ok: true, result: { state: 'rejected' } };
 }
 
+/**
+ * NEGOTIATION_PLAN §4.3 — the reference strategy for a counter-offer: move
+ * each line HALFWAY from its current price toward the price that would meet
+ * the buyer's whole-quote target, rounded down to the minor unit. A target at
+ * or above the current total is a hold. The runner is never told a floor:
+ * Core clamps whatever this proposes before anything is signed, so the
+ * strategy may be simple without being unsafe.
+ */
+export function answerCounterOffer(params: unknown): SupplierAnswer {
+  if (params === null || typeof params !== 'object') {
+    return { ok: false, error: 'counter: params missing' };
+  }
+  const { counter, current_quote: quote } = params as {
+    counter?: { target_total?: { minor_units?: unknown; currency?: unknown } };
+    current_quote?: {
+      total?: { minor_units?: unknown; currency?: unknown };
+      lines?: { line_id?: unknown; unit_price?: { minor_units?: unknown; currency?: unknown } }[];
+    };
+  };
+  const target = counter?.target_total?.minor_units;
+  const total = quote?.total?.minor_units;
+  const currency = quote?.total?.currency;
+  if (typeof target !== 'string' || typeof total !== 'string' || typeof currency !== 'string') {
+    return { ok: false, error: 'counter: target or quote unreadable' };
+  }
+  const targetMinor = BigInt(target);
+  const totalMinor = BigInt(total);
+  if (totalMinor <= 0n || targetMinor >= totalMinor) return { ok: true, result: { hold: true } };
+  const lines: { line_id: string; unit_price: { currency: string; minor_units: string } }[] = [];
+  for (const line of quote?.lines ?? []) {
+    const price = line.unit_price?.minor_units;
+    if (typeof line.line_id !== 'string' || typeof price !== 'string') {
+      return { ok: false, error: 'counter: quote line unreadable' };
+    }
+    const current = BigInt(price);
+    const aimed = (current * targetMinor) / totalMinor;
+    const proposed = current - (current - aimed) / 2n;
+    lines.push({
+      line_id: line.line_id,
+      unit_price: { currency, minor_units: proposed.toString(10) },
+    });
+  }
+  return { ok: true, result: { lines } };
+}
+
 export function answerCancellation(): SupplierAnswer {
   return { ok: true, result: { verdict: 'cancelled' } };
 }
@@ -264,6 +410,8 @@ export function answerSupplierTask(
       return answerOrderStatus(params, deps.runtime, deps.buyerDid);
     case 'com.dinakernel.commerce.cancel-order':
       return answerCancellation();
+    case 'com.dinakernel.commerce.negotiate-quote':
+      return answerCounterOffer(params);
     default:
       return { ok: false, error: `unsupported capability ${capabilityId}` };
   }

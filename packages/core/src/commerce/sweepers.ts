@@ -30,6 +30,7 @@
  */
 
 import { CommerceAdmissionSweeper } from './admission_sweeper';
+import { NegotiationSweeper, type NegotiationSweeperOptions } from './buyer_negotiation';
 import { ContinuityReleaseSweeper } from './continuity_release_sweeper';
 import { DispatchIntentSweeper } from './dispatch_intent_sweeper';
 import { CommerceEpochRevalidator } from './epoch_revalidator';
@@ -87,6 +88,8 @@ export interface CommerceSweeperOptions {
    * for an external runner. It idles until the owner pairs it to an install.
    */
   supplierRunner?: Pick<SupplierReferenceRunnerOptions, 'dispatch' | 'intervalMs' | 'onError'>;
+  /** NEGOTIATION_PLAN §4.5 — the buyer's tender loop; always on, idle with no policy. */
+  negotiation?: Pick<NegotiationSweeperOptions, 'intervalMs' | 'onError'>;
   /** Injectable timer pair, shared by all five. Tests pass fakes. */
   setInterval?: CommerceAdmissionSweeperOptions['setInterval'];
   clearInterval?: CommerceAdmissionSweeperOptions['clearInterval'];
@@ -101,6 +104,7 @@ export interface CommerceSweepers {
   dispatch: DispatchIntentSweeper;
   invite: InviteSweeper;
   supplierRunner: SupplierReferenceRunner | null;
+  negotiation: NegotiationSweeper;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
@@ -129,6 +133,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     options.supplierRunner === undefined
       ? null
       : new SupplierReferenceRunner({ ...options.supplierRunner, ...timers });
+  const negotiation = new NegotiationSweeper({ ...(options.negotiation ?? {}), ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
@@ -136,6 +141,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
   dispatch.start();
   invite.start();
   supplierRunner?.start();
+  negotiation.start();
   return {
     admission,
     epoch,
@@ -144,6 +150,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     dispatch,
     invite,
     supplierRunner,
+    negotiation,
     stop: () => {
       supplierRunner?.stop();
       // All stopped even if an earlier one throws: a teardown that abandons a
@@ -164,7 +171,11 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
               try {
                 dispatch.stop();
               } finally {
-                invite.stop();
+                try {
+                  invite.stop();
+                } finally {
+                  negotiation.stop();
+                }
               }
             }
           }

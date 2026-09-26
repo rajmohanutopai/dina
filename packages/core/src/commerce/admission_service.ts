@@ -104,6 +104,30 @@ export class CommerceAdmissionService {
   }
 
   /**
+   * NEGOTIATION_PLAN §4.3 — register a counter's revision AND retain the
+   * answer the buyer may replay, together or not at all.
+   *
+   * THE TWO WRITES ARE ONE FACT. A head that advanced with no retained answer
+   * is a revision the buyer can never recover: its replay finds nothing, and
+   * by the time it asks again the counter's window has closed. `retain` runs
+   * inside the same transaction and only when the registration succeeded; if
+   * it throws, the revision rolls back with it.
+   *
+   * Returns null on success, or the ledger's refusal (nothing written).
+   */
+  registerRevisionWithAnswer(
+    quote: SignedQuote,
+    expectedBuyerDid: string,
+    retain: () => void,
+  ): string | null {
+    return this.deps.transaction.atomically('registerRevisionWithAnswer', () => {
+      const refused = this.deps.engine.registerSignedQuoteInTx(quote, expectedBuyerDid);
+      if (refused === null) retain();
+      return refused;
+    });
+  }
+
+  /**
    * §9.8/§9.12 — issue a quote in answer to a buyer's request: retain the
    * request and register the family, together or not at all.
    *

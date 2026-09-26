@@ -38,6 +38,7 @@ import {
   type SupplierApprovalPayload,
 } from './approval_payload';
 import { isCommerceCapability } from './capability_names';
+import { settleInboundCounter } from './negotiation_supplier';
 import { settleInboundQuote } from './quote_issuance';
 import { rehydrateOrderStatus } from './rehydrate';
 import { getCommerceRuntime } from './runtime';
@@ -330,6 +331,14 @@ const ISSUES_QUOTE: ReadonlySet<string> = new Set([
   'com.dinakernel.commerce.request_quote',
 ]);
 
+/** NEGOTIATION_PLAN §4.3 — the runner proposed prices; Core clamps and signs. */
+const COUNTERS_QUOTE: ReadonlySet<string> = new Set([
+  'counter_offer',
+  'com.dinakernel.commerce.counter_offer',
+  // The manifest's own id for the lane (`negotiate-quote`), canonicalized.
+  'negotiate_quote',
+]);
+
 const REPORTS_STATUS: ReadonlySet<string> = new Set([
   'order_status',
   'com.dinakernel.commerce.order_status',
@@ -566,6 +575,19 @@ export function transformInboundOrderResult(args: {
     // then reads "declined: <reason>" instead of a member that never replied.
     if (issued.kind === 'declined') return { kind: 'replace', json: issued.declineJson };
     return { kind: 'withhold', reason: issued.refusal };
+  }
+
+  // §4.3 — a counter's answer is a revision Core signs, or the head unchanged.
+  // The runner's prices never reach the buyer raw: they are clamped to the
+  // owner's floors first, and an unusable answer withholds.
+  if (isCommerceCapability(COUNTERS_QUOTE, args.capability, args.capabilityId)) {
+    const settled = settleInboundCounter({
+      params: args.params,
+      buyerDid: args.fromDid,
+      runnerResultJson: args.resultJSON,
+      nowMs,
+    });
+    return { kind: 'replace', json: settled.json };
   }
 
   if (!decides && !reports) return { kind: 'passthrough' };

@@ -71,6 +71,7 @@ import {
   type CommerceOrderStatus,
   type DeliveryProjection,
   type ExtractionCommitment,
+  type Money,
   type OrderState,
   type PurchaseOrderProposal,
   type Sha256Fn,
@@ -89,6 +90,16 @@ import {
 import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
 import { enumerateV1Records } from '../../commerce/attribution_boundary';
 import { getBuyerOrderSender, submitApprovedOrder } from '../../commerce/buyer_executor';
+import {
+  counterInFlight,
+  rankTender,
+  recordNotAwardedNotices,
+  sendCounterOffer,
+  sendNotAwardedNotices,
+  startTenderNegotiation,
+  tenderPolicyError,
+  type TenderPolicyInput,
+} from '../../commerce/buyer_negotiation';
 import { requestQuote } from '../../commerce/buyer_quote_request';
 import { describeOrderForOwner } from '../../commerce/buyer_reconciliation';
 import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
@@ -244,7 +255,7 @@ import {
 } from '../../commerce/runtime';
 import { resolveServiceBinding } from '../../commerce/service_binding';
 import { applySkuMint } from '../../commerce/sku_mint';
-import { escalateStaffOperation } from '../../commerce/staff_escalation';
+import { consumeStaffEscalation, escalateStaffOperation } from '../../commerce/staff_escalation';
 import {
   checkStaffOperation,
   STAFF_INSTALL_SCOPES,
@@ -524,6 +535,144 @@ function staffOrOwnerCaller(
   return denied;
 }
 
+/**
+ * NEGOTIATION_PLAN §4.7 — the buyer's purchasing doors (the tender ranking
+ * and award, the held quotes and `from_quote`, the send) admit a staff device
+ * holding a live buyer-side `commerce_submit` grant, as the draft path does.
+ * A person still decides every order: the owner, or a clerk present on their
+ * own device inside the cap the owner set. Presence and the grant are checked
+ * before any state is read, so an ungranted device learns nothing.
+ *
+ * `presence: false` is for the reads (the ranking, the held quotes): a clerk
+ * with the grant reads them as the trade inbox is read.
+ */
+function purchasingCaller(
+  req: CoreRequest,
+  ownerGuard: OwnerGuard,
+  opts: { presence: boolean; ownerPresenceDetail?: string },
+): CommerceRouteCaller | CoreResponse {
+  const caller = staffOrOwnerCaller(req, ownerGuard);
+  if (!('kind' in caller)) return caller;
+  const now = Date.now();
+  if (caller.kind === 'owner') {
+    if (opts.presence && ownerPresenceCanBeEstablished() && !ownerPresentNow(now)) {
+      return {
+        status: 403,
+        body: {
+          error: 'no_user_presence',
+          detail: opts.ownerPresenceDetail ?? 'approving an order needs a person present',
+        },
+      };
+    }
+    return caller;
+  }
+  if (opts.presence) {
+    if (!staffPresenceCanBeEstablished()) {
+      return { status: 503, body: { error: 'staff_presence_unavailable' } };
+    }
+    if (!staffPresentNow(caller.deviceDid, now)) {
+      return { status: 403, body: { error: 'no_user_presence' } };
+    }
+  }
+  const live = getCommerceRuntime()?.staffGrants.get(caller.deviceDid, 'commerce_submit') ?? null;
+  if (live === null || live.revokedAt !== null || live.installs === 'supplier') {
+    return {
+      status: 403,
+      body: { error: 'access_denied', reason: 'no live staff grant for this scope' },
+    };
+  }
+  return caller;
+}
+
+/** Who stands behind an order a caller holds: null (the node) for the owner, the device for a clerk. */
+function vouchedByFor(caller: CommerceRouteCaller): string | null {
+  return caller.kind === 'staff' ? caller.deviceDid : null;
+}
+
+/** What the staff cap decided: refuse (the response), or go on — maybe on an owner's approved card. */
+type StaffPurchaseGate =
+  | { kind: 'stop'; response: CoreResponse }
+  | { kind: 'go'; approvedCard: string | null };
+
+/**
+ * The staff cap, on the order's OWN total — the held quote's, never a value
+ * the caller carried. Over the cap or in another currency the owner gets one
+ * card, keyed by the quote and its total. An approved card is returned for
+ * the caller to SPEND on the one order it lets through (`clearStaffOrder`):
+ * a quote may be ordered from more than once, and one owner yes covers one
+ * order. The owner is never gated.
+ */
+function staffPurchaseGate(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  caller: CommerceRouteCaller,
+  order: { supplierDid: string; quoteId: string; total: Money },
+): StaffPurchaseGate {
+  if (caller.kind !== 'staff') return { kind: 'go', approvedCard: null };
+  const gate = checkStaffOperation({
+    repository: runtime.staffGrants,
+    deviceDid: caller.deviceDid,
+    scope: 'commerce_submit',
+    installRole: 'buyer',
+    value: order.total,
+  });
+  if (gate.verdict === 'refuse') {
+    return { kind: 'stop', response: { status: 403, body: { error: 'access_denied', reason: gate.reason } } };
+  }
+  if (gate.verdict !== 'escalate') return { kind: 'go', approvedCard: null };
+  const escalated = escalateStaffOperation({
+    deviceDid: caller.deviceDid,
+    scope: 'commerce_submit',
+    subject: `quote:${order.supplierDid}:${order.quoteId}`,
+    value: order.total,
+    reason: gate.reason,
+    nowMs: Date.now(),
+    spentElsewhere: (taskId) => runtime.staffClearances.byEscalation(taskId) !== null,
+  });
+  if (escalated.kind === 'unavailable') {
+    return {
+      kind: 'stop',
+      response: { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } },
+    };
+  }
+  if (escalated.kind === 'escalated') {
+    return {
+      kind: 'stop',
+      response: { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } },
+    };
+  }
+  return { kind: 'go', approvedCard: escalated.taskId };
+}
+
+/**
+ * Spend an owner's approved card on this one held order, for this one clerk.
+ * The clearance row is written FIRST and is the record of the spend; the
+ * card's own transition follows, and a crash between the two is finished on
+ * the next attempt (`spentElsewhere`), never reused. That clerk may then send
+ * the order — and send it again after a failure — without a new card; any
+ * other order, or any other clerk, asks again.
+ */
+function clearStaffOrder(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  caller: CommerceRouteCaller,
+  card: string,
+  approvalId: string,
+): CoreResponse | null {
+  if (caller.kind !== 'staff') return null;
+  const now = Date.now();
+  const recorded = runtime.staffClearances.put({
+    approvalId,
+    deviceDid: caller.deviceDid,
+    escalationId: card,
+    createdAt: now,
+  });
+  if (!recorded) {
+    return { status: 403, body: { error: 'access_denied', reason: 'the owner approval was already used' } };
+  }
+  // Best effort: the row above already makes the card spent.
+  consumeStaffEscalation(card, approvalId, now);
+  return null;
+}
+
 export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: string): void {
   // Same boot-minted-capability guard as /v1/run and /v1/watch, and the same
   // fail-closed posture: a router registered without a capability rejects
@@ -770,8 +919,8 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * required as on every approval that commits money.
    */
   router.get('/v1/commerce/buyer/quotes', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = purchasingCaller(req, ownerOnlyGuard, { presence: false });
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const requested = Number(req.query.limit ?? 50);
@@ -804,86 +953,24 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
   });
 
   router.post('/v1/commerce/orders/from_quote', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = purchasingCaller(req, ownerOnlyGuard, { presence: true });
+    if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
-    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(Date.now())) {
-      return {
-        status: 403,
-        body: { error: 'no_user_presence', detail: 'approving an order needs a person present' },
-      };
-    }
     const body = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof body.supplier_did !== 'string' || body.supplier_did === '') {
-      return { status: 400, body: { error: 'supplier_did is required' } };
+    if (caller.kind === 'staff') {
+      const supplierDid = typeof body.supplier_did === 'string' ? body.supplier_did : '';
+      const quoteId = typeof body.quote_id === 'string' ? body.quote_id : '';
+      const head = runtime.buyerQuotes.chain(supplierDid, quoteId).at(-1);
+      if (head === undefined) return { status: 404, body: { error: 'no_such_quote' } };
+      const gate = staffPurchaseGate(runtime, caller, { supplierDid, quoteId, total: head.total });
+      if (gate.kind === 'stop') return gate.response;
+      const held = holdOrderFromQuote(runtime, body, vouchedByFor(caller));
+      if (held.status !== 200 || gate.approvedCard === null) return held;
+      const approvalId = String((held.body as { approval_id: string }).approval_id);
+      return clearStaffOrder(runtime, caller, gate.approvedCard, approvalId) ?? held;
     }
-    if (typeof body.quote_id !== 'string' || body.quote_id === '') {
-      return { status: 400, body: { error: 'quote_id is required' } };
-    }
-    const chain = runtime.buyerQuotes.chain(body.supplier_did, body.quote_id);
-    const quote = chain[chain.length - 1];
-    if (quote === undefined) return { status: 404, body: { error: 'no_such_quote' } };
-    if (Date.parse(quote.valid_until) <= Date.now()) {
-      return { status: 409, body: { error: 'quote_expired', valid_until: quote.valid_until } };
-    }
-    const self = ownerDid();
-    if (self === null) return { status: 503, body: { error: 'node_identity_unavailable' } };
-    const installRepo = getPluginInstallRepository();
-    if (installRepo === null) return { status: 503, body: { error: 'install_registry_unavailable' } };
-    const activeBuyerInstall = installRepo
-      .list()
-      .find((i) => i.pluginId === BUYER_REFERENCE_MANIFEST.plugin_id && i.status === 'active');
-    if (activeBuyerInstall === undefined) {
-      return { status: 403, body: { error: 'buyer_pack_not_installed' } };
-    }
-    const built = buildOrderFromHeldQuote(runtime, quote, body.projection, Date.now());
-    if (!built.ok) return built.response;
-    const order = built.order;
-    const resolved = resolveActingInstall(
-      buyerApprovalContextFor({
-        self,
-        quote,
-        install: activeBuyerInstall,
-        vouchedBy: self,
-        attributionActive: runtime.attributionBoundary.crossedAt() !== null,
-      }),
-      BUYER_REFERENCE_MANIFEST.plugin_id,
-    );
-    if (!resolved.ok) {
-      return {
-        status: resolved.refusal === 'install_registry_unavailable' ? 503 : 403,
-        body: { error: resolved.refusal, detail: resolved.detail },
-      };
-    }
-    const payload = buildBuyerApprovalPayload(order, resolved.context);
-    if (!payload.ok) return { status: 422, body: { error: 'approval_incomplete', missing: payload.missing } };
-    const listing = resolveServiceBinding({
-      serviceUri: resolved.context.serviceUri,
-      supplierDid: order.supplier_did,
-      statedRkey: body.service_rkey,
-    });
-    if (!listing.ok) return { status: 400, body: { error: listing.refusal, detail: listing.detail } };
-    const now = Date.now();
-    const approvalId = newApprovalId();
-    const retained = runtime.orderApprovals.put({
-      approvalId,
-      order,
-      context: resolved.context,
-      serviceRkey: listing.serviceRkey,
-      createdAt: now,
-      expiresAt: now + ORDER_APPROVAL_TTL_MS,
-    });
-    if (!retained) return { status: 409, body: { error: 'approval_not_retained' } };
-    return {
-      status: 200,
-      body: {
-        approval_id: approvalId,
-        approved: payload.payload,
-        purchase_order_id: order.purchase_order_id,
-        expires_at: now + ORDER_APPROVAL_TTL_MS,
-      },
-    };
+    return holdOrderFromQuote(runtime, body, vouchedByFor(caller));
   });
 
   router.post('/v1/commerce/orders/prepare', async (req): Promise<CoreResponse> => {
@@ -1096,8 +1183,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
   });
 
   router.post('/v1/commerce/orders/submit', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
-    if (denied !== null) return denied;
+    const caller = purchasingCaller(req, ownerOnlyGuard, { presence: false });
+    if (!('kind' in caller)) return caller;
+    // The owner's send has never needed a fresh proof (the hold did); a
+    // clerk's does, as on the draft path.
+    if (caller.kind === 'staff' && !staffPresentNow(caller.deviceDid, Date.now())) {
+      return { status: 403, body: { error: 'access_denied', reason: 'staff presence required' } };
+    }
 
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
@@ -1106,6 +1198,35 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     const approvalId = typeof body.approval_id === 'string' ? body.approval_id : '';
     if (approvalId === '') {
       return { status: 400, body: { error: 'approval_id is required' } };
+    }
+    if (caller.kind === 'staff') {
+      const approval = runtime.orderApprovals.get(approvalId);
+      if (approval === null) return { status: 404, body: { error: 'unknown_approval' } };
+      // A draft-bound order goes through the draft send, which closes the
+      // competing conversations and records the dispatch intent in one
+      // transaction; a clerk may not send it around that.
+      if (approval.payload.source !== undefined) {
+        return {
+          status: 409,
+          body: { error: 'use_draft_submit', detail: 'send a draft order through /v1/commerce/orders/drafts/submit' },
+        };
+      }
+      // An order the owner cleared above the cap goes out on that clearance,
+      // however many tries its send takes. Otherwise the cap compares the
+      // retained approval's own bound total, and an owner's yes above it is
+      // spent on THIS order.
+      if (runtime.staffClearances.get(approvalId, caller.deviceDid) === null) {
+        const gate = staffPurchaseGate(runtime, caller, {
+          supplierDid: approval.order.supplier_did,
+          quoteId: approval.order.quote_id,
+          total: approval.payload.approvedTotal,
+        });
+        if (gate.kind === 'stop') return gate.response;
+        if (gate.approvedCard !== null) {
+          const refused = clearStaffOrder(runtime, caller, gate.approvedCard, approvalId);
+          if (refused !== null) return refused;
+        }
+      }
     }
 
     // The whole path — card read, §5.4 source-binding enforcement, §7.2
@@ -2708,6 +2829,91 @@ function buildOrderFromHeldQuote(
   return { ok: true, order: read.order };
 }
 
+/**
+ * The owner's order from a held quote, built and held as an approval (item 7
+ * of the Jiffy review; the tender award uses it too, NEGOTIATION_PLAN §4.5).
+ * The caller has already checked owner and presence.
+ */
+function holdOrderFromQuote(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  body: Record<string, unknown>,
+  /** Who stands behind the hold: the node for the owner, the device for a clerk. */
+  vouchedBy: string | null,
+): CoreResponse {
+  if (typeof body.supplier_did !== 'string' || body.supplier_did === '') {
+    return { status: 400, body: { error: 'supplier_did is required' } };
+  }
+  if (typeof body.quote_id !== 'string' || body.quote_id === '') {
+    return { status: 400, body: { error: 'quote_id is required' } };
+  }
+  const chain = runtime.buyerQuotes.chain(body.supplier_did, body.quote_id);
+  const quote = chain[chain.length - 1];
+  if (quote === undefined) return { status: 404, body: { error: 'no_such_quote' } };
+  if (Date.parse(quote.valid_until) <= Date.now()) {
+    return { status: 409, body: { error: 'quote_expired', valid_until: quote.valid_until } };
+  }
+  const self = ownerDid();
+  if (self === null) return { status: 503, body: { error: 'node_identity_unavailable' } };
+  const installRepo = getPluginInstallRepository();
+  if (installRepo === null) return { status: 503, body: { error: 'install_registry_unavailable' } };
+  const activeBuyerInstall = installRepo
+    .list()
+    .find((i) => i.pluginId === BUYER_REFERENCE_MANIFEST.plugin_id && i.status === 'active');
+  if (activeBuyerInstall === undefined) {
+    return { status: 403, body: { error: 'buyer_pack_not_installed' } };
+  }
+  const built = buildOrderFromHeldQuote(runtime, quote, body.projection, Date.now());
+  if (!built.ok) return built.response;
+  const order = built.order;
+  const resolved = resolveActingInstall(
+    buyerApprovalContextFor({
+      self,
+      quote,
+      install: activeBuyerInstall,
+      vouchedBy: vouchedBy ?? self,
+      attributionActive: runtime.attributionBoundary.crossedAt() !== null,
+      ...(typeof body.service_rkey === 'string' && body.service_rkey !== ''
+        ? { serviceRkey: body.service_rkey }
+        : {}),
+    }),
+    BUYER_REFERENCE_MANIFEST.plugin_id,
+  );
+  if (!resolved.ok) {
+    return {
+      status: resolved.refusal === 'install_registry_unavailable' ? 503 : 403,
+      body: { error: resolved.refusal, detail: resolved.detail },
+    };
+  }
+  const payload = buildBuyerApprovalPayload(order, resolved.context);
+  if (!payload.ok) return { status: 422, body: { error: 'approval_incomplete', missing: payload.missing } };
+  const listing = resolveServiceBinding({
+    serviceUri: resolved.context.serviceUri,
+    supplierDid: order.supplier_did,
+    statedRkey: body.service_rkey,
+  });
+  if (!listing.ok) return { status: 400, body: { error: listing.refusal, detail: listing.detail } };
+  const now = Date.now();
+  const approvalId = newApprovalId();
+  const retained = runtime.orderApprovals.put({
+    approvalId,
+    order,
+    context: resolved.context,
+    serviceRkey: listing.serviceRkey,
+    createdAt: now,
+    expiresAt: now + ORDER_APPROVAL_TTL_MS,
+  });
+  if (!retained) return { status: 409, body: { error: 'approval_not_retained' } };
+  return {
+    status: 200,
+    body: {
+      approval_id: approvalId,
+      approved: payload.payload,
+      purchase_order_id: order.purchase_order_id,
+      expires_at: now + ORDER_APPROVAL_TTL_MS,
+    },
+  };
+}
+
 /** The approval context for an order built from a held quote — one shape for both lanes. */
 function buyerApprovalContextFor(args: {
   self: string;
@@ -2716,6 +2922,8 @@ function buyerApprovalContextFor(args: {
   source?: BuyerApprovalContext['source'];
   vouchedBy: string;
   attributionActive: boolean;
+  /** The listing the quote came from; `self` when the caller names none. */
+  serviceRkey?: string;
 }): BuyerApprovalContext {
   const { quote } = args;
   return {
@@ -2725,7 +2933,7 @@ function buyerApprovalContextFor(args: {
       authorityDomain: BUYER_ORDER_AUTHORITY_DOMAIN,
       policyRevision: null,
     },
-    serviceUri: `at://${quote.supplier_did}/com.dinakernel.service.profile/self`,
+    serviceUri: `at://${quote.supplier_did}/com.dinakernel.service.profile/${args.serviceRkey ?? 'self'}`,
     displayedLabels: Object.fromEntries(
       quote.lines.map((line) => [line.line_id, line.offered_product.value]),
     ),
@@ -6751,6 +6959,25 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         ? { ...line, lineId: line.line_id }
         : line,
     );
+    // NEGOTIATION_PLAN §4.5 — an optional policy: the loop counters toward
+    // `target_total`, never awards over `budget_ceiling`. Checked BEFORE any
+    // request leaves, so a bad policy never produces a half-started tender.
+    let negotiation: TenderPolicyInput | null = null;
+    if (body.negotiation !== undefined) {
+      const n = body.negotiation as Record<string, unknown> | null;
+      if (n === null || typeof n !== 'object' || typeof body.currency !== 'string') {
+        return { status: 400, body: { error: 'negotiation needs an object and the tender currency' } };
+      }
+      negotiation = {
+        currency: body.currency,
+        targetTotalMinor: String(n.target_total ?? ''),
+        budgetCeilingMinor: String(n.budget_ceiling ?? ''),
+        ...(typeof n.max_rounds === 'number' ? { maxRounds: n.max_rounds } : {}),
+        ...(typeof n.deadline_seconds === 'number' ? { deadlineSeconds: n.deadline_seconds } : {}),
+      };
+      const invalid = tenderPolicyError(negotiation);
+      if (invalid !== null) return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
+    }
     const created = await createTender({
       suppliers,
       lines: tenderLines as never,
@@ -6759,9 +6986,241 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),
       nowMs: runtime.now(),
     });
+    if (created.ok && negotiation !== null) {
+      startTenderNegotiation(created.tenderId, negotiation, runtime.now());
+    }
     return created.ok
-      ? { status: 200, body: { ok: true, tender_id: created.tenderId, members: created.members } }
+      ? {
+          status: 200,
+          body: {
+            ok: true,
+            tender_id: created.tenderId,
+            members: created.members,
+            negotiating: negotiation !== null,
+          },
+        }
       : { status: 409, body: { error: created.refusal } };
+  });
+
+  // NEGOTIATION_PLAN §4.5 — the offers a tender holds, filtered then ordered.
+  router.get('/v1/commerce/trade/tender/ranking', (req): CoreResponse => {
+    const caller = purchasingCaller(req, ownerOnlyGuard, { presence: false });
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const tenderId = req.query?.tender_id;
+    if (typeof tenderId !== 'string' || tenderId === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const ceiling = req.query?.budget_ceiling;
+    if (ceiling !== undefined && !/^(0|[1-9][0-9]{0,17})$/.test(ceiling)) {
+      return { status: 400, body: { error: 'budget_ceiling must be whole minor units' } };
+    }
+    const ranked = rankTender({
+      tenderId,
+      nowMs: runtime.now(),
+      ...(ceiling === undefined ? {} : { budgetCeilingMinor: ceiling }),
+    });
+    if (!ranked.ok) {
+      return { status: ranked.refusal === 'no_such_tender' ? 404 : 409, body: { error: ranked.refusal } };
+    }
+    const state = runtime.buyerNegotiation.getTender(tenderId);
+    return {
+      status: 200,
+      body: {
+        tender_id: tenderId,
+        state: state?.state ?? 'no_policy',
+        ...(state === null
+          ? {}
+          : {
+              target_total: state.targetTotalMinor,
+              budget_ceiling: state.budgetCeilingMinor,
+              currency: state.currency,
+              deadline_at: state.deadlineAt,
+              awarded_supplier_did: state.awardedSupplierDid,
+            }),
+        // After an award the owner can always find the approval again.
+        ...(state !== null && state.state === 'awarded' ? { approval_id: state.approvalId } : {}),
+        ranked: ranked.ranking.ranked,
+        excluded: ranked.ranking.excluded,
+      },
+    };
+  });
+
+  /**
+   * NEGOTIATION_PLAN §4.5 — the owner awards: the top-ranked offer (or the one
+   * named, if it passes the same filters) becomes a held order through the
+   * `from_quote` builder, the tender closes, and every other quoted supplier
+   * is told its quote was not awarded — and nothing else.
+   */
+  router.post('/v1/commerce/trade/tender/award', async (req): Promise<CoreResponse> => {
+    const caller = purchasingCaller(req, ownerOnlyGuard, {
+      presence: true,
+      ownerPresenceDetail: 'awarding a tender needs a person present',
+    });
+    if (!('kind' in caller)) return caller;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (typeof body.tender_id !== 'string' || body.tender_id === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const tenderId = body.tender_id;
+    const policy = runtime.buyerNegotiation.getTender(tenderId);
+    if (policy !== null && policy.state === 'awarded') {
+      // A retry after a lost response gets the award it already made — the
+      // same approval and order, never a second award. Naming a DIFFERENT
+      // supplier is a new decision, and the tender is closed to that.
+      if (typeof body.supplier_did === 'string' && body.supplier_did !== policy.awardedSupplierDid) {
+        return {
+          status: 409,
+          body: { error: 'tender_closed', awarded_supplier_did: policy.awardedSupplierDid },
+        };
+      }
+      const approval = runtime.orderApprovals.get(policy.approvalId);
+      return {
+        status: 200,
+        body: {
+          replayed: true,
+          tender_id: tenderId,
+          approval_id: policy.approvalId,
+          awarded_supplier_did: policy.awardedSupplierDid,
+          ...(approval === null
+            ? { approval_state: 'no_longer_held' }
+            : {
+                purchase_order_id: approval.order.purchase_order_id,
+                expires_at: approval.expiresAt,
+              }),
+        },
+      };
+    }
+    if (policy !== null && policy.state === 'closed') {
+      return { status: 409, body: { error: 'tender_closed' } };
+    }
+    const ranked = rankTender({ tenderId, nowMs: runtime.now() });
+    if (!ranked.ok) return { status: 404, body: { error: ranked.refusal } };
+    const pick =
+      typeof body.supplier_did === 'string'
+        ? ranked.ranking.ranked.find((offer) => offer.supplier_did === body.supplier_did)
+        : ranked.ranking.ranked[0];
+    if (pick === undefined) {
+      return {
+        status: 409,
+        body: { error: 'no_awardable_offer', excluded: ranked.ranking.excluded },
+      };
+    }
+    // A counter still on its way could replace this quote with a revision the
+    // held order would no longer match (`quote_superseded` at submit). Wait
+    // for the answer rather than build an order that is stale on arrival.
+    if (counterInFlight(pick.supplier_did, pick.quote_id, runtime.now())) {
+      return {
+        status: 409,
+        body: { error: 'counter_in_flight', detail: 'a counter to this supplier awaits its answer' },
+      };
+    }
+    // A clerk awards inside the cap the owner set; over it, the owner is asked
+    // BEFORE anything changes, and the same yes later lets the send through.
+    const pickHead = runtime.buyerQuotes.chain(pick.supplier_did, pick.quote_id).at(-1);
+    if (pickHead === undefined) return { status: 409, body: { error: 'no_awardable_offer' } };
+    const gate = staffPurchaseGate(runtime, caller, {
+      supplierDid: pick.supplier_did,
+      quoteId: pick.quote_id,
+      total: pickHead.total,
+    });
+    if (gate.kind === 'stop') return gate.response;
+    const held = holdOrderFromQuote(
+      runtime,
+      {
+        supplier_did: pick.supplier_did,
+        quote_id: pick.quote_id,
+        service_rkey: pick.service_rkey,
+        ...(body.projection === undefined ? {} : { projection: body.projection }),
+      },
+      vouchedByFor(caller),
+    );
+    if (held.status !== 200) return held;
+    const approvalId = String((held.body as { approval_id: string }).approval_id);
+    if (gate.approvedCard !== null) {
+      const refused = clearStaffOrder(runtime, caller, gate.approvedCard, approvalId);
+      if (refused !== null) return refused;
+    }
+    const now = runtime.now();
+    const award = { supplierDid: pick.supplier_did, approvalId };
+    // The award and the losers' notice records commit TOGETHER, so a crash
+    // between them cannot leave an award whose notices were never recorded.
+    let moved = false;
+    runtime.runInTransaction(() => {
+      if (policy === null) {
+        // A tender opened without a policy is still awarded once: record the
+        // award so a second one is refused.
+        const currency =
+          runtime.buyerQuotes.chain(pick.supplier_did, pick.quote_id).at(-1)?.total.currency ?? '';
+        startTenderNegotiation(
+          tenderId,
+          { currency, targetTotalMinor: pick.total_minor, budgetCeilingMinor: pick.total_minor },
+          now,
+        );
+        moved = runtime.buyerNegotiation.moveTender(tenderId, 'negotiating', 'awarded', now, award);
+      } else {
+        moved = runtime.buyerNegotiation.moveTender(tenderId, policy.state, 'awarded', now, award);
+      }
+      if (moved) recordNotAwardedNotices(runtime, tenderId, pick.supplier_did, now);
+    });
+    if (!moved) {
+      return { status: 409, body: { error: 'tender_moved', detail: 'the tender changed while awarding' } };
+    }
+    const notices = await sendNotAwardedNotices({ tenderId, winnerDid: pick.supplier_did, nowMs: now });
+    return {
+      status: 200,
+      body: {
+        ...(held.body as Record<string, unknown>),
+        tender_id: tenderId,
+        awarded: pick,
+        not_awarded_notices: notices,
+      },
+    };
+  });
+
+  // NEGOTIATION_PLAN §4.2 — one counter by hand, outside any loop.
+  router.post('/v1/commerce/trade/counter', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const target = body.target_total as { currency?: unknown; minor_units?: unknown } | undefined;
+    if (
+      typeof body.supplier_did !== 'string' ||
+      typeof body.quote_id !== 'string' ||
+      target === undefined ||
+      target === null ||
+      typeof target.currency !== 'string' ||
+      typeof target.minor_units !== 'string'
+    ) {
+      return { status: 400, body: { error: 'supplier_did, quote_id and target_total are required' } };
+    }
+    const outcome = await sendCounterOffer({
+      supplierDid: body.supplier_did,
+      quoteId: body.quote_id,
+      serviceRkey: typeof body.service_rkey === 'string' && body.service_rkey !== '' ? body.service_rkey : 'self',
+      targetTotal: { currency: target.currency, minor_units: target.minor_units },
+      nowMs: runtime.now(),
+    });
+    if (outcome.kind === 'refused') {
+      return {
+        status: outcome.reason === 'no_such_quote' ? 404 : outcome.reason === 'no_dispatch' ? 503 : 409,
+        body: { error: outcome.reason },
+      };
+    }
+    return {
+      status: outcome.kind === 'sent' ? 202 : 200,
+      body: {
+        state: outcome.kind,
+        counter_id: outcome.counter.counter_id,
+        round: outcome.counter.round,
+        respond_by: outcome.counter.respond_by,
+      },
+    };
   });
 
   router.get('/v1/commerce/trade/tender/comparison', (req): CoreResponse => {

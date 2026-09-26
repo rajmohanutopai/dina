@@ -1,7 +1,7 @@
 /**
  * Domain-separated commerce digests (§9.12).
  *
- * Ten digest domains, one per record family. Each digest:
+ * Eleven digest domains, one per record family. Each digest:
  *
  * - has an explicit domain separator line, so a byte-identical payload
  *   digested under two domains yields two different hashes — a quote
@@ -41,6 +41,8 @@ export const COMMERCE_DIGEST_DOMAINS = [
   'cancellation',
   'result',
   'epoch',
+  /** NEGOTIATION_PLAN §4.2 — a buyer's counter-offer on a held quote. */
+  'counter',
 ] as const;
 
 export type CommerceDigestDomain = (typeof COMMERCE_DIGEST_DOMAINS)[number];
@@ -57,6 +59,7 @@ export const DIGEST_FIELD_BY_DOMAIN: Readonly<Record<CommerceDigestDomain, strin
   cancellation: 'cancellation_digest',
   result: 'result_digest',
   epoch: 'epoch_digest',
+  counter: 'counter_digest',
 };
 
 const DOMAIN_PREFIX = 'dina:commerce:v1:';

@@ -45,6 +45,12 @@ describe('authz matrix — the staff surface is the trade prefix and nothing els
     ['POST', '/v1/commerce/orders/drafts/approve'],
     ['POST', '/v1/commerce/orders/drafts/submit'],
     ['POST', '/v1/commerce/orders/decide'],
+    // NEGOTIATION_PLAN §4.7: the purchasing doors, capped in the handlers.
+    ['GET', '/v1/commerce/trade/tender/ranking'],
+    ['POST', '/v1/commerce/trade/tender/award'],
+    ['GET', '/v1/commerce/buyer/quotes'],
+    ['POST', '/v1/commerce/orders/from_quote'],
+    ['POST', '/v1/commerce/orders/submit'],
   ];
 
   it.each(ALLOWED)('staff MAY reach %s %s (the handler gate decides further)', (method, path) => {
@@ -115,8 +121,14 @@ describe('authz matrix — the staff surface is the trade prefix and nothing els
     ['GET', '/v1/commerce/orders/drafts/confirm'],
     ['POST', '/v1/commerce/orders/drafts/confirm/extra'],
     ['POST', '/v1/commerce/orders/drafts'],
-    ['POST', '/v1/commerce/orders/submit'],
     ['GET', '/v1/commerce/orders/pending-decisions'],
+    // The purchasing rows are exact and method-bound too.
+    ['GET', '/v1/commerce/trade/tender/award'],
+    ['POST', '/v1/commerce/trade/tender/award/extra'],
+    ['POST', '/v1/commerce/trade/tender/ranking'],
+    ['POST', '/v1/commerce/trade/counter'],
+    ['GET', '/v1/commerce/orders/submit'],
+    ['POST', '/v1/commerce/orders/prepare'],
   ];
 
   it.each(DENIED)('staff may NOT reach %s %s', (method, path) => {

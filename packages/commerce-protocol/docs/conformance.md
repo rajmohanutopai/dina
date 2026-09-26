@@ -59,6 +59,18 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **ADDITIVE (NEGOTIATION_PLAN §4.2, §4.5, §4.6)** — `CounterOffer`: a
+  buyer's non-binding ask for a lower whole-quote total on the exact head it
+  holds (`quote_digest`), with a `round` and a `respond_by`. Digest-sealed
+  under the ELEVENTH commerce domain, `dina:commerce:v1:counter`
+  (`counter_digest`); vector-pinned in `negotiation.test.ts` and
+  cross-checked by an independent recomputation. The supplier's answer is a
+  §9.8 revision of that quote or the head unchanged, so no new quote record
+  exists. `QuoteOutcomeNotice` (`not_awarded`) carries no price, no winner
+  and no other field, and has no digest. `QuoteRequestLine.requirement`
+  (`text`, optional `category_id`) is new at minor **1.2**: the line's
+  product must be a `custom` placeholder the buyer issued, and
+  `acceptable_substitutions` must be `supplier_may_propose`.
 - **ADDITIVE (JIFFY_MERCHANT_INTEGRATION_PLAN §3.3)** — `OrderAttachment`:
   evidence a supplier's INTEGRATION binds to an accepted order and pushes to
   the buyer — `checkout_handoff` (an https link whose `amount` must equal the

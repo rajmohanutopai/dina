@@ -1693,6 +1693,81 @@ describe('provider ingress bridge (§11.2a)', () => {
       expect(workflow.store().getByCorrelationId('q-probe-over')).toEqual([]);
     });
 
+    it('a not-awarded notice is answered by Core even after the peer spent its probing budget (NEGOTIATION_PLAN §4.5)', () => {
+      installCommerceRuntime({
+        settings: new InMemoryCommerceSettingsRepository(),
+        families: { load: () => null },
+        negotiation: { putOutcome: () => undefined, questionsForQuote: () => [] },
+      } as unknown as CommerceRuntime);
+      const stranger = 'did:plc:competitor2';
+      for (let i = 0; i <= DEFAULT_PROBING_POLICY.unknownBudget; i += 1) {
+        createProviderIngressTask({
+          workflow,
+          capabilityConfig: binding(),
+          query: { ...query(`q-spend-${String(i)}`), capability: 'request_quote', fromDid: stranger },
+          nowMs: T0,
+        });
+      }
+      const notice = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('out_req-1'),
+          capability: 'com.dinakernel.commerce.quote_outcome',
+          fromDid: stranger,
+          params: { request_id: 'req-1', quote_id: 'q-1', outcome: 'not_awarded' },
+        },
+        nowMs: T0,
+      });
+      // Answered by Core, no runner, no budget: the notice asks for no price.
+      expect(notice).toEqual({ ok: true, coreAnswerJson: JSON.stringify({ recorded: true }) });
+    });
+
+    it('a counter already answered is replayed before the probing gate, so a lost reply is recoverable (NEGOTIATION_PLAN §4.3)', () => {
+      const answered = JSON.stringify({ quote: { quote_id: 'q-1' }, outcome: 'held' });
+      installCommerceRuntime({
+        settings: new InMemoryCommerceSettingsRepository(),
+        negotiation: {
+          getCounter: (buyer: string, id: string) =>
+            buyer === 'did:plc:competitor3' && id === 'ctr-lost' ? { answerJson: answered } : null,
+        },
+      } as unknown as CommerceRuntime);
+      const buyer = 'did:plc:competitor3';
+      for (let i = 0; i <= DEFAULT_PROBING_POLICY.unknownBudget; i += 1) {
+        createProviderIngressTask({
+          workflow,
+          capabilityConfig: binding(),
+          query: { ...query(`q-burn-${String(i)}`), capability: 'request_quote', fromDid: buyer },
+          nowMs: T0,
+        });
+      }
+      const replay = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('ctr-lost'),
+          capability: 'com.dinakernel.commerce.counter_offer',
+          fromDid: buyer,
+          params: { counter_id: 'ctr-lost' },
+        },
+        nowMs: T0,
+      });
+      expect(replay).toEqual({ ok: true, coreAnswerJson: answered });
+      // A different buyer naming the same counter id gets no one else's answer.
+      const stranger = createProviderIngressTask({
+        workflow,
+        capabilityConfig: binding(),
+        query: {
+          ...query('ctr-lost-2'),
+          capability: 'com.dinakernel.commerce.counter_offer',
+          fromDid: 'did:plc:someoneelse',
+          params: { counter_id: 'ctr-lost' },
+        },
+        nowMs: T0,
+      });
+      expect(stranger).not.toEqual({ ok: true, coreAnswerJson: answered });
+    });
+
     it('gives ONE refusal code whatever the reason', () => {
       // A prober who can tell "budget spent" from "we don't quote you" learns
       // the catalog by watching which requests get a different shape of no.

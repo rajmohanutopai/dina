@@ -21,6 +21,7 @@
  * services. The refusal says what to do: give that listing its own rkey.
  */
 
+import { getPluginInstallRepository } from '../plugins/registry';
 import {
   DEFAULT_LISTING_RKEY,
   getServiceConfig,
@@ -56,6 +57,18 @@ export const SUPPLIER_LISTING_BINDINGS: readonly { wire: string; capabilityId: s
   {
     wire: 'com.dinakernel.commerce.cancel_order',
     capabilityId: 'com.dinakernel.commerce.cancel-order',
+  },
+  // NEGOTIATION_PLAN §4.3 — a buyer's counter-offer, answered by the runner
+  // within Core's floors.
+  {
+    wire: 'com.dinakernel.commerce.counter_offer',
+    capabilityId: 'com.dinakernel.commerce.negotiate-quote',
+  },
+  // §4.5 — the not-awarded notice is answered by Core alone, like reconcile,
+  // and like reconcile it still routes through a complete plugin plane.
+  {
+    wire: 'com.dinakernel.commerce.quote_outcome',
+    capabilityId: 'com.dinakernel.commerce.request-quote',
   },
 ];
 
@@ -101,9 +114,21 @@ export async function bindSupplierListing(args: {
       detail: `the "${SUPPLIER_LISTING_RKEY}" listing is public; move that service to its own rkey, then confirm again`,
     };
   }
-  const manifestCid = referenceManifestCid(SUPPLIER_REFERENCE_MANIFEST);
+  // The manifest the install RUNS, not the one this build ships: an install on
+  // an older pack version must keep answering under its own contract, and a
+  // listing pinned to a newer CID is refused as stale. Only the lanes that
+  // manifest provides are bound — pack 1.0.0 has no `negotiate-quote`, so its
+  // listing simply offers no counter lane (NEGOTIATION_PLAN §4.3).
+  const install = getPluginInstallRepository()?.getById(args.installId) ?? null;
+  const manifestCid =
+    install?.currentCid !== undefined && install.currentCid !== ''
+      ? install.currentCid
+      : referenceManifestCid(SUPPLIER_REFERENCE_MANIFEST);
+  const provided = new Set(
+    (install?.manifest.capabilities ?? SUPPLIER_REFERENCE_MANIFEST.capabilities).map((c) => c.id),
+  );
   const commerce = Object.fromEntries(
-    SUPPLIER_LISTING_BINDINGS.map((b) => [
+    SUPPLIER_LISTING_BINDINGS.filter((b) => provided.has(b.capabilityId)).map((b) => [
       b.wire,
       {
         responsePolicy: 'auto',

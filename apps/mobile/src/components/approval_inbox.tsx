@@ -370,6 +370,9 @@ export function ApprovalActionCard({
   const isPlugin = item.kind === 'plugin_invocation';
   const isDisclosure = item.kind === 'disclosure_review';
   const isSettingsProposal = item.kind === 'integration_settings_proposal';
+  // NEGOTIATION_PLAN — both are Core-minted and the owner's alone (Core refuses Brain).
+  const isPriceAsk = item.kind === 'negotiation_price_approval';
+  const isTenderReady = item.kind === 'tender_ready';
   // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's order attachment
   // asks the buyer two things: open this payment link? record this as paid?
   const isCheckoutLink = item.kind === 'order_checkout_link';
@@ -382,7 +385,12 @@ export function ApprovalActionCard({
   // where to decide rather than offering a button Core will refuse. Opening a
   // payment link is the client's own act and stays available everywhere.
   const decidableHere =
-    (!isDisclosure && !isSettingsProposal && !isCheckoutLink && !isPaymentEvidence) ||
+    (!isDisclosure &&
+      !isSettingsProposal &&
+      !isCheckoutLink &&
+      !isPaymentEvidence &&
+      !isPriceAsk &&
+      !isTenderReady) ||
     OWNER_DECIDES_ON_THIS_SURFACE;
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
@@ -396,19 +404,23 @@ export function ApprovalActionCard({
       ? 'Share a household need?'
       : isSettingsProposal
         ? 'Apply a settings change?'
-        : isCheckoutLink
-          ? 'Open the payment link?'
-          : isPaymentEvidence
-            ? 'Record this payment?'
-            : isPlugin
-              ? 'Plugin action approval'
-              : isStagingAccess
-                ? 'Memory access approval'
-                : isVaultWrite
-                  ? 'Vault WRITE approval'
-                  : isVaultRead
-                    ? 'Vault read approval'
-                    : item.serviceName || 'Unnamed service';
+        : isPriceAsk
+          ? 'Offer a lower price?'
+          : isTenderReady
+            ? 'Your tender is ready to award'
+            : isCheckoutLink
+              ? 'Open the payment link?'
+              : isPaymentEvidence
+                ? 'Record this payment?'
+                : isPlugin
+                  ? 'Plugin action approval'
+                  : isStagingAccess
+                    ? 'Memory access approval'
+                    : isVaultWrite
+                      ? 'Vault WRITE approval'
+                      : isVaultRead
+                        ? 'Vault read approval'
+                        : item.serviceName || 'Unnamed service';
   const tagText =
     isIntent && item.riskLevel !== undefined
       ? item.riskLevel
@@ -425,13 +437,15 @@ export function ApprovalActionCard({
     ? 'agent'
     : isSettingsProposal
       ? 'proposed by'
-      : isCheckoutLink || isPaymentEvidence
-        ? 'supplier'
-        : isStagingAccess
-          ? 'source'
-          : isVaultRead
-            ? 'requester'
-            : 'from';
+      : isPriceAsk
+        ? 'buyer'
+        : isCheckoutLink || isPaymentEvidence
+          ? 'supplier'
+          : isStagingAccess
+            ? 'source'
+            : isVaultRead
+              ? 'requester'
+              : 'from';
   const riskHint =
     isIntent && item.riskLevel === 'MODERATE'
       ? 'Once per session'
@@ -509,7 +523,8 @@ export function ApprovalActionCard({
         <Text
           style={styles.paramsPreview}
           // The exact outbound params are the gate (§11.5): never clipped.
-          numberOfLines={item.kind === 'agent_action' || isPlugin ? undefined : 3}
+          // A price ask is never clipped either: its yes covers every line shown.
+          numberOfLines={item.kind === 'agent_action' || isPlugin || isPriceAsk ? undefined : 3}
           testID={isPlugin ? `approvals-plugin-params-${item.id}` : undefined}
         >
           {item.paramsPreview}

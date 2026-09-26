@@ -67,6 +67,8 @@ export interface TenderMember {
   requestDigest: string;
   /** '' until a quote settles for this member's request. */
   quoteId: string;
+  /** The listing the request went to; counters and notices go there too. */
+  serviceRkey: string;
 }
 
 export interface TenderRepository {
@@ -125,9 +127,16 @@ export class SQLiteTenderRepository implements TenderRepository {
   putMember(member: TenderMember): void {
     this.db.run(
       `INSERT OR REPLACE INTO commerce_tender_members
-         (tender_id, supplier_did, request_id, request_digest, quote_id)
-       VALUES (?, ?, ?, ?, ?)`,
-      [member.tenderId, member.supplierDid, member.requestId, member.requestDigest, member.quoteId],
+         (tender_id, supplier_did, request_id, request_digest, quote_id, service_rkey)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        member.tenderId,
+        member.supplierDid,
+        member.requestId,
+        member.requestDigest,
+        member.quoteId,
+        member.serviceRkey,
+      ],
     );
   }
 
@@ -162,6 +171,7 @@ function memberFromRow(row: DBRow): TenderMember {
     requestId: String(row.request_id),
     requestDigest: String(row.request_digest),
     quoteId: String(row.quote_id),
+    serviceRkey: row.service_rkey === undefined || row.service_rkey === null ? 'self' : String(row.service_rkey),
   };
 }
 
@@ -290,6 +300,7 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
       requestId: request.request_id,
       requestDigest: request.request_digest,
       quoteId: '',
+      serviceRkey: supplier.serviceRkey,
     });
     members.push({
       supplierDid: supplier.supplierDid,

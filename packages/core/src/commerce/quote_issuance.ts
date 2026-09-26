@@ -47,7 +47,9 @@ import {
   termsDigestInput,
   validateQuoteRequest,
   validateSignedQuote,
+  productRefsEqual,
   type Money,
+  type ProductRef,
   type Quantity,
   type Sha256Fn,
   type SignedQuote,
@@ -56,6 +58,7 @@ import {
 } from '@dina/commerce-protocol';
 
 import { authorQuoteDecline, rehydrateDeclineDocument } from './decline_documents';
+import { publishedCatalogItems } from './published_catalog';
 import { getCommerceRuntime } from './runtime';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -99,7 +102,13 @@ interface RunnerLine {
   line_id: string;
   unit_price: Money;
   quantity: Quantity;
+  /** NEGOTIATION_PLAN §4.6 — the runner's own item, for a line that allows it. */
+  offered_product?: ProductRef;
+  substitution_evidence?: string[];
 }
+
+const MAX_EVIDENCE_ENTRIES = 5;
+const MAX_EVIDENCE_LENGTH = 200;
 
 /** The runner's terms, as far as this module is willing to believe them. */
 function readRunnerTerms(
@@ -139,10 +148,15 @@ function readRunnerTerms(
     if (typeof line.line_id !== 'string' || line.line_id === '') return null;
     if (line.unit_price === null || typeof line.unit_price !== 'object') return null;
     if (line.quantity === null || typeof line.quantity !== 'object') return null;
+    const evidence = line.substitution_evidence;
     lines.push({
       line_id: line.line_id,
       unit_price: line.unit_price as Money,
       quantity: line.quantity as Quantity,
+      ...(line.offered_product !== undefined && line.offered_product !== null
+        ? { offered_product: line.offered_product as ProductRef }
+        : {}),
+      ...(Array.isArray(evidence) ? { substitution_evidence: evidence as string[] } : {}),
     });
   }
   return {
@@ -274,15 +288,18 @@ export function settleInboundQuote(args: {
     const priceBasis: Quantity = { value: '1', unit_code: offer.quantity.unit_code };
     const subtotal = computeLineSubtotal(offer.unit_price, offer.quantity, priceBasis);
     if (subtotal.error || !subtotal.value) return { kind: 'withhold', refusal: 'terms_unusable' };
+    // §9.8 / NEGOTIATION_PLAN §4.6 — what was asked for is what is offered,
+    // unless the buyer allowed a substitute AND the runner names an item of
+    // THIS supplier's live published catalogue with evidence. A runner cannot
+    // invent a product, and cannot substitute where the buyer said `none`.
+    const offered = substitutedProduct(requested, offer, runtime);
+    if (offered === 'refused') return { kind: 'withhold', refusal: 'terms_unusable' };
     lines.push({
       line_id: requested.line_id,
       requested_product: requested.product,
-      // §9.8 — the runner's result schema declares no substitution, so what
-      // was asked for is what is offered. When a substitution lane is added it
-      // must carry `substitution_evidence` and honour the request's
-      // `acceptable_substitutions`, which is why this is not a silent default
-      // but a stated one.
-      offered_product: requested.product,
+      ...(offered === null
+        ? { offered_product: requested.product }
+        : { offered_product: offered.product, substitution_evidence: offered.evidence }),
       quantity: offer.quantity,
       price_basis: priceBasis,
       unit_price: offer.unit_price,
@@ -345,6 +362,42 @@ export function settleInboundQuote(args: {
   if (refused !== null) return { kind: 'withhold', refusal: 'registration_refused' };
 
   return { kind: 'signed', quoteJson: JSON.stringify(quote) };
+}
+
+/**
+ * The runner's substitute for a line, when it names one: allowed only where
+ * the buyer allowed it, only for an item this supplier publishes, and only
+ * with bounded evidence. `null` means no substitution was proposed.
+ */
+function substitutedProduct(
+  requested: QuoteRequest['lines'][number],
+  offer: RunnerLine,
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+): { product: ProductRef; evidence: string[] } | null | 'refused' {
+  if (offer.offered_product === undefined) {
+    // A requirement line has only a placeholder; offering it would sell nothing.
+    return requested.requirement === undefined ? null : 'refused';
+  }
+  if (productRefsEqual(offer.offered_product, requested.product)) {
+    // The same rule when the runner NAMES the placeholder: a need is answered
+    // with a real item of this catalogue, never with the buyer's stand-in.
+    return requested.requirement === undefined ? null : 'refused';
+  }
+  if ((requested.acceptable_substitutions ?? 'none') === 'none') return 'refused';
+  const evidence = offer.substitution_evidence;
+  if (
+    evidence === undefined ||
+    evidence.length === 0 ||
+    evidence.length > MAX_EVIDENCE_ENTRIES ||
+    evidence.some((e) => typeof e !== 'string' || e === '' || e.length > MAX_EVIDENCE_LENGTH)
+  ) {
+    return 'refused';
+  }
+  const published = publishedCatalogItems(runtime).some((item) =>
+    productRefsEqual(item.product, offer.offered_product as ProductRef),
+  );
+  if (!published) return 'refused';
+  return { product: offer.offered_product, evidence };
 }
 
 /**

@@ -15,7 +15,10 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { resetCallerTypeState } from '../../../src/auth/caller_type';
 import { referenceManifestCid } from '../../../src/commerce/reference_install';
 import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_manifests';
-import { SUPPLIER_LISTING_BINDINGS } from '../../../src/commerce/supplier_listing';
+import {
+  SUPPLIER_LISTING_BINDINGS,
+  bindSupplierListing,
+} from '../../../src/commerce/supplier_listing';
 import { referenceRunnerDevice } from '../../../src/commerce/supplier_runner';
 import { getDeviceByDID, resetDeviceRegistry } from '../../../src/devices/registry';
 import { SQLiteDeviceRepository, setDeviceRepository } from '../../../src/devices/repository';
@@ -294,5 +297,50 @@ describe('the reference runner and the listing, at the owner’s doors', () => {
         )
       ).status,
     ).toBe(403);
+  });
+});
+
+describe('the listing follows the manifest the install runs (NEGOTIATION_PLAN §4.3)', () => {
+  it('an install on pack 1.0.0 is pinned to its own manifest and offers no counter lane', async () => {
+    const older = {
+      ...SUPPLIER_REFERENCE_MANIFEST,
+      version: '1.0.0',
+      capabilities: SUPPLIER_REFERENCE_MANIFEST.capabilities.filter(
+        (c) => c.id !== 'com.dinakernel.commerce.negotiate-quote',
+      ),
+    };
+    const installs = getPluginInstallRepository();
+    if (installs === null) throw new Error('no install repository');
+    const installId = installs.createPending({
+      publisherDid: SUPPLIER,
+      pluginId: SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+      label: 'Supplier',
+      executionMode: 'runner',
+      currentCid: 'bafy-pack-1-0-0',
+      currentVersion: '1.0.0',
+      manifest: older,
+      installScopeHash: 'a'.repeat(64),
+      capabilityHashes: {},
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'c'.repeat(64),
+      trustAnchor: { kind: 'repo_proof' },
+      pendingExpiresAtSec: Math.floor(Date.now() / 1000) + 600,
+      nowMs: Date.now(),
+    });
+    expect(installs.bindPendingDevice(installId, 'did:key:zRunner', Date.now())).toBe(true);
+    expect(installs.activate(installId, 'did:key:zRunner', Date.now())).toBe(true);
+    const outcome = await bindSupplierListing({ installId, name: 'Old pack' });
+    expect(outcome).toMatchObject({ ok: true });
+    const capabilities = getServiceConfig('self')?.capabilities ?? {};
+    expect(capabilities['com.dinakernel.commerce.counter_offer']).toBeUndefined();
+    expect(capabilities['com.dinakernel.commerce.request_quote']).toMatchObject({
+      pluginInstallId: installId,
+      pluginManifestCid: 'bafy-pack-1-0-0',
+    });
+    // The not-awarded notice routes through a lane 1.0.0 already has.
+    expect(capabilities['com.dinakernel.commerce.quote_outcome']).toMatchObject({
+      pluginManifestCid: 'bafy-pack-1-0-0',
+      pluginCapabilityId: 'com.dinakernel.commerce.request-quote',
+    });
   });
 });

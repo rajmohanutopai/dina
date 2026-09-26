@@ -37,4 +37,5 @@ export * from './quote_decline';
 export * from './trade_digest';
 export * from './trade_documents';
 export * from './order_attachment';
+export * from './negotiation';
 export * from './trade_fold';

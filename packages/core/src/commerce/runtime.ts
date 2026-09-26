@@ -32,6 +32,7 @@ import {
   SQLiteAttributionBoundaryRepository,
   type AttributionBoundaryRepository,
 } from './attribution_boundary';
+import { SQLiteBuyerNegotiationRepository } from './buyer_negotiation_store';
 import { SQLiteBuyerOrderRepository, type BuyerOrderRepository } from './buyer_orders';
 import { SQLiteBuyerQuoteRepository, type BuyerQuoteRepository } from './buyer_quotes';
 import {
@@ -73,6 +74,7 @@ import {
 } from './image_egress';
 import { SQLiteInviteRepository, type InviteRepository } from './invite_store';
 import { CommerceLifecycleEngine } from './lifecycle_engine';
+import { SQLiteNegotiationRepository } from './negotiation_store';
 import {
   SQLiteOrderApprovalRepository,
   type OrderApprovalRepository,
@@ -108,6 +110,10 @@ import {
   type CommerceSettingsRepository,
 } from './settings_store';
 import { SQLiteSkuLedgerRepository, type SkuLedgerRepository } from './sku_ledger';
+import {
+  SQLiteStaffClearanceRepository,
+  type StaffClearanceRepository,
+} from './staff_clearances';
 import { SQLiteStaffGrantRepository, type StaffGrantRepository } from './staff_grants';
 import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository } from './staff_pins';
 import { StatusChainStore } from './status_chain';
@@ -121,8 +127,10 @@ import { SQLiteTradeSpoolRepository, type TradeSpoolRepository } from './trade_s
 import { CommerceTransaction } from './transaction';
 import { SQLiteCommerceEpochWatermarkRepository } from './watermarks';
 
+import type { BuyerNegotiationRepository } from './buyer_negotiation_store';
 import type { DeclineDocumentRepository } from './decline_documents';
 import type { LifecycleEngineDeps } from './lifecycle_engine';
+import type { NegotiationRepository } from './negotiation_store';
 import type { CommerceReceiptRepository } from './receipts';
 import type { TenderRepository } from './tender';
 import type { TradeDocumentRepository } from './trade_ledger';
@@ -243,8 +251,14 @@ export interface CommerceRuntime {
   tradeSpool: TradeSpoolRepository;
   /** §3.2 — the private-tender aggregate: N requests, one comparison. */
   tenders: TenderRepository;
+  /** NEGOTIATION_PLAN §5 — counters received, owner price questions, not-awarded notices. */
+  negotiation: NegotiationRepository;
+  /** NEGOTIATION_PLAN §5 — counters sent and each tender's negotiation state. */
+  buyerNegotiation: BuyerNegotiationRepository;
   /** TRADE_FIRST_STRATEGY §6.2 — value-capped, install-scoped staff grants. */
   staffGrants: StaffGrantRepository;
+  /** NEGOTIATION_PLAN §4.7 — the held order each owner yes above a clerk's cap was spent on. */
+  staffClearances: StaffClearanceRepository;
   /** §6.4 — the per-device staff PIN records the grant ceremony mints. */
   staffPins: StaffPinRepository;
   /**
@@ -588,7 +602,10 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     declineDocuments: new SQLiteDeclineDocumentRepository(inputs.adapter),
     tradeSpool: new SQLiteTradeSpoolRepository(inputs.adapter),
     tenders: new SQLiteTenderRepository(inputs.adapter),
+    negotiation: new SQLiteNegotiationRepository(inputs.adapter),
+    buyerNegotiation: new SQLiteBuyerNegotiationRepository(inputs.adapter),
     staffGrants: new SQLiteStaffGrantRepository(inputs.adapter),
+    staffClearances: new SQLiteStaffClearanceRepository(inputs.adapter),
     staffPins: new SQLiteStaffPinRepository(inputs.adapter),
     attributionBoundary: new SQLiteAttributionBoundaryRepository(inputs.adapter),
     invites: new SQLiteInviteRepository(inputs.adapter),

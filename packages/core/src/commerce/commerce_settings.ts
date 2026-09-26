@@ -1,6 +1,7 @@
 import { isCurrencyCode, validateId, validateRegionRef } from '@dina/commerce-protocol';
 
 import { checkCatalogFeedUrl } from './catalog_feed_policy';
+import { negotiationPolicyFindings, type SupplierNegotiationPolicy } from './negotiation_policy';
 import { MAX_QUOTE_FANOUT } from './quote_fanout';
 import {
   MAX_LEGAL_NAME_CHARS,
@@ -119,6 +120,12 @@ export interface SupplierSettings {
   customerPricingSource: string | null;
   /** §15.2b — does accepting an order need a human? */
   orderAcceptance: 'auto' | 'review';
+  /**
+   * NEGOTIATION_PLAN §4.1 — how far this supplier comes down when a buyer
+   * counters. Absent means counter-offers are declined. Owner-only: not on
+   * the integration proposal allowlist.
+   */
+  negotiation?: SupplierNegotiationPolicy;
   /**
    * §8 — whether relay-delivered COLD invite offers are held for a
    * consent card at all. Publishing a catalog is the act of consenting
@@ -239,6 +246,8 @@ export type SettingsRefusal =
   | 'malformed_catalog_category'
   | 'divergence_threshold_out_of_range'
   | 'working_capital_rate_out_of_range'
+  /** NEGOTIATION_PLAN §4.1 — the counter-offer pricing policy. */
+  | 'negotiation_policy_invalid'
   /** Structural pre-pass: a container field is absent or the wrong shape. */
   | 'missing_field'
   | 'wrong_field_shape'
@@ -673,6 +682,7 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
       });
     }
   }
+  findings.push(...negotiationPolicyFindings(settings.negotiation));
 
   return findings.length === 0 ? { ok: true } : { ok: false, findings };
 }

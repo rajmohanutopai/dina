@@ -32,6 +32,11 @@ import { pluginLane } from '@dina/protocol';
 
 import { isCommerceCapability } from '../commerce/capability_names';
 import { quoteAdmissibility } from '../commerce/commerce_settings';
+import {
+  admitInboundCounter,
+  answerQuoteOutcomeInCore,
+  replayedCounterAnswer,
+} from '../commerce/negotiation_supplier';
 import { getQuoteAttemptLedger } from '../commerce/probing_ledger';
 import { admitQuoteRequest, type CounterpartyStanding } from '../commerce/probing_resistance';
 import { getCommerceRuntime } from '../commerce/runtime';
@@ -88,7 +93,11 @@ export type ProviderIngressResult =
          *  this counterparty right now. ONE code for every reason: a prober
          *  who can tell "budget spent" from "we don't quote you" learns the
          *  catalog by watching which requests get a different shape of no. */
-        | 'probing_refused';
+        | 'probing_refused'
+        /** NEGOTIATION_PLAN §4.3 — Core refused a counter-offer before any runner. */
+        | 'counter_refused'
+        /** §4.5 — a not-awarded notice this node could not read or record. */
+        | 'outcome_invalid';
       error: string;
     };
 
@@ -352,7 +361,30 @@ const ANSWERED_BY_CORE: ReadonlySet<string> = new Set(['order_reconcile']);
  * supplier can source, which is half the curve, and leaving it out would make
  * it the cheaper way to ask the same question.
  */
-const SPENDS_PROBING_BUDGET: ReadonlySet<string> = new Set(['request_quote', 'availability']);
+const SPENDS_PROBING_BUDGET: ReadonlySet<string> = new Set([
+  'request_quote',
+  'availability',
+  // NEGOTIATION_PLAN §3 rule 2 — a counter asks "how low will you go", which
+  // is the floor half of the curve. It pays like a quote request, under
+  // either name the lane may be listed by.
+  'counter_offer',
+  'negotiate_quote',
+]);
+
+/**
+ * NEGOTIATION_PLAN §4.3 — a buyer's counter-offer. Core admits it against its
+ * own records BEFORE any runner is asked (replay, moved head, closed quote,
+ * policy, round, window, daily cap), and the runner then receives the counter
+ * with the current quote beside it.
+ */
+const COUNTERS_QUOTE: ReadonlySet<string> = new Set(['counter_offer', 'negotiate_quote']);
+
+/**
+ * NEGOTIATION_PLAN §4.5 — a not-awarded notice. Answered by Core alone, from
+ * the authenticated sender and the quote ledger; no runner holds anything it
+ * could add.
+ */
+const RECORDS_QUOTE_OUTCOME: ReadonlySet<string> = new Set(['quote_outcome']);
 
 /**
  * Answer a reconcile from Core's own records (§12.7).
@@ -506,6 +538,26 @@ export function createProviderIngressTask(args: {
   // question Core could have answered from its own records.
   // §20.10 — spend probing budget BEFORE the runner is asked. A refusal that
   // reached the plugin would already have cost the supplier the answer.
+  // §4.5 — a not-awarded notice asks for no price and closes a quote: it is
+  // answered BEFORE the probing gate (it binds to the wire name alone, so the
+  // `request-quote` it is routed through does not make it pay). A paused
+  // listing never gets here: the receive path refuses queries to a listing
+  // that is not active, and NEGOTIATION_PLAN §4.5 accepts that.
+  if (isCommerceCapability(RECORDS_QUOTE_OUTCOME, query.capability)) {
+    // The buyer is the relay-authenticated sender, never a field in the body.
+    const answered = answerQuoteOutcomeInCore({ params: query.params, buyerDid: query.fromDid, nowMs });
+    return answered.ok
+      ? { ok: true, coreAnswerJson: answered.json }
+      : { ok: false, code: answered.code, error: `provider ingress: ${answered.error}` };
+  }
+
+  // §4.3 — a counter already answered is replayed before the probing gate:
+  // the replay asks nothing new, and a buyer that lost the reply must get it.
+  if (isCommerceCapability(COUNTERS_QUOTE, query.capability, boundCapabilityId)) {
+    const replayed = replayedCounterAnswer({ params: query.params, buyerDid: query.fromDid });
+    if (replayed !== null) return { ok: true, coreAnswerJson: replayed };
+  }
+
   if (isCommerceCapability(SPENDS_PROBING_BUDGET, query.capability, boundCapabilityId)) {
     const refused = refuseProbing(query);
     if (refused !== null) return refused;
@@ -609,6 +661,23 @@ export function createProviderIngressTask(args: {
     };
   }
 
+  // §4.3 — the counter lane: decided by Core where it can be, and otherwise
+  // handed to the runner WITH the current quote, so a runner that holds no
+  // ledger still sees the terms it is being asked to move.
+  let dispatchParams: unknown = query.params;
+  if (isCommerceCapability(COUNTERS_QUOTE, query.capability, boundCapabilityId)) {
+    const admitted = admitInboundCounter({ params: query.params, buyerDid: query.fromDid, nowMs });
+    if (admitted.kind === 'answer') return { ok: true, coreAnswerJson: admitted.json };
+    if (admitted.kind === 'refused') {
+      return {
+        ok: false,
+        code: 'counter_refused',
+        error: `provider ingress: counter refused (${admitted.refusal})`,
+      };
+    }
+    dispatchParams = admitted.params;
+  }
+
   const serviceIngress: PluginTaskEnvelope['service_ingress'] = {
     from_did: query.fromDid,
     query_id: query.queryId,
@@ -679,7 +748,7 @@ export function createProviderIngressTask(args: {
         ? buildPluginEnvelope({
             install,
             capabilityId: pluginCapabilityId,
-            params: query.params,
+            params: dispatchParams,
             context: [],
             executionId: scopedId,
             idempotencyKey: scopedId,

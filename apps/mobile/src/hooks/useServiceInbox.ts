@@ -56,6 +56,10 @@ export type InboxEntryKind =
   | 'integration_settings_proposal'
   | 'order_checkout_link'
   | 'payment_evidence_record'
+  /** NEGOTIATION_PLAN §4.3 — a buyer asks below the supplier's automatic limit; the owner offers it or not. */
+  | 'negotiation_price_approval'
+  /** NEGOTIATION_PLAN §4.5 — a negotiated tender is ready to award (a notice; the award is its own act). */
+  | 'tender_ready'
   | 'unknown';
 
 export interface InboxEntry {
@@ -594,7 +598,11 @@ export async function denyPending(
     // D2D requester either: a dismissed link or a "no, don't record it" is a
     // cancelled card and nothing more.
     kind === 'order_checkout_link' ||
-    kind === 'payment_evidence_record'
+    kind === 'payment_evidence_record' ||
+    // NEGOTIATION_PLAN — a "no" to a lower price, or dismissing a tender
+    // notice, cancels the card; neither has a D2D requester to answer.
+    kind === 'negotiation_price_approval' ||
+    kind === 'tender_ready'
   ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
@@ -812,6 +820,56 @@ function toEntry(task: WorkflowTask): InboxEntry {
       requesterDID: typeof parsed.supplier_did === 'string' ? parsed.supplier_did : '',
       paramsPreview: lines.filter((l) => l !== '').join('\n'),
       ...(isLink && typeof parsed.url === 'string' ? { linkUrl: parsed.url } : {}),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  // NEGOTIATION_PLAN §4.3 — the supplier owner's question. Each line reads
+  // "asked / signed now / first quoted" so the owner sees what they give up.
+  if (payloadType === 'negotiation_price_approval') {
+    const currency = typeof parsed.currency === 'string' ? parsed.currency : '';
+    const lines: string[] = [];
+    if (Array.isArray(parsed.lines)) {
+      // EVERY line the owner's yes would authorise — a quote carries at most
+      // 50, and a concession the owner cannot see is one they cannot weigh.
+      for (const raw of parsed.lines.slice(0, 50)) {
+        if (raw === null || typeof raw !== 'object') continue;
+        const line = raw as Record<string, unknown>;
+        const money = (minor: unknown): string => moneyLine({ currency, minor_units: minor });
+        lines.push(
+          `${oneLine(String(line.line_id ?? ''), 20)}: asks ${money(line.asked_minor_units)} (now ${money(line.signed_minor_units)}, quoted ${money(line.quoted_minor_units)})`,
+        );
+      }
+    }
+    return {
+      id: task.id,
+      kind: 'negotiation_price_approval',
+      capability: 'lower price',
+      serviceName: 'Lower price asked',
+      description: task.description ?? '',
+      requesterDID: typeof parsed.buyer_did === 'string' ? parsed.buyer_did : '',
+      paramsPreview: lines.join('\n'),
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  // NEGOTIATION_PLAN §4.5 — the buyer owner's one notice.
+  if (payloadType === 'tender_ready') {
+    const best =
+      typeof parsed.best_total_minor === 'string'
+        ? moneyLine({ currency: parsed.currency, minor_units: parsed.best_total_minor })
+        : '';
+    const offers = typeof parsed.offers === 'number' ? parsed.offers : 0;
+    return {
+      id: task.id,
+      kind: 'tender_ready',
+      capability: 'tender',
+      serviceName: 'Tender ready',
+      description: task.description ?? '',
+      requesterDID: '',
+      paramsPreview: best === '' ? 'no offer within budget' : `${String(offers)} offer(s) within budget, best ${best}`,
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

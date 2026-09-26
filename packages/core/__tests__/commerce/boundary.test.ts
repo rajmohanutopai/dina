@@ -379,6 +379,21 @@ describe('commerce aggregate boundary', () => {
       // buyer's REQUEST, which does have a digest, goes through
       // `validateQuoteRequest` and not through a bare parse.
       'quote_issuance.ts',
+      // NEGOTIATION_PLAN §4.3 — the same case for the counter lane: the
+      // runner's proposed prices are parsed, every field checked, and then
+      // clamped to the owner's floors; a stored quote is read only through
+      // `rehydrateSignedQuote`. The owner price card's payload is Core's own
+      // card, shape-checked on read like the settings proposal's.
+      'negotiation_supplier.ts',
+      // The buyer's side: a counter that went unanswered is sent once more,
+      // and the retained counter is parsed and IMMEDIATELY re-checked through
+      // `validateCounterOffer` (digest included) before it leaves again.
+      'buyer_negotiation.ts',
+      // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — the escalation card under
+      // a key is Core's own card, parsed and checked field by field (type,
+      // device, scope, subject, value) before it is read as the owner's yes;
+      // any miss refuses the operation.
+      'staff_escalation.ts',
       // The retained quote request is parsed and IMMEDIATELY re-derived
       // through `validateQuoteRequest`, which ends in
       // `verifyCommerceRecordDigest` — so a row edited after writing is caught

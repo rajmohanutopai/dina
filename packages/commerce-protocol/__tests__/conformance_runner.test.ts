@@ -304,7 +304,7 @@ describe('this implementation conforms to the frozen vectors', () => {
       'arithmetic.line_subtotals': 7,
       'arithmetic.totals': 4,
       'digests.records': 15,
-      'digests.domain_separation': 10,
+      'digests.domain_separation': 11,
       'units.defined': 7,
       'units.rejected': 7,
       'quantity.comparisons': 9,
