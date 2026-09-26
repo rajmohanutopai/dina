@@ -1161,6 +1161,13 @@ export {
   type StaffIdentity,
   type StaffInboxItem,
 } from './transport/staff_client';
+export type {
+  OrderSendOutcome,
+  TenderAwardOutcome,
+  TenderExclusionReason,
+  TenderOfferView,
+  TenderRankingView,
+} from './client/tender_views';
 export * from './session/lifecycle';
 export type { AgentSession, SessionGrant } from './session/lifecycle';
 export * from './config/loading';

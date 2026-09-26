@@ -35,6 +35,7 @@ import { quoteAdmissibility } from '../commerce/commerce_settings';
 import {
   admitInboundCounter,
   answerQuoteOutcomeInCore,
+  isWaitingReask,
   replayedCounterAnswer,
 } from '../commerce/negotiation_supplier';
 import { getQuoteAttemptLedger } from '../commerce/probing_ledger';
@@ -558,7 +559,13 @@ export function createProviderIngressTask(args: {
     if (replayed !== null) return { ok: true, coreAnswerJson: replayed };
   }
 
-  if (isCommerceCapability(SPENDS_PROBING_BUDGET, query.capability, boundCapabilityId)) {
+  // §4.3 — a counter re-asking while this node's owner decides asks nothing
+  // new, so it spends no probing budget (see `isWaitingReask`); everything
+  // else about it is still admitted below.
+  const waitingReask =
+    isCommerceCapability(COUNTERS_QUOTE, query.capability, boundCapabilityId) &&
+    isWaitingReask(query.params, query.fromDid);
+  if (!waitingReask && isCommerceCapability(SPENDS_PROBING_BUDGET, query.capability, boundCapabilityId)) {
     const refused = refuseProbing(query);
     if (refused !== null) return refused;
   }

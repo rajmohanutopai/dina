@@ -57,6 +57,8 @@ export interface NegotiationRepository {
   answerReserved(buyerDid: string, counterId: string, answerJson: string): boolean;
   /** Counters from one buyer since an instant — the §3 rule-2 daily cap. */
   countCountersSince(buyerDid: string, sinceMs: number): number;
+  /** This buyer's counters since a time, oldest first: the quote and the answer given. */
+  listCountersSince(buyerDid: string, sinceMs: number): { quoteId: string; answerJson: string }[];
   /** The answers this node gave one buyer on one quote, oldest first — the round limit. */
   listAnswersForQuote(buyerDid: string, quoteId: string): string[];
   /** One question per quote line; a newer ask replaces a pending one. */
@@ -142,6 +144,16 @@ export class SQLiteNegotiationRepository implements NegotiationRepository {
       [buyerDid, sinceMs],
     );
     return Number(rows[0]?.n ?? 0);
+  }
+
+  listCountersSince(buyerDid: string, sinceMs: number): { quoteId: string; answerJson: string }[] {
+    return this.db
+      .query(
+        `SELECT quote_id, answer_json FROM commerce_negotiation_counters
+          WHERE buyer_did = ? AND created_at >= ? ORDER BY created_at`,
+        [buyerDid, sinceMs],
+      )
+      .map((row) => ({ quoteId: String(row.quote_id), answerJson: String(row.answer_json) }));
   }
 
   listAnswersForQuote(buyerDid: string, quoteId: string): string[] {

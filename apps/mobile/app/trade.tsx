@@ -132,6 +132,10 @@ export default function TradeScreen(): React.ReactElement {
         router.push({ pathname: '/order-draft', params: { draft_id: item.subject } });
         return;
       }
+      if (item.kind === 'open_tender') {
+        router.push({ pathname: '/tender', params: { tender_id: item.subject } });
+        return;
+      }
       if (item.kind === 'pending_quote') {
         const [draftId] = item.subject.split(':');
         router.push({ pathname: '/order-draft', params: { draft_id: draftId ?? item.subject } });

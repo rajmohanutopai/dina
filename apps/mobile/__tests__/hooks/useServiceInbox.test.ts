@@ -466,7 +466,11 @@ describe('useServiceInbox', () => {
     expect(price).toMatchObject({ kind: 'negotiation_price_approval', requesterDID: 'did:plc:buyer' });
     expect(price?.paramsPreview).toBe('l1: asks INR 210.00 (now INR 220.00, quoted INR 240.00)');
     const ready = entries.find((e) => e.id === 'tender-ready-t1');
-    expect(ready).toMatchObject({ kind: 'tender_ready', paramsPreview: '2 offer(s) within budget, best INR 432.00' });
+    expect(ready).toMatchObject({
+      kind: 'tender_ready',
+      paramsPreview: '2 offer(s) within budget, best INR 432.00',
+      tenderId: 't1',
+    });
   });
 
   it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {

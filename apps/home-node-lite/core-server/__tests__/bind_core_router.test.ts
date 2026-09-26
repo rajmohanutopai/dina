@@ -409,6 +409,7 @@ describe('bindCoreRouter (task 4.13)', () => {
       .post('/v1/workflow/tasks/:id/complete', project as never, { auth: 'public' })
       .post('/v1/workflow/tasks/claim', project as never, { auth: 'public' })
       .post('/v1/workflow/tasks', project as never, { auth: 'public' })
+      .get('/v1/workflow/tasks', project as never, { auth: 'public' })
       .get('/v1/workflow/tasks/:id', project as never, { auth: 'public' });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
@@ -425,6 +426,8 @@ describe('bindCoreRouter (task 4.13)', () => {
     expect(await caller('POST', '/v1/workflow/tasks/claim')).toBeNull();
     expect(await caller('POST', '/v1/workflow/tasks')).toBeNull();
     expect(await caller('GET', '/v1/workflow/tasks/t-1')).toBeNull();
+    // NEGOTIATION_PLAN §4.7: the owner console LISTS its cards — the read only.
+    expect(await caller('GET', '/v1/workflow/tasks')).toBe('owner');
     // A wrong capability stamps nothing on the decision verbs either.
     expect(
       (

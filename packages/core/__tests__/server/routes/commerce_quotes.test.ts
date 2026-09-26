@@ -74,9 +74,23 @@ function families(): CommerceRuntime['families'] {
   }) as unknown as CommerceRuntime['families'];
 }
 
+/** NEGOTIATION_PLAN §4.5 — not-awarded notices this supplier received, by `${buyer} ${quote}`. */
+let outcomes: Map<string, number>;
+
 beforeEach(() => {
   ledger = new InMemoryCommerceQuoteLedgerRepository();
-  installCommerceRuntime({ families: families() } as unknown as CommerceRuntime);
+  outcomes = new Map();
+  installCommerceRuntime({
+    families: families(),
+    negotiation: {
+      outcomeFor: (buyerDid: string, quoteId: string) => {
+        const at = outcomes.get(`${buyerDid} ${quoteId}`);
+        return at === undefined
+          ? null
+          : { buyerDid, quoteId, requestId: 'r', outcome: 'not_awarded', receivedAt: at };
+      },
+    },
+  } as unknown as CommerceRuntime);
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
 });
@@ -121,6 +135,20 @@ describe('what the owner sees', () => {
     // answer — two states in one response, from one function.
     expect(byId.get('q-void')?.state).toBe('voided');
     expect(byId.get('q-void')?.actions).toEqual(['view']);
+  });
+
+  it('a quote the buyer passed over reads NOT AWARDED, and still says it can be ordered against', async () => {
+    seed({ quoteId: 'q-lost' });
+    seed({ quoteId: 'q-other' });
+    outcomes.set(`${BUYER} q-lost`, NOW_ISH);
+    const resp = await router.handle(req('owner'));
+    const body = resp.body as {
+      quotes: { quoteId: string; state: string; detail: string | null }[];
+    };
+    const byId = new Map(body.quotes.map((q) => [q.quoteId, q]));
+    expect(byId.get('q-lost')?.state).toBe('not_awarded');
+    expect(byId.get('q-lost')?.detail).toMatch(/could still order/);
+    expect(byId.get('q-other')?.state).toBe('live');
   });
 
   it('is empty, not absent, when this supplier has issued nothing', async () => {

@@ -186,14 +186,26 @@ export default function StaffHomeScreen(): React.ReactElement {
               <Pressable
                 key={`${item.kind}-${item.subject}`}
                 style={styles.itemRow}
-                disabled={item.kind !== 'unreceipted_delivery' || busy}
-                onPress={() => receipt(item)}
+                disabled={
+                  (item.kind !== 'unreceipted_delivery' && item.kind !== 'open_tender') || busy
+                }
+                onPress={() =>
+                  item.kind === 'open_tender'
+                    ? router.push({
+                        pathname: '/tender',
+                        params: { tender_id: item.subject, as: 'staff' },
+                      })
+                    : receipt(item)
+                }
                 testID={`staff-item-${item.kind}-${item.subject}`}
               >
                 <View style={styles.itemText}>
                   <Text style={styles.itemTitle}>{KIND_LABEL[item.kind] ?? item.kind}</Text>
                   {item.kind === 'unreceipted_delivery' && (
                     <Text style={styles.itemMeta}>Tap to receipt in full</Text>
+                  )}
+                  {item.kind === 'open_tender' && (
+                    <Text style={styles.itemMeta}>Tap to see the offers and award</Text>
                   )}
                 </View>
               </Pressable>

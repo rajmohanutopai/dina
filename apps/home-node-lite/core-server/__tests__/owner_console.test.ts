@@ -44,6 +44,16 @@ describe('Core owner console (B-02)', () => {
       // The owner can create a poll-mode subscription from this page (Piece 2).
       expect(body).toContain('/v1/watch/create');
       expect(body).toContain('New subscription');
+      // NEGOTIATION_PLAN §4.3/§4.5/§4.7 — the owner's own cards and tenders,
+      // decided here because Core refuses Brain these cards.
+      expect(body).toContain('/v1/workflow/tasks?kind=approval&state=pending_approval');
+      expect(body).toContain('A buyer asks for a lower price');
+      expect(body).toContain('/v1/commerce/trade/tender/ranking?tender_id=');
+      expect(body).toContain('/v1/commerce/trade/tender/award');
+      expect(body).toContain('/v1/commerce/orders/submit');
+      // A presence 403 raises the passphrase box; it is not a wrong key.
+      expect(body).toContain('no_user_presence');
+      expect(body).toContain('/v1/commerce/catalog/drafts/presence');
       // Presents the capability header the HTTP adapter validates.
       expect(body).toContain('x-dina-owner-capability');
       // Never targets a Brain-origin proxy path from this page.
@@ -56,6 +66,10 @@ describe('Core owner console (B-02)', () => {
       const script = body.match(/<script>([\s\S]*?)<\/script>/)?.[1];
       expect(script).toBeDefined();
       expect(() => new Function(script as string)).not.toThrow();
+      // Every helper the page calls is defined: `clear` was called in four
+      // places and defined nowhere, so the staff-device, agent and Brain-work
+      // lists died with a ReferenceError before they rendered.
+      expect(script).toMatch(/function clear\(node\)/);
       // Framing + CSP hardening headers.
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.headers['cache-control']).toBe('no-store');

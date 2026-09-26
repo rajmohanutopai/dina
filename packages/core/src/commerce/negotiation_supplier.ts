@@ -218,10 +218,13 @@ export function admitInboundCounter(args: {
   const { counter, head, policy } = read.context;
   if (reserved) return { kind: 'dispatch', params: { counter, current_quote: head } };
 
-  // Rule 2 — the per-buyer daily cap, across every quote.
+  // Rule 2 — the per-buyer daily cap, across every quote. A re-ask while
+  // this node's owner is still deciding asks nothing new, so it neither
+  // meets the cap nor counts toward it.
   if (
-    runtime.negotiation.countCountersSince(args.buyerDid, args.nowMs - DAY_MS) >=
-    policy.maxCountersPerBuyerPerDay
+    !isWaitingReask(args.params, args.buyerDid) &&
+    countedCountersSince(runtime, args.buyerDid, args.nowMs - DAY_MS) >=
+      policy.maxCountersPerBuyerPerDay
   ) {
     return { kind: 'refused', refusal: 'counter_limit' };
   }
@@ -281,6 +284,57 @@ function sameCounter(held: { counterDigest: string; quoteId: string }, raw: unkn
   if (raw === null || typeof raw !== 'object') return false;
   const body = raw as Record<string, unknown>;
   return body.counter_digest === held.counterDigest && body.quote_id === held.quoteId;
+}
+
+/**
+ * §4.3 — a counter asking AGAIN on a quote while this node's owner is still
+ * deciding a price on it asks nothing new: its answer is the same hold, or
+ * the price the owner has just authorised. So it spends no probing budget
+ * and does not count toward the daily cap (the round limit already skips it)
+ * — otherwise a buyer waiting politely would spend, on waiting, the budget
+ * the owner's yes needs to arrive.
+ *
+ * Only while the owner's question is LIVE: pending on a card still open, or
+ * approved and not yet given. A declined, withdrawn or lapsed question ends
+ * the exemption, so it can never become a standing free lane.
+ */
+export function isWaitingReask(params: unknown, buyerDid: string): boolean {
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return false;
+  const raw = counterOf(params);
+  const quoteId =
+    raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>).quote_id : undefined;
+  if (typeof quoteId !== 'string') return false;
+  const answers = runtime.negotiation
+    .listAnswersForQuote(buyerDid, quoteId)
+    .filter((json) => json !== '');
+  const last = answers.at(-1);
+  if (last === undefined || !waitedOnOwner(last)) return false;
+  const workflow = getWorkflowService();
+  return runtime.negotiation
+    .questionsForQuote(quoteId)
+    .some(
+      (q) =>
+        q.buyerDid === buyerDid &&
+        (q.state === 'approved' ||
+          (q.state === 'pending' &&
+            workflow?.store().getById(q.taskId)?.status === WorkflowTaskState.PendingApproval)),
+    );
+}
+
+/**
+ * The counters that count toward the daily cap: every one since `sinceMs`
+ * except a re-ask that followed a hold waiting on this node's owner.
+ */
+function countedCountersSince(runtime: CommerceRuntime, buyerDid: string, sinceMs: number): number {
+  const previous = new Map<string, string>();
+  let counted = 0;
+  for (const row of runtime.negotiation.listCountersSince(buyerDid, sinceMs)) {
+    const before = previous.get(row.quoteId);
+    if (before === undefined || !waitedOnOwner(before)) counted += 1;
+    if (row.answerJson !== '') previous.set(row.quoteId, row.answerJson);
+  }
+  return counted;
 }
 
 /** A recorded answer that held while this node's owner was still deciding. */

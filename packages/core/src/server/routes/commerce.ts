@@ -584,6 +584,16 @@ function purchasingCaller(
   return caller;
 }
 
+/** An awarded tender's held order, as a surface shows it. */
+function heldOrderState(
+  approval: { consumedAt: number | null; expiresAt: number } | null,
+  nowMs: number,
+): 'held' | 'sent' | 'lapsed' {
+  if (approval === null) return 'lapsed';
+  if (approval.consumedAt !== null) return 'sent';
+  return approval.expiresAt <= nowMs ? 'lapsed' : 'held';
+}
+
 /** Who stands behind an order a caller holds: null (the node) for the owner, the device for a clerk. */
 function vouchedByFor(caller: CommerceRouteCaller): string | null {
   return caller.kind === 'staff' ? caller.deviceDid : null;
@@ -2584,7 +2594,14 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       body: {
         quotes: runtime.families
           .listForOwner()
-          .map(({ head, usesSpent }) => describeQuoteForOwner(head, usesSpent, now)),
+          .map(({ head, usesSpent }) =>
+            describeQuoteForOwner(
+              head,
+              usesSpent,
+              now,
+              runtime.negotiation.outcomeFor(head.buyerDid, head.quoteId)?.receivedAt ?? null,
+            ),
+          ),
       },
     };
   });
@@ -7039,8 +7056,15 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
               deadline_at: state.deadlineAt,
               awarded_supplier_did: state.awardedSupplierDid,
             }),
-        // After an award the owner can always find the approval again.
-        ...(state !== null && state.state === 'awarded' ? { approval_id: state.approvalId } : {}),
+        // After an award the owner can always find the approval again, and
+        // whether it is still held, already sent, or lapsed unsent — so a
+        // surface offers "Send" only while there is something to send.
+        ...(state !== null && state.state === 'awarded'
+          ? {
+              approval_id: state.approvalId,
+              held_order: heldOrderState(runtime.orderApprovals.get(state.approvalId), Date.now()),
+            }
+          : {}),
         ranked: ranked.ranking.ranked,
         excluded: ranked.ranking.excluded,
       },
@@ -7085,6 +7109,15 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           tender_id: tenderId,
           approval_id: policy.approvalId,
           awarded_supplier_did: policy.awardedSupplierDid,
+          // The notices the award wrote, as they stand now — so a retry can
+          // read whether each one went (the first answer carried `sent`).
+          not_awarded_notices: runtime.buyerNegotiation
+            .listNoticesForTender(tenderId)
+            .map((notice) => ({
+              supplier_did: notice.supplierDid,
+              sent: notice.state === 'sent',
+              state: notice.state,
+            })),
           ...(approval === null
             ? { approval_state: 'no_longer_held' }
             : {

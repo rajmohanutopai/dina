@@ -9,9 +9,17 @@
 
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 
+import {
+  readOrderSend,
+  readTenderAward,
+  type OrderSendOutcome,
+  type TenderAwardOutcome,
+  type TenderRankingView,
+} from '../client/tender_views';
 import { getPublicKey } from '../crypto/ed25519';
 import { deriveDIDKey, publicKeyToMultibase } from '../identity/did';
 import { parseAgentSetupCode } from '../pairing/setup_code';
+
 
 import { RemoteCoreClient, type WebSocketLike } from './remote_core_client';
 
@@ -152,6 +160,57 @@ export class StaffCoreClient {
 
   async inbox(): Promise<{ ok: true; items: StaffInboxItem[] }> {
     return this.call('GET', '/v1/commerce/trade/inbox');
+  }
+
+  /** NEGOTIATION_PLAN §4.7 — the ranked offers, for a clerk with a buyer-side grant. */
+  async tenderRanking(tenderId: string): Promise<TenderRankingView> {
+    return this.call(
+      'GET',
+      `/v1/commerce/trade/tender/ranking?tender_id=${encodeURIComponent(tenderId)}`,
+    );
+  }
+
+  /** §4.7 — award inside the cap; over it, the owner's card (a typed outcome). */
+  async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
+    return this.decided(
+      'POST',
+      '/v1/commerce/trade/tender/award',
+      {
+        tender_id: args.tenderId,
+        ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
+      },
+      readTenderAward,
+    );
+  }
+
+  /** §4.7 — send the held order inside the cap, or on the owner's yes for it. */
+  async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
+    return this.decided(
+      'POST',
+      '/v1/commerce/orders/submit',
+      { approval_id: approvalId },
+      readOrderSend,
+    );
+  }
+
+  /** A call whose 202 ("waiting for the owner") is an answer, not an error. */
+  private async decided<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    read: (status: number, body: unknown) => T | null,
+  ): Promise<T> {
+    const res = await this.transport.request(method, path, JSON.stringify(body), {
+      'content-type': 'application/json',
+    });
+    const parsed = JSON.parse(res.body === '' ? '{}' : res.body) as Record<string, unknown>;
+    const outcome = read(res.status, parsed);
+    if (outcome !== null) return outcome;
+    throw new StaffClientError(
+      `${method} ${path} failed ${String(res.status)} — ${String(parsed.error ?? 'error')}`,
+      res.status,
+      String(parsed.error ?? 'error'),
+    );
   }
 
   async unanswered(counterpartyDid: string): Promise<{

@@ -9,6 +9,14 @@
  * validates, gates and signs; the screens render what Core answers.
  */
 
+import {
+  readOrderSend,
+  readTenderAward,
+  type OrderSendOutcome,
+  type TenderAwardOutcome,
+  type TenderRankingView,
+} from './tender_views';
+
 import type { CatalogDraft } from '../commerce/catalog_draft_store';
 import type { OrderConversation, OrderDraft, OrderDraftLine } from '../commerce/order_draft_store';
 import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
@@ -354,6 +362,50 @@ export class InProcessOwnerCommerceClient {
       return classified;
     }
     return expectOk<OrderSubmitAnswer>(res, 'orderSubmit');
+  }
+
+  // -------------------------------------------------------------------------
+  // The tender (NEGOTIATION_PLAN §4.5)
+  // -------------------------------------------------------------------------
+
+  async tenderRanking(tenderId: string): Promise<TenderRankingView> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'GET',
+        path: '/v1/commerce/trade/tender/ranking',
+        query: { tender_id: tenderId },
+      }),
+    );
+    return expectOk<TenderRankingView>(res, 'tenderRanking');
+  }
+
+  /** Award the best offer, or the one named. Presence is checked by Core. */
+  async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'POST',
+        path: '/v1/commerce/trade/tender/award',
+        body: {
+          tender_id: args.tenderId,
+          ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
+        },
+      }),
+    );
+    const outcome = readTenderAward(res.status, res.body);
+    return outcome ?? expectOk<never>(res, 'awardTender');
+  }
+
+  /** Send an order held from a quote (an award, `from_quote`). */
+  async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
+    const res = await this.router.handle(
+      this.stamp({
+        method: 'POST',
+        path: '/v1/commerce/orders/submit',
+        body: { approval_id: approvalId },
+      }),
+    );
+    const outcome = readOrderSend(res.status, res.body);
+    return outcome ?? expectOk<never>(res, 'sendHeldOrder');
   }
 
   // -------------------------------------------------------------------------

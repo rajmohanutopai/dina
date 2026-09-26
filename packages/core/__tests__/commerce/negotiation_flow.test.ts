@@ -1216,10 +1216,12 @@ describe('review fixes — the rules the first review found loose', () => {
     expect(pair.buyer.buyerNegotiation.getCounter(second.counter_id)?.state).toBe('pending');
     installCommerceRuntime(pair.buyer);
     expect(await runNegotiationTick(NOW + 5_000)).toBe(0);
-    // After the pause it asks again — and a round that only waited did not
-    // use one up, on either side, so the owner's later yes can still land.
-    for (let wait = 1; wait <= 4; wait += 1) {
-      expect(await runNegotiationTick(NOW + 5_000 + wait * 25_000)).toBe(1);
+    // After the pause it asks again, waiting longer each time the owner is
+    // still deciding (20 s, 40 s, 80 s, 160 s) — and a round that only waited
+    // did not use one up, on either side, so the owner's later yes can land.
+    for (const waitMs of [20_000, 40_000, 80_000, 160_000]) {
+      expect(await runNegotiationTick(NOW + waitMs - 1_000)).toBe(0);
+      expect(await runNegotiationTick(NOW + waitMs)).toBe(1);
       const again = sent.at(-1)?.body.params as CounterOffer;
       const reply = supplierAnswers(pair, again) as { json: string };
       expect(JSON.parse(reply.json)).toMatchObject({ outcome: 'held', pending_owner: true });
@@ -1236,7 +1238,9 @@ describe('review fixes — the rules the first review found loose', () => {
       nowMs: () => NOW,
     })({ task: card as never, decision: 'approved' });
     installCommerceRuntime(pair.buyer);
-    expect(await runNegotiationTick(NOW + 200_000)).toBe(1);
+    // Five waits in, the loop asks at most every five minutes.
+    expect(await runNegotiationTick(NOW + 299_000)).toBe(0);
+    expect(await runNegotiationTick(NOW + 300_000)).toBe(1);
     const last = sent.at(-1)?.body.params as CounterOffer;
     const signed = supplierAnswers(pair, last) as { json: string };
     expect(JSON.parse(signed.json)).toMatchObject({ outcome: 'revised' });
@@ -1837,5 +1841,71 @@ describe('dual review round 4 — pinned fixes', () => {
     expect(t.buyer.buyerNegotiation.getCounter(loopCounter.counterId)?.attempts).toBe(2);
     // Once every window has closed, nothing holds the award.
     expect(counterInFlight(SUPPLIER_DID, quoteA, NOW + 200_001 + 181_000)).toBe(false);
+  });
+});
+
+describe("waiting on the supplier's owner spends nothing (NEGOTIATION_PLAN §4.3)", () => {
+  const decide = (
+    pair: Awaited<ReturnType<typeof negotiatingPair>>,
+    decision: 'approved' | 'denied',
+  ) => {
+    installCommerceRuntime(pair.supplier);
+    const [question] = pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id);
+    makeNegotiationPriceDecisionHandler({
+      runtime: () => pair.supplier,
+      workflow: () => pair.workflow,
+      nowMs: () => NOW,
+    })({ task: pair.workflow.store().getById(question?.taskId ?? '') as never, decision });
+  };
+
+  it('re-asks while the owner decides do not count toward the daily cap; the yes arrives; the next real ask does count', async () => {
+    const pair = await negotiatingPair({
+      ...POLICY,
+      maxCountersPerBuyerPerDay: 2,
+      items: [{ product: GTIN, floorMinorUnits: '420', autoFloorMinorUnits: '480' }],
+    });
+    // Round 1 moves to the automatic floor and asks the owner about more.
+    const first = await buyerCounters(pair, '30000');
+    const a1 = supplierAnswers(pair, first) as { json: string };
+    expect(JSON.parse(a1.json)).toMatchObject({ outcome: 'revised', pending_owner: true });
+    buyerReceives(pair, first, a1.json);
+    // Round 2 is a hold that waits on the owner. Two real asks: the cap is met.
+    const second = await buyerCounters(pair, '30000');
+    const a2 = supplierAnswers(pair, second) as { json: string };
+    expect(JSON.parse(a2.json)).toMatchObject({ outcome: 'held', pending_owner: true });
+    buyerReceives(pair, second, a2.json);
+    // Re-asks while the owner decides are still admitted: they ask nothing new.
+    for (let i = 0; i < 3; i += 1) {
+      const again = await buyerCounters(pair, '30000');
+      const reply = supplierAnswers(pair, again);
+      expect(reply).not.toEqual({ refused: 'counter_limit' });
+      const json = (reply as { json: string }).json;
+      expect(JSON.parse(json)).toMatchObject({ outcome: 'held', pending_owner: true });
+      buyerReceives(pair, again, json);
+    }
+    // The owner says yes; the ask that carries it is free too, and signs.
+    decide(pair, 'approved');
+    const carrying = await buyerCounters(pair, '30000');
+    const signed = supplierAnswers(pair, carrying) as { json: string };
+    expect(JSON.parse(signed.json)).toMatchObject({ outcome: 'revised' });
+    buyerReceives(pair, carrying, signed.json);
+    // A new real ask after that counts: the cap of two is met, so it is refused.
+    const beyond = await buyerCounters(pair, '30000');
+    expect(supplierAnswers(pair, beyond)).toEqual({ refused: 'counter_limit' });
+  });
+
+  it('once the owner declines, a re-ask is an ordinary ask again', async () => {
+    const pair = await negotiatingPair({
+      ...POLICY,
+      maxCountersPerBuyerPerDay: 2,
+      items: [{ product: GTIN, floorMinorUnits: '420', autoFloorMinorUnits: '480' }],
+    });
+    const first = await buyerCounters(pair, '30000');
+    buyerReceives(pair, first, (supplierAnswers(pair, first) as { json: string }).json);
+    const second = await buyerCounters(pair, '30000');
+    buyerReceives(pair, second, (supplierAnswers(pair, second) as { json: string }).json);
+    decide(pair, 'denied');
+    const after = await buyerCounters(pair, '30000');
+    expect(supplierAnswers(pair, after)).toEqual({ refused: 'counter_limit' });
   });
 });

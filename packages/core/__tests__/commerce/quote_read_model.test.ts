@@ -39,6 +39,21 @@ function head(over: Partial<CommerceQuoteHead> = {}): CommerceQuoteHead {
   };
 }
 
+describe('NEGOTIATION_PLAN §4.5 — a quote the buyer passed over', () => {
+  it('reads NOT AWARDED while it is still in date, and says it can still be ordered against', () => {
+    const view = describeQuoteForOwner(head(), 0, NOW, NOW - 500);
+    expect(view.state).toBe('not_awarded');
+    expect(view.detail).toMatch(/could still order/);
+    expect(view.actions).toEqual(['view']);
+  });
+
+  it('gives way to the harder facts: voided, expired and fully used outrank it', () => {
+    expect(describeQuoteForOwner(head({ voided: true }), 0, NOW, NOW).state).toBe('voided');
+    expect(describeQuoteForOwner(head(), 0, NOW + 7_200_000, NOW).state).toBe('expired');
+    expect(describeQuoteForOwner(head({ maxUses: '1' }), 1, NOW, NOW).state).toBe('consumed');
+  });
+});
+
 describe('the ordinary states', () => {
   it('calls a signed, in-date, unspent quote LIVE and offers to void it', () => {
     const view = describeQuoteForOwner(head(), 0, NOW);

@@ -17,9 +17,11 @@ import {
 
 import type { WorkflowTask } from '@dina/core';
 
+const routerPush = jest.fn();
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn() }),
   useLocalSearchParams: () => ({}),
+  router: { push: (...args: unknown[]) => routerPush(...args) },
 }));
 jest.mock('../../src/storage/init', () => ({
   openPersonaDB: jest.fn(),
@@ -82,4 +84,39 @@ it('a price card with more lines than a preview holds shows every one, unclipped
     `l${String(LINE_COUNT)}: asks INR 210.00 (now INR 220.00, quoted INR 240.00)`,
   );
   expect(preview.props.numberOfLines).toBeUndefined();
+});
+
+it("a tender-ready card opens its tender: the award is the tender screen's act, not the card's", async () => {
+  const TENDER_READY: WorkflowTask = {
+    ...PRICE_CARD,
+    id: 'tender-ready-tnd-7',
+    description: 'Tender tnd-7 is ready.',
+    payload: JSON.stringify({
+      type: 'tender_ready',
+      tender_id: 'tnd-7',
+      reason: 'settled',
+      offers: 2,
+      best_total_minor: '43200',
+      currency: 'INR',
+    }),
+  };
+  let listCalls = 0;
+  const client: InboxCoreClient = {
+    async listWorkflowTasks(query) {
+      listCalls++;
+      if (query?.state === 'pending_approval' && query.kind === 'approval') return [TENDER_READY];
+      return [];
+    },
+    approveWorkflowTask: jest.fn(),
+    cancelWorkflowTask: jest.fn(),
+    getWorkflowTask: jest.fn(async () => null),
+    sendServiceRespond: jest.fn(),
+  };
+  setInboxCoreClient(client);
+  const screen = render(<NotificationsScreen />);
+  await waitFor(() => expect(listCalls).toBe(CALLS_PER_LOAD));
+  fireEvent.press(screen.getByTestId('filter-needs_action'));
+  const open = await waitFor(() => screen.getByTestId('approvals-open-tender-tender-ready-tnd-7'));
+  fireEvent.press(open);
+  expect(routerPush).toHaveBeenCalledWith({ pathname: '/tender', params: { tender_id: 'tnd-7' } });
 });

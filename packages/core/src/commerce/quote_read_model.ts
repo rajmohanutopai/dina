@@ -48,8 +48,14 @@ import type { CommerceQuoteHead } from './quote_ledger';
 export type OwnerQuoteAction = 'view';
 
 export type OwnerQuoteState =
-  /** Signed, in date, capacity left. The only state that can still be ordered against. */
+  /** Signed, in date, capacity left, and not passed over. */
   | 'live'
+  /**
+   * NEGOTIATION_PLAN §4.5 — the buyer told this node the tender went to
+   * someone else. Still in date, so the buyer COULD order against it; counter
+   * offers on it are refused.
+   */
+  | 'not_awarded'
   /** Disowned by this node (§16.2 restore, or an owner's own decision). */
   | 'voided'
   /** Past its validity window. */
@@ -86,6 +92,8 @@ export function describeQuoteForOwner(
   head: CommerceQuoteHead,
   usesSpent: number,
   nowMs: number,
+  /** §4.5 — the buyer's not-awarded notice for this quote, when one arrived. */
+  notAwardedAt: number | null = null,
 ): OwnerQuoteView {
   const maxUses = Number.parseInt(head.maxUses, 10);
   const base = {
@@ -131,6 +139,19 @@ export function describeQuoteForOwner(
       state: 'consumed',
       headline: 'Fully used.',
       detail: `All ${String(base.maxUses)} of this quote's uses are spent. A further order against it is refused.`,
+      actions: ['view'],
+    };
+  }
+  if (notAwardedAt !== null) {
+    return {
+      ...base,
+      state: 'not_awarded',
+      headline: 'Not awarded. The buyer chose another offer.',
+      // The notice closes the haggle, not the offer: the quote is still
+      // signed and in date, and saying "closed" would be a promise the order
+      // path does not keep.
+      detail:
+        'It stays valid until it expires, so the buyer could still order against it. Counter-offers on it are refused.',
       actions: ['view'],
     };
   }

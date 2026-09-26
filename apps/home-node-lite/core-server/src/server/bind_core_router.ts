@@ -114,7 +114,7 @@ export function bindCoreRouter(opts: BindCoreRouterOptions): number {
       if (
         opts.ownerCapability !== undefined &&
         opts.ownerCapability !== '' &&
-        isOwnerSurfacePath(coreReq.path) &&
+        isOwnerSurfacePath(coreReq.path, coreReq.method) &&
         ownerHeaderMatches(coreReq.headers['x-dina-owner-capability'], opts.ownerCapability)
       ) {
         coreReq = {
@@ -191,7 +191,7 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
  * is owner-controlled here; claim/complete/fail still require a signed backend
  * DID and can never be reached with the owner capability.
  */
-function isOwnerSurfacePath(p: string): boolean {
+function isOwnerSurfacePath(p: string, method: string): boolean {
   return (
     p === '/v1/run' ||
     p.startsWith('/v1/run/') ||
@@ -217,6 +217,12 @@ function isOwnerSurfacePath(p: string): boolean {
     // route re-validates the capability with its own owner guard; guest
     // traffic never arrives here — it rides the 1:1 service lane.
     p.startsWith('/v1/coordination/') ||
+    // NEGOTIATION_PLAN §4.3/§4.5/§4.7 — the LIST of the owner's cards (GET
+    // only), so the console can show what it may decide: a price below the
+    // automatic limit, a tender ready, a clerk over the cap. Creating a task
+    // on the same path is not the owner's to reach with this bearer; the two
+    // decision verbs are the rule just below.
+    (p === '/v1/workflow/tasks' && method === 'GET') ||
     // The owner's decision on an approval card (approve / cancel = deny).
     // The two verbs only: an owner console on a server node must be able to
     // settle the cards Core refuses Brain — a household disclosure review

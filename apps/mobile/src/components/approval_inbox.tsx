@@ -18,6 +18,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Linking } from 'react-native';
 
@@ -510,6 +511,20 @@ export function ApprovalActionCard({
             The payment link is not an https address and will not be opened.
           </Text>
         )
+      ) : null}
+      {isTenderReady && item.tenderId !== undefined ? (
+        // NEGOTIATION_PLAN §4.5 — the card only tells; the award is its own
+        // act, with presence, on the tender screen.
+        <Pressable
+          testID={`approvals-open-tender-${item.id}`}
+          accessibilityRole="link"
+          style={({ pressed }) => [styles.button, styles.linkButton, pressed && styles.pressed]}
+          onPress={() => {
+            router.push({ pathname: '/tender', params: { tender_id: item.tenderId } });
+          }}
+        >
+          <Text style={styles.linkText}>Open tender</Text>
+        </Pressable>
       ) : null}
       {item.requesterDID !== '' ? (
         <Text style={styles.requester} numberOfLines={1}>

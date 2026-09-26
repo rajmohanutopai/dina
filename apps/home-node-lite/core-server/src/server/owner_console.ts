@@ -187,6 +187,29 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   <div id="watchlist"></div>
 </section>
 
+<section>
+  <h2>Approvals <span id="approvalCount" class="muted"></span></h2>
+  <p class="muted">Cards only you may decide: a buyer asking below your automatic price limit, a tender ready to award, a clerk over their limit.</p>
+  <div class="bar"><button id="refreshApprovals">Refresh</button></div>
+  <div id="approvals" class="muted">Not checked.</div>
+</section>
+
+<section>
+  <h2>Tenders</h2>
+  <div class="bar"><button id="refreshTenders">Refresh</button></div>
+  <div id="tenders" class="muted">Not checked.</div>
+  <div id="tenderDetail"></div>
+</section>
+
+<div id="presenceBox" class="card hidden">
+  <div class="row">
+    <input id="presencePass" type="password" placeholder="owner passphrase" autocomplete="off" size="30" />
+    <button id="presenceConfirm" class="primary">Confirm it is you</button>
+    <button id="presenceCancel">Cancel</button>
+  </div>
+  <div id="presenceNote" class="muted">This needs a person present.</div>
+</div>
+
 <script>
 "use strict";
 (function () {
@@ -233,6 +256,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     (kids || []).forEach(function (c) { n.appendChild(c); });
     return n;
   }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
   function btn(label, cls, onClick) {
     var b = el("button", { text: label, class: cls || "" });
     b.addEventListener("click", onClick);
@@ -716,12 +740,222 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     }).catch(function (e) { alert(e.message); });
   }
 
+  // ── Owner cards and tenders (NEGOTIATION_PLAN §4.3, §4.5, §4.7) ─────
+  // A call that reports Core's own answer and never drops the key: an award
+  // answers 403 no_user_presence when a proof is due, and that is not a
+  // wrong key.
+  function call(method, path, body) {
+    var cap = getCap();
+    var headers = { "content-type": "application/json" };
+    if (cap) headers["x-dina-owner-capability"] = cap;
+    var init = { method: method, headers: headers };
+    if (method !== "GET") init.body = JSON.stringify(body || {});
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (t) {
+        var parsed = {};
+        try { parsed = t === "" ? {} : JSON.parse(t); } catch (e) { parsed = { error: t.slice(0, 120) }; }
+        return { status: res.status, body: parsed };
+      });
+    });
+  }
+  function money(minor, currency) {
+    var m = String(minor || "");
+    var digits = "0123456789";
+    for (var i = 0; i < m.length; i++) if (digits.indexOf(m.charAt(i)) < 0) return m;
+    while (m.length < 3) m = "0" + m;
+    var amount = m.slice(0, -2) + "." + m.slice(-2);
+    return currency ? currency + " " + amount : amount;
+  }
+  function refusal(key) {
+    var words = {
+      counter_in_flight: "Dina is still waiting for this supplier to answer a counter-offer. Try again in a few minutes.",
+      tender_closed: "This tender has already been awarded or closed.",
+      tender_moved: "The tender changed while awarding. Refresh and try again.",
+      no_awardable_offer: "No offer can be awarded: every quote is missing, expired or over budget.",
+      quote_expired: "That quote has expired.",
+      approval_expired: "The held order has lapsed. Award again to hold a fresh one.",
+      approval_already_used: "This order has already been sent.",
+      buyer_sender_unavailable: "Dina cannot send orders right now. Try again shortly."
+    };
+    return words[key] || ("Dina could not do that (" + String(key || "error") + ").");
+  }
+  var pendingRetry = null;
+  function needPresence(retry) {
+    pendingRetry = retry;
+    document.getElementById("presenceNote").textContent = "This needs a person present.";
+    document.getElementById("presenceBox").classList.remove("hidden");
+    document.getElementById("presencePass").focus();
+  }
+  function confirmPresence() {
+    var pass = document.getElementById("presencePass").value;
+    call("POST", "/v1/commerce/catalog/drafts/presence", { passphrase: pass }).then(function (r) {
+      document.getElementById("presencePass").value = "";
+      if (r.status !== 200) {
+        document.getElementById("presenceNote").textContent = "That passphrase did not verify.";
+        return;
+      }
+      document.getElementById("presenceBox").classList.add("hidden");
+      var retry = pendingRetry; pendingRetry = null;
+      if (retry) retry();
+    });
+  }
+  function payloadOf(task) {
+    try { return JSON.parse(task.payload || "{}"); } catch (e) { return {}; }
+  }
+  function decide(task, verb, body) {
+    call("POST", "/v1/workflow/tasks/" + encodeURIComponent(task.id) + "/" + verb, body || {}).then(function (r) {
+      if (r.status !== 200) alert(refusal(r.body && r.body.error));
+      loadApprovals();
+    });
+  }
+  function approvalCard(task) {
+    var p = payloadOf(task);
+    var card = el("div", { class: "card", "data-task": task.id });
+    var yes = "Approve", no = "Deny";
+    if (p.type === "negotiation_price_approval") {
+      card.appendChild(el("strong", { text: "A buyer asks for a lower price" }));
+      card.appendChild(el("div", { class: "muted", text: "Buyer " + String(p.buyer_did || "") + " · quote " + String(p.quote_id || "") }));
+      (Array.isArray(p.lines) ? p.lines : []).forEach(function (line) {
+        card.appendChild(el("div", { text: String(line.line_id || "") + ": asks " + money(line.asked_minor_units, p.currency) +
+          " (now " + money(line.signed_minor_units, p.currency) + ", first quoted " + money(line.quoted_minor_units, p.currency) + ")" }));
+      });
+      yes = "Offer it"; no = "Keep my price";
+    } else if (p.type === "tender_ready") {
+      card.appendChild(el("strong", { text: "Your tender is ready to award" }));
+      card.appendChild(el("div", { class: "muted", text: String(p.offers || 0) + " offer(s) within budget" +
+        (p.best_total_minor ? ", best " + money(p.best_total_minor, p.currency) : "") }));
+      var tid = String(p.tender_id || "");
+      card.appendChild(el("div", { class: "row" }, [btn("Open tender", "primary", function () { openTender(tid); })]));
+      yes = "Dismiss"; no = null;
+    } else if (p.type === "commerce_staff_escalation") {
+      card.appendChild(el("strong", { text: "A clerk is over their limit" }));
+      card.appendChild(el("div", { text: "Device " + String(p.device_did || "") + " · " +
+        (p.value ? money(p.value.minor_units, p.value.currency) : "") }));
+      card.appendChild(el("div", { class: "muted", text: String(p.reason || "") }));
+    } else {
+      card.appendChild(el("strong", { text: String(task.description || "Approval") }));
+    }
+    var row = el("div", { class: "row decision" });
+    row.appendChild(btn(yes, "primary", function () { decide(task, "approve"); }));
+    if (no) row.appendChild(btn(no, "danger", function () { decide(task, "cancel", { reason: "denied by the owner" }); }));
+    card.appendChild(row);
+    return card;
+  }
+  function loadApprovals() {
+    var box = document.getElementById("approvals");
+    call("GET", "/v1/workflow/tasks?kind=approval&state=pending_approval").then(function (r) {
+      box.textContent = "";
+      box.className = "";
+      if (r.status !== 200) { box.className = "muted"; box.textContent = refusal(r.body && r.body.error); return; }
+      var tasks = Array.isArray(r.body.tasks) ? r.body.tasks : [];
+      document.getElementById("approvalCount").textContent = tasks.length ? "(" + tasks.length + ")" : "";
+      if (tasks.length === 0) { box.className = "muted"; box.textContent = "Nothing waiting for you."; return; }
+      tasks.forEach(function (t) { box.appendChild(approvalCard(t)); });
+    });
+  }
+  function loadTenders() {
+    var box = document.getElementById("tenders");
+    call("GET", "/v1/commerce/trade/inbox").then(function (r) {
+      box.textContent = "";
+      box.className = "";
+      if (r.status !== 200) { box.className = "muted"; box.textContent = refusal(r.body && r.body.error); return; }
+      var open = (Array.isArray(r.body.items) ? r.body.items : []).filter(function (i) { return i.kind === "open_tender"; });
+      if (open.length === 0) { box.className = "muted"; box.textContent = "No open tenders."; return; }
+      open.forEach(function (item) {
+        var id = String(item.subject);
+        box.appendChild(el("div", { class: "row" }, [
+          el("code", { text: id }),
+          btn("Open", "", function () { openTender(id); })
+        ]));
+      });
+    });
+  }
+  var stateWords = {
+    negotiating: "Dina is asking the suppliers for better prices",
+    ready: "Ready to award",
+    awarded: "Awarded",
+    closed: "Closed",
+    no_policy: "Collecting quotes"
+  };
+  var excludedWords = {
+    no_quote: "No quote yet", declined: "Declined to quote", expired: "Quote expired",
+    currency_mismatch: "Quoted in another currency", over_budget: "Over your budget"
+  };
+  function openTender(id, notice, held) {
+    var box = document.getElementById("tenderDetail");
+    call("GET", "/v1/commerce/trade/tender/ranking?tender_id=" + encodeURIComponent(id)).then(function (r) {
+      box.textContent = "";
+      var card = el("div", { class: "card", id: "tender-" + id });
+      if (r.status !== 200) { card.appendChild(el("div", { text: refusal(r.body && r.body.error) })); box.appendChild(card); return; }
+      var v = r.body;
+      card.appendChild(el("strong", { text: "Tender " + id }));
+      card.appendChild(el("div", { class: "status", "data-state": v.state, text: stateWords[v.state] || v.state }));
+      if (v.target_total && v.currency) {
+        card.appendChild(el("div", { class: "muted", text: "Target " + money(v.target_total, v.currency) +
+          (v.budget_ceiling ? " · budget " + money(v.budget_ceiling, v.currency) : "") }));
+      }
+      var canAward = v.state === "ready" || v.state === "negotiating" || v.state === "no_policy";
+      (v.ranked || []).forEach(function (o, i) {
+        var row = el("div", { class: "row decision", "data-supplier": o.supplier_did }, [
+          el("span", { text: (i === 0 ? "Best offer · " : "") + o.supplier_did }),
+          el("strong", { class: "total", text: money(o.total_minor, o.currency) }),
+          el("span", { class: "muted", text: "valid until " + String(o.valid_until || "").slice(0, 10) +
+            (o.revision && o.revision !== "1" ? " · revised " + (Number(o.revision) - 1) + "×" : "") })
+        ]);
+        if (canAward) row.appendChild(btn("Award", "primary", function () { award(id, o.supplier_did); }));
+        if (v.state === "awarded" && v.awarded_supplier_did === o.supplier_did) row.appendChild(el("span", { class: "muted", text: "Awarded" }));
+        card.appendChild(row);
+      });
+      (v.excluded || []).forEach(function (x) {
+        card.appendChild(el("div", { class: "muted", "data-excluded": x.supplier_did, text: x.supplier_did + " — " + (excludedWords[x.reason] || x.reason) }));
+      });
+      var approval = held || (v.held_order === "held" ? v.approval_id : null);
+      if (!held && v.held_order === "sent") card.appendChild(el("div", { class: "decision", id: "tender-sent", text: "Order sent to the supplier." }));
+      if (!held && v.held_order === "lapsed") card.appendChild(el("div", { class: "decision muted", text: "The held order lapsed before it was sent." }));
+      if (approval) {
+        var send = el("div", { class: "decision", id: "tender-held" }, [
+          el("div", { text: "Order held. Nothing has gone to the supplier yet." }),
+          btn("Send order", "primary", function () { sendHeld(id, approval); })
+        ]);
+        card.appendChild(send);
+      }
+      if (notice) card.appendChild(el("div", { class: "decision", id: "tender-notice", text: notice }));
+      box.appendChild(card);
+    });
+  }
+  function award(id, supplierDid) {
+    call("POST", "/v1/commerce/trade/tender/award", { tender_id: id, supplier_did: supplierDid }).then(function (r) {
+      if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
+        needPresence(function () { award(id, supplierDid); });
+        return;
+      }
+      if (r.status === 200) { openTender(id, "Order held. Review it, then send it to the supplier.", r.body.approval_id); return; }
+      openTender(id, refusal(r.body && r.body.error));
+    });
+  }
+  function sendHeld(id, approvalId) {
+    call("POST", "/v1/commerce/orders/submit", { approval_id: approvalId }).then(function (r) {
+      if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
+        needPresence(function () { sendHeld(id, approvalId); });
+        return;
+      }
+      openTender(id, r.status === 200 ? String(r.body.headline || "Sent.") : refusal(r.body && r.body.error));
+    });
+  }
+
   // ── wire up ─────────────────────────────────────────────────────────
   document.getElementById("save").addEventListener("click", function () {
     setCap(document.getElementById("cap").value);
     document.getElementById("cap").value = "";
     refreshKeyState();
-    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches();
+    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders();
+  });
+  document.getElementById("refreshApprovals").addEventListener("click", loadApprovals);
+  document.getElementById("refreshTenders").addEventListener("click", loadTenders);
+  document.getElementById("presenceConfirm").addEventListener("click", confirmPresence);
+  document.getElementById("presenceCancel").addEventListener("click", function () {
+    pendingRetry = null;
+    document.getElementById("presenceBox").classList.add("hidden");
   });
   document.getElementById("pairCoding").addEventListener("click", createCodingSetup);
   document.getElementById("copyCoding").addEventListener("click", copyCodingSetup);
@@ -741,7 +975,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   });
   document.getElementById("watchForm").addEventListener("submit", createWatch);
   refreshKeyState();
-  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); }
+  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); }
 })();
 </script>
 </body>

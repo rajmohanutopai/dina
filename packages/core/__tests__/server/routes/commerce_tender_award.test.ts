@@ -276,12 +276,18 @@ describe('ranking and award', () => {
       approval_id: body.approval_id,
       awarded_supplier_did: SUPPLIER_B,
       purchase_order_id: runtime.orderApprovals.get(body.approval_id)?.order.purchase_order_id,
+      // A retry still reads whether each loser's notice went.
+      not_awarded_notices: [{ supplier_did: SUPPLIER_A, sent: true, state: 'sent' }],
     });
     expect(sent.length).toBe(mark + 1);
     const ranked = await router.handle(
       call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
     );
-    expect(ranked.body).toMatchObject({ state: 'awarded', approval_id: body.approval_id });
+    expect(ranked.body).toMatchObject({
+      state: 'awarded',
+      approval_id: body.approval_id,
+      held_order: 'held',
+    });
     // Naming a different supplier is a new decision, and the tender is closed to it.
     const other = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', {
@@ -730,6 +736,11 @@ describe('NEGOTIATION_PLAN §4.7 — a clerk awards inside the cap the owner set
     );
     expect(submitted.status).toBe(200);
     expect(orders).toHaveLength(1);
+    // Once sent, the tender says so: no surface offers "Send" again.
+    const after = await router.handle(
+      staffCall('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(after.body).toMatchObject({ state: 'awarded', held_order: 'sent' });
   });
 
   it('over the cap: the owner gets one card before anything changes, and the same yes lets the award and the send through', async () => {

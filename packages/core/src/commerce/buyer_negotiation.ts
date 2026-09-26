@@ -58,6 +58,8 @@ const MAX_NOTICE_ATTEMPTS = 5;
 const NOTICE_RETRY_MS = 60_000;
 /** How long the loop waits on a supplier's owner before asking again. */
 const OWNER_WAIT_MS = 20_000;
+/** The longest the loop waits between asks while a supplier's owner decides. */
+const MAX_OWNER_WAIT_MS = 5 * 60_000;
 /** How long a supplier has to answer one counter. */
 const COUNTER_RESPOND_WITHIN_MS = 60_000;
 const COUNTER_TTL_SECONDS = 120;
@@ -373,6 +375,8 @@ export interface RankedTenderOffer {
   quote_id: string;
   service_rkey: string;
   total_minor: string;
+  /** The currency every kept offer shares (a mix is refused). */
+  currency: string;
   comparison_cost_minor: string;
   credit_days: number;
   valid_until: string;
@@ -462,6 +466,7 @@ export function rankTender(args: {
       quote_id: head.quote_id,
       service_rkey: member.serviceRkey,
       total_minor: total.toString(10),
+      currency: head.total.currency,
       comparison_cost_minor: (total - benefit).toString(10),
       credit_days: creditDays,
       valid_until: head.valid_until,
@@ -605,7 +610,7 @@ async function negotiateOnce(
     if (
       last !== undefined &&
       last.state === 'pending' &&
-      nowMs - (last.answeredAt ?? last.sentAt) < OWNER_WAIT_MS
+      nowMs - (last.answeredAt ?? last.sentAt) < ownerWaitMs(counters)
     ) {
       waiting = true;
       continue;
@@ -630,6 +635,20 @@ async function negotiateOnce(
   // Nothing more to ask and nothing on its way: the tender is as good as it gets.
   if (!waiting && !open) markReady(runtime, tender, nowMs, 'settled');
   return sent;
+}
+
+/**
+ * How long to wait before asking again while the supplier's owner decides:
+ * 20 seconds after the first "owner is deciding" answer, doubling with each
+ * one after it, at most five minutes. An owner may take a while; asking every
+ * few seconds meanwhile only adds load and tells nobody anything.
+ */
+function ownerWaitMs(counters: SentCounter[]): number {
+  let pending = 0;
+  for (let i = counters.length - 1; i >= 0 && counters[i]?.state === 'pending'; i -= 1) {
+    pending += 1;
+  }
+  return Math.min(OWNER_WAIT_MS * 2 ** Math.max(0, pending - 1), MAX_OWNER_WAIT_MS);
 }
 
 /** Does any current offer in the tender's currency sit at or under its target? */

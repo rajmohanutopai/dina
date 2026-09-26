@@ -116,6 +116,8 @@ export interface InboxEntry {
    * payment ever enters the app.
    */
   linkUrl?: string;
+  /** tender_ready only: the tender the card's "Open tender" button opens. */
+  tenderId?: string;
   createdAt: number;
   expiresAt?: number;
 }
@@ -870,6 +872,9 @@ function toEntry(task: WorkflowTask): InboxEntry {
       description: task.description ?? '',
       requesterDID: '',
       paramsPreview: best === '' ? 'no offer within budget' : `${String(offers)} offer(s) within budget, best ${best}`,
+      ...(typeof parsed.tender_id === 'string' && parsed.tender_id !== ''
+        ? { tenderId: oneLine(parsed.tender_id, 120) }
+        : {}),
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };

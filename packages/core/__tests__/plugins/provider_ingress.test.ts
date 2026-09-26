@@ -58,7 +58,11 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { parsePluginEnvelope } from '../../src/workflow/plugin_envelope';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { makeServiceResponseBridgeSender } from '../../src/workflow/response_bridge_sender';
-import { WorkflowService, type ServiceQueryBridgeContext } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  setWorkflowService,
+  type ServiceQueryBridgeContext,
+} from '../../src/workflow/service';
 
 /**
  * Name which success a test expects. Since WS-4.6 there are two: a task was
@@ -1721,6 +1725,59 @@ describe('provider ingress bridge (§11.2a)', () => {
       });
       // Answered by Core, no runner, no budget: the notice asks for no price.
       expect(notice).toEqual({ ok: true, coreAnswerJson: JSON.stringify({ recorded: true }) });
+    });
+
+    it("a counter re-asking while the supplier's owner decides spends no probing budget; once the owner declines it does (NEGOTIATION_PLAN §4.3)", () => {
+      const buyer = 'did:plc:competitor4';
+      const waiting = JSON.stringify({ quote: { quote_id: 'q-wait' }, outcome: 'held', pending_owner: true });
+      let questionState: 'pending' | 'declined' = 'pending';
+      setWorkflowService(workflow);
+      workflow.create({
+        id: 'negotiation-price-q-wait',
+        kind: 'approval',
+        description: 'A buyer asks for a lower price.',
+        payload: JSON.stringify({ type: 'negotiation_price_approval', quote_id: 'q-wait', lines: [] }),
+        initialState: 'pending_approval' as never,
+      });
+      installCommerceRuntime({
+        settings: new InMemoryCommerceSettingsRepository(),
+        negotiation: {
+          getCounter: () => null,
+          listAnswersForQuote: (b: string, q: string) => (b === buyer && q === 'q-wait' ? [waiting] : []),
+          questionsForQuote: (q: string) =>
+            q === 'q-wait'
+              ? [{ quoteId: q, lineId: 'l1', buyerDid: buyer, state: questionState, taskId: 'negotiation-price-q-wait' }]
+              : [],
+        },
+      } as unknown as CommerceRuntime);
+      // The stranger's price questions for the hour are spent.
+      for (let i = 0; i <= DEFAULT_PROBING_POLICY.unknownBudget; i += 1) {
+        createProviderIngressTask({
+          workflow,
+          capabilityConfig: binding(),
+          query: { ...query(`q-burn-w-${String(i)}`), capability: 'request_quote', fromDid: buyer },
+          nowMs: T0,
+        });
+      }
+      const reask = (id: string) =>
+        createProviderIngressTask({
+          workflow,
+          capabilityConfig: binding(),
+          query: {
+            ...query(id),
+            capability: 'com.dinakernel.commerce.counter_offer',
+            fromDid: buyer,
+            params: { counter_id: id, quote_id: 'q-wait' },
+          },
+          nowMs: T0,
+        });
+      // Waiting on the owner: past the probing gate (what happens next is the
+      // counter's own admission, not the budget).
+      expect(reask('ctr-wait-1')).not.toMatchObject({ code: 'probing_refused' });
+      // The owner declined: an ordinary ask again, and the budget is spent.
+      questionState = 'declined';
+      expect(reask('ctr-wait-2')).toMatchObject({ ok: false, code: 'probing_refused' });
+      setWorkflowService(null);
     });
 
     it('a counter already answered is replayed before the probing gate, so a lost reply is recoverable (NEGOTIATION_PLAN §4.3)', () => {

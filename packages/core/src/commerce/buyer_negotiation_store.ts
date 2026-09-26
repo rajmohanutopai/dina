@@ -78,6 +78,8 @@ export interface BuyerNegotiationRepository {
   /** Written with the award; first writer wins. */
   putNotice(notice: TenderNotice): void;
   listNotices(state: TenderNoticeState): TenderNotice[];
+  /** Every notice one tender's award wrote, whatever its state. */
+  listNoticesForTender(tenderId: string): TenderNotice[];
   updateNotice(
     tenderId: string,
     supplierDid: string,
@@ -109,6 +111,19 @@ function counterFromRow(row: DBRow): SentCounter {
     answeredAt:
       row.answered_at === null || row.answered_at === undefined ? null : Number(row.answered_at),
     attempts: row.attempts === null || row.attempts === undefined ? 1 : Number(row.attempts),
+  };
+}
+
+function noticeFromRow(row: DBRow): TenderNotice {
+  return {
+    tenderId: String(row.tender_id),
+    supplierDid: String(row.supplier_did),
+    requestId: String(row.request_id),
+    quoteId: String(row.quote_id),
+    serviceRkey: String(row.service_rkey),
+    state: String(row.state) as TenderNoticeState,
+    attempts: Number(row.attempts),
+    updatedAt: Number(row.updated_at),
   };
 }
 
@@ -225,16 +240,15 @@ export class SQLiteBuyerNegotiationRepository implements BuyerNegotiationReposit
   listNotices(state: TenderNoticeState): TenderNotice[] {
     return this.db
       .query(`SELECT * FROM commerce_tender_notices WHERE state = ? ORDER BY updated_at`, [state])
-      .map((row) => ({
-        tenderId: String(row.tender_id),
-        supplierDid: String(row.supplier_did),
-        requestId: String(row.request_id),
-        quoteId: String(row.quote_id),
-        serviceRkey: String(row.service_rkey),
-        state: String(row.state) as TenderNoticeState,
-        attempts: Number(row.attempts),
-        updatedAt: Number(row.updated_at),
-      }));
+      .map(noticeFromRow);
+  }
+
+  listNoticesForTender(tenderId: string): TenderNotice[] {
+    return this.db
+      .query(`SELECT * FROM commerce_tender_notices WHERE tender_id = ? ORDER BY supplier_did`, [
+        tenderId,
+      ])
+      .map(noticeFromRow);
   }
 
   updateNotice(
