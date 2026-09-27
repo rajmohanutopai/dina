@@ -112,6 +112,10 @@ export class DispatchIntentSweeper {
           this.inFlight = false;
         });
     }, this.intervalMs);
+    // Like the other commerce sweepers: a timer nobody stopped must not hold
+    // the process open.
+    const maybeTimeout = this.handle as { unref?: () => void };
+    if (typeof maybeTimeout.unref === 'function') maybeTimeout.unref();
   }
 
   stop(): void {

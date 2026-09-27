@@ -346,6 +346,35 @@ describe('ranking and award', () => {
     expect(over.status).toBe(409);
     expect((over.body as { error: string }).error).toBe('no_awardable_offer');
   });
+
+  it('a tender with no policy, awarded to the cheaper offer, names no budget: the dearer one is not "over budget"', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
+    await proveOwnerPresence('correct horse', Date.now());
+    const awarded = await router.handle(
+      call('POST', '/v1/commerce/trade/tender/award', {
+        tender_id: tenderId,
+        supplier_did: SUPPLIER_B,
+      }),
+    );
+    expect(awarded.status).toBe(200);
+    const ranking = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    const body = ranking.body as {
+      state: string;
+      ranked: { supplier_did: string }[];
+      excluded: unknown[];
+    };
+    expect(body.state).toBe('awarded');
+    // The 2026-09-26 simulator run showed the award price as a "budget" the
+    // owner never set, and the losing offer as over it.
+    expect(body).not.toHaveProperty('target_total');
+    expect(body).not.toHaveProperty('budget_ceiling');
+    expect(body.excluded).toEqual([]);
+    expect(body.ranked.map((r) => r.supplier_did)).toEqual([SUPPLIER_B, SUPPLIER_A]);
+  });
 });
 
 describe('a manual counter', () => {

@@ -32,8 +32,18 @@ const KIND_LABEL: Record<string, string> = {
   short_acceptance: 'Short acceptance — dispute',
   unacknowledged_payment: 'Payment to acknowledge',
   pending_quote: 'Quote awaiting approval',
-  open_tender: 'Tender collecting quotes',
+  open_tender: 'Open tender',
+  awarded_tender: 'Awarded — order to send',
 };
+
+const TENDER_KINDS: ReadonlySet<string> = new Set(['open_tender', 'awarded_tender']);
+
+/** When a tender opened, so a clerk can tell one row from the next. */
+function openedAt(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `Opened ${String(d.getDate())}/${String(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function StaffHomeScreen(): React.ReactElement {
   const router = useRouter();
@@ -146,7 +156,7 @@ export default function StaffHomeScreen(): React.ReactElement {
   return (
     <View style={styles.container} testID="staff-home-screen">
       <Stack.Screen options={{ title: businessName || 'Staff' }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {!present ? (
           <View>
             <Text style={styles.hint}>Enter your staff PIN to start.</Text>
@@ -187,10 +197,10 @@ export default function StaffHomeScreen(): React.ReactElement {
                 key={`${item.kind}-${item.subject}`}
                 style={styles.itemRow}
                 disabled={
-                  (item.kind !== 'unreceipted_delivery' && item.kind !== 'open_tender') || busy
+                  (item.kind !== 'unreceipted_delivery' && !TENDER_KINDS.has(item.kind)) || busy
                 }
                 onPress={() =>
-                  item.kind === 'open_tender'
+                  TENDER_KINDS.has(item.kind)
                     ? router.push({
                         pathname: '/tender',
                         params: { tender_id: item.subject, as: 'staff' },
@@ -205,7 +215,14 @@ export default function StaffHomeScreen(): React.ReactElement {
                     <Text style={styles.itemMeta}>Tap to receipt in full</Text>
                   )}
                   {item.kind === 'open_tender' && (
-                    <Text style={styles.itemMeta}>Tap to see the offers and award</Text>
+                    <Text style={styles.itemMeta}>
+                      {openedAt(item.created_at)} · Tap to see the offers and award
+                    </Text>
+                  )}
+                  {item.kind === 'awarded_tender' && (
+                    <Text style={styles.itemMeta}>
+                      {openedAt(item.created_at)} · Tap to send the order
+                    </Text>
                   )}
                 </View>
               </Pressable>

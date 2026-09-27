@@ -266,7 +266,7 @@ export default function TenderScreen(): React.ReactElement {
   return (
     <View style={styles.container} testID="tender-screen">
       <Stack.Screen options={{ title: 'Tender' }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {view === null && error === null && <ActivityIndicator style={styles.spinner} />}
         {error !== null && (
           <Text style={styles.error} testID="tender-error">

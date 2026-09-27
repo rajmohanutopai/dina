@@ -29,6 +29,7 @@ function runtimeStub(): CommerceRuntime {
   return {
     orderDrafts: { list: () => [] },
     tenders: { listTenders: () => [] },
+    buyerNegotiation: { getTender: () => null },
     pendingDecisions: { list: () => [] },
     money: moneyOpen({ tradeDocuments: docs }),
     tradeSpool: new InMemoryTradeSpoolRepository(),
@@ -201,6 +202,7 @@ describe('the buyer-side and supplier-side queue kinds', () => {
           { tenderId: 'tender-dead', expiresAt: T0 - 1, createdAt: T0 - 100 },
         ],
       },
+      buyerNegotiation: { getTender: () => null },
       pendingDecisions: {
         list: () => [{ buyerDid: BUYER, purchaseOrderId: 'po-9', createdAt: T0 }],
       },
@@ -224,6 +226,43 @@ describe('the buyer-side and supplier-side queue kinds', () => {
     // The expired tender never surfaces.
     expect(items.map((item) => item.subject)).not.toContain('tender-dead');
   });
+
+  it('an awarded tender asks only while its order is held: sent, lapsed or closed, it leaves the inbox', () => {
+    const tenders = ['t-open', 't-held', 't-sent', 't-lapsed', 't-closed'].map((tenderId) => ({
+      tenderId,
+      expiresAt: T0 + 60_000,
+      createdAt: T0,
+    }));
+    const negotiation: Record<string, { state: string; approvalId: string }> = {
+      't-held': { state: 'awarded', approvalId: 'oap-held' },
+      't-sent': { state: 'awarded', approvalId: 'oap-sent' },
+      't-lapsed': { state: 'awarded', approvalId: 'oap-lapsed' },
+      't-closed': { state: 'closed', approvalId: '' },
+    };
+    const approvals: Record<string, { consumedAt: number | null; expiresAt: number }> = {
+      'oap-held': { consumedAt: null, expiresAt: T0 + 1_000 },
+      'oap-sent': { consumedAt: T0 - 1, expiresAt: T0 + 1_000 },
+      'oap-lapsed': { consumedAt: null, expiresAt: T0 },
+    };
+    const runtime = {
+      orderDrafts: { list: () => [] },
+      tenders: { listTenders: () => tenders },
+      buyerNegotiation: { getTender: (id: string) => negotiation[id] ?? null },
+      orderApprovals: { get: (id: string) => approvals[id] ?? null },
+      pendingDecisions: { list: () => [] },
+      money: moneyOpen({ tradeDocuments: docs }),
+      tradeSpool: new InMemoryTradeSpoolRepository(),
+    } as unknown as CommerceRuntime;
+
+    const tenderItems = buildTradeInbox(runtime, T0)
+      .items.filter((item) => item.subject.startsWith('t-'))
+      .map((item) => [item.subject, item.kind]);
+    // The 2026-09-26 simulator run: sent tenders stayed "collecting quotes".
+    expect(tenderItems).toEqual([
+      ['t-open', 'open_tender'],
+      ['t-held', 'awarded_tender'],
+    ]);
+  });
 });
 
 describe('the money line (§5.B1 Cut 3)', () => {
@@ -232,6 +271,7 @@ describe('the money line (§5.B1 Cut 3)', () => {
     const closed = {
       orderDrafts: { list: () => [] },
       tenders: { listTenders: () => [] },
+      buyerNegotiation: { getTender: () => null },
       pendingDecisions: { list: () => [] },
       money: moneyClosed(),
     } as unknown as CommerceRuntime;

@@ -5,6 +5,7 @@
  *   - pending confirms   — order drafts with vouchable lines (buyer);
  *   - pending quotes     — conversations quoted, awaiting approve (buyer);
  *   - open tenders       — §3.2 comparisons still collecting (buyer);
+ *   - awarded tenders    — an award whose order is held, not yet sent (buyer);
  *   - pending decisions  — orders waiting on a human (supplier);
  *   - unreceipted        — dispatched notes with no receipt (both);
  *   - short acceptances  — receipts accepting less than delivered
@@ -33,6 +34,7 @@ export interface TradeInboxItem {
     | 'pending_confirm'
     | 'pending_quote'
     | 'open_tender'
+    | 'awarded_tender'
     | 'pending_decision'
     | 'unreceipted_delivery'
     | 'short_acceptance'
@@ -97,11 +99,22 @@ export function buildTradeInbox(runtime: CommerceRuntime, nowMs: number): TradeI
     }
   }
 
-  // Buyer: tenders still inside their window.
+  // Buyer: tenders still inside their window that still ask something of a
+  // person. An awarded tender asks only while its order is held and unsent;
+  // once sent or lapsed it has nothing left to do, and "collecting quotes"
+  // would be false.
   for (const tender of runtime.tenders.listTenders()) {
     if (tender.expiresAt <= nowMs) continue;
+    const negotiation = runtime.buyerNegotiation.getTender(tender.tenderId);
+    if (negotiation?.state === 'closed') continue;
+    let kind: 'open_tender' | 'awarded_tender' = 'open_tender';
+    if (negotiation?.state === 'awarded') {
+      const held = runtime.orderApprovals.get(negotiation.approvalId);
+      if (held === null || held.consumedAt !== null || held.expiresAt <= nowMs) continue;
+      kind = 'awarded_tender';
+    }
     items.push({
-      kind: 'open_tender',
+      kind,
       role: 'buyer',
       subject: tender.tenderId,
       counterpartyDid: '',

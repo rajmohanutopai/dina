@@ -59,6 +59,17 @@ export interface SendRequest {
   messageId?: string;
 }
 
+/** A `commerce.trade` body's document kind ('' otherwise) — what the contact gate's waiver binds to. */
+function tradeKindOf(req: SendRequest): string {
+  if (req.messageType !== 'commerce.trade') return '';
+  try {
+    const kind = (JSON.parse(req.body) as { kind?: unknown }).kind;
+    return typeof kind === 'string' ? kind : '';
+  } catch {
+    return '';
+  }
+}
+
 export interface SendResult {
   sent: boolean;
   messageId: string;
@@ -162,6 +173,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
       req.recipientDID,
       req.messageType,
       req.dataCategories ?? [],
+      tradeKindOf(req),
     );
 
     if (!gateResult.allowed) {

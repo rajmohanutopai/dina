@@ -54,6 +54,10 @@ describe('Core owner console (B-02)', () => {
       // A presence 403 raises the passphrase box; it is not a wrong key.
       expect(body).toContain('no_user_presence');
       expect(body).toContain('/v1/commerce/catalog/drafts/presence');
+      // Item 1 — Dina's own packs update in place: list, review, confirm.
+      expect(body).toContain('/v1/commerce/install/updates');
+      expect(body).toContain('/v1/commerce/install/update/prepare');
+      expect(body).toContain('/v1/commerce/install/update/confirm');
       // Presents the capability header the HTTP adapter validates.
       expect(body).toContain('x-dina-owner-capability');
       // Never targets a Brain-origin proxy path from this page.

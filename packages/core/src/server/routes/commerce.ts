@@ -229,6 +229,11 @@ import {
   staffPresenceCanBeEstablished,
   staffPresentNow,
 } from '../../commerce/owner_presence';
+import {
+  confirmFirstPartyUpdate,
+  listFirstPartyUpdates,
+  prepareFirstPartyUpdate,
+} from '../../commerce/pack_update';
 import { checkPriceDivergence } from '../../commerce/price_divergence';
 import { chooseOffer, planProcurement } from '../../commerce/procurement_service';
 import { describeQuoteForOwner } from '../../commerce/quote_read_model';
@@ -295,6 +300,7 @@ import { getWorkflowService } from '../../workflow/service';
 import { getD2DSender } from './d2d_msg';
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 import { teardownResponse } from './plugin_install';
+import { readWidening, statusForConfirm, statusForPrepare } from './plugin_updates';
 
 import type {
   CatalogDraft,
@@ -3151,6 +3157,67 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
           : { ok: false, error: listing.refusal, detail: listing.detail },
       },
     };
+  });
+
+  /**
+   * Item 1 (NEGOTIATION follow-up) — Dina's own packs update WITH THE BUILD,
+   * in place: the install keeps its id, so open orders stay with it and the
+   * §16.4 refusal on retiring never has to be crossed. Three owner calls, the
+   * update flow's shape: list what the build offers, review one, confirm it.
+   */
+  router.get('/v1/commerce/install/updates', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    return {
+      status: 200,
+      body: {
+        updates: listFirstPartyUpdates().map((u) => ({
+          install_id: u.installId,
+          plugin_id: u.pluginId,
+          display_name: u.displayName,
+          from_version: u.fromVersion,
+          to_version: u.toVersion,
+        })),
+      },
+    };
+  });
+
+  router.post('/v1/commerce/install/update/prepare', (req): CoreResponse => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as { install_id?: unknown };
+    if (typeof body.install_id !== 'string' || body.install_id === '') {
+      return { status: 400, body: { error: 'install_id_required' } };
+    }
+    const result = prepareFirstPartyUpdate({ installId: body.install_id, nowMs: Date.now() });
+    return { status: statusForPrepare(result), body: result };
+  });
+
+  router.post('/v1/commerce/install/update/confirm', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as {
+      install_id?: unknown;
+      to_cid?: unknown;
+      accepted_widening?: unknown;
+      accepted_behavior_hash?: unknown;
+    };
+    const installId = typeof body.install_id === 'string' ? body.install_id : '';
+    const toCid = typeof body.to_cid === 'string' ? body.to_cid : '';
+    if (installId === '' || toCid === '') {
+      return { status: 400, body: { error: 'install_id and to_cid are required' } };
+    }
+    const accepted = readWidening(body.accepted_widening);
+    const result = await confirmFirstPartyUpdate({
+      installId,
+      toCid,
+      ...(accepted === null ? {} : { acceptedWidening: accepted }),
+      ...(typeof body.accepted_behavior_hash === 'string'
+        ? { acceptedBehaviorHash: body.accepted_behavior_hash }
+        : {}),
+      nowMs: Date.now(),
+    });
+    return { status: statusForConfirm(result), body: result };
   });
 
   /** Item 6 — write (or rewrite) the listing binding for an ACTIVE supplier install. */
@@ -7050,8 +7117,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         ...(state === null
           ? {}
           : {
-              target_total: state.targetTotalMinor,
-              budget_ceiling: state.budgetCeilingMinor,
+              // Empty: a tender awarded without a policy, which names neither.
+              ...(state.targetTotalMinor === '' ? {} : { target_total: state.targetTotalMinor }),
+              ...(state.budgetCeilingMinor === ''
+                ? {}
+                : { budget_ceiling: state.budgetCeilingMinor }),
               currency: state.currency,
               deadline_at: state.deadlineAt,
               awarded_supplier_did: state.awardedSupplierDid,
@@ -7185,12 +7255,14 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     runtime.runInTransaction(() => {
       if (policy === null) {
         // A tender opened without a policy is still awarded once: record the
-        // award so a second one is refused.
+        // award so a second one is refused. The owner named no target and no
+        // budget, so the record names none either; the award price as a
+        // budget would mark every dearer offer "over your budget".
         const currency =
           runtime.buyerQuotes.chain(pick.supplier_did, pick.quote_id).at(-1)?.total.currency ?? '';
         startTenderNegotiation(
           tenderId,
-          { currency, targetTotalMinor: pick.total_minor, budgetCeilingMinor: pick.total_minor },
+          { currency, targetTotalMinor: '', budgetCeilingMinor: '' },
           now,
         );
         moved = runtime.buyerNegotiation.moveTender(tenderId, 'negotiating', 'awarded', now, award);

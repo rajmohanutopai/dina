@@ -63,7 +63,7 @@ import { markNotificationRead } from '@dina/brain/notifications';
 
 import { DinaWordmark } from '../src/components/DinaWordmark';
 import { GuidedDemoGate } from '../src/components/guided_demo/GuidedDemoGate';
-import { UnlockGate } from '../src/components/unlock_gate';
+import { STAFF_ROUTES, UnlockGate } from '../src/components/unlock_gate';
 import { FEATURES, FeatureIcon, type FeatureKey } from '../src/features';
 import { useGuidedDemoActive } from '../src/guided_demo/active_context';
 import { useAutoLock } from '../src/hooks/useAutoLock';
@@ -720,7 +720,9 @@ export default function RootLayout() {
             enabled={
               bootState.status !== 'error' &&
               bootState.status !== 'booting' &&
-              (process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '') === ''
+              (process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '') === '' &&
+              // §6.3 — a staff phone has no vault and no owner tour.
+              !STAFF_ROUTES.has(pathname)
             }
           >
             {bootState.status === 'error' ? (
@@ -986,7 +988,12 @@ export default function RootLayout() {
                 />
                 <Tabs.Screen
                   name="tender"
-                  options={{ title: 'Tender', href: null, headerLeft: renderHeaderBackButton }}
+                  options={{
+                    title: 'Tender',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    tabBarStyle: { display: 'none' },
+                  }}
                 />
                 <Tabs.Screen
                   name="invites"
@@ -996,13 +1003,27 @@ export default function RootLayout() {
                   name="staff-grants"
                   options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}
                 />
+                {/* §6.3 — a staff phone has no owner surface: no tab bar and no
+                 * owner menu on its screens. */}
                 <Tabs.Screen
                   name="staff-join"
-                  options={{ title: 'Join as staff', href: null, headerLeft: renderHeaderBackButton }}
+                  options={{
+                    title: 'Join as staff',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    headerRight: () => null,
+                    tabBarStyle: { display: 'none' },
+                  }}
                 />
                 <Tabs.Screen
                   name="staff-home"
-                  options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}
+                  options={{
+                    title: 'Staff',
+                    href: null,
+                    headerLeft: () => null,
+                    headerRight: () => null,
+                    tabBarStyle: { display: 'none' },
+                  }}
                 />
                 <Tabs.Screen
                   name="reminders"

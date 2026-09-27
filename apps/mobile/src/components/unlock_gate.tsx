@@ -21,6 +21,7 @@
  * ignore both paths.
  */
 
+import { usePathname } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -51,7 +52,7 @@ import {
   writeInstallMarker,
 } from '../services/install_marker';
 import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
-import { loadStaffIdentity } from '../services/staff_identity_store';
+import { loadStaffIdentity, onStaffIdentitySaved } from '../services/staff_identity_store';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
 import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
@@ -79,6 +80,28 @@ const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
  * Pure so the wipe→onboarding contract is unit-testable without a full
  * gate render.
  */
+/**
+ * §6.3 — the routes a staff phone lives on. A staff phone has no vault, so it
+ * never reaches `unlocked`; without these the gate drew onboarding or a
+ * redirect over every staff screen and no phone could join or work as staff.
+ */
+export const STAFF_ROUTES: ReadonlySet<string> = new Set(['/staff-join', '/staff-home', '/tender']);
+
+/**
+ * What the gate draws for the no-vault modes: the navigator for a staff route
+ * (joining from onboarding, or working as staff), else onboarding or the
+ * redirect to the staff home. Null for every other mode (the gate's own
+ * branches decide).
+ */
+export function staffRouteView(
+  mode: Mode,
+  pathname: string,
+): 'navigator' | 'onboarding' | 'staff_redirect' | null {
+  if (mode === 'onboarding') return pathname === '/staff-join' ? 'navigator' : 'onboarding';
+  if (mode === 'staff') return STAFF_ROUTES.has(pathname) ? 'navigator' : 'staff_redirect';
+  return null;
+}
+
 export function modeAfterSeal(prev: Mode, hasWrappedSeed: boolean): Mode {
   if (prev !== 'unlocked') return prev;
   return hasWrappedSeed ? 'locked' : 'onboarding';
@@ -95,6 +118,9 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   const unlocked = useIsUnlocked();
   const unlockState = useUnlockState();
   const [mode, setMode] = useState<Mode>('loading');
+  const pathname = usePathname();
+  // A phone that joins a business as staff becomes the staff shell at once.
+  useEffect(() => onStaffIdentitySaved(() => setMode('staff')), []);
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
   const autoRanRef = useRef<Mode | null>(null);
@@ -300,11 +326,14 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
     );
   }
 
-  if (mode === 'onboarding') {
+  const staffView = staffRouteView(mode, pathname);
+  if (staffView === 'navigator') {
+    return <>{children}</>;
+  }
+  if (staffView === 'onboarding') {
     return <OnboardingFlow />;
   }
-
-  if (mode === 'staff') {
+  if (staffView === 'staff_redirect') {
     return <StaffShellRedirect />;
   }
 

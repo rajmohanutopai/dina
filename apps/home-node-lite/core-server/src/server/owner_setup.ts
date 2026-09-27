@@ -1,4 +1,9 @@
-import { buildAgentSetupCode, generatePairingCode, getNodeDID } from '@dina/core';
+import {
+  buildAgentSetupCode,
+  generatePairingCode,
+  getNodeDID,
+  getNodeSigningPublicKey,
+} from '@dina/core';
 import { getDevice, listActiveDevices, revokeDeviceDurable } from '@dina/core/devices';
 
 import { ownerHeaderMatches } from './bind_core_router';
@@ -119,7 +124,10 @@ export function registerOwnerSetupRoutes(
     if (!requireOwner(request, reply, options.ownerCapability)) return;
     noStore(reply);
     const nodeDID = getNodeDID();
-    if (nodeDID === null) {
+    // A staff phone seals its first request to the node's signing key and
+    // runs no DID resolution, so a staff code without that key is useless.
+    const nodePub = getNodeSigningPublicKey();
+    if (nodeDID === null || nodePub === null) {
       return reply.code(503).send({ error: 'Home Node identity is not ready' });
     }
     const body = isRecord(request.body) ? request.body : {};
@@ -137,6 +145,7 @@ export function registerOwnerSetupRoutes(
           homenodeDid: nodeDID,
           code,
           deviceName,
+          nodeSigningPubHex: Buffer.from(nodePub).toString('hex'),
         }),
         device_name: deviceName,
         expires_at: expiresAt,

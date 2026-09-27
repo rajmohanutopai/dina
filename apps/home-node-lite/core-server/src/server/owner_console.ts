@@ -195,6 +195,13 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
 </section>
 
 <section>
+  <h2>Pack updates</h2>
+  <p class="muted">Dina's own commerce and country packs update in place with the build. Orders already open stay with the pack.</p>
+  <div class="bar"><button id="refreshPacks">Refresh</button></div>
+  <div id="packs" class="muted">Not checked.</div>
+</section>
+
+<section>
   <h2>Tenders</h2>
   <div class="bar"><button id="refreshTenders">Refresh</button></div>
   <div id="tenders" class="muted">Not checked.</div>
@@ -859,14 +866,14 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       box.textContent = "";
       box.className = "";
       if (r.status !== 200) { box.className = "muted"; box.textContent = refusal(r.body && r.body.error); return; }
-      var open = (Array.isArray(r.body.items) ? r.body.items : []).filter(function (i) { return i.kind === "open_tender"; });
+      var open = (Array.isArray(r.body.items) ? r.body.items : []).filter(function (i) { return i.kind === "open_tender" || i.kind === "awarded_tender"; });
       if (open.length === 0) { box.className = "muted"; box.textContent = "No open tenders."; return; }
       open.forEach(function (item) {
         var id = String(item.subject);
-        box.appendChild(el("div", { class: "row" }, [
-          el("code", { text: id }),
-          btn("Open", "", function () { openTender(id); })
-        ]));
+        var parts = [el("code", { text: id })];
+        if (item.kind === "awarded_tender") parts.push(el("span", { class: "muted", text: "Awarded — order to send" }));
+        parts.push(btn("Open", "", function () { openTender(id); }));
+        box.appendChild(el("div", { class: "row" }, parts));
       });
     });
   }
@@ -943,15 +950,57 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     });
   }
 
+  // ── Pack updates (item 1): list, review, confirm ─────────────────────
+  function loadPacks() {
+    var box = document.getElementById("packs");
+    call("GET", "/v1/commerce/install/updates").then(function (r) {
+      clear(box);
+      box.className = "";
+      if (r.status !== 200) { box.className = "muted"; box.textContent = refusal(r.body && r.body.error); return; }
+      var updates = Array.isArray(r.body.updates) ? r.body.updates : [];
+      if (updates.length === 0) { box.className = "muted"; box.textContent = "Every pack runs the build's version."; return; }
+      updates.forEach(function (u) {
+        var card = el("div", { class: "card", "data-install": u.install_id });
+        card.appendChild(el("strong", { text: String(u.display_name || u.plugin_id) + " " + u.from_version + " → " + u.to_version }));
+        card.appendChild(el("div", { class: "row" }, [btn("Review update", "primary", function () { reviewPack(card, u); })]));
+        box.appendChild(card);
+      });
+    });
+  }
+  function reviewPack(card, u) {
+    call("POST", "/v1/commerce/install/update/prepare", { install_id: u.install_id }).then(function (r) {
+      if (r.status !== 200 || !r.body.review) { alert(r.body && (r.body.message || r.body.error) || "Could not review this update."); return; }
+      var review = r.body.review;
+      var detail = el("div", { class: "decision" });
+      (review.widening || []).forEach(function (w) {
+        detail.appendChild(el("div", { text: "Adds: " + String(w.kind).split("_").join(" ") + " — " + w.capabilityId }));
+      });
+      if (review.behaviorChanged) detail.appendChild(el("div", { text: "It also changes what the pack does." }));
+      detail.appendChild(el("div", { class: "row" }, [btn("Update", "primary", function () {
+        call("POST", "/v1/commerce/install/update/confirm", {
+          install_id: u.install_id,
+          to_cid: review.toCid,
+          accepted_widening: review.widening || [],
+          accepted_behavior_hash: review.toBehaviorHash
+        }).then(function (c) {
+          if (c.status !== 200) { alert("Update refused: " + String((c.body && (c.body.message || (c.body.outcome && c.body.outcome.refusal) || c.body.error)) || c.status)); }
+          loadPacks();
+        });
+      })]));
+      card.appendChild(detail);
+    });
+  }
+
   // ── wire up ─────────────────────────────────────────────────────────
   document.getElementById("save").addEventListener("click", function () {
     setCap(document.getElementById("cap").value);
     document.getElementById("cap").value = "";
     refreshKeyState();
-    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders();
+    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks();
   });
   document.getElementById("refreshApprovals").addEventListener("click", loadApprovals);
   document.getElementById("refreshTenders").addEventListener("click", loadTenders);
+  document.getElementById("refreshPacks").addEventListener("click", loadPacks);
   document.getElementById("presenceConfirm").addEventListener("click", confirmPresence);
   document.getElementById("presenceCancel").addEventListener("click", function () {
     pendingRetry = null;
@@ -975,7 +1024,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   });
   document.getElementById("watchForm").addEventListener("submit", createWatch);
   refreshKeyState();
-  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); }
+  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks(); }
 })();
 </script>
 </body>

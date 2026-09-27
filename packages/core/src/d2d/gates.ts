@@ -15,7 +15,8 @@
  * Source: core/internal/service/transport.go (SendMessage egress)
  */
 
-import { MsgTypeCommerceInvite, alwaysPasses } from './families';
+import { MsgTypeCommerceInvite, MsgTypeCommerceTrade, alwaysPasses } from './families';
+import { isTradeCounterparty } from './trade_ingress_seam';
 
 export interface EgressCheckResult {
   allowed: boolean;
@@ -149,6 +150,8 @@ export function checkEgressGates(
   recipientDID: string,
   messageType: string,
   dataCategories: string[],
+  /** `commerce.trade` only: the document's kind, which the counterparty waiver binds to. */
+  tradeKind = '',
 ): EgressCheckResult {
   // Pre-gate: Blocked destination list — always denied
   if (isDestinationBlocked(recipientDID)) {
@@ -167,7 +170,22 @@ export function checkEgressGates(
   // — the single-use nonce is the credential. Scenario, sharing and
   // audit still run; only the contact requirement is waived, mirroring
   // ingress exactly.
-  if (messageType !== MsgTypeCommerceInvite && !checkContactGate(recipientDID)) {
+  //
+  // `commerce.trade` to the COUNTERPARTY of an order this node accepted or
+  // placed passes it too, for the order-bound kinds — the mirror of the
+  // receive side's rule (`isTradeCounterparty`), so a supplier found on the
+  // AppView can send the buyer the documents that belong to that order
+  // without an invite first. The revenue-share chain names no order and
+  // stays with contacts.
+  const tradeCounterparty =
+    messageType === MsgTypeCommerceTrade &&
+    tradeKind !== '' &&
+    isTradeCounterparty(recipientDID, tradeKind);
+  if (
+    messageType !== MsgTypeCommerceInvite &&
+    !tradeCounterparty &&
+    !checkContactGate(recipientDID)
+  ) {
     return { allowed: false, deniedAt: 'contact', reason: 'Recipient is not a known contact' };
   }
 

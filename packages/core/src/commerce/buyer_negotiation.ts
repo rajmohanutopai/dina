@@ -404,7 +404,7 @@ export interface TenderRanking {
 export function rankTender(args: {
   tenderId: string;
   nowMs: number;
-  /** Absent: the tender's own policy ceiling, else no ceiling. */
+  /** Absent: the tender's own policy ceiling, else no ceiling. Empty: no ceiling. */
   budgetCeilingMinor?: string;
   currency?: string;
 }): { ok: true; ranking: TenderRanking } | { ok: false; refusal: string } {
@@ -414,7 +414,7 @@ export function rankTender(args: {
     return { ok: false, refusal: 'no_such_tender' };
   const policy = runtime.buyerNegotiation.getTender(args.tenderId);
   const ceilingText = args.budgetCeilingMinor ?? policy?.budgetCeilingMinor;
-  const ceiling = ceilingText === undefined ? null : BigInt(ceilingText);
+  const ceiling = ceilingText === undefined || ceilingText === '' ? null : BigInt(ceilingText);
   const currency = args.currency ?? policy?.currency;
   // No policy names a currency: rank only offers that share one, never a mix
   // compared minor unit for minor unit.
@@ -836,6 +836,9 @@ export class NegotiationSweeper {
     this.handle = every(() => {
       void this.runTick().catch((err: unknown) => this.options.onError?.(err));
     }, this.options.intervalMs ?? 5_000);
+    // Like the other commerce sweepers: a timer nobody stopped must not hold
+    // the process open.
+    (this.handle as { unref?: () => void } | null)?.unref?.();
   }
 
   stop(): void {

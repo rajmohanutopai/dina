@@ -1,6 +1,12 @@
 import Fastify from 'fastify';
 
-import { clearPairingState, getPairingIntent, setNodeDID } from '@dina/core';
+import {
+  clearPairingState,
+  getPairingIntent,
+  parseAgentSetupCode,
+  setNodeDID,
+  setNodeSigningPublicKey,
+} from '@dina/core';
 
 const mockGetDevice = jest.fn();
 const mockListActiveDevices = jest.fn();
@@ -20,6 +26,7 @@ import {
 
 const OWNER_CAPABILITY = 'owner-secret-for-test';
 const NODE_DID = 'did:plc:owner-setup-test';
+const NODE_PUB = new Uint8Array(32).fill(7);
 
 function fakePhone(): PhoneApprovalLifecycle {
   let state: 'unpaired' | 'active' | 'revoking' = 'unpaired';
@@ -45,12 +52,16 @@ describe('owner setup routes', () => {
   beforeEach(() => {
     clearPairingState();
     setNodeDID(NODE_DID);
+    setNodeSigningPublicKey(NODE_PUB);
     mockGetDevice.mockReset().mockReturnValue(null);
     mockListActiveDevices.mockReset().mockReturnValue([]);
     mockRevokeDeviceDurable.mockReset();
   });
 
-  afterEach(() => clearPairingState());
+  afterEach(() => {
+    clearPairingState();
+    setNodeSigningPublicKey(null);
+  });
 
   it('mints a coding-scoped one-paste setup code only for the owner', async () => {
     const app = Fastify({ logger: false });
@@ -121,12 +132,39 @@ describe('owner setup routes', () => {
         Buffer.from(body.setup_code.slice('dina1:'.length), 'base64url').toString('utf8'),
       ) as { code: string; device_name: string };
       expect(payload.device_name).toBe('Jiffy till connector');
+      // A staff phone seals its first request to this key; without it the
+      // phone refuses the code (the 2026-09-26 simulator run found this).
+      expect(parseAgentSetupCode(body.setup_code).nodeSigningPubHex).toBe(
+        Buffer.from(NODE_PUB).toString('hex'),
+      );
       // The pending code carries role staff and the owner's name; no scope, no install.
       expect(getPairingIntent(payload.code)).toEqual({
         deviceName: 'Jiffy till connector',
         role: 'staff',
         scope: undefined,
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('refuses a staff code while the node signing key is unknown: the phone could not use it', async () => {
+    setNodeSigningPublicKey(null);
+    const app = Fastify({ logger: false });
+    registerOwnerSetupRoutes(app as never, {
+      enabled: true,
+      ownerCapability: OWNER_CAPABILITY,
+      msgboxURL: 'wss://mailbox.example/ws',
+      phoneManager: fakePhone(),
+    });
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `${OWNER_SETUP_PREFIX}/staff`,
+        headers: { 'x-dina-owner-capability': OWNER_CAPABILITY },
+        payload: { device_name: 'till' },
+      });
+      expect(res.statusCode).toBe(503);
     } finally {
       await app.close();
     }

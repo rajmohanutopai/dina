@@ -19,8 +19,11 @@ import {
   checkRunnerPairing,
   confirmPluginInstall,
   declinePluginInstall,
+  applyPackUpdate,
   listInstalledPlugins,
+  listPackUpdates,
   pluginInstallAvailable,
+  reviewPackUpdate,
   uninstallPlugin,
 } from '../../src/services/plugin_install';
 
@@ -34,6 +37,9 @@ jest.mock('../../src/services/plugin_install', () => ({
   pluginInstallAvailable: jest.fn(() => true),
   uninstallPlugin: jest.fn(),
   listInstalledPlugins: jest.fn(() => []),
+  listPackUpdates: jest.fn(() => []),
+  reviewPackUpdate: jest.fn(),
+  applyPackUpdate: jest.fn(async () => ({ ok: true })),
 }));
 
 const beginMock = beginPluginInstall as jest.MockedFunction<typeof beginPluginInstall>;
@@ -322,5 +328,52 @@ describe('PluginsScreen — begin → consent', () => {
     const { getByTestId } = render(<PluginsScreen />);
     fireEvent.press(getByTestId('plugins-begin'));
     expect(beginMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('item 1 — a pack the app ships updates in place', () => {
+  const updatesMock = listPackUpdates as jest.MockedFunction<typeof listPackUpdates>;
+  const reviewMock = reviewPackUpdate as jest.MockedFunction<typeof reviewPackUpdate>;
+  const applyMock = applyPackUpdate as jest.MockedFunction<typeof applyPackUpdate>;
+  const REVIEW = {
+    installId: 'inst-sup',
+    toCid: 'bafy-1-1-0',
+    fromVersion: '1.0.0',
+    toVersion: '1.1.0',
+    changes: ['capability added: com.dinakernel.commerce.negotiate-quote'],
+    behaviorChanged: true,
+    widening: [{ kind: 'capability_added', capabilityId: 'com.dinakernel.commerce.negotiate-quote', to: 'x' }],
+    toBehaviorHash: 'h'.repeat(64),
+  };
+
+  it('offers "Update to 1.1.0", shows what changes, and applies only on the second tap', async () => {
+    listMock.mockReturnValue([
+      { installId: 'inst-sup', pluginId: 'com.dinakernel.commerce.supplier', status: 'active', executionMode: 'runner' },
+    ] as never);
+    updatesMock.mockReturnValue([
+      {
+        installId: 'inst-sup',
+        pluginId: 'com.dinakernel.commerce.supplier',
+        displayName: 'Supplier pack',
+        fromVersion: '1.0.0',
+        toVersion: '1.1.0',
+      },
+    ]);
+    reviewMock.mockReturnValue({ ok: true, review: REVIEW });
+    const { getByTestId, getByText } = render(<PluginsScreen />);
+    expect(getByText('Update to 1.1.0')).toBeTruthy();
+    fireEvent.press(getByTestId('plugin-update-inst-sup'));
+    expect(applyMock).not.toHaveBeenCalled();
+    const [title, body, buttons] = alertSpy.mock.calls.at(-1) as [
+      string,
+      string,
+      { text: string; onPress?: () => void }[],
+    ];
+    expect(title).toBe('Update this pack?');
+    expect(body).toMatch(/1\.0\.0 → 1\.1\.0/);
+    expect(body).toMatch(/negotiate-quote/);
+    expect(body).toMatch(/Orders already open stay with this pack/);
+    buttons.find((b) => b.text === 'Update')?.onPress?.();
+    await waitFor(() => expect(applyMock).toHaveBeenCalledWith(REVIEW));
   });
 });

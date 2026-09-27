@@ -51,6 +51,7 @@ export type TenderNegotiationState = 'negotiating' | 'ready' | 'awarded' | 'clos
 export interface TenderNegotiation {
   tenderId: string;
   currency: string;
+  /** Empty for both: a tender awarded without a policy names neither. */
   targetTotalMinor: string;
   budgetCeilingMinor: string;
   maxRounds: number;

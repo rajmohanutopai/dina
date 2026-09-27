@@ -36,9 +36,21 @@ function isHex(s: unknown, len?: number): s is string {
   return typeof s === 'string' && /^[0-9a-f]*$/.test(s) && (len === undefined || s.length === len);
 }
 
+const joinedListeners = new Set<() => void>();
+
+/**
+ * Tell the app this phone just became a staff device, so the unlock gate
+ * switches to the staff shell without a restart. Returns the unsubscribe.
+ */
+export function onStaffIdentitySaved(listener: () => void): () => void {
+  joinedListeners.add(listener);
+  return () => joinedListeners.delete(listener);
+}
+
 export async function saveStaffIdentity(identity: StaffIdentity): Promise<void> {
   const record: StoredStaffIdentity = { v: 1, ...identity };
   await setGenericPassword('staff', JSON.stringify(record), { service: STAFF_SERVICE });
+  for (const listener of [...joinedListeners]) listener();
 }
 
 export async function loadStaffIdentity(): Promise<StaffIdentity | null> {

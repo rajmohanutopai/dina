@@ -23,6 +23,7 @@ import {
   isDestinationBlocked,
   isDestinationTrusted,
 } from '../../src/d2d/gates';
+import { setTradeCounterpartyCheck } from '../../src/d2d/trade_ingress_seam';
 
 describe('D2D Egress 4-Gate Enforcement', () => {
   const knownContact = 'did:plc:knownFriend';
@@ -88,6 +89,46 @@ describe('D2D Egress 4-Gate Enforcement', () => {
       const result = checkEgressGates(unknownDID, 'commerce.trade', []);
       expect(result.allowed).toBe(false);
       expect(result.deniedAt).toBe('contact');
+    });
+
+    describe('commerce.trade to the COUNTERPARTY of an order — the mirror of the receive side', () => {
+      // A supplier found on the AppView holds the buyer's order but not the
+      // buyer's contact; the documents that belong to that order must go.
+      beforeEach(() =>
+        setTradeCounterpartyCheck((did, kind) => did === unknownDID && kind === 'delivery_note'),
+      );
+      afterEach(() => setTradeCounterpartyCheck(null));
+
+      it('an order-bound kind to the order counterparty passes the contact gate', () => {
+        expect(checkEgressGates(unknownDID, 'commerce.trade', [], 'delivery_note').allowed).toBe(
+          true,
+        );
+      });
+
+      it('a kind the counterparty rule does not cover, or no kind, stays contact-gated', () => {
+        expect(
+          checkEgressGates(unknownDID, 'commerce.trade', [], 'revshare_proposal'),
+        ).toMatchObject({
+          allowed: false,
+          deniedAt: 'contact',
+        });
+        expect(checkEgressGates(unknownDID, 'commerce.trade', [])).toMatchObject({
+          allowed: false,
+        });
+      });
+
+      it('only commerce.trade is waived, and the sharing gate still runs', () => {
+        expect(checkEgressGates(unknownDID, 'presence.signal', [], 'delivery_note')).toMatchObject({
+          allowed: false,
+          deniedAt: 'contact',
+        });
+        expect(
+          checkEgressGates(unknownDID, 'commerce.trade', ['health'], 'delivery_note'),
+        ).toMatchObject({
+          allowed: false,
+          deniedAt: 'sharing',
+        });
+      });
     });
   });
 

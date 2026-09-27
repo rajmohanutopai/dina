@@ -28,7 +28,8 @@ import type { TradeInboxItemDto, TradeStatementAnswer } from '@dina/core';
 const KIND_LABEL: Record<string, string> = {
   pending_confirm: 'Confirm an order draft',
   pending_quote: 'Quote awaiting your approval',
-  open_tender: 'Tender collecting quotes',
+  open_tender: 'Open tender',
+  awarded_tender: 'Awarded — order to send',
   pending_decision: 'Order awaiting your decision',
   unreceipted_delivery: 'Delivery to receipt',
   short_acceptance: 'Short acceptance — dispute',
@@ -132,7 +133,7 @@ export default function TradeScreen(): React.ReactElement {
         router.push({ pathname: '/order-draft', params: { draft_id: item.subject } });
         return;
       }
-      if (item.kind === 'open_tender') {
+      if (item.kind === 'open_tender' || item.kind === 'awarded_tender') {
         router.push({ pathname: '/tender', params: { tender_id: item.subject } });
         return;
       }

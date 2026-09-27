@@ -98,3 +98,10 @@ export * from './order_attachments';
 export * from './negotiation_policy';
 export * from './negotiation_supplier';
 export * from './buyer_negotiation';
+export {
+  confirmFirstPartyUpdate,
+  listFirstPartyUpdates,
+  prepareFirstPartyUpdate,
+  type FirstPartyConfirmResult,
+  type FirstPartyUpdate,
+} from './pack_update';

@@ -530,3 +530,4 @@ Inspect what happened: agent's full work = its `claude -p` session at `~/.claude
 node-side actions/approvals = `dina audit`; claim/complete/errors = the daemon log (metadata only).
 
 For testing, primarily use home node lite based testing - that allows you to test purely with chrome extension and web page, right? ensure the build is rebuilt - we have multiple isntances where we forgot to rebuild all vertsion
+while testing, if mobile simulator testing is required, please ensure that we are testing with existing simulator - dont download a new simulator.

@@ -47,13 +47,16 @@ import {
   beginInstall,
   buildAgentSetupCode,
   confirmConsent,
+  confirmFirstPartyUpdate,
   COUNTRY_PACK_IDS,
   declineConsent,
   getNodeDID,
   getPluginInstallRepository,
   getRepoProofVerifier,
   issueRunnerPairingCode,
+  listFirstPartyUpdates,
   PluginCommerceObligationError,
+  prepareFirstPartyUpdate,
   runnerPairingState,
   uninstall,
   type BeginInstallResult,
@@ -290,4 +293,74 @@ export function listInstalledPlugins(): InstalledPlugin[] {
     status: install.status,
     executionMode: install.executionMode,
   }));
+}
+
+/**
+ * Item 1 — Dina's own packs update in place with the app build: the install
+ * keeps its id, so open orders stay with it. The owner reviews what changes
+ * (new capabilities, a change in what the pack does) and confirms; nothing is
+ * applied by looking.
+ */
+export interface PackUpdate {
+  installId: string;
+  pluginId: string;
+  displayName: string;
+  fromVersion: string;
+  toVersion: string;
+}
+
+export function listPackUpdates(): PackUpdate[] {
+  try {
+    return listFirstPartyUpdates();
+  } catch {
+    return [];
+  }
+}
+
+export interface PackUpdateReview {
+  installId: string;
+  toCid: string;
+  fromVersion: string;
+  toVersion: string;
+  /** The capabilities the new version adds or widens, in its own words. */
+  changes: string[];
+  behaviorChanged: boolean;
+  widening: unknown[];
+  toBehaviorHash: string;
+}
+
+export function reviewPackUpdate(
+  installId: string,
+): { ok: true; review: PackUpdateReview } | { ok: false; error: string } {
+  const prepared = prepareFirstPartyUpdate({ installId, nowMs: Date.now() });
+  if (!prepared.ok) return { ok: false, error: prepared.message };
+  const r = prepared.review;
+  return {
+    ok: true,
+    review: {
+      installId,
+      toCid: r.toCid,
+      fromVersion: r.fromVersion,
+      toVersion: r.toVersion,
+      changes: r.widening.map((w) => `${w.kind.replace(/_/g, ' ')}: ${w.capabilityId}`),
+      behaviorChanged: r.behaviorChanged,
+      widening: r.widening,
+      toBehaviorHash: r.toBehaviorHash,
+    },
+  };
+}
+
+export async function applyPackUpdate(
+  review: PackUpdateReview,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const result = await confirmFirstPartyUpdate({
+    installId: review.installId,
+    toCid: review.toCid,
+    acceptedWidening: review.widening as Parameters<typeof confirmFirstPartyUpdate>[0]['acceptedWidening'],
+    acceptedBehaviorHash: review.toBehaviorHash,
+    nowMs: Date.now(),
+  });
+  if (!result.ok) return { ok: false, error: result.message };
+  if (!result.outcome.ok) return { ok: false, error: `update refused (${result.outcome.refusal})` };
+  return { ok: true };
 }

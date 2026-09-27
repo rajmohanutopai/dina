@@ -44,7 +44,7 @@ export default function StaffJoinScreen(): React.ReactElement {
   return (
     <View style={styles.container} testID="staff-join-screen">
       <Stack.Screen options={{ title: 'Join as staff' }} />
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.hint}>
           Ask the business owner to open Settings → Staff and share a staff setup code. Paste it
           here — this phone will act on their orders without ever holding their vault.

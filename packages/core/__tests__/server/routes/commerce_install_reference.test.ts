@@ -13,7 +13,10 @@ import path from 'node:path';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { resetCallerTypeState } from '../../../src/auth/caller_type';
-import { referenceManifestCid } from '../../../src/commerce/reference_install';
+import {
+  KERNEL_REFERENCE_KEY_ID,
+  referenceManifestCid,
+} from '../../../src/commerce/reference_install';
 import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_manifests';
 import {
   SUPPLIER_LISTING_BINDINGS,
@@ -32,8 +35,19 @@ import {
   setPluginGrantRepository,
   setPluginInstallRepository,
 } from '../../../src/plugins';
+import {
+  SQLiteDrainAuthorizationRepository,
+  setDrainAuthorizationRepository,
+} from '../../../src/plugins/drain_authorizations';
+import { UpdateRebindCoordinator } from '../../../src/plugins/update_rebind';
+import {
+  clearPreparedUpdates,
+  setUpdateRebindCoordinator,
+} from '../../../src/plugins/update_service';
+import { tier0TxRunner } from '../../../src/run/tx';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
+import { rebindListingsForUpdate } from '../../../src/service/listing_rebind';
 import {
   getServiceConfig,
   resetServiceConfigState,
@@ -342,5 +356,135 @@ describe('the listing follows the manifest the install runs (NEGOTIATION_PLAN §
       pluginManifestCid: 'bafy-pack-1-0-0',
       pluginCapabilityId: 'com.dinakernel.commerce.request-quote',
     });
+  });
+});
+
+describe('item 1 — a first-party pack updates in place, with the build', () => {
+  const older = {
+    ...SUPPLIER_REFERENCE_MANIFEST,
+    version: '1.0.0',
+    capabilities: SUPPLIER_REFERENCE_MANIFEST.capabilities.filter(
+      (c) => c.id !== 'com.dinakernel.commerce.negotiate-quote',
+    ),
+  };
+  const get = (routePath: string): CoreRequest => ({ ...post(routePath, {}), method: 'GET' });
+
+  function installOlder(anchor: 'first_party' | 'repo_proof'): string {
+    const installs = getPluginInstallRepository();
+    if (installs === null) throw new Error('no install repository');
+    const installId = installs.createPending({
+      publisherDid: SUPPLIER,
+      pluginId: SUPPLIER_REFERENCE_MANIFEST.plugin_id,
+      label: 'Supplier',
+      executionMode: 'runner',
+      currentCid: referenceManifestCid(older),
+      currentVersion: '1.0.0',
+      manifest: older,
+      installScopeHash: 'a'.repeat(64),
+      capabilityHashes: {},
+      behaviorHash: 'b'.repeat(64),
+      presentationHash: 'c'.repeat(64),
+      trustAnchor:
+        anchor === 'first_party'
+          ? { kind: 'local_publisher_key', keyId: KERNEL_REFERENCE_KEY_ID }
+          : { kind: 'repo_proof' },
+      pendingExpiresAtSec: Math.floor(Date.now() / 1000) + 600,
+      nowMs: Date.now(),
+    });
+    expect(installs.bindPendingDevice(installId, 'did:key:zRunner', Date.now())).toBe(true);
+    expect(installs.activate(installId, 'did:key:zRunner', Date.now())).toBe(true);
+    return installId;
+  }
+
+  beforeEach(() => {
+    setDrainAuthorizationRepository(new SQLiteDrainAuthorizationRepository(adapter));
+    setUpdateRebindCoordinator(
+      new UpdateRebindCoordinator({
+        installs: () => getPluginInstallRepository(),
+        drains: () => new SQLiteDrainAuthorizationRepository(adapter),
+        rebindListings: (args) => rebindListingsForUpdate(adapter, args),
+        countOpenOrders: () => 1, // an order is open: the install must survive it
+        tx: tier0TxRunner(adapter),
+        now: () => Date.now(),
+      }),
+    );
+  });
+  afterEach(() => {
+    setUpdateRebindCoordinator(null);
+    setDrainAuthorizationRepository(null);
+    clearPreparedUpdates();
+  });
+
+  it('lists the update, reviews it, and applies it on the SAME install; the new counter lane is bound', async () => {
+    const installId = installOlder('first_party');
+    expect(await bindSupplierListing({ installId, name: 'Old pack' })).toMatchObject({ ok: true });
+    expect(
+      getServiceConfig('self')?.capabilities['com.dinakernel.commerce.counter_offer'],
+    ).toBeUndefined();
+
+    const listed = await router.handle(get('/v1/commerce/install/updates'));
+    expect(listed.body).toMatchObject({
+      updates: [
+        {
+          install_id: installId,
+          from_version: '1.0.0',
+          to_version: SUPPLIER_REFERENCE_MANIFEST.version,
+        },
+      ],
+    });
+    const prepared = await router.handle(
+      post('/v1/commerce/install/update/prepare', { install_id: installId }),
+    );
+    expect(prepared.status).toBe(200);
+    const review = (prepared.body as { review: Record<string, unknown> }).review;
+    expect(review).toMatchObject({
+      fromVersion: '1.0.0',
+      toVersion: SUPPLIER_REFERENCE_MANIFEST.version,
+    });
+
+    // Confirming without echoing the review is refused (the owner must have seen it).
+    const blind = await router.handle(
+      post('/v1/commerce/install/update/confirm', { install_id: installId, to_cid: review.toCid }),
+    );
+    expect(blind.status).toBe(409);
+    const confirmed = await router.handle(
+      post('/v1/commerce/install/update/confirm', {
+        install_id: installId,
+        to_cid: review.toCid,
+        accepted_widening: review.widening,
+        accepted_behavior_hash: review.toBehaviorHash,
+      }),
+    );
+    expect(confirmed.status).toBe(200);
+    const install = getPluginInstallRepository()?.getById(installId);
+    expect(install).toMatchObject({
+      installId,
+      status: 'active',
+      currentVersion: SUPPLIER_REFERENCE_MANIFEST.version,
+      currentCid: referenceManifestCid(SUPPLIER_REFERENCE_MANIFEST),
+    });
+    expect(
+      getServiceConfig('self')?.capabilities['com.dinakernel.commerce.counter_offer'],
+    ).toMatchObject({
+      pluginInstallId: installId,
+      pluginManifestCid: referenceManifestCid(SUPPLIER_REFERENCE_MANIFEST),
+      pluginCapabilityId: 'com.dinakernel.commerce.negotiate-quote',
+    });
+    // Nothing more to offer once it runs the build's manifest.
+    expect((await router.handle(get('/v1/commerce/install/updates'))).body).toEqual({
+      updates: [],
+    });
+  });
+
+  it("a pack that arrived by repo proof is not offered the build's bytes", async () => {
+    const installId = installOlder('repo_proof');
+    expect((await router.handle(get('/v1/commerce/install/updates'))).body).toEqual({
+      updates: [],
+    });
+    const prepared = await router.handle(
+      post('/v1/commerce/install/update/prepare', { install_id: installId }),
+    );
+    expect(prepared.status).toBe(409);
+    expect(prepared.body).toMatchObject({ ok: false, code: 'cid_unchanged' });
   });
 });

@@ -250,6 +250,17 @@ Dual review, round 6. Fixed and pinned: a clearance granted to one clerk let ano
 
 Found and fixed during the run: after Send the page still offered Send (the ranking now carries `held_order`); the console's `clear` helper was called but never defined, so its staff-device, agent and Brain-work lists never rendered (a fault older than this work). Also found: sancho re-asked albert every 20 seconds while albert's owner decided, and those waiting rounds spent albert's probing budget for a stranger (5 an hour), so the round that would have carried the owner's yes was refused. Fixed on both sides (§4.3, §4.5): a re-ask while the owner decides spends no probing budget and no daily cap, and the buyer backs off (20 s doubling to five minutes).
 
+### Follow-ups from the live report (2026-09-26)
+
+- **Dina's own packs update in place.** An install this build vouched for (`local_publisher_key`) takes its update from the manifest the build ships, through the ordinary two-step update (review the widening and behaviour change, then confirm) and the same coordinator, which keeps the install id: open orders stay with it, the previous contract stays authorised for work in flight, and the listing moves to the new manifest; a lane the new version adds is bound by the supplier binder. Forward only. Routes `GET /v1/commerce/install/updates`, `POST …/update/prepare`, `POST …/update/confirm` (`commerce/pack_update.ts`); owner console "Pack updates"; phone Plugins screen "Update to x". Live: alonso, on 1.0.0 with three open orders, updated from its console and then revised a counter (₹60,000 → ₹55,000).
+- **Trade documents to an order counterparty.** The send gate now mirrors the receive side: a `commerce.trade` document of an order-bound kind passes the contact check when the recipient is the counterparty of an order this node accepted or placed. Only the contact check is waived; scenario, sharing and audit still run, and the revenue-share chain stays with contacts. Live: albert, who has no contact entry for sancho, sent a delivery note for sancho's order and it reached sancho's inbox.
+- **The phone tender screen, run on the simulator (2026-09-26).** A clerk joined sancho on the existing iPhone simulator, proved the PIN, opened the tender, awarded the cheaper offer and sent the order; alonso logged the `submit_order`. The run found five faults, all fixed:
+  - the staff code minted by a server node (`POST /v1/owner/setup/staff`) carried no node key, so no phone could join a server node; the route now includes it and refuses with 503 while the key is unknown;
+  - no route led to the staff join screen, and staff screens never rendered: `UnlockGate` now lets `/staff-join` through during onboarding and the staff routes through in staff mode, and the owner demo prompt stays off them;
+  - with the keyboard up, the first tap on Join, Start or Send only closed the keyboard; those screens now pass the tap through;
+  - an award on a tender with no policy recorded the winning price as target and budget, so the losing offer read "over your budget"; that record now names neither;
+  - awarded tenders stayed in the clerk's list as "collecting quotes" until they expired, and every row looked the same. A sent or lapsed award now leaves the list, a held one reads "Awarded — order to send", an open one reads "Open tender" (the list does not know whether Dina is still asking for better prices), and each row says when it opened.
+
 ### Live bed run (2026-09-25, four nodes on this code)
 
 | Step | Result |

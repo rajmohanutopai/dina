@@ -35,11 +35,15 @@ import {
   beginCountryPackInstall,
   beginPluginInstall,
   declinePluginInstall,
+  applyPackUpdate,
   listInstalledPlugins,
+  listPackUpdates,
   pluginInstallAvailable,
+  reviewPackUpdate,
   uninstallPlugin,
   type CountryPack,
   type InstalledPlugin,
+  type PackUpdate,
   type PluginConsentSummary,
 } from '../src/services/plugin_install';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
@@ -49,6 +53,7 @@ export default function PluginsScreen(): React.ReactElement {
   const bottomPad = insets.bottom + 49 + spacing.md;
 
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
+  const [updates, setUpdates] = useState<PackUpdate[]>([]);
   const [publisherDid, setPublisherDid] = useState('');
   const [rkey, setRkey] = useState('');
   const [beginning, setBeginning] = useState(false);
@@ -75,6 +80,7 @@ export default function PluginsScreen(): React.ReactElement {
   const refresh = useCallback(() => {
     try {
       setInstalled(listInstalledPlugins());
+      setUpdates(listPackUpdates());
     } catch (err) {
       console.warn('[plugins] list failed', err instanceof Error ? err.message : String(err));
       setInstalled([]);
@@ -84,6 +90,46 @@ export default function PluginsScreen(): React.ReactElement {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  /**
+   * Item 1 — a pack this app ships updates in place: show what changes, then
+   * apply on the owner's second tap. Open orders stay with the install.
+   */
+  const handleUpdate = useCallback(
+    (update: PackUpdate) => {
+      const reviewed = reviewPackUpdate(update.installId);
+      if (!reviewed.ok) {
+        Alert.alert('Nothing to update', reviewed.error);
+        refresh();
+        return;
+      }
+      const r = reviewed.review;
+      const lines = [
+        `${update.displayName} ${r.fromVersion} → ${r.toVersion}`,
+        ...(r.changes.length > 0 ? ['', 'This version adds:', ...r.changes.map((c) => `• ${c}`)] : []),
+        ...(r.behaviorChanged ? ['', 'It also changes what the pack does.'] : []),
+        '',
+        'Orders already open stay with this pack.',
+      ];
+      Alert.alert('Update this pack?', lines.join('\n'), [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update',
+          onPress: () => {
+            void (async () => {
+              const applied = await applyPackUpdate(r);
+              Alert.alert(
+                applied.ok ? 'Updated' : 'Update refused',
+                applied.ok ? `${update.displayName} now runs ${r.toVersion}.` : applied.error,
+              );
+              refresh();
+            })();
+          },
+        },
+      ]);
+    },
+    [refresh],
+  );
 
   const handleBegin = useCallback(async () => {
     const did = publisherDid.trim();
@@ -230,6 +276,20 @@ export default function PluginsScreen(): React.ReactElement {
                   <Text style={styles.pluginId}>{p.pluginId}</Text>
                   <Text style={styles.status}>{p.status}</Text>
                 </View>
+                {updates
+                  .filter((u) => u.installId === p.installId)
+                  .map((u) => (
+                    <Pressable
+                      key={u.toVersion}
+                      testID={`plugin-update-${p.installId}`}
+                      onPress={() => handleUpdate(u)}
+                      style={({ pressed }) => [styles.uninstall, pressed && styles.pressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Update ${p.pluginId} to ${u.toVersion}`}
+                    >
+                      <Text style={styles.updateText}>Update to {u.toVersion}</Text>
+                    </Pressable>
+                  ))}
                 <Pressable
                   testID={`plugin-uninstall-${p.installId}`}
                   onPress={() => handleUninstall(p)}
@@ -462,6 +522,7 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.accent,
   },
+  updateText: { ...textStyles.caption, color: colors.accent, fontWeight: '600' },
   uninstallText: {
     ...textStyles.caption,
     color: colors.error,

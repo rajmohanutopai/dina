@@ -104,13 +104,13 @@ export function registerPluginUpdateRoutes(router: CoreRouter, ownerCapability?:
  * the caller for different things: try again, versus do something else. A
  * missing install is 404 — the request named something that is not here.
  */
-function statusForPrepare(result: PrepareUpdateResult): number {
+export function statusForPrepare(result: PrepareUpdateResult): number {
   if (result.ok) return 200;
   if (result.code === 'install_unknown') return 404;
   return result.transient ? 503 : 409;
 }
 
-function statusForConfirm(result: ConfirmUpdateResult): number {
+export function statusForConfirm(result: ConfirmUpdateResult): number {
   if (!result.ok) return result.code === 'install_unknown' ? 404 : 409;
   // A COORDINATOR REFUSAL IS NOT A 200. `requires_reconsent` in particular is
   // the owner being asked again, and a client reading only the HTTP status must
@@ -119,7 +119,7 @@ function statusForConfirm(result: ConfirmUpdateResult): number {
 }
 
 /** Read the echoed findings without trusting their shape. */
-function readWidening(value: unknown): WideningFinding[] | null {
+export function readWidening(value: unknown): WideningFinding[] | null {
   if (!Array.isArray(value)) return null;
   const findings: WideningFinding[] = [];
   for (const entry of value) {

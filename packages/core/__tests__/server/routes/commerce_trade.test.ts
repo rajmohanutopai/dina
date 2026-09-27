@@ -420,6 +420,7 @@ describe('the money line (§5.B1 Cut 3): no active Commerce Pack', () => {
       // Two money-free items seeded OUT of order: the clerk's queue must not
       // depend on plugin state.
       tenders: { listTenders: () => [{ tenderId: 't-late', expiresAt: T0 + 60_000, createdAt: T0 }] },
+      buyerNegotiation: { getTender: () => null },
       pendingDecisions: { list: () => [{ buyerDid: BUYER_DID, purchaseOrderId: 'po-early', createdAt: T0 - 100 }] },
       nodeDid: () => SUPPLIER_DID,
       now: () => T0,

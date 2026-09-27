@@ -10,6 +10,7 @@ import { resetAuditState, queryAudit } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { addContact, clearGatesState } from '../../src/d2d/gates';
 import { sendD2D } from '../../src/d2d/send';
+import { setTradeCounterpartyCheck } from '../../src/d2d/trade_ingress_seam';
 import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
 import { clearOutbox, outboxCount } from '../../src/transport/outbox';
 import {
@@ -44,6 +45,28 @@ describe('D2D Send Pipeline', () => {
   });
 
   describe('gate checks', () => {
+    it('commerce.trade to an order counterparty passes gate 1 — the kind is read from the body', async () => {
+      setTradeCounterpartyCheck(
+        (did, kind) => did === baseReq.recipientDID && kind === 'delivery_note',
+      );
+      try {
+        const orderBound = await sendD2D({
+          ...baseReq,
+          messageType: 'commerce.trade',
+          body: JSON.stringify({ kind: 'delivery_note', document: {} }),
+        });
+        expect(orderBound.deniedAt).not.toBe('contact');
+        const notOrderBound = await sendD2D({
+          ...baseReq,
+          messageType: 'commerce.trade',
+          body: JSON.stringify({ kind: 'revshare_proposal', document: {} }),
+        });
+        expect(notOrderBound.deniedAt).toBe('contact');
+      } finally {
+        setTradeCounterpartyCheck(null);
+      }
+    });
+
     it('unknown contact → denied at gate 1', async () => {
       const result = await sendD2D(baseReq);
       expect(result.sent).toBe(false);

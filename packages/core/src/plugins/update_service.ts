@@ -30,7 +30,7 @@
 import { checkReleaseIntegrity } from '@dina/protocol';
 
 import { getRepoProofVerifier, vetReleaseManifest, type InstallFailure } from './install_service';
-import { getPluginInstallRepository } from './registry';
+import { getPluginInstallRepository, type PluginInstall } from './registry';
 import { detectUpdateWidening, type WideningFinding } from './update_widening';
 
 import type { UpdateRebindCoordinator, RebindOutcome } from './update_rebind';
@@ -285,9 +285,65 @@ export async function prepareUpdate(args: {
     return { ok: false, code: 'integrity_failed', message: integrity.message, transient: false };
   }
 
+  return prepareCandidate({
+    install,
+    manifest: proof.record as PluginManifest,
+    cid: proof.cid,
+    nowMs: args.nowMs,
+  });
+}
+
+/**
+ * Item 1 (NEGOTIATION follow-up) — prepare an update whose candidate bytes the
+ * CALLER already trusts: a first-party pack's manifest compiled into this
+ * build (`reference_install.ts`), the one source a `local_publisher_key`
+ * install may take bytes from. Everything after authenticity is the same as a
+ * repo-proof update: the install gates, same plugin id, a changed CID, the
+ * widening and behaviour review, and the same `confirmUpdate` to apply it.
+ *
+ * Not on the package surface for arbitrary bytes: the only caller is the
+ * first-party door, which takes a plugin id and looks the manifest up itself.
+ */
+export function prepareUpdateFromTrustedManifest(args: {
+  installId: string;
+  manifest: PluginManifest;
+  cid: string;
+  nowMs: number;
+}): PrepareUpdateResult {
+  const installs = getPluginInstallRepository();
+  if (installs === null) {
+    return {
+      ok: false,
+      code: 'verifier_unavailable',
+      message: 'plugin registry not wired',
+      transient: true,
+    };
+  }
+  const install = installs.getById(args.installId);
+  if (install === null) {
+    return { ok: false, code: 'install_unknown', message: 'no such install', transient: false };
+  }
+  if (install.status !== 'active') {
+    return {
+      ok: false,
+      code: 'install_not_active',
+      message: `an install in status "${install.status}" cannot be updated`,
+      transient: false,
+    };
+  }
+  return prepareCandidate({ install, manifest: args.manifest, cid: args.cid, nowMs: args.nowMs });
+}
+
+function prepareCandidate(args: {
+  install: PluginInstall;
+  manifest: PluginManifest;
+  cid: string;
+  nowMs: number;
+}): PrepareUpdateResult {
+  const install = args.install;
   // Every gate an INSTALL runs. An update that skipped one would swap the
   // install onto a manifest that could never have been installed here.
-  const vetted = vetReleaseManifest(proof.record as PluginManifest);
+  const vetted = vetReleaseManifest(args.manifest);
   if (!vetted.ok) return vetted;
   const { manifest, digests } = vetted;
 
@@ -302,7 +358,7 @@ export async function prepareUpdate(args: {
       transient: false,
     };
   }
-  if (proof.cid === install.currentCid) {
+  if (args.cid === install.currentCid) {
     return {
       ok: false,
       code: 'cid_unchanged',
@@ -312,10 +368,10 @@ export async function prepareUpdate(args: {
   }
 
   const widening = detectUpdateWidening(install.manifest, manifest);
-  prepared.set(args.installId, {
-    installId: args.installId,
+  prepared.set(install.installId, {
+    installId: install.installId,
     fromCid: install.currentCid,
-    cid: proof.cid,
+    cid: args.cid,
     version: manifest.version,
     manifest,
     installScopeHash: digests.installScopeHash,
@@ -329,13 +385,13 @@ export async function prepareUpdate(args: {
   return {
     ok: true,
     review: {
-      installId: args.installId,
+      installId: install.installId,
       publisherDid: install.publisherDid,
       pluginId: install.pluginId,
       fromVersion: install.currentVersion,
       toVersion: manifest.version,
       fromCid: install.currentCid,
-      toCid: proof.cid,
+      toCid: args.cid,
       displayName: manifest.display_name,
       capabilities: manifest.capabilities,
       perCapabilityScopeHashes: { ...digests.perCapability },
