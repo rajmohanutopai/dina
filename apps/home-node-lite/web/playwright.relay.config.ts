@@ -4,7 +4,7 @@
  * Unlike the other configs, this one has NO webServer: the two full home
  * nodes (alonso :8401, sancho :8402) run out-of-process via `dina-nodes/`
  * (provision + start + connect), against the cloud test relay. Playwright
- * opens each node's `<brain>/web/` as a separate person (§ twoHumans).
+ * opens each node's `<core>/app/` as a separate person (§ twoHumans).
  *
  * Prereq: `cd dina-nodes && ./start.sh alonso sancho && ./connect.sh alonso sancho`.
  * Run:    npm run -w @dina/home-node-lite-web-e2e test:e2e:relay

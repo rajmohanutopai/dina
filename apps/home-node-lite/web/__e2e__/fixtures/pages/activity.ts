@@ -18,11 +18,11 @@ export async function openApprovalInbox(page: Page): Promise<void> {
 }
 
 /**
- * Tap the Approve button on a specific approval card and wait for it to leave
- * the pending list. `vault_read` + `MODERATE intent_validation` cards approve
- * with a session scope directly (no confirm dialog); the 2-button cards (HIGH,
- * and every deny) confirm via a browser dialog — callers that hit those must
- * register a `page.on('dialog', d => d.accept())` first (RN-Web Alert.alert →
+ * Tap the Approve button on a specific approval card. A persona-guard vault
+ * read and a MODERATE intent approve with a session scope directly (no confirm
+ * dialog); the 2-button cards (an agent persona-access request, HIGH, and every
+ * deny) confirm via a browser dialog — callers that hit those must register a
+ * `page.on('dialog', d => d.accept())` first (`confirmDecision` →
  * window.confirm on web).
  */
 export async function tapApprove(page: Page, taskId: string): Promise<void> {

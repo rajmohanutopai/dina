@@ -10,15 +10,17 @@
 import { getThread, addMessage, resetThreads, type ChatMessage } from '@dina/brain/chat';
 
 import { syncQuarantineCards } from '../../src/hooks/quarantine_sync.web';
+import { BRAIN, installCoreServedPage } from '../setup/web_brain';
 
 function lifecycleOf(m: ChatMessage): { kind?: string; quarantineId?: string; senderDID?: string } {
   return (m.metadata?.lifecycle as { kind?: string; quarantineId?: string; senderDID?: string }) ?? {};
 }
 
+let brain: jest.Mock;
+
 function mockQuarantine(messages: unknown[]): void {
-  (globalThis as unknown as { fetch: unknown }).fetch = jest
-    .fn()
-    .mockResolvedValue({ ok: true, text: async () => '', json: async () => ({ messages }) });
+  brain = jest.fn().mockResolvedValue({ ok: true, text: async () => '', json: async () => ({ messages }) });
+  installCoreServedPage(brain);
 }
 
 async function flush(): Promise<void> {
@@ -40,14 +42,17 @@ describe('quarantine_sync.web', () => {
     syncQuarantineCards('main');
     await flush();
 
+    expect(brain).toHaveBeenCalledWith(`${BRAIN}/api/v1/d2d/quarantine`, { credentials: 'omit' });
     const thread = getThread('main');
     expect(thread).toHaveLength(2);
-    const lc0 = lifecycleOf(thread[0]!);
+    const [first, second] = thread;
+    if (first === undefined || second === undefined) throw new Error('two cards expected');
+    const lc0 = lifecycleOf(first);
     expect(lc0.kind).toBe('quarantine_request');
     expect(lc0.quarantineId).toBe('q1');
     expect(lc0.senderDID).toBe('did:plc:x');
-    expect(thread[0]?.type).toBe('dina');
-    expect(lifecycleOf(thread[1]!).quarantineId).toBe('q2');
+    expect(first.type).toBe('dina');
+    expect(lifecycleOf(second).quarantineId).toBe('q2');
   });
 
   it('does NOT duplicate a card already shown in the thread', async () => {
@@ -71,7 +76,7 @@ describe('quarantine_sync.web', () => {
   });
 
   it('injects nothing on a fetch failure (transient blip — a later mount retries)', async () => {
-    (globalThis as unknown as { fetch: unknown }).fetch = jest.fn().mockResolvedValue({ ok: false, text: async () => 'err' });
+    installCoreServedPage(jest.fn().mockResolvedValue({ ok: false, text: async () => 'err' }));
     syncQuarantineCards('main');
     await flush();
     expect(getThread('main')).toHaveLength(0);

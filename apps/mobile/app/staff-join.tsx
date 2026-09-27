@@ -7,10 +7,12 @@
 
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { pairStaffDevice } from '@dina/core';
 
+import { ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { saveStaffIdentity } from '../src/services/staff_identity_store';
 import { makeStaffWebSocket } from '../src/services/staff_transport_rn';
 import { colors, radius, spacing, textStyles } from '../src/theme';
@@ -31,10 +33,10 @@ export default function StaffJoinScreen(): React.ReactElement {
           timeoutMs: 30_000,
         });
         await saveStaffIdentity(identity);
-        Alert.alert('Joined', `This phone is now a staff device for ${identity.deviceName || 'the business'}.`);
+        showMessage('Joined', `This phone is now a staff device for ${identity.deviceName || 'the business'}.`);
         router.replace('/staff-home');
       } catch (err) {
-        Alert.alert('Could not join', (err as Error).message);
+        showMessage('Could not join', ownerErrorText(err));
       } finally {
         setBusy(false);
       }

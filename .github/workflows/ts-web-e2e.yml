@@ -1,5 +1,5 @@
 # Build the React Native Web bundle for home-node-lite and run the
-# Playwright smoke spec against the brain-server's /web/* route.
+# Playwright suites against the web app Core serves at /app/ (Brain reached cross-origin).
 #
 # Runs on:
 #   - push to main (post-merge regression catch)
@@ -20,6 +20,7 @@ on:
     branches: [main]
     paths:
       - "apps/mobile/**"
+      - "apps/home-node-lite/core-server/**"
       - "apps/home-node-lite/brain-server/**"
       - "apps/home-node-lite/web/**"
       - "packages/**"
@@ -30,6 +31,7 @@ on:
   pull_request:
     paths:
       - "apps/mobile/**"
+      - "apps/home-node-lite/core-server/**"
       - "apps/home-node-lite/brain-server/**"
       - "apps/home-node-lite/web/**"
       - "packages/**"

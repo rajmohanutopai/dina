@@ -20,7 +20,7 @@ import { extractPublicKey } from '../identity/did';
 
 import { isScopeAuthorized, requiredScopeFor, resolveAgentScope, type AgentScope } from './agent_scope';
 import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
-import { resolveCallerType } from './caller_type';
+import { resolveCallerType, type CallerIdentity } from './caller_type';
 import { verifyRequest } from './canonical';
 import { NonceCache } from './nonce';
 import { PerDIDRateLimiter } from './ratelimit';
@@ -111,13 +111,19 @@ export function configureRateLimiter(config: { maxRequests: number; windowSecond
   rateLimiter = new PerDIDRateLimiter(config);
 }
 
+/** Steps 1–6 of the pipeline passed: the request is authentic and its caller known. */
+interface VerifiedIdentity {
+  verified: true;
+  callerIdentity: CallerIdentity;
+}
+
 /**
- * Authenticate and authorize a request through the full pipeline.
- *
- * Returns AuthResult with authenticated=true and callerType on success,
- * or authenticated=false with rejectedAt and reason on failure.
+ * Steps 1–6: headers, timestamp window, Ed25519 signature, nonce replay,
+ * per-DID rate limit, caller-type resolution. Everything EXCEPT the
+ * path × caller authorization, which differs between the matrix
+ * (`authenticateRequest`) and the owner device (`authenticateOwnerDevice`).
  */
-export function authenticateRequest(req: AuthRequest): AuthResult {
+function verifySignedIdentity(req: AuthRequest): VerifiedIdentity | AuthResult {
   const did = req.headers['X-DID'];
   const timestamp = req.headers['X-Timestamp'];
   const nonce = req.headers['X-Nonce'];
@@ -223,7 +229,24 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
   }
 
   // 6. Resolve caller type
-  const callerIdentity = resolveCallerType(did, agentDID);
+  return { verified: true, callerIdentity: resolveCallerType(did, agentDID) };
+}
+
+function isVerified(r: VerifiedIdentity | AuthResult): r is VerifiedIdentity {
+  return (r as VerifiedIdentity).verified === true;
+}
+
+/**
+ * Authenticate and authorize a request through the full pipeline.
+ *
+ * Returns AuthResult with authenticated=true and callerType on success,
+ * or authenticated=false with rejectedAt and reason on failure.
+ */
+export function authenticateRequest(req: AuthRequest): AuthResult {
+  const verified = verifySignedIdentity(req);
+  if (!isVerified(verified)) return verified;
+  const { callerIdentity } = verified;
+  const did = callerIdentity.did;
 
   // 7. Authorize (path × callerType)
   // Map generic 'service' to specific authz role using the registered service name
@@ -283,6 +306,33 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
 }
 
 /**
+ * WEB_OWNER_SURFACE_PLAN §3.3 — verify a request signed by a browser paired
+ * as an OWNER device. The same steps 1–6 as every signed request (headers,
+ * ±5-minute window, Ed25519 signature, nonce replay, per-DID rate limit),
+ * then one rule instead of the path matrix: the signer must be a registered
+ * device whose role is `owner`. The matrix itself grants `owner_device`
+ * nothing, so such a device reaches Core ONLY through the host's owner entry
+ * point, which calls this and then marks the request exactly as the owner
+ * capability header does. The caller decides which paths that entry point
+ * covers; this function knows nothing of paths.
+ */
+export function authenticateOwnerDevice(req: AuthRequest): AuthResult {
+  const verified = verifySignedIdentity(req);
+  if (!isVerified(verified)) return verified;
+  const { callerIdentity } = verified;
+  if (callerIdentity.callerType !== 'owner_device') {
+    return {
+      authenticated: false,
+      did: callerIdentity.did,
+      callerType: callerIdentity.callerType,
+      rejectedAt: 'authorization',
+      reason: 'not an owner device',
+    };
+  }
+  return { authenticated: true, did: callerIdentity.did, callerType: 'owner_device' };
+}
+
+/**
  * Map generic caller type + service name to specific authz role.
  * 'service' with name 'brain' → 'brain', 'admin' → 'admin', etc.
  * 'device' → 'device', 'agent' → 'agent'.
@@ -301,6 +351,10 @@ function mapToAuthzRole(callerType: string, name?: string): AuthzCallerType | nu
   // the handler-level harnesses preset the caller type and never noticed.
   // Found live, 2026-08-18.
   if (callerType === 'staff') return 'staff';
+  // WEB_OWNER_SURFACE_PLAN §3.3: an owner device has its own row, which
+  // grants NOTHING. It reaches Core only through the host's owner entry
+  // point (`authenticateOwnerDevice`), never through this matrix.
+  if (callerType === 'owner_device') return 'owner_device';
 
   // Service: only recognized names get a role
   if (callerType === 'service' && name) {

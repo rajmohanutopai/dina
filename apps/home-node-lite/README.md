@@ -112,41 +112,55 @@ start the Core server first and configure `DINA_BRAIN_CORE_BASE_URL`
 
 ### Full Web UI (React Native Web bundle)
 
-A more complete browser UI exists for operators who want the full
-mobile app without installing Expo — same React tree, same hooks,
-served as a static SPA from the Brain container's `/web/*` mount.
+The whole mobile app, in a browser, without installing Expo — same React
+tree, same hooks. **Core** serves it at `/app/`
+(`docs/WEB_OWNER_SURFACE_PLAN.md`), so the owner's credentials live on
+Core's origin; the page reads Brain's `/api/*` cross-origin, and Brain allows
+exactly Core's origin.
 
 Quickstart (interactive):
 
 ```bash
 ./install-lite.sh --web-ui
-# After install completes, open http://127.0.0.1:8200/web/
+# After install completes, open http://127.0.0.1:8100/app/
 ```
 
 Manual route (dev iteration):
 
 ```bash
-# 1. Build the SPA bundle from apps/mobile
+# 1. Build the web app from apps/mobile
 npm run -w @dina/home-node-lite-web-e2e build:bundle
 
-# 2. Start the Brain server with the web UI flag set
-cd apps/home-node-lite/brain-server
-DINA_BRAIN_WEB_UI=1 npm start
-# Open http://127.0.0.1:8200/web/
+# 2. Core serves it (Brain at http://127.0.0.1:8200 unless
+#    DINA_CORE_WEB_BRAIN_ORIGIN says otherwise); Brain lets Core's origin,
+#    by both loopback names, read its API
+cd apps/home-node-lite/core-server && DINA_CORE_WEB_UI=1 npm start
+cd apps/home-node-lite/brain-server && \
+  DINA_BRAIN_WEB_ORIGIN=http://127.0.0.1:8100,http://localhost:8100 npm start
+# Open http://127.0.0.1:8100/app/, then Settings → Owner access:
+# paste the owner key (vault/owner_capability) once.
 ```
 
-Caveats — read **before** exposing the brain port beyond loopback:
+Owner actions (approvals, orders, tenders, staff, plugins, agents) go to
+Core as this browser's **owner device**: a signing key the browser keeps and
+cannot export, paired once with the owner key. The owner key itself is not
+stored. On a node in security mode (`DINA_UNLOCK_PASSPHRASE` set before the
+first boot) the powerful actions also ask for the passphrase, a person
+present; a convenience-mode node has no passphrase and asks for none.
 
-- The web target has **no Secure Enclave equivalent**. Device-local
-  secrets live in IndexedDB under WebCrypto AES-GCM. See
-  `apps/home-node-lite/web/SECURITY.md` for the full threat model.
-- The brain port (8200 by default) carries the SPA AND the
-  `/api/v1/*` API. Exposing it on a public hostname requires TLS,
-  the operator's Ed25519 device keys per request, and ideally a
-  reverse proxy that scopes `/api/*` to authenticated requests.
-- The Playwright smoke + onboarding specs at
-  `apps/home-node-lite/web/__e2e__/` are the regression contract.
-  CI runs them on every PR via `.github/workflows/ts-web-e2e.yml`.
+Caveats — read **before** reaching the node from another machine:
+
+- Keep both ports on loopback and reach them through a tunnel
+  (`ssh -L 8100:127.0.0.1:8100 -L 8200:127.0.0.1:8200 host`, or a
+  private network such as Tailscale). Both then appear as `127.0.0.1` on
+  your machine, so the origins and Brain's CORS rule hold unchanged.
+- Brain's `/api/*` is unauthenticated by design (loopback, Host-allowlisted).
+  Never publish it on a public interface.
+- The web target has **no Secure Enclave equivalent**. See
+  `apps/home-node-lite/web/SECURITY.md` for the threat model.
+- The Playwright suites at `apps/home-node-lite/web/__e2e__/` are the
+  regression contract. CI runs them on every PR via
+  `.github/workflows/ts-web-e2e.yml`.
 
 ## Test
 

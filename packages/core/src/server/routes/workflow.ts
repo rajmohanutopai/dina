@@ -32,6 +32,7 @@ import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { ORDER_CHECKOUT_LINK_TYPE, PAYMENT_EVIDENCE_RECORD_TYPE } from '../../commerce/integration';
 import { INTEGRATION_SETTINGS_PROPOSAL_TYPE } from '../../commerce/integration_settings';
 import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from '../../commerce/negotiation_policy';
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getCommerceRuntime } from '../../commerce/runtime';
 import {
   STAFF_ESCALATION_APPROVAL_TYPE,
@@ -158,7 +159,11 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     return j(200, forCaller(req, task));
   });
   router.post('/v1/workflow/tasks/:id/approve', async (req) => {
-    return decisionGuard(req) ?? runAction(req, approveTask);
+    return (
+      decisionGuard(req) ??
+      presenceGatedCardGuard(req, req.params.id ?? '') ??
+      runAction(req, approveTask)
+    );
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
     return decisionGuard(req) ?? runAction(req, cancelTask);
@@ -1184,6 +1189,41 @@ function brainDisclosureReviewGuard(req: CoreRequest, id: string): CoreResponse 
     });
   }
   return null;
+}
+
+/**
+ * WEB_OWNER_SURFACE_PLAN §3.8 — cards whose YES moves money-related state or
+ * hands out commercial authority need a person present, whoever answers:
+ *
+ *   - a price below the supplier's automatic limit (a yes lets a lower
+ *     price be signed);
+ *   - payment evidence (a yes writes a payment note into the khata);
+ *   - a clerk's operation above their cap (a yes lets that order, receipt
+ *     or acceptance go through — the owner doing it directly is gated too);
+ *   - an integration's settings proposal (a yes rewrites supplier policy:
+ *     order acceptance, cold invites, quote access).
+ *
+ * Only the yes is gated; a no reduces nothing and stays immediate. The
+ * value is the refusal detail the presence sheet shows.
+ */
+export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map([
+  [
+    NEGOTIATION_PRICE_APPROVAL_TYPE,
+    'offering a price below your automatic limit needs a person present',
+  ],
+  [PAYMENT_EVIDENCE_RECORD_TYPE, 'recording a payment needs a person present'],
+  [STAFF_ESCALATION_APPROVAL_TYPE, 'approving a clerk above their limit needs a person present'],
+  [INTEGRATION_SETTINGS_PROPOSAL_TYPE, 'changing supplier settings needs a person present'],
+]);
+
+function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {
+  const service = getWorkflowService();
+  if (service === null) return null; // runAction will surface the 503
+  const task = service.store().getById(id);
+  const type = task === null ? undefined : safeParseBody(task.payload)?.type;
+  const detail = typeof type === 'string' ? PRESENCE_GATED_PAYLOAD_TYPES.get(type) : undefined;
+  if (detail === undefined) return null;
+  return ownerPresenceRefusal(req, Date.now(), detail);
 }
 
 /**

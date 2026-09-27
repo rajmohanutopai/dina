@@ -36,8 +36,8 @@ function cadenceLabel(sec: number): string {
 
 /** #7 — owner-initiated creation of a poll-mode standing subscription. Mints a
  *  stable `subscription_id` (the idempotency key) and creates the watch through
- *  the owner-only `/v1/watch/create` route. Returns the created watch id, or null
- *  on failure. */
+ *  the owner-only `/v1/watch/create` route. Returns the created watch id, null
+ *  when no owner client is wired; a refusal is raised so the screen can say why. */
 export interface CreateSubscriptionInput {
   persona: string;
   serviceUri: string;
@@ -79,44 +79,40 @@ function parseTargetQuery(target: string | undefined): Record<string, unknown> |
 export async function createSubscription(input: CreateSubscriptionInput): Promise<string | null> {
   const client = getOwnerRunClient();
   if (client === null) return null;
-  try {
-    const subscriptionId = `sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const condition = input.condition !== undefined ? input.condition.trim() : '';
-    // R3-06 — the poll target (what to poll) is distinct from the wake filter (when
-    // to notify): an explicit `query` wins, else derive it from the `target` string.
-    const query = input.query ?? parseTargetQuery(input.target);
-    const res = await client.watchCreate({
-      subscription_id: subscriptionId,
-      persona: input.persona,
-      service_uri: input.serviceUri,
-      provider_did: input.providerDid,
-      capability: input.capability,
-      poll_interval_sec: input.pollIntervalSec,
-      ...(query !== undefined ? { query } : {}),
-      ...(input.schemaHash !== undefined && input.schemaHash !== ''
-        ? { schema_hash: input.schemaHash }
-        : {}),
-      ...(input.freshnessSec !== undefined && input.freshnessSec > 0
-        ? { freshness_sec: input.freshnessSec }
-        : {}),
-      ...(condition !== '' ? { condition, filter: { contains: condition } } : {}),
-    });
-    return res.watch_id;
-  } catch {
-    return null;
-  }
+  const subscriptionId = `sub-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const condition = input.condition !== undefined ? input.condition.trim() : '';
+  // R3-06 — the poll target (what to poll) is distinct from the wake filter (when
+  // to notify): an explicit `query` wins, else derive it from the `target` string.
+  const query = input.query ?? parseTargetQuery(input.target);
+  const res = await client.watchCreate({
+    subscription_id: subscriptionId,
+    persona: input.persona,
+    service_uri: input.serviceUri,
+    provider_did: input.providerDid,
+    capability: input.capability,
+    poll_interval_sec: input.pollIntervalSec,
+    ...(query !== undefined ? { query } : {}),
+    ...(input.schemaHash !== undefined && input.schemaHash !== ''
+      ? { schema_hash: input.schemaHash }
+      : {}),
+    ...(input.freshnessSec !== undefined && input.freshnessSec > 0
+      ? { freshness_sec: input.freshnessSec }
+      : {}),
+    ...(condition !== '' ? { condition, filter: { contains: condition } } : {}),
+  });
+  return res.watch_id;
 }
 
-/** The owner's active (running) subscriptions, most-recent first. */
+/**
+ * The owner's active (running) subscriptions, most-recent first. A refusal is
+ * raised, not read as "none": a browser not connected as the owner must be
+ * told so.
+ */
 export async function getActiveSubscriptions(): Promise<SubscriptionUIItem[]> {
   const client = getOwnerRunClient();
   if (client === null) return [];
-  try {
-    const { watches } = await client.watchList();
-    return watches.map((item) => ({ ...item, cadenceLabel: cadenceLabel(item.poll_interval_sec) }));
-  } catch {
-    return [];
-  }
+  const { watches } = await client.watchList();
+  return watches.map((item) => ({ ...item, cadenceLabel: cadenceLabel(item.poll_interval_sec) }));
 }
 
 /** Pause polling (keeps the subscription; no queries fire until resumed). */

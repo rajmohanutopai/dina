@@ -13,7 +13,7 @@ function guardedApp(): FastifyInstance {
   const app = Fastify({ logger: false });
   registerHostAllowlistGuard(app);
   // Stand-in for the state-mutating approval gate.
-  app.post('/api/v1/workflow/tasks/:id/approve', async () => ({ ok: true }));
+  app.post('/api/v1/chat/reset', async () => ({ ok: true }));
   return app;
 }
 
@@ -43,7 +43,7 @@ describe('brain-server Host allowlist', () => {
     try {
       const res = await app.inject({
         method: 'POST',
-        url: '/api/v1/workflow/tasks/t1/approve',
+        url: '/api/v1/chat/reset',
         headers: { host: 'evil.com' },
       });
       expect(res.statusCode).toBe(421);
@@ -58,14 +58,14 @@ describe('brain-server Host allowlist', () => {
     try {
       const withPort = await app.inject({
         method: 'POST',
-        url: '/api/v1/workflow/tasks/t1/approve',
+        url: '/api/v1/chat/reset',
         headers: { host: '127.0.0.1:8402' },
       });
       expect(withPort.statusCode).toBe(200);
 
       const bare = await app.inject({
         method: 'POST',
-        url: '/api/v1/workflow/tasks/t1/approve',
+        url: '/api/v1/chat/reset',
         headers: { host: 'localhost' },
       });
       expect(bare.statusCode).toBe(200);

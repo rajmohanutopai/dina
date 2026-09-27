@@ -171,6 +171,7 @@ function expectOk<T>(res: CoreResponse, context: string): T {
     throw new CoreHttpError(
       `InProcessTransport: ${context} failed ${res.status} — ${err}`,
       res.status,
+      res.body,
     );
   }
   return res.body as T;

@@ -1,5 +1,5 @@
 /**
- * Client↔route parity smoke: every InProcessOwnerCommerceClient method
+ * Client↔route parity smoke: every OwnerCommerceClient method
  * must land on a REGISTERED route. The router answers an unknown path
  * with `no route for …` — so each method is driven against a router
  * with the commerce routes registered and NO runtime, and the failure
@@ -8,22 +8,23 @@
  */
 
 import {
-  InProcessOwnerCommerceClient,
+  OwnerCommerceClient,
   OwnerCommerceHttpError,
 } from '../../src/client/owner-commerce-client';
+import { inProcessOwnerDispatcher } from '../../src/client/owner-dispatch';
 import { installCommerceRuntime } from '../../src/commerce/runtime';
 import { CoreRouter } from '../../src/server/router';
 import { registerCommerceRoutes } from '../../src/server/routes/commerce';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 
-let client: InProcessOwnerCommerceClient;
+let client: OwnerCommerceClient;
 
 beforeEach(() => {
   const router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
   installCommerceRuntime(null); // every handler must answer 503, never 404
-  client = new InProcessOwnerCommerceClient(router, OWNER_CAP);
+  client = new OwnerCommerceClient(inProcessOwnerDispatcher(router, OWNER_CAP));
 });
 
 afterEach(() => installCommerceRuntime(null));

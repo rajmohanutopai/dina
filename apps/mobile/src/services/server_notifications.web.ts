@@ -1,7 +1,7 @@
 /**
  * Server-notification installer — WEB (R4-03).
  *
- * The `/web` SPA runs Brain's inbox in the browser, but the durable notification
+ * The web app runs Brain's inbox in the browser, but the durable notification
  * log lives on the split server (Core's identity.sqlite). This wires a
  * repository that proxies to `/api/v1/notifications` so:
  *   - `hydrateNotifications()` loads the server's durable inbox on boot;
@@ -27,6 +27,8 @@ import {
   type StoredNotificationItem,
 } from '@dina/core';
 
+import { brainEventStream, brainFetch, type BrainEventStream } from './web_runtime';
+
 class WebNotificationLogRepository implements NotificationLogRepository {
   async append(): Promise<void> {
     // Server is the source of truth; the browser never originates notifications.
@@ -34,7 +36,7 @@ class WebNotificationLogRepository implements NotificationLogRepository {
 
   async markRead(id: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/v1/notifications/read', {
+      const res = await brainFetch('/api/v1/notifications/read', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -50,7 +52,7 @@ class WebNotificationLogRepository implements NotificationLogRepository {
   async listAll(limit?: number): Promise<StoredNotificationItem[]> {
     try {
       const url = limit !== undefined ? `/api/v1/notifications?limit=${limit}` : '/api/v1/notifications';
-      const res = await fetch(url);
+      const res = await brainFetch(url);
       if (!res.ok) return [];
       // R5-08 — the server returns snake_case wire rows.
       const body = (await res.json()) as { notifications?: unknown[] };
@@ -102,7 +104,7 @@ export function installServerNotifications(): () => void {
   const repo = new WebNotificationLogRepository();
   setNotificationLogRepository(repo);
 
-  let source: EventSource | null = null;
+  let stream: BrainEventStream | null = null;
   let disposed = false;
 
   // R5-09 — hydrate the durable snapshot FIRST, THEN subscribe. Opening the
@@ -116,8 +118,8 @@ export function installServerNotifications(): () => void {
       /* offline — SSE + reconnect reconciliation below still catch up */
     }
     if (disposed) return;
-    try {
-      source = new EventSource('/api/v1/notifications/stream');
+    if (typeof EventSource === 'undefined') return; // the hydrate delivered the backlog
+    stream = brainEventStream('/api/v1/notifications/stream', (source) => {
       source.addEventListener('appended', foldAppended);
       // R5-09 — reconcile from the durable snapshot on every (re)connect. The
       // stream carries only FUTURE frames, so an item created during a
@@ -133,14 +135,12 @@ export function installServerNotifications(): () => void {
           }
         })();
       });
-    } catch {
-      /* EventSource unavailable — the initial hydrate still delivered the backlog */
-    }
+    });
   })();
 
   return () => {
     disposed = true;
-    source?.close();
-    source = null;
+    stream?.close();
+    stream = null;
   };
 }

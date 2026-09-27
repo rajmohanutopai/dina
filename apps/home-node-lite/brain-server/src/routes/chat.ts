@@ -29,6 +29,8 @@ import {
 import { deliverWatchResult } from '@dina/brain/notifications';
 import { type WatchFilter, type WorkflowEvent, type WorkflowTask } from '@dina/core';
 
+import { openEventStream } from './sse';
+
 import type { ServiceQueryEventDetails } from '@dina/brain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -160,7 +162,7 @@ export function registerChatRoutes(
       // `getWatchService()` is null, so a missing/malformed policy fails CLOSED
       // (`watchActive: false` → suppressed). On the split server the inbox
       // dual-writes THROUGH Core into identity.sqlite (wired in boot), so the
-      // result survives restart and the `/web` client reads it over the
+      // result survives restart and the web app reads it over the
       // `/api/v1/notifications` route + SSE. Non-watch service results keep the
       // chat lifecycle-card path.
       const task = body.task as WorkflowTask;
@@ -235,19 +237,7 @@ export function registerChatRoutes(
           ? req.query.threadId
           : 'main';
 
-      // Headers must land before any body bytes. Fastify wants to set
-      // its own Content-Type, so we send headers via the raw socket.
-      reply.raw.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        // Disable buffering at reverse proxies (e.g., nginx).
-        'X-Accel-Buffering': 'no',
-      });
-
-      // SSE retry hint — if the connection drops, EventSource waits
-      // this long before reconnecting (default would be ~3s).
-      reply.raw.write('retry: 2000\n\n');
+      openEventStream(reply);
 
       // Flush existing history so a fresh subscriber sees the current
       // thread state without a separate GET. `getThread` returns the

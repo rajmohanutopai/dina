@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, SectionList, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, SectionList, Pressable } from 'react-native';
 
 import {
   getUpcomingReminders,
@@ -10,6 +10,7 @@ import {
   type ReminderUIItem,
   type ReminderGroup,
 } from '../src/hooks/useReminders';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 /**
@@ -49,20 +50,12 @@ export default function RemindersScreen() {
 
   const onDismiss = useCallback(
     (item: ReminderUIItem) => {
-      Alert.alert(
-        'Dismiss reminder?',
-        item.message,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Dismiss',
-            style: 'destructive',
-            onPress: () => {
-              void dismissReminder(item.id).then(() => refresh());
-            },
-          },
-        ],
-        { cancelable: true },
+      void confirmDecision('Dismiss reminder?', item.message, 'Dismiss', true).then(
+        async (dismiss) => {
+          if (!dismiss) return;
+          await dismissReminder(item.id);
+          refresh();
+        },
       );
     },
     [refresh],

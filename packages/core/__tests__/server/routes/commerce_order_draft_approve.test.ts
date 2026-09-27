@@ -36,6 +36,7 @@ import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
@@ -170,7 +171,7 @@ const submit = async (body: Record<string, unknown>) =>
 /** The owner is present unless a case says otherwise. */
 async function provePresence(): Promise<void> {
   installOwnerPresenceVerifier(async (p) => p === 'correct horse');
-  await proveOwnerPresence('correct horse', Date.now());
+  await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
 }
 
 beforeEach(() => {

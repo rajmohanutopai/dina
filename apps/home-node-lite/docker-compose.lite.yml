@@ -52,6 +52,10 @@ services:
     # mount semantics.
     volumes:
       - dina-core-vault:/var/lib/dina
+      # The web app bundle (WEB_OWNER_SURFACE_PLAN §3.2). Core serves it at
+      # /app/ when DINA_CORE_WEB_UI=1; the host path is empty (and the mount
+      # harmless) unless `install-lite.sh --web-ui` built it.
+      - ./web/dist:/web-dist:ro
     environment:
       # Bind all interfaces — docker network routes traffic to the
       # container's 127.0.0.1 only if the server binds 0.0.0.0.
@@ -62,6 +66,20 @@ services:
       DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
       DINA_ENDPOINT_MODE: ${DINA_ENDPOINT_MODE:-release}
       DINA_CORE_OWNER_CONSOLE: ${DINA_CORE_OWNER_CONSOLE:-1}
+      # Security mode (see .env.example). Set before the FIRST boot, the seed
+      # is stored wrapped under this passphrase, and the powerful owner
+      # actions (spending, pairing, plugin consent, money cards) need it typed
+      # within five minutes. Empty: convenience mode, which has no passphrase
+      # to ask for and so gates none of them. A wrapped node needs it on every
+      # boot.
+      DINA_UNLOCK_PASSPHRASE: ${DINA_UNLOCK_PASSPHRASE:-}
+      # The web app — `install-lite.sh --web-ui` writes DINA_CORE_WEB_UI=1 into
+      # .env. The page reaches Brain cross-origin at Brain's HOST-published
+      # address (the browser cannot resolve `brain-lite`), which Brain allows
+      # through DINA_BRAIN_WEB_ORIGIN below.
+      DINA_CORE_WEB_UI: ${DINA_CORE_WEB_UI:-}
+      DINA_CORE_WEB_BUNDLE_DIR: /web-dist
+      DINA_CORE_WEB_BRAIN_ORIGIN: http://127.0.0.1:${DINA_BRAIN_PORT_EXTERNAL:-8200}
       # PDS credentials — only required when Core needs to createAccount
       # on first boot. Empty values skip publish (dev-mode).
       DINA_PDS_HANDLE: ${DINA_PDS_HANDLE:-}
@@ -129,27 +147,18 @@ services:
       DINA_OPENAI_API_KEY: ${DINA_OPENAI_API_KEY:-}
       DINA_GEMINI_API_KEY: ${DINA_GEMINI_API_KEY:-}
       DINA_MODEL_DEFAULT: ${DINA_MODEL_DEFAULT:-anthropic:claude-haiku-4-5}
-      # Web SPA serving — when `install-lite.sh --web-ui` runs, it
-      # writes `DINA_BRAIN_WEB_UI=1` into .env and that flows through
-      # here. The SPA bundle is bind-mounted into the container at
-      # /web-dist; brain reads it via `DINA_BRAIN_WEB_BUNDLE_DIR`.
-      # Default is the empty string so the regular install path stays
-      # silent — `webUI: 'disabled'` in /readyz.
-      DINA_BRAIN_WEB_UI: ${DINA_BRAIN_WEB_UI:-}
-      DINA_BRAIN_WEB_BUNDLE_DIR: /web-dist
+      # The Core-served web app reads Brain's /api/* cross-origin; Brain allows
+      # exactly that origin (Core's HOST-published address). Empty = no CORS.
+      # `install-lite.sh --web-ui` writes it into .env.
+      DINA_BRAIN_WEB_ORIGIN: ${DINA_BRAIN_WEB_ORIGIN:-}
     ports:
       # Host LOOPBACK only — Brain's API is unauthenticated, so it must not be
       # published on a public interface. `127.0.0.1:8200` lets a local operator
-      # (or an SSH tunnel) reach the optional web UI without exposing the vault-
-      # write surface to the network. Core↔Brain traffic uses the compose
-      # network (service DNS), not this published port.
+      # (or an SSH tunnel) reach it — the Core-served web app calls it from the
+      # browser — without exposing the vault-write surface to the network.
+      # Core↔Brain traffic uses the compose network (service DNS), not this
+      # published port.
       - "127.0.0.1:${DINA_BRAIN_PORT_EXTERNAL:-8200}:8200"
-    volumes:
-      # Web SPA bundle bind-mount. The host path is empty (so the
-      # mount is harmless) when --web-ui wasn't passed; install-lite
-      # creates it before `docker compose up` so brain finds
-      # /web-dist/index.html on boot.
-      - ./web/dist:/web-dist:ro
     networks:
       - dina-lite
     # Task 7.18 — Brain waits for Core to be healthy before booting.

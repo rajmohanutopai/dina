@@ -16,13 +16,14 @@ export function confirmDecision(
   message: string,
   confirmLabel: string,
   destructive = false,
+  cancelLabel = 'Cancel',
 ): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       title,
       message,
       [
-        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: cancelLabel, style: 'cancel', onPress: () => resolve(false) },
         {
           text: confirmLabel,
           style: destructive ? 'destructive' : 'default',

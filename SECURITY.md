@@ -124,13 +124,24 @@ Telegram  → Telegram API   → Telegram bot  → Ed25519 → Core
 Brain     →                                  Ed25519 → Core
 ```
 
-One auth model everywhere. The browser is the only component that can't do Ed25519 natively, so the admin backend bridges that gap — same pattern as Telegram.
+One auth model everywhere. The browser is the only component that can't do Ed25519 natively, so the admin backend bridges that gap — same pattern as Telegram. (Superseded for the owner's own screens: current browsers sign Ed25519 with WebCrypto, and the web app does so as an owner device — see "Owner control from a browser" below.)
 
 **Session security:**
 - Session ID: 32-byte random hex
 - CSRF token: 32-byte random hex, constant-time comparison
 - Cookie: `HttpOnly; SameSite=Strict; Max-Age=86400`
 - Session TTL: 24 hours (configurable)
+
+### Owner control from a browser — the owner device
+
+On a server node the owner uses the web app, which **Core** serves at `/app/` (`DINA_CORE_WEB_UI=1`; `docs/WEB_OWNER_SURFACE_PLAN.md`). The browser is paired once as a device of role `owner`: it makes an Ed25519 key with WebCrypto as **non-extractable** (the page can sign with it; no script can read it out), and the owner proves ownership once with the owner capability. The capability is not stored.
+
+- **Every owner request is signed** like any device request (`X-DID`, `X-Timestamp`, `X-Nonce`, `X-Signature`, ±5-minute window, nonce replay cache). Core's HTTP entry point verifies it and marks the request as the owner exactly as the capability header does, only on the owner routes; the route guards are unchanged. Off those routes an owner device reaches nothing, and a failed owner signature is refused at the entry point.
+- **Brain never sees owner authority.** The page reads Brain's `/api/*` cross-origin (Brain allows exactly Core's origin, `DINA_BRAIN_WEB_ORIGIN`), so nothing Brain returns becomes a page on Core's origin. Brain's own copy of the app and the path that forwarded the capability through Brain are removed.
+- **A person must be present** (the owner passphrase within five minutes) for spending, staff authority, pairing any device, plugin consent and updates, invites, buyer and supplier settings, choosing a reasoning backend, the yes on money and staff-escalation cards, and lowering an agent's supervision — on the phone and the web alike. Revoking never needs it. The proof belongs to the surface that made it: a passphrase typed in one browser lets that browser act, not another browser or a script holding the capability. **This holds on a node in security mode** (a passphrase-wrapped seed: set on the phone at onboarding, `DINA_UNLOCK_PASSPHRASE` before a server's first boot). A convenience-mode node has no passphrase to ask for, so none of these actions is gated there.
+- **Remote use goes through a tunnel.** Core and Brain stay on loopback; a browser on another machine reaches both with `ssh -L 8100:127.0.0.1:8100 -L 8200:127.0.0.1:8200 <host>` or over a private network (Tailscale). Both appear as `127.0.0.1` there, so the origins and the CORS rule hold unchanged. Never publish Brain's port: its API is unauthenticated by design.
+- **Residual risk:** the page beside owner authority is the whole app, not a small console. The CSP runs only the app's own scripts (no inline, no `eval`); React renders text, not markup; card links pass `safe_url`; an injected script could act as the owner while the page is open but could not take the key away; on a security-mode node the powerful actions still need the passphrase, while on a convenience-mode node it could do all of them. The phone has no such risk (native views run no HTML).
+- **Lost laptop:** revoke its owner device (Settings → Owner access on it, or Agents from any owner surface).
 
 ### 3. Ed25519 Device Keys (CLI / Paired Devices)
 

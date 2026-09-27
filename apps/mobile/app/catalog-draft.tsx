@@ -19,7 +19,6 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -30,9 +29,11 @@ import {
   View,
 } from 'react-native';
 
-import { OwnerCommerceHttpError } from '@dina/core';
-
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { CatalogDraft } from '@dina/core';
@@ -50,20 +51,27 @@ export default function CatalogDraftScreen(): React.ReactElement {
   const params = useLocalSearchParams<{ draft_id?: string }>();
   const draftId = typeof params.draft_id === 'string' ? params.draft_id : '';
   const [draft, setDraft] = useState<CatalogDraft | null>(null);
+  /** Why the draft could not load (gone, or a browser not connected as the owner). */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [cellEdit, setCellEdit] = useState<{ row: number; column: string; value: string } | null>(
     null,
   );
-  const [presencePrompt, setPresencePrompt] = useState<{ retry: () => Promise<void> } | null>(null);
-  const [passphrase, setPassphrase] = useState('');
 
   const reload = useCallback(async () => {
     const client = getOwnerCommerceClient();
     if (client === null || draftId === '') return;
-    const answer = await client.listDrafts(CATALOG_ID);
-    const found = answer.drafts.find((d) => d.draftId === draftId) ?? null;
+    let found: CatalogDraft | null;
+    try {
+      const answer = await client.listDrafts(CATALOG_ID);
+      found = answer.drafts.find((d) => d.draftId === draftId) ?? null;
+    } catch (err) {
+      setLoadError(ownerErrorText(err));
+      return;
+    }
     setDraft(found);
+    setLoadError(found === null ? 'This draft is no longer here.' : null);
     // The photograph, beside the values — the screens' whole point (§6).
     if (found?.photoExtraction != null && pages.length === 0) {
       const loaded: string[] = [];
@@ -83,55 +91,52 @@ export default function CatalogDraftScreen(): React.ReactElement {
     void reload();
   }, [reload]);
 
-  /** Run an operation; on `no_user_presence` raise the passphrase sheet. */
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) => showMessage('Refused', ownerErrorText(err)),
+    onSettled: () => void reload(),
+    reason: 'This step signs your catalog, so Dina checks a person is here.',
+  });
+
+  /** Run an owner action; a lapsed presence raises the passphrase sheet, then retries. */
   const withPresence = useCallback(
     async (operation: () => Promise<void>) => {
       setBusy(true);
       try {
-        await operation();
-      } catch (err) {
-        if (err instanceof OwnerCommerceHttpError && err.errorKey === 'no_user_presence') {
-          setPresencePrompt({ retry: operation });
-        } else {
-          Alert.alert('Refused', (err as Error).message);
-        }
+        await runGated(operation);
       } finally {
         setBusy(false);
-        void reload();
       }
     },
-    [reload],
+    [runGated],
   );
-
-  const submitPresence = useCallback(async () => {
-    const client = getOwnerCommerceClient();
-    if (client === null || presencePrompt === null) return;
-    const retry = presencePrompt.retry;
-    setBusy(true);
-    try {
-      await client.provePresence(passphrase);
-      setPresencePrompt(null);
-      setPassphrase('');
-      await retry();
-    } catch {
-      Alert.alert('Not verified', 'That passphrase did not verify. Try again.');
-    } finally {
-      setBusy(false);
-      void reload();
-    }
-  }, [passphrase, presencePrompt, reload]);
 
   if (draft === null) {
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ title: 'Catalog draft' }} />
-        <ActivityIndicator style={styles.spinner} />
+        {loadError === null ? (
+          <ActivityIndicator style={styles.spinner} />
+        ) : (
+          <Text style={styles.loadError} testID="catalog-draft-load-error">
+            {loadError}
+          </Text>
+        )}
       </View>
     );
   }
 
   const client = getOwnerCommerceClient();
-  const findings = draft.findings as { refusal?: string; row?: number; column?: string; detail?: string }[];
+  const findings = draft.findings as {
+    refusal?: string;
+    row?: number;
+    column?: string;
+    detail?: string;
+  }[];
   const needsRepair = draft.items.length === 0 || findings.length > 0;
 
   return (
@@ -141,7 +146,10 @@ export default function CatalogDraftScreen(): React.ReactElement {
         {/* The photograph, always beside the values. */}
         {pages.map((uri, index) =>
           uri === '' ? (
-            <Text key={index} style={styles.pageGone}>{`Page ${String(index + 1)} unavailable`}</Text>
+            <Text
+              key={index}
+              style={styles.pageGone}
+            >{`Page ${String(index + 1)} unavailable`}</Text>
           ) : (
             <Image key={index} source={{ uri }} style={styles.page} resizeMode="contain" />
           ),
@@ -205,7 +213,9 @@ export default function CatalogDraftScreen(): React.ReactElement {
               const record = item as unknown as Record<string, unknown>;
               return (
                 <View key={index} style={styles.rowCard} testID={`review-item-${String(index)}`}>
-                  <Text style={styles.rowNumber}>{String(record.name ?? record.product ?? '')}</Text>
+                  <Text style={styles.rowNumber}>
+                    {String(record.name ?? record.product ?? '')}
+                  </Text>
                   {Object.entries(provenance).map(([field, state]) => (
                     <View key={field} style={styles.fieldRow}>
                       <Text style={styles.cell}>
@@ -241,7 +251,11 @@ export default function CatalogDraftScreen(): React.ReactElement {
             testID="draft-confirm"
             style={styles.primaryButton}
             disabled={busy}
-            onPress={() => void withPresence(async () => { await client?.confirm(draftId); })}
+            onPress={() =>
+              void withPresence(async () => {
+                await client?.confirm(draftId);
+              })
+            }
           >
             <Text style={styles.primaryLabel}>Confirm these products</Text>
           </Pressable>
@@ -251,7 +265,11 @@ export default function CatalogDraftScreen(): React.ReactElement {
             testID="draft-prepare"
             style={styles.primaryButton}
             disabled={busy}
-            onPress={() => void withPresence(async () => { await client?.prepare(draftId); })}
+            onPress={() =>
+              void withPresence(async () => {
+                await client?.prepare(draftId);
+              })
+            }
           >
             <Text style={styles.primaryLabel}>Build the catalog</Text>
           </Pressable>
@@ -283,7 +301,11 @@ export default function CatalogDraftScreen(): React.ReactElement {
             testID="draft-publish"
             style={styles.primaryButton}
             disabled={busy}
-            onPress={() => void withPresence(async () => { await client?.publish(draftId); })}
+            onPress={() =>
+              void withPresence(async () => {
+                await client?.publish(draftId);
+              })
+            }
           >
             <Text style={styles.primaryLabel}>Publish</Text>
           </Pressable>
@@ -356,37 +378,7 @@ export default function CatalogDraftScreen(): React.ReactElement {
 
       {/* §4.3 — the presence sheet: passphrase (or the biometric-released
           passphrase upstream), five-minute window, typed once per ceremony. */}
-      <Modal visible={presencePrompt !== null} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard} testID="presence-sheet">
-            <Text style={styles.sectionTitle}>Confirm it’s you</Text>
-            <Text style={styles.meta}>
-              This step signs your catalog, so Dina checks a person is here.
-            </Text>
-            <TextInput
-              testID="presence-passphrase"
-              style={styles.input}
-              secureTextEntry
-              placeholder="Your passphrase"
-              value={passphrase}
-              onChangeText={setPassphrase}
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setPresencePrompt(null);
-                  setPassphrase('');
-                }}
-              >
-                <Text style={styles.link}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="presence-submit" onPress={() => void submitPresence()}>
-                <Text style={styles.link}>Verify</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }
@@ -395,6 +387,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl },
   spinner: { marginTop: spacing.xl },
+  loadError: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    marginTop: spacing.xl,
+    textAlign: 'center',
+  },
   page: {
     width: '100%',
     height: 220,

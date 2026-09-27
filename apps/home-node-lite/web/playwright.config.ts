@@ -35,9 +35,11 @@ export default defineConfig({
   //   - functional MRS flows + judge calibration → autopilot bundle / Gemini
   //     key, run under playwright.functional.config.ts;
   //   - relay/** → drive EXTERNAL dina-nodes (which its own config auto-
-  //     restarts); they don't belong in the hermetic core+brain webServer run.
-  // Each has its own npm script (test:e2e:functional / :relay).
-  testIgnore: ['**/functional/**', '**/judge.calibration.spec.ts', '**/relay/**'],
+  //     restarts); they don't belong in the hermetic core+brain webServer run;
+  //   - services/** → need the relay, a provisioned identity and the scripted
+  //     provider, run under playwright.services.config.ts.
+  // Each has its own npm script (test:e2e:functional / :relay / :services).
+  testIgnore: ['**/functional/**', '**/judge.calibration.spec.ts', '**/relay/**', '**/services/**'],
   globalSetup: path.resolve(__dirname, '__e2e__', 'setup.ts'),
   retries: process.env.CI ? 1 : 0,
   workers: 1,

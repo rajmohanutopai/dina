@@ -9,6 +9,8 @@
  * store. Native returns the in-process client unchanged.
  */
 
+import { brainFetch } from './web_runtime';
+
 import type { ServiceConfigCoreClient } from '../hooks/useServiceConfigForm';
 import type { ServiceConfig, ServiceListing } from '@dina/core';
 
@@ -28,13 +30,13 @@ async function throwOnError(res: Response, label: string): Promise<void> {
 
 const httpServiceConfig: ServiceConfigCoreClient = {
   async serviceConfig(rkey?: string): Promise<ServiceConfig | null> {
-    const res = await fetch(configPath(rkey));
+    const res = await brainFetch(configPath(rkey));
     if (res.status === 404) return null; // not published yet
     await throwOnError(res, 'service_config');
     return (await res.json()) as ServiceConfig;
   },
   async putServiceConfig(config: ServiceConfig, rkey?: string): Promise<void> {
-    const res = await fetch(configPath(rkey), {
+    const res = await brainFetch(configPath(rkey), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(config),
@@ -43,13 +45,13 @@ const httpServiceConfig: ServiceConfigCoreClient = {
     await throwOnError(res, 'service_config publish');
   },
   async listServiceConfigs(): Promise<ServiceListing[]> {
-    const res = await fetch(`${BASE}/configs`);
+    const res = await brainFetch(`${BASE}/configs`);
     await throwOnError(res, 'service_config list');
     const body = (await res.json()) as { listings?: ServiceListing[] };
     return body.listings ?? [];
   },
   async deleteServiceConfig(rkey: string): Promise<void> {
-    const res = await fetch(configPath(rkey), { method: 'DELETE' });
+    const res = await brainFetch(configPath(rkey), { method: 'DELETE' });
     await throwOnError(res, 'service_config delete');
   },
 };

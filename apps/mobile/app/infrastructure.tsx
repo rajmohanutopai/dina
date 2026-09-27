@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +19,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
+import { confirmDecision } from '../src/services/confirm_decision';
 import {
   DEFAULT_APPVIEW_URL,
   DEFAULT_PDS_URL,
@@ -91,14 +91,14 @@ export default function InfrastructureScreen(): React.ReactElement {
         saveAppViewURL(nextAppView),
         saveServicesAppViewURL(nextServicesAppView),
       ]);
-      Alert.alert(
+      const restart = await confirmDecision(
         'Infrastructure saved',
         'Dina needs to restart to apply these endpoint changes.',
-        [
-          { text: 'Later', style: 'cancel' },
-          { text: 'Restart now', onPress: () => void reloadApp() },
-        ],
+        'Restart now',
+        false,
+        'Later',
       );
+      if (restart) await reloadApp();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

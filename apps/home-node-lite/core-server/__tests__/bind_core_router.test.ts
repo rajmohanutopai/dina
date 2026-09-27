@@ -397,7 +397,35 @@ describe('bindCoreRouter (task 4.13)', () => {
     await app.close();
   });
 
-  it('stamps owner authority on the approve/cancel decision verbs and nowhere else on the workflow tree', async () => {
+  it('names the capability as the owner principal, and strips any principal sent over the wire', async () => {
+    const coreRouter = new CoreRouter();
+    coreRouter.get(
+      '/v1/owner/agent-policies',
+      ((req: { ownerPrincipal?: string }) => ({
+        status: 200,
+        body: { principal: req.ownerPrincipal ?? null },
+      })) as never,
+      { auth: 'public' },
+    );
+    const app = await createServer({ config: baseConfig(), logger: silentLogger() });
+    bindCoreRouter({ coreRouter, app, ownerCapability: 'owner-secret' });
+    const owner = await app.inject({
+      method: 'GET',
+      url: '/v1/owner/agent-policies',
+      headers: { 'x-dina-owner-capability': 'owner-secret' },
+    });
+    expect(owner.json()).toEqual({ principal: 'capability' });
+    // Nothing on the wire can claim a principal: no field is read from headers.
+    const forged = await app.inject({
+      method: 'GET',
+      url: '/v1/owner/agent-policies',
+      headers: { 'x-owner-principal': 'device:did:key:z6MkForged' },
+    });
+    expect(forged.json()).toEqual({ principal: null });
+    await app.close();
+  });
+
+  it('stamps owner authority on the card reads and the decision verbs, and nowhere else on the workflow tree', async () => {
     const coreRouter = new CoreRouter();
     const project = (req: { callerType?: string }) => ({
       status: 200,
@@ -410,7 +438,11 @@ describe('bindCoreRouter (task 4.13)', () => {
       .post('/v1/workflow/tasks/claim', project as never, { auth: 'public' })
       .post('/v1/workflow/tasks', project as never, { auth: 'public' })
       .get('/v1/workflow/tasks', project as never, { auth: 'public' })
-      .get('/v1/workflow/tasks/:id', project as never, { auth: 'public' });
+      .get('/v1/workflow/tasks/:id', project as never, { auth: 'public' })
+      .get('/v1/workflow/tasks/:id/events', project as never, { auth: 'public' })
+      .post('/v1/workflow/tasks/:id', project as never, { auth: 'public' })
+      .post('/v1/service/respond', project as never, { auth: 'public' })
+      .get('/v1/service/respond', project as never, { auth: 'public' });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app, ownerCapability: 'owner-secret' });
@@ -425,9 +457,16 @@ describe('bindCoreRouter (task 4.13)', () => {
     expect(await caller('POST', '/v1/workflow/tasks/t-1/complete')).toBeNull();
     expect(await caller('POST', '/v1/workflow/tasks/claim')).toBeNull();
     expect(await caller('POST', '/v1/workflow/tasks')).toBeNull();
-    expect(await caller('GET', '/v1/workflow/tasks/t-1')).toBeNull();
     // NEGOTIATION_PLAN §4.7: the owner console LISTS its cards — the read only.
     expect(await caller('GET', '/v1/workflow/tasks')).toBe('owner');
+    // WEB_OWNER_SURFACE_PLAN §3.5: the web inbox reads one card (GET only;
+    // nothing below it, no other verb on its path) and answers a declined
+    // service query with `unavailable` (POST only).
+    expect(await caller('GET', '/v1/workflow/tasks/t-1')).toBe('owner');
+    expect(await caller('POST', '/v1/workflow/tasks/t-1')).toBeNull();
+    expect(await caller('GET', '/v1/workflow/tasks/t-1/events')).toBeNull();
+    expect(await caller('POST', '/v1/service/respond')).toBe('owner');
+    expect(await caller('GET', '/v1/service/respond')).toBeNull();
     // A wrong capability stamps nothing on the decision verbs either.
     expect(
       (

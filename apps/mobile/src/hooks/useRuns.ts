@@ -30,21 +30,22 @@ function progressLabel(produced: number, max: number | null): string {
   return max === null ? String(produced) : `${produced} / ${max}`;
 }
 
-/** The active (non-terminal-first) runs. */
+/**
+ * The active (non-terminal-first) runs. A refusal is raised, not read as "no
+ * runs": a browser not connected as the owner must be told so, not shown an
+ * empty list.
+ */
 export async function getActiveRuns(): Promise<RunUIItem[]> {
   const client = getOwnerRunClient();
   if (client === null) return [];
-  try {
-    const { runs } = await client.runList();
-    return runs.map((r) => ({ ...r, progressLabel: progressLabel(r.produced_count, r.max_count) }));
-  } catch {
-    return [];
-  }
+  const { runs } = await client.runList();
+  return runs.map((r) => ({ ...r, progressLabel: progressLabel(r.produced_count, r.max_count) }));
 }
 
 /** #7 — owner-initiated start of an interactive run. Mints a stable
  *  `idempotency_key` and starts the run through the owner-only `/v1/run/start`
- *  route. Returns the new run id, or null on failure. */
+ *  route. Returns the new run id, null when no owner client is wired; a
+ *  refusal is raised so the screen can say why. */
 export interface StartRunInput {
   serviceUri: string;
   providerDid: string;
@@ -60,24 +61,20 @@ export interface StartRunInput {
 export async function startRun(input: StartRunInput): Promise<string | null> {
   const client = getOwnerRunClient();
   if (client === null) return null;
-  try {
-    const idempotencyKey = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const res = await client.runStart({
-      service_uri: input.serviceUri,
-      provider_did: input.providerDid,
-      persona: input.persona,
-      idempotency_key: idempotencyKey,
-      ttl_seconds: input.ttlSeconds,
-      ...(input.intervalMs !== undefined ? { interval_ms: input.intervalMs } : {}),
-      ...(input.maxCount !== undefined ? { max_count: input.maxCount } : {}),
-      ...(input.providerGrantId !== undefined && input.providerGrantId !== ''
-        ? { provider_grant_id: input.providerGrantId }
-        : {}),
-    });
-    return res.run_id;
-  } catch {
-    return null;
-  }
+  const idempotencyKey = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const res = await client.runStart({
+    service_uri: input.serviceUri,
+    provider_did: input.providerDid,
+    persona: input.persona,
+    idempotency_key: idempotencyKey,
+    ttl_seconds: input.ttlSeconds,
+    ...(input.intervalMs !== undefined ? { interval_ms: input.intervalMs } : {}),
+    ...(input.maxCount !== undefined ? { max_count: input.maxCount } : {}),
+    ...(input.providerGrantId !== undefined && input.providerGrantId !== ''
+      ? { provider_grant_id: input.providerGrantId }
+      : {}),
+  });
+  return res.run_id;
 }
 
 /** Pause the pull loop (keeps the run). Returns the new state, or null. */

@@ -16,7 +16,7 @@
 
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 
 import { effectiveDiscoverability, type ServiceListingStatus } from '@dina/protocol';
 
@@ -29,8 +29,10 @@ import {
   saveServiceConfig,
   type ServiceListing,
 } from '../src/hooks/useServiceConfigForm';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { reloadApp } from '../src/services/reload_app';
 import { saveRolePreference } from '../src/services/role_preference';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
 import type { NodeRole } from '../src/services/bootstrap';
@@ -84,16 +86,16 @@ export default function MyListingsScreen(): React.ReactElement {
     setRole(next);
     try {
       await saveRolePreference(next);
-      Alert.alert(
+      const restart = await confirmDecision(
         'Role updated',
         `Saved as ${next}. Dina needs to restart to apply this.`,
-        [
-          { text: 'Later', style: 'cancel' },
-          { text: 'Restart now', onPress: () => void reloadApp() },
-        ],
+        'Restart now',
+        false,
+        'Later',
       );
+      if (restart) await reloadApp();
     } catch (err) {
-      Alert.alert('Error', (err as Error).message ?? 'Failed to save role');
+      showMessage('Error', (err as Error).message ?? 'Failed to save role');
     }
   }, []);
 
@@ -107,7 +109,7 @@ export default function MyListingsScreen(): React.ReactElement {
         await saveServiceConfig({ ...listing.config, status: next }, rkey);
         await reload();
       } catch (err) {
-        Alert.alert('Error', (err as Error).message ?? 'Failed to update listing');
+        showMessage('Error', (err as Error).message ?? 'Failed to update listing');
       }
     },
     [listings, reload],
@@ -117,23 +119,21 @@ export default function MyListingsScreen(): React.ReactElement {
     (rkey: string) => {
       const listing = listings.find((l) => l.rkey === rkey);
       const name = listing?.config.name ?? rkey;
-      Alert.alert('Delete listing', `Permanently delete “${name}”? This unpublishes and removes it.`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await deleteServiceListing(rkey);
-                await reload();
-              } catch (err) {
-                Alert.alert('Error', (err as Error).message ?? 'Failed to delete listing');
-              }
-            })();
-          },
-        },
-      ]);
+      void (async () => {
+        const remove = await confirmDecision(
+          'Delete listing',
+          `Permanently delete “${name}”? This unpublishes and removes it.`,
+          'Delete',
+          true,
+        );
+        if (!remove) return;
+        try {
+          await deleteServiceListing(rkey);
+          await reload();
+        } catch (err) {
+          showMessage('Error', (err as Error).message ?? 'Failed to delete listing');
+        }
+      })();
     },
     [listings, reload],
   );

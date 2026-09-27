@@ -8,9 +8,11 @@
  * sender DID — but the signature matches the native peer.
  */
 
+import { brainFetch } from '../services/web_runtime';
+
 async function postQuarantineAction(action: 'accept' | 'block', senderDID: string): Promise<boolean> {
   try {
-    const res = await fetch(`/api/v1/d2d/quarantine/${action}`, {
+    const res = await brainFetch(`/api/v1/d2d/quarantine/${action}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sender_did: senderDID }),

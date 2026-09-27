@@ -29,7 +29,13 @@
  *   DINA_ARCHITECTURE_OVERVIEW.md "transport-agnostic kernel" principle.
  */
 
-import { authenticateRequest, type AuthRequest, type AuthResult } from '../auth/middleware';
+import { resolveCallerType } from '../auth/caller_type';
+import {
+  authenticateOwnerDevice,
+  authenticateRequest,
+  type AuthRequest,
+  type AuthResult,
+} from '../auth/middleware';
 
 export interface CoreRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -109,6 +115,15 @@ export interface CoreRequest {
    * See SECURITY.md. Fabricating this field without the secret is still rejected.
    */
   ownerCapability?: string;
+  /**
+   * WHICH owner principal sent this (WEB_OWNER_SURFACE_PLAN §3.8): the
+   * capability header, or one paired owner device. Stamped by the host's
+   * owner entry point next to `ownerCapability`, never taken from the wire;
+   * absent on in-process dispatch (the phone's own app). Owner presence is
+   * kept per principal, so a passphrase typed at one surface does not let
+   * another act (`commerce/owner_presence.ts`).
+   */
+  ownerPrincipal?: string;
 }
 
 export interface CoreResponse {
@@ -375,6 +390,43 @@ export function authenticateCore(req: CoreRequest): AuthResult {
     // pre-dispatch auth step (router.ts handle()) and surface as a 500 / crash
     // the MsgBox RPC handler, instead of the uniform 401 every other rejection
     // returns. Don't echo the offending value (it's attacker-controlled).
+    return {
+      authenticated: false,
+      rejectedAt: 'signature',
+      reason: 'malformed authentication material',
+    };
+  }
+}
+
+/**
+ * WEB_OWNER_SURFACE_PLAN §3.3 — does this request name a paired OWNER device
+ * in `X-DID`? No cryptography and no side effects (no nonce spent): the host
+ * uses it to decide whether the owner-device path applies before verifying,
+ * so a staff or agent device signing an owner-surface path falls through to
+ * the ordinary pipeline untouched.
+ */
+export function namesOwnerDevice(req: CoreRequest): boolean {
+  const did = req.headers['x-did'] ?? req.headers['X-DID'] ?? '';
+  return did !== '' && resolveCallerType(did).callerType === 'owner_device';
+}
+
+/**
+ * WEB_OWNER_SURFACE_PLAN §3.3 — verify a request signed by a paired owner
+ * device (signature, window, nonce, rate limit, role). The host's owner
+ * entry point calls this on its owner surface and, on success, marks the
+ * request exactly as the owner capability header does. Fails closed on
+ * malformed material, like `authenticateCore`.
+ */
+export function authenticateOwnerDeviceCore(req: CoreRequest): AuthResult {
+  try {
+    return authenticateOwnerDevice({
+      method: req.method,
+      path: req.path,
+      query: serialiseQuery(req.query),
+      body: req.rawBody,
+      headers: withAuthHeaderAliases(req.headers),
+    });
+  } catch {
     return {
       authenticated: false,
       rejectedAt: 'signature',

@@ -21,11 +21,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { markNotificationRead } from '@dina/brain/notifications';
 
 import { approvePending, denyPending, getApprovalLifecycle } from '../hooks/useServiceInbox';
+import { showMessage } from '../services/show_message';
 import { colors, radius, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
@@ -156,7 +157,7 @@ export function InlineVaultReadApprovalCard({
       } catch {
         /* fall through to surface the original error */
       }
-      Alert.alert('Error', (err as Error).message ?? 'Failed to update approval');
+      showMessage('Error', (err as Error).message ?? 'Failed to update approval');
       return false;
     },
     [],

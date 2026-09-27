@@ -30,6 +30,7 @@ import {
   installStaffPresenceVerifier,
   proveOwnerPresence,
   proveStaffPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
 import {
   createCommerceRuntime,
@@ -246,7 +247,7 @@ describe('ranking and award', () => {
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
     );
     expect(noPresence.status).toBe(403);
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const mark = sent.length;
     const award = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
@@ -306,7 +307,7 @@ describe('ranking and award', () => {
     const opened = await openTender();
     const tenderId = String(opened.body.tender_id);
     quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const named = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', {
         tender_id: tenderId,
@@ -354,7 +355,7 @@ describe('ranking and award', () => {
     const opened = await openTender();
     const tenderId = String(opened.body.tender_id);
     quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const awarded = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', {
         tender_id: tenderId,
@@ -423,7 +424,7 @@ describe('owner cards that outlive their question (integration report 2026-09-27
 
   it('an award takes the "tender ready" card down', async () => {
     const { tenderId, start } = await readyTender();
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     // The counters' windows close, so the award is free to go.
     clockOffset = 200_000;
     await runNegotiationTick(start + 200_000);
@@ -462,7 +463,7 @@ describe('owner cards that outlive their question (integration report 2026-09-27
         [SUPPLIER_B, 'not_awarded'],
       ].sort(),
     );
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const late = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
     );
@@ -563,7 +564,7 @@ describe('review fixes on the routes', () => {
         target_total: { currency: 'INR', minor_units: '45000' },
       }),
     );
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const award = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
     );
@@ -653,7 +654,7 @@ describe('dual review round 2 — pinned fixes', () => {
     clockOffset = 100_000;
     expect(await runNegotiationTick(start + 100_000)).toBe(0);
     expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('ready');
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const early = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
     );
@@ -700,7 +701,7 @@ describe('dual review round 2 — pinned fixes', () => {
       }),
     );
     expect(manual.status).toBe(202);
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     clockOffset = 181_000;
     const award = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
@@ -727,7 +728,7 @@ describe('dual review round 2 — pinned fixes', () => {
     const onReady = await counterOn(SUPPLIER_B, 'q-bbbb');
     expect(onReady.status).toBe(409);
     expect((onReady.body as { error: string }).error).toBe('tender_closed');
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     expect(
       (
         await router.handle(
@@ -755,7 +756,7 @@ describe('dual review round 3 — pinned fixes', () => {
     quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
     const start = Date.now();
     expect(await runNegotiationTick(start)).toBe(2);
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     // First windows closed, no sweep yet: a revision may have been lost.
     clockOffset = 181_000;
     expect(((await award(tenderId)).body as { error: string }).error).toBe('counter_in_flight');
@@ -798,7 +799,7 @@ describe('dual review round 3 — pinned fixes', () => {
     await runNegotiationTick(start + 200_000);
     expect(counters().filter((w) => w.body.query_id === counterId)).toHaveLength(1);
     expect(runtime.buyerNegotiation.getCounter(counterId)?.attempts).toBe(1);
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     expect((await award(tenderId)).status).toBe(200);
   });
 });
@@ -1067,7 +1068,7 @@ describe('NEGOTIATION_PLAN §4.7 — a clerk awards inside the cap the owner set
       );
       const card = (asked.body as { task_id: string }).task_id;
       workflow.approve(card);
-      await proveOwnerPresence('correct horse', Date.now());
+      await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
       const held = await router.handle(call('POST', '/v1/commerce/orders/from_quote', holdBody));
       const approvalId = (held.body as { approval_id: string }).approval_id;
       expect(
@@ -1178,7 +1179,7 @@ describe('NEGOTIATION_PLAN §4.7 — a clerk awards inside the cap the owner set
   it('R4-2: a clerk cannot send a draft-bound order around the draft send', async () => {
     grant('50000');
     await tender();
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const held = await router.handle(
       call('POST', '/v1/commerce/orders/from_quote', {
         supplier_did: SUPPLIER_B,

@@ -4,7 +4,8 @@
  * admitted and the same routes reject a non-owner caller.
  */
 
-import { InProcessOwnerRunClient, OwnerRunHttpError } from '../../src/client/owner-run-client';
+import { inProcessOwnerDispatcher } from '../../src/client/owner-dispatch';
+import { OwnerRunControlClient, OwnerRunHttpError } from '../../src/client/owner-run-client';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import {
   InMemoryReasoningBackendRepository,
@@ -122,9 +123,9 @@ function startBody() {
   };
 }
 
-describe('InProcessOwnerRunClient (§12.5)', () => {
+describe('OwnerRunControlClient (§12.5)', () => {
   it('drives start → status → pause → resume → stop as the owner', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const started = await client.runStart(startBody());
     expect(started.run_id).toMatch(/^run-/);
     expect(started.effective_erasure_mode).toBe('logical_deletion');
@@ -141,7 +142,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     // The real owner path is this typed client (the mobile UI holds it), not a
     // hand-built CoreRequest. Prove the expiry reaches storage via /start and a
     // rebinding /update, surfaced back through /status as provider_grant_valid_until.
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const nowSec = Math.floor(NOW / 1000);
     const started = await client.runStart({
       ...startBody(),
@@ -172,7 +173,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('lists active runs through the owner client (L-BOUNDARY — no getRunService() leak)', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const a = await client.runStart(startBody());
     const b = await client.runStart(startBody());
     const { runs } = await client.runList();
@@ -183,7 +184,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('lists owner-safe connected reasoning backends through the typed client', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const { backends } = await client.reasoningBackends();
     expect(backends).toEqual([
       expect.objectContaining({
@@ -199,7 +200,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('registers and revokes a reasoning backend through the typed owner client', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const registered = await client.reasoningRegisterBackend({
       backend_id: 'remote-test',
       kind: 'remote_provider',
@@ -230,7 +231,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('records an owner decision on a classified action message', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const started = await client.runStart(startBody());
     messages.create(
       makeMsg({
@@ -251,7 +252,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('a deny/acknowledge kind-mismatch is rejected', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const started = await client.runStart(startBody());
     messages.create(
       makeMsg({
@@ -279,7 +280,7 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
   });
 
   it('lists + steers poll-mode watches through the owner client (PSVC-4)', async () => {
-    const client = new InProcessOwnerRunClient(router, OWNER_CAP);
+    const client = new OwnerRunControlClient(inProcessOwnerDispatcher(router, OWNER_CAP));
     const svc = getWatchService();
     if (svc === null) throw new Error('watch service not wired');
     const w = svc.createPollWatch({
@@ -342,7 +343,9 @@ describe('InProcessOwnerRunClient (§12.5)', () => {
     const wrong: CoreRequest = { ...forged, ownerCapability: 'wrong-guess' };
     expect((await router.handle(wrong)).status).toBe(403);
     // The genuine owner client (which holds the secret) still succeeds.
-    const ok = await new InProcessOwnerRunClient(router, OWNER_CAP).runStart(startBody());
+    const ok = await new OwnerRunControlClient(
+      inProcessOwnerDispatcher(router, OWNER_CAP),
+    ).runStart(startBody());
     expect(ok.run_id).toMatch(/^run-/);
   });
 });

@@ -34,7 +34,7 @@ import { getPublicKey } from '../../../src/crypto/ed25519';
 import { resetDeviceRegistry, getDeviceByDID } from '../../../src/devices/registry';
 import { setDeviceRepository } from '../../../src/devices/repository';
 import { deriveDIDKey, publicKeyToMultibase } from '../../../src/identity/did';
-import { setNodeDID, clearPairingState } from '../../../src/pairing/ceremony';
+import { setNodeDID, clearPairingState, generatePairingCode } from '../../../src/pairing/ceremony';
 import { createCoreRouter } from '../../../src/server/core_server';
 
 import type { PairedDevice } from '../../../src/devices/registry';
@@ -231,6 +231,14 @@ describe('POST /v1/pair/initiate — admin only', () => {
     expect(resp.status).toBe(201);
     expect((resp.body as { role: string }).role).toBe('staff');
   });
+
+  it("never mints role 'owner', whoever calls (WEB_OWNER_SURFACE_PLAN §3.3: only owner setup may)", async () => {
+    const resp = await router.handle(
+      signedReq('POST', '/v1/pair/initiate', { device_name: 'my laptop', role: 'owner' }, admin),
+    );
+    expect(resp.status).toBe(400);
+    expect((resp.body as { error: string }).error).not.toContain('owner');
+  });
 });
 
 describe('POST /v1/pair/complete — public, code-authenticated', () => {
@@ -368,6 +376,31 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     expect(resp.status).toBe(201);
     // The owner card names a proposer by this label, so the owner's words stand.
     expect(resolveCallerType(staff.did).name).toBe('Jiffy till connector');
+  });
+
+  it('an owner code (minted by owner setup) completes to an owner device, named by the owner, refused by the matrix', async () => {
+    const { code } = generatePairingCode({ deviceName: 'Office laptop', role: 'owner' });
+    const browser = makeActor();
+    const resp = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code,
+        public_key_multibase: publicKeyToMultibase(browser.pub),
+        device_name: 'Admin',
+      }),
+    );
+    expect(resp.status).toBe(201);
+    expect(getDeviceByDID(browser.did)?.role).toBe('owner');
+    const caller = resolveCallerType(browser.did);
+    expect(caller.callerType).toBe('owner_device');
+    // The owner's words stand, as for a staff device.
+    expect(caller.name).toBe('Office laptop');
+    // Signed straight at Core, an owner device reaches nothing: the matrix
+    // refuses it; only the host's owner entry point accepts it.
+    registerPublicKeyResolver((did) =>
+      did === admin.did ? admin.pub : did === browser.did ? browser.pub : null,
+    );
+    const direct = await router.handle(signedReq('GET', '/v1/devices', undefined, browser));
+    expect(direct.status).toBe(403);
   });
 
   it('rejects an unknown code', async () => {

@@ -19,7 +19,7 @@
 # Usage:
 #   ./apps/home-node-lite/install-lite.sh              # install (or re-run; idempotent)
 #   ./apps/home-node-lite/install-lite.sh --test-infra # install pointed at test-*.dinakernel.com (task 13.1)
-#   ./apps/home-node-lite/install-lite.sh --web-ui     # build SPA bundle + enable brain's /web/* mount
+#   ./apps/home-node-lite/install-lite.sh --web-ui     # build the web app + serve it from Core at /app/
 #   ./apps/home-node-lite/install-lite.sh --uninstall  # stop + remove containers + network + vault
 #   ./apps/home-node-lite/install-lite.sh --help       # usage summary
 
@@ -50,8 +50,9 @@ PDS_URL_DEFAULT="https://bsky.social"
 #   1. Builds the React Native Web SPA bundle from `apps/mobile/`
 #      into `apps/home-node-lite/web/dist/`. Requires Node + npm on
 #      the host; doesn't need Docker for the build step itself.
-#   2. Writes `DINA_BRAIN_WEB_UI=1` into `.env` so the brain
-#      container mounts `GET /web/*` and serves the bundle.
+#   2. Writes `DINA_CORE_WEB_UI=1` into `.env` so Core serves the
+#      bundle at `/app/`, and `DINA_BRAIN_WEB_ORIGIN` (Core's address) so
+#      Brain lets that page read its API cross-origin.
 #
 # Off by default — the web UI's trust boundary is the operator's
 # browser session (no Secure Enclave equivalent). See
@@ -94,9 +95,10 @@ Commands:
                    PDS publish entirely during local dev.
 
   --web-ui         Modifier on (no flag) — also build the React Native
-                   Web SPA bundle and enable the brain container's
-                   /web/* mount. After install completes, the UI is
-                   served at http://127.0.0.1:<brain-port>/web/. Read
+                   Web app and serve it from Core. After install
+                   completes, the app is at
+                   http://127.0.0.1:<core-port>/app/ (connect it as the
+                   owner under Settings → Owner access). Read
                    apps/home-node-lite/web/SECURITY.md before exposing
                    beyond loopback.
 
@@ -224,7 +226,9 @@ print_credentials() {
     printf "After recording it, remove the plaintext file with:\n"
     printf "  docker exec dina-core-lite rm /var/lib/dina/recovery-phrase.txt\n\n"
   else
-    info "no recovery-phrase file found — it was already removed or this is not first boot"
+    info "no recovery-phrase file found — it was already removed, this is not first boot, or"
+    info "the node runs in security mode (DINA_UNLOCK_PASSPHRASE set), which writes none: Core's"
+    info "first-boot log line says how to print the phrase once"
   fi
 
   local owner_capability
@@ -240,6 +244,10 @@ print_credentials() {
       "$core_port"
     printf "${C_BOLD}Owner key:${C_RESET} %s\n\n" "$owner_capability"
     printf "Use the owner console to pair coding agents and your approval phone.\n"
+    if grep -q '^DINA_CORE_WEB_UI=1' "$ENV_FILE" 2>/dev/null; then
+      printf "${C_BOLD}Web app:${C_RESET} http://127.0.0.1:%s/app/ (Settings → Owner access, paste the owner key once)\n" \
+        "$core_port"
+    fi
     printf "The key is authority; do not paste it into an agent conversation.\n\n"
   fi
 
@@ -254,8 +262,8 @@ print_credentials() {
 }
 
 build_web_ui() {
-  # Phase 11 — build the SPA bundle from apps/mobile so the brain
-  # container can serve it at /web/*. Idempotent: if the bundle is
+  # Phase 11 — build the web app from apps/mobile so Core can serve it
+  # at /app/. Idempotent: if the bundle is
   # already present and fresher than its sources, npm's build step
   # is still cheap (Metro re-uses incremental cache).
   require_tool node
@@ -269,16 +277,34 @@ build_web_ui() {
   )
   ok "SPA bundle ready at ${SCRIPT_DIR}/web/dist"
 
-  # Make sure brain reads DINA_BRAIN_WEB_UI=1 on boot. We append to
-  # .env only if the line isn't already present; idempotent across
-  # re-runs.
-  if ! grep -q '^DINA_BRAIN_WEB_UI=' "$ENV_FILE" 2>/dev/null; then
-    printf "\nDINA_BRAIN_WEB_UI=1\n" >>"$ENV_FILE"
-    ok "DINA_BRAIN_WEB_UI=1 appended to ${ENV_FILE}"
-  else
-    sed -i.bak 's|^DINA_BRAIN_WEB_UI=.*|DINA_BRAIN_WEB_UI=1|' "$ENV_FILE"
+  # Core serves the app at /app/; Brain lets exactly Core's address read
+  # its API cross-origin. Core admits both loopback names, and a browser
+  # treats 127.0.0.1 and localhost as different origins, so both are listed.
+  # Idempotent across re-runs.
+  local core_port
+  core_port=$(grep -E '^DINA_CORE_PORT_EXTERNAL=' "$ENV_FILE" 2>/dev/null \
+    | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')
+  core_port="${core_port:-8100}"
+  set_env_var DINA_CORE_WEB_UI 1
+  set_env_var DINA_BRAIN_WEB_ORIGIN "http://127.0.0.1:${core_port},http://localhost:${core_port}"
+  # Brain no longer serves the app (WEB_OWNER_SURFACE_PLAN §3.7).
+  if grep -q '^DINA_BRAIN_WEB_UI=' "$ENV_FILE" 2>/dev/null; then
+    sed -i.bak '/^DINA_BRAIN_WEB_UI=/d' "$ENV_FILE"
     rm -f "${ENV_FILE}.bak"
-    info "DINA_BRAIN_WEB_UI already in .env — set to 1"
+    info "removed DINA_BRAIN_WEB_UI from .env (Core serves the app now)"
+  fi
+}
+
+# Set KEY=VALUE in .env: replace the line if present, append it otherwise.
+set_env_var() {
+  local key="$1" value="$2"
+  if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    rm -f "${ENV_FILE}.bak"
+    info "${key} set in ${ENV_FILE}"
+  else
+    printf "\n%s=%s\n" "$key" "$value" >>"$ENV_FILE"
+    ok "${key} appended to ${ENV_FILE}"
   fi
 }
 
@@ -331,7 +357,7 @@ for arg in "$@"; do
       ;;
     --web-ui)
       WEB_UI=true
-      info "web-ui mode — building SPA bundle + enabling brain /web/* mount"
+      info "web-ui mode — building the web app + serving it from Core at /app/"
       ;;
     --uninstall|--help|-h)
       # Handled in the primary dispatcher below.

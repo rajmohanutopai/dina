@@ -38,7 +38,16 @@ import {
 import type { DeviceRole } from '../../devices/registry';
 import type { CoreRouter } from '../router';
 
+/** Roles `/v1/pair/initiate` may mint. */
 const VALID_ROLES = new Set<string>(['rich', 'thin', 'cli', 'agent', 'plugin', 'staff']);
+
+/**
+ * Roles a pending code may carry to `/v1/pair/complete`: the above, plus
+ * `owner` (WEB_OWNER_SURFACE_PLAN §3.3). Owner codes are minted only by the
+ * owner-setup route, behind the owner's credential and presence; this
+ * route's initiate never mints one, whoever calls it.
+ */
+const COMPLETE_ROLES = new Set<string>([...VALID_ROLES, 'owner']);
 
 /**
  * Wire-aliases for `role` accepted from external callers that follow
@@ -139,7 +148,9 @@ export function registerPairRoutes(router: CoreRouter): void {
       // the proposer by it (JIFFY review item 3), so a completing device may
       // not rename itself there. Other roles keep the label override.
       const ownerNamed =
-        intent?.role === 'staff' && intent.deviceName !== undefined && intent.deviceName !== '';
+        (intent?.role === 'staff' || intent?.role === 'owner') &&
+        intent.deviceName !== undefined &&
+        intent.deviceName !== '';
       const deviceName = ownerNamed
         ? (intent.deviceName as string)
         : overrideName !== ''
@@ -169,10 +180,10 @@ export function registerPairRoutes(router: CoreRouter): void {
           body: { error: 'device_name was not captured at initiate and no override supplied' },
         };
       }
-      if (!VALID_ROLES.has(roleRaw)) {
+      if (!COMPLETE_ROLES.has(roleRaw)) {
         return {
           status: 400,
-          body: { error: `role must be one of: ${[...VALID_ROLES].join(', ')}` },
+          body: { error: `role must be one of: ${[...COMPLETE_ROLES].join(', ')}` },
         };
       }
 

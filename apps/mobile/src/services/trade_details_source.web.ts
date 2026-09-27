@@ -9,6 +9,8 @@
 
 import { updateContactBody } from '@dina/core';
 
+import { brainFetch } from './web_runtime';
+
 import type { PostalAddress, TaxRegistration, TradeIdentityFinding } from '@dina/core';
 
 export interface TradeDetails {
@@ -20,7 +22,7 @@ export interface TradeDetails {
 }
 
 export async function loadTradeDetails(did: string): Promise<TradeDetails> {
-  const res = await fetch(`/api/v1/contacts/lookup?q=${encodeURIComponent(did)}`);
+  const res = await brainFetch(`/api/v1/contacts/lookup?q=${encodeURIComponent(did)}`);
   if (!res.ok) {
     // A failed read must NOT render as an empty form over a contact whose
     // identity Core holds: the owner would "correct" blanks over real data.
@@ -51,7 +53,7 @@ export async function saveTradeDetails(
   // second spelling of a tri-state wire is a second thing to drift. The
   // channels are OMITTED — this surface could not read them, so it must not
   // claim to set them.
-  const res = await fetch(`/api/v1/contacts/${encodeURIComponent(did)}`, {
+  const res = await brainFetch(`/api/v1/contacts/${encodeURIComponent(did)}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(

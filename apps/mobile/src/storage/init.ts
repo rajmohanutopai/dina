@@ -162,7 +162,7 @@ import {
 } from '@dina/core/storage';
 
 import { stopMobileCommercePlane } from '../services/commerce_plane';
-import { setOwnerRunClient } from '../services/owner_run_client';
+import { setOwnerDispatcher } from '../services/owner_dispatcher';
 
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
 // `Directory` object exposing `.uri`). op-sqlite's `location` parameter takes a
@@ -849,7 +849,7 @@ export async function shutdownAllPersistence(): Promise<void> {
     // plane's stop() clears it on the async dispose path, but this synchronous
     // teardown must not depend on that ordering.
     setFetchEligibilityProbe(null);
-    setOwnerRunClient(null);
+    setOwnerDispatcher(null);
     // Staging inbox — same cross-identity in-memory leak as chat/quarantine.
     // It caches in-flight /remember content (raw, pre-classification). Null
     // the repo first so the reset's repo.clear() is a no-op, and pass

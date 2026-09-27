@@ -8,8 +8,6 @@ import { Stack, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -19,9 +17,12 @@ import {
   View,
 } from 'react-native';
 
-import { OwnerCommerceHttpError } from '@dina/core';
-
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { isPresenceRefusal, ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { InviteListEntry } from '@dina/core';
@@ -44,8 +45,10 @@ export default function InvitesScreen(): React.ReactElement {
   const [minting, setMinting] = useState(false);
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
-  const [presencePrompt, setPresencePrompt] = useState<{ retry: () => Promise<void> } | null>(null);
-  const [passphrase, setPassphrase] = useState('');
+  /** The code just minted, shown so it can be copied where sharing is unavailable. */
+  const [minted, setMinted] = useState<string | null>(null);
+  /** Why the list could not load (a browser not connected as the owner). */
+  const [listError, setListError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const client = getOwnerCommerceClient();
@@ -56,8 +59,9 @@ export default function InvitesScreen(): React.ReactElement {
     try {
       const answer = await client.listInvites();
       setInvites(answer.invites);
-    } catch {
-      // The list is best-effort surface; actions report their own errors.
+      setListError(null);
+    } catch (err) {
+      setListError(ownerErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -69,104 +73,83 @@ export default function InvitesScreen(): React.ReactElement {
     }, [reload]),
   );
 
-  /** Run the mint; on `no_user_presence` raise the passphrase sheet. */
-  const withPresence = useCallback(
-    async (operation: () => Promise<void>) => {
-      setMinting(true);
-      try {
-        await operation();
-      } catch (err) {
-        if (err instanceof OwnerCommerceHttpError && err.errorKey === 'no_user_presence') {
-          setPresencePrompt({ retry: operation });
-        } else {
-          Alert.alert('Could not create the invite', (err as Error).message);
-        }
-      } finally {
-        setMinting(false);
-        void reload();
-      }
-    },
-    [reload],
-  );
-
-  const submitPresence = useCallback(async () => {
-    const client = getOwnerCommerceClient();
-    if (client === null || presencePrompt === null) return;
-    const retry = presencePrompt.retry;
-    setMinting(true);
-    try {
+  // §8 — minting, redeeming and accepting an introduction all create a
+  // trading relationship that carries standing access: presence-gated.
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
       await client.provePresence(passphrase);
-      setPresencePrompt(null);
-      setPassphrase('');
-      await retry();
-    } catch {
-      Alert.alert('Not verified', 'That passphrase did not verify. Try again.');
-    } finally {
-      setMinting(false);
-      void reload();
-    }
-  }, [passphrase, presencePrompt, reload]);
+    },
+    onError: (err) => showMessage('Could not do that', ownerErrorText(err)),
+    onSettled: () => void reload(),
+    reason: 'An invite creates a trading relationship, so Dina checks a person is here.',
+  });
+
+  /** Run a gated invite action; a failure other than presence is said under `title`. */
+  const gated = useCallback(
+    (title: string, operation: () => Promise<void>) =>
+      runGated(async () => {
+        try {
+          await operation();
+        } catch (err) {
+          if (isPresenceRefusal(err)) throw err;
+          showMessage(title, ownerErrorText(err));
+        }
+      }),
+    [runGated],
+  );
 
   const mint = useCallback(
     (direction: 'i_supply_you' | 'you_supply_me') => {
       const client = getOwnerCommerceClient();
       if (client === null) return;
-      void withPresence(async () => {
-        const minted = await client.mintInvite({
+      setMinting(true);
+      void gated('Could not create the invite', async () => {
+        const answer = await client.mintInvite({
           direction,
           serviceRkeys: ['self'],
         });
-        await Share.share({ message: minted.code });
-      });
+        setMinted(answer.code);
+        // The code is on screen either way; the share sheet is a shortcut
+        // (most desktop browsers have none).
+        await Share.share({ message: answer.code }).catch(() => undefined);
+      }).finally(() => setMinting(false));
     },
-    [withPresence],
+    [gated],
   );
 
   const redeem = useCallback(() => {
-    void (async () => {
-      const client = getOwnerCommerceClient();
-      if (client === null || code.trim() === '') return;
-      setRedeeming(true);
-      try {
-        await client.redeemInvite({ code: code.trim(), serviceRkeys: ['self'] });
-        setCode('');
-        Alert.alert('Invite accepted', 'The relationship activates once both sides confirm.');
-      } catch (err) {
-        Alert.alert('Could not redeem', (err as Error).message);
-      } finally {
-        setRedeeming(false);
-        void reload();
-      }
-    })();
-  }, [code, reload]);
+    const client = getOwnerCommerceClient();
+    const typed = code.trim();
+    if (client === null || typed === '') return;
+    setRedeeming(true);
+    void gated('Could not redeem', async () => {
+      await client.redeemInvite({ code: typed, serviceRkeys: ['self'] });
+      setCode('');
+      showMessage('Invite accepted', 'The relationship activates once both sides confirm.');
+    }).finally(() => setRedeeming(false));
+  }, [code, gated]);
 
   const acceptHeld = useCallback(
     (entry: InviteListEntry, nonce: string) => {
-      Alert.alert(
-        'Accept this introduction?',
-        `${shortDid(entry.counterparty_did)} wants a trading relationship (${entry.direction === 'you_supply_me' ? 'you supply them' : 'they supply you'}).`,
-        [
-          { text: 'Ignore', style: 'cancel' },
-          {
-            text: 'Accept',
-            onPress: () => {
-              void (async () => {
-                try {
-                  await getOwnerCommerceClient()?.acceptHeldInvite({
-                    nonce,
-                    serviceRkeys: ['self'],
-                  });
-                } catch (err) {
-                  Alert.alert('Could not accept', (err as Error).message);
-                }
-                void reload();
-              })();
-            },
-          },
-        ],
-      );
+      void (async () => {
+        const accept = await confirmDecision(
+          'Accept this introduction?',
+          `${shortDid(entry.counterparty_did)} wants a trading relationship (${entry.direction === 'you_supply_me' ? 'you supply them' : 'they supply you'}).`,
+          'Accept',
+          false,
+          'Ignore',
+        );
+        if (!accept) return;
+        const client = getOwnerCommerceClient();
+        if (client === null) return;
+        await gated('Could not accept', async () => {
+          await client.acceptHeldInvite({ nonce, serviceRkeys: ['self'] });
+        });
+      })();
     },
-    [reload],
+    [gated],
   );
   return (
     <View style={styles.container} testID="invites-screen">
@@ -195,6 +178,14 @@ export default function InvitesScreen(): React.ReactElement {
           One tap creates a single-use code to share on WhatsApp or as a QR. Redeeming it is their
           consent; nothing activates until both sides confirm.
         </Text>
+        {minted !== null && (
+          <View style={styles.mintedBox}>
+            <Text style={styles.hint}>Your invite code (single use):</Text>
+            <Text style={styles.mintedCode} selectable testID="invite-minted-code">
+              {minted}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>Redeem a code</Text>
         <TextInput
@@ -224,7 +215,7 @@ export default function InvitesScreen(): React.ReactElement {
         {loading && <ActivityIndicator style={styles.spinner} />}
         {!loading && invites.length === 0 && (
           <Text style={styles.empty} testID="invites-empty">
-            No invites yet.
+            {listError ?? 'No invites yet.'}
           </Text>
         )}
         {invites.map((entry, index) => (
@@ -239,7 +230,9 @@ export default function InvitesScreen(): React.ReactElement {
           >
             <View style={styles.rowText}>
               <Text style={styles.rowTitle}>
-                {entry.counterparty_did === '' ? 'Unredeemed offer' : shortDid(entry.counterparty_did)}
+                {entry.counterparty_did === ''
+                  ? 'Unredeemed offer'
+                  : shortDid(entry.counterparty_did)}
               </Text>
               <Text style={styles.rowMeta}>
                 {STATE_LABEL[entry.state]}
@@ -259,39 +252,7 @@ export default function InvitesScreen(): React.ReactElement {
         ))}
       </ScrollView>
 
-      {/* §8 — minting hands standing authority to whoever redeems it. */}
-      <Modal visible={presencePrompt !== null} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard} testID="presence-sheet">
-            <Text style={styles.sectionTitle}>Confirm it’s you</Text>
-            <Text style={styles.hint}>
-              An invite hands its redeemer real standing, so Dina checks a person is here.
-            </Text>
-            <TextInput
-              testID="presence-passphrase"
-              style={styles.input}
-              secureTextEntry
-              placeholder="Your passphrase"
-              placeholderTextColor={colors.textSecondary}
-              value={passphrase}
-              onChangeText={setPassphrase}
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setPresencePrompt(null);
-                  setPassphrase('');
-                }}
-              >
-                <Text style={styles.link}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="presence-submit" onPress={() => void submitPresence()}>
-                <Text style={styles.link}>Verify</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }
@@ -345,18 +306,11 @@ const styles = StyleSheet.create({
   rowTitle: { ...textStyles.body, color: colors.textPrimary },
   rowMeta: { ...textStyles.caption, color: colors.textSecondary, marginTop: 2 },
   chip: { ...textStyles.caption, color: colors.accent },
-  link: { ...textStyles.body, color: colors.core },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  modalCard: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.lg },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.lg,
+  mintedBox: {
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
     marginTop: spacing.md,
   },
+  mintedCode: { ...textStyles.body, color: colors.textPrimary, fontFamily: 'monospace' },
 });

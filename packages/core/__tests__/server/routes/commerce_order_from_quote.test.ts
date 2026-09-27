@@ -28,6 +28,7 @@ import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
@@ -172,7 +173,7 @@ describe('an order built from a held quote', () => {
     );
     expect(refused.status).toBe(403);
     expect((refused.body as { error: string }).error).toBe('no_user_presence');
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const res = await router.handle(
       call('POST', '/v1/commerce/orders/from_quote', {
         supplier_did: SUPPLIER,
@@ -217,7 +218,7 @@ describe('an order built from a held quote', () => {
   });
 
   it('refuses an unknown quote, a lapsed one, a missing field, and a non-owner', async () => {
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     expect(
       (
         await router.handle(

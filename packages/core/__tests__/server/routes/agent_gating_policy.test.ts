@@ -4,6 +4,12 @@ import {
   type AgentGatingPolicyRepository,
   type SetAgentGatingPolicyInput,
 } from '../../../src/agent/gating_policy';
+import {
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+  proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
+} from '../../../src/commerce/owner_presence';
 import { registerDevice, resetDeviceRegistry } from '../../../src/devices/registry';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
@@ -114,6 +120,46 @@ describe('owner connected-agent policy routes', () => {
       }),
     );
     expect(wrongDevice.status).toBe(404);
+  });
+
+  it('lowering supervision needs a person present; tightening to full supervision does not (§3.8)', async () => {
+    const agent = registerDevice('Claude Code', 'z6MkPolicyAgent', 'agent', 'coding');
+    const repo = new MemoryPolicyRepository();
+    setAgentGatingPolicyRepository(repo);
+    const router = new CoreRouter();
+    registerAgentGatingPolicyRoutes(router, 'owner-cap');
+    installOwnerPresenceVerifier(async (p) => p === 'correct horse');
+    try {
+      for (const profile of ['network_protection', 'sensitive_boundaries']) {
+        const refused = await router.handle(
+          req('PUT', `/v1/owner/agent-policies/${agent.did}`, { profile, expected_version: null }),
+        );
+        expect([profile, refused.status, (refused.body as { error: string }).error]).toEqual([
+          profile,
+          403,
+          'no_user_presence',
+        ]);
+      }
+      expect(repo.policy).toBeNull();
+      const strict = await router.handle(
+        req('PUT', `/v1/owner/agent-policies/${agent.did}`, {
+          profile: 'full_supervision',
+          expected_version: null,
+        }),
+      );
+      expect(strict.status).toBe(201);
+      await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+      const lowered = await router.handle(
+        req('PUT', `/v1/owner/agent-policies/${agent.did}`, {
+          profile: 'network_protection',
+          expected_version: 1,
+        }),
+      );
+      expect(lowered.status).toBe(200);
+    } finally {
+      clearOwnerPresence();
+      installOwnerPresenceVerifier(null);
+    }
   });
 
   it('lists old-owner policies separately for explicit reconfirmation', async () => {

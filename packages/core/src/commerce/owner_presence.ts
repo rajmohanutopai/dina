@@ -49,14 +49,44 @@ export const OWNER_PRESENCE_TTL_MS = 5 * 60 * 1000;
 export type OwnerPresenceVerifier = (passphrase: string) => Promise<boolean>;
 
 let verifier: OwnerPresenceVerifier | null = null;
-let provenAtMs = 0;
+
+/**
+ * WHO PROVED IT. A stamp is kept per owner principal, as the staff stamps
+ * below are kept per device (WEB_OWNER_SURFACE_PLAN §3.8). A node can have
+ * several owner principals at once — the phone's own app, the capability
+ * the `/owner` console and owner scripts hold, each paired owner browser —
+ * and a passphrase typed into one of them says a person is at THAT one. With
+ * one node-wide stamp, a script holding the capability could poll a gated
+ * route (a refusal costs nothing) and act inside the five minutes after the
+ * owner typed the passphrase into a browser. The principal is the host's
+ * verdict, never a caller's claim: `CoreRequest.ownerPrincipal`.
+ */
+const provenAtMs = new Map<string, number>();
+
+/** The owner's own app dispatching in-process (the phone): one principal. */
+export const OWNER_IN_PROCESS_PRINCIPAL = 'in_process';
+/** A request carrying the boot-minted owner capability header. */
+export const OWNER_CAPABILITY_PRINCIPAL = 'capability';
+/** A request signed by one paired owner device. */
+export function ownerDevicePrincipal(deviceDid: string): string {
+  return `device:${deviceDid}`;
+}
+
+/**
+ * The principal a request speaks for. The host's owner entry point stamps
+ * `ownerPrincipal`; a request without one is the in-process owner app, the
+ * only dispatcher that reaches owner routes without that entry point.
+ */
+export function ownerPresencePrincipal(req: { ownerPrincipal?: string }): string {
+  return req.ownerPrincipal ?? OWNER_IN_PROCESS_PRINCIPAL;
+}
 
 export function installOwnerPresenceVerifier(value: OwnerPresenceVerifier | null): void {
   verifier = value;
   // A NODE THAT SWAPS ITS VERIFIER HAS NOT GOT A PERSON IN THE ROOM. Keeping
   // the stamp across an install would let a boot sequence inherit presence
   // proven against a verifier that is no longer the one in force.
-  provenAtMs = 0;
+  provenAtMs.clear();
 }
 
 /**
@@ -72,12 +102,17 @@ export function ownerPresenceCanBeEstablished(): boolean {
 }
 
 /**
- * Verify a passphrase and, if it is right, stamp the clock.
+ * Verify a passphrase and, if it is right, stamp the clock for the principal
+ * that sent it.
  *
  * The passphrase is not stored, not logged and not returned. Callers get a
  * boolean.
  */
-export async function proveOwnerPresence(passphrase: string, nowMs: number): Promise<boolean> {
+export async function proveOwnerPresence(
+  passphrase: string,
+  nowMs: number,
+  principal: string,
+): Promise<boolean> {
   if (verifier === null) return false;
   // An empty string is not a passphrase, and letting it reach the verifier
   // invites a backend that treats "no record" as "no mismatch".
@@ -90,27 +125,54 @@ export async function proveOwnerPresence(passphrase: string, nowMs: number): Pro
     // what stops a broken Argon2id backend reading as a successful login.
     return false;
   }
-  if (proven) provenAtMs = nowMs;
+  if (proven) provenAtMs.set(principal, nowMs);
   return proven;
 }
 
 /**
- * Is somebody here right now?
+ * Is somebody here right now — at this principal?
  *
  * A stamp in the FUTURE counts as no proof, for the same reason a publication
  * claim stamped ahead of the clock is treated as abandoned: a device whose
  * clock moved backwards would otherwise carry presence for the size of the
  * skew, and presence is the one thing that must not outlive the person.
  */
-export function ownerPresentNow(nowMs: number): boolean {
-  if (provenAtMs <= 0) return false;
-  const age = nowMs - provenAtMs;
+export function ownerPresentNow(nowMs: number, principal: string): boolean {
+  const stamp = provenAtMs.get(principal) ?? 0;
+  if (stamp <= 0) return false;
+  const age = nowMs - stamp;
   return age >= 0 && age < OWNER_PRESENCE_TTL_MS;
+}
+
+/** The answer every presence-gated owner action gives when nobody has proven presence. */
+export interface OwnerPresenceRefusal {
+  status: 403;
+  body: { error: 'no_user_presence'; detail: string };
+}
+
+/**
+ * One rule for every presence-gated owner action (WEB_OWNER_SURFACE_PLAN
+ * §3.8): refuse with `no_user_presence` when this node CAN establish presence
+ * and nobody has within the window; `null` otherwise. The phone's and the
+ * web's presence prompt key on `no_user_presence` and retry after proving.
+ * A node that cannot establish presence at all (convenience mode, no
+ * verifier) is not gated, the same fail-open rule the commerce routes keep:
+ * it has no passphrase to ask for.
+ */
+export function ownerPresenceRefusal(
+  req: { ownerPrincipal?: string },
+  nowMs: number,
+  detail: string,
+): OwnerPresenceRefusal | null {
+  if (!ownerPresenceCanBeEstablished() || ownerPresentNow(nowMs, ownerPresencePrincipal(req))) {
+    return null;
+  }
+  return { status: 403, body: { error: 'no_user_presence', detail } };
 }
 
 /** Drop any standing proof — used on lock, on logout, and by tests. */
 export function clearOwnerPresence(): void {
-  provenAtMs = 0;
+  provenAtMs.clear();
   staffProvenAtMs.clear();
 }
 
@@ -118,8 +180,7 @@ export function clearOwnerPresence(): void {
 // Attributed presence (TRADE_FIRST_STRATEGY §6.4)
 // ---------------------------------------------------------------------------
 //
-// The owner's stamp above stays exactly as it was — every shipped caller
-// keeps its contract. What §6 adds is presence FOR A NAMED PRINCIPAL: a
+// What §6 adds is presence for a STAFF principal: a
 // staff device proves with its own per-device PIN (an Argon2id record
 // minted at the grant ceremony; the PIN unlocks nothing in the vault),
 // and the stamp is kept PER DEVICE with the same five-minute window.

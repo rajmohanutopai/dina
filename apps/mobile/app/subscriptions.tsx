@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
 
 import {
   getActiveSubscriptions,
@@ -11,6 +11,8 @@ import {
   createSubscription,
   type SubscriptionUIItem,
 } from '../src/hooks/useSubscriptions';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { ownerErrorText } from '../src/services/owner_errors';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 /**
@@ -27,10 +29,19 @@ export default function SubscriptionsScreen() {
   const [items, setItems] = useState<SubscriptionUIItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  /** Why the list could not load (a browser not connected as the owner). */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void getActiveSubscriptions()
-      .then(setItems)
+      .then((watches) => {
+        setItems(watches);
+        setLoadError(null);
+      })
+      .catch((err: unknown) => {
+        setItems([]);
+        setLoadError(ownerErrorText(err));
+      })
       .finally(() => setHydrated(true));
   }, []);
 
@@ -50,21 +61,16 @@ export default function SubscriptionsScreen() {
 
   const onCancel = useCallback(
     (item: SubscriptionUIItem) => {
-      Alert.alert(
+      void confirmDecision(
         'Cancel subscription?',
         `Dina will stop watching ${item.capability} from this provider. This can't be undone.`,
-        [
-          { text: 'Keep', style: 'cancel' },
-          {
-            text: 'Cancel it',
-            style: 'destructive',
-            onPress: () => {
-              void cancelSubscription(item.watch_id).then(() => refresh());
-            },
-          },
-        ],
-        { cancelable: true },
-      );
+        'Cancel it',
+        true,
+        'Keep',
+      ).then((ok) => {
+        if (!ok) return;
+        void cancelSubscription(item.watch_id).then(() => refresh());
+      });
     },
     [refresh],
   );
@@ -111,10 +117,16 @@ export default function SubscriptionsScreen() {
             color={colors.textMuted}
             style={{ marginBottom: spacing.md }}
           />
-          <Text style={styles.emptyTitle}>No subscriptions yet</Text>
-          <Text style={styles.emptyBody}>
-            Ask Dina to watch something in Chat — like &ldquo;tell me if my flight is delayed&rdquo; — or
-            tap New to create a standing subscription you control.
+          <Text style={styles.emptyTitle}>
+            {loadError === null ? 'No subscriptions yet' : 'Could not load'}
+          </Text>
+          <Text style={styles.emptyBody} testID="subscriptions-empty-body">
+            {loadError ?? (
+              <>
+                Ask Dina to watch something in Chat — like &ldquo;tell me if my flight is
+                delayed&rdquo; — or tap New to create a standing subscription you control.
+              </>
+            )}
           </Text>
         </View>
       ) : (
@@ -170,18 +182,62 @@ function NewSubscriptionForm({ onCreated }: { onCreated: () => void }) {
         if (watchId === null) setError('Could not create the subscription.');
         else onCreated();
       })
+      .catch((err: unknown) => setError(ownerErrorText(err)))
       .finally(() => setBusy(false));
   };
 
   return (
     <View style={styles.form} testID="subscription-new-form">
-      <FormField label="What to watch (capability)" value={capability} onChange={setCapability} placeholder="e.g. transit.eta" testID="sub-field-capability" />
-      <FormField label="Provider DID" value={providerDid} onChange={setProviderDid} placeholder="did:plc:…" testID="sub-field-provider" />
-      <FormField label="Service URI" value={serviceUri} onChange={setServiceUri} placeholder="at://…" testID="sub-field-service" />
-      <FormField label="Persona" value={persona} onChange={setPersona} placeholder="general" testID="sub-field-persona" />
-      <FormField label="Check every (minutes)" value={minutes} onChange={setMinutes} placeholder="5" keyboardType="numeric" testID="sub-field-minutes" />
-      <FormField label="What to poll (optional, e.g. flight=BA117)" value={target} onChange={setTarget} placeholder="key=value, key2=value2" testID="sub-field-target" />
-      <FormField label="Notify only when result contains (optional)" value={condition} onChange={setCondition} placeholder="e.g. delayed" testID="sub-field-condition" />
+      <FormField
+        label="What to watch (capability)"
+        value={capability}
+        onChange={setCapability}
+        placeholder="e.g. transit.eta"
+        testID="sub-field-capability"
+      />
+      <FormField
+        label="Provider DID"
+        value={providerDid}
+        onChange={setProviderDid}
+        placeholder="did:plc:…"
+        testID="sub-field-provider"
+      />
+      <FormField
+        label="Service URI"
+        value={serviceUri}
+        onChange={setServiceUri}
+        placeholder="at://…"
+        testID="sub-field-service"
+      />
+      <FormField
+        label="Persona"
+        value={persona}
+        onChange={setPersona}
+        placeholder="general"
+        testID="sub-field-persona"
+      />
+      <FormField
+        label="Check every (minutes)"
+        value={minutes}
+        onChange={setMinutes}
+        placeholder="5"
+        keyboardType="numeric"
+        testID="sub-field-minutes"
+      />
+      <FormField
+        label="What to poll (optional, e.g. flight=BA117)"
+        value={target}
+        onChange={setTarget}
+        placeholder="key=value, key2=value2"
+        testID="sub-field-target"
+      />
+      <FormField
+        label="Notify only when result contains (optional)"
+        value={condition}
+        onChange={setCondition}
+        placeholder="e.g. delayed"
+        testID="sub-field-condition"
+      />
       {error !== null ? <Text style={styles.formError}>{error}</Text> : null}
       <Pressable
         testID="subscription-create-submit"

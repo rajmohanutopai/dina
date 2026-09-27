@@ -26,6 +26,7 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { ownerErrorText } from '../src/services/owner_errors';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { SettingsFindingDto } from '@dina/core';
@@ -110,7 +111,7 @@ export default function BusinessIdentityScreen(): React.JSX.Element {
       })
       .catch((err: unknown) => {
         if (!live) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(ownerErrorText(err));
         setStatus('idle');
       });
     return () => {
@@ -162,7 +163,7 @@ export default function BusinessIdentityScreen(): React.JSX.Element {
       router.back();
     } catch (err) {
       setStatus('idle');
-      setError(err instanceof Error ? err.message : String(err));
+      setError(ownerErrorText(err));
     }
   }, [form, router]);
 

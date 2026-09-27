@@ -21,8 +21,8 @@ export interface RelayNode {
 }
 
 export const NODES: Record<'alonso' | 'sancho', RelayNode> = {
-  alonso: { name: 'alonso', web: 'http://127.0.0.1:8401/web/', core: 'http://127.0.0.1:8301', brain: 'http://127.0.0.1:8401' },
-  sancho: { name: 'sancho', web: 'http://127.0.0.1:8402/web/', core: 'http://127.0.0.1:8302', brain: 'http://127.0.0.1:8402' },
+  alonso: { name: 'alonso', web: 'http://127.0.0.1:8301/app/', core: 'http://127.0.0.1:8301', brain: 'http://127.0.0.1:8401' },
+  sancho: { name: 'sancho', web: 'http://127.0.0.1:8302/app/', core: 'http://127.0.0.1:8302', brain: 'http://127.0.0.1:8402' },
 };
 
 /**
@@ -59,7 +59,7 @@ export async function dispatch(
 
 /**
  * True when BOTH nodes are fully reachable for relay flows — the gate for
- * `test.skip`. Every relay flow drives the browser (Brain/web) AND backstage
+ * `test.skip`. Every relay flow drives the browser (Core's /app) AND backstage
  * via Core's `/v1/debug/dispatch`, so a Brain-only healthz probe is
  * insufficient: a node whose Brain is up but whose Core is down — or whose
  * debug-dispatch is disabled (DINA_DEBUG_MODE off) — would pass the gate and

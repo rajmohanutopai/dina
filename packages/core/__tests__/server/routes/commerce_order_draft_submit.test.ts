@@ -38,6 +38,7 @@ import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
@@ -227,7 +228,7 @@ beforeEach(async () => {
     singleOwnerAuthority({ ownerDid: 'did:plc:testowner00000000', order, context, serviceRkey }),
   );
   installOwnerPresenceVerifier(async (p) => p === 'correct horse');
-  await proveOwnerPresence('correct horse', Date.now());
+  await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
 });

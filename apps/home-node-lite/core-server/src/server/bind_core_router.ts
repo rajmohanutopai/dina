@@ -36,6 +36,8 @@
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+import { OWNER_CAPABILITY_PRINCIPAL, ownerDevicePrincipal } from '@dina/core';
+
 import type { CoreRouter, CoreRequest, CoreResponse } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -65,6 +67,16 @@ export interface BindCoreRouterOptions {
    */
   ownerCapability?: string;
   /**
+   * WEB_OWNER_SURFACE_PLAN §3.3 — the owner-device path. A request on the
+   * owner surface that names a paired OWNER device in `X-DID` is verified
+   * (signature, window, nonce, rate limit, role) and, on success, marked
+   * exactly as a matching capability header marks it; on failure it is
+   * refused here. A request naming any other device falls through to the
+   * ordinary signed pipeline untouched. Absent: owner devices are not
+   * accepted (the capability header still works).
+   */
+  ownerDeviceAuth?: OwnerDeviceAuth;
+  /**
    * Routes already owned by the Fastify shell. Boot uses this to keep
    * `/healthz` as the process liveness route while binding the rest of
    * CoreRouter's API surface.
@@ -91,6 +103,65 @@ export interface BindCoreRouterOptions {
 
 type FastifyHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
+/** Core's owner-device checks, injected so this adapter holds no auth logic of its own. */
+export interface OwnerDeviceAuth {
+  /** Cheap, side-effect free: does the request name a paired owner device? */
+  namesOwnerDevice(req: CoreRequest): boolean;
+  /** Full verification; spends the nonce. */
+  authenticate(req: CoreRequest): { authenticated: boolean; rejectedAt?: string; reason?: string };
+}
+
+/** What the owner verdict needs, shared by the capability and owner-device paths. */
+export type OwnerVerdict =
+  /** `principal`: which owner principal matched, for per-principal presence. */
+  | { kind: 'owner'; principal: string }
+  | { kind: 'not_owner' }
+  | { kind: 'refused'; status: number; body: Record<string, unknown> };
+
+/**
+ * One decision for every owner entry point in this host: the capability
+ * header, or a verified owner device, on an owner-surface path. The route
+ * binder and the Fastify-level approval-phone routes
+ * (`approval_phone_routes.ts`) both call it, so the two cannot drift.
+ */
+export function ownerVerdict(
+  req: CoreRequest,
+  ownerCapability: string | undefined,
+  ownerDeviceAuth: OwnerDeviceAuth | undefined,
+): OwnerVerdict {
+  if (ownerCapability === undefined || ownerCapability === '') return { kind: 'not_owner' };
+  if (!isOwnerSurfacePath(req.path, req.method)) return { kind: 'not_owner' };
+  if (ownerHeaderMatches(req.headers['x-dina-owner-capability'], ownerCapability)) {
+    return { kind: 'owner', principal: OWNER_CAPABILITY_PRINCIPAL };
+  }
+  if (ownerDeviceAuth === undefined || !ownerDeviceAuth.namesOwnerDevice(req)) {
+    return { kind: 'not_owner' };
+  }
+  const result = ownerDeviceAuth.authenticate(req);
+  if (!result.authenticated && result.rejectedAt === 'rate_limit') {
+    // Throttling says nothing about the key: answer 429, so the page can tell
+    // "slow down" apart from a refused device (which it forgets).
+    return {
+      kind: 'refused',
+      status: 429,
+      body: { error: result.reason ?? 'rate limit exceeded', rejected_at: 'rate_limit' },
+    };
+  }
+  if (result.authenticated) {
+    // X-DID is the device the signature was just verified against.
+    const did = req.headers['x-did'] ?? req.headers['X-DID'] ?? '';
+    return { kind: 'owner', principal: ownerDevicePrincipal(did) };
+  }
+  return {
+    kind: 'refused',
+    status: result.rejectedAt === 'authorization' ? 403 : 401,
+    body: {
+      error: result.reason ?? 'authentication failed',
+      rejected_at: result.rejectedAt ?? 'unknown',
+    },
+  };
+}
+
 /**
  * Walk the router's registered routes and bind each onto Fastify.
  *
@@ -109,19 +180,21 @@ export function bindCoreRouter(opts: BindCoreRouterOptions): number {
 
     const handler: FastifyHandler = async (req, reply) => {
       let coreReq = buildCoreRequest(req);
-      // A-07 — stamp the OWNER identity only on a timing-safe capability match
-      // scoped to the run/watch owner surface (see BindCoreRouterOptions).
-      if (
-        opts.ownerCapability !== undefined &&
-        opts.ownerCapability !== '' &&
-        isOwnerSurfacePath(coreReq.path, coreReq.method) &&
-        ownerHeaderMatches(coreReq.headers['x-dina-owner-capability'], opts.ownerCapability)
-      ) {
+      // A-07 — stamp the OWNER identity only on a timing-safe capability match,
+      // or a verified owner device (WEB_OWNER_SURFACE_PLAN §3.3), scoped to the
+      // owner surface (see BindCoreRouterOptions).
+      const verdict = ownerVerdict(coreReq, opts.ownerCapability, opts.ownerDeviceAuth);
+      if (verdict.kind === 'refused') {
+        reply.code(verdict.status).send(verdict.body);
+        return;
+      }
+      if (verdict.kind === 'owner') {
         coreReq = {
           ...coreReq,
           trustedInProcess: true,
           callerType: 'owner',
           ownerCapability: opts.ownerCapability,
+          ownerPrincipal: verdict.principal,
         };
       }
       const coreRes = await opts.coreRouter.handle(coreReq);
@@ -191,7 +264,7 @@ function installRawBodyParser(app: BindCoreRouterOptions['app']): void {
  * is owner-controlled here; claim/complete/fail still require a signed backend
  * DID and can never be reached with the owner capability.
  */
-function isOwnerSurfacePath(p: string, method: string): boolean {
+export function isOwnerSurfacePath(p: string, method: string): boolean {
   return (
     p === '/v1/run' ||
     p.startsWith('/v1/run/') ||
@@ -231,6 +304,12 @@ function isOwnerSurfacePath(p: string, method: string): boolean {
     // is the owner's to reach with this bearer. The handler re-validates the
     // capability (`ownerDecisionGuard`), like every other owner route.
     OWNER_DECISION_VERB.test(p) ||
+    // WEB_OWNER_SURFACE_PLAN §3.5 — the approval inbox on the web: one card
+    // (GET only; nothing else on a task's own path), and the answer to a
+    // service query the owner declines (`unavailable`, so the requester hears
+    // no instead of timing out). The phone reaches both in-process.
+    (OWNER_TASK_READ.test(p) && method === 'GET') ||
+    (p === '/v1/service/respond' && method === 'POST') ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
     (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))
@@ -240,6 +319,9 @@ function isOwnerSurfacePath(p: string, method: string): boolean {
 /** `/v1/workflow/tasks/<id>/approve` or `/cancel` — one id segment, nothing after the verb. */
 const OWNER_DECISION_VERB = /^\/v1\/workflow\/tasks\/[^/]+\/(approve|cancel)$/;
 
+/** `/v1/workflow/tasks/<id>` — one id segment, nothing after it. */
+const OWNER_TASK_READ = /^\/v1\/workflow\/tasks\/[^/]+$/;
+
 /** Timing-safe capability comparison (hash both sides to fixed length first). */
 export function ownerHeaderMatches(header: string | undefined, expected: string): boolean {
   if (header === undefined || header === '') return false;
@@ -248,7 +330,7 @@ export function ownerHeaderMatches(header: string | undefined, expected: string)
   return timingSafeEqual(a, b);
 }
 
-function buildCoreRequest(req: FastifyRequest): CoreRequest {
+export function buildCoreRequest(req: FastifyRequest): CoreRequest {
   // Fastify lowercases header names already.
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) {

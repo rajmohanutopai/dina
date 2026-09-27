@@ -6,7 +6,7 @@
  * `dina1:` prefix bumps on incompatible change).
  */
 
-import { buildAgentSetupCode, SETUP_CODE_PREFIX } from '../../src/services/agent_setup_code';
+import { buildAgentSetupCode, SETUP_CODE_PREFIX } from '../../src/pairing/setup_code';
 
 const PINNED_VECTOR =
   'dina1:eyJ2IjoxLCJtc2dib3hfdXJsIjoid3NzOi8vdGVzdC1tYWlsYm94LmRpbmFrZXJuZWwuY29tL3dzIiwiaG9tZW5vZGVfZGlkIjoiZGlkOnBsYzpzNm1icDdycWc2ZGluYXRlc3R3aWU1dSIsInRyYW5zcG9ydCI6Im1zZ2JveCIsImRldmljZV9uYW1lIjoib3BlbmNsYXctYWdlbnQiLCJjb2RlIjoiQUJDRDJFRkcifQ';

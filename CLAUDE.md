@@ -72,7 +72,8 @@ apps/mobile/         Expo/React Native — a full Home Node on-device. Brain↔C
                      Activity; plus Reminders/Vault/Settings/Agents in a sheet.
 apps/home-node-lite/ Server Home Node. core-server (:8100, vault keeper) + brain-server (:8200,
                      analyst, loopback-only). Brain↔Core is HttpCoreTransport (signed HTTP).
-                     Optional web UI: /dev (chat SPA) and /web (the mobile app exported to RN-Web).
+                     Optional web UI: Brain's /dev (chat SPA) and Core's /app (the mobile app
+                     exported to RN-Web; the browser signs owner calls as an owner device).
 appview/             PeerLens AppView — Jetstream ingester + scorer jobs + xRPC. PostgreSQL (Drizzle).
 msgbox/              Go relay — zero-knowledge sealed-box mailbox for NAT'd nodes (outbound WS).
 cli/                 Python dina-agent — paired external agent/device (signing, MsgBox transport,
@@ -176,7 +177,8 @@ npm start            # Expo dev server. Press i for iOS, a for Android.
 npm install                                           # repo-root workspace install
 cd apps/home-node-lite/core-server  && npm start      # Fastify Core, listens :8100
 cd apps/home-node-lite/brain-server && npm start      # Fastify Brain, listens :8200 (loopback-only)
-# Optional web UI: DINA_BRAIN_DEV_UI=1 (/dev chat) or DINA_BRAIN_WEB_UI=1 (/web = mobile app as RN-Web)
+# Optional web UI: DINA_BRAIN_DEV_UI=1 (/dev chat), or DINA_CORE_WEB_UI=1 on Core (/app = mobile app
+# as RN-Web) + DINA_BRAIN_WEB_ORIGIN=http://127.0.0.1:8100,http://localhost:8100 on Brain (CORS for that page)
 ```
 
 See `apps/home-node-lite/README.md` and `docs/HOME_NODE_LITE_TASKS.md` for the milestone roadmap (pre-M1; some boot steps are `'pending'`).

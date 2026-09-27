@@ -34,7 +34,15 @@ export type CallerType =
    * no settings). The trade routes admit staff through the
    * staff-grant gate, never through this matrix alone.
    */
-  | 'staff';
+  | 'staff'
+  /**
+   * WEB_OWNER_SURFACE_PLAN §3.3 — a paired device with role 'owner' (a
+   * browser the owner connected). Absent from EVERY rule below, so the
+   * matrix refuses it everywhere: it acts only through the host's owner
+   * entry point, which verifies the signature and marks the request as
+   * the owner.
+   */
+  | 'owner_device';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of

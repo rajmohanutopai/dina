@@ -19,7 +19,6 @@
  * Hidden from the tab bar.
  */
 
-import { bytesToHex } from '@noble/hashes/utils.js';
 import { Stack } from 'expo-router';
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -30,39 +29,105 @@ import {
   Pressable,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
-  Share,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getNodeDID,
-  getNodeSigningPublicKey, type AgentScope } from '@dina/core';
 import {
-  generatePairingCode,
-  listDevices,
-  revokeDeviceDurable,
-  type DeviceRole,
-  type PairedDevice,
-} from '@dina/core/devices';
+  OwnerSetupHttpError,
+  type AgentSupervisionPolicies,
+  type AgentSupervisionProfile,
+  type ApprovalPhoneStatus,
+  type OwnerSetupDeviceEntry,
+} from '@dina/core';
 
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import {
   activeConnectedBrainForPrincipal,
   disableConnectedBrain,
   enableConnectedBrain,
   type ConnectedBrainOwnerClient,
 } from '../src/reasoning/connected_brain_control';
-import { buildAgentSetupCode } from '../src/services/agent_setup_code';
-import { resolveMsgBoxURL } from '../src/services/msgbox_wiring';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import {
+  CONNECT_OWNER_DEVICE_MESSAGE,
+  errorKeyOf,
+  isPresenceRefusal,
+  ownerErrorText,
+} from '../src/services/owner_errors';
 import { getOwnerRunClient } from '../src/services/owner_run_client';
+import { getOwnerSetupClient } from '../src/services/owner_setup_client';
+import { shareOrCopy, shareOutcomeLabel, type ShareOutcome } from '../src/services/share_text';
+import { showMessage } from '../src/services/show_message';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
+/**
+ * How closely Dina supervises a coding agent (`/v1/owner/agent-policies`).
+ * With no choice made, full supervision applies.
+ */
+const SUPERVISION: { profile: AgentSupervisionProfile; label: string; description: string }[] = [
+  {
+    profile: 'network_protection',
+    label: 'Standard',
+    description:
+      'Dina provides identity, private context, services and connections. Your agent handles ordinary local work; requests from others stay fully supervised.',
+  },
+  {
+    profile: 'sensitive_boundaries',
+    label: 'Sensitive boundaries',
+    description:
+      'Dina also checks protected data, external sends, destructive operations, package changes and system changes.',
+  },
+  {
+    profile: 'full_supervision',
+    label: 'Full supervision',
+    description:
+      'Dina applies its full classifier and approval policy to every supported tool call.',
+  },
+];
+
+interface SupervisionState {
+  profile: AgentSupervisionProfile;
+  /** The version the owner saw, for the next change; null before any choice. */
+  version: number | null;
+  /** An earlier owner identity chose it: full supervision applies until reconfirmed. */
+  stale: boolean;
+}
+
+/** The two kinds this screen pairs; runners and plugins pair elsewhere. */
+type PairableRole = 'agent' | 'staff';
+
+/** A device as the list shows it (Core's owner-setup status, one row). */
+interface DeviceRow {
+  deviceId: string;
+  did: string;
+  deviceName: string;
+  role: string;
+  scope?: string;
+  createdAt: number;
+  lastSeen: number;
+  revoked: boolean;
+}
+
+function toRow(entry: OwnerSetupDeviceEntry): DeviceRow {
+  return {
+    deviceId: entry.device_id,
+    did: entry.did,
+    deviceName: entry.name,
+    role: entry.role,
+    ...(entry.scope !== undefined ? { scope: entry.scope } : {}),
+    createdAt: entry.created_at,
+    lastSeen: entry.last_seen,
+    revoked: entry.revoked,
+  };
+}
+
 interface LiveCode {
-  code: string;
   expiresAt: number; // unix seconds
   deviceName: string;
-  role: DeviceRole;
-  scope: AgentScope;
+  role: PairableRole;
   /**
    * The one-paste `dina1:…` string bundling relay URL + node DID +
    * this pairing code — the only pairing artifact the UI shows.
@@ -73,7 +138,7 @@ interface LiveCode {
 export default function PairedDevicesScreen() {
   const insets = useSafeAreaInsets();
   const bottomPad = insets.bottom + 49 + spacing.md;
-  const [devices, setDevices] = useState<PairedDevice[]>([]);
+  const [devices, setDevices] = useState<DeviceRow[]>([]);
   // Empty default; the placeholder below shows `openclaw-user` as a
   // hint. Pre-filling forced anyone pairing dina-cli or a phone to
   // clear the field before typing — a self-defeating "convenience".
@@ -82,20 +147,22 @@ export default function PairedDevicesScreen() {
   // trade slice — `staff`, a clerk's phone acting under value-capped
   // grants. Staff devices get their authority on the Staff screen; the
   // pairing only mints the identity.
-  const [role, setRole] = useState<DeviceRole>('agent');
-  // This screen installs the Dina skill into interactive coding-agent hosts
-  // (Claude Code, Codex, OpenClaw, etc.). Core derives this privilege from the
-  // paired device record; omitting it would intentionally downgrade the agent
-  // to the legacy `runner` scope and make the installed plugin unusable.
-  const scope: AgentScope = 'coding';
+  const [role, setRole] = useState<PairableRole>('agent');
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  const [sharedSetup, setSharedSetup] = useState(false);
+  const [shareOutcome, setShareOutcome] = useState<ShareOutcome | null>(null);
+  /** Why the device list is empty when it could not load (e.g. a browser not connected). */
+  const [devicesError, setDevicesError] = useState<string | null>(null);
   const [reasoningBackends, setReasoningBackends] = useState<
     Awaited<ReturnType<ConnectedBrainOwnerClient['reasoningBackends']>>['backends']
   >([]);
   const [brainBusyDid, setBrainBusyDid] = useState<string | null>(null);
+  const [supervision, setSupervision] = useState<Record<string, SupervisionState>>({});
+  // A server node can pair a phone to approve its cards; the phone app itself
+  // never sees this (its status carries no `phone`).
+  const [approvalPhone, setApprovalPhone] = useState<ApprovalPhoneStatus | undefined>(undefined);
+  const [phoneCode, setPhoneCode] = useState('');
 
   const getBrainClient = useCallback((): ConnectedBrainOwnerClient | null => {
     const client = getOwnerRunClient();
@@ -124,15 +191,35 @@ export default function PairedDevicesScreen() {
     }
   }, [getBrainClient]);
 
-  const refreshDevices = useCallback(() => {
-    try {
-      setDevices(listDevices());
-    } catch (err) {
-      // `listDevices()` reads the in-memory registry; failures here
-      // mean the module hasn't been hydrated. Not fatal — just show
-      // an empty list.
-      console.warn('[paired-devices] listDevices failed', err);
+  // The list is Core's (the phone's in-process Core, or the Home Node's for a
+  // browser connected as the owner), so every surface shows the same devices.
+  const refreshDevices = useCallback(async () => {
+    const client = getOwnerSetupClient();
+    if (client === null) {
       setDevices([]);
+      return;
+    }
+    try {
+      const status = await client.status();
+      setDevices(status.devices.map(toRow));
+      setApprovalPhone(status.phone);
+      setDevicesError(null);
+    } catch (err) {
+      // Not fatal: show an empty list and say why (a browser not connected
+      // as the owner, a node still starting).
+      setDevices([]);
+      setDevicesError(
+        errorKeyOf(err) === 'owner_device_not_connected'
+          ? CONNECT_OWNER_DEVICE_MESSAGE
+          : 'Could not load the devices. Try again shortly.',
+      );
+      console.warn('[paired-devices] device list failed', errorKeyOrMessage(err));
+    }
+    try {
+      setSupervision(supervisionByAgent(await client.agentPolicies()));
+    } catch {
+      // Without the list every agent reads as full supervision, the default.
+      setSupervision({});
     }
   }, []);
 
@@ -143,86 +230,60 @@ export default function PairedDevicesScreen() {
   // any agent-daemon currently polling against this DID and the user
   // would have to re-pair to recover.
   const handleRevoke = useCallback(
-    (device: PairedDevice) => {
+    (device: DeviceRow) => {
       if (device.revoked) return;
-      Alert.alert(
-        `Revoke "${device.deviceName}"?`,
-        'The agent will lose access immediately. Any in-flight signed requests will fail and the agent must be re-paired with a new code to regain access.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Revoke',
-            style: 'destructive',
-            onPress: () => {
-              // issues.txt §5 — durable revoke: persist revoked=1 to SQL
-              // BEFORE reporting success so a restart can't re-trust the
-              // device. If persistence fails, access is still cut in-memory
-              // but we must NOT claim a durable revoke — surface a warning.
-              void (async () => {
-                try {
-                  let brainCleanupFailed = false;
-                  const brainClient = getBrainClient();
-                  if (brainClient !== null) {
-                    try {
-                      await disableConnectedBrain(brainClient, device.did);
-                    } catch {
-                      // Device revocation remains the hard security boundary:
-                      // continue even when the convenience-policy cleanup
-                      // conflicts, then tell the owner it needs attention.
-                      brainCleanupFailed = true;
-                    }
-                  }
-                  const result = await revokeDeviceDurable(device.deviceId);
-                  refreshDevices();
-                  await refreshBrainBindings();
-                  if (!result.durable || brainCleanupFailed) {
-                    Alert.alert(
-                      'Revoke not fully saved',
-                      'Agent access was cut, but every related policy change could not be confirmed. Please retry after the app is fully available.',
-                    );
-                  }
-                } catch (err) {
-                  Alert.alert('Revoke failed', err instanceof Error ? err.message : String(err));
-                }
-              })();
-            },
-          },
-        ],
-      );
+      void (async () => {
+        const revoke = await confirmDecision(
+          `Revoke "${device.deviceName}"?`,
+          'The agent will lose access immediately. Any in-flight signed requests will fail and the agent must be re-paired with a new code to regain access.',
+          'Revoke',
+          true,
+        );
+        if (!revoke) return;
+        // Durable revoke (issues.txt §5): Core persists revoked=1 before
+        // answering 204, and says so when it could not.
+        try {
+          let brainCleanupFailed = false;
+          const brainClient = getBrainClient();
+          if (brainClient !== null) {
+            try {
+              await disableConnectedBrain(brainClient, device.did);
+            } catch {
+              // Device revocation remains the hard security boundary:
+              // continue even when the convenience-policy cleanup
+              // conflicts, then tell the owner it needs attention.
+              brainCleanupFailed = true;
+            }
+          }
+          const client = getOwnerSetupClient();
+          if (client === null) throw new Error('Dina is still starting up.');
+          let notDurable = false;
+          try {
+            await client.revokeDevice(device.deviceId);
+          } catch (err) {
+            if (!(err instanceof OwnerSetupHttpError) || err.status !== 503) throw err;
+            notDurable = true;
+          }
+          await refreshDevices();
+          await refreshBrainBindings();
+          if (notDurable || brainCleanupFailed) {
+            showMessage(
+              'Revoke not fully saved',
+              'Agent access was cut, but every related policy change could not be confirmed. Please retry after the app is fully available.',
+            );
+          }
+        } catch (err) {
+          showMessage('Revoke failed', ownerErrorText(err));
+        }
+      })();
     },
     [getBrainClient, refreshBrainBindings, refreshDevices],
   );
 
   useEffect(() => {
-    refreshDevices();
+    void refreshDevices();
     void refreshBrainBindings();
   }, [refreshBrainBindings, refreshDevices]);
-
-  const handleToggleBrain = useCallback(
-    async (device: PairedDevice) => {
-      const client = getBrainClient();
-      if (client === null || device.revoked) return;
-      setBrainBusyDid(device.did);
-      try {
-        const active = activeConnectedBrainForPrincipal(reasoningBackends, device.did);
-        if (active === null) {
-          await enableConnectedBrain(client, device);
-        } else {
-          await disableConnectedBrain(client, device.did);
-        }
-        await refreshBrainBindings();
-      } catch (err) {
-        Alert.alert(
-          'Could not update Brain access',
-          err instanceof Error ? err.message : String(err),
-        );
-        await refreshBrainBindings();
-      } finally {
-        setBrainBusyDid(null);
-      }
-    },
-    [getBrainClient, reasoningBackends, refreshBrainBindings],
-  );
 
   // Tick the expiry countdown every second while a code is live.
   useEffect(() => {
@@ -244,54 +305,131 @@ export default function PairedDevicesScreen() {
   // pairing code — the share sheet is the user's trust decision.
   const handleShareSetup = useCallback(() => {
     if (liveCode === null) return;
-    Share.share({ message: liveCode.setupCode }).catch(() => {});
-    setSharedSetup(true);
-    setTimeout(() => setSharedSetup(false), 2000);
+    void shareOrCopy(liveCode.setupCode).then((outcome) => {
+      setShareOutcome(outcome);
+      setTimeout(() => setShareOutcome(null), 2000);
+    });
   }, [liveCode]);
+
+  // Minting a code, lowering an agent's supervision and pairing an approval
+  // phone all hand out authority, so Core asks for a person present (§3.8).
+  // Each action reports its own failure; only a presence refusal reaches the
+  // gate, which asks and runs the same action again.
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const commerce = getOwnerCommerceClient();
+      if (commerce === null) throw new Error('Dina is still starting up.');
+      await commerce.provePresence(passphrase);
+    },
+    onError: (err) => showMessage('Something went wrong', ownerErrorText(err)),
+    reason: 'This hands a device or an agent more authority, so Dina checks a person is here.',
+  });
+
+  const gated = useCallback(
+    (title: string, action: () => Promise<void>): Promise<void> =>
+      runGated(async () => {
+        try {
+          await action();
+        } catch (err) {
+          if (isPresenceRefusal(err)) throw err;
+          showMessage(title, ownerErrorText(err));
+        }
+      }),
+    [runGated],
+  );
+
+  // Turning Brain access ON lets the agent claim reasoning jobs carrying
+  // vault context, so Core asks for a person present; turning it off does not.
+  const handleToggleBrain = useCallback(
+    (device: DeviceRow) => {
+      const client = getBrainClient();
+      if (client === null || device.revoked) return;
+      const active = activeConnectedBrainForPrincipal(reasoningBackends, device.did);
+      setBrainBusyDid(device.did);
+      void gated('Could not update Brain access', async () => {
+        if (active === null) await enableConnectedBrain(client, device);
+        else await disableConnectedBrain(client, device.did);
+      }).finally(() => {
+        setBrainBusyDid(null);
+        void refreshBrainBindings();
+      });
+    },
+    [gated, getBrainClient, reasoningBackends, refreshBrainBindings],
+  );
+
+  const handleSupervision = useCallback(
+    (device: DeviceRow, profile: AgentSupervisionProfile) => {
+      const client = getOwnerSetupClient();
+      if (client === null) return;
+      const current = supervision[device.did];
+      void gated('Could not change supervision', async () => {
+        await client.setAgentPolicy(device.did, profile, current?.version ?? null);
+        await refreshDevices();
+      });
+    },
+    [gated, refreshDevices, supervision],
+  );
+
+  const handlePairPhone = useCallback(() => {
+    const client = getOwnerSetupClient();
+    const code = phoneCode.trim();
+    if (client === null || code === '') return;
+    void gated('Could not pair the phone', async () => {
+      setApprovalPhone(await client.pairApprovalPhone(code));
+      setPhoneCode('');
+    });
+  }, [gated, phoneCode]);
+
+  const handleUnpairPhone = useCallback(() => {
+    const client = getOwnerSetupClient();
+    if (client === null) return;
+    void (async () => {
+      const unpair = await confirmDecision(
+        'Unpair the approval phone?',
+        'It stops deciding this node’s high-risk coding actions.',
+        'Unpair',
+        true,
+      );
+      if (!unpair) return;
+      try {
+        setApprovalPhone(await client.revokeApprovalPhone());
+      } catch (err) {
+        showMessage('Could not unpair the phone', ownerErrorText(err));
+      }
+    })();
+  }, []);
 
   const handleGenerate = useCallback(() => {
     const name = deviceName.trim();
     if (name === '') {
-      Alert.alert('Device name required', 'Give the device a name before generating a code.');
+      showMessage('Device name required', 'Give the device a name before generating a code.');
       return;
     }
-    setGenerating(true);
-    try {
-      // Pairing codes are short-lived shared secrets — never log the
-      // code value itself. iOS native logs persist for hours after a
-      // generation, and `xcrun simctl log show` would surface a recent
-      // code to anyone with simulator access (or anyone reading a
-      // device sysdiagnose). Log only the metadata that can't be used
-      // to pair: device name + role + non-secret scope.
-      const { code, expiresAt } = generatePairingCode({ deviceName: name, role, scope });
-      // The setup string IS the product — there is no bare-number
-      // fallback (greenfield: every dina-agent understands `dina1:`,
-      // and the number alone was never enough to configure anyway).
-      // If the node identity isn't ready, fail loudly and let the user
-      // retry rather than handing them a third of a setup.
-      const nodeDid = getNodeDID();
-      if (nodeDid === null) {
-        throw new Error('Node identity not ready yet — wait for boot to finish and retry.');
-      }
-      const signingPub = getNodeSigningPublicKey();
-      const setupCode = buildAgentSetupCode({
-        msgboxUrl: resolveMsgBoxURL(),
-        homenodeDid: nodeDid,
-        deviceName: name,
-        code,
-        // §6 — a joining STAFF phone seals its first request to this key;
-        // agents ignore the extra field.
-        ...(signingPub === null ? {} : { nodeSigningPubHex: bytesToHex(signingPub) }),
-      });
-      setLiveCode({ code, expiresAt, deviceName: name, role, scope, setupCode });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn('[paired-devices] generate failed:', message);
-      Alert.alert('Could not generate setup code', message);
-    } finally {
-      setGenerating(false);
+    const client = getOwnerSetupClient();
+    if (client === null) {
+      showMessage('Could not generate setup code', 'Dina is still starting up.');
+      return;
     }
-  }, [deviceName, role, scope]);
+    const pairing = role;
+    setGenerating(true);
+    // Pairing codes are short-lived shared secrets — never log the code value
+    // itself (MT-33-I1): native logs persist, and a recent code would surface
+    // to anyone reading them. Core mints the code and the one-paste setup
+    // string (relay, node identity, and for a staff phone the node's signing
+    // key); a coding agent is stamped `coding` scope there.
+    void gated('Could not generate setup code', async () => {
+      const minted =
+        pairing === 'agent'
+          ? await client.mintCodingAgentCode(name)
+          : await client.mintStaffCode(name);
+      setLiveCode({
+        expiresAt: minted.expires_at,
+        deviceName: minted.device_name ?? name,
+        role: pairing,
+        setupCode: minted.setup_code,
+      });
+    }).finally(() => setGenerating(false));
+  }, [deviceName, role, gated]);
 
   const secondsRemaining = liveCode === null ? 0 : Math.max(0, liveCode.expiresAt - now);
 
@@ -305,7 +443,9 @@ export default function PairedDevicesScreen() {
       >
         <Section title={`CONNECTED (${devices.length})`}>
           {devices.length === 0 ? (
-            <Text style={styles.empty}>No agents connected yet.</Text>
+            <Text style={styles.empty} testID="paired-devices-empty">
+              {devicesError ?? 'No agents connected yet.'}
+            </Text>
           ) : (
             devices.map((d) => {
               const activeBrain = activeConnectedBrainForPrincipal(reasoningBackends, d.did);
@@ -327,38 +467,49 @@ export default function PairedDevicesScreen() {
                     {d.lastSeen > 0 ? ` • active ${new Date(d.lastSeen).toLocaleDateString()}` : ''}
                     {d.revoked ? ' • revoked' : ''}
                   </Text>
-                  {!d.revoked && getBrainClient() !== null && (
-                    <>
-                      <Pressable
-                        testID={`paired-devices-brain-${d.deviceId}`}
-                        onPress={() => void handleToggleBrain(d)}
-                        disabled={brainBusy}
-                        style={({ pressed }) => [
-                          styles.brainButton,
-                          activeBrain !== null && styles.brainButtonActive,
-                          (pressed || brainBusy) && styles.brainButtonPressed,
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          activeBrain === null
-                            ? `Use ${d.deviceName} as Brain`
-                            : `Stop using ${d.deviceName} as Brain`
-                        }
-                      >
-                        {brainBusy ? (
-                          <ActivityIndicator size="small" color={colors.textPrimary} />
-                        ) : (
-                          <Text style={styles.brainButtonText}>
-                            {activeBrain === null ? 'Use as Brain' : 'Stop using as Brain'}
-                          </Text>
-                        )}
-                      </Pressable>
-                      <Text style={styles.brainHelp}>
-                        {activeBrain === null
-                          ? 'Let this active Claude, Codex, or other coding-agent session perform bounded reasoning for Dina.'
-                          : 'Foreground only. Dina still controls identity, context, approvals, state, and actions.'}
-                      </Text>
-                    </>
+                  {/* Only a coding agent session can do Dina's reasoning. */}
+                  {!d.revoked &&
+                    d.role === 'agent' &&
+                    d.scope === 'coding' &&
+                    getBrainClient() !== null && (
+                      <>
+                        <Pressable
+                          testID={`paired-devices-brain-${d.deviceId}`}
+                          onPress={() => handleToggleBrain(d)}
+                          disabled={brainBusy}
+                          style={({ pressed }) => [
+                            styles.brainButton,
+                            activeBrain !== null && styles.brainButtonActive,
+                            (pressed || brainBusy) && styles.brainButtonPressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            activeBrain === null
+                              ? `Use ${d.deviceName} as Brain`
+                              : `Stop using ${d.deviceName} as Brain`
+                          }
+                        >
+                          {brainBusy ? (
+                            <ActivityIndicator size="small" color={colors.textPrimary} />
+                          ) : (
+                            <Text style={styles.brainButtonText}>
+                              {activeBrain === null ? 'Use as Brain' : 'Stop using as Brain'}
+                            </Text>
+                          )}
+                        </Pressable>
+                        <Text style={styles.brainHelp}>
+                          {activeBrain === null
+                            ? 'Let this active Claude, Codex, or other coding-agent session perform bounded reasoning for Dina.'
+                            : 'Foreground only. Dina still controls identity, context, approvals, state, and actions.'}
+                        </Text>
+                      </>
+                    )}
+                  {!d.revoked && d.role === 'agent' && d.scope === 'coding' && (
+                    <SupervisionPicker
+                      device={d}
+                      state={supervision[d.did]}
+                      onChoose={(profile) => handleSupervision(d, profile)}
+                    />
                   )}
                   {!d.revoked && (
                     <Pressable
@@ -381,7 +532,7 @@ export default function PairedDevicesScreen() {
           <Pressable
             testID="paired-devices-refresh"
             onPress={() => {
-              refreshDevices();
+              void refreshDevices();
               void refreshBrainBindings();
             }}
             style={styles.refreshButton}
@@ -390,6 +541,56 @@ export default function PairedDevicesScreen() {
             <Text style={styles.refreshText}>Refresh</Text>
           </Pressable>
         </Section>
+
+        {approvalPhone !== undefined && (
+          <Section title="APPROVAL PHONE">
+            <Text style={styles.help} testID="approval-phone-state">
+              {approvalPhone.state === 'active'
+                ? `Paired${approvalPhone.phoneDid !== undefined ? ` · ${approvalPhone.phoneDid}` : ''}. That phone decides this node’s high-risk coding actions.`
+                : approvalPhone.state === 'revoking'
+                  ? 'Unpaired here; the relay still owes the phone its cleanup.'
+                  : 'No phone decides this node’s high-risk coding actions yet. Generate a setup code in the Dina phone app (Settings → Agents) and paste it here.'}
+            </Text>
+            {approvalPhone.state === 'active' ? (
+              <Pressable
+                testID="approval-phone-revoke"
+                onPress={handleUnpairPhone}
+                style={({ pressed }) => [
+                  styles.revokeButton,
+                  pressed && styles.revokeButtonPressed,
+                ]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.revokeText}>Unpair phone</Text>
+              </Pressable>
+            ) : (
+              <>
+                <TextInput
+                  testID="approval-phone-code"
+                  style={styles.input}
+                  value={phoneCode}
+                  onChangeText={setPhoneCode}
+                  secureTextEntry
+                  placeholder="dina1:…"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  testID="approval-phone-pair"
+                  style={[
+                    styles.primaryButton,
+                    phoneCode.trim() === '' && styles.primaryButtonDisabled,
+                  ]}
+                  disabled={phoneCode.trim() === ''}
+                  onPress={handlePairPhone}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.primaryButtonText}>Pair phone</Text>
+                </Pressable>
+              </>
+            )}
+          </Section>
+        )}
 
         <Section title="AUTHORIZE A NEW AGENT">
           <Text style={styles.help}>
@@ -473,8 +674,6 @@ export default function PairedDevicesScreen() {
             <Text
               testID="paired-devices-setup-code"
               selectable
-              numberOfLines={2}
-              ellipsizeMode="middle"
               style={styles.setupCode}
             >
               {liveCode.setupCode}
@@ -487,12 +686,14 @@ export default function PairedDevicesScreen() {
               accessibilityLabel="Share setup code"
             >
               <Text style={styles.copyButtonText}>
-                {sharedSetup ? 'Shared!' : 'Share Setup Code'}
+                {shareOutcomeLabel(shareOutcome, 'Share Setup Code')}
               </Text>
             </Pressable>
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
-              <Text style={styles.mono}>{liveCode.scope}</Text>
+              <Text style={styles.mono}>
+                {liveCode.role === 'agent' ? 'coding agent' : 'staff phone'}
+              </Text>
             </Text>
             <Text style={[styles.codeMeta, secondsRemaining < 60 && styles.codeExpiring]}>
               Expires in {formatDuration(secondsRemaining)}
@@ -500,8 +701,81 @@ export default function PairedDevicesScreen() {
           </Section>
         )}
       </KeyboardAwareScrollView>
+      <PresenceSheet {...presenceSheet} />
     </>
   );
+}
+
+/** Each agent's current supervision, from Core's policy list. */
+function supervisionByAgent(list: AgentSupervisionPolicies): Record<string, SupervisionState> {
+  const out: Record<string, SupervisionState> = {};
+  for (const policy of list.stale_policies) {
+    // An earlier owner chose it; full supervision applies until the owner
+    // confirms a level again, and that change must name this version.
+    out[policy.agent_did] = {
+      profile: 'full_supervision',
+      version: policy.policy_version,
+      stale: true,
+    };
+  }
+  for (const policy of list.policies) {
+    out[policy.agent_did] = {
+      profile: policy.revoked_at === null ? policy.profile : 'full_supervision',
+      version: policy.policy_version,
+      stale: false,
+    };
+  }
+  return out;
+}
+
+function SupervisionPicker(props: {
+  device: DeviceRow;
+  state: SupervisionState | undefined;
+  onChoose: (profile: AgentSupervisionProfile) => void;
+}): React.ReactElement {
+  const current = props.state?.profile ?? 'full_supervision';
+  const chosen = SUPERVISION.find((s) => s.profile === current) ?? SUPERVISION[2];
+  return (
+    <View testID={`paired-devices-supervision-${props.device.deviceId}`}>
+      <Text style={styles.label}>Supervision</Text>
+      <View style={styles.roleRow}>
+        {SUPERVISION.map((option) => (
+          <TouchableOpacity
+            key={option.profile}
+            style={[styles.roleChip, current === option.profile && styles.roleChipActive]}
+            onPress={() => {
+              if (option.profile !== current || props.state?.stale === true)
+                props.onChoose(option.profile);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: current === option.profile }}
+            testID={`paired-devices-supervision-${props.device.deviceId}-${option.profile}`}
+          >
+            <Text
+              style={current === option.profile ? styles.roleChipActiveText : styles.roleChipText}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {props.state?.stale === true && (
+        <Text style={styles.brainHelp}>
+          This Home Node’s identity changed. Full supervision is active until you choose a level
+          again.
+        </Text>
+      )}
+      <Text style={styles.brainHelp}>{chosen?.description}</Text>
+    </View>
+  );
+}
+
+function errorKeyOrMessage(err: unknown): string {
+  return err instanceof OwnerSetupHttpError
+    ? err.errorKey
+    : err instanceof Error
+      ? err.message
+      : 'error';
 }
 
 // ---------------------------------------------------------------------------

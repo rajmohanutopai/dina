@@ -8,19 +8,13 @@
 
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { OwnerCommerceHttpError } from '@dina/core';
 
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { TradeInboxItemDto, TradeStatementAnswer } from '@dina/core';
@@ -88,7 +82,7 @@ export default function TradeScreen(): React.ReactElement {
       setItems(answer.items);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(ownerErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -117,12 +111,12 @@ export default function TradeScreen(): React.ReactElement {
             await client.tradeStatement(counterpartyDid, 'INR', 'buyer'),
           ]);
         } catch (inner) {
-          Alert.alert('No statement', (inner as Error).message);
+          showMessage('No statement', (inner as Error).message);
           setStatementFor(null);
         }
         return;
       }
-      Alert.alert('No statement', (err as Error).message);
+      showMessage('No statement', ownerErrorText(err));
       setStatementFor(null);
     }
   }, []);
@@ -167,7 +161,7 @@ export default function TradeScreen(): React.ReactElement {
       try {
         const client = getOwnerCommerceClient();
         if (client === null) {
-          Alert.alert('Not ready', 'Dina is still starting up. Reopen and try again.');
+          showMessage('Not ready', 'Dina is still starting up. Reopen and try again.');
           return;
         }
         const answer = await client.remindCounterparty({
@@ -180,7 +174,7 @@ export default function TradeScreen(): React.ReactElement {
         // owner, and a standing grant can let it go straight out. Saying
         // "waiting for you" when it already went is the kind of small lie that
         // makes an owner stop trusting the screen.
-        Alert.alert(
+        showMessage(
           answer.ok
             ? answer.mode === 'dispatched'
               ? 'Reminder sent'
@@ -193,7 +187,7 @@ export default function TradeScreen(): React.ReactElement {
             : reminderReason(answer.reason),
         );
       } catch (err) {
-        Alert.alert('Could not ask', err instanceof Error ? err.message : String(err));
+        showMessage('Could not ask', ownerErrorText(err));
       } finally {
         setRemindingKey(null);
       }
@@ -331,12 +325,19 @@ export default function TradeScreen(): React.ReactElement {
                             accessibilityRole="button"
                             disabled={remindingKey !== null}
                             onPress={() => {
-                              void remind(statementFor, due.purchase_order_id, due.due_at, due.amount.currency);
+                              void remind(
+                                statementFor,
+                                due.purchase_order_id,
+                                due.due_at,
+                                due.amount.currency,
+                              );
                             }}
                             style={({ pressed }) => [styles.remind, pressed && { opacity: 0.85 }]}
                           >
                             <Text style={styles.remindText}>
-                              {remindingKey === `${due.purchase_order_id}-${due.due_at}` ? 'Asking…' : 'Remind'}
+                              {remindingKey === `${due.purchase_order_id}-${due.due_at}`
+                                ? 'Asking…'
+                                : 'Remind'}
                             </Text>
                           </Pressable>
                         )}
@@ -431,7 +432,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   statementLine: { ...textStyles.body, color: colors.textPrimary, marginTop: spacing.xs },
-  dueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  dueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   remind: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,

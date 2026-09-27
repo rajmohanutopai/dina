@@ -6,7 +6,15 @@ React Native Web bundle does not — browsers have no equivalent. This
 document is the honest fine print operators should read **before**
 running the web client outside their own laptop.
 
-Source: `docs/HOME_NODE_LITE_WEB_UI_TASKS.md` Phase 2 "Storage shim".
+Source: `docs/HOME_NODE_LITE_WEB_UI_TASKS.md` Phase 2 "Storage shim";
+`docs/WEB_OWNER_SURFACE_PLAN.md` (Core serves the page; the owner device).
+
+**Where the page lives.** Core serves the web app at `/app/` on Core's port
+(`DINA_CORE_WEB_UI=1`). Owner calls go to Core on that same origin, signed by
+this browser's owner device; chat, contacts, reminders and notifications go to
+Brain's `/api/*` cross-origin, which Brain allows for exactly Core's origin
+(`DINA_BRAIN_WEB_ORIGIN`). Nothing Brain returns is ever served from Core's
+origin.
 
 ## Trust boundary
 
@@ -25,7 +33,7 @@ don't provide a tighter isolation primitive than the origin.
 
 ## What is stored where
 
-Two surfaces hold device-local material:
+Three surfaces hold device-local material:
 
 1. **`keychain.web.ts`** (`apps/mobile/src/services/keychain.web.ts`).
    - Backing store: IndexedDB database `dina-keychain`, object store
@@ -41,10 +49,20 @@ Two surfaces hold device-local material:
      also driving the browser's WebCrypto subsystem on the
      compromised origin.
 
-2. **Core vault data.** _Not stored in the browser at all._ All
-   vault reads/writes go to the brain-server over HTTPS, which in
-   turn talks to Core's SQLCipher file. The web client is a thin
-   UI shell over the same `/api/v1/*` endpoints mobile uses.
+2. **The owner device** (`apps/mobile/src/services/owner_device.web.ts`).
+   - Backing store: IndexedDB database `dina-owner-device`, one record.
+   - An Ed25519 signing key made with WebCrypto as **non-extractable**:
+     the page can ask the browser to sign with it, but no script can read
+     it out. Core registered its public half as a device with role
+     `owner`; a lost laptop is one revoke (Settings → Owner access, or
+     Agents from any owner surface).
+   - The owner key (`owner_capability`) is used once to pair and is **not
+     stored**.
+
+3. **The owner's vault.** _Not stored in the browser._ Owner reads and
+   decisions go to Core; the rest to Brain. (The web build also runs a
+   small node of its own in the tab — onboarding creates a browser
+   identity — which holds none of the owner's vault.)
 
 ## What is NOT stored in the browser
 
@@ -63,10 +81,10 @@ Two surfaces hold device-local material:
 | Threat                                                  | Mitigation                                                                                                                                                                 |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Resting compromise of the user's disk (no browser open) | AES-GCM under a non-extractable WebCrypto key. Stolen IndexedDB rows are opaque.                                                                                           |
-| Hostile script on the same origin (XSS, malicious ext.) | **Not mitigated.** Inside the trust boundary. Run the brain-server on a hostname you control end-to-end; never proxy through a CDN that injects ad/analytics scripts.      |
+| Hostile script on the same origin (XSS, malicious ext.) | **Partly.** The page's CSP runs only its own scripts (`script-src 'self'`, no inline, no `eval`). A script that did run could act as the owner while the page is open, but could not take the owner device key away (non-extractable). On a security-mode node spending, pairing, plugin consent and money cards still need the passphrase; a convenience-mode node has none, so there the script could do them too. |
 | Another user logging into the same OS account           | Browser profile separation. The same-machine-different-OS-account case is the OS's responsibility; we don't reach below the browser.                                       |
 | Backup software exfiltrating browser data               | The IndexedDB rows are encrypted at rest — backups carry ciphertext only. Recovery requires the operator to restore the browser profile (which holds the wrap key) intact. |
-| Network adversary                                       | TLS to the brain-server (operator-issued cert). The brain-server's `/api/v1/*` requires Ed25519 device-key signed requests just like mobile.                               |
+| Network adversary                                       | Core and Brain stay on loopback; a remote browser reaches both through an SSH tunnel or a private network (Tailscale). Owner calls carry an Ed25519 signature, a timestamp and a nonce (replay refused). Brain's `/api/*` is unauthenticated by design: never publish it. |
 
 ## What this means in practice
 
@@ -77,46 +95,56 @@ Two surfaces hold device-local material:
 - A locked-down browser kiosk on the operator's premises (e.g. a
   dedicated Mac mini running Safari with only this site
   whitelisted).
-- A self-hosted brain-server reachable only from the operator's
-  LAN / Tailscale net.
+- A self-hosted Home Node reached only over loopback, through
+  `ssh -L 8100:127.0.0.1:8100 -L 8200:127.0.0.1:8200 host` or a
+  private network such as Tailscale.
 
 **Discouraged:**
 
 - Shared workstations (libraries, schools, conference rooms).
   Anyone with intra-session access to the browser reads the keys.
   Use the mobile app instead.
-- Hosting the brain-server on a public CDN that injects third-party
-  scripts. The CDN sits inside the trust boundary by definition.
+- Putting Core or Brain behind a public CDN or proxy that injects
+  third-party scripts. It sits inside the trust boundary by definition.
 - Sharing a browser profile across users. Don't.
 
-## Owner control (interactive runs & watches)
+## Owner control
 
-The `/v1/run*` and `/v1/watch*` routes are the owner-only control plane
-(`INTERACTIVE_SERVICES_ARCHITECTURE.md` §12.5): only the human owner may
-create, decide, or steer a run. On mobile that owner is the in-app user
-(in-process, no credential travels). On the split server the owner is the
-human at a browser, so Core mints an **owner capability** —
-`DINA_OWNER_CAPABILITY`, or a `0600` `owner_capability` file in the vault dir —
-and only a request carrying the matching `x-dina-owner-capability` header (a
-timing-safe compare, scoped to the run/watch paths) is treated as the owner.
+Only the human owner may decide an approval card, place an order, award a
+tender, grant staff authority, pair a device or install a plugin. On mobile
+that owner is the in-app user (in-process, no credential travels). On a
+server node the owner is the human at a browser, and Core recognises the
+owner two ways, both only on the owner routes:
 
-Two ways to present it, both **opt-in and off by default**:
+- **The owner device (the web app).** A browser connected under Settings →
+  Owner access signs each request with its non-extractable key; Core's
+  entry point verifies the signature against a device of role `owner` and
+  treats the request as the owner. Off the owner routes the device reaches
+  nothing.
+- **The owner capability** (`DINA_OWNER_CAPABILITY`, or the `0600`
+  `owner_capability` file in the vault dir), in the `x-dina-owner-capability`
+  header: for headless servers, scripts, and pairing the first owner device.
+  A timing-safe compare, scoped to the owner routes.
 
-- **Core-served owner console (recommended) — `DINA_CORE_OWNER_CONSOLE=1`.**
-  Core serves a self-contained page at `/owner` (on the Core port) whose calls
-  target Core's *own* routes same-origin. The capability lives only on Core's
-  origin and **never transits Brain**. This is the credential-safe surface.
-- **Brain byte-pipe — `DINA_BRAIN_OWNER_PROXY=1`.** Lets the Brain-served web
-  app drive runs by forwarding the header verbatim to Core. Convenient (one
-  origin for the whole SPA), but the reusable capability **passes through the
-  Brain process**: a fully-compromised Brain could skim it from a live request
-  and then issue owner commands itself. Enable this only when that residual is
-  acceptable (loopback-only dev), and prefer the Core console otherwise.
+Neither ever reaches Brain. The old path that let the Brain-served page
+forward the capability through Brain (`DINA_BRAIN_OWNER_PROXY`) and Brain's
+own copy of the app (`/web`) are gone. The Core-served `/owner` console
+(`DINA_CORE_OWNER_CONSOLE=1`) remains for now, same-origin with Core's
+routes.
 
-With neither flag set, the server exposes no browser owner surface at all
-(fail-closed). The custom-header requirement is itself a CSRF defense — a
-cross-site page can't set a custom header without a CORS preflight, and Core
-sends no permissive CORS headers by default.
+**Presence.** The powerful actions — spending, staff authority, pairing a
+coding agent, staff phone, owner device or approval phone, plugin consent and
+updates, invites, buyer and supplier settings, choosing a reasoning backend,
+the yes on a money or staff-escalation card, lowering an agent's supervision —
+also need the owner's passphrase within the last five minutes (a person
+present), on every surface. The proof counts only for the surface that made
+it (this browser, another browser, the capability). Revoking and declining
+never do. This holds on a node in **security mode**
+(`DINA_UNLOCK_PASSPHRASE` set before the server's first boot); a
+convenience-mode node has no passphrase to ask for and gates none of these.
+
+A cross-site page cannot forge an owner call: it holds no key, and a custom
+header or signature needs a CORS preflight Core never grants.
 
 ## Verifying the security claims locally
 

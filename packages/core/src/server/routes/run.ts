@@ -204,7 +204,7 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
   // GET /v1/run/list — the owner's active (non-terminal-first) runs, as safe
   // display DTOs (the full RunRecord — config + crypto fields — never leaves
   // Core). Owner-only, like every other /v1/run/* surface (§12.5). This is the
-  // path the mobile run screen uses via InProcessOwnerRunClient, so the UI never
+  // path the mobile run screen uses via OwnerRunControlClient, so the UI never
   // touches `getRunService().store()` directly.
   router.get('/v1/run/list', async (req) => {
     const denied = ownerOnlyGuard(req);

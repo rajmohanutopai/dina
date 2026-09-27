@@ -721,7 +721,7 @@ from a **reachable** Core → `ask`/phone; anything not explicitly SAFE → `ask
 
 Core is loopback-only, but the phone must decide the laptop's approvals — and the existing `dina1:`
 code runs the **opposite** direction (it packages the _phone_ node's relay so an agent connects to
-the phone, `apps/mobile/src/services/agent_setup_code.ts`). So v1 specifies + versions a
+the phone, `packages/core/src/pairing/setup_code.ts`). So v1 specifies + versions a
 laptop-Core↔phone channel:
 
 - **Transport:** the laptop Core connects outbound to **MsgBox** (same sealed relay the mobile node

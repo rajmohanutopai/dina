@@ -161,12 +161,57 @@ describe('the tender screen', () => {
     const view = render(<TenderScreen />);
     await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
     fireEvent.press(view.getByTestId(`tender-award-${B}`));
-    await waitFor(() => expect(view.getByTestId('tender-presence-input')).toBeTruthy());
-    fireEvent.changeText(view.getByTestId('tender-presence-input'), 'correct horse');
-    fireEvent.press(view.getByTestId('tender-presence-submit'));
+    await waitFor(() => expect(view.getByTestId('presence-passphrase')).toBeTruthy());
+    fireEvent.changeText(view.getByTestId('presence-passphrase'), 'correct horse');
+    fireEvent.press(view.getByTestId('presence-submit'));
     await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
     expect(b.provePresence).toHaveBeenCalledWith('correct horse');
     expect(b.awardTender).toHaveBeenCalledTimes(2);
+  });
+
+  it('the retried award keeps the screen busy: a second tap sends nothing more', async () => {
+    let first = true;
+    let finish: (() => void) | null = null;
+    const b = backend({
+      awardTender: jest.fn(async () => {
+        if (first) {
+          first = false;
+          throw Object.assign(new Error('no presence'), { errorKey: 'no_user_presence' });
+        }
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        return { kind: 'awarded' as const, approvalId: 'oap_3', supplierDid: B, replayed: false };
+      }),
+    });
+    setTenderBackendForTest(b);
+    const view = render(<TenderScreen />);
+    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
+    fireEvent.press(view.getByTestId(`tender-award-${B}`));
+    await waitFor(() => expect(view.getByTestId('presence-passphrase')).toBeTruthy());
+    fireEvent.changeText(view.getByTestId('presence-passphrase'), 'correct horse ');
+    fireEvent.press(view.getByTestId('presence-submit'));
+    await waitFor(() => expect(b.awardTender).toHaveBeenCalledTimes(2));
+    // The passphrase goes as typed, trailing space included.
+    expect(b.provePresence).toHaveBeenCalledWith('correct horse ');
+    // The retry is in flight: Award stays disabled and the spinner shows, so
+    // a second tap cannot send a second award. (The test renderer's Pressable
+    // does not honour `disabled`, so the prop is what is asserted.)
+    expect(view.getByTestId(`tender-award-${B}`).props.disabled).toBe(true);
+    finish?.();
+    await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
+    expect(b.awardTender).toHaveBeenCalledTimes(2);
+  });
+
+  it('a browser not connected as the owner is told to connect, not shown a raw key', async () => {
+    const b = backend({
+      tenderRanking: jest.fn(async () => {
+        throw Object.assign(new Error('401'), { errorKey: 'owner_device_not_connected' });
+      }),
+    });
+    setTenderBackendForTest(b);
+    const view = render(<TenderScreen />);
+    await waitFor(() => expect(view.getByText(/Connect this browser as the owner/)).toBeTruthy());
   });
 
   it('an awarded tender offers the send of its held order, and no further award', async () => {

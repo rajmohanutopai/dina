@@ -225,6 +225,8 @@ import {
   clearStaffPresence,
   OWNER_PRESENCE_TTL_MS,
   ownerPresenceCanBeEstablished,
+  ownerPresenceRefusal,
+  ownerPresencePrincipal,
   ownerPresentNow,
   proveOwnerPresence,
   proveStaffPresence,
@@ -432,7 +434,8 @@ function publicationFence(): CoreResponse | null {
 }
 
 /**
- * Is a person here RIGHT NOW?
+ * Is a person here RIGHT NOW, at the principal driving this request? `null`
+ * is a caller that is no owner principal (a connector): never present.
  *
  * Read by the draft service's `userPresent`. Both questions this file asks
  * about presence come from `owner_presence.ts` so they cannot drift, but they
@@ -441,8 +444,8 @@ function publicationFence(): CoreResponse | null {
  * capability. Conflating them meant the retired item-list route stayed open
  * whenever nobody happened to be at the keyboard.
  */
-function ownerPresentNowForRoutes(): boolean {
-  return ownerPresentNow(Date.now());
+function ownerPresentNowForRoutes(principal: string | null): boolean {
+  return principal !== null && ownerPresentNow(Date.now(), principal);
 }
 
 /**
@@ -525,7 +528,14 @@ function completeProjection(value: Record<string, unknown>): Record<string, unkn
  * beyond those two — every other caller gets the owner guard's own
  * refusal, so the refusal shape stays identical across the surface.
  */
-type CommerceRouteCaller = { kind: 'owner' } | { kind: 'staff'; deviceDid: string };
+/**
+ * Who is acting on a commerce route. The owner kind names its presence
+ * principal (`ownerPresencePrincipal`), so a presence check asks about the
+ * surface that sent THIS request, as the staff kind asks about its device.
+ */
+type CommerceRouteCaller =
+  | { kind: 'owner'; principal: string }
+  | { kind: 'staff'; deviceDid: string };
 
 /** An integration's command id: a stable, log-safe token, never free text. */
 const COMMAND_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
@@ -536,7 +546,7 @@ function staffOrOwnerCaller(
   ownerGuard: OwnerGuard,
 ): CommerceRouteCaller | CoreResponse {
   const denied = ownerGuard(req);
-  if (denied === null) return { kind: 'owner' };
+  if (denied === null) return { kind: 'owner', principal: ownerPresencePrincipal(req) };
   if (req.callerType === 'staff' && typeof req.callerDID === 'string' && req.callerDID !== '') {
     return { kind: 'staff', deviceDid: req.callerDID };
   }
@@ -563,7 +573,7 @@ function purchasingCaller(
   if (!('kind' in caller)) return caller;
   const now = Date.now();
   if (caller.kind === 'owner') {
-    if (opts.presence && ownerPresenceCanBeEstablished() && !ownerPresentNow(now)) {
+    if (opts.presence && ownerPresenceCanBeEstablished() && !ownerPresentNow(now, caller.principal)) {
       return {
         status: 403,
         body: {
@@ -1005,12 +1015,8 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // closes: a program holding only the boot-minted owner capability can
     // no longer mint a commercial approval on a node whose owner has a
     // passphrase nobody typed.
-    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(Date.now())) {
-      return {
-        status: 403,
-        body: { error: 'no_user_presence', detail: 'approving an order needs a person present' },
-      };
-    }
+    const absent = ownerPresenceRefusal(req, Date.now(), 'approving an order needs a person present');
+    if (absent !== null) return absent;
 
     const body = (req.body ?? {}) as {
       order?: unknown;
@@ -1474,7 +1480,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
 
   const orderDraftService = (
     runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
-    caller: CommerceRouteCaller = { kind: 'owner' },
+    caller: CommerceRouteCaller,
   ): OrderDraftService =>
     new OrderDraftService({
       drafts: runtime.orderDrafts,
@@ -1486,10 +1492,16 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       userPresent: () =>
         caller.kind === 'staff'
           ? staffPresentNow(caller.deviceDid, Date.now())
-          : ownerPresentNow(Date.now()),
+          : ownerPresentNow(Date.now(), caller.principal),
       attributionBoundary: runtime.attributionBoundary,
       vouchedBy: () => (caller.kind === 'staff' ? caller.deviceDid : getNodeDID()),
     });
+
+  /** The owner as a draft-service caller, for the owner-only draft doors. */
+  const ownerCaller = (req: CoreRequest): CommerceRouteCaller => ({
+    kind: 'owner',
+    principal: ownerPresencePrincipal(req),
+  });
 
   /**
    * §6 capture, order lane — the same trusted artifact-ingest boundary the
@@ -1769,7 +1781,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 400, body: { error: 'draft_id, line_id, field and value are required' } };
     }
     return orderDraftAnswer(
-      orderDraftService(runtime).repairLine(body.draft_id, {
+      orderDraftService(runtime, ownerCaller(req)).repairLine(body.draft_id, {
         lineId: body.line_id,
         field: body.field,
         value: body.value,
@@ -1827,7 +1839,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       }
     }
     return orderDraftAnswer(
-      orderDraftService(runtime).resolveLine(body.draft_id, {
+      orderDraftService(runtime, ownerCaller(req)).resolveLine(body.draft_id, {
         lineId: body.line_id,
         resolution: resolution as unknown as OrderDraft['lines'][number]['resolution'],
         ...(body.evidence !== undefined
@@ -1846,7 +1858,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (typeof body.draft_id !== 'string' || typeof body.line_id !== 'string') {
       return { status: 400, body: { error: 'draft_id and line_id are required' } };
     }
-    return orderDraftAnswer(orderDraftService(runtime).deferLine(body.draft_id, body.line_id));
+    return orderDraftAnswer(orderDraftService(runtime, ownerCaller(req)).deferLine(body.draft_id, body.line_id));
   });
 
   router.post('/v1/commerce/orders/drafts/accept_fields', async (req): Promise<CoreResponse> => {
@@ -1866,7 +1878,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       }
       refs.push({ lineId: named.line_id, field: named.field });
     }
-    return orderDraftAnswer(orderDraftService(runtime).acceptLineFields(body.draft_id, refs));
+    return orderDraftAnswer(orderDraftService(runtime, ownerCaller(req)).acceptLineFields(body.draft_id, refs));
   });
 
   router.post('/v1/commerce/orders/drafts/requirement', async (req): Promise<CoreResponse> => {
@@ -1887,7 +1899,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       };
     }
     return orderDraftAnswer(
-      orderDraftService(runtime).editRequirement(body.draft_id, {
+      orderDraftService(runtime, ownerCaller(req)).editRequirement(body.draft_id, {
         key: body.key,
         action: action as 'edit' | 'accept' | 'omit' | 'reinstate',
         ...(typeof body.value === 'string' ? { value: body.value } : {}),
@@ -1956,7 +1968,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 400, body: { error: 'draft_id and conversation_id are required' } };
     }
     return orderDraftAnswer(
-      orderDraftService(runtime).reopenLines(body.draft_id, body.conversation_id),
+      orderDraftService(runtime, ownerCaller(req)).reopenLines(body.draft_id, body.conversation_id),
     );
   });
 
@@ -1973,7 +1985,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (typeof body.draft_id !== 'string' || body.draft_id === '') {
       return { status: 400, body: { error: 'draft_id_required' } };
     }
-    const outcome = orderDraftService(runtime).abandon(body.draft_id);
+    const outcome = orderDraftService(runtime, ownerCaller(req)).abandon(body.draft_id);
     if (outcome.ok) {
       runtime.runInTransaction(() => {
         runtime.imageArtifacts.eraseDraft(body.draft_id as string);
@@ -2004,7 +2016,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       if (!ownerPresenceCanBeEstablished()) {
         return { status: 503, body: { error: 'presence_unavailable', detail: 'photo-derived orders are unapprovable on this deployment' } };
       }
-      if (!ownerPresentNow(Date.now())) {
+      if (!ownerPresentNow(Date.now(), caller.principal)) {
         return { status: 403, body: { error: 'no_user_presence' } };
       }
     } else {
@@ -2355,7 +2367,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       userPresent: () =>
         caller.kind === 'staff'
           ? staffPresentNow(caller.deviceDid, Date.now())
-          : ownerPresentNow(Date.now()),
+          : ownerPresentNow(Date.now(), caller.principal),
       attributionBoundary: runtime.attributionBoundary,
       vouchedBy: () => (caller.kind === 'staff' ? caller.deviceDid : getNodeDID()),
     });
@@ -3089,7 +3101,8 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
    * mints the device and keeps only its DID; consent is still `confirm`.
    */
   router.post('/v1/commerce/install/bind_reference_runner', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
+    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || body.install_id === '') {
@@ -3106,7 +3119,8 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
   });
 
   router.post('/v1/commerce/install/bind_device', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
+    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || typeof body.device_did !== 'string') {
@@ -3124,7 +3138,8 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
   });
 
   router.post('/v1/commerce/install/confirm', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
+    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'consenting to a pack needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || body.install_id === '') {
@@ -3196,7 +3211,8 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
   });
 
   router.post('/v1/commerce/install/update/confirm', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
+    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'updating a pack needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as {
       install_id?: unknown;
@@ -3430,7 +3446,17 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     });
 
     router.put(`/v1/commerce/settings/${kind}`, async (req): Promise<CoreResponse> => {
-      const denied = ownerOnlyGuard(req);
+      // WEB_OWNER_SURFACE_PLAN §3.8 — buyer and supplier settings are standing
+      // commercial policy: the automatic price floor, whether orders are
+      // accepted unseen, who may ask for quotes, cold invites, blocked
+      // suppliers. Writing them hands out authority in advance, so a person
+      // must be present. Business settings (legal name, registrations,
+      // address) hand out nothing and stay ungated.
+      const denied =
+        ownerOnlyGuard(req) ??
+        (kind === 'business'
+          ? null
+          : ownerPresenceRefusal(req, Date.now(), `changing ${kind} settings needs a person present`));
       if (denied !== null) return denied;
       const runtime = getCommerceRuntime();
       if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
@@ -5230,7 +5256,10 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       return { status: 403, body: { error: 'acting_business_mismatch' } };
     }
     const draftId = `cdr_int_${bytesToHex(hash(new TextEncoder().encode(`${body.catalog_id}\n${body.command_id}`))).slice(0, 32)}`;
-    const svc = buildDraftService();
+    // A connector is no owner principal: nothing it drives counts as a
+    // person present, so it can confirm a source-derived draft and never a
+    // model-derived one.
+    const svc = buildDraftService(null);
     if (svc === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const loaded = await loadCatalogThroughConnector({
       spec: {
@@ -5573,7 +5602,7 @@ function draftIngressDeps(drafts: CatalogDraftRepository, newDraftId?: () => str
  * integration's refresh drives the SAME state machine (confirm, prepare) and
  * can never reach approve or publish by another path.
  */
-function buildDraftService(): CatalogDraftService | null {
+function buildDraftService(presencePrincipal: string | null): CatalogDraftService | null {
   const runtime = getCommerceRuntime();
   if (runtime === null) return null;
   return new CatalogDraftService({
@@ -5582,12 +5611,11 @@ function buildDraftService(): CatalogDraftService | null {
     sha256: hash,
     now: () => Date.now(),
     newClaimToken: () => `pcl_${bytesToHex(randomBytes(16))}`,
-    // NOT WIRED, AND FAILING CLOSED IS THE POINT. §10 item 9: the per-persona
-    // Argon2id verifier exists but has no production caller, no persistence
-    // and no mobile equivalent. Returning false makes every binding operation
-    // refuse, which is honest — a receipt minted without presence would
-    // record that the software asked itself.
-    userPresent: ownerPresentNowForRoutes,
+    // Presence of the principal driving THIS request (§10 item 9, and
+    // WEB_OWNER_SURFACE_PLAN §3.8): a passphrase typed at another owner
+    // surface vouches for nothing here. A receipt minted without presence
+    // would record that the software asked itself.
+    userPresent: () => ownerPresentNowForRoutes(presencePrincipal),
     publicationFence: () => publicationFence(),
     attributionBoundary: runtime.attributionBoundary,
     // The owner vouches on this surface; the staff confirm surface (§7)
@@ -5612,7 +5640,8 @@ function evidenceRefsFor(runtime: CommerceRuntime, buyerDid: string, purchaseOrd
 }
 
 function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGuard): void {
-  const draftService = (): CatalogDraftService | null => buildDraftService();
+  const draftService = (req: CoreRequest): CatalogDraftService | null =>
+    buildDraftService(ownerPresencePrincipal(req));
 
   const withDraftService = (
     handler: (svc: CatalogDraftService, body: Record<string, unknown>) => Promise<CoreResponse> | CoreResponse,
@@ -5620,7 +5649,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     return async (req: CoreRequest): Promise<CoreResponse> => {
       const denied = ownerOnlyGuard(req);
       if (denied !== null) return denied;
-      const svc = draftService();
+      const svc = draftService(req);
       if (svc === null) return { status: 503, body: { error: 'commerce_unavailable' } };
       const body = (req.body ?? {}) as Record<string, unknown>;
       const draftId = body.draft_id;
@@ -5674,7 +5703,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         };
       }
       const passphrase = typeof body.passphrase === 'string' ? body.passphrase : '';
-      const proven = await proveOwnerPresence(passphrase, Date.now());
+      const proven = await proveOwnerPresence(passphrase, Date.now(), ownerPresencePrincipal(req));
       if (!proven) {
         // No detail about WHY. A wrong passphrase and a verifier that threw
         // are the same answer to anyone who is guessing.
@@ -6645,7 +6674,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   });
 
   router.post('/v1/commerce/trade/payment-note', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — the same gate the payment-evidence card's
+    // yes carries: a payment note enters the khata and goes to the supplier.
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'recording a payment needs a person present');
     if (denied !== null) return denied;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
@@ -7606,11 +7639,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // exists for. Same fail-open rule as the vouch ceremony: a node
     // that cannot establish presence at all must not brick the grant
     // screen, because that node has no staff PINs either.
-    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(runtime.now())) {
-      // Same error family as approve/publish: the mobile presence sheet
-      // keys on 'no_user_presence' and retries after provePresence.
-      return { status: 403, body: { error: 'no_user_presence' } };
-    }
+    const absent = ownerPresenceRefusal(
+      req,
+      runtime.now(),
+      'giving a clerk spending authority needs a person present',
+    );
+    if (absent !== null) return absent;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (
       typeof body.device_did !== 'string' ||
@@ -7720,11 +7754,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // Minting an offer hands standing authority to whoever redeems it —
     // the staff-grant presence rule applies, fail-open only where no
     // verifier exists at all.
-    if (ownerPresenceCanBeEstablished() && !ownerPresentNow(runtime.now())) {
-      // Same error family as approve/publish: the mobile presence sheet
-      // keys on 'no_user_presence' and retries after provePresence.
-      return { status: 403, body: { error: 'no_user_presence' } };
-    }
+    const absent = ownerPresenceRefusal(req, runtime.now(), 'creating an invite needs a person present');
+    if (absent !== null) return absent;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (
       (body.direction !== 'i_supply_you' && body.direction !== 'you_supply_me') ||
@@ -7787,7 +7818,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   });
 
   router.post('/v1/commerce/invites/redeem', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // WEB_OWNER_SURFACE_PLAN §3.8 — redeeming is the other half of the mint:
+    // when this node supplies, activation grants the inviter standing access
+    // to its services. Gated in both directions, as the mint is, and before
+    // anything is stored or sent.
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'accepting an invite needs a person present');
     if (denied !== null) return denied;
     const service = getInviteService();
     if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
@@ -7815,7 +7852,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   });
 
   router.post('/v1/commerce/invites/accept-held', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    // The consent tap on a held cold offer is a redeem (§8 step 2): same gate.
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'accepting an invite needs a person present');
     if (denied !== null) return denied;
     const service = getInviteService();
     if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };

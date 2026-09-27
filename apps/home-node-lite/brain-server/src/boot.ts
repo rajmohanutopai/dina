@@ -25,8 +25,6 @@
  * Brain composition reuses.
  */
 
-import path from 'node:path';
-
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import {
@@ -84,14 +82,17 @@ import { registerChatRoutes } from './routes/chat';
 import { registerContactApiRoutes } from './routes/contacts';
 import { registerCoordinationApiRoutes } from './routes/coordination';
 import { registerNotificationApiRoutes } from './routes/notifications';
-import { registerOwnerProxyRoutes } from './routes/owner_proxy';
 import { registerPeerlensProxyRoutes } from './routes/peerlens_proxy';
 import { registerQuarantineApiRoutes } from './routes/quarantine';
 import { registerReminderApiRoutes, startReminderFireLoop } from './routes/reminders';
 import { registerServiceConfigProxyRoutes } from './routes/service_config_proxy';
 import { registerServiceSearchRoutes } from './routes/service_search';
-import { registerWebRoutes } from './routes/web';
-import { registerWorkflowApiRoutes } from './routes/workflow';
+import {
+  WEB_ORIGIN_ENV,
+  parseWebOrigins,
+  registerOriginGuard,
+  registerWebOriginCors,
+} from './web_origin';
 
 /**
  * Per-persona hints used by the agentic /remember loop's system prompt.
@@ -132,17 +133,6 @@ export interface BrainServerDependencyStatus {
   reminderRoutes: 'configured' | 'disabled';
   serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
-  /**
-   * Web SPA serving status.
-   *   - `'disabled'`  — `DINA_BRAIN_WEB_UI` is unset/false (production default).
-   *   - `'configured'` — flag is set and the bundle was found + mounted.
-   *   - `'missing_bundle'` — flag is set but `web/dist/index.html` is missing.
-   *      Boot does NOT crash; the rest of the brain server stays up so an
-   *      operator can run `npm run web:export` and re-enable on the next
-   *      restart. The status is surfaced via `/readyz` so they can see why
-   *      `/web/` is 404'ing.
-   */
-  webUI: 'configured' | 'disabled' | 'missing_bundle';
   /**
    * `'pending'` while `bootServer` is mid-flight (route handler also
    * sees this if `/readyz` is hit before listen returns). Flips to
@@ -270,7 +260,6 @@ export async function bootServer(
     reminderRoutes: 'disabled',
     serviceRuntime: 'disabled',
     stagingDrain: 'disabled',
-    webUI: 'disabled',
     runtime: 'pending',
   };
 
@@ -454,11 +443,21 @@ export async function bootServer(
   const app = Fastify({ logger: false }); // we manage our own logger
 
   // Anti-DNS-rebinding Host allowlist (runs before every route). Guards the
-  // whole unauthenticated /api/v1/* surface — including the state-mutating
-  // agent-approval gate (approve/cancel) and owner-private reads (contacts,
-  // workflow tasks) — from a browser tricked into treating an attacker
+  // whole unauthenticated /api/v1/* surface — state-mutating routes (chat
+  // reset, remember, reminders) and owner-private reads (contacts,
+  // notifications) — from a browser tricked into treating an attacker
   // hostname as 127.0.0.1. See host_guard.ts.
   registerHostAllowlistGuard(app);
+
+  // WEB_OWNER_SURFACE_PLAN §3.4 — the Core-served web app reads Brain's
+  // /api/* cross-origin; only the origins the operator lists may. The origin
+  // guard also refuses a WRITE from any other page (a no-preflight form post
+  // runs its handler even when CORS hides the answer).
+  const webOrigins = parseWebOrigins(process.env[WEB_ORIGIN_ENV]);
+  registerOriginGuard(app, webOrigins);
+  await registerWebOriginCors(app, webOrigins);
+  if (webOrigins.length > 0)
+    logger.info({ origins: webOrigins }, 'brain-server CORS for the web app');
 
   app.addHook('onClose', async () => {
     schedulers.stagingDrain?.stop();
@@ -632,12 +631,10 @@ export async function bootServer(
   // the reminder store) via the CoreClient. The web reminder UI hits
   // these; mobile calls the in-process reminder service directly.
   if (clients.core !== undefined) {
-    // Approval-inbox data layer for the SPA — proxies workflow-task reads +
-    // the owner approve/cancel decisions to core-server. The web Activity →
-    // Needs-action inbox hits these; mobile calls Core in-process. Without
-    // this the SPA reads the empty in-browser store (F4 — "All caught up"
-    // despite Core having pending agent-approval tasks).
-    registerWorkflowApiRoutes(app, { core: clients.core });
+    // The approval inbox is NOT here: owner decisions need owner authority,
+    // so the web inbox reads and decides at Core as the owner device
+    // (WEB_OWNER_SURFACE_PLAN §3.5). Brain, unauthenticated by design, keeps
+    // no door that approves, cancels or answers a card.
 
     // GROUP_COORDINATION §9 — the plan card's READ path on the web thin
     // client, through Brain's own two doors (read a plan, list handles).
@@ -677,21 +674,6 @@ export async function bootServer(
     // the in-process inbox at boot. The SPA reads them over `/api/v1/notifications`
     // + SSE (the proper silence-tiered surface, not chat), and Tier-3 items reach
     // the daily briefing via the notification-backed engagement provider.
-    // Round-A A-07 — the owner run/watch byte-pipe: forwards the SPA's owner
-    // calls (with the browser-presented capability header) verbatim to Core.
-    // Brain holds no owner authority; Core validates every request. Round-B
-    // B-02: OFF by default so no owner credential transits Brain unless an
-    // operator opts in (`DINA_BRAIN_OWNER_PROXY=1`) — the credential-safe path
-    // is the Core-served owner console (`DINA_CORE_OWNER_CONSOLE=1`). Opting in
-    // accepts that a compromised Brain could skim the reusable bearer.
-    if (process.env.DINA_BRAIN_OWNER_PROXY === '1') {
-      registerOwnerProxyRoutes(app, { coreBaseUrl: config.core.baseUrl });
-      logger.info(
-        {},
-        'owner run/watch proxy enabled (DINA_BRAIN_OWNER_PROXY=1) — the owner capability transits Brain; prefer the Core-served owner console for strict isolation',
-      );
-    }
-
     const notificationRepo = new CoreClientNotificationLogRepository(clients.core);
     setNotificationLogRepository(notificationRepo);
     registerEngagementProvider(collectNotificationBriefingItems);
@@ -728,44 +710,19 @@ export async function bootServer(
     notificationReconcile.unref();
   }
 
-  // SPA bundle serving. Opt-in via `DINA_BRAIN_WEB_UI=1` — same gate
-  // philosophy as `/dev`. The bundle is produced by `npx expo export
-  // --platform web` from `apps/mobile/`; default location is the
-  // sibling `apps/home-node-lite/web/dist/` directory so a `git pull`
-  // of a freshly built tree just works without env overrides.
-  //
-  // We swallow "bundle missing" rather than crash boot: the brain
-  // server has plenty of value (chat API, ask API) without the UI,
-  // and the operator's first signal that something's wrong is the
-  // `webUI: 'missing_bundle'` flag in `/readyz`.
-  if (process.env.DINA_BRAIN_WEB_UI === '1') {
-    const bundleDir =
-      process.env.DINA_BRAIN_WEB_BUNDLE_DIR ?? path.resolve(__dirname, '..', '..', 'web', 'dist');
-    try {
-      const result = await registerWebRoutes(app, { bundleDir });
-      dependencyStatus.webUI = 'configured';
-      logger.info(
-        { bundleDir: result.bundleDir, urlPrefix: result.urlPrefix },
-        'brain-server web UI configured',
-      );
-    } catch (err) {
-      dependencyStatus.webUI = 'missing_bundle';
-      logger.warn(
-        { bundleDir, error: err instanceof Error ? err.message : String(err) },
-        'brain-server web UI requested but bundle is missing — /web/ will 404 until built',
-      );
-    }
-    // The web thin-client can't call the AppView directly (sovereignty + CORS),
-    // so it fetches PeerLens reads at this same-origin path and we forward them
-    // to the AppView server-side. Web-only: registered under the same web-UI
-    // gate. Native keeps calling the AppView directly.
+  // The web app (Core-served, WEB_OWNER_SURFACE_PLAN §3.2) can't call the
+  // AppView directly (sovereignty + CORS), so it fetches PeerLens reads at
+  // Brain's /api/peerlens, cross-origin, and Brain forwards them to the
+  // AppView server-side. On only when a web origin is allowed; native keeps
+  // calling the AppView directly.
+  if (webOrigins.length > 0) {
     registerPeerlensProxyRoutes(app, {
       appViewURL: config.endpoints.appViewBaseUrl,
       logger,
     });
     logger.info(
       { appViewURL: config.endpoints.appViewBaseUrl, path: '/api/peerlens/xrpc/*' },
-      'brain-server PeerLens read proxy configured (web thin-client)',
+      'brain-server PeerLens read proxy configured (web app)',
     );
   }
 
@@ -779,12 +736,6 @@ export async function bootServer(
         dependencyStatus.serviceRuntime === 'configured' ? ('ok' as const) : ('disabled' as const),
       stagingDrain:
         dependencyStatus.stagingDrain === 'running' ? ('ok' as const) : ('disabled' as const),
-      webUI:
-        dependencyStatus.webUI === 'configured'
-          ? ('ok' as const)
-          : dependencyStatus.webUI === 'missing_bundle'
-            ? ('missing_bundle' as const)
-            : ('disabled' as const),
       runtime: dependencyStatus.runtime === 'ok' ? ('ok' as const) : ('fail' as const),
     };
     // Ready when boot completed (`runtime === 'ok'`) AND Core is wired.
@@ -799,9 +750,10 @@ export async function bootServer(
     });
   });
 
-  // SECURITY: the brain HTTP surface (api / chat / ask / reminder / web) is
+  // SECURITY: the brain HTTP surface (api / chat / ask / reminder) is
   // UNAUTHENTICATED — a localhost-only analyst API by design (mobile drives it
-  // in-process; the SPA proxies through loopback). Binding it to a non-loopback
+  // in-process; the web app, served by Core, calls it cross-origin from the
+  // listed web origins only). Binding it to a non-loopback
   // interface would expose vault-write paths (e.g. /remember) + the LLM to the
   // network with no auth. Fail closed: refuse a non-loopback bind unless an
   // operator explicitly opts in (e.g. a trusted authenticating reverse proxy

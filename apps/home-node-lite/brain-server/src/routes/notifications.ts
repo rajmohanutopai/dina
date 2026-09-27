@@ -22,6 +22,8 @@ import {
 } from '@dina/brain/notifications';
 import { storedNotificationToWire } from '@dina/core';
 
+import { openEventStream } from './sse';
+
 import type { NotificationWireDTO } from '@dina/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -60,13 +62,7 @@ export function registerNotificationApiRoutes(
   // subscribes here + folds each item into its own in-browser inbox for a live
   // Activity badge without polling.
   app.get(`${prefix}/notifications/stream`, async (_req: FastifyRequest, reply: FastifyReply) => {
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    reply.raw.write('retry: 2000\n\n');
+    openEventStream(reply);
 
     const unsubscribe = subscribeNotifications((entry) => {
       if (entry.type !== 'appended') return;

@@ -13,6 +13,7 @@ export function confirmDecision(
   message: string,
   _confirmLabel: string,
   _destructive = false,
+  _cancelLabel = 'Cancel',
 ): Promise<boolean> {
   if (typeof window === 'undefined' || typeof window.confirm !== 'function') {
     // No confirm available (SSR / node test env without a window). This backs

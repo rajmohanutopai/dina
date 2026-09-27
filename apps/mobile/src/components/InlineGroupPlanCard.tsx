@@ -32,6 +32,7 @@ import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 import { loadContacts } from '../services/contacts_source';
 import { getGroupPlanReader } from '../services/group_plan_reader';
 import { getOwnerCoordinationClient } from '../services/owner_coordination_client';
+import { CONNECT_OWNER_DEVICE_MESSAGE } from '../services/owner_errors';
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';
@@ -370,15 +371,13 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
         </TouchableOpacity>
       ) : null}
       {!stopped && client === null && plan.state !== 'proposing' ? (
-        // The Brain-served web page holds no owner authority (§12.5, round-C):
-        // the fold is readable here, the decisions live on Core's own owner
-        // surface — the same line the run and watch UI draws.
+        // No owner client yet (the app is still starting): the fold is
+        // readable, the decisions arrive with the owner client. On the phone
+        // and in a browser connected as the owner there always is one.
         <Text testID={`group-plan-owner-surface-${planId}`} style={styles.subtitle}>
           {settled
-            ? 'Reopen with other dates or cancel from Core’s owner console.'
-            : canChoose
-              ? 'Choose, ask again or stop from Core’s owner console.'
-              : 'Ask again, go ahead without them or stop from Core’s owner console.'}
+            ? 'Reopening or cancelling is available once Dina finishes starting.'
+            : 'Deciding is available once Dina finishes starting.'}
         </Text>
       ) : null}
 
@@ -442,6 +441,8 @@ function refusalText(key: string): string {
       return 'The plan moved on. Wait a moment.';
     case 'no_required_guest':
       return 'At least one household has to be required.';
+    case 'owner_device_not_connected':
+      return CONNECT_OWNER_DEVICE_MESSAGE;
     default:
       return "Couldn't do that. Try again.";
   }

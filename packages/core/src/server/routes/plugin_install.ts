@@ -14,6 +14,8 @@
  *   POST /v1/plugins/install/confirm      → consent → activate (on the device Core bound)
  *   POST /v1/plugins/install/decline      → decline a pending install (teardown)
  *   POST /v1/plugins/install/uninstall    → tear down an install (§16.4)
+ *   GET  /v1/plugins/installs             → every install, and whether a third-party release can be verified here
+ *   POST /v1/plugins/install/pairing_state → where the runner ceremony stands (the code rides the body, never a URL)
  *
  * OWNER-ONLY: each of these grants, changes, or revokes the authority code runs
  * under. The trust anchor is NEVER taken from the request — P0 supports exactly
@@ -29,12 +31,15 @@
  */
 
 import { COUNTRY_PACK_IDS, isCountryPack } from '../../commerce/country_packs';
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { beginFirstPartyInstall } from '../../commerce/reference_install';
 import { revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
+import { buildAgentSetupCode } from '../../pairing/setup_code';
 import {
   beginInstall,
   confirmConsent,
+  getRepoProofVerifier,
   declineConsent,
   PluginCommerceObligationError,
   uninstall,
@@ -43,7 +48,7 @@ import {
   type RevokeDeviceByDid,
 } from '../../plugins/install_service';
 import { getPluginInstallRepository } from '../../plugins/registry';
-import { issueRunnerPairingCode } from '../../plugins/runner_pairing';
+import { issueRunnerPairingCode, runnerPairingState } from '../../plugins/runner_pairing';
 
 import { makeOwnerGuard } from './owner_guard';
 
@@ -55,11 +60,15 @@ import type { CoreResponse, CoreRouter } from '../router';
  *   The core teardown REFUSES to drop a row whose device it could not durably
  *   revoke (the row is the retry anchor), so a route without a revoker would
  *   leave every runner install undeletable.
+ * @param msgboxURL the relay a runner reaches this node through. When given,
+ *   `setup_code` also answers the one-paste `dina1:` string, so no surface has
+ *   to know the node's identity or relay to hand a runner its code.
  */
 export function registerPluginInstallRoutes(
   router: CoreRouter,
   ownerCapability?: string,
   revokeDevice: RevokeDeviceByDid = revokePluginDeviceForTeardown,
+  msgboxURL?: () => string,
 ): void {
   const ownerOnlyGuard = makeOwnerGuard(
     ownerCapability,
@@ -104,7 +113,8 @@ export function registerPluginInstallRoutes(
       return { status: 400, body: { error: "pack must be 'in' | 'us'" } };
     }
     const owner = getNodeDID();
-    if (owner === null || owner === '') return { status: 503, body: { error: 'owner_identity_unavailable' } };
+    if (owner === null || owner === '')
+      return { status: 503, body: { error: 'owner_identity_unavailable' } };
     const pluginId = COUNTRY_PACK_IDS[pack];
     const installs = getPluginInstallRepository();
     if (installs === null) return { status: 503, body: { error: 'plugin_registry_unavailable' } };
@@ -119,7 +129,10 @@ export function registerPluginInstallRoutes(
   });
 
   router.post('/v1/plugins/install/setup_code', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    const denied =
+      ownerOnlyGuard(req) ??
+      // §3.8 — a runner code hands a device the install's authority.
+      ownerPresenceRefusal(req, Date.now(), 'pairing a plugin runner needs a person present');
     if (denied !== null) return denied;
 
     const body = (req.body ?? {}) as { install_id?: unknown };
@@ -130,26 +143,91 @@ export function registerPluginInstallRoutes(
     if (installs === null) return { status: 503, body: { error: 'plugin_registry_unavailable' } };
     const install = installs.getById(body.install_id);
     if (install === null) return { status: 404, body: { error: 'install_unknown' } };
-    if (install.status !== 'pending') return { status: 409, body: { error: 'install_not_pending' } };
+    if (install.status !== 'pending')
+      return { status: 409, body: { error: 'install_not_pending' } };
     if (install.executionMode !== 'runner') {
       return { status: 409, body: { error: 'not_a_runner_install' } };
     }
     // The same window every other step of the ceremony refuses: a code for an
     // expired pending (still present between sweeper ticks) would be dead on
     // arrival — `completePairing` refuses it and spends it.
-    if (install.pendingExpiresAt !== undefined && install.pendingExpiresAt <= Math.floor(Date.now() / 1000)) {
+    if (
+      install.pendingExpiresAt !== undefined &&
+      install.pendingExpiresAt <= Math.floor(Date.now() / 1000)
+    ) {
       return { status: 409, body: { error: 'install_expired' } };
     }
     try {
       const issued = issueRunnerPairingCode(install);
-      return { status: 201, body: { ok: true, code: issued.code, expires_at: issued.expiresAt } };
+      const nodeDid = getNodeDID();
+      const setupCode =
+        msgboxURL !== undefined && nodeDid !== null
+          ? buildAgentSetupCode({
+              msgboxUrl: msgboxURL(),
+              homenodeDid: nodeDid,
+              deviceName: install.pluginId,
+              code: issued.code,
+            })
+          : undefined;
+      return {
+        status: 201,
+        body: {
+          ok: true,
+          code: issued.code,
+          expires_at: issued.expiresAt,
+          ...(setupCode === undefined ? {} : { setup_code: setupCode }),
+        },
+      };
     } catch (err) {
       return { status: 503, body: { error: err instanceof Error ? err.message : String(err) } };
     }
   });
 
-  router.post('/v1/plugins/install/confirm', async (req): Promise<CoreResponse> => {
+  // Read-only: Core bound the runner (or refused it) when the code was used.
+  // POST so the pairing code rides the body, never a URL a log keeps.
+  router.post('/v1/plugins/install/pairing_state', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const body = (req.body ?? {}) as { install_id?: unknown; code?: unknown };
+    if (
+      typeof body.install_id !== 'string' ||
+      body.install_id === '' ||
+      typeof body.code !== 'string'
+    ) {
+      return { status: 400, body: { error: 'install_id and code are required' } };
+    }
+    return {
+      status: 200,
+      body: runnerPairingState(body.install_id, body.code, Math.floor(Date.now() / 1000)),
+    };
+  });
+
+  router.get('/v1/plugins/installs', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const installs = getPluginInstallRepository();
+    return {
+      status: 200,
+      body: {
+        installs: (installs?.list() ?? []).map((install) => ({
+          install_id: install.installId,
+          plugin_id: install.pluginId,
+          status: install.status,
+          execution_mode: install.executionMode,
+        })),
+        registry_available: installs !== null,
+        // A build with no repo-proof verifier cannot take a third-party
+        // release at all; the screen says so instead of offering a retry.
+        third_party_available: getRepoProofVerifier() !== null,
+      },
+    };
+  });
+
+  router.post('/v1/plugins/install/confirm', async (req): Promise<CoreResponse> => {
+    const denied =
+      ownerOnlyGuard(req) ??
+      // §3.8 — consent is the act that grants the plugin its capabilities.
+      ownerPresenceRefusal(req, Date.now(), 'consenting to a plugin needs a person present');
     if (denied !== null) return denied;
 
     const body = (req.body ?? {}) as { install_id?: unknown; device_did?: unknown };
@@ -165,7 +243,10 @@ export function registerPluginInstallRoutes(
     if (installs === null) return { status: 503, body: { error: 'plugin_registry_unavailable' } };
     const install = installs.getById(body.install_id);
     if (install === null) return { status: 404, body: { error: 'install_unknown' } };
-    if (install.executionMode === 'runner' && (install.deviceDid === undefined || install.deviceDid === '')) {
+    if (
+      install.executionMode === 'runner' &&
+      (install.deviceDid === undefined || install.deviceDid === '')
+    ) {
       return { status: 409, body: { error: 'runner_not_paired' } };
     }
     const activated = confirmConsent(

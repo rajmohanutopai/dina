@@ -10,7 +10,7 @@ Status: design + build plan. Grounded against the real infrastructure: the Playw
 
 Test everything **as a human would experience it** — through the browser, watching the actual product respond — but **repeatably**, and with assertions that survive the fact that Dina's answers are LLM-generated and never byte-identical twice. Two tools, two jobs:
 
-- **Playwright is the human.** It opens `http://127.0.0.1:.../web/`, types into the real composer, waits for the real card, and reads the real text off the screen.
+- **Playwright is the human.** It opens Core's `http://127.0.0.1:.../app/`, types into the real composer, waits for the real card, and reads the real text off the screen.
 - **Gemini is the grader.** Playwright extracts the rendered text; a separate Gemini call, given a rubric, judges whether that text is correct/safe/appropriate and returns a structured verdict. Semantic correctness, not string equality.
 
 One principle organizes the rest:
@@ -46,20 +46,21 @@ The pattern the existing Playwright config already boots (`apps/home-node-lite/w
 ```
 core-server  :18298   DINA_DEBUG_MODE=1   DINA_VAULT_DIR=<fresh mkdtemp>
                       DINA_RATE_LIMIT=100000   DINA_ENDPOINT_MODE=test
-brain-server :18299   DINA_BRAIN_WEB_UI=1   DINA_CORE_URL=http://127.0.0.1:18298
+                      DINA_CORE_WEB_UI=1   DINA_CORE_WEB_BRAIN_ORIGIN=http://127.0.0.1:18299
+brain-server :18299   DINA_BRAIN_WEB_ORIGIN=http://127.0.0.1:18298   DINA_CORE_URL=http://127.0.0.1:18298
                       DINA_BRAIN_LLM_PROVIDER=gemini   DINA_GEMINI_API_KEY=…
-Playwright            Chromium → http://127.0.0.1:18299/web/
+Playwright            Chromium → http://127.0.0.1:18298/app/   (core-server DINA_CORE_WEB_UI=1)
 ```
 
 Fresh temp vault per run = clean state. Core auto-seeds 4 personas on boot (`general`, `work`, `health`, `finance`) and opens them for the owner. `DINA_DEBUG_MODE=1` enables the backstage hook (§8).
 
 ### 3.2 Two humans, two Dinas (Talk, services, cross-party)
 
-Reuse `dina-nodes/`: named nodes with deterministic ports (`alonso` `8301/8401`, `sancho` `8302/8402`, …), each with its own `did:plc`, `DINA_DEBUG_MODE=1`, web UI at `:84xx/web/`; `./connect.sh alonso sancho` seeds mutual contacts. Playwright drives both as separate people:
+Reuse `dina-nodes/`: named nodes with deterministic ports (`alonso` `8301/8401`, `sancho` `8302/8402`, …), each with its own `did:plc`, `DINA_DEBUG_MODE=1`, web UI at `:83xx/app/` (Core); `./connect.sh alonso sancho` seeds mutual contacts. Playwright drives both as separate people:
 
 ```js
-const alonso = await browser.newContext();   // → :8401/web  (a person)
-const sancho = await browser.newContext();   // → :8402/web  (another person)
+const alonso = await browser.newContext();   // → :8301/app  (a person)
+const sancho = await browser.newContext();   // → :8302/app  (another person)
 // Alonso sends a Talk message in his UI; switch to Sancho's context,
 // assert he sees it + the enriched reminder. Real relay carries it.
 ```
@@ -202,7 +203,7 @@ Playwright's own ergonomics are built for "watch it happen":
 - **Headed + slow-mo** — `npx playwright test --headed` (+ `launchOptions.slowMo`) to watch at human speed.
 - **UI mode** — `npx playwright test --ui`: a time-travel cockpit; pick a flow, watch each step, inspect the DOM. The primary "test everything as a human" surface.
 - **`page.pause()`** — hand control to yourself mid-flow, click around, resume.
-- **Codegen** — `npx playwright codegen http://127.0.0.1:18299/web/` records your clicks into a draft flow.
+- **Codegen** — `npx playwright codegen http://127.0.0.1:18298/app/` records your clicks into a draft flow.
 - **Trace viewer** — traces are on for retries; every failure ships a step-by-step replay with DOM snapshots. Put these in the suite README so a person can, day one, run one flow headed and watch Dina remember and recall.
 
 ## 7. Scenario catalog — every MRS as a human flow
@@ -321,7 +322,7 @@ Used strictly for: **(1) preconditions a human can't stage in one browser** (see
 
 ## 9. Fixtures and helpers to build
 
-1. **`humanSession` fixture** — the two-server boot as a fixture; returns `{ page (on /web/), backstage(), judge(), llmMode }`. Default single human.
+1. **`humanSession` fixture** — the two-server boot as a fixture; returns `{ page (on /app/), backstage(), judge(), llmMode }`. Default single human.
 2. **The testID contract in source (§5.3)** — the P0 prerequisite for everything else; without stable `chat-row`/`row-primary-text`, selection is guesswork.
 3. **Page objects (testID-based)** — `Composer`, `ChatThread` (`latestRow({kind,role,status})`, `latestAnswerText()`, `waitForServiceCard()`), `ApprovalCard`, `ReminderCard`, `Activity`, `Network`.
 4. **`judge` helper** — Gemini call, `temperature:0`, `responseSchema {pass,reason,confidence}`, pinned model, rubric template; plus `judge.calibration.spec.ts` golden set (§4.1).
@@ -368,7 +369,7 @@ Headless CI runs the *same flows* a person watches headed; the trace viewer make
 | Playwright suite | `apps/home-node-lite/web/` (pkg `@dina/home-node-lite-web-e2e`) |
 | Config / specs | `apps/home-node-lite/web/playwright.config.ts` · `__e2e__/*.spec.ts` |
 | Build SPA · run E2E | `npm run -w @dina/home-node-lite-web-e2e build:bundle` · `… test:e2e` |
-| Watch / author | `npx playwright test --ui` · `--headed` · `codegen http://127.0.0.1:18299/web/` |
+| Watch / author | `npx playwright test --ui` · `--headed` · `codegen http://127.0.0.1:18298/app/` |
 | CI workflow | `.github/workflows/ts-web-e2e.yml` |
 | Servers | `npm start -w @dina/home-node-lite-core-server` · `…-brain-server` |
 | Backstage hook | `POST /v1/debug/dispatch` (`DINA_DEBUG_MODE=1`), `…/core-server/src/server/debug_dispatch.ts` |

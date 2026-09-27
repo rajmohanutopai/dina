@@ -13,7 +13,6 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { installCommerceRuntime, createCommerceRuntime } from '../../../src/commerce/runtime';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import { installImageReencoder } from '../../../src/commerce/image_artifacts';
 import { installImageEgressBroker } from '../../../src/commerce/image_egress';
@@ -25,7 +24,9 @@ import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
+import { installCommerceRuntime, createCommerceRuntime } from '../../../src/commerce/runtime';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -126,7 +127,7 @@ beforeEach(async () => {
     },
   });
   installOwnerPresenceVerifier(async (p) => p === 'correct horse');
-  await proveOwnerPresence('correct horse', Date.now());
+  await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
 });

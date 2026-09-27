@@ -27,8 +27,11 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Share, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 
+import { usePresenceGate } from '../hooks/usePresenceGate';
+import { getOwnerCommerceClient } from '../services/owner_commerce_client';
+import { isPresenceRefusal, ownerErrorText } from '../services/owner_errors';
 import {
   checkRunnerPairing,
   confirmPluginInstall,
@@ -38,7 +41,10 @@ import {
   type RunnerPairingState,
   type RunnerSetupCode,
 } from '../services/plugin_install';
+import { shareOrCopy, shareOutcomeLabel, type ShareOutcome } from '../services/share_text';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
+
+import { PresenceSheet } from './PresenceSheet';
 
 export type PluginConsentOutcome = 'confirmed' | 'declined' | 'failed';
 
@@ -78,18 +84,38 @@ export function PluginConsentCard({
   const [setupError, setSetupError] = useState<string | null>(null);
   const [pairing, setPairing] = useState<RunnerPairingState>({ state: 'waiting' });
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  const [shared, setShared] = useState(false);
+  const [shared, setShared] = useState<ShareOutcome | null>(null);
+
+  // A runner code and the consent both hand out authority, so Core asks for a
+  // person present (§3.8). Each step records its own failure on the card; only
+  // a presence refusal reaches the gate, which asks and runs the step again.
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) => setSetupError(ownerErrorText(err)),
+    reason: 'A plugin gets real authority from this, so Dina checks a person is here.',
+  });
 
   const issueCode = useCallback(() => {
-    try {
-      setSetup(issueRunnerSetupCode(consent));
-      setSetupError(null);
-      setPairing({ state: 'waiting' });
-    } catch (err) {
-      setSetup(null);
-      setSetupError(err instanceof Error ? err.message : String(err));
-    }
-  }, [consent]);
+    void runGated(async () => {
+      try {
+        setSetup(await issueRunnerSetupCode(consent));
+        setSetupError(null);
+        setPairing({ state: 'waiting' });
+      } catch (err) {
+        setSetup(null);
+        if (isPresenceRefusal(err)) {
+          // Said on the card too, so cancelling the sheet leaves a way on.
+          setSetupError('Confirm it’s you to get the runner’s setup code.');
+          throw err;
+        }
+        setSetupError(ownerErrorText(err));
+      }
+    });
+  }, [consent, runGated]);
 
   // Issue the first code as soon as a runner card appears; the owner can only
   // install after the runner pairs, so there is nothing to wait for.
@@ -104,14 +130,21 @@ export function PluginConsentCard({
     if (!isRunner || setup === null || resolved !== null || pairing.state !== 'waiting') return;
     const installId = consent.installId;
     const code = setup.code;
+    let live = true;
     const tick = (): void => {
       setNow(Math.floor(Date.now() / 1000));
-      const next = checkRunnerPairing(installId, code);
-      if (next.state !== 'waiting') setPairing(next);
+      void checkRunnerPairing(installId, code)
+        .then((next) => {
+          if (live && next.state !== 'waiting') setPairing(next);
+        })
+        .catch(() => undefined); // a missed poll is retried on the next tick
     };
     tick();
     const timer = setInterval(tick, PAIRING_POLL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
   }, [consent.installId, isRunner, pairing.state, resolved, setup]);
 
   // Second-by-second countdown for the code's expiry.
@@ -125,24 +158,27 @@ export function PluginConsentCard({
 
   const onConfirm = useCallback(async () => {
     if (pending || resolved !== null || !canInstall) return;
-    setPending(true);
-    try {
-      const result = await confirmPluginInstall(consent.installId, consent.executionMode);
-      if (result.ok) {
-        setResolved('confirmed');
-        onDone('confirmed');
-      } else {
+    await runGated(async () => {
+      setPending(true);
+      try {
+        const result = await confirmPluginInstall(consent.installId);
+        if (result.ok) {
+          setResolved('confirmed');
+          onDone('confirmed');
+        } else {
+          setResolved('failed');
+          onDone('failed', result.error);
+        }
+      } catch (err) {
+        // Not a failure: the sheet asks, and Install runs again after it.
+        if (isPresenceRefusal(err)) throw err;
         setResolved('failed');
-        onDone('failed', result.error);
+        onDone('failed', ownerErrorText(err));
+      } finally {
+        setPending(false);
       }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      setResolved('failed');
-      onDone('failed', detail);
-    } finally {
-      setPending(false);
-    }
-  }, [canInstall, consent.executionMode, consent.installId, onDone, pending, resolved]);
+    });
+  }, [canInstall, consent.installId, onDone, pending, resolved, runGated]);
 
   const onDecline = useCallback(async () => {
     if (pending || resolved !== null) return;
@@ -162,9 +198,10 @@ export function PluginConsentCard({
 
   const onShare = useCallback(() => {
     if (setup === null) return;
-    Share.share({ message: setup.setupCode }).catch(() => undefined);
-    setShared(true);
-    setTimeout(() => setShared(false), 2000);
+    void shareOrCopy(setup.setupCode).then((outcome) => {
+      setShared(outcome);
+      setTimeout(() => setShared(null), 2000);
+    });
   }, [setup]);
 
   const disabled = pending || resolved !== null;
@@ -235,7 +272,7 @@ export function PluginConsentCard({
                   accessibilityRole="button"
                   accessibilityLabel="Share setup code"
                 >
-                  <Text style={styles.link}>{shared ? 'Shared!' : 'Share setup code'}</Text>
+                  <Text style={styles.link}>{shareOutcomeLabel(shared, 'Share setup code')}</Text>
                 </TouchableOpacity>
                 <Text style={[styles.codeMeta, secondsLeft < 60 && styles.codeExpiring]}>
                   Expires in {formatDuration(secondsLeft)}
@@ -305,6 +342,7 @@ export function PluginConsentCard({
           Couldn&apos;t install.
         </Text>
       )}
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }

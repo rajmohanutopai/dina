@@ -1,10 +1,11 @@
 /**
  * humanSession fixture — the single-human harness (docs/E2E_TESTING.md §9).
  *
- * Provides a `human` fixture already at a clean Chat: navigates to /web/,
- * lets the onboarding autopilot provision + unlock, and waits for
- * Chat-ready (the Remember mode chip). Bundles the composer, the chat
- * thread reader, and backstage (debug-dispatch) for invisible assertions.
+ * Provides a `human` fixture already at a clean Chat: navigates to Core's
+ * /app/, lets the onboarding autopilot provision + unlock, and waits for
+ * Chat-ready (the Remember mode chip). Bundles the composer, the chat thread
+ * reader, and backstage (debug-dispatch) for invisible assertions. A spec that
+ * decides as the owner connects the browser first (`pages/owner_access.ts`).
  *
  * Requires the AUTOPILOT bundle (dist-e2e) + the functional config (which
  * boots Core with debug-dispatch and Brain with live Gemini).
@@ -62,7 +63,7 @@ export const test = base.extend<{ human: HumanSession }>({
     await backstage.resetVault();
     await backstage.resetApprovals();
 
-    await page.goto('/web/');
+    await page.goto('/app/');
     // Chat-ready = the Remember mode chip is present. Autopilot: welcome →
     // provision did:plc (test-pds) → argon2 unlock → Chat (the guided-demo
     // gate is disabled under autopilot). Generous wait for provision + KDF.
@@ -102,10 +103,25 @@ export const test = base.extend<{ human: HumanSession }>({
     const unexpected = [
       ...new Set(requestUrls.filter((u) => !isAllowedEgress(u)).map(egressHost)),
     ].filter((h): h is string => h !== null);
+    // Name the requests too (path only: a query string can carry a key).
+    const examples = [
+      ...new Set(
+        requestUrls
+          .filter((u) => !isAllowedEgress(u))
+          .map((u) => {
+            try {
+              const url = new URL(u);
+              return `${url.host}${url.pathname}`;
+            } catch {
+              return u.split('?')[0];
+            }
+          }),
+      ),
+    ].slice(0, 3);
     expect(
       unexpected,
-      `MRS-14: browser reached non-allowlisted host(s): ${unexpected.join(', ')} — ` +
-        'review and add to ALLOWED_EGRESS_HOSTS if legitimate.',
+      `MRS-14: browser reached non-allowlisted host(s): ${unexpected.join(', ')} ` +
+        `(e.g. ${examples.join(', ')}) — review and add to ALLOWED_EGRESS_HOSTS if legitimate.`,
     ).toEqual([]);
   },
 });

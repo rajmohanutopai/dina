@@ -66,12 +66,67 @@ export function signRequest(
   body: Uint8Array,
   privateKey: Uint8Array,
   did: string,
-): { 'X-DID': string; 'X-Timestamp': string; 'X-Nonce': string; 'X-Signature': string } {
+): SignedRequestHeaders {
+  const { timestamp, nonce, message } = canonicalToSign(method, path, query, body);
+  return signedHeaders(did, timestamp, nonce, sign(privateKey, message));
+}
+
+/**
+ * The four headers every signed request carries. The index signature lets it
+ * stand wherever a plain header record is expected.
+ */
+export interface SignedRequestHeaders {
+  [header: string]: string;
+  'X-DID': string;
+  'X-Timestamp': string;
+  'X-Nonce': string;
+  'X-Signature': string;
+}
+
+/**
+ * A signer that holds its key where the caller cannot read it — a browser's
+ * non-extractable WebCrypto key (WEB_OWNER_SURFACE_PLAN §3.3). It signs the
+ * canonical payload and names its DID; nothing else.
+ */
+export interface RequestSigner {
+  readonly did: string;
+  sign(message: Uint8Array): Promise<Uint8Array>;
+}
+
+/**
+ * `signRequest` for a signer that signs asynchronously and never exposes its
+ * key. Same canonical payload, same headers, so Core verifies it with the
+ * pipeline every device uses.
+ */
+export async function signRequestWith(
+  method: string,
+  path: string,
+  query: string,
+  body: Uint8Array,
+  signer: RequestSigner,
+): Promise<SignedRequestHeaders> {
+  const { timestamp, nonce, message } = canonicalToSign(method, path, query, body);
+  return signedHeaders(signer.did, timestamp, nonce, await signer.sign(message));
+}
+
+function canonicalToSign(
+  method: string,
+  path: string,
+  query: string,
+  body: Uint8Array,
+): { timestamp: string; nonce: string; message: Uint8Array } {
   const timestamp = toRFC3339(new Date());
   const nonce = bytesToHex(randomBytes(16));
   const canonical = buildCanonicalPayload(method, path, query, timestamp, nonce, body);
-  const signature = sign(privateKey, new TextEncoder().encode(canonical));
+  return { timestamp, nonce, message: new TextEncoder().encode(canonical) };
+}
 
+function signedHeaders(
+  did: string,
+  timestamp: string,
+  nonce: string,
+  signature: Uint8Array,
+): SignedRequestHeaders {
   return {
     'X-DID': did,
     'X-Timestamp': timestamp,

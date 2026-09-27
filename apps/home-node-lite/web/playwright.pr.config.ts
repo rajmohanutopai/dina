@@ -29,19 +29,23 @@ process.env.DINA_E2E_BUNDLE_DIR = 'dist-e2e';
 
 // noLlm: Brain boots with no provider; provisionPds: still wire the workflow
 // plane (the agent specs need it); info level: the MRS-14 sweep still runs.
+// ownerPassphrase: Core runs in security mode, so the owner-presence gates
+// fire and owner_presence.spec.ts drives the passphrase sheet for real.
 const stack = buildStack({
   bundleDir: 'dist-e2e',
   logLevel: 'info',
   provisionPds: true,
   noLlm: true,
+  ownerPassphrase: 'e2e owner passphrase',
 });
 
 export default defineConfig({
   testDir: path.resolve(__dirname, '__e2e__', 'functional'),
   // The deterministic, LLM-free flows: the agent-safety specs (gatekeeper /
-  // workflow / signed-agent perimeter) + the PeerLens read (an AppView HTTP
-  // query, results-or-empty). None touch the product LLM.
-  testMatch: ['**/agent_*.spec.ts', '**/peerlens_read.spec.ts'],
+  // workflow / signed-agent perimeter), the owner-presence gate in the
+  // browser, and the PeerLens read (an AppView HTTP query, results-or-empty).
+  // None touch the product LLM.
+  testMatch: ['**/agent_*.spec.ts', '**/owner_*.spec.ts', '**/peerlens_read.spec.ts'],
   globalSetup: path.resolve(__dirname, '__e2e__', 'setup.ts'),
   globalTeardown: path.resolve(__dirname, '__e2e__', 'support', 'log_teardown.ts'),
   // Deterministic → no retries needed (a failure is a real failure).

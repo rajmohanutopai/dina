@@ -35,6 +35,7 @@ import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
 
 import { installAgentContextDecorator } from './auth/agent_did_decorator';
+import { WEB_APP_PREFIX } from './server/web_app';
 import { REQUEST_ID_HEADER, validateRequestId } from './trace/trace_context';
 import { getServerVersion } from './version';
 
@@ -265,7 +266,11 @@ export async function createServer(opts: CreateServerOptions) {
   // window. Default 60 (matches Go Core); `DINA_RATE_LIMIT` env var
   // overrides via the config layer (task 4.4). /healthz + /readyz are
   // deliberately exempt so an overloaded node can still be probed by
-  // orchestrators.
+  // orchestrators. So are GETs of the web app's own files under /app/
+  // (WEB_OWNER_SURFACE_PLAN §3.2): one page load fetches about ninety of
+  // them, which alone would spend the default budget and leave the owner's
+  // signed calls refused. They are public, read-only and carry no authority;
+  // every call that does stays counted.
   //
   // SECURITY (P2.11): this EDGE limiter keys by IP only. It runs as an
   // onRequest hook BEFORE signature verification, so the `X-DID` header is
@@ -280,7 +285,10 @@ export async function createServer(opts: CreateServerOptions) {
   await app.register(rateLimit, {
     max: config.runtime.rateLimitPerMinute,
     timeWindow: '1 minute',
-    allowList: (req) => req.url === '/healthz' || req.url === '/readyz',
+    allowList: (req) =>
+      req.url === '/healthz' ||
+      req.url === '/readyz' ||
+      (req.method === 'GET' && (req.url === '/app' || req.url.startsWith(WEB_APP_PREFIX))),
     keyGenerator: (req) => `ip:${req.ip}`,
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the

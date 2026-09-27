@@ -76,9 +76,7 @@ import {
   setRunRepository,
   setRunService,
   wireRunPlaneNode,
-  InProcessOwnerCommerceClient,
-  InProcessOwnerCoordinationClient,
-  InProcessOwnerRunClient,
+  inProcessOwnerDispatcher,
   createCoreRouter,
   createConnectedBrainAgentFacades,
   createInProcessDispatch,
@@ -114,9 +112,8 @@ import { isAppViewStub } from './appview_stub';
 import { createNode, type DinaNode, type NodeRole, type CreateNodeOptions } from './bootstrap';
 import { startMobileCommercePlane } from './commerce_plane';
 import { createDemoServiceResponder } from './demo_service_responder';
-import { setOwnerCommerceClient } from './owner_commerce_client';
-import { setOwnerCoordinationClient } from './owner_coordination_client';
-import { setOwnerRunClient } from './owner_run_client';
+import { resolveMsgBoxURL } from './msgbox_wiring';
+import { setOwnerDispatcher } from './owner_dispatcher';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { talkThreadResolver } from './talk_thread_routing';
@@ -394,7 +391,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // can override via `inputs.coreRouter` (pre-seeded with fakes).
   // Boot-minted OWNER capability (INTERACTIVE_SERVICES §12.5, F15). A fresh 32-byte
   // secret generated here + held in this boot closure, passed to BOTH the router
-  // (guard verifies it) and the InProcessOwnerRunClient (stamps it). It stops a
+  // (guard verifies it) and the owner dispatcher (stamps it). It stops a
   // prompt-injection-STEERED Brain (no owner client, no secret) from forging owner
   // calls. It is NOT a hard boundary against a Brain running arbitrary hostile JS
   // in this shared VM — such code can patch CoreRouter.prototype.handle to skim the
@@ -411,6 +408,10 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     createCoreRouter({
       ownerCapability,
       agentFacades: createConnectedBrainAgentFacades(),
+      // WEB_OWNER_SURFACE_PLAN §3.5 — the owner's devices (the Agents screen),
+      // the same Core routes the server and the web app use. A setup code
+      // carries the relay this node is reached through.
+      ownerSetup: { msgboxURL: () => inputs.msgboxURL ?? resolveMsgBoxURL() },
       ...(inputs.appViewClient === undefined
         ? {}
         : {
@@ -457,21 +458,17 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     reviewPublishRepository = new SQLiteReviewPublishRepository(inputs.databaseAdapter);
     // Interactive-run subsystem (INTERACTIVE_SERVICES §5..§13) — the full Tier-0
     // store set + service. Owner run control reaches these via a dedicated
-    // owner-marked dispatch (InProcessOwnerRunClient), never Brain's transport.
+    // owner-marked dispatch (the owner dispatcher below), never Brain's transport.
     const runRepository = new SQLiteRunRepository(inputs.databaseAdapter);
     setRunRepository(runRepository);
     setRunService(new RunService({ repository: runRepository }));
-    // The owner-only run/watch control client (§12.5). The run UI reaches every
-    // list/steer through THIS (owner-marked dispatch → route guards → durable
-    // command receipts), never the raw getRunService()/getWatchService() globals
-    // that Brain shares on this same JS VM — "trusted-in-process" is not the
-    // owner boundary (§20). Router already has /v1/run/* + /v1/watch/* registered
-    // (createCoreRouter).
-    setOwnerRunClient(new InProcessOwnerRunClient(router, ownerCapability));
-    // §4 (photo lanes) — the seller screens' draft dispatch, same boundary.
-    setOwnerCommerceClient(new InProcessOwnerCommerceClient(router, ownerCapability));
-    // GROUP_COORDINATION §9 — the plan card's decisions, same boundary.
-    setOwnerCoordinationClient(new InProcessOwnerCoordinationClient(router, ownerCapability));
+    // The owner dispatcher (§12.5, WEB_OWNER_SURFACE_PLAN §3.6). Every owner
+    // client — run/watch control, the seller and trade screens, the plan card —
+    // is derived from it, so they reach Core through owner-marked dispatch →
+    // route guards → durable command receipts, never the raw service globals
+    // Brain shares on this JS VM ("trusted-in-process" is not the owner
+    // boundary, §20). The router already has every owner route registered.
+    setOwnerDispatcher(inProcessOwnerDispatcher(router, ownerCapability));
     setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
     setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
     setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));

@@ -1,13 +1,15 @@
 /**
  * Owner-only interactive-run control client (INTERACTIVE_SERVICES_ARCHITECTURE.md
- * §12.5). This is the net-new OWNER dispatch — a REAL boundary, not
- * `trustedInProcess`. It is deliberately a SEPARATE client from the
- * Brain-shared `CoreClient`/`InProcessTransport`: the owner UI holds an
- * `InProcessOwnerRunClient`, Brain does not, so Brain literally has no reference
- * to a dispatch that stamps `callerType: 'owner'`. Every request it emits is
- * marked owner; the `/v1/run/*` handlers reject any other caller.
+ * §12.5). A REAL boundary, not `trustedInProcess`: a SEPARATE client from the
+ * Brain-shared `CoreClient`/`InProcessTransport`. The owner UI holds an
+ * `OwnerRunControlClient` over an `OwnerDispatcher`, Brain does not, so Brain
+ * has no reference to a dispatch Core would admit as the owner. The dispatcher
+ * decides how the request becomes the owner's (in-process stamp on the phone,
+ * owner-device signature in a browser: `owner-dispatch.ts`); the `/v1/run/*`
+ * handlers reject any other caller.
  */
 
+import type { OwnerDispatcher } from './owner-dispatch';
 import type { ReasoningSubmission } from '../reasoning/broker';
 import type {
   ReasoningAvailability,
@@ -17,7 +19,7 @@ import type {
 } from '../reasoning/domain';
 import type { OwnerReasoningJobView } from '../reasoning/job_projection';
 import type { RunListItem } from '../run/list';
-import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
+import type { CoreResponse } from '../server/router';
 import type { WatchListItem } from '../watch/list';
 
 export interface RunStartRequest {
@@ -212,57 +214,38 @@ export class OwnerRunHttpError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    /** Core's machine-readable `error` (e.g. `no_user_presence`), when it sent one. */
+    public readonly errorKey?: string,
   ) {
     super(message);
     this.name = 'OwnerRunHttpError';
   }
 }
 
-function buildOwnerReq(overrides: Partial<CoreRequest>): CoreRequest {
-  return {
-    method: 'GET',
-    path: '/',
-    query: {},
-    headers: {},
-    body: undefined,
-    rawBody: new Uint8Array(),
-    params: {},
-    // The owner marker — set ONLY by this dedicated dispatch. Combined with
-    // trustedInProcess (so the auth pipeline is skipped in-process), the
-    // /v1/run/* handlers admit it. The unforgeable `ownerCapability` (stamped by
-    // the client's `stampReq`) is what the route guard actually verifies (§12.5,
-    // F15) — `callerType:'owner'` alone is forgeable by co-resident code.
-    trustedInProcess: true,
-    callerType: 'owner',
-    ...overrides,
-  };
-}
-
 function expectOk<T>(res: CoreResponse, ctx: string): T {
   if (res.status < 200 || res.status >= 300) {
-    const err = (res.body as { error?: string; reason?: string } | undefined)?.error ?? 'error';
-    throw new OwnerRunHttpError(`OwnerRunClient: ${ctx} failed ${res.status} — ${err}`, res.status);
+    const key = (res.body as { error?: unknown } | undefined)?.error;
+    const errorKey = typeof key === 'string' && key !== '' ? key : undefined;
+    throw new OwnerRunHttpError(
+      `OwnerRunClient: ${ctx} failed ${res.status} — ${errorKey ?? 'error'}`,
+      res.status,
+      errorKey,
+    );
   }
   return res.body as T;
 }
 
-/** In-process implementation — dispatches owner-marked requests through the
- *  CoreRouter. Wired only to the owner UI. */
-export class InProcessOwnerRunClient implements OwnerRunClient, OwnerReasoningClient {
+/** The owner's run, watch and reasoning-backend control, over an owner dispatcher. Wired only to the owner UI. */
+export class OwnerRunControlClient implements OwnerRunClient, OwnerReasoningClient {
   private seq = 0;
   private readonly boot: string;
   /**
-   * @param router  the Core router (shared with Brain's in-process transport)
-   * @param ownerCapability  the boot-minted owner secret (F15). The app mints it,
-   *   passes the SAME value to `createCoreRouter({ ownerCapability })`, and holds it
-   *   only here + in that closure. Brain, lacking the secret, cannot forge an owner
-   *   call even though it can construct this class. A missing/empty capability makes
-   *   every request fail the (fail-closed) route guard.
+   * @param dispatcher  sends each request as the owner (`owner-dispatch.ts`).
+   *   On the phone it closes over the boot-minted owner capability (F15), which
+   *   Brain never holds; a dispatcher without a valid owner credential makes every
+   *   request fail the (fail-closed) route guard.
    */
-  constructor(
-    private readonly router: CoreRouter,
-    private readonly ownerCapability: string,
-  ) {
+  constructor(private readonly dispatcher: OwnerDispatcher) {
     // A per-instance prefix so keys are unique across app launches; the monotonic
     // counter makes each command's key distinct. Every owner MUTATION carries one
     // so it is durably receipted (§12.5) — the route rejects a keyless mutation.
@@ -271,217 +254,193 @@ export class InProcessOwnerRunClient implements OwnerRunClient, OwnerReasoningCl
   private nextKey(): string {
     return `owner-${this.boot}-${(++this.seq).toString(36)}`;
   }
-  /** Build an owner request with the unforgeable capability stamped on (F15). */
-  private stampReq(overrides: Partial<CoreRequest>): CoreRequest {
-    return buildOwnerReq({ ...overrides, ownerCapability: this.ownerCapability });
-  }
 
   async runList(): Promise<{ runs: RunListItem[] }> {
-    const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/run/list' }));
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/run/list' });
     return expectOk<{ runs: RunListItem[] }>(res, 'runList');
   }
 
   async reasoningBackends(): Promise<{ backends: OwnerReasoningBackendView[] }> {
-    const res = await this.router.handle(
-      this.stampReq({ method: 'GET', path: '/v1/reasoning/backends' }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/reasoning/backends' });
     return expectOk<{ backends: OwnerReasoningBackendView[] }>(res, 'reasoningBackends');
   }
 
   async reasoningRegisterBackend(
     req: OwnerReasoningBackendRegisterRequest,
   ): Promise<OwnerReasoningBackendView> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: '/v1/reasoning/backends/register',
-        body: req,
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: '/v1/reasoning/backends/register',
+      body: req,
+    });
     return expectOk<OwnerReasoningBackendView>(res, 'reasoningRegisterBackend');
   }
 
   async reasoningRevokeBackend(backendId: string, expectedVersion: number): Promise<{ ok: true }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/reasoning/backends/${encodeURIComponent(backendId)}/revoke`,
-        body: { expected_version: expectedVersion },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/reasoning/backends/${encodeURIComponent(backendId)}/revoke`,
+      body: { expected_version: expectedVersion },
+    });
     expectOk<null>(res, 'reasoningRevokeBackend');
     return { ok: true };
   }
 
   async reasoningSubmit(req: OwnerReasoningSubmitRequest): Promise<OwnerReasoningSubmitResult> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: '/v1/owner/reasoning/jobs',
-        body: req,
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: '/v1/owner/reasoning/jobs',
+      body: req,
+    });
     return expectOk<OwnerReasoningSubmitResult>(res, 'reasoningSubmit');
   }
 
   async reasoningList(limit?: number): Promise<{ jobs: OwnerReasoningJobView[] }> {
     const query: Record<string, string> = limit === undefined ? {} : { limit: String(limit) };
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'GET',
-        path: '/v1/owner/reasoning/jobs',
-        query,
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/owner/reasoning/jobs',
+      query,
+    });
     return expectOk<{ jobs: OwnerReasoningJobView[] }>(res, 'reasoningList');
   }
 
   async reasoningGet(taskId: string): Promise<{ job: OwnerReasoningJobView }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'GET',
-        path: `/v1/owner/reasoning/jobs/${encodeURIComponent(taskId)}`,
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: `/v1/owner/reasoning/jobs/${encodeURIComponent(taskId)}`,
+    });
     return expectOk<{ job: OwnerReasoningJobView }>(res, 'reasoningGet');
   }
 
   async reasoningCancel(taskId: string, reason?: string): Promise<{ ok: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/owner/reasoning/${encodeURIComponent(taskId)}/cancel`,
-        body: reason === undefined ? {} : { reason },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/owner/reasoning/${encodeURIComponent(taskId)}/cancel`,
+      body: reason === undefined ? {} : { reason },
+    });
     return expectOk<{ ok: boolean }>(res, 'reasoningCancel');
   }
   async runStart(req: RunStartRequest): Promise<RunStartResult> {
     // `start` already carries the run's `idempotency_key` — it IS the command key.
-    const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: '/v1/run/start', body: req }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: '/v1/run/start',
+      body: req,
+    });
     return expectOk<RunStartResult>(res, 'runStart');
   }
   async runPause(runId: string): Promise<{ state: string }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/pause`,
-        body: { idempotency_key: this.nextKey() },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/pause`,
+      body: { idempotency_key: this.nextKey() },
+    });
     return expectOk<{ state: string }>(res, 'runPause');
   }
   async runResume(runId: string): Promise<{ state: string }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/resume`,
-        body: { idempotency_key: this.nextKey() },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/resume`,
+      body: { idempotency_key: this.nextKey() },
+    });
     return expectOk<{ state: string }>(res, 'runResume');
   }
   async runStop(runId: string, onStop?: string): Promise<{ state: string }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/stop`,
-        body: {
-          idempotency_key: this.nextKey(),
-          ...(onStop !== undefined ? { on_stop: onStop } : {}),
-        },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/stop`,
+      body: {
+        idempotency_key: this.nextKey(),
+        ...(onStop !== undefined ? { on_stop: onStop } : {}),
+      },
+    });
     return expectOk<{ state: string }>(res, 'runStop');
   }
   async runUpdate(runId: string, req: RunUpdateRequest): Promise<{ config_version: number }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/update`,
-        body: { idempotency_key: this.nextKey(), ...req },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/update`,
+      body: { idempotency_key: this.nextKey(), ...req },
+    });
     return expectOk<{ config_version: number }>(res, 'runUpdate');
   }
   async runDecide(
     runId: string,
     req: RunDecideRequest,
   ): Promise<{ state: string; decision_revision: number }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/decide`,
-        body: { idempotency_key: this.nextKey(), ...req },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/decide`,
+      body: { idempotency_key: this.nextKey(), ...req },
+    });
     return expectOk<{ state: string; decision_revision: number }>(res, 'runDecide');
   }
   async confirmRisk(
     runId: string,
     messageId: string,
   ): Promise<{ state: string; authorized: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/confirm-risk`,
-        body: { message_id: messageId, idempotency_key: this.nextKey() },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/confirm-risk`,
+      body: { message_id: messageId, idempotency_key: this.nextKey() },
+    });
     return expectOk<{ state: string; authorized: boolean }>(res, 'confirmRisk');
   }
   async skipLost(
     runId: string,
     reservationId: string,
   ): Promise<{ reservation_id: string; state: string; fetch_resumed: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({
-        method: 'POST',
-        path: `/v1/run/${runId}/skip-lost`,
-        body: { reservation_id: reservationId, idempotency_key: this.nextKey() },
-      }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/run/${runId}/skip-lost`,
+      body: { reservation_id: reservationId, idempotency_key: this.nextKey() },
+    });
     return expectOk<{ reservation_id: string; state: string; fetch_resumed: boolean }>(
       res,
       'skipLost',
     );
   }
   async runStatus(runId: string): Promise<Record<string, unknown>> {
-    const res = await this.router.handle(
-      this.stampReq({ method: 'GET', path: `/v1/run/${runId}/status` }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: `/v1/run/${runId}/status` });
     return expectOk<Record<string, unknown>>(res, 'runStatus');
   }
 
   async watchCreate(req: WatchCreateRequest): Promise<WatchCreateResult> {
     // `subscription_id` IS the idempotency key (createPollWatch dedups on it).
-    const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: '/v1/watch/create', body: req }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: '/v1/watch/create',
+      body: req,
+    });
     return expectOk<WatchCreateResult>(res, 'watchCreate');
   }
   async watchList(): Promise<{ watches: WatchListItem[] }> {
-    const res = await this.router.handle(this.stampReq({ method: 'GET', path: '/v1/watch/list' }));
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/watch/list' });
     return expectOk<{ watches: WatchListItem[] }>(res, 'watchList');
   }
   async watchPause(watchId: string): Promise<{ ok: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/pause`, body: {} }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/watch/${watchId}/pause`,
+      body: {},
+    });
     return expectOk<{ ok: boolean }>(res, 'watchPause');
   }
   async watchResume(watchId: string): Promise<{ ok: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/resume`, body: {} }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/watch/${watchId}/resume`,
+      body: {},
+    });
     return expectOk<{ ok: boolean }>(res, 'watchResume');
   }
   async watchCancel(watchId: string): Promise<{ ok: boolean }> {
-    const res = await this.router.handle(
-      this.stampReq({ method: 'POST', path: `/v1/watch/${watchId}/cancel`, body: {} }),
-    );
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `/v1/watch/${watchId}/cancel`,
+      body: {},
+    });
     return expectOk<{ ok: boolean }>(res, 'watchCancel');
   }
 }
@@ -490,5 +449,6 @@ export class InProcessOwnerRunClient implements OwnerRunClient, OwnerReasoningCl
 // A module-global getter here would be importable by Brain on the shared mobile
 // JS VM, handing it an owner-stamping dispatcher and defeating the owner boundary.
 // The instance is held at the trusted app edge instead
-// (`apps/mobile/src/services/owner_run_client.ts`); constructing this class needs
-// the raw CoreRouter, which Brain never receives.
+// (`apps/mobile/src/services/owner_run_client.ts`); constructing it needs an owner
+// dispatcher, which needs the raw CoreRouter and the owner capability (phone) or
+// the owner device's key (browser), none of which Brain holds.

@@ -3,9 +3,8 @@
  *
  * On mobile the app runs Core in-process, so the in-process client already
  * backs the approval inbox — return it unchanged. The web variant
- * (`inbox_client_resolver.web.ts`) overrides this to back the inbox with an
- * HTTP client to the brain's `/api/v1/workflow/tasks` proxy, because in the
- * web thin-client the in-process Core store is empty (F4).
+ * (`inbox_client_resolver.web.ts`) backs it with the Home Node's Core,
+ * reached as the owner through this browser's owner device.
  */
 
 import type { InboxCoreClient } from '../hooks/useServiceInbox';
@@ -17,8 +16,9 @@ export function resolveInboxCoreClient(inProcess: InboxCoreClient): InboxCoreCli
 /**
  * Whether a decision made on this surface reaches Core AS THE OWNER. On the
  * phone the in-process transport is the owner's own, so every approval kind
- * can be decided here. The web peer answers false: its decisions travel
- * through Brain, and Core refuses a Brain caller the kinds only the owner may
- * settle (a household disclosure, an agent-raised task, a plugin invocation).
+ * can be decided here. The web peer is true as well: it decides as the owner
+ * device. A surface that decided through Brain would be false, because Core
+ * refuses Brain the kinds only the owner may settle (a household disclosure,
+ * an agent-raised task, a plugin invocation).
  */
 export const OWNER_DECIDES_ON_THIS_SURFACE = true;

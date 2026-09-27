@@ -13,18 +13,13 @@
 
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { confirmDecision } from '../src/services/confirm_decision';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { errorKeyOf, ownerErrorText } from '../src/services/owner_errors';
 import { normalizePickedPages } from '../src/services/photo_pipeline';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { CatalogDraft } from '@dina/core';
@@ -59,7 +54,7 @@ export default function CatalogScreen(): React.ReactElement {
       setDrafts(answer.drafts);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(ownerErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -89,7 +84,7 @@ export default function CatalogScreen(): React.ReactElement {
       // transcoded on-device before the capture gate sniffs it.
       const pages = await normalizePickedPages(picked.assets);
       if (pages.length === 0) {
-        Alert.alert('Nothing to read', 'The photos could not be loaded.');
+        showMessage('Nothing to read', 'The photos could not be loaded.');
         return;
       }
       const captured = await client.photoCapture(CATALOG_ID, pages);
@@ -103,15 +98,15 @@ export default function CatalogScreen(): React.ReactElement {
         params: { draft_id: extracted.draft.draftId },
       });
     } catch (err) {
-      const message = (err as Error).message;
+      const key = errorKeyOf(err);
       // The two named degradations get a pointer, not a stack trace.
-      if (message.includes('no_egress_broker') || message.includes('provider_failed')) {
-        Alert.alert(
+      if (key === 'no_egress_broker' || key === 'provider_failed') {
+        showMessage(
           'No photo reader configured',
           'Starter credits cover photo reading once claimed. Or add an OpenAI or OpenRouter key under Settings → AI Providers, then try again.',
         );
       } else {
-        Alert.alert('Could not read the photo', message);
+        showMessage('Could not read the photo', ownerErrorText(err));
       }
     } finally {
       setCapturing(false);
@@ -121,27 +116,23 @@ export default function CatalogScreen(): React.ReactElement {
 
   const eraseDraft = useCallback(
     (draft: CatalogDraft) => {
-      Alert.alert(
+      void confirmDecision(
         'Erase this draft?',
         'The draft, its photographs, and its unpublished product numbers are removed. Anything already published stays published.',
-        [
-          { text: 'Keep', style: 'cancel' },
-          {
-            text: 'Erase',
-            style: 'destructive',
-            onPress: () => {
-              void (async () => {
-                try {
-                  await getOwnerCommerceClient()?.erase(draft.draftId);
-                } catch (err) {
-                  Alert.alert('Could not erase', (err as Error).message);
-                }
-                void reload();
-              })();
-            },
-          },
-        ],
-      );
+        'Erase',
+        true,
+        'Keep',
+      ).then((ok) => {
+        if (!ok) return;
+        void (async () => {
+          try {
+            await getOwnerCommerceClient()?.erase(draft.draftId);
+          } catch (err) {
+            showMessage('Could not erase', ownerErrorText(err));
+          }
+          void reload();
+        })();
+      });
     },
     [reload],
   );

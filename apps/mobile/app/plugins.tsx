@@ -15,30 +15,40 @@
  * a staged install never lingers with no card to act on it. A runner that
  * pairs after that is refused by Core, so no device outlives the teardown.
  *
- * Until the phone wires a repo-proof verifier (C1-mobile), the third-party
- * door is closed and says so; the country packs and the manage list still work.
+ * Where the node has no repo-proof verifier, the third-party door is closed and
+ * says so; the country packs and the manage list still work.
  *
- * The screen talks to Core through the in-process ceremony modules — no HTTP
- * round-trip, because the admin UI shares Core's JS runtime on mobile.
+ * The screen reaches Core's owner routes through the owner plugins client: the
+ * phone's own Core in-process, or the Home Node's for a browser connected as
+ * the owner (WEB_OWNER_SURFACE_PLAN §3.5). Consent, runner codes and updates
+ * need a person present; the sheet asks and the step runs again.
  */
 
 import { Stack, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COUNTRY_PACK_MANIFESTS, COUNTRY_PACKS } from '@dina/core';
 
 import { PluginConsentCard } from '../src/components/PluginConsentCard';
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import {
+  CONNECT_OWNER_DEVICE_MESSAGE,
+  errorKeyOf,
+  ownerErrorText,
+} from '../src/services/owner_errors';
 import {
   beginCountryPackInstall,
   beginPluginInstall,
   declinePluginInstall,
   applyPackUpdate,
-  listInstalledPlugins,
   listPackUpdates,
-  pluginInstallAvailable,
+  loadPlugins,
   reviewPackUpdate,
   uninstallPlugin,
   type CountryPack,
@@ -46,6 +56,7 @@ import {
   type PackUpdate,
   type PluginConsentSummary,
 } from '../src/services/plugin_install';
+import { showMessage } from '../src/services/show_message';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 export default function PluginsScreen(): React.ReactElement {
@@ -58,7 +69,10 @@ export default function PluginsScreen(): React.ReactElement {
   const [rkey, setRkey] = useState('');
   const [beginning, setBeginning] = useState(false);
   const [pending, setPending] = useState<PluginConsentSummary | null>(null);
-  const available = pluginInstallAvailable();
+  // Whether this node can verify a third-party release; Core says so.
+  const [available, setAvailable] = useState(false);
+  /** Why nothing could be listed (e.g. a browser not connected as the owner). */
+  const [listError, setListError] = useState<string | null>(null);
 
   // Leaving the screen with a consent undecided is a Decline (§15.3: expiry and
   // cancellation converge on one cleanup path). The ref lets the blur cleanup
@@ -77,19 +91,44 @@ export default function PluginsScreen(): React.ReactElement {
     }, []),
   );
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     try {
-      setInstalled(listInstalledPlugins());
-      setUpdates(listPackUpdates());
+      const view = await loadPlugins();
+      setInstalled(view.installed);
+      setAvailable(view.thirdPartyAvailable);
+      setListError(null);
     } catch (err) {
       console.warn('[plugins] list failed', err instanceof Error ? err.message : String(err));
       setInstalled([]);
+      setListError(
+        errorKeyOf(err) === 'owner_device_not_connected'
+          ? CONNECT_OWNER_DEVICE_MESSAGE
+          : 'Could not load the plugins. Try again shortly.',
+      );
+    }
+    try {
+      setUpdates(await listPackUpdates());
+    } catch {
+      setUpdates([]);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
+
+  // Applying a pack update can widen what it may do, so Core asks for a
+  // person present (§3.8); the sheet asks and the update runs again.
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) => showMessage('Update refused', ownerErrorText(err)),
+    onSettled: () => void refresh(),
+    reason: 'An update can change what a pack may do, so Dina checks a person is here.',
+  });
 
   /**
    * Item 1 — a pack this app ships updates in place: show what changes, then
@@ -97,45 +136,47 @@ export default function PluginsScreen(): React.ReactElement {
    */
   const handleUpdate = useCallback(
     (update: PackUpdate) => {
-      const reviewed = reviewPackUpdate(update.installId);
-      if (!reviewed.ok) {
-        Alert.alert('Nothing to update', reviewed.error);
-        refresh();
-        return;
-      }
-      const r = reviewed.review;
-      const lines = [
-        `${update.displayName} ${r.fromVersion} → ${r.toVersion}`,
-        ...(r.changes.length > 0 ? ['', 'This version adds:', ...r.changes.map((c) => `• ${c}`)] : []),
-        ...(r.behaviorChanged ? ['', 'It also changes what the pack does.'] : []),
-        '',
-        'Orders already open stay with this pack.',
-      ];
-      Alert.alert('Update this pack?', lines.join('\n'), [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Update',
-          onPress: () => {
-            void (async () => {
-              const applied = await applyPackUpdate(r);
-              Alert.alert(
-                applied.ok ? 'Updated' : 'Update refused',
-                applied.ok ? `${update.displayName} now runs ${r.toVersion}.` : applied.error,
-              );
-              refresh();
-            })();
-          },
-        },
-      ]);
+      void (async () => {
+        let reviewed;
+        try {
+          reviewed = await reviewPackUpdate(update.installId);
+        } catch (err) {
+          showMessage('Nothing to update', ownerErrorText(err));
+          return;
+        }
+        if (!reviewed.ok) {
+          showMessage('Nothing to update', reviewed.error);
+          void refresh();
+          return;
+        }
+        const r = reviewed.review;
+        const lines = [
+          `${update.displayName} ${r.fromVersion} → ${r.toVersion}`,
+          ...(r.changes.length > 0
+            ? ['', 'This version adds:', ...r.changes.map((c) => `• ${c}`)]
+            : []),
+          ...(r.behaviorChanged ? ['', 'It also changes what the pack does.'] : []),
+          '',
+          'Orders already open stay with this pack.',
+        ];
+        if (!(await confirmDecision('Update this pack?', lines.join('\n'), 'Update'))) return;
+        await runGated(async () => {
+          const applied = await applyPackUpdate(r);
+          showMessage(
+            applied.ok ? 'Updated' : 'Update refused',
+            applied.ok ? `${update.displayName} now runs ${r.toVersion}.` : applied.error,
+          );
+        });
+      })();
     },
-    [refresh],
+    [refresh, runGated],
   );
 
   const handleBegin = useCallback(async () => {
     const did = publisherDid.trim();
     const key = rkey.trim();
     if (did === '' || key === '') {
-      Alert.alert('Publisher and release required', 'Enter the publisher DID and the release key.');
+      showMessage('Publisher and release required', 'Enter the publisher DID and the release key.');
       return;
     }
     setBeginning(true);
@@ -143,14 +184,14 @@ export default function PluginsScreen(): React.ReactElement {
       const outcome = await beginPluginInstall(did, key);
       if (outcome.ok) {
         setPending(outcome.consent);
-        refresh();
+        void refresh();
       } else if (outcome.unavailable) {
         // A build-level absence, never a network problem to retry.
-        Alert.alert('Not available on this phone yet', outcome.error);
+        showMessage('Not available here yet', outcome.error);
       } else {
         // A transient failure (PDS unreachable) is worth a retry; a permanent
         // one (bad proof) is not — say which so the owner isn't left guessing.
-        Alert.alert(
+        showMessage(
           outcome.transient ? "Couldn't reach the publisher" : 'Release could not be verified',
           outcome.transient
             ? `${outcome.error}\n\nCheck the connection and try again.`
@@ -158,33 +199,35 @@ export default function PluginsScreen(): React.ReactElement {
         );
       }
     } catch (err) {
-      Alert.alert('Install failed', err instanceof Error ? err.message : String(err));
+      showMessage('Install failed', ownerErrorText(err));
     } finally {
       setBeginning(false);
     }
   }, [publisherDid, rkey, refresh]);
 
   // The first-party door: no fetch, no verifier — the build vouches for its
-  // own manifest. Staging is synchronous; the card then runs the same pairing
-  // and consent as any runner plugin.
+  // own manifest. The card then runs the same pairing and consent as any
+  // runner plugin.
   const handleCountryPack = useCallback(
     (pack: CountryPack) => {
-      try {
-        const outcome = beginCountryPackInstall(pack);
-        if (outcome.state === 'staged') {
-          setPending(outcome.consent);
-          refresh();
-        } else if (outcome.state === 'already_active') {
-          Alert.alert('Already installed', 'This pack is active — it is listed above.');
-        } else {
-          Alert.alert(
-            outcome.transient ? 'Not ready yet' : 'Pack could not be staged',
-            outcome.transient ? `${outcome.error}\n\nTry again in a moment.` : outcome.error,
-          );
+      void (async () => {
+        try {
+          const outcome = await beginCountryPackInstall(pack);
+          if (outcome.state === 'staged') {
+            setPending(outcome.consent);
+            void refresh();
+          } else if (outcome.state === 'already_active') {
+            showMessage('Already installed', 'This pack is active — it is listed above.');
+          } else {
+            showMessage(
+              outcome.transient ? 'Not ready yet' : 'Pack could not be staged',
+              outcome.transient ? `${outcome.error}\n\nTry again in a moment.` : outcome.error,
+            );
+          }
+        } catch (err) {
+          showMessage('Install failed', ownerErrorText(err));
         }
-      } catch (err) {
-        Alert.alert('Install failed', err instanceof Error ? err.message : String(err));
-      }
+      })();
     },
     [refresh],
   );
@@ -198,16 +241,18 @@ export default function PluginsScreen(): React.ReactElement {
         setRkey('');
       }
       if (outcome === 'failed') {
-        Alert.alert('Install failed', detail ?? 'The plugin could not be installed.');
+        showMessage('Install failed', detail ?? 'The plugin could not be installed.');
         // A failed confirm leaves the staged install pending with no card to act
         // on it — tear it down (revoking any paired runner device) so the owner
         // starts clean rather than waiting on the sweeper.
         if (staged !== null) {
-          void declinePluginInstall(staged.installId).finally(refresh);
+          void declinePluginInstall(staged.installId)
+            .catch(() => undefined)
+            .finally(() => void refresh());
           return;
         }
       }
-      refresh();
+      void refresh();
     },
     [pending, refresh],
   );
@@ -216,39 +261,33 @@ export default function PluginsScreen(): React.ReactElement {
   // lingering with no consent behind it.
   const handleDismissPending = useCallback(() => {
     if (pending === null) return;
-    void declinePluginInstall(pending.installId).finally(() => {
-      setPending(null);
-      refresh();
-    });
+    void declinePluginInstall(pending.installId)
+      .catch(() => undefined)
+      .finally(() => {
+        setPending(null);
+        void refresh();
+      });
   }, [pending, refresh]);
 
   const handleUninstall = useCallback(
     (plugin: InstalledPlugin) => {
-      Alert.alert(
-        `Uninstall "${plugin.pluginId}"?`,
-        'The plugin loses access immediately. A runner plugin’s paired device is revoked. Reinstalling requires the publisher’s release again.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Uninstall',
-            style: 'destructive',
-            onPress: () => {
-              void (async () => {
-                try {
-                  const result = await uninstallPlugin(plugin.installId);
-                  if (!result.ok) {
-                    Alert.alert(...uninstallRefusal(result.error, result.detail));
-                  }
-                } catch (err) {
-                  Alert.alert('Uninstall failed', err instanceof Error ? err.message : String(err));
-                } finally {
-                  refresh();
-                }
-              })();
-            },
-          },
-        ],
-      );
+      void (async () => {
+        const uninstall = await confirmDecision(
+          `Uninstall "${plugin.pluginId}"?`,
+          'The plugin loses access immediately. A runner plugin’s paired device is revoked. Reinstalling requires the publisher’s release again.',
+          'Uninstall',
+          true,
+        );
+        if (!uninstall) return;
+        try {
+          const result = await uninstallPlugin(plugin.installId);
+          if (!result.ok) showMessage(...uninstallRefusal(result.error, result.detail));
+        } catch (err) {
+          showMessage('Uninstall failed', ownerErrorText(err));
+        } finally {
+          void refresh();
+        }
+      })();
     },
     [refresh],
   );
@@ -268,7 +307,9 @@ export default function PluginsScreen(): React.ReactElement {
       >
         <Section title={`INSTALLED (${listed.length})`}>
           {listed.length === 0 ? (
-            <Text style={styles.empty}>No plugins installed yet.</Text>
+            <Text style={styles.empty} testID="plugins-empty">
+              {listError ?? 'No plugins installed yet.'}
+            </Text>
           ) : (
             listed.map((p) => (
               <View key={p.installId} style={styles.row} testID={`plugin-row-${p.installId}`}>
@@ -302,7 +343,7 @@ export default function PluginsScreen(): React.ReactElement {
               </View>
             ))
           )}
-          <Pressable testID="plugins-refresh" onPress={refresh} style={styles.refreshButton}>
+          <Pressable testID="plugins-refresh" onPress={() => void refresh()} style={styles.refreshButton}>
             <Text style={styles.refreshText}>Refresh</Text>
           </Pressable>
         </Section>
@@ -347,10 +388,10 @@ export default function PluginsScreen(): React.ReactElement {
           </Section>
         )}
 
-        {pending !== null ? null : !available ? (
+        {pending !== null || listError !== null ? null : !available ? (
           <Section title="INSTALL A PLUGIN">
             <Text style={styles.help} testID="plugins-unavailable">
-              This phone can’t verify third-party plugins yet, so installing is off here until a
+              This Dina can’t verify third-party plugins yet, so installing is off here until a
               later build. Anything listed above can still be managed.
             </Text>
           </Section>
@@ -401,6 +442,7 @@ export default function PluginsScreen(): React.ReactElement {
           </Section>
         )}
       </KeyboardAwareScrollView>
+      <PresenceSheet {...presenceSheet} />
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
 
 import {
   getActiveRuns,
@@ -17,6 +17,8 @@ import {
   type RunDecisions,
   type RunPendingItem,
 } from '../src/hooks/useRuns';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { ownerErrorText } from '../src/services/owner_errors';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 /**
@@ -33,10 +35,19 @@ export default function RunsScreen() {
   const [items, setItems] = useState<RunUIItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  /** Why the list could not load (a browser not connected as the owner). */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void getActiveRuns()
-      .then(setItems)
+      .then((runs) => {
+        setItems(runs);
+        setLoadError(null);
+      })
+      .catch((err: unknown) => {
+        setItems([]);
+        setLoadError(ownerErrorText(err));
+      })
       .finally(() => setHydrated(true));
   }, []);
 
@@ -56,21 +67,16 @@ export default function RunsScreen() {
 
   const onStop = useCallback(
     (item: RunUIItem) => {
-      Alert.alert(
+      void confirmDecision(
         'Stop this run?',
         'Dina will drain any pending work and end the session. This can’t be undone.',
-        [
-          { text: 'Keep running', style: 'cancel' },
-          {
-            text: 'Stop',
-            style: 'destructive',
-            onPress: () => {
-              void stopRun(item.run_id).then(() => refresh());
-            },
-          },
-        ],
-        { cancelable: true },
-      );
+        'Stop',
+        true,
+        'Keep running',
+      ).then((ok) => {
+        if (!ok) return;
+        void stopRun(item.run_id).then(() => refresh());
+      });
     },
     [refresh],
   );
@@ -117,10 +123,16 @@ export default function RunsScreen() {
             color={colors.textMuted}
             style={{ marginBottom: spacing.md }}
           />
-          <Text style={styles.emptyTitle}>No interactive runs</Text>
-          <Text style={styles.emptyBody}>
-            Start an interactive session with a provider — tap Start above — and it appears here so
-            you can pause, resume, or stop it.
+          <Text style={styles.emptyTitle}>
+            {loadError === null ? 'No interactive runs' : 'Could not load'}
+          </Text>
+          <Text style={styles.emptyBody} testID="runs-empty-body">
+            {loadError ?? (
+              <>
+                Start an interactive session with a provider — tap Start above — and it appears here
+                so you can pause, resume, or stop it.
+              </>
+            )}
           </Text>
         </View>
       ) : (
@@ -173,16 +185,48 @@ function NewRunForm({ onStarted }: { onStarted: () => void }) {
         if (runId === null) setError('Could not start the run.');
         else onStarted();
       })
+      .catch((err: unknown) => setError(ownerErrorText(err)))
       .finally(() => setBusy(false));
   };
 
   return (
     <View style={styles.form} testID="run-new-form">
-      <RunFormField label="Provider DID" value={providerDid} onChange={setProviderDid} placeholder="did:plc:…" testID="run-field-provider" />
-      <RunFormField label="Service URI" value={serviceUri} onChange={setServiceUri} placeholder="at://…" testID="run-field-service" />
-      <RunFormField label="Persona" value={persona} onChange={setPersona} placeholder="general" testID="run-field-persona" />
-      <RunFormField label="Run for (minutes)" value={ttlMinutes} onChange={setTtlMinutes} placeholder="60" keyboardType="numeric" testID="run-field-ttl" />
-      <RunFormField label="Provider grant (optional)" value={grantId} onChange={setGrantId} placeholder="grant id for a protected service" testID="run-field-grant" />
+      <RunFormField
+        label="Provider DID"
+        value={providerDid}
+        onChange={setProviderDid}
+        placeholder="did:plc:…"
+        testID="run-field-provider"
+      />
+      <RunFormField
+        label="Service URI"
+        value={serviceUri}
+        onChange={setServiceUri}
+        placeholder="at://…"
+        testID="run-field-service"
+      />
+      <RunFormField
+        label="Persona"
+        value={persona}
+        onChange={setPersona}
+        placeholder="general"
+        testID="run-field-persona"
+      />
+      <RunFormField
+        label="Run for (minutes)"
+        value={ttlMinutes}
+        onChange={setTtlMinutes}
+        placeholder="60"
+        keyboardType="numeric"
+        testID="run-field-ttl"
+      />
+      <RunFormField
+        label="Provider grant (optional)"
+        value={grantId}
+        onChange={setGrantId}
+        placeholder="grant id for a protected service"
+        testID="run-field-grant"
+      />
       {error !== null ? <Text style={styles.formError}>{error}</Text> : null}
       <Pressable
         testID="run-start-submit"
@@ -391,44 +435,49 @@ function RunDecisionsSection({ runId, onChanged }: { runId: string; onChanged: (
               {label(m)}
             </Text>
             <View style={styles.decisionBtns}>
-            {m.kind === 'action' ? (
-              <>
+              {m.kind === 'action' ? (
+                <>
+                  <DecisionBtn
+                    testID={`run-approve-${m.message_id}`}
+                    text="Approve"
+                    tone="accent"
+                    disabled={busy}
+                    onPress={() =>
+                      act(() =>
+                        decideRunMessage(runId, m.message_id, 'approve', m.decision_revision ?? 0),
+                      )
+                    }
+                  />
+                  <DecisionBtn
+                    testID={`run-deny-${m.message_id}`}
+                    text="Deny"
+                    tone="error"
+                    disabled={busy}
+                    onPress={() =>
+                      act(() =>
+                        decideRunMessage(runId, m.message_id, 'deny', m.decision_revision ?? 0),
+                      )
+                    }
+                  />
+                </>
+              ) : (
                 <DecisionBtn
-                  testID={`run-approve-${m.message_id}`}
-                  text="Approve"
-                  tone="accent"
+                  testID={`run-ack-${m.message_id}`}
+                  text="Got it"
+                  tone="muted"
                   disabled={busy}
                   onPress={() =>
                     act(() =>
-                      decideRunMessage(runId, m.message_id, 'approve', m.decision_revision ?? 0),
+                      decideRunMessage(
+                        runId,
+                        m.message_id,
+                        'acknowledge',
+                        m.decision_revision ?? 0,
+                      ),
                     )
                   }
                 />
-                <DecisionBtn
-                  testID={`run-deny-${m.message_id}`}
-                  text="Deny"
-                  tone="error"
-                  disabled={busy}
-                  onPress={() =>
-                    act(() =>
-                      decideRunMessage(runId, m.message_id, 'deny', m.decision_revision ?? 0),
-                    )
-                  }
-                />
-              </>
-            ) : (
-              <DecisionBtn
-                testID={`run-ack-${m.message_id}`}
-                text="Got it"
-                tone="muted"
-                disabled={busy}
-                onPress={() =>
-                  act(() =>
-                    decideRunMessage(runId, m.message_id, 'acknowledge', m.decision_revision ?? 0),
-                  )
-                }
-              />
-            )}
+              )}
             </View>
           </View>
         </View>
@@ -490,7 +539,8 @@ function DecisionBtn({
   onPress: () => void;
   testID: string;
 }) {
-  const color = tone === 'error' ? colors.error : tone === 'muted' ? colors.textMuted : colors.accent;
+  const color =
+    tone === 'error' ? colors.error : tone === 'muted' ? colors.textMuted : colors.accent;
   return (
     <Pressable
       testID={testID}
@@ -579,7 +629,12 @@ const styles = StyleSheet.create({
   decisionCard: { marginBottom: spacing.xs, gap: 2 },
   decisionCardTitle: { ...textStyles.bodyStrong, color: colors.textPrimary },
   decisionCardBody: { ...textStyles.caption, color: colors.textMuted },
-  decisionLabel: { ...textStyles.caption, color: colors.textPrimary, flex: 1, marginRight: spacing.sm },
+  decisionLabel: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
   decisionBtns: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   decisionBtn: {
     borderWidth: 1,

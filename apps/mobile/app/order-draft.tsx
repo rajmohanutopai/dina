@@ -18,7 +18,6 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
@@ -29,9 +28,11 @@ import {
   View,
 } from 'react-native';
 
-import { OwnerCommerceHttpError } from '@dina/core';
-
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { errorKeyOf, ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { OrderConversation, OrderDraft } from '@dina/core';
@@ -69,14 +70,24 @@ export default function OrderDraftScreen(): React.ReactElement {
   const params = useLocalSearchParams<{ draft_id?: string }>();
   const draftId = typeof params.draft_id === 'string' ? params.draft_id : '';
   const [draft, setDraft] = useState<OrderDraft | null>(null);
+  /** Why the draft could not load (gone, or a browser not connected as the owner). */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [fieldEdit, setFieldEdit] = useState<{ lineId: string; field: string; value: string } | null>(null);
-  const [resolveEdit, setResolveEdit] = useState<{ lineId: string; supplier: string; sku: string } | null>(null);
-  const [requirementEdit, setRequirementEdit] = useState<{ key: string; value: string } | null>(null);
+  const [fieldEdit, setFieldEdit] = useState<{
+    lineId: string;
+    field: string;
+    value: string;
+  } | null>(null);
+  const [resolveEdit, setResolveEdit] = useState<{
+    lineId: string;
+    supplier: string;
+    sku: string;
+  } | null>(null);
+  const [requirementEdit, setRequirementEdit] = useState<{ key: string; value: string } | null>(
+    null,
+  );
   const [askEdit, setAskEdit] = useState<{ supplier: string; postal: string } | null>(null);
-  const [presencePrompt, setPresencePrompt] = useState<{ retry: () => Promise<void> } | null>(null);
-  const [passphrase, setPassphrase] = useState('');
 
   const reload = useCallback(async () => {
     const client = getOwnerCommerceClient();
@@ -84,6 +95,7 @@ export default function OrderDraftScreen(): React.ReactElement {
     try {
       const answer = await client.orderDraft(draftId);
       setDraft(answer.draft);
+      setLoadError(null);
       if (pages.length === 0) {
         const loaded: string[] = [];
         for (const page of answer.draft.manifest) {
@@ -96,8 +108,9 @@ export default function OrderDraftScreen(): React.ReactElement {
         }
         setPages(loaded);
       }
-    } catch {
+    } catch (err) {
       setDraft(null);
+      setLoadError(ownerErrorText(err));
     }
   }, [draftId, pages.length]);
 
@@ -120,51 +133,35 @@ export default function OrderDraftScreen(): React.ReactElement {
     return () => clearInterval(id);
   }, [draft, reload]);
 
-  /** Run an operation; on `no_user_presence` raise the passphrase sheet. */
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) =>
+      errorKeyOf(err) === 'presence_unavailable'
+        ? showMessage(
+            'Set a passphrase first',
+            'Vouching a photographed order needs a presence proof; this device has none configured.',
+          )
+        : showMessage('Refused', ownerErrorText(err)),
+    onSettled: () => void reload(),
+    reason: 'Vouching a photographed order needs a person present.',
+  });
+
+  /** Run an owner action; a lapsed presence raises the passphrase sheet, then retries. */
   const withPresence = useCallback(
     async (operation: () => Promise<void>) => {
       setBusy(true);
       try {
-        await operation();
-      } catch (err) {
-        if (err instanceof OwnerCommerceHttpError && err.errorKey === 'no_user_presence') {
-          setPresencePrompt({ retry: operation });
-        } else if (
-          err instanceof OwnerCommerceHttpError &&
-          err.errorKey === 'presence_unavailable'
-        ) {
-          Alert.alert(
-            'Set a passphrase first',
-            'Vouching a photographed order needs a presence proof; this device has none configured.',
-          );
-        } else {
-          Alert.alert('Refused', (err as Error).message);
-        }
+        await runGated(operation);
       } finally {
         setBusy(false);
-        void reload();
       }
     },
-    [reload],
+    [runGated],
   );
-
-  const submitPresence = useCallback(async () => {
-    const client = getOwnerCommerceClient();
-    if (client === null || presencePrompt === null) return;
-    const retry = presencePrompt.retry;
-    setBusy(true);
-    try {
-      await client.provePresence(passphrase);
-      setPresencePrompt(null);
-      setPassphrase('');
-      await retry();
-    } catch {
-      Alert.alert('Not verified', 'That passphrase did not verify. Try again.');
-    } finally {
-      setBusy(false);
-      void reload();
-    }
-  }, [passphrase, presencePrompt, reload]);
 
   const approveConversation = useCallback(
     async (conversation: OrderConversation) => {
@@ -192,12 +189,14 @@ export default function OrderDraftScreen(): React.ReactElement {
               flagged?: boolean;
               direction?: string;
             };
-            if (verdict.kind === 'no_reference_price') return `${entry.line_id}: no reference price`;
-            if (verdict.kind === 'no_comparable_basis') return `${entry.line_id}: no comparable basis`;
+            if (verdict.kind === 'no_reference_price')
+              return `${entry.line_id}: no reference price`;
+            if (verdict.kind === 'no_comparable_basis')
+              return `${entry.line_id}: no comparable basis`;
             return `${entry.line_id}: ${String(verdict.ratioPct)}% of reference${verdict.flagged === true ? ` — ${verdict.direction ?? ''} your band` : ''}`;
           })
           .join('\n');
-        Alert.alert('Approved', `The order is ready to send.\n\n${badges}`);
+        showMessage('Approved', `The order is ready to send.\n\n${badges}`);
       });
     },
     [draft, withPresence],
@@ -207,24 +206,16 @@ export default function OrderDraftScreen(): React.ReactElement {
     async (conversation: OrderConversation) => {
       const client = getOwnerCommerceClient();
       if (client === null || draft === null) return;
-      setBusy(true);
-      try {
+      // Sending an order spends money: Core asks for presence (§3.8).
+      await withPresence(async () => {
         const answer = await client.orderSubmit({
           draftId: draft.draftId,
           conversationId: conversation.conversationId,
         });
-        Alert.alert(
-          'Send order',
-          DISPATCH_MESSAGE[answer.dispatch_class] ?? answer.dispatch_class,
-        );
-      } catch (err) {
-        Alert.alert('Refused', (err as Error).message);
-      } finally {
-        setBusy(false);
-        void reload();
-      }
+        showMessage('Send order', DISPATCH_MESSAGE[answer.dispatch_class] ?? answer.dispatch_class);
+      });
     },
-    [draft, reload],
+    [draft, withPresence],
   );
 
   // Reached with no draft_id (a stray deep link, or the tab-leak build) the
@@ -245,7 +236,13 @@ export default function OrderDraftScreen(): React.ReactElement {
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ title: 'Order' }} />
-        <ActivityIndicator style={styles.spinner} />
+        {loadError === null ? (
+          <ActivityIndicator style={styles.spinner} />
+        ) : (
+          <Text style={styles.loadError} testID="order-draft-load-error">
+            {loadError}
+          </Text>
+        )}
       </View>
     );
   }
@@ -263,7 +260,10 @@ export default function OrderDraftScreen(): React.ReactElement {
       <ScrollView contentContainerStyle={styles.scroll}>
         {pages.map((uri, index) =>
           uri === '' ? (
-            <Text key={index} style={styles.pageGone}>{`Page ${String(index + 1)} unavailable`}</Text>
+            <Text
+              key={index}
+              style={styles.pageGone}
+            >{`Page ${String(index + 1)} unavailable`}</Text>
           ) : (
             <Image key={index} source={{ uri }} style={styles.page} resizeMode="contain" />
           ),
@@ -610,7 +610,7 @@ export default function OrderDraftScreen(): React.ReactElement {
                       supplierDid: edit.supplier,
                       projection: { region: { scheme: 'postal_area', value: edit.postal } },
                     });
-                    Alert.alert('Asked', 'Dina will show the quote here when it arrives.');
+                    showMessage('Asked', 'Dina will show the quote here when it arrives.');
                   });
                 }}
               >
@@ -620,39 +620,7 @@ export default function OrderDraftScreen(): React.ReactElement {
           </View>
         </View>
       </Modal>
-
-      {/* Presence sheet */}
-      <Modal visible={presencePrompt !== null} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Prove it is you</Text>
-            <Text style={styles.modalHint}>
-              Vouching a photographed order needs a person present.
-            </Text>
-            <TextInput
-              testID="order-presence-input"
-              style={styles.input}
-              value={passphrase}
-              onChangeText={setPassphrase}
-              secureTextEntry
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setPresencePrompt(null);
-                  setPassphrase('');
-                }}
-              >
-                <Text style={styles.link}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="order-presence-submit" onPress={() => void submitPresence()}>
-                <Text style={styles.link}>Verify</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }
@@ -661,6 +629,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   spinner: { marginTop: spacing.xl },
+  loadError: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    marginTop: spacing.xl,
+    textAlign: 'center',
+  },
   emptyState: {
     ...textStyles.body,
     color: colors.textSecondary,
@@ -708,7 +682,6 @@ const styles = StyleSheet.create({
   },
   modalCard: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.lg },
   modalTitle: { ...textStyles.h3, color: colors.textPrimary, marginBottom: spacing.sm },
-  modalHint: { ...textStyles.caption, color: colors.textSecondary, marginBottom: spacing.sm },
   input: {
     ...textStyles.body,
     color: colors.textPrimary,

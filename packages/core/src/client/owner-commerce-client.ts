@@ -1,9 +1,9 @@
 /**
- * Owner-only catalog-draft client (PHOTO_COMMERCE_LANES_DESIGN §4) — the
- * seller screens' dispatch, on the same REAL boundary as
- * `InProcessOwnerRunClient`: a separate client from the Brain-shared
- * `CoreClient`, stamping the boot-minted owner capability, so Brain has no
- * reference to a dispatch the owner-only draft routes would admit.
+ * Owner-only commerce client (PHOTO_COMMERCE_LANES_DESIGN §4 and the trade
+ * screens) — on the same REAL boundary as `OwnerRunControlClient`: a separate
+ * client from the Brain-shared `CoreClient`, sending through an
+ * `OwnerDispatcher` (`owner-dispatch.ts`), so Brain has no reference to a
+ * dispatch the owner-only routes would admit.
  *
  * The methods mirror the routes one-to-one and add nothing: Core builds,
  * validates, gates and signs; the screens render what Core answers.
@@ -17,9 +17,10 @@ import {
   type TenderRankingView,
 } from './tender_views';
 
+import type { OwnerDispatcher } from './owner-dispatch';
 import type { CatalogDraft } from '../commerce/catalog_draft_store';
 import type { OrderConversation, OrderDraft, OrderDraftLine } from '../commerce/order_draft_store';
-import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
+import type { CoreResponse } from '../server/router';
 
 export interface PhotoCaptureResult {
   ok: true;
@@ -47,24 +48,6 @@ export class OwnerCommerceHttpError extends Error {
   }
 }
 
-function buildOwnerReq(overrides: Partial<CoreRequest>): CoreRequest {
-  return {
-    method: 'POST',
-    path: '/',
-    query: {},
-    headers: {},
-    body: undefined,
-    rawBody: new Uint8Array(),
-    params: {},
-    // The same two-part owner marker the run client documents: trustedInProcess
-    // skips the network auth pipeline in-process, and the unforgeable
-    // ownerCapability is what the route guard actually verifies.
-    trustedInProcess: true,
-    callerType: 'owner',
-    ...overrides,
-  };
-}
-
 function expectOk<T>(res: CoreResponse, ctx: string): T {
   if (res.status < 200 || res.status >= 300) {
     const key = (res.body as { error?: string } | undefined)?.error ?? 'error';
@@ -77,29 +60,20 @@ function expectOk<T>(res: CoreResponse, ctx: string): T {
   return res.body as T;
 }
 
-export class InProcessOwnerCommerceClient {
-  constructor(
-    private readonly router: CoreRouter,
-    private readonly ownerCapability: string,
-  ) {}
-
-  private stamp(overrides: Partial<CoreRequest>): CoreRequest {
-    return buildOwnerReq({ ...overrides, ownerCapability: this.ownerCapability });
-  }
+export class OwnerCommerceClient {
+  constructor(private readonly dispatcher: OwnerDispatcher) {}
 
   private async post<T>(path: string, body: Record<string, unknown>, ctx: string): Promise<T> {
-    const res = await this.router.handle(this.stamp({ method: 'POST', path, body }));
+    const res = await this.dispatcher.dispatch({ method: 'POST', path, body });
     return expectOk<T>(res, ctx);
   }
 
   async listDrafts(catalogId: string): Promise<{ drafts: CatalogDraft[] }> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/catalog/drafts',
         query: { catalog_id: catalogId },
-      }),
-    );
+      });
     return expectOk<{ drafts: CatalogDraft[] }>(res, 'listDrafts');
   }
 
@@ -185,13 +159,11 @@ export class InProcessOwnerCommerceClient {
 
   /** §6 — a stored page's stripped bytes, for the photograph-beside-values screens. */
   async photoPage(artifactId: string): Promise<{ mime: string; bytes_base64: string }> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/catalog/drafts/photo_page',
         query: { artifact_id: artifactId },
-      }),
-    );
+      });
     return expectOk<{ mime: string; bytes_base64: string }>(res, 'photoPage');
   }
 
@@ -213,20 +185,16 @@ export class InProcessOwnerCommerceClient {
   }
 
   async orderDrafts(): Promise<{ drafts: OrderDraftSummary[] }> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: '/v1/commerce/orders/drafts', query: {} }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/orders/drafts', query: {} });
     return expectOk<{ drafts: OrderDraftSummary[] }>(res, 'orderDrafts');
   }
 
   async orderDraft(draftId: string): Promise<OrderDraftAnswer> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/orders/drafts/get',
         query: { draft_id: draftId },
-      }),
-    );
+      });
     return expectOk<OrderDraftAnswer>(res, 'orderDraft');
   }
 
@@ -350,13 +318,11 @@ export class InProcessOwnerCommerceClient {
     draftId: string;
     conversationId: string;
   }): Promise<OrderSubmitAnswer> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'POST',
         path: '/v1/commerce/orders/drafts/submit',
         body: { draft_id: args.draftId, conversation_id: args.conversationId },
-      }),
-    );
+      });
     const classified = res.body as OrderSubmitAnswer | undefined;
     if (classified !== undefined && typeof classified.dispatch_class === 'string') {
       return classified;
@@ -369,41 +335,35 @@ export class InProcessOwnerCommerceClient {
   // -------------------------------------------------------------------------
 
   async tenderRanking(tenderId: string): Promise<TenderRankingView> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/trade/tender/ranking',
         query: { tender_id: tenderId },
-      }),
-    );
+      });
     return expectOk<TenderRankingView>(res, 'tenderRanking');
   }
 
   /** Award the best offer, or the one named. Presence is checked by Core. */
   async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'POST',
         path: '/v1/commerce/trade/tender/award',
         body: {
           tender_id: args.tenderId,
           ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
         },
-      }),
-    );
+      });
     const outcome = readTenderAward(res.status, res.body);
     return outcome ?? expectOk<never>(res, 'awardTender');
   }
 
   /** Send an order held from a quote (an award, `from_quote`). */
   async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'POST',
         path: '/v1/commerce/orders/submit',
         body: { approval_id: approvalId },
-      }),
-    );
+      });
     const outcome = readOrderSend(res.status, res.body);
     return outcome ?? expectOk<never>(res, 'sendHeldOrder');
   }
@@ -413,9 +373,7 @@ export class InProcessOwnerCommerceClient {
   // -------------------------------------------------------------------------
 
   async tradeInbox(): Promise<{ items: TradeInboxItemDto[] }> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: '/v1/commerce/trade/inbox' }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/trade/inbox' });
     return expectOk<{ items: TradeInboxItemDto[] }>(res, 'tradeInbox');
   }
 
@@ -425,8 +383,7 @@ export class InProcessOwnerCommerceClient {
     /** Required when the pair trades BOTH ways (`role_required` answers the bare call). */
     role?: 'buyer' | 'supplier',
   ): Promise<TradeStatementAnswer> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/trade/statement',
         query: {
@@ -434,8 +391,7 @@ export class InProcessOwnerCommerceClient {
           currency,
           ...(role !== undefined ? { role } : {}),
         },
-      }),
-    );
+      });
     return expectOk<TradeStatementAnswer>(res, 'tradeStatement');
   }
 
@@ -444,9 +400,7 @@ export class InProcessOwnerCommerceClient {
    * a real state ("not configured"), not an error.
    */
   async businessIdentity(): Promise<BusinessIdentityAnswer> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: '/v1/commerce/settings/business' }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/business' });
     return expectOk<BusinessIdentityAnswer>(res, 'businessIdentity');
   }
 
@@ -467,9 +421,7 @@ export class InProcessOwnerCommerceClient {
       country: string;
     };
   }): Promise<{ ok: true } | { ok: false; findings: SettingsFindingDto[] }> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'PUT', path: '/v1/commerce/settings/business', body: settings }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'PUT', path: '/v1/commerce/settings/business', body: settings });
     if (res.status === 200) return { ok: true };
     const body = (res.body ?? {}) as { findings?: SettingsFindingDto[]; error?: string };
     if (body.findings !== undefined) return { ok: false, findings: body.findings };
@@ -492,8 +444,7 @@ export class InProcessOwnerCommerceClient {
     dueAt: string;
     currency: string;
   }): Promise<TradeReminderAnswer> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'POST',
         path: '/v1/commerce/trade/remind',
         body: {
@@ -502,8 +453,7 @@ export class InProcessOwnerCommerceClient {
           due_at: args.dueAt,
           currency: args.currency,
         },
-      }),
-    );
+      });
     if (res.status === 200) return expectOk<TradeReminderAnswer>(res, 'remindCounterparty');
     // A pack that cannot send is a FACT to show the owner (no channel stated,
     // no pack installed, nothing outstanding), not an exception to swallow.
@@ -575,9 +525,7 @@ export class InProcessOwnerCommerceClient {
   }
 
   async booksExport(currency: string): Promise<{ voucher_count: number; xml: string }> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: '/v1/commerce/trade/books-export', query: { currency } }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/trade/books-export', query: { currency } });
     return expectOk<{ voucher_count: number; xml: string }>(res, 'booksExport');
   }
 
@@ -626,9 +574,7 @@ export class InProcessOwnerCommerceClient {
   }
 
   async listInvites(): Promise<{ invites: InviteListEntry[] }> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: '/v1/commerce/invites' }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/invites' });
     return expectOk<{ invites: InviteListEntry[] }>(res, 'listInvites');
   }
 
@@ -672,13 +618,11 @@ export class InProcessOwnerCommerceClient {
   }
 
   async listStaffGrants(deviceDid: string): Promise<{ grants: StaffGrantEntry[] }> {
-    const res = await this.router.handle(
-      this.stamp({
+    const res = await this.dispatcher.dispatch({
         method: 'GET',
         path: '/v1/commerce/staff-grants',
         query: { device_did: deviceDid },
-      }),
-    );
+      });
     return expectOk<{ grants: StaffGrantEntry[] }>(res, 'listStaffGrants');
   }
 

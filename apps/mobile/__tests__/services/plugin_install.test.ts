@@ -9,6 +9,10 @@
  * code, a simulated runner completes pairing with its OWN key, Core binds that
  * exact device to the pending install, consent activates on it, and every
  * teardown (decline / uninstall) durably revokes the device.
+ *
+ * Every call goes through Core's owner routes (WEB_OWNER_SURFACE_PLAN §3.5),
+ * over the in-process owner dispatcher the phone installs at boot — the same
+ * routes a browser connected as the owner reaches over HTTP.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -22,6 +26,8 @@ import {
   applyMigrations,
   clearPairingState,
   completePairing,
+  createCoreRouter,
+  inProcessOwnerDispatcher,
   getPluginInstallRepository,
   IDENTITY_MIGRATIONS,
   publicKeyToMultibase,
@@ -34,11 +40,17 @@ import {
   setPluginInstallRepository,
   setRepoProofVerifier,
 } from '@dina/core';
-import { deviceCount, getDeviceByDID, getPairingIntent, resetDeviceRegistry } from '@dina/core/devices';
+import {
+  deviceCount,
+  getDeviceByDID,
+  getPairingIntent,
+  resetDeviceRegistry,
+} from '@dina/core/devices';
 import { base32Encode, releaseRkeyFromCid, PLUGIN_NSIDS } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { SQLiteDeviceRepository, setDeviceRepository } from '../../../core/src/devices/repository';
+import { setOwnerDispatcher } from '../../src/services/owner_dispatcher';
 import {
   beginCountryPackInstall,
   beginPluginInstall,
@@ -46,8 +58,7 @@ import {
   confirmPluginInstall,
   declinePluginInstall,
   issueRunnerSetupCode,
-  listInstalledPlugins,
-  pluginInstallAvailable,
+  loadPlugins,
   uninstallPlugin,
   type PluginConsentSummary,
 } from '../../src/services/plugin_install';
@@ -56,11 +67,23 @@ import type { PluginManifest, RepoProofResult, RepoProofVerifier } from '@dina/p
 
 const PUBLISHER = 'did:plc:acmepublisher00000000000';
 const NODE_DID = 'did:key:z6MkTestNodeDID';
+const OWNER_CAP = 'owner-capability-for-plugin-install-test';
+const RELAY = 'wss://relay.example/ws';
+
+/** The phone's owner dispatcher, as boot installs it. */
+const router = createCoreRouter({
+  ownerCapability: OWNER_CAP,
+  ownerSetup: { msgboxURL: () => RELAY },
+});
+
+const installedPlugins = async () => (await loadPlugins()).installed;
+const thirdPartyAvailable = async () => (await loadPlugins()).thirdPartyAvailable;
 
 let dir: string;
 let adapter: NodeSQLiteAdapter;
 
-const sha256 = (d: Uint8Array): Uint8Array => new Uint8Array(createHash('sha256').update(d).digest());
+const sha256 = (d: Uint8Array): Uint8Array =>
+  new Uint8Array(createHash('sha256').update(d).digest());
 
 function cidFor(seed: string): string {
   const digest = sha256(new TextEncoder().encode(seed));
@@ -91,7 +114,10 @@ function runnerManifest(): PluginManifest {
   } as PluginManifest;
 }
 
-function fakeVerifier(manifest: PluginManifest, seed = 'v1'): { rkey: string; verifier: RepoProofVerifier } {
+function fakeVerifier(
+  manifest: PluginManifest,
+  seed = 'v1',
+): { rkey: string; verifier: RepoProofVerifier } {
   const cid = cidFor(seed);
   const rkey = releaseRkeyFromCid(cid) as string;
   const verifier: RepoProofVerifier = async (req) =>
@@ -121,7 +147,13 @@ function runnerPairs(code: string): string {
   crypto.getRandomValues(seed);
   const publicKey = ed25519.getPublicKey(seed);
   const intent = getPairingIntent(code);
-  completePairing(code, 'com.acme.widget', publicKeyToMultibase(publicKey), intent?.role, intent?.scope);
+  completePairing(
+    code,
+    'com.acme.widget',
+    publicKeyToMultibase(publicKey),
+    intent?.role,
+    intent?.scope,
+  );
   return `did:key:${publicKeyToMultibase(publicKey)}`;
 }
 
@@ -143,9 +175,11 @@ beforeEach(() => {
     return device !== null && !device.revoked && device.role === 'plugin';
   });
   setNodeDID(NODE_DID);
+  setOwnerDispatcher(inProcessOwnerDispatcher(router, OWNER_CAP));
 });
 
 afterEach(() => {
+  setOwnerDispatcher(null);
   setPluginInstallRepository(null);
   setPluginGrantRepository(null);
   setPluginDeviceVerifier(null);
@@ -165,9 +199,13 @@ describe('plugin_install (mobile, §5.C2)', () => {
     expect(consent.executionMode).toBe('runner');
     expect(consent.capabilities).toEqual(['Read a widget']);
     // A pending install is now in the registry.
-    const listed = listInstalledPlugins();
+    const listed = await installedPlugins();
     expect(listed).toHaveLength(1);
-    expect(listed[0]).toMatchObject({ pluginId: 'com.acme.widget', status: 'pending', executionMode: 'runner' });
+    expect(listed[0]).toMatchObject({
+      pluginId: 'com.acme.widget',
+      status: 'pending',
+      executionMode: 'runner',
+    });
   });
 
   it('surfaces a verifier failure', async () => {
@@ -188,7 +226,7 @@ describe('plugin_install (mobile, §5.C2)', () => {
   });
 
   it('with no verifier wired the door is closed and says so — never "check the connection"', async () => {
-    expect(pluginInstallAvailable()).toBe(false);
+    expect(await thirdPartyAvailable()).toBe(false);
     const outcome = await beginPluginInstall(PUBLISHER, 'somekey');
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) {
@@ -196,7 +234,7 @@ describe('plugin_install (mobile, §5.C2)', () => {
       expect(outcome.transient).toBe(false);
     }
     setRepoProofVerifier(fakeVerifier(runnerManifest()).verifier);
-    expect(pluginInstallAvailable()).toBe(true);
+    expect(await thirdPartyAvailable()).toBe(true);
   });
 
   it('uninstalling an unknown install says so', async () => {
@@ -207,7 +245,7 @@ describe('plugin_install (mobile, §5.C2)', () => {
 describe('runner pairing before authority (PLUGIN_ARCHITECTURE §15.3)', () => {
   it('issues a setup code tied to THIS install with role plugin / scope runner fixed at initiate', async () => {
     const consent = await stagedRunner();
-    const setup = issueRunnerSetupCode(consent);
+    const setup = await issueRunnerSetupCode(consent);
     expect(setup.code).toMatch(/^[0-9A-Z]{8}$/);
     expect(setup.setupCode.startsWith('dina1:')).toBe(true);
     expect(setup.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
@@ -218,96 +256,102 @@ describe('runner pairing before authority (PLUGIN_ARCHITECTURE §15.3)', () => {
       pluginInstallId: consent.installId,
     });
     // Nobody has paired yet.
-    expect(checkRunnerPairing(consent.installId, setup.code)).toEqual({ state: 'waiting' });
+    expect(await checkRunnerPairing(consent.installId, setup.code)).toEqual({ state: 'waiting' });
   });
 
   it('refuses to activate a runner before it pairs — the phone never mints a key', async () => {
     const consent = await stagedRunner();
-    issueRunnerSetupCode(consent);
-    const result = await confirmPluginInstall(consent.installId, 'runner');
+    await issueRunnerSetupCode(consent);
+    const result = await confirmPluginInstall(consent.installId);
     expect(result).toEqual({ ok: false, error: 'the runner has not paired yet' });
-    expect(listInstalledPlugins()[0]?.status).toBe('pending');
+    expect((await installedPlugins())[0]?.status).toBe('pending');
     // No device of any kind was registered on the phone's side.
     expect(deviceCount()).toBe(0);
   });
 
   it('Core binds the exact device that used the code; consent activates on it', async () => {
     const consent = await stagedRunner();
-    const setup = issueRunnerSetupCode(consent);
+    const setup = await issueRunnerSetupCode(consent);
 
     const runnerDid = runnerPairs(setup.code);
     // The phone only READS the bind Core made.
-    expect(checkRunnerPairing(consent.installId, setup.code)).toEqual({ state: 'bound', deviceDid: runnerDid });
+    expect(await checkRunnerPairing(consent.installId, setup.code)).toEqual({
+      state: 'bound',
+      deviceDid: runnerDid,
+    });
     expect(getDeviceByDID(runnerDid)?.role).toBe('plugin');
 
-    const confirmed = await confirmPluginInstall(consent.installId, 'runner');
+    const confirmed = await confirmPluginInstall(consent.installId);
     expect(confirmed).toEqual({ ok: true });
-    expect(listInstalledPlugins()[0]?.status).toBe('active');
+    expect((await installedPlugins())[0]?.status).toBe('active');
   });
 
   it('a second code cannot bind a second runner to an install another runner already holds', async () => {
     const consent = await stagedRunner();
-    const first = issueRunnerSetupCode(consent);
-    const second = issueRunnerSetupCode(consent);
+    const first = await issueRunnerSetupCode(consent);
+    const second = await issueRunnerSetupCode(consent);
     const firstDid = runnerPairs(first.code);
     expect(() => runnerPairs(second.code)).toThrow(/already bound/);
-    expect(checkRunnerPairing(consent.installId, first.code)).toEqual({ state: 'bound', deviceDid: firstDid });
+    expect(await checkRunnerPairing(consent.installId, first.code)).toEqual({
+      state: 'bound',
+      deviceDid: firstDid,
+    });
     expect(deviceCount()).toBe(1);
   });
 
   it('reports an expired or unknown code so the screen issues a new one', async () => {
     const consent = await stagedRunner();
-    expect(checkRunnerPairing(consent.installId, 'NEVERISS')).toEqual({ state: 'expired' });
+    expect(await checkRunnerPairing(consent.installId, 'NEVERISS')).toEqual({ state: 'expired' });
   });
 
   it('a runner that pairs after the owner declined is refused by Core and leaves no device', async () => {
     const consent = await stagedRunner();
-    const setup = issueRunnerSetupCode(consent);
+    const setup = await issueRunnerSetupCode(consent);
     expect(await declinePluginInstall(consent.installId)).toEqual({ removed: true });
     expect(() => runnerPairs(setup.code)).toThrow(/no longer pending/);
     expect(deviceCount()).toBe(0);
-    expect(checkRunnerPairing(consent.installId, setup.code).state).toBe('refused');
+    expect((await checkRunnerPairing(consent.installId, setup.code)).state).toBe('refused');
   });
 
   it('declining after the runner paired revokes that device and removes the row', async () => {
     const consent = await stagedRunner();
-    const setup = issueRunnerSetupCode(consent);
+    const setup = await issueRunnerSetupCode(consent);
     const runnerDid = runnerPairs(setup.code);
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(false);
 
     expect(await declinePluginInstall(consent.installId)).toEqual({ removed: true });
-    expect(listInstalledPlugins()).toEqual([]);
+    expect(await installedPlugins()).toEqual([]);
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(true);
   });
 
   it('uninstalling an active runner install revokes its device and removes the row', async () => {
     const consent = await stagedRunner();
-    const setup = issueRunnerSetupCode(consent);
+    const setup = await issueRunnerSetupCode(consent);
     const runnerDid = runnerPairs(setup.code);
-    expect(await confirmPluginInstall(consent.installId, 'runner')).toEqual({ ok: true });
+    expect(await confirmPluginInstall(consent.installId)).toEqual({ ok: true });
 
     expect(await uninstallPlugin(consent.installId)).toEqual({ ok: true });
-    expect(listInstalledPlugins()).toEqual([]);
+    expect(await installedPlugins()).toEqual([]);
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(true);
   });
 
   it('declining a bare pending install (nothing paired) removes it', async () => {
     const consent = await stagedRunner();
     expect(await declinePluginInstall(consent.installId)).toEqual({ removed: true });
-    expect(listInstalledPlugins()).toEqual([]);
+    expect(await installedPlugins()).toEqual([]);
   });
 
   it('a setup code for an install that is no longer a pending runner is refused', async () => {
     const consent = await stagedRunner();
     await declinePluginInstall(consent.installId);
-    expect(() => issueRunnerSetupCode(consent)).toThrow(/no longer take a runner/);
+    await expect(issueRunnerSetupCode(consent)).rejects.toThrow(/no longer take a runner/);
   });
 });
 
 describe('the country packs enter through the first-party door (§5.D)', () => {
-  it('stages a pack with no verifier, anchored on the local publisher key, ready for the runner ceremony', () => {
-    expect(pluginInstallAvailable()).toBe(false);
-    const outcome = beginCountryPackInstall('in');
+  it('stages a pack with no verifier, anchored on the local publisher key, ready for the runner ceremony', async () => {
+    expect(await thirdPartyAvailable()).toBe(false);
+    const outcome = await beginCountryPackInstall('in');
     if (outcome.state !== 'staged') throw new Error(`expected staged: ${JSON.stringify(outcome)}`);
     expect(outcome.consent.pluginId).toBe('com.dinakernel.country.in');
     expect(outcome.consent.executionMode).toBe('runner');
@@ -323,26 +367,38 @@ describe('the country packs enter through the first-party door (§5.D)', () => {
     expect(row?.publisherDid).toBe(NODE_DID);
 
     // From here the ceremony is the one every runner plugin runs.
-    const { code } = issueRunnerSetupCode(outcome.consent);
+    const { code } = await issueRunnerSetupCode(outcome.consent);
     const runnerDid = runnerPairs(code);
-    expect(checkRunnerPairing(outcome.consent.installId, code)).toEqual({ state: 'bound', deviceDid: runnerDid });
+    expect(await checkRunnerPairing(outcome.consent.installId, code)).toEqual({
+      state: 'bound',
+      deviceDid: runnerDid,
+    });
   });
 
   it('a pack the owner already activated answers already_active — no second consent', async () => {
-    const first = beginCountryPackInstall('us');
+    const first = await beginCountryPackInstall('us');
     if (first.state !== 'staged') throw new Error('expected staged');
-    const runnerDid = runnerPairs(issueRunnerSetupCode(first.consent).code);
-    expect(await confirmPluginInstall(first.consent.installId, 'runner')).toEqual({ ok: true });
+    const runnerDid = runnerPairs((await issueRunnerSetupCode(first.consent)).code);
+    expect(await confirmPluginInstall(first.consent.installId)).toEqual({ ok: true });
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(false);
 
-    expect(beginCountryPackInstall('us')).toEqual({ state: 'already_active', installId: first.consent.installId });
-    expect(listInstalledPlugins().filter((p) => p.pluginId === 'com.dinakernel.country.us')).toHaveLength(1);
+    expect(await beginCountryPackInstall('us')).toEqual({
+      state: 'already_active',
+      installId: first.consent.installId,
+    });
+    expect(
+      (await installedPlugins()).filter((p) => p.pluginId === 'com.dinakernel.country.us'),
+    ).toHaveLength(1);
   });
 
-  it('without a node identity the door refuses and says to retry, staging nothing', () => {
+  it('without a node identity the door refuses and says to retry, staging nothing', async () => {
     clearPairingState();
-    const outcome = beginCountryPackInstall('in');
-    expect(outcome).toEqual({ state: 'refused', error: expect.stringMatching(/not ready/), transient: true });
-    expect(listInstalledPlugins()).toEqual([]);
+    const outcome = await beginCountryPackInstall('in');
+    expect(outcome).toEqual({
+      state: 'refused',
+      error: expect.stringMatching(/not ready/),
+      transient: true,
+    });
+    expect(await installedPlugins()).toEqual([]);
   });
 });

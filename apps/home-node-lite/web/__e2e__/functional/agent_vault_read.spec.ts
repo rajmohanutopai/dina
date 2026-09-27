@@ -21,12 +21,16 @@
 import { pairAgent } from '../fixtures/dina_agent';
 import { expect, test } from '../fixtures/human_session';
 import { openApprovalInbox, tapApprove } from '../fixtures/pages/activity';
+import { connectAsOwner } from '../fixtures/pages/owner_access';
 
 test.describe('MRS-07 — Agent vault-read persona gate', () => {
   test('agent gated on a sensitive persona, served on a default one; owner never gated; approval unblocks', async ({
     human,
   }) => {
     const { backstage, page } = human;
+    // Owner decisions reach Core as the owner device (WEB_OWNER_SURFACE_PLAN
+    // §3.3): connect this browser first, as the owner does once.
+    await connectAsOwner(page, backstage.readOwnerCapability());
     const agent = await pairAgent('e2e-vault-read-agent');
     const started = await agent.signedFetch('POST', '/v1/session/start', {
       body: { host_session_id: 'e2e-vault-a' },
@@ -88,10 +92,18 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     // The human-visible decision is driven through the UI, NOT backstage (§8:
     // backstage never stands in for human-visible behavior). F4 made the web
     // approval inbox faithful, so the vault-read card surfaces here and the tap
-    // flips it. (vault_read approves with a session scope directly — no confirm
-    // dialog.)
+    // flips it. An agent persona-access card is a single confirm (PLG-31: its
+    // grant is durable whatever the scope, so no "approve once"), which the web
+    // shows as the browser's confirm — accept it, and count it.
+    const confirms: string[] = [];
+    page.on('dialog', (d) => {
+      confirms.push(d.type());
+      void d.accept();
+    });
     await openApprovalInbox(page);
     await tapApprove(page, taskId);
+    await expect.poll(() => confirms.length, { timeout: 10_000 }).toBe(1);
+    expect(confirms).toEqual(['confirm']);
     await expect(async () => {
       const retry = await agent.signedFetch('POST', '/v1/vault/query', {
         query: { persona: 'health' },

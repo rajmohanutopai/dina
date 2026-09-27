@@ -61,6 +61,24 @@ describe('rate limit (task 4.30)', () => {
     await app.close();
   });
 
+  it('the web app’s own files under /app/ are not counted; everything else still is', async () => {
+    const app = await createServer({ config: configWithRateLimit(2), logger: silentLogger() });
+    app.get('/app/*', async () => 'asset');
+    app.get('/x', async () => ({ ok: true }));
+    app.post('/app/not-an-asset', async () => ({ ok: true }));
+    await app.ready();
+    // A page load fetches far more files than the budget.
+    for (let i = 0; i < 20; i++) {
+      const asset = await app.inject({ method: 'GET', url: `/app/_expo/static/js/chunk-${i}.js` });
+      expect(asset.statusCode).toBe(200);
+    }
+    // The budget is still whole for the calls that carry authority.
+    expect((await app.inject({ method: 'GET', url: '/x' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/app/not-an-asset' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/x' })).statusCode).toBe(429);
+    await app.close();
+  });
+
   it('rotating X-DID does NOT mint a fresh bucket — edge limiter keys by IP (P2.11)', async () => {
     // The edge limiter runs before signature verification, so X-DID is
     // unauthenticated here. Keying on it would let an attacker rotate X-DID to

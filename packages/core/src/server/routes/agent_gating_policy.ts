@@ -12,6 +12,7 @@ import {
   isAgentGatingProfile,
 } from '../../agent/gating_policy';
 import { appendAudit } from '../../audit/service';
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getDeviceByDID } from '../../devices/registry';
 
 import { ownerDidForRequest } from './owner_guard';
@@ -91,6 +92,17 @@ export function registerAgentGatingPolicyRoutes(
         : {};
     if (!isAgentGatingProfile(body.profile)) {
       return response(400, { error: 'invalid_profile' });
+    }
+    // WEB_OWNER_SURFACE_PLAN §3.8 — anything below full supervision lets the
+    // agent act with less oversight: authority handed out, so a person must be
+    // present. Tightening to full supervision reduces authority and is not gated.
+    if (body.profile !== 'full_supervision') {
+      const refusal = ownerPresenceRefusal(
+        req,
+        Date.now(),
+        'lowering an agent’s supervision needs a person present',
+      );
+      if (refusal !== null) return response(refusal.status, refusal.body);
     }
     const expectedVersion =
       body.expected_version === null

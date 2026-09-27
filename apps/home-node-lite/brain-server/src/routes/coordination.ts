@@ -4,12 +4,12 @@
  *
  * Brain holds two doors on Core for plans: read one by id, and list the
  * recent handles. Both are Brain's own authority (the same doors the
- * `coordinate_group` and `group_plan_handoff` tools use), so a page Brain
- * serves may read a plan card's fold through them without any owner
- * capability touching Brain. DECISIONS — choose, widen, drop, stop, delete —
- * are the owner's and are NOT proxied here: an owner bearer must never
- * transit a Brain-served page (round-C, `apps/home-node-lite/web/SECURITY.md`),
- * so those live on Core's own owner surface, the same as run and watch.
+ * `coordinate_group` and `group_plan_handoff` tools use), so the web app may
+ * read a plan card's fold through them without any owner authority touching
+ * Brain. DECISIONS — choose, widen, drop, stop, delete — are the owner's and
+ * are NOT proxied here: owner authority never transits Brain
+ * (`apps/home-node-lite/web/SECURITY.md`); the web app sends them to Core as
+ * its owner device, the same as run and watch.
  */
 
 import { CoreHttpError, type CoreClient } from '@dina/core';

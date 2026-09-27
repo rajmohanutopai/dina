@@ -17,6 +17,7 @@ import {
   ownerPresenceCanBeEstablished,
   ownerPresentNow,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../src/commerce/owner_presence';
 
 const T0 = 1_800_000_500_000;
@@ -33,8 +34,8 @@ describe('whether presence can be established at all', () => {
     // to reach a state where it thinks somebody is here.
     installOwnerPresenceVerifier(null);
     expect(ownerPresenceCanBeEstablished()).toBe(false);
-    expect(await proveOwnerPresence(RIGHT, T0)).toBe(false);
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('is true once a verifier is installed, even before anyone proves anything', () => {
@@ -43,21 +44,21 @@ describe('whether presence can be established at all', () => {
     // whether somebody happens to be at the keyboard.
     installOwnerPresenceVerifier(async () => true);
     expect(ownerPresenceCanBeEstablished()).toBe(true);
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 });
 
 describe('proving it', () => {
   it('accepts the right passphrase and stamps the clock', async () => {
     installOwnerPresenceVerifier(async (p) => p === RIGHT);
-    expect(await proveOwnerPresence(RIGHT, T0)).toBe(true);
-    expect(ownerPresentNow(T0)).toBe(true);
+    expect(await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(true);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(true);
   });
 
   it('refuses the wrong one, and leaves nobody present', async () => {
     installOwnerPresenceVerifier(async (p) => p === RIGHT);
-    expect(await proveOwnerPresence('hunter2', T0)).toBe(false);
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(await proveOwnerPresence('hunter2', T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('refuses an empty passphrase without consulting the verifier', async () => {
@@ -68,7 +69,7 @@ describe('proving it', () => {
       asked = true;
       return true;
     });
-    expect(await proveOwnerPresence('', T0)).toBe(false);
+    expect(await proveOwnerPresence('', T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
     expect(asked).toBe(false);
   });
 
@@ -79,29 +80,29 @@ describe('proving it', () => {
     installOwnerPresenceVerifier(() => {
       throw new Error('the hasher is not available');
     });
-    expect(await proveOwnerPresence(RIGHT, T0)).toBe(false);
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('does not keep the standing proof when a later attempt fails', async () => {
     let accept = true;
     installOwnerPresenceVerifier(async () => accept);
-    await proveOwnerPresence(RIGHT, T0);
+    await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL);
     accept = false;
-    expect(await proveOwnerPresence('wrong', T0 + 1)).toBe(false);
+    expect(await proveOwnerPresence('wrong', T0 + 1, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
     // The earlier proof is still inside its window, and a failed attempt is
     // not a reason to revoke it — the person who proved it is still there.
-    expect(ownerPresentNow(T0 + 1)).toBe(true);
+    expect(ownerPresentNow(T0 + 1, OWNER_IN_PROCESS_PRINCIPAL)).toBe(true);
   });
 });
 
 describe('the window', () => {
   it('holds for the TTL and not a millisecond longer', async () => {
     installOwnerPresenceVerifier(async () => true);
-    await proveOwnerPresence(RIGHT, T0);
+    await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL);
 
-    expect(ownerPresentNow(T0 + OWNER_PRESENCE_TTL_MS - 1)).toBe(true);
-    expect(ownerPresentNow(T0 + OWNER_PRESENCE_TTL_MS)).toBe(false);
+    expect(ownerPresentNow(T0 + OWNER_PRESENCE_TTL_MS - 1, OWNER_IN_PROCESS_PRINCIPAL)).toBe(true);
+    expect(ownerPresentNow(T0 + OWNER_PRESENCE_TTL_MS, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('treats a clock that went BACKWARDS as nobody present', async () => {
@@ -109,23 +110,23 @@ describe('the window', () => {
     // stamped ahead of the clock would otherwise stand for the whole skew,
     // which on a phone with a corrected date is hours.
     installOwnerPresenceVerifier(async () => true);
-    await proveOwnerPresence(RIGHT, T0 + 60 * 60 * 1000);
-    expect(ownerPresentNow(T0)).toBe(false);
+    await proveOwnerPresence(RIGHT, T0 + 60 * 60 * 1000, OWNER_IN_PROCESS_PRINCIPAL);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('drops on lock', async () => {
     installOwnerPresenceVerifier(async () => true);
-    await proveOwnerPresence(RIGHT, T0);
+    await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL);
     clearOwnerPresence();
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 
   it('drops when the verifier is swapped', async () => {
     // A boot sequence that installs a verifier must not inherit presence
     // proven against a different one.
     installOwnerPresenceVerifier(async () => true);
-    await proveOwnerPresence(RIGHT, T0);
+    await proveOwnerPresence(RIGHT, T0, OWNER_IN_PROCESS_PRINCIPAL);
     installOwnerPresenceVerifier(async () => true);
-    expect(ownerPresentNow(T0)).toBe(false);
+    expect(ownerPresentNow(T0, OWNER_IN_PROCESS_PRINCIPAL)).toBe(false);
   });
 });

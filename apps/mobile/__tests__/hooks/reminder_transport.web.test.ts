@@ -3,7 +3,9 @@
  * (`reminder_transport.web.ts`) — the fetch/SSE layer the SPA actually
  * runs. The server route is covered elsewhere (brain-server tests via
  * MockCoreClient); this pins the *browser* side: URL shapes, body
- * encoding, error surfacing, SSE frame parsing, and disposal.
+ * encoding, error surfacing, SSE frame parsing, and disposal. The page is
+ * Core-served, so every call goes to Brain's origin cross-origin, without
+ * credentials.
  */
 
 import {
@@ -14,8 +16,16 @@ import {
   transportDelete,
   watchFiredReminders,
 } from '../../src/hooks/reminder_transport.web';
+import { BRAIN, configLoaded, installCoreServedPage } from '../setup/web_brain';
 
 type FetchMock = jest.Mock<Promise<unknown>, [string, unknown?]>;
+
+/** The one request the call under test made to Brain. */
+function onlyCall(mock: FetchMock): [string, unknown] {
+  expect(mock.mock.calls).toHaveLength(1);
+  const [url, opts] = mock.mock.calls[0] ?? ['', undefined];
+  return [url, opts];
+}
 
 function okRes(body: unknown): unknown {
   return { ok: true, status: 200, json: async () => body };
@@ -29,7 +39,7 @@ describe('reminder_transport.web — fetch surface', () => {
 
   beforeEach(() => {
     fetchMock = jest.fn() as unknown as FetchMock;
-    (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
+    installCoreServedPage(fetchMock);
   });
   afterEach(() => {
     delete (globalThis as unknown as { fetch?: unknown }).fetch;
@@ -39,27 +49,33 @@ describe('reminder_transport.web — fetch surface', () => {
   it('listPending hits /pending with the now query, returns reminders', async () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [{ id: 'r1' }] }));
     const out = await transportListPending(123);
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reminders/pending?now=123');
+    expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders/pending?now=123`, {
+      credentials: 'omit',
+    });
     expect(out).toEqual([{ id: 'r1' }]);
   });
 
   it('listPending omits now when undefined', async () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [] }));
     await transportListPending();
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reminders/pending');
+    expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders/pending`, {
+      credentials: 'omit',
+    });
   });
 
   it('listByPersona URL-encodes the persona', async () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [] }));
     await transportListByPersona('he/alth');
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reminders?persona=he%2Falth');
+    expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders?persona=he%2Falth`, {
+      credentials: 'omit',
+    });
   });
 
   it('complete POSTs to /:id/complete and returns next', async () => {
     fetchMock.mockResolvedValue(okRes({ next: null }));
     const out = await transportComplete('rem 1');
-    const [url, opts] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/reminders/rem%201/complete');
+    const [url, opts] = onlyCall(fetchMock);
+    expect(url).toBe(`${BRAIN}/api/v1/reminders/rem%201/complete`);
     expect((opts as { method: string }).method).toBe('POST');
     expect(out).toBeNull();
   });
@@ -67,8 +83,8 @@ describe('reminder_transport.web — fetch surface', () => {
   it('snooze sends snooze_ms in the body', async () => {
     fetchMock.mockResolvedValue(okRes({ reminder: { id: 'r1' } }));
     await transportSnooze('r1', 60_000);
-    const [url, opts] = fetchMock.mock.calls[0]! as [string, { method: string; body: string }];
-    expect(url).toBe('/api/v1/reminders/r1/snooze');
+    const [url, opts] = onlyCall(fetchMock) as [string, { method: string; body: string }];
+    expect(url).toBe(`${BRAIN}/api/v1/reminders/r1/snooze`);
     expect(opts.method).toBe('POST');
     expect(JSON.parse(opts.body)).toEqual({ snooze_ms: 60_000 });
   });
@@ -76,8 +92,8 @@ describe('reminder_transport.web — fetch surface', () => {
   it('delete issues DELETE and returns the deleted flag', async () => {
     fetchMock.mockResolvedValue(okRes({ deleted: true }));
     const out = await transportDelete('r1');
-    const [url, opts] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/v1/reminders/r1');
+    const [url, opts] = onlyCall(fetchMock);
+    expect(url).toBe(`${BRAIN}/api/v1/reminders/r1`);
     expect((opts as { method: string }).method).toBe('DELETE');
     expect(out).toBe(true);
   });
@@ -89,11 +105,14 @@ describe('reminder_transport.web — fetch surface', () => {
 });
 
 describe('reminder_transport.web — fired SSE stream', () => {
+  beforeEach(() => {
+    installCoreServedPage(jest.fn());
+  });
   afterEach(() => {
     delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
   });
 
-  it('subscribes to /stream, parses fired frames, drops malformed, disposes', () => {
+  it('subscribes to /stream, parses fired frames, drops malformed, disposes', async () => {
     const listeners: Record<string, (ev: { data: string }) => void> = {};
     const closeSpy = jest.fn();
     let openedUrl = '';
@@ -112,23 +131,41 @@ describe('reminder_transport.web — fired SSE stream', () => {
 
     const fired: { id: string }[] = [];
     const dispose = watchFiredReminders((r) => fired.push(r as { id: string }));
+    await configLoaded();
 
-    expect(openedUrl).toBe('/api/v1/reminders/stream');
+    expect(openedUrl).toBe(`${BRAIN}/api/v1/reminders/stream`);
 
-    listeners.fired!({ data: JSON.stringify({ id: 'r9', message: 'ring' }) });
+    const fire = listeners.fired;
+    if (fire === undefined) throw new Error('no fired listener attached');
+    fire({ data: JSON.stringify({ id: 'r9', message: 'ring' }) });
     expect(fired).toEqual([{ id: 'r9', message: 'ring' }]);
 
     // Malformed frame is dropped, not thrown.
-    expect(() => listeners.fired!({ data: 'not-json' })).not.toThrow();
+    expect(() => fire({ data: 'not-json' })).not.toThrow();
     expect(fired).toHaveLength(1);
 
     dispose();
     expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('disposed before Brain’s address is known: the stream never opens', async () => {
+    let opened = 0;
+    (globalThis as unknown as { EventSource: unknown }).EventSource = class {
+      addEventListener = jest.fn();
+      close = jest.fn();
+      constructor() {
+        opened += 1;
+      }
+    };
+    const dispose = watchFiredReminders(jest.fn());
+    dispose();
+    await configLoaded();
+    expect(opened).toBe(0);
+  });
+
   it('is a no-op (no throw) when EventSource is unavailable (SSR/test env)', () => {
     delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
-    const dispose = watchFiredReminders(() => {});
+    const dispose = watchFiredReminders(jest.fn());
     expect(typeof dispose).toBe('function');
     expect(() => dispose()).not.toThrow();
   });

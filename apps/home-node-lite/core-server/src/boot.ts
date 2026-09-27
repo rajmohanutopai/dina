@@ -42,6 +42,8 @@ import {
   publishAttestationToPDS,
 } from '@dina/brain';
 import {
+  authenticateOwnerDeviceCore,
+  namesOwnerDevice,
   getUpdateRebindCoordinator,
   getDrainAuthorizationRepository,
   configureRateLimiter,
@@ -116,23 +118,32 @@ import { createCodingGate } from './gate/coding_gate_impl';
 import { deriveIdentity } from './identity/derivations';
 import { loadOrGenerateSeed, wrappedSeedPathOf, type SeedSource } from './identity/master_seed';
 import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
+import { createOpenAiVisionBroker, createSharpReencoder } from './image_pipeline';
 import { createLogger } from './logger';
 import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
 import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { ReasoningCommitSupervisor } from './reasoning/reasoning_commit_supervisor';
 import { createServer } from './server';
+import { phoneStatusForOwnerSetup, registerApprovalPhoneRoutes } from './server/approval_phone_routes';
 import { bindCoreRouter } from './server/bind_core_router';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
-import { registerOwnerSetupRoutes } from './server/owner_setup';
-import { createOpenAiVisionBroker, createSharpReencoder } from './image_pipeline';
+import {
+  DEFAULT_WEB_BUNDLE_DIR,
+  WEB_APP_PREFIX,
+  parseBrainOrigin,
+  registerWebAppRoutes,
+} from './server/web_app';
 import { initializeStorage } from './storage/init';
 import { wireWorkflowPlane, type WiredWorkflowPlane } from './workflow/wire_workflow_plane';
 
 import type { LoadedCoreServerConfig } from './config';
 import type { Logger } from './logger';
 import type { DatabaseAdapter } from '@dina/core/storage';
+
+/** Brain on this host, where `DINA_BRAIN_URL` does not say otherwise. */
+const LOCAL_BRAIN_URL = 'http://127.0.0.1:8200';
 
 /** The canonical sequence — enumerated once, consulted everywhere. */
 export const BOOT_STEPS = [
@@ -817,16 +828,13 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         }
         const reviewRepo = getReviewPublishRepository();
         if (reviewRepo !== null) {
+          const reviewPds = wiredPublisher.pdsPublisher;
+          const reviewOwnerDid = pdsIdentity.did;
           reviewPublishSupervisor = new ReviewPublishSupervisor({
-            ownerDid: pdsIdentity.did,
+            ownerDid: reviewOwnerDid,
             repo: reviewRepo,
             publish: (job, record) =>
-              publishAttestationToPDS(
-                wiredPublisher!.pdsPublisher,
-                pdsIdentity!.did,
-                record,
-                job.rkey,
-              ),
+              publishAttestationToPDS(reviewPds, reviewOwnerDid, record, job.rkey),
             classifyError: classifyAttestationPublishError,
             logger,
           });
@@ -885,6 +893,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   try {
     coreRouter = createCoreRouter({
       ownerCapability: ownerCap.capability,
+      // WEB_OWNER_SURFACE_PLAN §3.5 — the owner's devices, shared with the
+      // phone and the web app; the approval phone joins their status.
+      ownerSetup: {
+        msgboxURL: () => config.msgbox.url,
+        extraStatus: () => phoneStatusForOwnerSetup(phoneApprovalManager),
+      },
       codingGate: codingGateHandle.gate,
       onAgentGatingPolicyChanged: (agentDid) => {
         codingGateHandle.permits.revokeForAgent(agentDid);
@@ -895,7 +909,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         }),
       ),
       agentFacades: createAgentFacades({
-        brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
+        brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
         appViewUrl: config.endpoints.appViewBaseUrl,
         ...(wiredPublisher !== undefined && pdsIdentity !== undefined
           ? {
@@ -906,7 +920,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       }),
       ask: {
         handler: makeHttpAskHandler({
-          brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
+          brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
         }),
       },
     });
@@ -954,7 +968,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       coreRouter,
       // Co-located Brain (has the LLM) for the Tier-1 dina.local lane. Defaults
       // to the brain's default host:port when DINA_BRAIN_URL is unset.
-      brainUrl: config.services?.brainUrl ?? 'http://127.0.0.1:8200',
+      brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
       logger,
     });
     // GROUP_COORDINATION §5: a guest asked for reach through the 1:1 preflight
@@ -1098,13 +1112,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // lock itself is written after listen with the real bound port.
       releaseLock(config.storage.vaultDir);
     });
+    // WEB_OWNER_SURFACE_PLAN §3.3 — Core's owner-device checks, shared by the
+    // route binder and the Fastify-level approval-phone routes.
+    const ownerDeviceAuth = { namesOwnerDevice, authenticate: authenticateOwnerDeviceCore };
     routesBound = bindCoreRouter({
       coreRouter,
       app,
       skipRoutes: [{ method: 'GET', path: HEALTHZ_PATH }],
       // A-07 — the HTTP adapter stamps the owner identity on a timing-safe
-      // `x-dina-owner-capability` match, scoped to the run/watch surface.
+      // `x-dina-owner-capability` match, or a verified owner device, scoped
+      // to the owner surface.
       ownerCapability: ownerCap.capability,
+      ownerDeviceAuth,
     });
     // Round-B B-02 (full fix) — the CORE-SERVED owner console. Opt-in
     // (`DINA_CORE_OWNER_CONSOLE=1`); serves a self-contained page at /owner
@@ -1113,17 +1132,33 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     const ownerConsolePath = registerOwnerConsoleRoute(app, {
       enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1',
     });
-    registerOwnerSetupRoutes(app, {
-      enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1',
+    registerApprovalPhoneRoutes(app, {
+      // The owner interface (web app) and the console both drive these.
+      enabled: process.env.DINA_CORE_OWNER_CONSOLE === '1' || process.env.DINA_CORE_WEB_UI === '1',
       ownerCapability: ownerCap.capability,
-      msgboxURL: config.msgbox.url,
       phoneManager: phoneApprovalManager,
+      ownerDeviceAuth,
     });
     if (ownerConsolePath !== null) {
       logger.info(
         { path: ownerConsolePath },
         'owner console served (credential-safe: browser → Core, never Brain)',
       );
+    }
+    // WEB_OWNER_SURFACE_PLAN §3.2 — Core serves the web app at /app/ (opt-in).
+    // The page reaches Brain cross-origin, so Core names Brain's origin as the
+    // browser sees it (the page's config and CSP carry it): the explicit
+    // setting, else Brain's URL, else the local default every other Brain
+    // call here assumes. A malformed value fails boot (`parseBrainOrigin`).
+    if (process.env.DINA_CORE_WEB_UI === '1') {
+      const brainRaw =
+        process.env.DINA_CORE_WEB_BRAIN_ORIGIN?.trim() ||
+        config.services?.brainUrl?.trim() ||
+        LOCAL_BRAIN_URL;
+      const bundleDir = process.env.DINA_CORE_WEB_BUNDLE_DIR ?? DEFAULT_WEB_BUNDLE_DIR;
+      const brainOrigin = parseBrainOrigin(brainRaw);
+      await registerWebAppRoutes(app, { bundleDir, brainOrigin });
+      logger.info({ path: WEB_APP_PREFIX, brainOrigin }, 'web app served by Core (owner devices sign; Brain cross-origin)');
     }
     // Debug control channel — TEST/DEV only, off by default. Lets a test
     // harness drive a real booted node over loopback without signing.

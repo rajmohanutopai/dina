@@ -12,12 +12,22 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 
 import { addLifecycleMessage, getThread, resetThreads, type ChatMessage } from '@dina/brain/chat';
-import { OwnerCoordinationHttpError, type GroupPlanWire, type InProcessOwnerCoordinationClient } from '@dina/core';
+import { OwnerCoordinationHttpError, type GroupPlanWire, type OwnerCoordinationClient } from '@dina/core';
 
 import { InlineGroupPlanCard, parseCandidates, slotText } from '../../src/components/InlineGroupPlanCard';
 import * as contactsSource from '../../src/services/contacts_source';
 import * as readerModule from '../../src/services/group_plan_reader';
-import { setOwnerCoordinationClient } from '../../src/services/owner_coordination_client';
+
+// The owner coordination client is derived from the owner dispatcher in the
+// app; this suite answers with a fake client at the module the card reads.
+let mockCoordinationClient: OwnerCoordinationClient | null = null;
+jest.mock('../../src/services/owner_coordination_client', () => ({
+  getOwnerCoordinationClient: () => mockCoordinationClient,
+}));
+
+function setOwnerCoordinationClient(client: OwnerCoordinationClient | null): void {
+  mockCoordinationClient = client;
+}
 
 const THREAD = 't';
 const GARCIA = 'did:plc:garcia';
@@ -52,7 +62,7 @@ function plan(over: Partial<GroupPlanWire> = {}): GroupPlanWire {
   };
 }
 
-type FakeClient = Pick<InProcessOwnerCoordinationClient, 'get' | 'choose' | 'widen' | 'makeOptional' | 'abandon'>;
+type FakeClient = Pick<OwnerCoordinationClient, 'get' | 'choose' | 'widen' | 'makeOptional' | 'abandon'>;
 
 function fakeClient(current: GroupPlanWire | null): FakeClient & { calls: string[] } {
   const calls: string[] = [];
@@ -80,7 +90,7 @@ function fakeClient(current: GroupPlanWire | null): FakeClient & { calls: string
 }
 
 function install(client: FakeClient): void {
-  setOwnerCoordinationClient(client as unknown as InProcessOwnerCoordinationClient);
+  setOwnerCoordinationClient(client as unknown as OwnerCoordinationClient);
 }
 
 beforeEach(() => {
@@ -306,8 +316,8 @@ describe('InlineGroupPlanCard', () => {
     await waitFor(() => expect(screen.getByText('This plan was deleted.')).toBeTruthy());
   });
 
-  it('with no owner client (the Brain-served web page) the fold still renders and decisions point at Core’s owner console', async () => {
-    // The reader answers; the owner client is absent — the web posture.
+  it('with no owner client yet (still starting) the fold still renders and no decision can be made', async () => {
+    // The reader answers; the owner client is not installed yet.
     const readOnly = fakeClient(
       plan({
         state: 'folded',
@@ -352,7 +362,7 @@ describe('InlineGroupPlanCard', () => {
           ],
         }),
       );
-      setOwnerCoordinationClient(client as unknown as InProcessOwnerCoordinationClient);
+      setOwnerCoordinationClient(client as unknown as OwnerCoordinationClient);
       render(<InlineGroupPlanCard message={post()} />);
       await waitFor(() => expect(screen.getByText('The Garcias')).toBeTruthy());
       // A DID this short is shown whole; a real one is trimmed to its ends.

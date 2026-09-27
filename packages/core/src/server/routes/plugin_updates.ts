@@ -14,6 +14,7 @@
  * a time.
  */
 
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import {
   confirmUpdate,
   prepareUpdate,
@@ -53,7 +54,10 @@ export function registerPluginUpdateRoutes(router: CoreRouter, ownerCapability?:
   });
 
   router.post('/v1/plugins/update/confirm', async (req): Promise<CoreResponse> => {
-    const denied = ownerOnlyGuard(req);
+    const denied =
+      ownerOnlyGuard(req) ??
+      // §3.8 — an update can widen what the plugin may do.
+      ownerPresenceRefusal(req, Date.now(), 'updating a plugin needs a person present');
     if (denied !== null) return denied;
 
     const body = (req.body ?? {}) as {

@@ -23,9 +23,7 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Alert,
   Modal,
-  Platform,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
@@ -66,9 +64,12 @@ import {
   type CatalogData,
   type CatalogFetch,
 } from '../src/services/catalog_source';
+import { chooseAction } from '../src/services/choose_action';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { buildContactServiceListingFields } from '../src/services/contact_service_listing';
 import { slugifyRkey } from '../src/services/listing_rkey';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
+import { showMessage } from '../src/services/show_message';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
 
 
@@ -468,7 +469,7 @@ export default function ServiceSettingsScreen() {
 
   const onSave = useCallback(async () => {
     if (name.trim() === '') {
-      Alert.alert('Missing name', 'Give this service a display name before saving.');
+      showMessage('Missing name', 'Give this service a display name before saving.');
       return;
     }
     // Review #19: don't allow saving a LIVE discoverable profile with no
@@ -480,7 +481,7 @@ export default function ServiceSettingsScreen() {
     // isListingPublishable = active && !known_only — so it fires for
     // UNLISTED too, and the remedies offered must actually pass.
     if (status === 'active' && discoverability !== 'known_only' && capabilities.length === 0) {
-      Alert.alert(
+      showMessage(
         'No capabilities',
         'A live listing must advertise at least one capability. Add one first, set its visibility to Private / Approved Only, or pause the listing.',
       );
@@ -493,7 +494,7 @@ export default function ServiceSettingsScreen() {
     if (status === 'active') {
       const missing = capabilities.find((c) => c.lane === 'dina' && c.instruction.trim() === '');
       if (missing !== undefined) {
-        Alert.alert(
+        showMessage(
           'Tell Dina how to answer',
           `"${capabilityDisplayName(missing.key)}" is answered by your Dina, but you haven't written instructions yet. Add a sentence or two (e.g. "Use my appointment notes to answer availability. If someone wants to book, ask me first."), or switch it to a connected agent.`,
         );
@@ -523,7 +524,7 @@ export default function ServiceSettingsScreen() {
           const clashCap = Object.keys(clashListing.config.capabilities ?? {}).find((k) =>
             myKeys.has(k),
           );
-          Alert.alert(
+          showMessage(
             'Already auto-offered elsewhere',
             `"${clashListing.config.name ?? clashListing.rkey}" already auto-offers ${
               clashCap !== undefined ? capabilityDisplayName(clashCap) : 'this capability'
@@ -709,22 +710,17 @@ export default function ServiceSettingsScreen() {
           discoverability === 'public' &&
           verdict.errors.some((e) => e.code === 'public_custom_needs_schema');
         if (customSchemaBlocked) {
-          Alert.alert(
+          const makeKnownOnly = await confirmDecision(
             'Public custom capabilities not supported yet',
             'Custom (namespaced) capabilities can only be published Public with a ' +
               'params/result schema, which this build can’t author yet. Publish it ' +
               'Known-only instead, or use a standard capability.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Make Known-only',
-                onPress: () => {
-                  setDiscoverability('known_only');
-                  setDiscoverabilityTouched(true);
-                },
-              },
-            ],
+            'Make Known-only',
           );
+          if (makeKnownOnly) {
+            setDiscoverability('known_only');
+            setDiscoverabilityTouched(true);
+          }
           return;
         }
         // A sensitive official capability on a PUBLIC listing (taxonomy §3 /
@@ -735,32 +731,23 @@ export default function ServiceSettingsScreen() {
           discoverability === 'public' &&
           verdict.errors.some((e) => e.code === 'public_sensitive_capability');
         if (sensitivePublicBlocked) {
-          Alert.alert(
+          const visibility = await chooseAction(
             'Too sensitive for a Public listing',
             'This listing includes a capability that reads sensitive or personal data ' +
               '(for example appointment or homework status). It can be offered Unlisted ' +
               '(link or QR) or Private / Approved Only, but not in public Dina search.',
             [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Make Unlisted',
-                onPress: () => {
-                  setDiscoverability('unlisted');
-                  setDiscoverabilityTouched(true);
-                },
-              },
-              {
-                text: 'Make Private',
-                onPress: () => {
-                  setDiscoverability('known_only');
-                  setDiscoverabilityTouched(true);
-                },
-              },
-            ],
+              { key: 'unlisted', label: 'Make Unlisted' },
+              { key: 'known_only', label: 'Make Private' },
+            ] as const,
           );
+          if (visibility !== null) {
+            setDiscoverability(visibility);
+            setDiscoverabilityTouched(true);
+          }
           return;
         }
-        Alert.alert(
+        showMessage(
           'Fix before publishing',
           verdict.errors.map((e) => `• ${e.message}`).join('\n'),
         );
@@ -777,14 +764,14 @@ export default function ServiceSettingsScreen() {
         );
       }
       await saveServiceConfig(next, targetRkey);
-      Alert.alert('Saved', isCreate ? 'Listing created.' : 'Listing updated.', [
-        { text: 'OK', onPress: () => router.replace('/my-listings') },
-      ]);
+      showMessage('Saved', isCreate ? 'Listing created.' : 'Listing updated.', () =>
+        router.replace('/my-listings'),
+      );
     } catch (err) {
       if (err instanceof ServiceConfigValidationError) {
-        Alert.alert('Validation error', err.message);
+        showMessage('Validation error', err.message);
       } else {
-        Alert.alert('Error', (err as Error).message ?? 'Failed to save');
+        showMessage('Error', (err as Error).message ?? 'Failed to save');
       }
     } finally {
       setSaving(false);
@@ -984,7 +971,7 @@ export default function ServiceSettingsScreen() {
                   ]}
                   onPress={() =>
                     opt.disabled === true
-                      ? Alert.alert('Coming soon', PROVIDER_SPECIFIC_COMING_SOON)
+                      ? showMessage('Coming soon', PROVIDER_SPECIFIC_COMING_SOON)
                       : lockedForTalk
                         ? undefined
                         : chooseDiscoverability(opt.value as Discoverability)

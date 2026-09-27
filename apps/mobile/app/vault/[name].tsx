@@ -19,7 +19,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -39,6 +38,8 @@ import {
   listVaultItemsUI,
   type VaultItemUI,
 } from '../../src/hooks/useVaultItems';
+import { confirmDecision } from '../../src/services/confirm_decision';
+import { showMessage } from '../../src/services/show_message';
 import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
 
 interface ScreenState {
@@ -111,25 +112,20 @@ export default function VaultDetail(): React.ReactElement {
 
   const onDeleteItem = useCallback(
     (itemId: string) => {
-      Alert.alert(
+      void confirmDecision(
         'Delete this item?',
         'It will be removed from your vault. This cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              try {
-                deleteVaultItem(personaName, itemId);
-                refresh();
-              } catch (err) {
-                Alert.alert('Could not delete', err instanceof Error ? err.message : String(err));
-              }
-            },
-          },
-        ],
-      );
+        'Delete',
+        true,
+      ).then((remove) => {
+        if (!remove) return;
+        try {
+          deleteVaultItem(personaName, itemId);
+          refresh();
+        } catch (err) {
+          showMessage('Could not delete', err instanceof Error ? err.message : String(err));
+        }
+      });
     },
     [personaName, refresh],
   );

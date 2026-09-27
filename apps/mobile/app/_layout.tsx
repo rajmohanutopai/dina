@@ -1163,6 +1163,16 @@ export default function RootLayout() {
                   }}
                 />
                 <Tabs.Screen
+                  name="owner-access"
+                  options={{
+                    title: 'Owner access',
+                    // WEB_OWNER_SURFACE_PLAN §3.3 — connect this browser as the
+                    // owner's device. Reached from Settings, on the web only.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
                   name="plugins"
                   options={{
                     title: 'Plugins',

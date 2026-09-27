@@ -39,6 +39,7 @@ import { registerHostOperationRoutes } from './routes/host_operations';
 import { registerIntentRoutes } from './routes/intent';
 import { registerMemoryRoutes } from './routes/memory';
 import { registerNotificationRoutes } from './routes/notifications';
+import { registerOwnerSetupRoutes, type OwnerSetupRouteOptions } from './routes/owner_setup';
 import { registerPairRoutes } from './routes/pair';
 import { registerPeopleRoutes } from './routes/people';
 import { registerPersonasRoutes } from './routes/personas';
@@ -92,6 +93,10 @@ export interface CoreRouterOptions {
   /** Core-owned projection uses this read-only source for public review and
    * service evidence. App-specific AppView clients adapt to this interface. */
   reasoningPublicEvidenceSource?: ReasoningRouteOptions['publicEvidenceSource'];
+  /** WEB_OWNER_SURFACE_PLAN §3.5 — the owner's devices (`/v1/owner/setup/*`).
+   *  The host names the relay its setup codes carry; omitted (Brain's own
+   *  router), the routes are not registered. */
+  ownerSetup?: OwnerSetupRouteOptions;
 }
 
 /**
@@ -132,7 +137,12 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // a list of which orders this node cannot answer for is a map of where the
   // supplier is vulnerable.
   registerCommerceRoutes(router, options.ownerCapability);
-  registerPluginInstallRoutes(router, options.ownerCapability);
+  registerPluginInstallRoutes(
+    router,
+    options.ownerCapability,
+    undefined,
+    options.ownerSetup?.msgboxURL,
+  );
   registerPluginInvokeRoutes(router, options.ownerCapability);
   registerPluginUpdateRoutes(router, options.ownerCapability);
   registerHostOperationRoutes(router, options.ownerCapability);
@@ -140,6 +150,9 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // choose, widen, drop from required, stop, delete. Owner-only in the authz
   // matrix AND in-handler; guests reach this node only through the 1:1 lane.
   registerGroupCoordinationRoutes(router, options.ownerCapability);
+  if (options.ownerSetup !== undefined) {
+    registerOwnerSetupRoutes(router, options.ownerCapability, options.ownerSetup);
+  }
   registerServiceQueryRoutes(router, options.serviceQuery);
   registerServiceRespondRoutes(router, options.serviceRespond);
   // Memory routes read from the module-global per-persona repo map

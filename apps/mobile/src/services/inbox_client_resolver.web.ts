@@ -1,88 +1,131 @@
 /**
- * Inbox Core-client resolver — WEB.
+ * Inbox Core-client resolver — WEB (WEB_OWNER_SURFACE_PLAN §3.5).
  *
- * In the web thin-client the in-process Core store is empty (Core runs
- * server-side), so the approval inbox must talk to core-server. It does so
- * through the brain-server's `/api/v1/workflow/tasks` proxy (same origin as
- * the served bundle) — the F4 web-parity fix for Activity → Needs-action.
- * Mirrors the reminder/chat web transports.
+ * The tab's own limited node holds none of the owner's approval cards; they
+ * live in the Home Node's Core. The page reaches Core directly, as the owner,
+ * through this browser's owner device (`owner_dispatcher.web.ts`): the list,
+ * one card, the approve/cancel decisions and the answer to a service query,
+ * the same routes the phone reaches in-process. Nothing goes through Brain,
+ * so every kind of card is decidable here, exactly as on the phone.
+ *
+ * A browser not connected as the owner gets no cards and a message saying
+ * where to connect.
  */
+
+import { getOwnerDispatcher } from './owner_dispatcher';
+import { CONNECT_OWNER_DEVICE_MESSAGE } from './owner_errors';
 
 import type { InboxCoreClient } from '../hooks/useServiceInbox';
 import type {
+  CoreResponse,
+  OwnerRequest,
   ServiceRespondRequestBody,
   ServiceRespondResult,
   WorkflowTask,
 } from '@dina/core';
 
+const TASKS = '/v1/workflow/tasks';
 
-const BASE = '/api/v1/workflow/tasks';
-
-async function readJson(res: Response): Promise<Record<string, unknown>> {
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`inbox: ${res.status} ${detail.slice(0, 200)}`);
+export class OwnerInboxError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly errorKey: string,
+  ) {
+    super(message);
+    this.name = 'OwnerInboxError';
   }
-  return (await res.json()) as Record<string, unknown>;
 }
 
-const httpInbox: InboxCoreClient = {
+async function send(req: OwnerRequest): Promise<CoreResponse> {
+  const dispatcher = getOwnerDispatcher();
+  if (dispatcher === null) {
+    throw new OwnerInboxError(
+      'Owner access is not available on this page.',
+      0,
+      'no_owner_dispatcher',
+    );
+  }
+  return dispatcher.dispatch(req);
+}
+
+function bodyOf(res: CoreResponse): Record<string, unknown> {
+  return res.body !== null && typeof res.body === 'object'
+    ? (res.body as Record<string, unknown>)
+    : {};
+}
+
+/** The answer's body when it is the expected status; a readable error otherwise. */
+function answerOf(res: CoreResponse, ok: number, what: string): Record<string, unknown> {
+  const body = bodyOf(res);
+  if (res.status === ok) return body;
+  const key = typeof body.error === 'string' ? body.error : 'error';
+  if (key === 'owner_device_not_connected') {
+    throw new OwnerInboxError(CONNECT_OWNER_DEVICE_MESSAGE, res.status, key);
+  }
+  const reason =
+    typeof body.reason === 'string'
+      ? body.reason
+      : typeof body.detail === 'string'
+        ? body.detail
+        : key;
+  throw new OwnerInboxError(`${what}: ${reason}`, res.status, key);
+}
+
+const ownerInbox: InboxCoreClient = {
   async listWorkflowTasks(filter) {
-    const qs = new URLSearchParams({
-      kind: filter.kind,
-      state: filter.state,
-      ...(filter.limit !== undefined ? { limit: String(filter.limit) } : {}),
+    const res = await send({
+      method: 'GET',
+      path: TASKS,
+      query: {
+        kind: filter.kind,
+        state: filter.state,
+        ...(filter.limit !== undefined ? { limit: String(filter.limit) } : {}),
+      },
     });
-    const body = await readJson(await fetch(`${BASE}?${qs.toString()}`));
-    return (body.tasks as WorkflowTask[] | undefined) ?? [];
+    return (
+      (answerOf(res, 200, 'Could not load approvals').tasks as WorkflowTask[] | undefined) ?? []
+    );
   },
 
   async getWorkflowTask(id) {
-    const res = await fetch(`${BASE}/${encodeURIComponent(id)}`);
+    const res = await send({ method: 'GET', path: `${TASKS}/${encodeURIComponent(id)}` });
     if (res.status === 404) return null;
-    const body = await readJson(res);
-    return (body.task as WorkflowTask | undefined) ?? null;
+    return (
+      (answerOf(res, 200, 'Could not load the approval').task as WorkflowTask | undefined) ?? null
+    );
   },
 
   async approveWorkflowTask(id, opts) {
-    const body = await readJson(
-      await fetch(`${BASE}/${encodeURIComponent(id)}/approve`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(opts ?? {}),
-      }),
-    );
-    return body.task as WorkflowTask;
+    const res = await send({
+      method: 'POST',
+      path: `${TASKS}/${encodeURIComponent(id)}/approve`,
+      body: opts ?? {},
+    });
+    return answerOf(res, 200, 'Could not approve').task as WorkflowTask;
   },
 
   async cancelWorkflowTask(id, reason) {
-    const body = await readJson(
-      await fetch(`${BASE}/${encodeURIComponent(id)}/cancel`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason: reason ?? '' }),
-      }),
-    );
-    return body.task as WorkflowTask;
+    const res = await send({
+      method: 'POST',
+      path: `${TASKS}/${encodeURIComponent(id)}/cancel`,
+      body: { reason: reason ?? '' },
+    });
+    return answerOf(res, 200, 'Could not decline').task as WorkflowTask;
   },
 
-  // Service-query responses (provider → requester D2D): approve sends the
-  // result, DENY sends `unavailable`. The web thin-client can't reach Core's
-  // in-process sender, so it proxies to the brain's `/api/v1/service/respond`
-  // → CoreClient.sendServiceRespond. Previously this rejected and denyPending
-  // fell back to a LOCAL cancel, so the requester never got `unavailable` and
-  // TIMED OUT (review P2) — now the real protocol response is sent.
+  // A declined service query answers the requester `unavailable` through
+  // Core's respond route, so the requester hears no rather than timing out.
   async sendServiceRespond(
     taskId: string,
     responseBody: ServiceRespondRequestBody,
   ): Promise<ServiceRespondResult> {
-    const body = await readJson(
-      await fetch('/api/v1/service/respond', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ task_id: taskId, response_body: responseBody }),
-      }),
-    );
+    const res = await send({
+      method: 'POST',
+      path: '/v1/service/respond',
+      body: { task_id: taskId, response_body: responseBody },
+    });
+    const body = answerOf(res, 200, 'Could not answer the request');
     return {
       status: typeof body.status === 'string' ? body.status : '',
       taskId: typeof body.task_id === 'string' ? body.task_id : taskId,
@@ -92,15 +135,8 @@ const httpInbox: InboxCoreClient = {
 };
 
 export function resolveInboxCoreClient(_inProcess: InboxCoreClient): InboxCoreClient {
-  return httpInbox;
+  return ownerInbox;
 }
 
-/**
- * The web page decides through Brain, never as the owner: an owner bearer
- * must not transit a Brain-served page (`apps/home-node-lite/web/SECURITY.md`,
- * round C). Core refuses a Brain caller the owner-only kinds — see
- * `brainDisclosureReviewGuard` and its siblings in Core's workflow routes —
- * so a card for one of those says where to decide instead of offering a
- * button that cannot land.
- */
-export const OWNER_DECIDES_ON_THIS_SURFACE = false;
+/** Decisions reach Core as the owner here, as on the phone. */
+export const OWNER_DECIDES_ON_THIS_SURFACE = true;

@@ -10,6 +10,8 @@
 
 import { getThread, addMessage } from '@dina/brain/chat';
 
+import { brainFetch } from '../services/web_runtime';
+
 interface QuarantinedMessage {
   id: string;
   senderDID: string;
@@ -36,7 +38,7 @@ export function syncQuarantineCards(threadId: string): void {
   void (async () => {
     let messages: QuarantinedMessage[] = [];
     try {
-      const res = await fetch('/api/v1/d2d/quarantine');
+      const res = await brainFetch('/api/v1/d2d/quarantine');
       if (!res.ok) return;
       const body = (await res.json()) as { messages?: QuarantinedMessage[] };
       messages = body.messages ?? [];

@@ -12,8 +12,8 @@
  * simply never arrives unless both sides have the other in contacts.
  */
 
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useHeaderHeight } from '@react-navigation/elements';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
@@ -24,7 +24,6 @@ import {
   FlatList,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
@@ -43,6 +42,7 @@ import {
   SCHEDULE_SEED,
 } from '../../src/services/chat_composer_routing';
 import { ChatSendError } from '../../src/services/chat_d2d';
+import { showMessage } from '../../src/services/show_message';
 import { colors, spacing, textStyles } from '../../src/theme';
 
 export default function ChatScreen() {
@@ -103,7 +103,7 @@ export default function ChatScreen() {
       try {
         await runChatTurn(text, peerDID);
       } catch (err) {
-        Alert.alert('Couldn\u2019t schedule', err instanceof Error ? err.message : String(err));
+        showMessage('Couldn\u2019t schedule', err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(false);
         setTimeout(() => {
@@ -120,11 +120,9 @@ export default function ChatScreen() {
     // Block + redirect rather than silently re-route, so the user keeps
     // control of which surface they're talking to.
     if (route === 'slash') {
-      Alert.alert(
+      showMessage(
         'Slash commands talk to Dina, not your contact',
         'Switch to the Chat tab to use commands like /remember or /ask. Or remove the leading "/" if you really meant to send this as a message.',
-        [{ text: 'OK', style: 'default' }],
-        { cancelable: true },
       );
       return;
     }
@@ -135,7 +133,7 @@ export default function ChatScreen() {
       await send(text);
     } catch (err) {
       const msg = err instanceof ChatSendError ? err.message : String(err);
-      Alert.alert('Couldn\u2019t send', msg);
+      showMessage('Couldn\u2019t send', msg);
     } finally {
       setBusy(false);
       // Defer scroll-to-end until after React commits the new row.

@@ -10,7 +10,6 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +20,10 @@ import {
 
 import { StaffCoreClient, staffTransportFor, type StaffInboxItem } from '@dina/core';
 
+import { proofFailureText } from '../src/hooks/usePresenceGate';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { ownerErrorText } from '../src/services/owner_errors';
+import { showMessage } from '../src/services/show_message';
 import { clearStaffIdentity, loadStaffIdentity } from '../src/services/staff_identity_store';
 import { makeStaffWebSocket } from '../src/services/staff_transport_rn';
 import { colors, radius, spacing, textStyles } from '../src/theme';
@@ -75,7 +78,7 @@ export default function StaffHomeScreen(): React.ReactElement {
       setItems(answer.items);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(ownerErrorText(err));
     }
   }, [ensureClient]);
 
@@ -96,7 +99,9 @@ export default function StaffHomeScreen(): React.ReactElement {
         setPresent(true);
         await refreshInbox();
       } catch (err) {
-        Alert.alert('Not verified', (err as Error).message);
+        // A wrong PIN answers access_denied (one bit out, by design): say it
+        // in words, the way the presence sheet does.
+        showMessage('Not verified', proofFailureText(err, 'pin'));
       } finally {
         setBusy(false);
       }
@@ -118,16 +123,16 @@ export default function StaffHomeScreen(): React.ReactElement {
             lines: [],
           });
           if (outcome.kind === 'pending_approval') {
-            Alert.alert(
+            showMessage(
               'Sent to the owner',
               'This delivery is over your limit, so the owner has to approve it. It will go through once they do.',
             );
           } else {
-            Alert.alert('Receipted', 'The delivery is recorded.');
+            showMessage('Receipted', 'The delivery is recorded.');
           }
           await refreshInbox();
         } catch (err) {
-          Alert.alert('Could not receipt', (err as Error).message);
+          showMessage('Could not receipt', ownerErrorText(err));
         } finally {
           setBusy(false);
         }
@@ -137,20 +142,19 @@ export default function StaffHomeScreen(): React.ReactElement {
   );
 
   const leave = useCallback(() => {
-    Alert.alert('Leave this business?', 'This phone will stop being a staff device.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Leave',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            await clearStaffIdentity();
-            clientRef.current = null;
-            router.replace('/staff-join');
-          })();
-        },
-      },
-    ]);
+    void (async () => {
+      const leaving = await confirmDecision(
+        'Leave this business?',
+        'This phone will stop being a staff device.',
+        'Leave',
+        true,
+        'Stay',
+      );
+      if (!leaving) return;
+      await clearStaffIdentity();
+      clientRef.current = null;
+      router.replace('/staff-join');
+    })();
   }, [router]);
 
   return (

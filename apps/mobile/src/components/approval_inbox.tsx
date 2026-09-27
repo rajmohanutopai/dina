@@ -24,6 +24,7 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator, Linking } from 'r
 
 import { subscribeNotifications } from '@dina/brain/notifications';
 
+import { usePresenceGate } from '../hooks/usePresenceGate';
 import {
   listPendingApprovals,
   listResolvedApprovals,
@@ -35,11 +36,15 @@ import {
 } from '../hooks/useServiceInbox';
 import { confirmDecision } from '../services/confirm_decision';
 import { OWNER_DECIDES_ON_THIS_SURFACE } from '../services/inbox_client_resolver';
+import { getOwnerCommerceClient } from '../services/owner_commerce_client';
+import { isPresenceRefusal, ownerErrorText } from '../services/owner_errors';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
 import { safeHttpsUrl } from './safe_url';
 import { SafeCardRenderer } from './SafeCardRenderer';
+
+import type { PresenceSheetProps } from './PresenceSheet';
 
 export type { InboxEntry, ResolvedInboxEntry };
 
@@ -65,6 +70,12 @@ export interface ApprovalInbox {
   approveAllow24h: (item: InboxEntry) => void;
   deny: (item: InboxEntry) => void;
   reload: () => Promise<void>;
+  /**
+   * §3.8 — the "confirm it's you" sheet. A yes on a money card (a price below
+   * the automatic limit, a payment record) needs a person present; Core says
+   * `no_user_presence`, the sheet asks, and the same decision is retried.
+   */
+  presenceSheet: PresenceSheetProps;
 }
 
 /**
@@ -95,7 +106,7 @@ export function useApprovalInbox(): ApprovalInbox {
     try {
       // Fetch both buckets together so a resolution on one surface is
       // reflected in both lists on the next refresh. In-process reads on
-      // mobile; HTTP GETs to the brain proxy on the web thin-client.
+      // mobile; signed owner calls to Core on the web.
       const [pendingList, resolvedList] = await Promise.all([
         listPendingApprovals(50),
         listResolvedApprovals(50),
@@ -169,6 +180,42 @@ export function useApprovalInbox(): ApprovalInbox {
     return off;
   }, [load]);
 
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    // Each decision reports its own failure on its card (below); only a
+    // presence refusal reaches the gate.
+    onError: (err) => setError(ownerErrorText(err)),
+    reason: 'This decision moves money, so Dina checks a person is here.',
+  });
+
+  /**
+   * Send one decision. A failure is shown on that card; a presence refusal is
+   * passed to the gate, which asks for the passphrase and sends it again.
+   */
+  const decide = useCallback(
+    (id: string, action: () => Promise<unknown>): Promise<void> =>
+      runGated(async () => {
+        setBusyId(id);
+        clearActionError(id);
+        try {
+          await action();
+          setPending((list) => list.filter((e) => e.id !== id));
+          // Pull the just-resolved task into the resolved history.
+          void refreshResolved();
+        } catch (err) {
+          if (isPresenceRefusal(err)) throw err;
+          noteActionError(id, ownerErrorText(err));
+        } finally {
+          setBusyId(null);
+        }
+      }),
+    [runGated, refreshResolved, clearActionError, noteActionError],
+  );
+
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
       const namesCapability =
@@ -187,20 +234,9 @@ export function useApprovalInbox(): ApprovalInbox {
       // web thin-client's Approve/Deny confirm never appears; F4).
       const ok = await confirmDecision(headline, subline, verb, verb === 'Deny');
       if (!ok) return;
-      setBusyId(entry.id);
-      clearActionError(entry.id);
-      try {
-        await action();
-        setPending((list) => list.filter((e) => e.id !== entry.id));
-        // Pull the just-resolved task into the resolved history.
-        void refreshResolved();
-      } catch (err) {
-        noteActionError(entry.id, (err as Error).message ?? `Failed to ${verb.toLowerCase()}`);
-      } finally {
-        setBusyId(null);
-      }
+      await decide(entry.id, action);
     },
-    [refreshResolved, clearActionError, noteActionError],
+    [decide],
   );
 
   /**
@@ -227,18 +263,9 @@ export function useApprovalInbox(): ApprovalInbox {
   /** Direct approval driver — no popup; called from the inline buttons. */
   const runApprove = useCallback(
     (item: InboxEntry, scope: 'single' | 'session'): void => {
-      setBusyId(item.id);
-      clearActionError(item.id);
-      void approvePending(item.id, item.kind, scope)
-        .then(() => {
-          setPending((list) => list.filter((e) => e.id !== item.id));
-          // Surface the approved task in the resolved history.
-          void refreshResolved();
-        })
-        .catch((err) => noteActionError(item.id, (err as Error).message ?? 'Failed to approve'))
-        .finally(() => setBusyId(null));
+      void decide(item.id, () => approvePending(item.id, item.kind, scope));
     },
-    [refreshResolved, clearActionError, noteActionError],
+    [decide],
   );
 
   /**
@@ -298,6 +325,7 @@ export function useApprovalInbox(): ApprovalInbox {
     loading,
     error,
     actionErrors,
+    presenceSheet,
     supportsSessionScope,
     supportsAllow24h,
     approve,
@@ -381,10 +409,10 @@ export function ApprovalActionCard({
   const checkoutUrl = isCheckoutLink ? safeHttpsUrl(item.linkUrl) : null;
   // GROUP_COORDINATION §6 and JIFFY_MERCHANT_INTEGRATION_PLAN §3.2/§3.3: a
   // household disclosure, a connector's settings proposal and the attachment
-  // cards are decided by the owner alone (Core refuses Brain), and a surface
-  // that decides through Brain (the web page) has no owner path — so it says
-  // where to decide rather than offering a button Core will refuse. Opening a
-  // payment link is the client's own act and stays available everywhere.
+  // cards are decided by the owner alone (Core refuses Brain); a surface that
+  // decided through Brain would have no owner path, so it would say where to
+  // decide rather than offer a button Core will refuse. Opening a payment link
+  // is the client's own act and stays available everywhere.
   const decidableHere =
     (!isDisclosure &&
       !isSettingsProposal &&

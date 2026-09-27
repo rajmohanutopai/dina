@@ -11,23 +11,20 @@
 
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import {
   activateBuyerInstall,
   buyerInstallConsentSummary,
   buyerInstallStatus,
 } from '../src/services/commerce_install';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { errorKeyOf, ownerErrorText } from '../src/services/owner_errors';
 import { normalizePickedPages } from '../src/services/photo_pipeline';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { OrderDraftSummary } from '@dina/core';
@@ -48,7 +45,10 @@ export default function OrdersScreen(): React.ReactElement {
   const [enabling, setEnabling] = useState(false);
 
   const reload = useCallback(async () => {
-    setOrderingEnabled(buyerInstallStatus().state === 'active');
+    // "Enable ordering" shows only when Core says the buyer pack is absent;
+    // an unreachable read shows nothing rather than a consent for authority
+    // the owner may already have granted.
+    void buyerInstallStatus().then((status) => setOrderingEnabled(status.state !== 'absent'));
     const client = getOwnerCommerceClient();
     if (client === null) {
       setError('Dina is still starting up. Reopen and try again.');
@@ -60,7 +60,7 @@ export default function OrdersScreen(): React.ReactElement {
       setDrafts(answer.drafts);
       setError(null);
     } catch (err) {
-      setError((err as Error).message);
+      setError(ownerErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -90,7 +90,7 @@ export default function OrdersScreen(): React.ReactElement {
       // transcoded on-device before the capture gate sniffs it.
       const pages = await normalizePickedPages(picked.assets);
       if (pages.length === 0) {
-        Alert.alert('Nothing to read', 'The photos could not be loaded.');
+        showMessage('Nothing to read', 'The photos could not be loaded.');
         return;
       }
       const captured = await client.orderPhotoCapture(pages);
@@ -103,14 +103,14 @@ export default function OrdersScreen(): React.ReactElement {
         params: { draft_id: extracted.draft.draftId },
       });
     } catch (err) {
-      const message = (err as Error).message;
-      if (message.includes('no_egress_broker') || message.includes('provider_failed')) {
-        Alert.alert(
+      const key = errorKeyOf(err);
+      if (key === 'no_egress_broker' || key === 'provider_failed') {
+        showMessage(
           'No photo reader configured',
           'Starter credits cover photo reading once claimed. Or add an OpenAI or OpenRouter key under Settings → AI Providers, then try again.',
         );
       } else {
-        Alert.alert('Could not read the photo', message);
+        showMessage('Could not read the photo', ownerErrorText(err));
       }
     } finally {
       setCapturing(false);
@@ -120,55 +120,58 @@ export default function OrdersScreen(): React.ReactElement {
 
   const abandonDraft = useCallback(
     (draft: OrderDraftSummary) => {
-      Alert.alert(
+      void confirmDecision(
         'Abandon this order?',
         'The draft and its photographs are removed. A conversation whose order may already be on its way holds the draft until that settles.',
-        [
-          { text: 'Keep', style: 'cancel' },
-          {
-            text: 'Abandon',
-            style: 'destructive',
-            onPress: () => {
-              void (async () => {
-                try {
-                  await getOwnerCommerceClient()?.orderAbandon(draft.draft_id);
-                } catch (err) {
-                  Alert.alert('Held', (err as Error).message);
-                }
-                void reload();
-              })();
-            },
-          },
-        ],
-      );
+        'Abandon',
+        true,
+        'Keep',
+      ).then((ok) => {
+        if (!ok) return;
+        void (async () => {
+          try {
+            await getOwnerCommerceClient()?.orderAbandon(draft.draft_id);
+          } catch (err) {
+            showMessage('Held', ownerErrorText(err));
+          }
+          void reload();
+        })();
+      });
     },
     [reload],
   );
 
+  // Binding the pack's runner and consenting hand out authority, so Core asks
+  // for a person present (§3.8); the sheet asks and the activation runs again.
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) => showMessage('Could not enable ordering', ownerErrorText(err)),
+    onSettled: () => void reload(),
+    reason:
+      'Installing the buyer pack lets Dina place orders for you, so Dina checks a person is here.',
+  });
+
   const enableOrdering = useCallback(() => {
     const consent = buyerInstallConsentSummary();
-    Alert.alert(
+    void confirmDecision(
       `Install ${consent.name}?`,
       `This lets your Dina place orders with suppliers you choose. It may:\n\n${consent.capabilities.map((c) => `• ${c}`).join('\n')}`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Install',
-          onPress: () => {
-            void (async () => {
-              setEnabling(true);
-              const outcome = await activateBuyerInstall();
-              setEnabling(false);
-              if (!outcome.ok) {
-                Alert.alert('Could not enable ordering', outcome.error);
-              }
-              void reload();
-            })();
-          },
-        },
-      ],
-    );
-  }, [reload]);
+      'Install',
+      false,
+      'Not now',
+    ).then((ok) => {
+      if (!ok) return;
+      setEnabling(true);
+      void runGated(async () => {
+        const outcome = await activateBuyerInstall();
+        if (!outcome.ok) showMessage('Could not enable ordering', outcome.error);
+      }).finally(() => setEnabling(false));
+    });
+  }, [runGated]);
 
   return (
     <View style={styles.container} testID="orders-screen">
@@ -247,6 +250,7 @@ export default function OrdersScreen(): React.ReactElement {
           </Pressable>
         ))}
       </ScrollView>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }

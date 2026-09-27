@@ -16,7 +16,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { Alert, Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 import {
   getCachedKeyHealth,
@@ -25,6 +25,7 @@ import {
   type KeyHealth,
 } from '../ai/key_health';
 import { getApiKey, PROVIDERS } from '../ai/provider';
+import { confirmDecision } from '../services/confirm_decision';
 import { colors, radius, spacing, textStyles } from '../theme';
 
 import type { ProviderType } from '../ai/provider';
@@ -73,17 +74,18 @@ export function KeyHealthPill({ provider }: { provider: ProviderType }): React.J
 
   const onPress = (): void => {
     const providerLabel = PROVIDERS[provider].label;
-    Alert.alert(
+    void confirmDecision(
       label,
       (exhausted
         ? `${providerLabel} accepted the key but refused to generate: the project's credits or quota are used up. Top up / check billing with ${providerLabel}, then re-check.`
         : `${providerLabel} rejected this key. It may have been revoked — check it on the provider's console, or replace it here.`) +
         (health.detail !== undefined ? `\n\nProvider says: “${health.detail}”` : ''),
-      [
-        { text: 'Close', style: 'cancel' },
-        { text: 'Re-check now', onPress: () => refresh(true) },
-      ],
-    );
+      'Re-check now',
+      false,
+      'Close',
+    ).then((recheck) => {
+      if (recheck) refresh(true);
+    });
   };
 
   return (

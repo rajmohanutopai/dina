@@ -112,7 +112,15 @@ export class SQLiteDeviceRepository implements DeviceRepository {
 
 /** The valid persisted device roles (DeviceRole). A row carrying anything else
  *  is corrupt / from a newer schema / tampered. */
-const VALID_DEVICE_ROLES = new Set<DeviceRole>(['rich', 'thin', 'cli', 'agent', 'plugin', 'staff']);
+const VALID_DEVICE_ROLES = new Set<DeviceRole>([
+  'rich',
+  'thin',
+  'cli',
+  'agent',
+  'plugin',
+  'staff',
+  'owner',
+]);
 
 /**
  * Round-12 #4: QUARANTINE a row whose `role` column is not a known DeviceRole

@@ -13,33 +13,13 @@
  * pure HTTP boundary. When `PeerlensQueryClient` adopts these endpoints
  * we can switch over without touching the screen-side hooks.
  *
- * URL precedence comes from `@dina/home-node`: mobile env overrides
- * may replace specific endpoints, otherwise endpoint mode selects the
- * hosted test or release fleet as one unit.
+ * The base comes from `appview_base` (phone: the hosted AppView; web:
+ * Brain's PeerLens read proxy).
  */
 
-import { Platform } from 'react-native';
-
-import { mobileHostedEndpoints } from '../services/hosted_endpoints';
+import { appViewBase } from './appview_base';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-
-function configuredURL(): string {
-  // Web thin-client: the browser must NOT call the AppView directly — that
-  // breaks the sovereignty rule (external I/O flows through the Home Node) and
-  // is CORS-blocked (the AppView sends no Access-Control-Allow-Origin). Route
-  // PeerLens reads at the Home Node's same-origin proxy (brain-server
-  // `/api/peerlens/xrpc/*`), which forwards to the AppView server-side. Native
-  // IS the full Home Node, so it keeps calling the AppView directly.
-  if (Platform.OS === 'web') return '/api/peerlens';
-  return mobileHostedEndpoints().appViewBaseUrl;
-}
-
-const APPVIEW_URL = configuredURL();
-
-export function getAppViewURL(): string {
-  return APPVIEW_URL;
-}
 
 export class AppViewError extends Error {
   constructor(
@@ -54,7 +34,7 @@ export class AppViewError extends Error {
 
 async function getJSON<T>(path: string, params: Record<string, string>): Promise<T> {
   const qs = new URLSearchParams(params).toString();
-  const url = `${APPVIEW_URL}${path}${qs ? `?${qs}` : ''}`;
+  const url = `${await appViewBase()}${path}${qs ? `?${qs}` : ''}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
@@ -379,7 +359,7 @@ export interface DeleteAttestationResponse {
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const url = `${APPVIEW_URL}${path}`;
+  const url = `${await appViewBase()}${path}`;
   const token = process.env.EXPO_PUBLIC_DINA_TEST_INJECT_TOKEN;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);

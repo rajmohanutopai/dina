@@ -20,7 +20,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
@@ -51,6 +50,8 @@ import { CreditsTile } from '../src/components/CreditsTile';
 import { KeyHealthPill } from '../src/components/key_health_pill';
 import { ModelPickerSheet } from '../src/components/ModelPickerSheet';
 import { ProviderPicker } from '../src/components/ProviderPicker';
+import { confirmDecision } from '../src/services/confirm_decision';
+import { showMessage } from '../src/services/show_message';
 import { colors, spacing, radius, textStyles } from '../src/theme';
 
 import type { ProviderType } from '../src/ai/provider';
@@ -143,14 +144,14 @@ export default function AIProvidersScreen(): React.JSX.Element {
   const handleSaveKey = async (provider: ProviderType): Promise<void> => {
     const formatError = validateKeyFormat(provider, keyInput);
     if (formatError) {
-      Alert.alert('Invalid Key', formatError);
+      showMessage('Invalid Key', formatError);
       return;
     }
     setSaving(true);
     try {
       const probeError = await verifyKey(provider, keyInput.trim());
       if (probeError !== null) {
-        Alert.alert("Key didn't work", probeError);
+        showMessage("Key didn't work", probeError);
         return;
       }
       await saveApiKey(provider, keyInput.trim());
@@ -163,33 +164,29 @@ export default function AIProvidersScreen(): React.JSX.Element {
       await loadStates();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save key';
-      Alert.alert('Error', msg);
+      showMessage('Error', msg);
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemoveKey = (provider: ProviderType): void => {
-    Alert.alert(
-      'Remove API Key',
-      `Remove your ${PROVIDERS[provider].label} key? You can add it again later.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            await removeApiKey(provider);
-            if (active === provider) {
-              await saveActiveProvider(null);
-              await wireBrainChatProvider(null);
-              setActive(null);
-            }
-            await loadStates();
-          },
-        },
-      ],
-    );
+    void (async () => {
+      const remove = await confirmDecision(
+        'Remove API Key',
+        `Remove your ${PROVIDERS[provider].label} key? You can add it again later.`,
+        'Remove',
+        true,
+      );
+      if (!remove) return;
+      await removeApiKey(provider);
+      if (active === provider) {
+        await saveActiveProvider(null);
+        await wireBrainChatProvider(null);
+        setActive(null);
+      }
+      await loadStates();
+    })();
   };
 
   const handleSelectActive = async (provider: ProviderType): Promise<void> => {

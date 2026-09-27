@@ -5,10 +5,11 @@
  */
 
 import { acceptQuarantine, blockQuarantine } from '../../src/hooks/quarantine_actions.web';
+import { BRAIN, installCoreServedPage } from '../setup/web_brain';
 
 function mockFetch(impl: () => Promise<unknown>): jest.Mock {
   const m = jest.fn(impl);
-  (globalThis as unknown as { fetch: unknown }).fetch = m;
+  installCoreServedPage(m);
   return m;
 }
 
@@ -26,8 +27,8 @@ describe('quarantine_actions.web', () => {
     const ok = await acceptQuarantine('q-1', 'did:plc:x');
     expect(ok).toBe(true);
     expect(m).toHaveBeenCalledWith(
-      '/api/v1/d2d/quarantine/accept',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ sender_did: 'did:plc:x' }) }),
+      `${BRAIN}/api/v1/d2d/quarantine/accept`,
+      expect.objectContaining({ method: 'POST', credentials: 'omit', body: JSON.stringify({ sender_did: 'did:plc:x' }) }),
     );
   });
 
@@ -43,7 +44,7 @@ describe('quarantine_actions.web', () => {
     const ok = await blockQuarantine('q-2', 'did:plc:y');
     expect(ok).toBe(true);
     expect(m).toHaveBeenCalledWith(
-      '/api/v1/d2d/quarantine/block',
+      `${BRAIN}/api/v1/d2d/quarantine/block`,
       expect.objectContaining({ body: JSON.stringify({ sender_did: 'did:plc:y' }) }),
     );
   });

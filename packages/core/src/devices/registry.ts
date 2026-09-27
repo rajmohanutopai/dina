@@ -39,9 +39,11 @@ import type { AgentScope } from '../auth/agent_scope';
  * instance: paired like an agent, but resolved to its OWN caller type —
  * silent fallthrough to 'device' would inherit the much wider device
  * surface (privilege escalation by default-case). Pinned by
- * __tests__/auth/plugin_caller.test.ts.
+ * __tests__/auth/plugin_caller.test.ts. `owner` (WEB_OWNER_SURFACE_PLAN §3.3)
+ * is a browser the owner connected: its own caller class, refused by the
+ * authz matrix everywhere, acting only through the host's owner entry point.
  */
-export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent' | 'plugin' | 'staff';
+export type DeviceRole = 'rich' | 'thin' | 'cli' | 'agent' | 'plugin' | 'staff' | 'owner';
 export type AuthType = 'ed25519' | 'token';
 
 export interface PairedDevice {

@@ -4,11 +4,13 @@
  * In the browser the reminder store lives in core-server's process, not
  * the page, so the SPA can't read it in-process (that would hit an empty
  * browser-local store). Instead it calls the brain-server's
- * `/api/v1/reminders` API (same origin as the served bundle), which
+ * `/api/v1/reminders` API (cross-origin from the Core-served page), which
  * proxies to core-server via its CoreClient. Same async surface as the
  * native peer (`reminder_transport.ts`) so `useReminders` is platform-
  * agnostic. Mirrors `chat_transport.web.ts`.
  */
+
+import { brainEventStream, brainFetch } from '../services/web_runtime';
 
 import type { Reminder } from '@dina/core/reminders';
 
@@ -26,7 +28,7 @@ async function parseError(res: Response): Promise<never> {
 }
 
 async function getReminders(url: string): Promise<Reminder[]> {
-  const res = await fetch(url);
+  const res = await brainFetch(url);
   if (!res.ok) return parseError(res);
   const body = (await res.json()) as { reminders?: Reminder[] };
   return Array.isArray(body.reminders) ? body.reminders : [];
@@ -42,7 +44,7 @@ export async function transportListByPersona(persona: string): Promise<Reminder[
 }
 
 export async function transportComplete(id: string): Promise<Reminder | null> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/complete`, {
+  const res = await brainFetch(`${BASE}/${encodeURIComponent(id)}/complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '{}',
@@ -59,7 +61,7 @@ export async function transportSnooze(
   snoozeMs: number,
   _now?: number,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}/snooze`, {
+  const res = await brainFetch(`${BASE}/${encodeURIComponent(id)}/snooze`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ snooze_ms: snoozeMs }),
@@ -68,7 +70,7 @@ export async function transportSnooze(
 }
 
 export async function transportDelete(id: string): Promise<boolean> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await brainFetch(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) return parseError(res);
   const body = (await res.json()) as { deleted?: boolean };
   return body.deleted === true;
@@ -87,16 +89,17 @@ export function watchFiredReminders(
   _tickMs?: number,
 ): () => void {
   // SSR/test-safe: EventSource only exists in the browser.
-  if (typeof EventSource === 'undefined') return () => {};
-  const es = new EventSource(`${BASE}/stream`);
-  es.addEventListener('fired', (ev: MessageEvent<string>) => {
-    try {
-      onFired(JSON.parse(ev.data) as Reminder);
-    } catch {
-      /* drop a malformed frame */
-    }
+  if (typeof EventSource === 'undefined') return () => undefined;
+  const stream = brainEventStream(`${BASE}/stream`, (es) => {
+    es.addEventListener('fired', (ev: MessageEvent<string>) => {
+      try {
+        onFired(JSON.parse(ev.data) as Reminder);
+      } catch {
+        /* drop a malformed frame */
+      }
+    });
   });
-  return () => es.close();
+  return () => stream.close();
 }
 
 /** No-op on web — the in-process store the native peer resets doesn't

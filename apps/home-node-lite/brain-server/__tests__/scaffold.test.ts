@@ -227,7 +227,6 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'disabled',
           serviceRuntime: 'disabled',
           stagingDrain: 'disabled',
-          webUI: 'disabled',
           runtime: 'ok',
         },
       });
@@ -578,7 +577,7 @@ describe('brain-server — boot (task 5.1)', () => {
     });
     globalThis.fetch = fetchFn as unknown as typeof globalThis.fetch;
     const timerHandles = [{ id: 'staging' }, { id: 'events' }, { id: 'approvals' }];
-    const setIntervalFn = jest.fn(() => timerHandles.shift()!);
+    const setIntervalFn = jest.fn(() => defined(timerHandles.shift(), 'a timer handle'));
     const clearIntervalFn = jest.fn();
     let booted: Awaited<ReturnType<typeof bootServer>> | undefined;
     try {
@@ -612,8 +611,8 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(setIntervalFn).toHaveBeenNthCalledWith(2, expect.any(Function), 25);
       expect(setIntervalFn).toHaveBeenNthCalledWith(3, expect.any(Function), 50);
       await Promise.all([
-        booted.schedulers.stagingDrain!.flush(),
-        booted.compositions.service!.flush(),
+        defined(booted.schedulers.stagingDrain, 'the staging drain').flush(),
+        defined(booted.compositions.service, 'the service runtime').flush(),
       ]);
 
       // Service runtime composed with Core → /readyz reports ready.
@@ -721,7 +720,7 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(bootUrls).toContain('http://core.example:8100/v1/notifications');
       fetchFn.mockClear();
 
-      await booted.schedulers.stagingDrain!.flush();
+      await defined(booted.schedulers.stagingDrain, 'the staging drain').flush();
 
       // Signed Core client up + staging drain running → /readyz green.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
@@ -739,7 +738,7 @@ describe('brain-server — boot (task 5.1)', () => {
       expect(fetchFn.mock.calls[0]?.[0]).toBe('http://core.example:8100/v1/staging/claim?limit=10');
       fetchFn.mockClear();
 
-      await booted.clients.core!.healthz();
+      await defined(booted.clients.core, 'the Core client').healthz();
       expect(fetchFn).toHaveBeenCalledTimes(1);
       const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
       expect(url).toBe('http://core.example:8100/healthz');
@@ -860,9 +859,15 @@ describe('brain-server — boot (task 5.1)', () => {
   });
 });
 
+/** The value, or a failure naming what the boot should have wired. */
+function defined<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) throw new Error(`boot did not wire ${what}`);
+  return value;
+}
+
 function restoreEnvValue(key: string, value: string | undefined): void {
   if (value === undefined) {
-    delete process.env[key];
+    Reflect.deleteProperty(process.env, key);
   } else {
     process.env[key] = value;
   }

@@ -242,8 +242,11 @@ describe('commerce aggregate boundary', () => {
     expect(
       /if \(ownerPresenceCanBeEstablished\(\)\)[\s\S]{0,400}item_list_retired/.test(routes),
     ).toBe(true);
-    // ...and the draft service asks the INSTANT one.
-    expect(/userPresent:\s*ownerPresentNowForRoutes/.test(routes)).toBe(true);
+    // ...and the draft service asks the INSTANT one, for the principal
+    // driving the request (WEB_OWNER_SURFACE_PLAN §3.8).
+    expect(
+      /userPresent:\s*\(\)\s*=>\s*ownerPresentNowForRoutes\(presencePrincipal\)/.test(routes),
+    ).toBe(true);
     expect(routes.match(/function ownerPresentNowForRoutes\(/g) ?? []).toHaveLength(1);
     // And no hand-rolled constant standing in for either.
     expect(/userPresent:\s*\(\)\s*=>\s*(false|true)/.test(routes)).toBe(false);

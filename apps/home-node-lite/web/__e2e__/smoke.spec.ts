@@ -1,10 +1,10 @@
 /**
- * Phase 1 smoke spec — proves the brain-server's `/web/` route serves
+ * Phase 1 smoke spec — proves Core's `/app/` route (web_app.ts) serves
  * a SPA shell AND the bundled JS executes far enough to render the
  * onboarding screen via React Native Web.
  *
  * Pass criteria (mirrors __chrome__/welcome_screen_renders.scenario.md):
- *   - HTTP 200 on /web/.
+ *   - HTTP 200 on /app/.
  *   - The HTML response contains a `<div id="root">` placeholder.
  *   - After page load, the visible text contains one of the
  *     onboarding-screen phrases. Which one is rendered depends on
@@ -18,15 +18,11 @@
 
 import { expect, test } from '@playwright/test';
 
-const ONBOARDING_PHRASES = [
-  'Welcome to Dina',
-  'Choose your infrastructure',
-  'What kind of node will this be?',
-  "Let's set up Dina",
-];
+// The first onboarding screen (welcome) or the one after it (mode choice).
+const ONBOARDING_PHRASES = ['Your sovereign AI.', 'Get started', 'Welcome to Dina'];
 
-test('GET /web/ serves the SPA shell with cache-busting headers', async ({ request }) => {
-  const resp = await request.get('/web/');
+test('GET /app/ serves the SPA shell with cache-busting headers', async ({ request }) => {
+  const resp = await request.get('/app/');
   expect(resp.status()).toBe(200);
   expect(resp.headers()['content-type']).toContain('text/html');
   expect(resp.headers()['cache-control']).toBe('no-cache, must-revalidate');
@@ -34,7 +30,7 @@ test('GET /web/ serves the SPA shell with cache-busting headers', async ({ reque
   expect(body).toContain('id="root"');
 });
 
-test('Loading /web/ in Chromium mounts React and renders an onboarding screen', async ({
+test('Loading /app/ in Chromium mounts React and renders an onboarding screen', async ({
   page,
 }) => {
   const consoleErrors: string[] = [];
@@ -45,7 +41,7 @@ test('Loading /web/ in Chromium mounts React and renders an onboarding screen', 
     consoleErrors.push(err.message);
   });
 
-  await page.goto('/web/');
+  await page.goto('/app/');
 
   // React mounts asynchronously. Wait until the welcome-screen text
   // appears on the page — that's the signal the JS bundle executed,
@@ -70,10 +66,10 @@ test('Loading /web/ in Chromium mounts React and renders an onboarding screen', 
 test('Deep-link routes fall back to the SPA shell (client-side router takes over)', async ({
   request,
 }) => {
-  // The brain-server returns index.html for any /web/<unknown> URL so
+  // Core returns index.html for any /app/<unknown> URL so
   // the React Router on the client can resolve the route. This pins
   // the contract for refreshing a deep-link URL in the browser.
-  const resp = await request.get('/web/onboarding/welcome');
+  const resp = await request.get('/app/onboarding/welcome');
   expect(resp.status()).toBe(200);
   expect(resp.headers()['content-type']).toContain('text/html');
   const body = await resp.text();

@@ -1,9 +1,9 @@
 /**
  * Owner-only group-plan client (GROUP_COORDINATION §9) — the plan card's
- * dispatch, on the same REAL boundary as `InProcessOwnerRunClient` and the
+ * dispatch, on the same REAL boundary as `OwnerRunControlClient` and the
  * commerce client: a separate client from the Brain-shared `CoreClient`,
- * stamping the boot-minted owner capability, so Brain holds no reference to a
- * dispatch the decision routes would admit. Brain opens and reads plans
+ * sending through an `OwnerDispatcher` (`owner-dispatch.ts`), so Brain holds
+ * no reference to a dispatch the decision routes would admit. Brain opens and reads plans
  * through `CoreClient`; the organizer chooses, widens, drops, stops and
  * deletes through THIS.
  *
@@ -13,7 +13,8 @@
 
 import { readGroupPlanWire, type GroupPlanWire } from '../coordination/plan_wire';
 
-import type { CoreRequest, CoreResponse, CoreRouter } from '../server/router';
+import type { OwnerDispatcher } from './owner-dispatch';
+import type { CoreResponse } from '../server/router';
 
 export class OwnerCoordinationHttpError extends Error {
   constructor(
@@ -26,24 +27,6 @@ export class OwnerCoordinationHttpError extends Error {
     super(message);
     this.name = 'OwnerCoordinationHttpError';
   }
-}
-
-function buildOwnerReq(overrides: Partial<CoreRequest>): CoreRequest {
-  return {
-    method: 'POST',
-    path: '/',
-    query: {},
-    headers: {},
-    body: undefined,
-    rawBody: new Uint8Array(),
-    params: {},
-    // The same two-part owner marker the run client documents: trustedInProcess
-    // skips the network auth pipeline in-process, and the unforgeable
-    // ownerCapability is what the route guard actually verifies.
-    trustedInProcess: true,
-    callerType: 'owner',
-    ...overrides,
-  };
 }
 
 function expectPlan(res: CoreResponse, ctx: string): GroupPlanWire {
@@ -64,24 +47,17 @@ function expectPlan(res: CoreResponse, ctx: string): GroupPlanWire {
   return plan;
 }
 
-export class InProcessOwnerCoordinationClient {
-  constructor(
-    private readonly router: CoreRouter,
-    private readonly ownerCapability: string,
-  ) {}
-
-  private stamp(overrides: Partial<CoreRequest>): CoreRequest {
-    return buildOwnerReq({ ...overrides, ownerCapability: this.ownerCapability });
-  }
+export class OwnerCoordinationClient {
+  constructor(private readonly dispatcher: OwnerDispatcher) {}
 
   private async post(path: string, body: Record<string, unknown>, ctx: string): Promise<GroupPlanWire> {
-    const res = await this.router.handle(this.stamp({ method: 'POST', path, body }));
+    const res = await this.dispatcher.dispatch({ method: 'POST', path, body });
     return expectPlan(res, ctx);
   }
 
   /** Every open plan, folded as of now, newest first. */
   async list(): Promise<GroupPlanWire[]> {
-    const res = await this.router.handle(this.stamp({ method: 'GET', path: '/v1/coordination/plans' }));
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/coordination/plans' });
     if (res.status < 200 || res.status >= 300) {
       const key = (res.body as { error?: string } | undefined)?.error ?? 'error';
       throw new OwnerCoordinationHttpError(`OwnerCoordinationClient: list failed ${String(res.status)} — ${key}`, res.status, key);
@@ -92,9 +68,7 @@ export class InProcessOwnerCoordinationClient {
 
   /** One plan, folded as of now; null when it does not exist. */
   async get(planId: string): Promise<GroupPlanWire | null> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'GET', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` });
     if (res.status === 404) return null;
     return expectPlan(res, `get(${planId})`);
   }
@@ -125,9 +99,7 @@ export class InProcessOwnerCoordinationClient {
 
   /** Delete the plan and what guests disclosed for it. */
   async remove(planId: string): Promise<boolean> {
-    const res = await this.router.handle(
-      this.stamp({ method: 'DELETE', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` }),
-    );
+    const res = await this.dispatcher.dispatch({ method: 'DELETE', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` });
     if (res.status === 404) return false;
     if (res.status < 200 || res.status >= 300) {
       const key = (res.body as { error?: string } | undefined)?.error ?? 'error';

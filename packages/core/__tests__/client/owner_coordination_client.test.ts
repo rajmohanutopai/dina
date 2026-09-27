@@ -14,9 +14,10 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { InProcessTransport } from '../../src/client/in-process-transport';
 import {
-  InProcessOwnerCoordinationClient,
+  OwnerCoordinationClient,
   OwnerCoordinationHttpError,
 } from '../../src/client/owner-coordination-client';
+import { inProcessOwnerDispatcher } from '../../src/client/owner-dispatch';
 import { addContact, resetContactDirectory } from '../../src/contacts/directory';
 import { SQLiteContactRepository, setContactRepository } from '../../src/contacts/repository';
 import {
@@ -56,7 +57,7 @@ function offerFrom(did: string): ServiceOffer {
 let dir: string;
 let adapter: NodeSQLiteAdapter;
 let router: CoreRouter;
-let owner: InProcessOwnerCoordinationClient;
+let owner: OwnerCoordinationClient;
 let brain: InProcessTransport;
 let workflow: WorkflowService;
 let sent: string[];
@@ -84,7 +85,7 @@ beforeEach(() => {
   setD2DSender(async () => undefined);
   router = new CoreRouter();
   registerGroupCoordinationRoutes(router, OWNER_CAP);
-  owner = new InProcessOwnerCoordinationClient(router, OWNER_CAP);
+  owner = new OwnerCoordinationClient(inProcessOwnerDispatcher(router, OWNER_CAP));
   brain = new InProcessTransport(router);
 });
 
@@ -199,7 +200,7 @@ describe('the owner client', () => {
       candidates: [{ start: 'Sat 26' }],
     });
     if (!opened.ok) throw new Error(opened.refusal);
-    const impostor = new InProcessOwnerCoordinationClient(router, 'wrong-capability');
+    const impostor = new OwnerCoordinationClient(inProcessOwnerDispatcher(router, 'wrong-capability'));
     for (const call of [
       () => impostor.list(),
       () => impostor.choose(opened.plan.plan_id, { start: 'Sat 26' }),

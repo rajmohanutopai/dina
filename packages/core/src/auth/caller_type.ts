@@ -17,7 +17,14 @@
  * Source: ARCHITECTURE.md Section 2.10
  */
 
-export type CallerType = 'service' | 'device' | 'agent' | 'plugin' | 'staff' | 'unknown';
+export type CallerType =
+  | 'service'
+  | 'device'
+  | 'agent'
+  | 'plugin'
+  | 'staff'
+  | 'owner_device'
+  | 'unknown';
 
 /**
  * Optional callback: given a DID, return the device role or null if the
@@ -141,6 +148,14 @@ export function resolveCallerType(authenticatedDID: string, agentDID?: string): 
       // grants staff nothing by default; the trade routes admit it
       // through the staff-grant gate and nothing else does.
       return { did: authenticatedDID, callerType: 'staff', name: deviceName };
+    }
+    if (role === 'owner') {
+      // WEB_OWNER_SURFACE_PLAN §3.3 — a browser paired as the owner's
+      // device. Its OWN caller class, granted nothing by the authz matrix:
+      // it acts only through the host's owner entry point, which marks a
+      // verified request as the owner. Falling through to 'device' here
+      // would hand it the generic device surface instead.
+      return { did: authenticatedDID, callerType: 'owner_device', name: deviceName };
     }
     return { did: authenticatedDID, callerType: 'device', name: deviceName };
   }

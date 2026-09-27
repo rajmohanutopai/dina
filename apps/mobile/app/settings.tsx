@@ -22,6 +22,7 @@ import { wireBrainChatProvider } from '../src/ai/brain_wiring';
 import { PROVIDERS, getApiKey, maskKey, getConfiguredProviders } from '../src/ai/provider';
 import { KeyHealthPill } from '../src/components/key_health_pill';
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
+import { OWNER_ACCESS_ON_THIS_SURFACE } from '../src/services/owner_device';
 import { saveBackgroundTimeoutPreference } from '../src/services/security_preferences';
 import { loadVerificationStatus } from '../src/services/verification_status';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
@@ -105,9 +106,8 @@ export default function SettingsScreen() {
       };
       // loadStates depends on `active`, which is the very thing we
       // want to discover on focus — re-running on every active change
-      // would also reload on internal sets. Disable the lint rule
-      // here intentionally.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      // would also reload on internal sets, so the list stays empty on
+      // purpose.
     }, []),
   );
 
@@ -372,6 +372,18 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Agents</Text>
           <Text style={styles.rowValue}>{'\u203A'}</Text>
         </TouchableOpacity>
+        {OWNER_ACCESS_ON_THIS_SURFACE && (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push('/owner-access')}
+            accessibilityRole="button"
+            accessibilityLabel="Open Owner access"
+            testID="settings-row-owner-access"
+          >
+            <Text style={styles.rowLabel}>Owner access</Text>
+            <Text style={styles.rowValue}>{'\u203A'}</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.row}
           onPress={() => router.push('/plugins')}

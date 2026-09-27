@@ -9,8 +9,6 @@ import { Stack, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,10 +17,17 @@ import {
   View,
 } from 'react-native';
 
-import { OwnerCommerceHttpError } from '@dina/core';
-import { listDevices } from '@dina/core/devices';
-
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
+import { confirmDecision } from '../src/services/confirm_decision';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import {
+  CONNECT_OWNER_DEVICE_MESSAGE,
+  errorKeyOf,
+  ownerErrorText,
+} from '../src/services/owner_errors';
+import { getOwnerSetupClient } from '../src/services/owner_setup_client';
+import { showMessage } from '../src/services/show_message';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { StaffGrantEntry } from '@dina/core';
@@ -39,20 +44,34 @@ function shortDid(did: string): string {
 
 export default function StaffGrantsScreen(): React.ReactElement {
   const [staffDevices, setStaffDevices] = useState<{ did: string; name: string }[]>([]);
+  /** Why the device list is empty when it could not load (a browser not connected). */
+  const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [grants, setGrants] = useState<StaffGrantEntry[]>([]);
   const [scope, setScope] = useState<(typeof SCOPES)[number]>(SCOPES[0]);
   const [cap, setCap] = useState('');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
-  const [presencePrompt, setPresencePrompt] = useState<{ retry: () => Promise<void> } | null>(null);
-  const [passphrase, setPassphrase] = useState('');
 
   const reload = useCallback(async () => {
-    const devices = listDevices()
-      .filter((device) => !device.revoked && device.role === 'staff' && device.did !== '')
-      .map((device) => ({ did: device.did, name: device.deviceName }));
-    setStaffDevices(devices);
+    // Core's paired staff devices (the phone's own Core, or the Home Node's
+    // for a browser connected as the owner).
+    try {
+      const status = await getOwnerSetupClient()?.status();
+      setStaffDevices(
+        (status?.staff_devices ?? [])
+          .filter((device) => device.did !== '')
+          .map((device) => ({ did: device.did, name: device.name })),
+      );
+      setListError(null);
+    } catch (err) {
+      setStaffDevices([]);
+      setListError(
+        errorKeyOf(err) === 'owner_device_not_connected'
+          ? CONNECT_OWNER_DEVICE_MESSAGE
+          : 'Could not load the staff devices. Try again shortly.',
+      );
+    }
     if (selected !== null) {
       try {
         const answer = await getOwnerCommerceClient()?.listStaffGrants(selected);
@@ -69,43 +88,29 @@ export default function StaffGrantsScreen(): React.ReactElement {
     }, [reload]),
   );
 
-  /** Run the ceremony; on `no_user_presence` raise the passphrase sheet. */
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (passphrase) => {
+      const client = getOwnerCommerceClient();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(passphrase);
+    },
+    onError: (err) => showMessage('Could not grant', ownerErrorText(err)),
+    onSettled: () => void reload(),
+    reason: 'A grant hands this device real authority, so Dina checks a person is here.',
+  });
+
+  /** Run an owner action; a lapsed presence raises the passphrase sheet, then retries. */
   const withPresence = useCallback(
     async (operation: () => Promise<void>) => {
       setBusy(true);
       try {
-        await operation();
-      } catch (err) {
-        if (err instanceof OwnerCommerceHttpError && err.errorKey === 'no_user_presence') {
-          setPresencePrompt({ retry: operation });
-        } else {
-          Alert.alert('Could not grant', (err as Error).message);
-        }
+        await runGated(operation);
       } finally {
         setBusy(false);
-        void reload();
       }
     },
-    [reload],
+    [runGated],
   );
-
-  const submitPresence = useCallback(async () => {
-    const client = getOwnerCommerceClient();
-    if (client === null || presencePrompt === null) return;
-    const retry = presencePrompt.retry;
-    setBusy(true);
-    try {
-      await client.provePresence(passphrase);
-      setPresencePrompt(null);
-      setPassphrase('');
-      await retry();
-    } catch {
-      Alert.alert('Not verified', 'That passphrase did not verify. Try again.');
-    } finally {
-      setBusy(false);
-      void reload();
-    }
-  }, [passphrase, presencePrompt, reload]);
 
   const grant = useCallback(() => {
     const client = getOwnerCommerceClient();
@@ -128,29 +133,29 @@ export default function StaffGrantsScreen(): React.ReactElement {
       });
       setPin('');
       setCap('');
-      Alert.alert('Granted', `${scopeLabel} for ${shortDid(target)}.`);
+      showMessage('Granted', `${scopeLabel} for ${shortDid(target)}.`);
     });
   }, [selected, scope, cap, pin, withPresence]);
 
   const revokeAll = useCallback(() => {
     if (selected === null) return;
-    Alert.alert('Revoke this staff device?', 'Every grant, its PIN and any presence proof end now.', [
-      { text: 'Keep', style: 'cancel' },
-      {
-        text: 'Revoke',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            try {
-              await getOwnerCommerceClient()?.revokeStaffGrants(selected);
-            } catch (err) {
-              Alert.alert('Could not revoke', (err as Error).message);
-            }
-            void reload();
-          })();
-        },
-      },
-    ]);
+    const target = selected;
+    void (async () => {
+      const revoke = await confirmDecision(
+        'Revoke this staff device?',
+        'Every grant, its PIN and any presence proof end now.',
+        'Revoke',
+        true,
+        'Keep',
+      );
+      if (!revoke) return;
+      try {
+        await getOwnerCommerceClient()?.revokeStaffGrants(target);
+      } catch (err) {
+        showMessage('Could not revoke', ownerErrorText(err));
+      }
+      void reload();
+    })();
   }, [selected, reload]);
 
   return (
@@ -166,7 +171,7 @@ export default function StaffGrantsScreen(): React.ReactElement {
         <Text style={styles.sectionTitle}>Device</Text>
         {staffDevices.length === 0 && (
           <Text style={styles.empty} testID="staff-none">
-            No staff devices paired yet.
+            {listError ?? 'No staff devices paired yet.'}
           </Text>
         )}
         {staffDevices.map((device) => (
@@ -252,40 +257,7 @@ export default function StaffGrantsScreen(): React.ReactElement {
           </>
         )}
       </ScrollView>
-
-      {/* §6.2 — granting standing authority needs a person present. */}
-      <Modal visible={presencePrompt !== null} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard} testID="presence-sheet">
-            <Text style={styles.sectionTitle}>Confirm it’s you</Text>
-            <Text style={styles.hint}>
-              A grant hands this device real authority, so Dina checks a person is here.
-            </Text>
-            <TextInput
-              testID="presence-passphrase"
-              style={styles.input}
-              secureTextEntry
-              placeholder="Your passphrase"
-              placeholderTextColor={colors.textSecondary}
-              value={passphrase}
-              onChangeText={setPassphrase}
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => {
-                  setPresencePrompt(null);
-                  setPassphrase('');
-                }}
-              >
-                <Text style={styles.link}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="presence-submit" onPress={() => void submitPresence()}>
-                <Text style={styles.link}>Verify</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }
@@ -339,18 +311,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   revokeLabel: { ...textStyles.button, color: colors.error },
-  link: { ...textStyles.body, color: colors.core },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  modalCard: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: spacing.lg },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.lg,
-    marginTop: spacing.md,
-  },
 });

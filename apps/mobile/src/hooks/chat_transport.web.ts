@@ -28,6 +28,8 @@ import {
   type ChatResponse,
 } from '@dina/brain/chat';
 
+import { brainEventStream, brainFetch, type BrainEventStream } from '../services/web_runtime';
+
 const CHAT_ENDPOINT = '/api/v1/chat';
 const CHAT_STREAM_ENDPOINT = '/api/v1/chat/stream';
 
@@ -43,7 +45,7 @@ interface ChatErrorBody {
  * to tear it down explicitly; in practice the stream tears down on
  * tab close, which is fine.
  */
-const activeStreams = new Map<string, EventSource>();
+const activeStreams = new Map<string, BrainEventStream>();
 
 // How many mounted consumers (chat views) currently hold each thread's stream
 // open. The stream is torn down only when the LAST one releases — otherwise a
@@ -59,9 +61,12 @@ function ensureChatStream(threadId: string): void {
   // POST path still works in test harnesses.
   if (typeof EventSource === 'undefined') return;
 
-  const url = `${CHAT_STREAM_ENDPOINT}?threadId=${encodeURIComponent(threadId)}`;
-  const es = new EventSource(url);
+  const path = `${CHAT_STREAM_ENDPOINT}?threadId=${encodeURIComponent(threadId)}`;
+  const stream = brainEventStream(path, (es) => attachChatListeners(es, threadId));
+  activeStreams.set(threadId, stream);
+}
 
+function attachChatListeners(es: EventSource, threadId: string): void {
   es.addEventListener('message', (ev: MessageEvent<string>) => {
     let msg: ChatMessage;
     try {
@@ -89,8 +94,6 @@ function ensureChatStream(threadId: string): void {
     // No-op; the browser will reconnect. Tearing down here would
     // give up on a transient blip (e.g. a sleeping laptop).
   });
-
-  activeStreams.set(threadId, es);
 }
 
 /**
@@ -118,9 +121,9 @@ export function closeChatStream(threadId: string): void {
     return;
   }
   streamRefCounts.delete(threadId);
-  const es = activeStreams.get(threadId);
-  if (es !== undefined) {
-    es.close();
+  const stream = activeStreams.get(threadId);
+  if (stream !== undefined) {
+    stream.close();
     activeStreams.delete(threadId);
   }
 }
@@ -131,7 +134,7 @@ export async function runChatTurn(text: string, threadId: string): Promise<ChatR
   // `handleChat`. EventSource open is idempotent per threadId.
   ensureChatStream(threadId);
 
-  const httpResp = await fetch(CHAT_ENDPOINT, {
+  const httpResp = await brainFetch(CHAT_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, threadId }),

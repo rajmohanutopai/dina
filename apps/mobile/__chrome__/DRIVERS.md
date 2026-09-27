@@ -20,9 +20,9 @@ gives Claude `tabs_create`, `navigate`, `computer { action, tabId }`,
 4. Either:
    - Run `apps/mobile/__chrome__/scripts/web-export.sh` which
      builds + starts a static server on port 18290, OR
-   - Once Phase 1 lands: start `brain-server` with
-     `DINA_BRAIN_WEB_UI=1` and point Claude at
-     `http://127.0.0.1:8200/web/`.
+   - Start `core-server` with
+     `DINA_CORE_WEB_UI=1` on Core (and `DINA_BRAIN_WEB_ORIGIN=http://127.0.0.1:8100`
+     on Brain) and point Claude at `http://127.0.0.1:8100/app/`.
 5. Verify the driver is alive: in any Claude conversation with the
    MCP attached, ask "list connected browsers" — should return
    your local Chrome.

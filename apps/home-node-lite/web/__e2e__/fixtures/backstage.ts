@@ -401,7 +401,7 @@ export interface CreateWatchInput {
  * created by calling Core directly with the `x-dina-owner-capability` header,
  * exactly as Core's own `/owner` console does.
  */
-function readOwnerCapability(): string {
+export function readOwnerCapability(): string {
   const vaultDir = process.env.DINA_E2E_VAULT_DIR;
   if (vaultDir === undefined || vaultDir === '') {
     throw new Error('backstage: DINA_E2E_VAULT_DIR not set (needed for the owner capability)');

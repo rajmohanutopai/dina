@@ -855,14 +855,19 @@ export { unwrapSeed, wrapSeed } from './crypto/aesgcm';
 // §10 item 9 — presence. The composition root installs the verifier; the
 // commerce routes ask the two questions. See `commerce/owner_presence.ts`.
 export {
+  OWNER_CAPABILITY_PRINCIPAL,
+  OWNER_IN_PROCESS_PRINCIPAL,
   OWNER_PRESENCE_TTL_MS,
   clearOwnerPresence,
   installOwnerPresenceVerifier,
+  ownerDevicePrincipal,
   ownerPresenceCanBeEstablished,
+  ownerPresencePrincipal,
+  ownerPresenceRefusal,
   ownerPresentNow,
   proveOwnerPresence,
 } from './commerce/owner_presence';
-export type { OwnerPresenceVerifier } from './commerce/owner_presence';
+export type { OwnerPresenceRefusal, OwnerPresenceVerifier } from './commerce/owner_presence';
 // §3 (photo lanes) — the image-egress gate. The composition root installs
 // the broker (the only holder of a vision-provider credential); the lanes
 // call the gate; Brain receives rows and never bytes.
@@ -1435,17 +1440,54 @@ export { InProcessTransport } from './client/in-process-transport';
 export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
 // NOTE: no owner-client singleton getter/setter is exported (R2-08) — the
 // instance is held at the app edge so Brain cannot acquire an owner-stamping
-// dispatcher. Only the class (which needs the raw router to construct) is public.
-export { InProcessOwnerRunClient, OwnerRunHttpError } from './client/owner-run-client';
+// dispatcher. Only the classes are public, and building an owner dispatcher
+// needs the raw router and the owner capability (phone) or the owner device's
+// key (browser) — WEB_OWNER_SURFACE_PLAN §3.6.
+export {
+  HttpOwnerDispatcher,
+  inProcessOwnerDispatcher,
+} from './client/owner-dispatch';
+export type {
+  HttpOwnerDispatcherOptions,
+  OwnerDispatcher,
+  OwnerMethod,
+  OwnerRequest,
+} from './client/owner-dispatch';
+export { OwnerRunControlClient, OwnerRunHttpError } from './client/owner-run-client';
+// WEB_OWNER_SURFACE_PLAN §3.5 — the devices that act for the owner.
+export {
+  OWNER_SETUP_PREFIX,
+  OwnerSetupClient,
+  OwnerSetupHttpError,
+} from './client/owner-setup-client';
+export type {
+  AgentSupervisionPolicies,
+  AgentSupervisionPolicy,
+  AgentSupervisionProfile,
+  ApprovalPhoneStatus,
+  MintedOwnerDeviceCode,
+  MintedSetupCode,
+  OwnerSetupDevice,
+  OwnerSetupDeviceEntry,
+  OwnerSetupStatus,
+} from './client/owner-setup-client';
+export type { OwnerSetupRouteOptions } from './server/routes/owner_setup';
+export { OwnerPluginsClient, OwnerPluginsHttpError } from './client/owner-plugins-client';
+export type {
+  CommercePackBegin,
+  CountryPackBegin,
+  PackUpdateRow,
+  PluginInstallRow,
+  PluginInstallsView,
+  RunnerCode,
+  TeardownAnswer,
+} from './client/owner-plugins-client';
 // §4 (photo lanes) — the seller screens' owner-only draft dispatch, on the
 // same real boundary as the run client: Brain holds no reference to it.
-export {
-  InProcessOwnerCommerceClient,
-  OwnerCommerceHttpError,
-} from './client/owner-commerce-client';
+export { OwnerCommerceClient, OwnerCommerceHttpError } from './client/owner-commerce-client';
 // GROUP_COORDINATION §9 — the organizer's decisions on a plan, owner-marked.
 export {
-  InProcessOwnerCoordinationClient,
+  OwnerCoordinationClient,
   OwnerCoordinationHttpError,
 } from './client/owner-coordination-client';
 export type {
@@ -1564,7 +1606,7 @@ export { runPersonStoreContract } from './people/contract';
 // Core HTTP surface in-process (used by `InProcessTransport`). Exporting
 // here keeps `apps/home-node-lite/*` from having to reach into
 // `./server/router` subpaths.
-export { CoreRouter } from './server/router';
+export { CoreRouter, authenticateOwnerDeviceCore, namesOwnerDevice } from './server/router';
 export type {
   CoreRequest,
   CoreResponse,

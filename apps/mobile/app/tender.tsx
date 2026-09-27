@@ -11,20 +11,14 @@
 
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { StaffCoreClient, staffTransportFor } from '@dina/core';
 
+import { PresenceSheet } from '../src/components/PresenceSheet';
+import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
+import { CONNECT_OWNER_DEVICE_MESSAGE, errorKeyOf } from '../src/services/owner_errors';
 import { loadStaffIdentity } from '../src/services/staff_identity_store';
 import { makeStaffWebSocket } from '../src/services/staff_transport_rn';
 import { colors, radius, spacing, textStyles } from '../src/theme';
@@ -91,14 +85,11 @@ export function refusalText(key: string): string {
       return 'This order has already been sent.';
     case 'buyer_sender_unavailable':
       return 'Dina cannot send orders right now. Try again shortly.';
+    case 'owner_device_not_connected':
+      return CONNECT_OWNER_DEVICE_MESSAGE;
     default:
-      return `Dina could not do that (${key}).`;
+      return `Dina could not do that (${key.replace(/_/g, ' ')}).`;
   }
-}
-
-function errorKeyOf(err: unknown): string {
-  const key = (err as { errorKey?: unknown }).errorKey;
-  return typeof key === 'string' ? key : 'error';
 }
 
 function money(minor: string, currency: string): string {
@@ -124,8 +115,6 @@ export default function TenderScreen(): React.ReactElement {
   /** The held order to send: from this visit's award, or the tender's own record. */
   const [heldApproval, setHeldApproval] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [presencePrompt, setPresencePrompt] = useState<{ retry: () => Promise<void> } | null>(null);
-  const [secret, setSecret] = useState('');
 
   const backend = useCallback(async (): Promise<TenderBackend | null> => {
     if (backendOverride !== null) return backendOverride;
@@ -186,43 +175,33 @@ export default function TenderScreen(): React.ReactElement {
     }, [reload]),
   );
 
+  const { run: runGated, sheet: presenceSheet } = usePresenceGate({
+    prove: async (secret) => {
+      const client = await backend();
+      if (client === null) throw new Error('Dina is still starting up.');
+      await client.provePresence(secret);
+    },
+    onError: (err) => setNotice(refusalText(errorKeyOf(err))),
+    onSettled: () => void reload(),
+    secretKind: asStaff ? 'pin' : 'passphrase',
+    reason: asStaff
+      ? 'Awarding places an order, so enter your staff PIN.'
+      : 'Awarding places an order, so Dina checks a person is here.',
+  });
+
   /** Run a tap; a lapsed presence raises the passphrase or PIN sheet, then retries. */
   const withPresence = useCallback(
     async (operation: () => Promise<void>) => {
       setBusy(true);
       setNotice(null);
       try {
-        await operation();
-      } catch (err) {
-        const key = errorKeyOf(err);
-        if (key === 'no_user_presence') setPresencePrompt({ retry: operation });
-        else setNotice(refusalText(key));
+        await runGated(operation);
       } finally {
         setBusy(false);
-        void reload();
       }
     },
-    [reload],
+    [runGated],
   );
-
-  const submitPresence = useCallback(async () => {
-    const client = await backend();
-    if (client === null || presencePrompt === null) return;
-    const retry = presencePrompt.retry;
-    setBusy(true);
-    try {
-      await client.provePresence(secret.trim());
-      setPresencePrompt(null);
-      setSecret('');
-      await withPresence(retry);
-    } catch {
-      setNotice(
-        client.presence === 'pin' ? 'That PIN did not verify.' : 'That passphrase did not verify.',
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, [backend, presencePrompt, secret, withPresence]);
 
   const award = useCallback(
     (supplierDid: string) =>
@@ -395,38 +374,7 @@ export default function TenderScreen(): React.ReactElement {
         {busy && <ActivityIndicator style={styles.spinner} />}
       </ScrollView>
 
-      <Modal visible={presencePrompt !== null} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.offerTitle}>
-              {asStaff ? 'Enter your staff PIN' : 'Confirm it is you'}
-            </Text>
-            <TextInput
-              style={styles.input}
-              value={secret}
-              onChangeText={setSecret}
-              secureTextEntry
-              keyboardType={asStaff ? 'number-pad' : 'default'}
-              placeholder={asStaff ? 'PIN' : 'Passphrase'}
-              testID="tender-presence-input"
-            />
-            <View style={styles.modalRow}>
-              <Pressable
-                onPress={() => {
-                  setPresencePrompt(null);
-                  setSecret('');
-                }}
-                testID="tender-presence-cancel"
-              >
-                <Text style={styles.cancel}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={() => void submitPresence()} testID="tender-presence-submit">
-                <Text style={styles.confirm}>Confirm</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <PresenceSheet {...presenceSheet} />
     </View>
   );
 }
@@ -482,28 +430,4 @@ const styles = StyleSheet.create({
   },
   sendLabel: { ...textStyles.button, color: colors.bgPrimary },
   notice: { ...textStyles.body, color: colors.textPrimary, marginTop: spacing.md },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  modalCard: { backgroundColor: colors.bgPrimary, borderRadius: radius.lg, padding: spacing.lg },
-  input: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    marginTop: spacing.md,
-  },
-  modalRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.lg,
-    marginTop: spacing.md,
-  },
-  cancel: { ...textStyles.button, color: colors.textSecondary },
-  confirm: { ...textStyles.button, color: colors.accent },
 });

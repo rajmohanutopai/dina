@@ -61,7 +61,10 @@ export interface WebServerEntry {
 export interface BuiltStack {
   corePort: number;
   brainPort: number;
+  /** Core's origin: it serves the web app at `/app/` (WEB_OWNER_SURFACE_PLAN §3.2). */
   baseURL: string;
+  /** Brain's origin: the page reaches its `/api/*` cross-origin (§3.4). */
+  brainURL: string;
   /** The Core vault dir (temp, per stack). After PDS provisioning it holds
    *  `pds_identity.json` → `.did` (the node's own DID, for a self-subscription). */
   vaultDir: string;
@@ -108,10 +111,20 @@ export function buildStack(opts: {
    *  test relay — REQUIRED for a real services loop. Implies `provisionPds`
    *  (a node must have a did:plc + registered MsgBox endpoint to be reachable). */
   msgbox?: boolean;
+  /** Run Core in SECURITY MODE: the seed is wrapped under this passphrase on
+   *  first boot (`DINA_UNLOCK_PASSPHRASE`), so the owner-presence gates fire
+   *  (WEB_OWNER_SURFACE_PLAN §3.8). Exposed to the fixtures as
+   *  `DINA_E2E_OWNER_PASSPHRASE`; unset, the node runs in convenience mode
+   *  and gates nothing. */
+  ownerPassphrase?: string;
 }): BuiltStack {
   const corePort = Number(process.env.DINA_CORE_E2E_PORT ?? 18298);
   const brainPort = Number(process.env.DINA_BRAIN_E2E_PORT ?? 18299);
-  const baseURL = `http://127.0.0.1:${brainPort}`;
+  // The page is Core-served (the owner device lives on Core's origin); Brain
+  // is reached cross-origin, and allows exactly Core's origin.
+  const baseURL = `http://127.0.0.1:${corePort}`;
+  const brainURL = `http://127.0.0.1:${brainPort}`;
+  process.env.DINA_E2E_BRAIN_URL = brainURL;
 
   // Playwright RE-EVALUATES the config in every worker process, so buildStack
   // runs again there. The FIRST eval (main process, which boots the webServer)
@@ -154,6 +167,12 @@ export function buildStack(opts: {
   // Publish the vault dir so a worker can read the provisioned DID from
   // `pds_identity.json` (a self-subscription targets the node's own DID).
   process.env.DINA_E2E_VAULT_DIR = vaultDir;
+  // Workers inherit this at spawn; the owner-access fixture types it.
+  if (opts.ownerPassphrase !== undefined) {
+    process.env.DINA_E2E_OWNER_PASSPHRASE = opts.ownerPassphrase;
+  } else {
+    delete process.env.DINA_E2E_OWNER_PASSPHRASE;
+  }
 
   // Agent tier: a unique PDS handle per stack (derived from the random
   // mkdtemp suffix, tied to this vault) so a fresh vault mints a fresh
@@ -199,6 +218,7 @@ export function buildStack(opts: {
     corePort,
     brainPort,
     baseURL,
+    brainURL,
     vaultDir,
     live,
     coreLogPath,
@@ -229,6 +249,12 @@ export function buildStack(opts: {
           DINA_DEBUG_MODE: '1',
           DINA_ENDPOINT_MODE: 'test',
           ...(opts.ownerConsole ? { DINA_CORE_OWNER_CONSOLE: '1' } : {}),
+          ...(opts.ownerPassphrase !== undefined
+            ? { DINA_UNLOCK_PASSPHRASE: opts.ownerPassphrase }
+            : {}),
+          DINA_CORE_WEB_UI: '1',
+          DINA_CORE_WEB_BUNDLE_DIR: bundleAbs,
+          DINA_CORE_WEB_BRAIN_ORIGIN: brainURL,
           ...msgboxEnv,
           ...pdsEnv,
         },
@@ -236,7 +262,7 @@ export function buildStack(opts: {
       {
         command: `npm start --workspace=@dina/home-node-lite-brain-server 2>&1 | tee ${JSON.stringify(brainLogPath)}`,
         cwd: REPO_ROOT,
-        url: `${baseURL}/healthz`,
+        url: `${brainURL}/healthz`,
         timeout: 30_000,
         // Always boot fresh — reusing a lingering server would run tests
         // against a stale vault and (worse) leave the MRS-14 log tee empty,
@@ -244,11 +270,10 @@ export function buildStack(opts: {
         // real signal to clean up, not something to paper over.
         reuseExistingServer: false,
         env: {
-          DINA_BRAIN_WEB_UI: '1',
+          DINA_BRAIN_WEB_ORIGIN: baseURL,
           DINA_BRAIN_HOST: '127.0.0.1',
           DINA_BRAIN_PORT: String(brainPort),
           DINA_BRAIN_LOG_LEVEL: logLevel,
-          DINA_BRAIN_WEB_BUNDLE_DIR: bundleAbs,
           DINA_CORE_URL: `http://127.0.0.1:${corePort}`,
           DINA_SERVICE_KEY_DIR: serviceKeyDir,
           DINA_BRAIN_SERVICE_KEY_FILE: brainKeyFile,

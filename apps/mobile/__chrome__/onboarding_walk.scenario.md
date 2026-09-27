@@ -12,7 +12,8 @@ screens without a wired Core.
 ## Preconditions
 
 - `welcome_screen_renders.scenario.md` passes on this platform.
-- For `web`: brain-server is up with `DINA_BRAIN_WEB_UI=1`. The
+- For `web`: core-server is up with `DINA_CORE_WEB_UI=1` (the app at `/app/`) and
+  brain-server with `DINA_BRAIN_WEB_ORIGIN` set to Core's origin. The
   Playwright spec at `apps/home-node-lite/web/__e2e__/onboarding.spec.ts`
   encodes the exact assertions; this scenario is the
   manual-driver equivalent.

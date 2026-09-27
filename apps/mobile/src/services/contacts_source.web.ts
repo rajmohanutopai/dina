@@ -7,10 +7,12 @@
  * yet" despite Core having contacts).
  */
 
+import { brainFetch } from './web_runtime';
+
 import type { Contact } from '@dina/core';
 
 export async function loadContacts(): Promise<Contact[]> {
-  const res = await fetch('/api/v1/contacts');
+  const res = await brainFetch('/api/v1/contacts');
   if (!res.ok) {
     throw new Error(`contacts: ${res.status} ${await res.text().catch(() => '')}`);
   }
@@ -27,7 +29,7 @@ export async function loadContacts(): Promise<Contact[]> {
  * only when it actually stuck.
  */
 export async function deleteContact(did: string): Promise<boolean> {
-  const res = await fetch(`/api/v1/contacts/${encodeURIComponent(did)}`, { method: 'DELETE' });
+  const res = await brainFetch(`/api/v1/contacts/${encodeURIComponent(did)}`, { method: 'DELETE' });
   if (!res.ok) return false;
   const body = (await res.json().catch(() => ({}))) as { deleted?: boolean };
   return body.deleted === true;

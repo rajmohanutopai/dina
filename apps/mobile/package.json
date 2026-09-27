@@ -11,7 +11,7 @@
     "web": "expo start --web",
     "check:release-env": "node ../../scripts/check-expo-public-env.mjs",
     "eas-build-pre-install": "node ../../scripts/check-expo-public-env.mjs",
-    "web:export": "npm run check:release-env && expo export --platform web --output-dir ../home-node-lite/web/dist",
+    "web:export": "npm run check:release-env && EXPO_NO_DOTENV=1 expo export --platform web --output-dir ../home-node-lite/web/dist --clear",
     "test": "jest",
     "test:e2e": "maestro test maestro/",
     "typecheck": "tsc --noEmit",

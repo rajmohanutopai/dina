@@ -16,6 +16,7 @@ import {
   type PublicReasoningEvidenceSource,
 } from '../../agent/connected_brain_facades';
 import { appendAudit } from '../../audit/service';
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getDeviceByDID } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
 import { revokeReasoningAuthorityForPrincipal } from '../../reasoning/authority_revocation';
@@ -500,6 +501,16 @@ export function registerReasoningRoutes(
   router.post('/v1/reasoning/backends/register', async (req) => {
     const owner = ownerDidForRequest(req, ownerCapability);
     if (typeof owner !== 'string') return owner;
+    // WEB_OWNER_SURFACE_PLAN §3.8 — a binding lets its principal claim
+    // reasoning jobs carrying vault context up to `max_sensitivity`: authority
+    // handed out, so a person must be present. Revoking takes it back and is
+    // not gated.
+    const absent = ownerPresenceRefusal(
+      req,
+      Date.now(),
+      'choosing a reasoning backend needs a person present',
+    );
+    if (absent !== null) return response(absent.status, absent.body);
     const repo = getReasoningBackendRepository();
     if (repo === null) return response(503, { error: 'reasoning_repository_unavailable' });
     const body = recordBody(req.body);

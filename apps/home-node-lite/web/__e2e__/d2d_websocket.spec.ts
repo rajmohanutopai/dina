@@ -16,7 +16,7 @@
  *      envelopes use a BLAKE2b nonce + Curve25519 ops, both of which
  *      libsodium-wrappers builds on the same WebCrypto base our
  *      keychain shim uses (Phase 2).
- *   3. The `/web/chat/<did>` route renders. That's the D2D thread UI
+ *   3. The `/app/chat/<did>` route renders. That's the D2D thread UI
  *      — when MsgBox messages arrive in production they land here.
  *
  * The actual MsgBox round-trip (open WS → subscribe → push test
@@ -33,7 +33,7 @@
 import { expect, test } from '@playwright/test';
 
 test('Browser WebSocket + WebCrypto.subtle available inside the SPA', async ({ page }) => {
-  await page.goto('/web/');
+  await page.goto('/app/');
 
   // Evaluate inside the page context so we're testing the live
   // bundle's globals, not Playwright's Node-side environment.
@@ -51,7 +51,7 @@ test('Browser WebSocket + WebCrypto.subtle available inside the SPA', async ({ p
   });
 });
 
-test('GET /web/chat/<did> renders the D2D conversation surface', async ({ page }) => {
+test('GET /app/chat/<did> renders the D2D conversation surface', async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -61,7 +61,7 @@ test('GET /web/chat/<did> renders the D2D conversation surface', async ({ page }
   // Deep-link a plausible-shaped DID. Expo Router substitutes the
   // path segment into `useLocalSearchParams().did` — the chat
   // screen renders the empty-state when no thread exists yet.
-  await page.goto('/web/chat/did:plc:phase9-fake');
+  await page.goto('/app/chat/did:plc:phase9-fake');
 
   await expect(page.locator('#root')).toBeAttached({ timeout: 10_000 });
   await expect(page.locator('body')).not.toBeEmpty({ timeout: 15_000 });

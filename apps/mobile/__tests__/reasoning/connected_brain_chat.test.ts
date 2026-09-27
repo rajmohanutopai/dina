@@ -6,7 +6,6 @@ import {
   reconcileConnectedBrainChat,
   trySubmitConnectedBrainAsk,
 } from '../../src/reasoning/connected_brain_chat';
-import { setOwnerRunClient } from '../../src/services/owner_run_client';
 
 import type {
   OwnerReasoningBackendView,
@@ -15,6 +14,13 @@ import type {
   OwnerReasoningSubmitResult,
   OwnerRunClient,
 } from '@dina/core';
+
+// The owner run client is derived from the owner dispatcher in the app; this
+// suite answers with a fake client directly, at the module the chat reads.
+let mockOwnerRunClient: OwnerRunClient | null = null;
+jest.mock('../../src/services/owner_run_client', () => ({
+  getOwnerRunClient: () => mockOwnerRunClient,
+}));
 
 const NOW = Date.now();
 
@@ -99,7 +105,7 @@ function wireFake(state: FakeState): void {
       return { ok: true };
     },
   };
-  setOwnerRunClient(fake as unknown as OwnerRunClient);
+  mockOwnerRunClient = fake as unknown as OwnerRunClient;
 }
 
 function emptyState(): FakeState {
@@ -113,11 +119,11 @@ function emptyState(): FakeState {
 
 beforeEach(() => {
   resetThreads();
-  setOwnerRunClient(null);
+  mockOwnerRunClient = null;
 });
 
 afterEach(() => {
-  setOwnerRunClient(null);
+  mockOwnerRunClient = null;
   resetThreads();
 });
 
@@ -169,6 +175,20 @@ describe('connected Brain mobile chat projection', () => {
     expect(getThread('main')[1].content).toBe(
       'Dina could not check your approved reasoning backends. Please try again.',
     );
+  });
+
+  it('a browser not connected as the owner leaves Ask to Brain (it can see no bindings)', async () => {
+    const state = emptyState();
+    state.backendError = Object.assign(new Error('401'), {
+      errorKey: 'owner_device_not_connected',
+    });
+    wireFake(state);
+
+    expect(await trySubmitConnectedBrainAsk('What is the capital of France?')).toEqual({
+      handled: false,
+    });
+    expect(state.submitted).toEqual([]);
+    expect(getThread('main')).toEqual([]);
   });
 
   it('delegates backend selection to Core and creates one durable lifecycle row', async () => {

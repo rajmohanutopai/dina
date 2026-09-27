@@ -13,6 +13,7 @@
 
 import { expect, test } from '../fixtures/human_session';
 import { openApprovalInbox } from '../fixtures/pages/activity';
+import { connectAsOwner } from '../fixtures/pages/owner_access';
 
 // A stable synthetic agent DID (not a real paired device — backstage stages
 // the intent as if this agent submitted it).
@@ -23,6 +24,9 @@ test.describe('MRS-08 — Agent risk ladder + approval state machine', () => {
     human,
   }) => {
     const { backstage, page } = human;
+    // Owner decisions reach Core as the owner device (WEB_OWNER_SURFACE_PLAN
+    // §3.3): connect this browser first, as the owner does once.
+    await connectAsOwner(page, backstage.readOwnerCapability());
     // The confirm-dialog Approve/Deny (HIGH card, and every deny) surface as a
     // browser confirm (RN-Web Alert.alert → window.confirm on web). RECORD each
     // one before accepting so we can assert, per tap, whether the decision
@@ -93,9 +97,9 @@ test.describe('MRS-08 — Agent risk ladder + approval state machine', () => {
     expect(await backstage.approvalTaskInState(high2Id, 'pending_approval')).toBe(true);
 
     // ── The owner DECIDES in the browser (Activity → Needs action) ───────
-    // F4 fixed: the web inbox now surfaces Core-side pending approvals via the
-    // brain's /api/v1/workflow/tasks proxy, so the human Approve/Deny TAP works
-    // end-to-end — no longer deferred to Maestro.
+    // The web inbox reads and decides Core's pending approvals as this
+    // browser's owner device (inbox_client_resolver.web.ts, signed requests
+    // to Core), so the human Approve/Deny TAP works end-to-end.
     await openApprovalInbox(page);
 
     // UI half of "NO card for SAFE/BLOCKED": the inbox surfaces cards ONLY for

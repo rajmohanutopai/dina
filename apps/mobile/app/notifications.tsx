@@ -26,7 +26,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+} from 'react-native';
 
 import {
   getUnreadCount,
@@ -46,6 +54,7 @@ import {
   type InboxEntry,
   type ResolvedInboxEntry,
 } from '../src/components/approval_inbox';
+import { PresenceSheet } from '../src/components/PresenceSheet';
 import { useServiceDecisions, type DecisionRow } from '../src/hooks/useServiceDecisions';
 import { resolveSafeDeepLink } from '../src/notifications/deep_link';
 import { type FilterKey } from '../src/notifications/screen_filter';
@@ -71,7 +80,10 @@ function decisionText(d: DecisionRow): { title: string; subtitle: string } {
   const cap = d.capability.replace(/_/g, ' ');
   switch (d.decision) {
     case 'granted':
-      return { title: `${d.requesterName} can now use ${cap}`, subtitle: 'Auto-granted by policy.' };
+      return {
+        title: `${d.requesterName} can now use ${cap}`,
+        subtitle: 'Auto-granted by policy.',
+      };
     case 'auto_declined':
       return {
         title: `${d.requesterName} asked for ${cap}`,
@@ -83,7 +95,10 @@ function decisionText(d: DecisionRow): { title: string; subtitle: string } {
         subtitle: 'You were asked to allow this.',
       };
     case 'prompt_timed_out':
-      return { title: `${d.requesterName} asked for ${cap}`, subtitle: 'The allow prompt expired.' };
+      return {
+        title: `${d.requesterName} asked for ${cap}`,
+        subtitle: 'The allow prompt expired.',
+      };
     case 'error':
       return {
         title: `A request for ${cap} couldn’t be processed`,
@@ -187,13 +202,9 @@ export default function NotificationsScreen(): React.JSX.Element {
         // Once / Approve inline). This is the key inline-actions fix.
         return approvals.pending.map((entry) => ({ t: 'pending', entry }));
       case 'unread':
-        return items
-          .filter((i) => i.readAt === null)
-          .map((item) => ({ t: 'notif', item }));
+        return items.filter((i) => i.readAt === null).map((item) => ({ t: 'notif', item }));
       case 'reminder':
-        return items
-          .filter((i) => i.kind === 'reminder')
-          .map((item) => ({ t: 'notif', item }));
+        return items.filter((i) => i.kind === 'reminder').map((item) => ({ t: 'notif', item }));
       case 'requests':
         // Owner-private decision log only — already newest-first from the repo.
         return decisions.map((decision): Row => ({ t: 'decision', decision }));
@@ -367,7 +378,9 @@ export default function NotificationsScreen(): React.JSX.Element {
                   <Text style={styles.rowSubtitle} numberOfLines={2}>
                     {subtitle}
                   </Text>
-                  <Text style={styles.rowMeta}>{formatRelative(row.decision.createdAt * 1000)}</Text>
+                  <Text style={styles.rowMeta}>
+                    {formatRelative(row.decision.createdAt * 1000)}
+                  </Text>
                 </View>
               </View>
             );
@@ -409,6 +422,7 @@ export default function NotificationsScreen(): React.JSX.Element {
           );
         }}
       />
+      <PresenceSheet {...approvals.presenceSheet} />
     </View>
   );
 }

@@ -52,7 +52,7 @@
       ]
     ],
     "experiments": {
-      "baseUrl": "/web"
+      "baseUrl": "/app"
     },
     "extra": {
       "router": {},

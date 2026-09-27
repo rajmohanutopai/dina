@@ -1,74 +1,52 @@
 /**
- * The GENERAL (third-party marketplace) plugin install ceremony, on the phone
- * (§5.C2). The server drives the SAME machinery over its owner routes
- * (`/v1/plugins/install/*`); the phone drives it in-process. Unlike the
- * first-party commerce pack (`commerce_install.ts`, `local_publisher_key`
- * anchor), this is the REPO-PROOF path: a plugin named by `(publisher DID,
- * content-derived rkey)` is fetched and authenticated through the injected
- * repo-proof verifier (§5.C1) before anything is staged.
+ * The owner's plugin ceremonies (§5.C2), on every owner surface. The phone and
+ * a browser connected as the owner drive the SAME Core routes
+ * (`/v1/plugins/install/*`, `/v1/commerce/install/update/*`) through the owner
+ * plugins client, so the §3.8 presence checks on consent, runner pairing and
+ * updates hold everywhere (WEB_OWNER_SURFACE_PLAN §3.5). A presence refusal is
+ * not swallowed here: it reaches the screen, whose sheet asks and retries.
  *
- * CONSENT IS A TAP, NOT A BOOT STEP. `beginPluginInstall` authenticates + stages
- * a PENDING install and returns the locally-computed consent summary; nothing
- * runs until `confirmPluginInstall`.
+ * CONSENT IS A TAP, NOT A BOOT STEP. `beginPluginInstall` authenticates +
+ * stages a PENDING install and returns the consent summary; nothing runs until
+ * `confirmPluginInstall`.
  *
  * RUNNER PAIRING BEFORE AUTHORITY (PLUGIN_ARCHITECTURE §15.3). A runner plugin
- * is out-of-process code with ITS OWN Ed25519 key. The phone never mints that
- * key and never names the device: it issues a setup code tied to the pending
- * install (`issueRunnerSetupCode`), the runner completes pairing with its own
- * public key over the relay, and `completePairing` binds that exact device to
- * that exact install inside Core. The phone only READS where the ceremony
- * stands (`checkRunnerPairing`) and confirms on the device the install row
- * holds. The first-party buyer pack's throwaway key is a first-party quirk
- * ("the phone's buyer runner claims no work") that must not leak into the
- * marketplace path.
+ * is out-of-process code with ITS OWN Ed25519 key. The owner never mints that
+ * key and never names the device: Core issues a setup code tied to the pending
+ * install, the runner completes pairing with its own public key over the
+ * relay, and Core binds that exact device to that exact install. The screen
+ * only READS where the ceremony stands and confirms on the device the install
+ * row holds.
  *
- * TEARDOWN REVOKES THE DEVICE. Decline, uninstall, and the abandoned-install
- * sweep all pass the durable device revoker; the core teardown keeps the row
- * when it cannot durably revoke a bound device, so a call without a revoker
- * would leave runner installs undeletable.
+ * TEARDOWN REVOKES THE DEVICE. Decline and uninstall revoke any runner device
+ * durably inside Core; a teardown that could not says so and keeps the row.
  *
- * NO VERIFIER, NO DOOR. Boot wires the phone's repo-proof verifier
- * (`repo_proof_wiring.ts`, the shared chain over the audited AT-Protocol stack
- * statically bundled by Metro). `pluginInstallAvailable` reports whether one
- * is wired; a begin without one is a build-level absence, never a network
- * problem the owner should retry.
+ * NO VERIFIER, NO DOOR. A node without a repo-proof verifier cannot take a
+ * third-party release; `loadPlugins` reports it, and a begin there is a
+ * build-level absence, never a network problem the owner should retry.
  *
  * THE FIRST-PARTY DOOR (`beginCountryPackInstall`, RESEARCHER_KERNEL §5.D)
- * needs no verifier: the build vouches for its own compiled-in manifest under
- * the `local_publisher_key` anchor, exactly as the commerce packs enter. From
- * the pending row on, the ceremony is the same one — setup code, the operator's
- * runner pairs with its own key, consent activates on the bound device. The
- * phone is the authority-granting surface (PLUGIN_ARCHITECTURE §15.1), so this
- * door lives here as well as on the server route.
+ * needs no verifier: the build vouches for its own compiled-in manifest. From
+ * the pending row on, the ceremony is the same one.
  */
 
 import {
-  beginFirstPartyInstall,
-  beginInstall,
-  buildAgentSetupCode,
-  confirmConsent,
-  confirmFirstPartyUpdate,
-  COUNTRY_PACK_IDS,
-  declineConsent,
-  getNodeDID,
-  getPluginInstallRepository,
-  getRepoProofVerifier,
-  issueRunnerPairingCode,
-  listFirstPartyUpdates,
-  PluginCommerceObligationError,
-  prepareFirstPartyUpdate,
-  runnerPairingState,
-  uninstall,
+  OwnerPluginsHttpError,
   type BeginInstallResult,
   type CountryPack,
-  type PluginInstallStatus,
+  type OwnerPluginsClient,
   type RunnerPairingState,
 } from '@dina/core';
-import { revokePluginDeviceForTeardown } from '@dina/core/devices';
 
-import { resolveMsgBoxURL } from './msgbox_wiring';
+import { getOwnerPluginsClient } from './owner_plugins_client';
 
 export type { CountryPack, RunnerPairingState } from '@dina/core';
+
+function plugins(): OwnerPluginsClient {
+  const client = getOwnerPluginsClient();
+  if (client === null) throw new Error('Dina is still starting up. Try again in a moment.');
+  return client;
+}
 
 export interface PluginConsentSummary {
   installId: string;
@@ -80,6 +58,33 @@ export interface PluginConsentSummary {
   capabilities: string[];
 }
 
+export interface InstalledPlugin {
+  installId: string;
+  pluginId: string;
+  status: string;
+  executionMode: 'interpreted' | 'runner';
+}
+
+export interface PluginsView {
+  installed: InstalledPlugin[];
+  /** Can this node verify a third-party release at all? */
+  thirdPartyAvailable: boolean;
+}
+
+/** Every install the node holds, and whether the third-party door is open. */
+export async function loadPlugins(): Promise<PluginsView> {
+  const view = await plugins().installs();
+  return {
+    installed: view.installs.map((row) => ({
+      installId: row.install_id,
+      pluginId: row.plugin_id,
+      status: row.status,
+      executionMode: row.execution_mode,
+    })),
+    thirdPartyAvailable: view.third_party_available,
+  };
+}
+
 export type BeginPluginInstallOutcome =
   | { ok: true; consent: PluginConsentSummary }
   | {
@@ -87,51 +92,11 @@ export type BeginPluginInstallOutcome =
       error: string;
       /** A retry may succeed (publisher unreachable). */
       transient: boolean;
-      /** This build cannot verify a third-party release at all — no retry helps. */
+      /** This node cannot verify a third-party release at all — no retry helps. */
       unavailable: boolean;
     };
 
-/** Can this phone verify a third-party release? True once boot wired the verifier. */
-export function pluginInstallAvailable(): boolean {
-  return getRepoProofVerifier() !== null;
-}
-
-/**
- * Fetch + authenticate a third-party release (repo-proof) and STAGE it. Returns
- * the consent summary the screen renders; nothing runs until confirm.
- */
-export async function beginPluginInstall(
-  publisherDid: string,
-  rkey: string,
-  label?: string,
-): Promise<BeginPluginInstallOutcome> {
-  if (!pluginInstallAvailable()) {
-    return {
-      ok: false,
-      error: 'This phone cannot verify third-party plugins yet.',
-      transient: false,
-      unavailable: true,
-    };
-  }
-  const result = await beginInstall({
-    publisherDid,
-    rkey,
-    trustAnchor: { kind: 'repo_proof' },
-    ...(label !== undefined && label !== '' ? { label } : {}),
-    nowMs: Date.now(),
-  });
-  if (!result.ok) {
-    return {
-      ok: false,
-      error: `${result.code}: ${result.message}`,
-      transient: result.transient,
-      unavailable: false,
-    };
-  }
-  return { ok: true, consent: consentSummary(result) };
-}
-
-/** The consent card's rows, computed locally from what Core staged. */
+/** The consent card's rows, from what Core staged. */
 function consentSummary(result: Extract<BeginInstallResult, { ok: true }>): PluginConsentSummary {
   return {
     installId: result.installId,
@@ -143,34 +108,58 @@ function consentSummary(result: Extract<BeginInstallResult, { ok: true }>): Plug
   };
 }
 
+/**
+ * Fetch + authenticate a third-party release (repo-proof) and STAGE it.
+ * Nothing runs until confirm.
+ */
+export async function beginPluginInstall(
+  publisherDid: string,
+  rkey: string,
+  label?: string,
+): Promise<BeginPluginInstallOutcome> {
+  const result = await plugins().begin(publisherDid, rkey, label);
+  if (result.ok) return { ok: true, consent: consentSummary(result) };
+  if (result.code === 'verifier_unavailable') {
+    return {
+      ok: false,
+      error: 'This node cannot verify third-party plugins yet.',
+      transient: false,
+      unavailable: true,
+    };
+  }
+  return {
+    ok: false,
+    error: `${result.code}: ${result.message}`,
+    transient: result.transient,
+    unavailable: false,
+  };
+}
+
 export type BeginCountryPackOutcome =
   | { state: 'staged'; consent: PluginConsentSummary }
   /** The owner already granted this pack — an answer, not an error. */
   | { state: 'already_active'; installId: string }
   | { state: 'refused'; error: string; transient: boolean };
 
-/**
- * Stage a country pack (§5.D) through the first-party door. No fetch and no
- * verifier: the manifest is compiled in and the build vouches for it. An
- * `active` install answers idempotently so re-tapping never stacks a second
- * consent for authority already granted; a pending one is left to its card
- * (or the sweeper) and a fresh pending is staged, as every begin does.
- */
-export function beginCountryPackInstall(pack: CountryPack): BeginCountryPackOutcome {
-  const owner = getNodeDID();
-  if (owner === null || owner === '') {
-    return { state: 'refused', error: 'Node identity not ready yet — wait for boot to finish and retry.', transient: true };
+/** Stage a country pack (§5.D) through the first-party door. */
+export async function beginCountryPackInstall(pack: CountryPack): Promise<BeginCountryPackOutcome> {
+  let result;
+  try {
+    result = await plugins().beginCountryPack(pack);
+  } catch (err) {
+    if (err instanceof OwnerPluginsHttpError && err.errorKey === 'owner_identity_unavailable') {
+      return { state: 'refused', error: 'Node identity not ready yet — wait for boot to finish and retry.', transient: true };
+    }
+    throw err;
   }
-  const installs = getPluginInstallRepository();
-  if (installs === null) return { state: 'refused', error: 'plugin registry not wired', transient: false };
-  const pluginId = COUNTRY_PACK_IDS[pack];
-  const active = installs.list().find((install) => install.pluginId === pluginId && install.status === 'active');
-  if (active !== undefined) return { state: 'already_active', installId: active.installId };
-  const result = beginFirstPartyInstall({ pluginId, publisherDid: owner, nowMs: Date.now() });
+  if (result.ok && 'status' in result && result.status === 'active') {
+    return { state: 'already_active', installId: result.installId };
+  }
+  if (result.ok && 'consent' in result) return { state: 'staged', consent: consentSummary(result) };
   if (!result.ok) {
     return { state: 'refused', error: `${result.code}: ${result.message}`, transient: result.transient };
   }
-  return { state: 'staged', consent: consentSummary(result) };
+  return { state: 'refused', error: 'unexpected answer from the node', transient: false };
 }
 
 export interface RunnerSetupCode {
@@ -183,76 +172,66 @@ export interface RunnerSetupCode {
 }
 
 /**
- * Issue the setup code a runner pairs with, tied to this pending install. Role
- * `plugin` + scope `runner` are fixed at initiate — the completing side cannot
- * pick its own role — and Core binds the device that uses it to this install.
- * Throws when the node identity is not ready (nothing to pair against) or the
- * install is no longer a pending runner install.
+ * The setup code a runner pairs with, tied to this pending install; role
+ * `plugin` + scope `runner` are fixed by Core. Needs a person present (§3.8):
+ * a presence refusal is raised for the screen's sheet. Other refusals raise
+ * an error naming what to do.
  */
-export function issueRunnerSetupCode(consent: PluginConsentSummary): RunnerSetupCode {
-  const nodeDid = getNodeDID();
-  if (nodeDid === null) {
-    throw new Error('Node identity not ready yet — wait for boot to finish and retry.');
+export async function issueRunnerSetupCode(consent: PluginConsentSummary): Promise<RunnerSetupCode> {
+  let issued;
+  try {
+    issued = await plugins().runnerCode(consent.installId);
+  } catch (err) {
+    if (
+      err instanceof OwnerPluginsHttpError &&
+      ['install_unknown', 'install_not_pending', 'not_a_runner_install', 'install_expired'].includes(err.errorKey)
+    ) {
+      throw new Error('This install can no longer take a runner — start again.');
+    }
+    throw err;
   }
-  const install = getPluginInstallRepository()?.getById(consent.installId) ?? null;
-  if (install === null || install.status !== 'pending' || install.executionMode !== 'runner') {
-    throw new Error('This install can no longer take a runner — start again.');
+  if (issued.setup_code === undefined) {
+    throw new Error('This node does not name its relay, so it cannot hand a runner a setup code.');
   }
-  const { code, expiresAt } = issueRunnerPairingCode(install);
-  const setupCode = buildAgentSetupCode({
-    msgboxUrl: resolveMsgBoxURL(),
-    homenodeDid: nodeDid,
-    deviceName: consent.pluginId,
-    code,
-  });
-  return { code, expiresAt, setupCode };
+  return { code: issued.code, expiresAt: issued.expires_at, setupCode: issued.setup_code };
 }
 
 /**
  * Where the ceremony stands. READ-ONLY: Core bound the runner (or refused it)
- * when the code was used; the phone only reports the install row. `expired`
- * means nobody will ever pair with this code — issue a new one. `refused`
- * means the install itself can no longer take a runner.
+ * when the code was used. `expired`: issue a new code. `refused`: the install
+ * itself can no longer take a runner.
  */
-export function checkRunnerPairing(installId: string, code: string): RunnerPairingState {
-  return runnerPairingState(installId, code, Math.floor(Date.now() / 1000));
+export async function checkRunnerPairing(installId: string, code: string): Promise<RunnerPairingState> {
+  return plugins().pairingState(installId, code);
 }
 
 export type ConfirmPluginInstallOutcome = { ok: true } | { ok: false; error: string };
 
 /**
- * The owner confirmed the consent card. A runner plugin activates on the device
- * Core bound to the install (§15.4: the client never names a device); an
- * interpreted plugin activates with no device. Core re-checks that the bound
- * device is a real, unrevoked `plugin` device.
+ * The owner confirmed the consent card. Core activates a runner plugin on the
+ * device it bound (§15.4: the client never names one) and an interpreted one
+ * with none. Needs a person present: a presence refusal is raised.
  */
-export async function confirmPluginInstall(
-  installId: string,
-  executionMode: 'interpreted' | 'runner',
-): Promise<ConfirmPluginInstallOutcome> {
-  const installs = getPluginInstallRepository();
-  if (installs === null) return { ok: false, error: 'plugin registry not wired' };
-  let deviceDid: string | undefined;
-  if (executionMode === 'runner') {
-    const bound = installs.getById(installId)?.deviceDid;
-    if (bound === undefined || bound === '') return { ok: false, error: 'the runner has not paired yet' };
-    deviceDid = bound;
+export async function confirmPluginInstall(installId: string): Promise<ConfirmPluginInstallOutcome> {
+  try {
+    await plugins().confirm(installId);
+    return { ok: true };
+  } catch (err) {
+    if (!(err instanceof OwnerPluginsHttpError) || err.errorKey === 'no_user_presence') throw err;
+    if (err.errorKey === 'runner_not_paired') return { ok: false, error: 'the runner has not paired yet' };
+    if (err.errorKey === 'consent_refused') return { ok: false, error: 'consent refused' };
+    return { ok: false, error: err.errorKey };
   }
-  return confirmConsent(installId, deviceDid, Date.now())
-    ? { ok: true }
-    : { ok: false, error: 'consent refused' };
 }
 
 /**
- * The owner declined (or cancelled, or left) a pending install — tear it down
- * and revoke any runner device paired during the ceremony. `removed: false`
- * means the row was unknown, already active, or kept as a retry anchor for the
- * sweeper. A runner that pairs after this is refused by Core (its install is
- * gone), so no device outlives the decline.
+ * The owner declined (or cancelled, or left) a pending install — Core tears it
+ * down and revokes any runner device paired during the ceremony. `removed:
+ * false` means the row was unknown, already active, or kept for the sweeper.
  */
 export async function declinePluginInstall(installId: string): Promise<{ removed: boolean }> {
-  const result = await declineConsent(installId, Date.now(), revokePluginDeviceForTeardown);
-  return { removed: result?.removed === true };
+  const answer = await plugins().decline(installId);
+  return { removed: answer.ok };
 }
 
 export type UninstallPluginOutcome =
@@ -261,45 +240,21 @@ export type UninstallPluginOutcome =
 
 /** Tear down an install (§16.4), revoking its runner device. */
 export async function uninstallPlugin(installId: string): Promise<UninstallPluginOutcome> {
-  let result;
-  try {
-    result = await uninstall(installId, Date.now(), revokePluginDeviceForTeardown);
-  } catch (err) {
-    if (err instanceof PluginCommerceObligationError) {
-      return { ok: false, error: 'obligations_open', detail: err.message };
-    }
-    throw err;
+  const answer = await plugins().uninstall(installId);
+  if (answer.ok) return { ok: true };
+  if (answer.error === 'obligations_open') {
+    return { ok: false, error: 'obligations_open', ...(answer.detail !== undefined ? { detail: answer.detail } : {}) };
   }
-  if (result === null) return { ok: false, error: 'unknown_install' };
-  return result.removed
-    ? { ok: true }
-    : { ok: false, error: 'teardown_incomplete', detail: 'device revoke not durable; kept for the sweeper' };
-}
-
-export interface InstalledPlugin {
-  installId: string;
-  pluginId: string;
-  status: PluginInstallStatus;
-  executionMode: 'interpreted' | 'runner';
-}
-
-/** Every install the registry holds, in creation order — the manage list. */
-export function listInstalledPlugins(): InstalledPlugin[] {
-  const installs = getPluginInstallRepository();
-  if (installs === null) return [];
-  return installs.list().map((install) => ({
-    installId: install.installId,
-    pluginId: install.pluginId,
-    status: install.status,
-    executionMode: install.executionMode,
-  }));
+  if (answer.error === 'teardown_incomplete') {
+    return { ok: false, error: 'teardown_incomplete', detail: 'device revoke not durable; kept for the sweeper' };
+  }
+  return { ok: false, error: 'unknown_install' };
 }
 
 /**
  * Item 1 — Dina's own packs update in place with the app build: the install
  * keeps its id, so open orders stay with it. The owner reviews what changes
- * (new capabilities, a change in what the pack does) and confirms; nothing is
- * applied by looking.
+ * and confirms; nothing is applied by looking.
  */
 export interface PackUpdate {
   installId: string;
@@ -309,12 +264,14 @@ export interface PackUpdate {
   toVersion: string;
 }
 
-export function listPackUpdates(): PackUpdate[] {
-  try {
-    return listFirstPartyUpdates();
-  } catch {
-    return [];
-  }
+export async function listPackUpdates(): Promise<PackUpdate[]> {
+  return (await plugins().packUpdates()).map((row) => ({
+    installId: row.install_id,
+    pluginId: row.plugin_id,
+    displayName: row.display_name,
+    fromVersion: row.from_version,
+    toVersion: row.to_version,
+  }));
 }
 
 export interface PackUpdateReview {
@@ -325,14 +282,14 @@ export interface PackUpdateReview {
   /** The capabilities the new version adds or widens, in its own words. */
   changes: string[];
   behaviorChanged: boolean;
-  widening: unknown[];
+  widening: Parameters<OwnerPluginsClient['confirmPackUpdate']>[0]['acceptedWidening'];
   toBehaviorHash: string;
 }
 
-export function reviewPackUpdate(
+export async function reviewPackUpdate(
   installId: string,
-): { ok: true; review: PackUpdateReview } | { ok: false; error: string } {
-  const prepared = prepareFirstPartyUpdate({ installId, nowMs: Date.now() });
+): Promise<{ ok: true; review: PackUpdateReview } | { ok: false; error: string }> {
+  const prepared = await plugins().preparePackUpdate(installId);
   if (!prepared.ok) return { ok: false, error: prepared.message };
   const r = prepared.review;
   return {
@@ -350,15 +307,15 @@ export function reviewPackUpdate(
   };
 }
 
+/** Apply the reviewed update. Needs a person present: a presence refusal is raised. */
 export async function applyPackUpdate(
   review: PackUpdateReview,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const result = await confirmFirstPartyUpdate({
+  const result = await plugins().confirmPackUpdate({
     installId: review.installId,
     toCid: review.toCid,
-    acceptedWidening: review.widening as Parameters<typeof confirmFirstPartyUpdate>[0]['acceptedWidening'],
+    acceptedWidening: review.widening,
     acceptedBehaviorHash: review.toBehaviorHash,
-    nowMs: Date.now(),
   });
   if (!result.ok) return { ok: false, error: result.message };
   if (!result.outcome.ok) return { ok: false, error: `update refused (${result.outcome.refusal})` };

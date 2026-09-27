@@ -180,14 +180,13 @@ export { hasDEK, wrapWithPersonaDEK, unwrapWithPersonaDEK } from './src/persona/
 // ISVC-10 — the boot assembly (egress + PersonaCipher + plane + receive hook).
 export { wireRunPlaneNode } from './src/run/plane_node';
 export type { RunPlaneNode, RunPlaneNodeDeps, SendD2D } from './src/run/plane_node';
-export { InProcessOwnerRunClient } from './src/client/owner-run-client';
-export {
-  InProcessOwnerCommerceClient,
-  OwnerCommerceHttpError,
-} from './src/client/owner-commerce-client';
+export { HttpOwnerDispatcher, inProcessOwnerDispatcher } from './src/client/owner-dispatch';
+export type { OwnerDispatcher, OwnerRequest } from './src/client/owner-dispatch';
+export { OwnerRunControlClient } from './src/client/owner-run-client';
+export { OwnerCommerceClient, OwnerCommerceHttpError } from './src/client/owner-commerce-client';
 // GROUP_COORDINATION §9 — the organizer's decisions on a plan, owner-marked.
 export {
-  InProcessOwnerCoordinationClient,
+  OwnerCoordinationClient,
   OwnerCoordinationHttpError,
 } from './src/client/owner-coordination-client';
 export type {

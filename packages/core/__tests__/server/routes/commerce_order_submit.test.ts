@@ -48,6 +48,7 @@ import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
   proveOwnerPresence,
+  OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
@@ -79,7 +80,6 @@ const REQUEST = makeQuoteRequest();
 const QUOTE = makeSignedQuote(REQUEST, { quote_id: 'q-submit' });
 const ORDER = makeOrder(QUOTE, REQUEST.delivery.projection);
 const SUPPLIER = ORDER.supplier_did;
-const PO = ORDER.purchase_order_id;
 
 const T0 = Date.parse('2026-08-08T09:00:00.000Z');
 
@@ -988,7 +988,7 @@ describe('the conditional presence gate on prepare (§5.4 stage 4)', () => {
 
   it('a live proof opens the gate; a convenience-mode node is unchanged', async () => {
     installOwnerPresenceVerifier(async (p) => p === 'correct horse');
-    await proveOwnerPresence('correct horse', Date.now());
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const withProof = await router.handle(
       owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT }),
     );
@@ -1135,7 +1135,8 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     // the approval was minted under.
     const draft = orderDrafts.get('odr-1');
     if (draft !== null) {
-      draft.lines[0]!.assignmentGeneration = 1;
+      const line = draft.lines[0];
+      if (line !== undefined) line.assignmentGeneration = 1;
       orderDrafts.put(draft);
     }
     const resp = await submit({ approval_id: approvalId });
@@ -1148,9 +1149,10 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     // Both conversations carry line-1; both minted approvals before either
     // submitted — the reachable race the design records.
     const draft = orderDrafts.get('odr-1');
-    if (draft !== null) {
+    const firstConversation = draft?.conversations[0];
+    if (draft !== null && firstConversation !== undefined) {
       draft.conversations.push({
-        ...draft.conversations[0]!,
+        ...firstConversation,
         conversationId: 'conv-2',
         state: 'superseded', // terminal, so the one-live invariant holds
       });
@@ -1169,7 +1171,8 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     // assignment retires.
     const after = orderDrafts.get('odr-1');
     if (after !== null) {
-      after.lines[0]!.assignmentGeneration = 1;
+      const line = after.lines[0];
+      if (line !== undefined) line.assignmentGeneration = 1;
       orderDrafts.put(after);
     }
     const second = await submit({ approval_id: approvalB });

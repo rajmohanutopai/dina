@@ -1,5 +1,10 @@
 # Home Node Lite — Web UI parity plan
 
+> **Update (2026-09-27):** Core now serves this bundle at `/app/` and Brain's
+> `/web` mount is removed; owner actions go to Core as the browser's owner
+> device. See `docs/WEB_OWNER_SURFACE_PLAN.md`. The `/web` references below
+> describe the original design.
+
 **Status**: Draft v1 (2026-05-17). Not started — this is the build plan.
 
 ## 1. Vision

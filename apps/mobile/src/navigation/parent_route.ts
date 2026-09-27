@@ -42,6 +42,7 @@ const SECTION_PARENTS: Record<string, string> = {
   policy: '/admin',
   'paired-devices': '/settings',
   plugins: '/settings',
+  'owner-access': '/settings',
   // /subscriptions (standing poll-mode watches) is reached from Settings →
   // Subscriptions; back returns to Settings (PSVC-4).
   subscriptions: '/settings',

@@ -6,9 +6,10 @@
  */
 
 import {
-  InProcessOwnerCommerceClient,
+  OwnerCommerceClient,
   OwnerCommerceHttpError,
 } from '../../src/client/owner-commerce-client';
+import { inProcessOwnerDispatcher } from '../../src/client/owner-dispatch';
 import { StaffClientError, StaffCoreClient } from '../../src/transport/staff_client';
 
 import type { CoreResponse, CoreRouter } from '../../src/server/router';
@@ -42,11 +43,11 @@ function staffWith(status: number, body: unknown): { client: StaffCoreClient; ca
   return { client: new StaffCoreClient(transport), calls };
 }
 
-function ownerWith(status: number, body: unknown): InProcessOwnerCommerceClient {
+function ownerWith(status: number, body: unknown): OwnerCommerceClient {
   const router = {
     handle: async (): Promise<CoreResponse> => ({ status, body }),
   } as unknown as CoreRouter;
-  return new InProcessOwnerCommerceClient(router, 'cap');
+  return new OwnerCommerceClient(inProcessOwnerDispatcher(router, 'cap'));
 }
 
 describe("the clerk's relay client", () => {

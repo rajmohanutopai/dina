@@ -11,6 +11,10 @@
  * Playwright is launched (`npm run test:e2e`, `npx playwright test`, an IDE
  * runner), so a Metro resolution break now fails the E2E run itself.
  *
+ * Hermetic: both build scripts set `EXPO_NO_DOTENV=1`, so a developer's
+ * `apps/mobile/.env` (dev AI keys, demo endpoints) never reaches a test bundle
+ * — a local run builds what CI builds.
+ *
  * Which bundle: the smoke tier serves `dist`; the functional/PR tiers set
  * `DINA_E2E_BUNDLE_DIR=dist-e2e` (the onboarding-autopilot build) before
  * `defineConfig`. Each maps to its own build script.

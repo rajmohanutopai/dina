@@ -1,16 +1,14 @@
 /**
- * Phase 3 onboarding render walk — proves the first three onboarding
- * surfaces render correctly under React Native Web through the
- * brain-server's `/web/*` mount.
+ * Phase 3 onboarding render walk — proves the first onboarding surfaces
+ * render correctly under React Native Web through Core's `/app/*` mount.
  *
- * Three screens covered here, in the order the unlock gate + state
- * machine produce them on a fresh install:
+ * Two screens, in the order the state machine produces them on a fresh
+ * install:
  *
- *   1. **Infra setup** (`unlock_gate.tsx` mounts this BEFORE the main
- *      onboarding flow). Operator picks PDS / AppView URLs.
- *   2. **Welcome** (`OnboardingFlow` `INITIAL_STEP`). Brand splash +
+ *   1. **Welcome** (`OnboardingFlow` `INITIAL_STEP`). Brand splash +
  *      "Get started" CTA.
- *   3. **Mode choice** — create-new vs restore-from-recovery.
+ *   2. **Mode choice** — create new, use an existing identity, restore from a
+ *      recovery phrase, or join a business as staff.
  *
  * Steps 4-11 (passphrase set → mnemonic reveal → verify → recovery
  * handle → handle picker → owner name → provisioning) drive into Core
@@ -24,7 +22,7 @@
 
 import { expect, test } from '@playwright/test';
 
-test('Infra setup → Welcome → Mode choice renders end-to-end via /web/', async ({ page }) => {
+test('Welcome → Mode choice renders end-to-end via /app/', async ({ page }) => {
   // Capture hard JS errors throughout — same pattern as smoke.spec.ts.
   // Any TypeError / ReferenceError during this walk is a regression
   // (usually a native-only module leaking into the web bundle).
@@ -36,7 +34,7 @@ test('Infra setup → Welcome → Mode choice renders end-to-end via /web/', asy
     consoleErrors.push(err.message);
   });
 
-  await page.goto('/web/');
+  await page.goto('/app/');
 
   // We locate buttons by their visible text rather than by ARIA role
   // because RNW renders `Pressable` as a plain `<div>` without
@@ -45,27 +43,18 @@ test('Infra setup → Welcome → Mode choice renders end-to-end via /web/', asy
   // back to `getByRole` — for now, text selectors keep the test
   // honest about what the user actually sees.
 
-  // ── Step 1: Infra setup ───────────────────────────────────────────
-  await expect(page.getByText('Choose your infrastructure')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('PDS URL')).toBeVisible();
-  await expect(page.getByText('PeerLens and Services URL')).toBeVisible();
-  await page.getByText('Continue', { exact: true }).click();
-
-  // ── Step 2: Welcome ───────────────────────────────────────────────
-  // The welcome screen shows the brand wordmark, the "Your sovereign
-  // personal AI" tagline, the six-feature pill row, and a "Get
-  // started" CTA. We assert on a stable bit of brand copy plus the
-  // CTA presence rather than try to pin the tagline exactly (which
-  // is more likely to change as marketing iterates).
-  await expect(page.getByText('Your sovereign')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText('Sovereign Identity')).toBeVisible();
+  // ── Step 1: Welcome ───────────────────────────────────────────────
+  // The first screen: the headline, the feature pills, and a "Get started"
+  // CTA. Assert a stable bit of brand copy plus the CTA rather than pin the
+  // whole tagline (marketing iterates on it).
+  await expect(page.getByText('Your sovereign', { exact: false }).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText('Sovereign Identity').first()).toBeVisible();
   await page.getByText(/get started/i).click();
 
-  // ── Step 3: Mode choice ───────────────────────────────────────────
-  // Two CTAs: create new Dina, restore from recovery phrase.
-  await expect(page.getByText("Let's get your Dina set up")).toBeVisible({
-    timeout: 10_000,
-  });
+  // ── Step 2: Mode choice ───────────────────────────────────────────
+  await expect(page.getByText('Welcome to Dina')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Create a new Dina')).toBeVisible();
   await expect(page.getByText('Restore from recovery phrase')).toBeVisible();
 

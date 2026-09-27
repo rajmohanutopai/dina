@@ -21,6 +21,7 @@ import {
   type ReasoningJobLifecycle,
 } from '@dina/brain/chat';
 
+import { errorKeyOf } from '../services/owner_errors';
 import { getOwnerRunClient, type OwnerControlClient } from '../services/owner_run_client';
 
 import type {
@@ -198,7 +199,11 @@ export async function trySubmitConnectedBrainAsk(
   let backends: OwnerReasoningBackendView[];
   try {
     backends = (await client.reasoningBackends()).backends;
-  } catch {
+  } catch (err) {
+    // A browser not connected as the owner cannot read the owner's bindings
+    // (WEB_OWNER_SURFACE_PLAN §3.6): it has no connected host to route to, so
+    // the ordinary Ask path through Brain answers. Any other failure is said.
+    if (errorKeyOf(err) === 'owner_device_not_connected') return { handled: false };
     const userMessage = addUserMessage(threadId, query, {
       mode: 'ask',
       reasoningBackendId: 'policy-selected',

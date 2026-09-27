@@ -26,8 +26,11 @@
 
 import { expect, test } from '@playwright/test';
 
+// The page is Core-served; Brain's API is its own origin (the stack publishes it).
+const BRAIN = process.env.DINA_E2E_BRAIN_URL ?? 'http://127.0.0.1:18299';
+
 test('POST /api/v1/chat with /help returns a non-empty ChatResponse', async ({ request }) => {
-  const resp = await request.post('/api/v1/chat', {
+  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
     data: { text: '/help', threadId: 'phase-4-smoke' },
   });
   expect(resp.status()).toBe(200);
@@ -42,7 +45,7 @@ test('POST /api/v1/chat with /help returns a non-empty ChatResponse', async ({ r
 });
 
 test('POST /api/v1/chat rejects empty text with 400 (input validation)', async ({ request }) => {
-  const resp = await request.post('/api/v1/chat', {
+  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
     data: { text: '' },
   });
   expect(resp.status()).toBe(400);
@@ -60,7 +63,7 @@ test('POST /api/v1/chat with /remember writes a memory record and acknowledges',
   // /remember handler → Core. We assert the round-trip ack here;
   // verifying the record actually landed in Core is a Core-side
   // integration concern already covered by Core's own staging tests.
-  const resp = await request.post('/api/v1/chat', {
+  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
     data: {
       text: '/remember Emma loves dinosaurs',
       threadId: 'phase-4-remember',
@@ -82,10 +85,10 @@ test('POST /api/v1/chat with /remember writes a memory record and acknowledges',
 
 test('POST /api/v1/chat/reset clears a thread', async ({ request }) => {
   // Seed a message first so the reset has something to wipe.
-  await request.post('/api/v1/chat', {
+  await request.post(`${BRAIN}/api/v1/chat`, {
     data: { text: '/help', threadId: 'phase-4-reset' },
   });
-  const resp = await request.post('/api/v1/chat/reset', {
+  const resp = await request.post(`${BRAIN}/api/v1/chat/reset`, {
     data: { threadId: 'phase-4-reset' },
   });
   expect(resp.status()).toBe(200);

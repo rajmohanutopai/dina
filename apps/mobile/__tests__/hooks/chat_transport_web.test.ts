@@ -18,6 +18,9 @@
  * model — placeholder bubbles, late-arriving lifecycle patches, and
  * the synchronous fast-path response all flow through the same stream.
  *
+ * The page is Core-served, so both channels go to Brain's origin
+ * cross-origin (WEB_OWNER_SURFACE_PLAN §3.4).
+ *
  * Source: docs/HOME_NODE_LITE_WEB_UI_TASKS.md — SSE chat delivery.
  */
 
@@ -34,6 +37,7 @@ import {
   openChatStream,
   runChatTurn,
 } from '../../src/hooks/chat_transport.web';
+import { BRAIN, configLoaded, installCoreServedPage } from '../setup/web_brain';
 
 const ORIG_FETCH = globalThis.fetch;
 let lastRequest: { url: string; init: RequestInit | undefined } | null = null;
@@ -50,7 +54,11 @@ interface StubEventSourceLike {
   emitError(): void;
 }
 
-let lastEventSource: StubEventSourceLike | null = null;
+const openedSources: StubEventSourceLike[] = [];
+/** The most recently opened stream, or null before any opened. */
+function latest(): StubEventSourceLike | null {
+  return openedSources[openedSources.length - 1] ?? null;
+}
 const ORIG_EVENT_SOURCE = (globalThis as { EventSource?: unknown }).EventSource;
 
 class StubEventSource implements StubEventSourceLike {
@@ -60,7 +68,7 @@ class StubEventSource implements StubEventSourceLike {
 
   constructor(url: string) {
     this.url = url;
-    lastEventSource = this;
+    openedSources.push(this);
   }
 
   addEventListener(type: string, fn: (ev: unknown) => void): void {
@@ -92,13 +100,13 @@ class StubEventSource implements StubEventSourceLike {
 }
 
 function mockFetch(response: { status: number; body: unknown }): void {
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    lastRequest = { url: String(input), init };
+  installCoreServedPage(async (url, init) => {
+    lastRequest = { url, init };
     return new Response(JSON.stringify(response.body), {
       status: response.status,
       headers: { 'content-type': 'application/json' },
     });
-  }) as typeof globalThis.fetch;
+  });
 }
 
 function plainChatResponse(text: string, intent = 'PLAIN'): ChatResponse {
@@ -130,8 +138,9 @@ function serverChatMessage(
 beforeEach(() => {
   resetThreads();
   lastRequest = null;
-  lastEventSource = null;
+  openedSources.length = 0;
   (globalThis as { EventSource?: unknown }).EventSource = StubEventSource;
+  mockFetch({ status: 200, body: {} });
 });
 
 afterEach(() => {
@@ -151,8 +160,9 @@ describe('chat_transport.web — POST contract', () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hello', 'thread-x');
     expect(lastRequest).not.toBeNull();
-    expect(lastRequest?.url).toBe('/api/v1/chat');
+    expect(lastRequest?.url).toBe(`${BRAIN}/api/v1/chat`);
     expect(lastRequest?.init?.method).toBe('POST');
+    expect(lastRequest?.init?.credentials).toBe('omit');
     expect((lastRequest?.init?.headers as Record<string, string>)['content-type']).toBe(
       'application/json',
     );
@@ -175,8 +185,7 @@ describe('chat_transport.web — POST contract', () => {
   });
 
   it('throws a status-based message when the error body isnt JSON', async () => {
-    globalThis.fetch = (async () =>
-      new Response('Internal Server Error', { status: 500 })) as typeof globalThis.fetch;
+    installCoreServedPage(async () => new Response('Internal Server Error', { status: 500 }));
     await expect(runChatTurn('hi', 'main')).rejects.toThrow(/HTTP 500/);
   });
 });
@@ -185,24 +194,25 @@ describe('chat_transport.web — SSE contract', () => {
   it('opens an EventSource on /api/v1/chat/stream with the threadId', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hello', 'thread-stream');
-    expect(lastEventSource).not.toBeNull();
-    expect(lastEventSource?.url).toBe('/api/v1/chat/stream?threadId=thread-stream');
+    expect(latest()).not.toBeNull();
+    expect(latest()?.url).toBe(`${BRAIN}/api/v1/chat/stream?threadId=thread-stream`);
   });
 
   it('reuses the same EventSource across calls on the same thread', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('one', 'thread-x');
-    const first = lastEventSource;
+    const first = latest();
     await runChatTurn('two', 'thread-x');
     // No new EventSource was constructed for the second call.
-    expect(lastEventSource).toBe(first);
+    expect(latest()).toBe(first);
   });
 
-  it('ref-counts open/close: a second consumer unmounting does NOT tear down the stream', () => {
+  it('ref-counts open/close: a second consumer unmounting does NOT tear down the stream', async () => {
     // Two mounted consumers (e.g. a duplicate/hidden route) open the same thread.
     openChatStream('thread-x');
     openChatStream('thread-x');
-    const es = lastEventSource;
+    await configLoaded();
+    const es = latest();
     expect(es).not.toBeNull();
 
     // One unmounts — the stream MUST stay open for the still-active view: a
@@ -218,6 +228,13 @@ describe('chat_transport.web — SSE contract', () => {
     expect(getThread('thread-x')).toHaveLength(1);
   });
 
+  it('a view that unmounts before Brain’s address is known opens no stream', async () => {
+    openChatStream('thread-x');
+    closeChatStream('thread-x');
+    await configLoaded();
+    expect(latest()).toBeNull();
+  });
+
   it('mirrors server-pushed user + dina messages into the local thread store', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ack', 'REMEMBER') });
     await runChatTurn('/remember Emma loves dinosaurs', 'main');
@@ -226,12 +243,12 @@ describe('chat_transport.web — SSE contract', () => {
     // message is the CLEAN payload + the mode in metadata (no slash prefix) —
     // docs/COMPOSER_MODES_DESIGN.md section 7.1. Mirroring must preserve both,
     // so the web SPA renders the clean bubble + a mode chip, just like mobile.
-    lastEventSource?.emitMessage(
+    latest()?.emitMessage(
       JSON.stringify(
         serverChatMessage('main', 'user', 'Emma loves dinosaurs', { metadata: { mode: 'remember' } }),
       ),
     );
-    lastEventSource?.emitMessage(
+    latest()?.emitMessage(
       JSON.stringify(serverChatMessage('main', 'dina', 'Got it — saved to your vault.')),
     );
 
@@ -252,7 +269,7 @@ describe('chat_transport.web — SSE contract', () => {
     const srvMsg = serverChatMessage('thread-x', 'dina', 'first version', {
       id: 'srv-fixed-id',
     });
-    lastEventSource?.emitMessage(JSON.stringify(srvMsg));
+    latest()?.emitMessage(JSON.stringify(srvMsg));
 
     const after = getThread('thread-x');
     expect(after.find((m) => m.id === 'srv-fixed-id')).toBeDefined();
@@ -265,11 +282,11 @@ describe('chat_transport.web — SSE contract', () => {
     const placeholder = serverChatMessage('thread-x', 'dina', "Working on it…", {
       id: 'srv-ask-1',
     });
-    lastEventSource?.emitMessage(JSON.stringify(placeholder));
+    latest()?.emitMessage(JSON.stringify(placeholder));
     const patched = serverChatMessage('thread-x', 'dina', 'Final answer.', {
       id: 'srv-ask-1',
     });
-    lastEventSource?.emitMessage(JSON.stringify(patched));
+    latest()?.emitMessage(JSON.stringify(patched));
 
     const msgs = getThread('thread-x');
     expect(msgs.filter((m) => m.id === 'srv-ask-1')).toHaveLength(1);
@@ -280,7 +297,7 @@ describe('chat_transport.web — SSE contract', () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
 
-    lastEventSource?.emitMessage(
+    latest()?.emitMessage(
       JSON.stringify(serverChatMessage('OTHER-THREAD', 'user', 'foo')),
     );
     expect(getThread('thread-x')).toHaveLength(0);
@@ -291,8 +308,8 @@ describe('chat_transport.web — SSE contract', () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
 
-    lastEventSource?.emitMessage('not-json');
-    lastEventSource?.emitError(); // also tolerated
+    latest()?.emitMessage('not-json');
+    latest()?.emitError(); // also tolerated
 
     expect(getThread('thread-x')).toHaveLength(0);
   });

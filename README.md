@@ -40,7 +40,7 @@ cd apps/home-node-lite/brain-server && npm start
 curl http://127.0.0.1:8200/healthz          # {"status":"ok","role":"brain"}
 ```
 
-To use a browser instead of the phone, start the Brain with `DINA_BRAIN_DEV_UI=1` for a minimal chat UI at `http://127.0.0.1:8200/dev` that drives the same orchestrator the app uses, or run `./install-lite.sh --web-ui` to serve the full app as a web bundle at `/web/`. See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md).
+To use a browser instead of the phone, start the Brain with `DINA_BRAIN_DEV_UI=1` for a minimal chat UI at `http://127.0.0.1:8200/dev` that drives the same orchestrator the app uses, or run `./install-lite.sh --web-ui` to have Core serve the full app at `/app/` (Core: `DINA_CORE_WEB_UI=1`; Brain: `DINA_BRAIN_WEB_ORIGIN` lists Core's origin). See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md).
 
 ### Connect an agent: `dina-agent`
 

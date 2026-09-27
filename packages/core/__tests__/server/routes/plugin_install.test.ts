@@ -27,7 +27,13 @@ import {
 } from '../../../src/devices/registry';
 import { SQLiteDeviceRepository, setDeviceRepository } from '../../../src/devices/repository';
 import { publicKeyToMultibase } from '../../../src/identity/did';
-import { clearPairingState, completePairing, getPairingIntent, setNodeDID } from '../../../src/pairing/ceremony';
+import {
+  clearPairingState,
+  completePairing,
+  getPairingIntent,
+  setNodeDID,
+} from '../../../src/pairing/ceremony';
+import { parseAgentSetupCode } from '../../../src/pairing/setup_code';
 import {
   getPluginInstallRepository,
   SQLitePluginGrantRepository,
@@ -68,7 +74,8 @@ function post(routePath: string, body: Record<string, unknown>, caller = 'owner'
   } as CoreRequest;
 }
 
-const sha256 = (d: Uint8Array): Uint8Array => new Uint8Array(createHash('sha256').update(d).digest());
+const sha256 = (d: Uint8Array): Uint8Array =>
+  new Uint8Array(createHash('sha256').update(d).digest());
 
 /** Real CIDv1 (dag-cbor, sha2-256) over a fixed body. */
 function cidFor(seed: string): string {
@@ -115,7 +122,10 @@ function runnerPairs(code: string): string {
 }
 
 /** A verifier returning the given manifest at a content-correct rkey. */
-function fakeVerifier(manifest: PluginManifest, seed = 'v1'): { rkey: string; verifier: RepoProofVerifier } {
+function fakeVerifier(
+  manifest: PluginManifest,
+  seed = 'v1',
+): { rkey: string; verifier: RepoProofVerifier } {
   const cid = cidFor(seed);
   const rkey = releaseRkeyFromCid(cid) as string;
   const verifier: RepoProofVerifier = async (req) =>
@@ -160,22 +170,120 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+function get(routePath: string, caller = 'owner'): CoreRequest {
+  return { ...post(routePath, {}, caller), method: 'GET', body: undefined };
+}
+
+describe('the owner surfaces’ reads and the one-paste runner code (WEB_OWNER_SURFACE_PLAN §3.5)', () => {
+  it('lists every install and says whether a third-party release can be verified here', async () => {
+    const empty = await router.handle(get('/v1/plugins/installs'));
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual({
+      installs: [],
+      registry_available: true,
+      third_party_available: false,
+    });
+
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
+    const installId = (begun.body as { installId: string }).installId;
+    const listed = await router.handle(get('/v1/plugins/installs'));
+    expect(listed.body).toEqual({
+      installs: [
+        {
+          install_id: installId,
+          plugin_id: 'com.acme.widget',
+          status: 'pending',
+          execution_mode: 'runner',
+        },
+      ],
+      registry_available: true,
+      third_party_available: true,
+    });
+  });
+
+  it('pairing_state reads the ceremony, with the code in the body (never a logged URL)', async () => {
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
+    const installId = (begun.body as { installId: string }).installId;
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
+    const { code } = issued.body as { code: string };
+    const state = (c: string) =>
+      router.handle(post('/v1/plugins/install/pairing_state', { install_id: installId, code: c }));
+    expect((await state(code)).body).toEqual({ state: 'waiting' });
+    expect((await state('NEVERISS')).body).toEqual({ state: 'expired' });
+    const runnerDid = runnerPairs(code);
+    expect((await state(code)).body).toEqual({ state: 'bound', deviceDid: runnerDid });
+    expect(
+      (await router.handle(post('/v1/plugins/install/pairing_state', { install_id: installId })))
+        .status,
+    ).toBe(400);
+  });
+
+  it('with the node’s relay named, setup_code also answers the one-paste string for the runner', async () => {
+    const withRelay = new CoreRouter();
+    registerPluginInstallRoutes(withRelay, OWNER_CAP, undefined, () => 'wss://relay.example/ws');
+    const { rkey, verifier } = fakeVerifier(runnerManifest());
+    setRepoProofVerifier(verifier);
+    const begun = await withRelay.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
+    const installId = (begun.body as { installId: string }).installId;
+    const issued = await withRelay.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
+    const body = issued.body as { code: string; setup_code: string };
+    expect(parseAgentSetupCode(body.setup_code)).toMatchObject({
+      msgboxUrl: 'wss://relay.example/ws',
+      homenodeDid: NODE_DID,
+      deviceName: 'com.acme.widget',
+      code: body.code,
+    });
+    // Without a relay (the default registration) there is only the bare code.
+    const bare = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
+    expect((bare.body as { setup_code?: string }).setup_code).toBeUndefined();
+  });
+
+  it('the reads are the owner’s too', async () => {
+    for (const req of [
+      get('/v1/plugins/installs', 'brain'),
+      post('/v1/plugins/install/pairing_state', { install_id: 'x', code: 'y' }, 'brain'),
+    ]) {
+      expect((await router.handle(req)).status).toBe(403);
+    }
+  });
+});
+
 describe('POST /v1/plugins/install/* (§5.C2)', () => {
   it('an authentic release stages a pending install; the runner pairs on the issued code, consent activates on THAT device', async () => {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
 
-    const begun = await router.handle(post('/v1/plugins/install/begin', {
-      publisher_did: PUBLISHER,
-      rkey,
-    }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', {
+        publisher_did: PUBLISHER,
+        rkey,
+      }),
+    );
     expect(begun.status).toBe(200);
     const body = begun.body as { ok: boolean; installId: string; consent: { pluginId: string } };
     expect(body.ok).toBe(true);
     expect(body.consent.pluginId).toBe('com.acme.widget');
 
     // §15.3 — the owner issues a code for THIS install; role/scope fixed at initiate.
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: body.installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: body.installId }),
+    );
     expect(issued.status).toBe(201);
     const { code } = issued.body as { code: string };
     expect(getPairingIntent(code)).toMatchObject({
@@ -185,7 +293,9 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
     });
 
     // Consent before the runner pairs is refused: nothing to activate on.
-    const early = await router.handle(post('/v1/plugins/install/confirm', { install_id: body.installId }));
+    const early = await router.handle(
+      post('/v1/plugins/install/confirm', { install_id: body.installId }),
+    );
     expect(early.status).toBe(409);
     expect(early.body).toMatchObject({ error: 'runner_not_paired' });
 
@@ -194,29 +304,41 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
     expect(getPluginInstallRepository()?.getById(body.installId)?.deviceDid).toBe(runnerDid);
 
     // The client cannot name a device at the final button (§15.4).
-    const named = await router.handle(post('/v1/plugins/install/confirm', {
-      install_id: body.installId,
-      device_did: runnerDid,
-    }));
+    const named = await router.handle(
+      post('/v1/plugins/install/confirm', {
+        install_id: body.installId,
+        device_did: runnerDid,
+      }),
+    );
     expect(named.status).toBe(400);
 
-    const confirmed = await router.handle(post('/v1/plugins/install/confirm', { install_id: body.installId }));
+    const confirmed = await router.handle(
+      post('/v1/plugins/install/confirm', { install_id: body.installId }),
+    );
     expect(confirmed.status).toBe(200);
     expect((confirmed.body as { status: string }).status).toBe('active');
     expect(getPluginInstallRepository()?.getById(body.installId)?.deviceDid).toBe(runnerDid);
   });
 
   it('setup_code refuses an unknown, non-pending, or non-runner install', async () => {
-    const unknown = await router.handle(post('/v1/plugins/install/setup_code', { install_id: 'nope' }));
+    const unknown = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: 'nope' }),
+    );
     expect(unknown.status).toBe(404);
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const begun = await router.handle(post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
     const installId = (begun.body as { installId: string }).installId;
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
     runnerPairs((issued.body as { code: string }).code);
     await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }));
-    const active = await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }));
+    const active = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
     expect(active.status).toBe(409);
     expect(active.body).toMatchObject({ error: 'install_not_pending' });
   });
@@ -224,13 +346,17 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
   it('setup_code refuses an expired pending install (the code would be dead on arrival)', async () => {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const begun = await router.handle(post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
     const installId = (begun.body as { installId: string }).installId;
     adapter.execute('UPDATE plugin_installs SET pending_expires_at = ? WHERE install_id = ?', [
       Math.floor(Date.now() / 1000) - 1,
       installId,
     ]);
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
     expect(issued.status).toBe(409);
     expect(issued.body).toMatchObject({ error: 'install_expired' });
   });
@@ -238,12 +364,18 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
   it('a runner that pairs after the install was declined is refused and leaves no device', async () => {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const begun = await router.handle(post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
     const installId = (begun.body as { installId: string }).installId;
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
     const { code } = issued.body as { code: string };
 
-    const declined = await router.handle(post('/v1/plugins/install/decline', { install_id: installId }));
+    const declined = await router.handle(
+      post('/v1/plugins/install/decline', { install_id: installId }),
+    );
     expect(declined.status).toBe(200);
 
     expect(() => runnerPairs(code)).toThrow(/no longer pending/);
@@ -254,10 +386,16 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
   it('a second code cannot bind a second runner to an install another runner already holds', async () => {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const begun = await router.handle(post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
     const installId = (begun.body as { installId: string }).installId;
-    const first = (await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }))).body as { code: string };
-    const second = (await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }))).body as { code: string };
+    const first = (
+      await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }))
+    ).body as { code: string };
+    const second = (
+      await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }))
+    ).body as { code: string };
     const firstDid = runnerPairs(first.code);
     expect(() => runnerPairs(second.code)).toThrow(/already bound/);
     expect(getPluginInstallRepository()?.getById(installId)?.deviceDid).toBe(firstDid);
@@ -267,10 +405,12 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
   it('fails CLOSED with no verifier wired — never trust-on-first-use', async () => {
     setRepoProofVerifier(null);
     const { rkey } = fakeVerifier(runnerManifest());
-    const res = await router.handle(post('/v1/plugins/install/begin', {
-      publisher_did: PUBLISHER,
-      rkey,
-    }));
+    const res = await router.handle(
+      post('/v1/plugins/install/begin', {
+        publisher_did: PUBLISHER,
+        rkey,
+      }),
+    );
     expect(res.status).toBe(503);
   });
 
@@ -281,10 +421,12 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
       transient: false,
       message: 'bad sig',
     }));
-    const res = await router.handle(post('/v1/plugins/install/begin', {
-      publisher_did: PUBLISHER,
-      rkey: releaseRkeyFromCid(cidFor('x')) as string,
-    }));
+    const res = await router.handle(
+      post('/v1/plugins/install/begin', {
+        publisher_did: PUBLISHER,
+        rkey: releaseRkeyFromCid(cidFor('x')) as string,
+      }),
+    );
     expect(res.status).toBe(409);
   });
 
@@ -301,9 +443,13 @@ describe('POST /v1/plugins/install/* (§5.C2)', () => {
   });
 
   it('declining / uninstalling an unknown install is 404', async () => {
-    const declined = await router.handle(post('/v1/plugins/install/decline', { install_id: 'nope' }));
+    const declined = await router.handle(
+      post('/v1/plugins/install/decline', { install_id: 'nope' }),
+    );
     expect(declined.status).toBe(404);
-    const removed = await router.handle(post('/v1/plugins/install/uninstall', { install_id: 'nope' }));
+    const removed = await router.handle(
+      post('/v1/plugins/install/uninstall', { install_id: 'nope' }),
+    );
     expect(removed.status).toBe(404);
   });
 });
@@ -321,12 +467,18 @@ describe('POST /v1/plugins/install/country_pack — the first-party door (§5.D)
     expect(begun.status).toBe(200);
     const body = begun.body as { ok: boolean; installId: string; consent: { pluginId: string } };
     expect(body.consent.pluginId).toBe('com.dinakernel.country.in');
-    expect(getPluginInstallRepository()?.getById(body.installId)?.trustAnchor.kind).toBe('local_publisher_key');
+    expect(getPluginInstallRepository()?.getById(body.installId)?.trustAnchor.kind).toBe(
+      'local_publisher_key',
+    );
 
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: body.installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: body.installId }),
+    );
     expect(issued.status).toBe(201);
     runnerPairs((issued.body as { code: string }).code);
-    const confirmed = await router.handle(post('/v1/plugins/install/confirm', { install_id: body.installId }));
+    const confirmed = await router.handle(
+      post('/v1/plugins/install/confirm', { install_id: body.installId }),
+    );
     expect(confirmed.status).toBe(200);
 
     const again = await router.handle(post('/v1/plugins/install/country_pack', { pack: 'in' }));
@@ -335,8 +487,13 @@ describe('POST /v1/plugins/install/country_pack — the first-party door (§5.D)
   });
 
   it('refuses an unknown pack and a non-owner', async () => {
-    expect((await router.handle(post('/v1/plugins/install/country_pack', { pack: 'uk' }))).status).toBe(400);
-    expect((await router.handle(post('/v1/plugins/install/country_pack', { pack: 'in' }, 'device'))).status).toBe(403);
+    expect(
+      (await router.handle(post('/v1/plugins/install/country_pack', { pack: 'uk' }))).status,
+    ).toBe(400);
+    expect(
+      (await router.handle(post('/v1/plugins/install/country_pack', { pack: 'in' }, 'device')))
+        .status,
+    ).toBe(403);
   });
 
   it('a second begin while the first is still pending stages a NEW consent — a pending row is never reused', async () => {
@@ -347,7 +504,9 @@ describe('POST /v1/plugins/install/country_pack — the first-party door (§5.D)
     const a = (first.body as { installId: string }).installId;
     const b = (second.body as { installId: string }).installId;
     expect(a).not.toBe(b);
-    const rows = (getPluginInstallRepository()?.list() ?? []).filter((r) => r.pluginId === 'com.dinakernel.country.in');
+    const rows = (getPluginInstallRepository()?.list() ?? []).filter(
+      (r) => r.pluginId === 'com.dinakernel.country.in',
+    );
     expect(rows.map((r) => r.status)).toEqual(['pending', 'pending']);
   });
 
@@ -368,10 +527,14 @@ describe('POST /v1/plugins/install/country_pack — the first-party door (§5.D)
       }),
     );
     expect(begun.status).toBe(200);
-    const row = getPluginInstallRepository()?.getById((begun.body as { installId: string }).installId) ?? null;
+    const row =
+      getPluginInstallRepository()?.getById((begun.body as { installId: string }).installId) ??
+      null;
     expect(row?.pluginId).toBe('com.dinakernel.country.us');
     expect(row?.publisherDid).toBe(NODE_DID);
-    expect(row?.manifest.capabilities.map((c) => c.id)).toContain('com.dinakernel.country.us.settlement-status');
+    expect(row?.manifest.capabilities.map((c) => c.id)).toContain(
+      'com.dinakernel.country.us.settlement-status',
+    );
   });
 });
 
@@ -380,9 +543,13 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
   async function boundPending(): Promise<{ installId: string; runnerDid: string }> {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const begun = await router.handle(post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }));
+    const begun = await router.handle(
+      post('/v1/plugins/install/begin', { publisher_did: PUBLISHER, rkey }),
+    );
     const installId = (begun.body as { installId: string }).installId;
-    const issued = await router.handle(post('/v1/plugins/install/setup_code', { install_id: installId }));
+    const issued = await router.handle(
+      post('/v1/plugins/install/setup_code', { install_id: installId }),
+    );
     const runnerDid = runnerPairs((issued.body as { code: string }).code);
     return { installId, runnerDid };
   }
@@ -398,7 +565,12 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
 
     const res = await router.handle(post('/v1/plugins/install/decline', { install_id: installId }));
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, removed: true, deviceDid: runnerDid, deviceRevoked: true });
+    expect(res.body).toMatchObject({
+      ok: true,
+      removed: true,
+      deviceDid: runnerDid,
+      deviceRevoked: true,
+    });
     expect(revoked).toEqual([runnerDid]);
     expect(getPluginInstallRepository()?.getById(installId)).toBeNull();
   });
@@ -411,10 +583,14 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
       return { durable: true };
     });
     const { installId, runnerDid } = await boundPending();
-    const confirmed = await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }));
+    const confirmed = await router.handle(
+      post('/v1/plugins/install/confirm', { install_id: installId }),
+    );
     expect(confirmed.status).toBe(200);
 
-    const res = await router.handle(post('/v1/plugins/install/uninstall', { install_id: installId }));
+    const res = await router.handle(
+      post('/v1/plugins/install/uninstall', { install_id: installId }),
+    );
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, removed: true, deviceRevoked: true });
     expect(revoked).toEqual([runnerDid]);
@@ -426,9 +602,15 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
     registerPluginInstallRoutes(router, OWNER_CAP, async () => ({ durable: false }));
     const { installId } = await boundPending();
 
-    const res = await router.handle(post('/v1/plugins/install/uninstall', { install_id: installId }));
+    const res = await router.handle(
+      post('/v1/plugins/install/uninstall', { install_id: installId }),
+    );
     expect(res.status).toBe(409);
-    expect(res.body).toMatchObject({ error: 'teardown_incomplete', removed: false, deviceRevoked: false });
+    expect(res.body).toMatchObject({
+      error: 'teardown_incomplete',
+      removed: false,
+      deviceRevoked: false,
+    });
     // Authority is gone (tombstoned) but the row stays so the sweeper can retry the revoke.
     expect(getPluginInstallRepository()?.getById(installId)?.status).toBe('revoked');
   });
@@ -437,14 +619,21 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
     router = new CoreRouter();
     registerPluginInstallRoutes(router, OWNER_CAP, async () => ({ durable: false }));
     const { installId, runnerDid } = await boundPending();
-    expect((await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status).toBe(200);
+    expect(
+      (await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status,
+    ).toBe(200);
 
-    const res = await router.handle(post('/v1/plugins/install/uninstall', { install_id: installId }));
+    const res = await router.handle(
+      post('/v1/plugins/install/uninstall', { install_id: installId }),
+    );
     expect(res.status).toBe(409);
     expect(getPluginInstallRepository()?.getById(installId)?.status).toBe('revoked');
 
     // The sweep retries the revoke (durable now) and removes the anchor.
-    const swept = await sweepAbandonedInstalls(Math.floor(Date.now() / 1000) + 1, revokePluginDeviceForTeardown);
+    const swept = await sweepAbandonedInstalls(
+      Math.floor(Date.now() / 1000) + 1,
+      revokePluginDeviceForTeardown,
+    );
     expect(swept.map((ref) => ref.installId)).toContain(installId);
     expect(getPluginInstallRepository()?.getById(installId)).toBeNull();
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(true);
@@ -464,7 +653,9 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
 
   it('declining an ACTIVE install says it is live (409), not that it is unknown', async () => {
     const { installId, runnerDid } = await boundPending();
-    expect((await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status).toBe(200);
+    expect(
+      (await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status,
+    ).toBe(200);
     const res = await router.handle(post('/v1/plugins/install/decline', { install_id: installId }));
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ error: 'install_not_pending', status: 'active' });
@@ -474,11 +665,15 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
 
   it('open commerce obligations refuse the uninstall as 409 obligations_open, never a 500', async () => {
     const { installId } = await boundPending();
-    expect((await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status).toBe(200);
+    expect(
+      (await router.handle(post('/v1/plugins/install/confirm', { install_id: installId }))).status,
+    ).toBe(200);
     // §16.4 — an order this install is serving is still open.
     installCommerceRuntime({ inFlightCount: () => 1 } as unknown as CommerceRuntime);
     try {
-      const res = await router.handle(post('/v1/plugins/install/uninstall', { install_id: installId }));
+      const res = await router.handle(
+        post('/v1/plugins/install/uninstall', { install_id: installId }),
+      );
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ error: 'obligations_open' });
       expect(getPluginInstallRepository()?.getById(installId)?.status).toBe('active');
@@ -489,7 +684,9 @@ describe('POST /v1/plugins/install/{decline,uninstall} — the §15.3 cleanup pa
 
   it('every route is owner-only', async () => {
     for (const routePath of ['setup_code', 'confirm', 'decline', 'uninstall']) {
-      const res = await router.handle(post(`/v1/plugins/install/${routePath}`, { install_id: 'x' }, 'device'));
+      const res = await router.handle(
+        post(`/v1/plugins/install/${routePath}`, { install_id: 'x' }, 'device'),
+      );
       expect(res.status).toBe(403);
     }
   });
