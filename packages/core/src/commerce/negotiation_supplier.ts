@@ -37,6 +37,7 @@ import {
   validateSignedQuote,
   type CounterOffer,
   type Money,
+  type QuoteOutcomeNotice,
   type Sha256Fn,
   type SignedQuote,
   type SignedQuoteLine,
@@ -683,7 +684,9 @@ export function makeNegotiationPriceDecisionHandler(deps: {
     const runtime = deps.runtime();
     if (runtime === null) return;
     const state = decision === 'approved' ? 'approved' : 'declined';
-    runtime.negotiation.decideQuestion(task.id, state, deps.nowMs());
+    // Already withdrawn (the quote was not awarded): the cancel that took the
+    // card down is not an owner's no, and is not audited as one.
+    if (!runtime.negotiation.decideQuestion(task.id, state, deps.nowMs())) return;
     appendAudit(
       'negotiation',
       `owner_price_${decision}`,
@@ -769,24 +772,36 @@ export function answerQuoteOutcomeInCore(args: {
   if (validateQuoteOutcomeNotice(args.params) !== null) {
     return { ok: false, code: 'outcome_invalid', error: 'not a quote outcome notice' };
   }
-  const notice = args.params as { request_id: string; quote_id: string; outcome: 'not_awarded' };
+  const notice = args.params as QuoteOutcomeNotice;
   const head = headQuote(runtime, notice.quote_id);
-  if (head !== null && head.buyer_did === args.buyerDid && head.request_id === notice.request_id) {
+  const bound =
+    head !== null && head.buyer_did === args.buyerDid && head.request_id === notice.request_id;
+  if (bound && notice.outcome === 'negotiation_closed') {
+    // No more counters on this quote, which may still be awarded: close the
+    // owner's open price questions and nothing else.
+    withdrawOwnerQuestions(runtime, notice.quote_id, args.nowMs, 'negotiation_closed');
+    appendAudit('negotiation', 'quote_negotiation_closed', notice.quote_id, 'questions_closed');
+  } else if (bound) {
     runtime.negotiation.putOutcome({
       buyerDid: args.buyerDid,
       quoteId: notice.quote_id,
       requestId: notice.request_id,
-      outcome: notice.outcome,
+      outcome: 'not_awarded',
       receivedAt: args.nowMs,
     });
-    withdrawOwnerQuestions(runtime, notice.quote_id, args.nowMs);
+    withdrawOwnerQuestions(runtime, notice.quote_id, args.nowMs, 'quote_not_awarded');
     appendAudit('negotiation', 'quote_not_awarded', notice.quote_id, 'closed');
   }
   return { ok: true, json: JSON.stringify({ recorded: true }) };
 }
 
-/** A closed quote needs no answer from the owner any more. */
-function withdrawOwnerQuestions(runtime: CommerceRuntime, quoteId: string, nowMs: number): void {
+/** A closed quote, or one the buyer stopped countering, needs no answer from the owner. */
+function withdrawOwnerQuestions(
+  runtime: CommerceRuntime,
+  quoteId: string,
+  nowMs: number,
+  reason: 'quote_not_awarded' | 'negotiation_closed',
+): void {
   const workflow = getWorkflowService();
   const tasks = new Set<string>();
   for (const question of runtime.negotiation.questionsForQuote(quoteId)) {
@@ -795,7 +810,7 @@ function withdrawOwnerQuestions(runtime: CommerceRuntime, quoteId: string, nowMs
   for (const taskId of tasks) {
     runtime.negotiation.decideQuestion(taskId, 'withdrawn', nowMs);
     try {
-      workflow?.cancel(taskId, 'quote_not_awarded');
+      workflow?.cancel(taskId, reason);
     } catch {
       /* already decided */
     }

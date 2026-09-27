@@ -19,7 +19,10 @@ import {
   installBuyerOrderSender,
   type BuyerOrderSender,
 } from '../../../src/commerce/buyer_executor';
-import { runNegotiationTick } from '../../../src/commerce/buyer_negotiation';
+import {
+  retireSettledTenderReadyCards,
+  runNegotiationTick,
+} from '../../../src/commerce/buyer_negotiation';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import {
   clearOwnerPresence,
@@ -374,6 +377,131 @@ describe('ranking and award', () => {
     expect(body).not.toHaveProperty('budget_ceiling');
     expect(body.excluded).toEqual([]);
     expect(body.ranked.map((r) => r.supplier_did)).toEqual([SUPPLIER_B, SUPPLIER_A]);
+  });
+});
+
+describe('owner cards that outlive their question (integration report 2026-09-27)', () => {
+  let workflow: WorkflowService;
+  const DAY = 24 * 60 * 60 * 1000;
+  const outcomes = (from: number): [string, string][] =>
+    sent
+      .slice(from)
+      .filter((w) => w.body.capability === 'com.dinakernel.commerce.quote_outcome')
+      .map((w): [string, string] => [w.toDid, (w.body.params as { outcome: string }).outcome])
+      .sort();
+
+  beforeEach(() => {
+    workflow = new WorkflowService({ repository: new InMemoryWorkflowRepository() });
+    setWorkflowService(workflow);
+  });
+  afterEach(() => setWorkflowService(null));
+
+  /** Counters out to both, the deadline passes: the tender is ready, with its card. */
+  async function readyTender(): Promise<{ tenderId: string; start: number }> {
+    const opened = await openTender({ target_total: '42000', budget_ceiling: '60000' });
+    const tenderId = String(opened.body.tender_id);
+    quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
+    const start = Date.now();
+    expect(await runNegotiationTick(start)).toBe(2);
+    clockOffset = 100_000;
+    await runNegotiationTick(start + 100_000);
+    expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('ready');
+    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('pending_approval');
+    return { tenderId, start };
+  }
+
+  it('reaching ready tells each countered supplier no more counters are coming', async () => {
+    const mark = sent.length;
+    await readyTender();
+    expect(outcomes(mark)).toEqual(
+      [
+        [SUPPLIER_A, 'negotiation_closed'],
+        [SUPPLIER_B, 'negotiation_closed'],
+      ].sort(),
+    );
+  });
+
+  it('an award takes the "tender ready" card down', async () => {
+    const { tenderId, start } = await readyTender();
+    await proveOwnerPresence('correct horse', Date.now());
+    // The counters' windows close, so the award is free to go.
+    clockOffset = 200_000;
+    await runNegotiationTick(start + 200_000);
+    clockOffset = 400_000;
+    await runNegotiationTick(start + 400_000);
+    const award = await router.handle(
+      call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
+    );
+    expect(award.status).toBe(200);
+    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+    // The replay lists only the loser's not-awarded notice.
+    const replay = await router.handle(
+      call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
+    );
+    expect(
+      (replay.body as { not_awarded_notices: { supplier_did: string }[] }).not_awarded_notices.map(
+        (n) => n.supplier_did,
+      ),
+    ).toEqual([SUPPLIER_A]);
+  });
+
+  it('a window that runs out unawarded closes the tender, takes the card down and tells every supplier', async () => {
+    const { tenderId, start } = await readyTender();
+    const mark = sent.length;
+    clockOffset = DAY + 60_000;
+    await runNegotiationTick(start + DAY + 60_000);
+    expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('closed');
+    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+    // No counter goes on a closing tender; only the notices.
+    expect(
+      sent.slice(mark).filter((w) => w.body.capability === 'com.dinakernel.commerce.counter_offer'),
+    ).toEqual([]);
+    expect(outcomes(mark)).toEqual(
+      [
+        [SUPPLIER_A, 'not_awarded'],
+        [SUPPLIER_B, 'not_awarded'],
+      ].sort(),
+    );
+    await proveOwnerPresence('correct horse', Date.now());
+    const late = await router.handle(
+      call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
+    );
+    expect(late.status).toBe(409);
+    expect((late.body as { error: string }).error).toBe('tender_closed');
+    // A later tick changes nothing and sends nothing more.
+    const after = sent.length;
+    await runNegotiationTick(start + DAY + 120_000);
+    expect(sent.length).toBe(after);
+  });
+
+  it('on start, cards left pending by awards made before this fix are taken down', async () => {
+    const { tenderId } = await readyTender();
+    // Awarded the old way: the tender moved, the card was never touched.
+    expect(
+      runtime.buyerNegotiation.moveTender(tenderId, 'ready', 'awarded', Date.now(), {
+        supplierDid: SUPPLIER_B,
+        approvalId: 'oap_legacy',
+      }),
+    ).toBe(true);
+    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('pending_approval');
+    retireSettledTenderReadyCards();
+    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+  });
+
+  it('a tender opened without a policy closes the same way when its window runs out', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
+    const mark = sent.length;
+    clockOffset = DAY + 60_000;
+    await runNegotiationTick(Date.now() + DAY);
+    expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('closed');
+    expect(outcomes(mark)).toEqual(
+      [
+        [SUPPLIER_A, 'not_awarded'],
+        [SUPPLIER_B, 'not_awarded'],
+      ].sort(),
+    );
   });
 });
 

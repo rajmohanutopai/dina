@@ -8,6 +8,7 @@
  */
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+import type { QuoteOutcome } from '@dina/commerce-protocol';
 
 /**
  * `unsent` — retained, and the transport could not prove it left (§12.7).
@@ -38,6 +39,11 @@ export type TenderNoticeState = 'pending' | 'sent' | 'abandoned';
 export interface TenderNotice {
   tenderId: string;
   supplierDid: string;
+  /**
+   * `not_awarded`: an award went elsewhere, or the window ran out.
+   * `negotiation_closed`: no more counters; the quote may still be awarded.
+   */
+  outcome: QuoteOutcome;
   requestId: string;
   quoteId: string;
   serviceRkey: string;
@@ -76,14 +82,20 @@ export interface BuyerNegotiationRepository {
   putTender(policy: TenderNegotiation): void;
   getTender(tenderId: string): TenderNegotiation | null;
   listTenders(state: TenderNegotiationState): TenderNegotiation[];
-  /** Written with the award; first writer wins. */
+  /**
+   * Tenders whose window has closed and that are neither awarded nor closed,
+   * with or without a policy — the ones the sweeper still has to close.
+   */
+  listLapsedTenderIds(nowMs: number): string[];
+  /** Written with the award, the close, or the end of negotiating; first writer wins. */
   putNotice(notice: TenderNotice): void;
   listNotices(state: TenderNoticeState): TenderNotice[];
-  /** Every notice one tender's award wrote, whatever its state. */
+  /** Every notice one tender wrote, whatever its state. */
   listNoticesForTender(tenderId: string): TenderNotice[];
   updateNotice(
     tenderId: string,
     supplierDid: string,
+    outcome: QuoteOutcome,
     state: TenderNoticeState,
     attempts: number,
     atMs: number,
@@ -119,6 +131,7 @@ function noticeFromRow(row: DBRow): TenderNotice {
   return {
     tenderId: String(row.tender_id),
     supplierDid: String(row.supplier_did),
+    outcome: String(row.outcome) as QuoteOutcome,
     requestId: String(row.request_id),
     quoteId: String(row.quote_id),
     serviceRkey: String(row.service_rkey),
@@ -223,11 +236,13 @@ export class SQLiteBuyerNegotiationRepository implements BuyerNegotiationReposit
   putNotice(notice: TenderNotice): void {
     this.db.run(
       `INSERT OR IGNORE INTO commerce_tender_notices
-         (tender_id, supplier_did, request_id, quote_id, service_rkey, state, attempts, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (tender_id, supplier_did, outcome, request_id, quote_id, service_rkey, state, attempts,
+          updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         notice.tenderId,
         notice.supplierDid,
+        notice.outcome,
         notice.requestId,
         notice.quoteId,
         notice.serviceRkey,
@@ -246,23 +261,25 @@ export class SQLiteBuyerNegotiationRepository implements BuyerNegotiationReposit
 
   listNoticesForTender(tenderId: string): TenderNotice[] {
     return this.db
-      .query(`SELECT * FROM commerce_tender_notices WHERE tender_id = ? ORDER BY supplier_did`, [
-        tenderId,
-      ])
+      .query(
+        `SELECT * FROM commerce_tender_notices WHERE tender_id = ? ORDER BY supplier_did, outcome`,
+        [tenderId],
+      )
       .map(noticeFromRow);
   }
 
   updateNotice(
     tenderId: string,
     supplierDid: string,
+    outcome: QuoteOutcome,
     state: TenderNoticeState,
     attempts: number,
     atMs: number,
   ): void {
     this.db.run(
       `UPDATE commerce_tender_notices SET state = ?, attempts = ?, updated_at = ?
-        WHERE tender_id = ? AND supplier_did = ?`,
-      [state, attempts, atMs, tenderId, supplierDid],
+        WHERE tender_id = ? AND supplier_did = ? AND outcome = ?`,
+      [state, attempts, atMs, tenderId, supplierDid, outcome],
     );
   }
 
@@ -279,6 +296,18 @@ export class SQLiteBuyerNegotiationRepository implements BuyerNegotiationReposit
         state,
       ])
       .map(tenderFromRow);
+  }
+
+  listLapsedTenderIds(nowMs: number): string[] {
+    return this.db
+      .query(
+        `SELECT t.tender_id FROM commerce_tenders t
+           LEFT JOIN commerce_tender_negotiation n ON n.tender_id = t.tender_id
+          WHERE t.expires_at <= ? AND (n.state IS NULL OR n.state IN ('negotiating', 'ready'))
+          ORDER BY t.expires_at`,
+        [nowMs],
+      )
+      .map((row) => String(row.tender_id));
   }
 
   moveTender(

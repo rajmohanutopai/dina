@@ -84,7 +84,12 @@ export function readCounterOffer(value: unknown, sha256: Sha256Fn): ReadCounterO
   return error === null ? { ok: true, counter: value as CounterOffer } : { ok: false, error };
 }
 
-export const QUOTE_OUTCOMES = ['not_awarded'] as const;
+/**
+ * `not_awarded`: the quote was not awarded (an award went elsewhere, or the
+ * tender closed with none). `negotiation_closed`: the buyer sends no more
+ * counters on this quote; the quote may still be awarded.
+ */
+export const QUOTE_OUTCOMES = ['not_awarded', 'negotiation_closed'] as const;
 export type QuoteOutcome = (typeof QUOTE_OUTCOMES)[number];
 
 export interface QuoteOutcomeNotice {

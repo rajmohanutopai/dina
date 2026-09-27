@@ -66,8 +66,9 @@ above is lifted, breaks do not bump the version.
   (`counter_digest`); vector-pinned in `negotiation.test.ts` and
   cross-checked by an independent recomputation. The supplier's answer is a
   §9.8 revision of that quote or the head unchanged, so no new quote record
-  exists. `QuoteOutcomeNotice` (`not_awarded`) carries no price, no winner
-  and no other field, and has no digest. `QuoteRequestLine.requirement`
+  exists. `QuoteOutcomeNotice` (`not_awarded`, or `negotiation_closed`: the
+  buyer sends no more counters and the quote may still be awarded) carries no
+  price, no winner and no other field, and has no digest. `QuoteRequestLine.requirement`
   (`text`, optional `category_id`) is new at minor **1.2**: the line's
   product must be a `custom` placeholder the buyer issued, and
   `acceptable_substitutions` must be `supplier_may_propose`.

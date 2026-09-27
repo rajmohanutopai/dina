@@ -12,6 +12,7 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { queryAudit, resetAuditState } from '../../src/audit/service';
 import {
   counterInFlight,
   rankTender,
@@ -300,12 +301,26 @@ interface Pair {
 }
 
 /** Buyer asks, supplier (with a policy) quotes 100 x 500, buyer holds it. */
-async function negotiatingPair(policy: SupplierNegotiationPolicy = POLICY): Promise<Pair> {
+async function negotiatingPair(
+  policy: SupplierNegotiationPolicy = POLICY,
+  /** Wire the supplier's owner-decision handler, as production does. */
+  withDecisionHandler = false,
+): Promise<Pair> {
   const buyer = openRuntime(BUYER_DID);
   const supplier = openRuntime(SUPPLIER_DID);
-  const workflow = new WorkflowService({
+  let workflow: WorkflowService | null = null;
+  workflow = new WorkflowService({
     repository: new InMemoryWorkflowRepository(),
     nowMsFn: () => NOW,
+    ...(withDecisionHandler
+      ? {
+          approvalDecisionHandler: makeNegotiationPriceDecisionHandler({
+            runtime: () => supplier,
+            workflow: () => workflow,
+            nowMs: () => NOW,
+          }),
+        }
+      : {}),
   });
   setWorkflowService(workflow);
   expect(supplier.settings.writeSupplier(supplierSettings(policy)).ok).toBe(true);
@@ -465,6 +480,47 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
     });
     expect(buyerReceives(pair, third, r3.json)).toBe('applied');
     expect(headPrice(pair)).toBe('425');
+  });
+
+  it('a buyer\'s "no more counters" closes the owner\'s price card without closing the quote or counting as a no', async () => {
+    const pair = await negotiatingPair(
+      {
+        ...POLICY,
+        items: [{ product: GTIN, floorMinorUnits: '420', autoFloorMinorUnits: '450' }],
+      },
+      true,
+    );
+    const first = await buyerCounters(pair, '40000');
+    const r1 = supplierAnswers(pair, first) as { json: string };
+    expect(buyerReceives(pair, first, r1.json)).toBe('applied');
+    const second = await buyerCounters(pair, '40000');
+    supplierAnswers(pair, second);
+    installCommerceRuntime(pair.supplier);
+    const [question] = pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id);
+    const cardId = question?.taskId ?? '';
+    expect(pair.workflow.store().getById(cardId)?.status).toBe('pending_approval');
+    resetAuditState();
+
+    expect(
+      answerQuoteOutcomeInCore({
+        params: {
+          request_id: pair.quote.request_id,
+          quote_id: pair.quote.quote_id,
+          outcome: 'negotiation_closed',
+        },
+        buyerDid: BUYER_DID,
+        nowMs: NOW,
+      }),
+    ).toEqual({ ok: true, json: JSON.stringify({ recorded: true }) });
+    // The integration report (2026-09-27): the card sat pending after the
+    // buyer's tender had stopped negotiating, where a yes could do nothing.
+    expect(pair.workflow.store().getById(cardId)?.status).toBe('cancelled');
+    expect(pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id)[0]?.state).toBe(
+      'withdrawn',
+    );
+    expect(queryAudit({ action: 'owner_price_denied' })).toHaveLength(0);
+    // The quote itself stays open: it may still be awarded.
+    expect(pair.supplier.negotiation.outcomeFor(BUYER_DID, pair.quote.quote_id)).toBeNull();
   });
 
   it('a runner that wants to go under the hard floor gets the owner asked about the floor, never below it', async () => {
@@ -849,7 +905,9 @@ describe('items 6, 8, 9 — two suppliers, one tender, the loop runs to ready', 
       installCommerceRuntime(buyer);
       const mark = sent.length;
       const count = await runNegotiationTick(NOW);
-      for (const wire of sent.slice(mark)) {
+      for (const wire of sent
+        .slice(mark)
+        .filter((w) => w.body.capability === 'com.dinakernel.commerce.counter_offer')) {
         const supplier = runtimes[wire.toDid] as CommerceRuntime;
         const counter = wire.body.params as CounterOffer;
         installCommerceRuntime(supplier);
@@ -888,9 +946,24 @@ describe('items 6, 8, 9 — two suppliers, one tender, the loop runs to ready', 
     expect(await round()).toBe(2); // A 500 -> 460; B 480 -> 450
     expect(await round()).toBe(2); // A 460 -> 450 (its floor); B 450 -> 435
     expect(await round()).toBe(2); // A holds at 450; B 435 -> 432 (its floor)
+    const beforeReady = sent.length;
     expect(await round()).toBe(0); // A held, B spent its three rounds: ready
     installCommerceRuntime(buyer);
     expect(buyer.buyerNegotiation.getTender(created.tenderId)?.state).toBe('ready');
+    // Both were countered, so both hear no more counters are coming; the
+    // quotes stay open for the award.
+    expect(
+      sent
+        .slice(beforeReady)
+        .filter((w) => w.body.capability === 'com.dinakernel.commerce.quote_outcome')
+        .map((w) => [w.toDid, (w.body.params as { outcome: string }).outcome])
+        .sort(),
+    ).toEqual(
+      [
+        [SUPPLIER_B, 'negotiation_closed'],
+        [SUPPLIER_DID, 'negotiation_closed'],
+      ].sort(),
+    );
 
     const ranked = rankTender({ tenderId: created.tenderId, nowMs: NOW });
     if (!ranked.ok) throw new Error(ranked.refusal);
@@ -1051,7 +1124,12 @@ describe('item 6 — a retained counter that no longer checks out', () => {
     expect(sent.length).toBe(mark);
     expect(buyer.buyerNegotiation.getCounter(stored.counterId)?.attempts).toBe(2);
     expect(await runNegotiationTick(NOW + 20 * 60_000)).toBe(0);
-    expect(sent.length).toBe(mark);
+    // No counter goes again; reaching ready tells the supplier no more will.
+    expect(
+      sent
+        .slice(mark)
+        .map((w) => [w.body.capability, (w.body.params as { outcome?: string }).outcome]),
+    ).toEqual([['com.dinakernel.commerce.quote_outcome', 'negotiation_closed']]);
     expect(buyer.buyerNegotiation.getTender(created.tenderId)?.state).toBe('ready');
   });
 });
@@ -1726,7 +1804,12 @@ describe('dual review round 2 — pinned fixes', () => {
     });
     const mark = sent.length;
     expect(await runNegotiationTick(NOW)).toBe(1);
-    expect(sent.slice(mark).map((w) => w.toDid)).toEqual([SUPPLIER_DID]);
+    expect(
+      sent
+        .slice(mark)
+        .filter((w) => w.body.capability === 'com.dinakernel.commerce.counter_offer')
+        .map((w) => w.toDid),
+    ).toEqual([SUPPLIER_DID]);
     expect(t.buyer.buyerNegotiation.getTender(t.tenderId)?.state).toBe('ready');
   });
 });
@@ -1742,7 +1825,12 @@ describe('dual review round 3 — pinned fixes', () => {
     installCommerceRuntime(t.buyer);
     const mark = sent.length;
     expect(await runNegotiationTick(NOW)).toBe(1);
-    expect(sent.slice(mark).map((w) => w.toDid)).toEqual([SUPPLIER_DID]);
+    expect(
+      sent
+        .slice(mark)
+        .filter((w) => w.body.capability === 'com.dinakernel.commerce.counter_offer')
+        .map((w) => w.toDid),
+    ).toEqual([SUPPLIER_DID]);
     expect(t.buyer.buyerNegotiation.getTender(t.tenderId)?.state).toBe('ready');
   });
 

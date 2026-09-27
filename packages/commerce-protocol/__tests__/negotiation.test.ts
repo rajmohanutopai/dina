@@ -92,6 +92,24 @@ describe('QuoteOutcomeNotice', () => {
       /request_id/,
     );
   });
+
+  it('may also say negotiation_closed — no more counters, still nothing about terms', () => {
+    expect(
+      validateQuoteOutcomeNotice({
+        request_id: 'r-1',
+        quote_id: 'q-1',
+        outcome: 'negotiation_closed',
+      }),
+    ).toBeNull();
+    expect(
+      validateQuoteOutcomeNotice({
+        request_id: 'r-1',
+        quote_id: 'q-1',
+        outcome: 'negotiation_closed',
+        deadline: '2026-09-27T00:00:00Z',
+      }),
+    ).toMatch(/carries no terms/);
+  });
 });
 
 describe('requirement lines (minor 1.2)', () => {

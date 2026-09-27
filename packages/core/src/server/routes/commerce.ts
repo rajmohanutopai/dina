@@ -93,7 +93,9 @@ import { getBuyerOrderSender, submitApprovedOrder } from '../../commerce/buyer_e
 import {
   counterInFlight,
   rankTender,
+  recordNegotiationClosedNotices,
   recordNotAwardedNotices,
+  retireTenderReadyCard,
   sendCounterOffer,
   sendNotAwardedNotices,
   startTenderNegotiation,
@@ -7183,6 +7185,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           // read whether each one went (the first answer carried `sent`).
           not_awarded_notices: runtime.buyerNegotiation
             .listNoticesForTender(tenderId)
+            .filter((notice) => notice.outcome === 'not_awarded')
             .map((notice) => ({
               supplier_did: notice.supplierDid,
               sent: notice.state === 'sent',
@@ -7268,12 +7271,19 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         moved = runtime.buyerNegotiation.moveTender(tenderId, 'negotiating', 'awarded', now, award);
       } else {
         moved = runtime.buyerNegotiation.moveTender(tenderId, policy.state, 'awarded', now, award);
+        // Awarded mid-negotiation: the winner, if it was countered, hears no
+        // more counters are coming (a ready tender told it already).
+        if (moved && policy.state === 'negotiating') {
+          recordNegotiationClosedNotices(runtime, tenderId, pick.supplier_did, now);
+        }
       }
       if (moved) recordNotAwardedNotices(runtime, tenderId, pick.supplier_did, now);
     });
     if (!moved) {
       return { status: 409, body: { error: 'tender_moved', detail: 'the tender changed while awarding' } };
     }
+    // The owner's "tender ready" card asked for this decision; it is made.
+    retireTenderReadyCard(tenderId, 'tender_awarded');
     const notices = await sendNotAwardedNotices({ tenderId, winnerDid: pick.supplier_did, nowMs: now });
     return {
       status: 200,

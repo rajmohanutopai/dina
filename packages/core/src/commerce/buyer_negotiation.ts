@@ -497,6 +497,20 @@ export async function runNegotiationTick(nowMs: number): Promise<number> {
   const tickStart = runtime.now();
   const clock = (): number => nowMs + Math.max(0, runtime.now() - tickStart);
   let sent = 0;
+  // A tender whose window ran out with no award can no longer be awarded.
+  // It closes, its ready card goes, and every quoted supplier is told its
+  // quote was not awarded, which closes any price question its owner still
+  // has open. Before the window ends a ready tender may still be awarded, so
+  // nothing is said at "ready". This runs first, so no counter goes out on a
+  // tender about to close.
+  for (const tenderId of runtime.buyerNegotiation.listLapsedTenderIds(clock())) {
+    const now = clock();
+    const policy = runtime.buyerNegotiation.getTender(tenderId);
+    if (policy !== null && (policy.state === 'awarded' || policy.state === 'closed')) continue;
+    if (closeExpiredTender(runtime, tenderId, policy, now)) {
+      retireTenderReadyCard(tenderId, 'tender_expired');
+    }
+  }
   for (const tender of runtime.buyerNegotiation.listTenders('negotiating')) {
     sent += await negotiateOnce(runtime, tender, clock);
   }
@@ -522,13 +536,58 @@ export async function runNegotiationTick(nowMs: number): Promise<number> {
       await resendCounter(runtime, mine, member.serviceRkey, now);
     }
   }
-  // Notices written with an award and not yet taken by the transport.
+  // Notices written with an award or a close, not yet taken by the transport.
   for (const notice of runtime.buyerNegotiation.listNotices('pending')) {
     const now = clock();
     if (notice.attempts > 0 && now - notice.updatedAt < NOTICE_RETRY_MS) continue;
     await deliverNotice(runtime, notice, now);
   }
   return sent;
+}
+
+/**
+ * Cards raised before an award retired them: a tender already awarded or
+ * closed has nothing left to ask. Run once when the sweeper starts.
+ */
+export function retireSettledTenderReadyCards(): void {
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return;
+  for (const tender of runtime.buyerNegotiation.listTenders('awarded')) {
+    retireTenderReadyCard(tender.tenderId, 'tender_awarded');
+  }
+  for (const tender of runtime.buyerNegotiation.listTenders('closed')) {
+    retireTenderReadyCard(tender.tenderId, 'tender_expired');
+  }
+}
+
+/**
+ * Close a tender whose window ran out unawarded, and record a not-awarded
+ * notice for every supplier that quoted — together, so a crash cannot close
+ * it silently. A tender opened without a policy gets a record naming no
+ * target and no budget, as an award would give it.
+ */
+function closeExpiredTender(
+  runtime: CommerceRuntime,
+  tenderId: string,
+  policy: TenderNegotiation | null,
+  nowMs: number,
+): boolean {
+  let moved = false;
+  runtime.runInTransaction(() => {
+    if (policy === null) {
+      startTenderNegotiation(
+        tenderId,
+        { currency: '', targetTotalMinor: '', budgetCeilingMinor: '' },
+        nowMs,
+      );
+      moved = runtime.buyerNegotiation.moveTender(tenderId, 'negotiating', 'closed', nowMs);
+    } else {
+      moved = runtime.buyerNegotiation.moveTender(tenderId, policy.state, 'closed', nowMs);
+    }
+    if (moved) recordNotAwardedNotices(runtime, tenderId, '', nowMs);
+  });
+  if (moved) appendAudit('negotiation', 'tender_closed', tenderId, 'reason=expired');
+  return moved;
 }
 
 /**
@@ -681,7 +740,14 @@ function markReady(
   nowMs: number,
   reason: TenderReadyCardPayload['reason'],
 ): void {
-  if (!runtime.buyerNegotiation.moveTender(tender.tenderId, 'negotiating', 'ready', nowMs)) return;
+  let moved = false;
+  runtime.runInTransaction(() => {
+    moved = runtime.buyerNegotiation.moveTender(tender.tenderId, 'negotiating', 'ready', nowMs);
+    // No more counters will go: a supplier whose owner was asked about one
+    // is told, so the question does not sit open while the tender waits.
+    if (moved) recordNegotiationClosedNotices(runtime, tender.tenderId, null, nowMs);
+  });
+  if (!moved) return;
   const ranking = rankTender({ tenderId: tender.tenderId, nowMs });
   const ranked = ranking.ok ? ranking.ranking.ranked : [];
   appendAudit(
@@ -720,6 +786,27 @@ function markReady(
   }
 }
 
+/**
+ * The owner's "tender ready" card asks nothing once the tender is awarded or
+ * closed: an award from any surface, or a window that ran out, takes it down
+ * so it never sits pending over a decision already made.
+ */
+export function retireTenderReadyCard(
+  tenderId: string,
+  reason: 'tender_awarded' | 'tender_expired',
+): void {
+  const workflow = getWorkflowService();
+  if (workflow === null) return;
+  const id = `tender-ready-${tenderId}`;
+  const task = workflow.store().getById(id);
+  if (task === null || task.status !== WorkflowTaskState.PendingApproval) return;
+  try {
+    workflow.cancel(id, reason);
+  } catch {
+    /* the owner cleared it first */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The not-awarded notice
 // ---------------------------------------------------------------------------
@@ -741,6 +828,12 @@ export async function sendNotAwardedNotices(args: {
   const results: { supplier_did: string; sent: boolean }[] = [];
   for (const notice of runtime.buyerNegotiation.listNotices('pending')) {
     if (notice.tenderId !== args.tenderId) continue;
+    if (notice.outcome !== 'not_awarded') {
+      // The winner's "no more counters" rides the same send; it is not
+      // reported as a not-awarded notice.
+      await deliverNotice(runtime, notice, args.nowMs);
+      continue;
+    }
     results.push({
       supplier_did: notice.supplierDid,
       sent: await deliverNotice(runtime, notice, args.nowMs),
@@ -749,7 +842,7 @@ export async function sendNotAwardedNotices(args: {
   return results;
 }
 
-/** The notice intents for an award — written before anything is sent. */
+/** The notice intents for an award or a close — written before anything is sent. */
 export function recordNotAwardedNotices(
   runtime: CommerceRuntime,
   tenderId: string,
@@ -761,6 +854,39 @@ export function recordNotAwardedNotices(
     runtime.buyerNegotiation.putNotice({
       tenderId,
       supplierDid: member.supplierDid,
+      outcome: 'not_awarded',
+      requestId: member.requestId,
+      quoteId: member.quoteId,
+      serviceRkey: member.serviceRkey,
+      state: 'pending',
+      attempts: 0,
+      updatedAt: nowMs,
+    });
+  }
+}
+
+/**
+ * "No more counters" for every supplier this tender countered, except the one
+ * named (its own notice is written by the caller). A supplier never countered
+ * has no owner question to close and is not told.
+ */
+export function recordNegotiationClosedNotices(
+  runtime: CommerceRuntime,
+  tenderId: string,
+  onlyDid: string | null,
+  nowMs: number,
+): void {
+  for (const member of runtime.tenders.listMembers(tenderId)) {
+    if (member.quoteId === '') continue;
+    if (onlyDid !== null && member.supplierDid !== onlyDid) continue;
+    const countered = runtime.buyerNegotiation
+      .countersForQuote(member.supplierDid, member.quoteId)
+      .some((c) => c.tenderId === tenderId);
+    if (!countered) continue;
+    runtime.buyerNegotiation.putNotice({
+      tenderId,
+      supplierDid: member.supplierDid,
+      outcome: 'negotiation_closed',
       requestId: member.requestId,
       quoteId: member.quoteId,
       serviceRkey: member.serviceRkey,
@@ -783,13 +909,16 @@ async function deliverNotice(
     const params: QuoteOutcomeNotice = {
       request_id: notice.requestId,
       quote_id: notice.quoteId,
-      outcome: 'not_awarded',
+      outcome: notice.outcome,
     };
     try {
       const result = await dispatch({
         toDid: notice.supplierDid,
         body: {
-          query_id: `out_${notice.requestId}`,
+          query_id:
+            notice.outcome === 'not_awarded'
+              ? `out_${notice.requestId}`
+              : `ncl_${notice.requestId}`,
           capability: QUOTE_OUTCOME_WIRE_CAPABILITY,
           params,
           ttl_seconds: COUNTER_TTL_SECONDS,
@@ -804,6 +933,7 @@ async function deliverNotice(
   runtime.buyerNegotiation.updateNotice(
     notice.tenderId,
     notice.supplierDid,
+    notice.outcome,
     sent ? 'sent' : attempts >= MAX_NOTICE_ATTEMPTS ? 'abandoned' : 'pending',
     attempts,
     nowMs,
@@ -823,7 +953,7 @@ export interface NegotiationSweeperOptions {
   clearInterval?: (handle: unknown) => void;
 }
 
-/** Runs the loop on a timer. Idle on a node with no negotiating tender. */
+/** Runs the loop on a timer: negotiate, close tenders that ran out, send notices. */
 export class NegotiationSweeper {
   private handle: unknown = null;
   private running = false;
@@ -832,6 +962,7 @@ export class NegotiationSweeper {
 
   start(): void {
     if (this.handle !== null) return;
+    retireSettledTenderReadyCards();
     const every = this.options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
     this.handle = every(() => {
       void this.runTick().catch((err: unknown) => this.options.onError?.(err));

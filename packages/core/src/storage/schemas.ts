@@ -2869,6 +2869,51 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE commerce_tender_members ADD COLUMN service_rkey TEXT NOT NULL DEFAULT 'self';
     `,
   },
+  {
+    version: 50,
+    name: 'commerce_tender_notice_outcomes',
+    // NEGOTIATION_PLAN §4.6. A tender now tells a supplier two things: that
+    // it will send no more counters (`negotiation_closed`, the quote may still
+    // be awarded) and that the quote was not awarded. One supplier can be
+    // owed both, so the outcome joins the key. Rebuilt, not altered: SQLite
+    // cannot change a primary key in place. Existing rows were all
+    // not-awarded notices. The first statement is for a vault that recorded
+    // v49 before v49 gained this table: it then migrates an empty one.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_tender_notices (
+        tender_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sent', 'abandoned')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tender_id, supplier_did)
+      );
+      CREATE TABLE commerce_tender_notices_v50 (
+        tender_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('not_awarded', 'negotiation_closed')),
+        request_id TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'sent', 'abandoned')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (tender_id, supplier_did, outcome)
+      );
+      INSERT INTO commerce_tender_notices_v50
+        (tender_id, supplier_did, outcome, request_id, quote_id, service_rkey, state, attempts, updated_at)
+        SELECT tender_id, supplier_did, 'not_awarded', request_id, quote_id, service_rkey, state,
+               attempts, updated_at
+          FROM commerce_tender_notices;
+      DROP TABLE commerce_tender_notices;
+      ALTER TABLE commerce_tender_notices_v50 RENAME TO commerce_tender_notices;
+      CREATE INDEX IF NOT EXISTS idx_tender_notices_state
+        ON commerce_tender_notices(state, updated_at);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------
