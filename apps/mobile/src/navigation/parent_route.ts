@@ -60,6 +60,24 @@ const SECTION_PARENTS: Record<string, string> = {
   'service-settings': '/my-listings',
   'recovery-phrase': '/settings',
   'confirm-recovery-phrase': '/settings',
+  'change-passphrase': '/settings',
+  // Trade family. Settings opens Trade, Orders, Catalog, Business identity and
+  // Staff, so they return there; screens opened from Trade return to Trade.
+  // A screen with a second opener (Trade → Orders, Orders → Ask for quotes,
+  // the chat card, the Activity inbox) is pushed with `?from=`, which the
+  // back button honours over this map.
+  trade: '/settings',
+  orders: '/settings',
+  catalog: '/settings',
+  'business-identity': '/settings',
+  'staff-grants': '/settings',
+  tender: '/trade',
+  'ask-quotes': '/trade',
+  invites: '/trade',
+  'order-draft': '/orders',
+  'catalog-draft': '/catalog',
+  'contact-trade-details': '/people',
+  'staff-join': '/staff-home',
   // /peerlens-preferences index returns to Settings; its sub-screens
   // (region, budget, devices, languages, dietary, accessibility)
   // return to the index page — handled as a special case in

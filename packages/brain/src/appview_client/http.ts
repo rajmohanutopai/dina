@@ -72,6 +72,11 @@ export interface ServiceProfile {
   /** Distance in km from the query location, if the query supplied lat/lng. */
   distanceKm?: number;
   /**
+   * PeerLens trust of the operator, 0..1, as `service.search` ranks it;
+   * null for an operator with no history. Absent from `getByUri`.
+   */
+  trustScore?: number | null;
+  /**
    * AT-URI of THIS listing (`at://<did>/com.dinakernel.service.profile/<rkey>`). A
    * provider DID may publish many listings (marketplace multi-listing per DID);
    * the uri disambiguates which one was chosen so it can ride the service.query.

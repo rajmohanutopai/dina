@@ -1,8 +1,9 @@
 /**
  * PeerLens read proxy — the web thin-client's same-origin AppView lane.
  *
- * Forwards only read-only `com.dinakernel.peerlens.*` GET xRPCs to the
- * configured AppView server-side (so the browser never calls external infra
+ * Forwards only read-only GET xRPCs — `com.dinakernel.peerlens.*` and the
+ * supplier finder's three discovery reads, by exact name — to the configured
+ * AppView server-side (so the browser never calls external infra
  * directly → no CORS); refuses anything else and never masks the upstream
  * status.
  */
@@ -56,6 +57,47 @@ describe('Brain — PeerLens read proxy (web thin-client)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/peerlens/xrpc/com.dinakernel.test.injectAttestation?token=x',
+    });
+    expect(res.statusCode).toBe(404);
+    expect(captured).toHaveLength(0);
+    await app.close();
+  });
+
+  it.each([
+    'com.dinakernel.commerce.searchCatalog?q=cake&region=postal_area%3A560001',
+    'com.dinakernel.service.search?capability=com.dinakernel.commerce.request_quote&q=cake',
+    'com.dinakernel.service.getByUri?uri=at%3A%2F%2Fdid%3Aplc%3Ax%2Fcom.dinakernel.service.profile%2Fshop',
+  ])('forwards the supplier finder’s public read %s', async (path) => {
+    const captured: Captured[] = [];
+    const app = makeApp(captured);
+    const res = await app.inject({ method: 'GET', url: `/api/peerlens/xrpc/${path}` });
+    expect(res.statusCode).toBe(200);
+    expect(captured.map((c) => [c.url, c.method])).toEqual([
+      [`https://appview.example/xrpc/${path}`, 'GET'],
+    ]);
+    await app.close();
+  });
+
+  it.each([
+    'com.dinakernel.commerce.publishCatalog',
+    'com.dinakernel.service.searchX',
+    'com.dinakernel.commerce.searchCatalogs',
+  ])('refuses a name that only resembles a discovery read (%s)', async (nsid) => {
+    const captured: Captured[] = [];
+    const app = makeApp(captured);
+    const res = await app.inject({ method: 'GET', url: `/api/peerlens/xrpc/${nsid}` });
+    expect(res.statusCode).toBe(404);
+    expect(captured).toHaveLength(0);
+    await app.close();
+  });
+
+  it('only GET: a POST to an allowed name reaches no route', async () => {
+    const captured: Captured[] = [];
+    const app = makeApp(captured);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/peerlens/xrpc/com.dinakernel.service.search',
+      payload: {},
     });
     expect(res.statusCode).toBe(404);
     expect(captured).toHaveLength(0);

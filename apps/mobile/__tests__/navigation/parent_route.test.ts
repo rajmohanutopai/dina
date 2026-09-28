@@ -9,6 +9,9 @@
  *   - Unknown / malformed paths default to Chat (defensive)
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import { parentRouteFor } from '../../src/navigation/parent_route';
 
 describe('parentRouteFor', () => {
@@ -115,6 +118,50 @@ describe('parentRouteFor', () => {
     it('help → /', () => {
       expect(parentRouteFor('/help')).toBe('/');
     });
+  });
+
+  describe('Trade family', () => {
+    it.each([
+      ['/trade', '/settings'],
+      ['/orders', '/settings'],
+      ['/catalog', '/settings'],
+      ['/business-identity', '/settings'],
+      ['/staff-grants', '/settings'],
+      ['/change-passphrase', '/settings'],
+      ['/tender', '/trade'],
+      ['/ask-quotes', '/trade'],
+      ['/invites', '/trade'],
+      ['/order-draft', '/orders'],
+      ['/catalog-draft', '/catalog'],
+      ['/contact-trade-details', '/people'],
+    ])('%s → %s', (from, to) => {
+      expect(parentRouteFor(from)).toBe(to);
+    });
+  });
+
+  describe('every screen with a back chevron has a parent', () => {
+    // A screen added to the root layout with the back chevron but left out of
+    // the map sent the owner to Chat (Trade, Tender, Ask for quotes …). Read
+    // the layout so the next screen cannot miss it. Only the hamburger items
+    // return to Chat on purpose.
+    const HOME_ON_PURPOSE = new Set(['settings', 'reminders', 'help']);
+    const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '_layout.tsx'), 'utf8');
+    const screens = [...layout.matchAll(/<Tabs\.Screen\s+name="([^"]+)"([\s\S]*?)\/>/g)]
+      .filter((m) => (m[2] ?? '').includes('renderHeaderBackButton'))
+      .map((m) => (m[1] ?? '').replace(/\/index$/, '').replace(/\/\[[^\]]+\]$/, '/x'));
+
+    it('finds the screens', () => {
+      expect(screens).toEqual(
+        expect.arrayContaining(['trade', 'tender', 'ask-quotes', 'subscriptions']),
+      );
+    });
+
+    it.each(screens.filter((s) => !HOME_ON_PURPOSE.has(s)))(
+      '/%s does not fall back to Chat',
+      (screen) => {
+        expect(parentRouteFor(`/${screen}`)).not.toBe('/');
+      },
+    );
   });
 
   describe('Defensive handling', () => {

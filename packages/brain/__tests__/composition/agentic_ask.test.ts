@@ -183,7 +183,7 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.provider.name).toContain('reason');
   });
 
-  it('registers all 20 agentic tools on the tool registry', () => {
+  it('registers all 21 agentic tools on the tool registry', () => {
     // 10 substrate / discovery tools (incl. search_capabilities — the
     // Layer-4 intent→canonical-capability discovery step that precedes
     // search_provider_services) + classify_intent (re-routing mid-loop)
@@ -196,7 +196,9 @@ describe('buildAgenticAskPipeline', () => {
     // coordinate_group (GROUP_COORDINATION §11 — the one tool that touches N
     // contacts; Core fans out and folds) + group_plan_handoff (§10 — the slot
     // and de-identified requirements a settled plan yields to the vendor
-    // lane). The full set is documented in composition/agentic_ask.ts.
+    // lane) + draft_quote_request (ASK_FOR_QUOTES_PLAN §2 — drafts a request
+    // for quotes; the card opens the Ask for quotes screen, nothing is sent).
+    // The full set is documented in composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
     const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
     expect(names).toEqual(
@@ -204,6 +206,7 @@ describe('buildAgenticAskPipeline', () => {
         'browse_vault',
         'classify_intent',
         'coordinate_group',
+        'draft_quote_request',
         'draft_review',
         'find_person',
         'find_preferred_provider',
@@ -223,7 +226,7 @@ describe('buildAgenticAskPipeline', () => {
         'vault_search',
       ].sort(),
     );
-    expect(pipeline.tools.size()).toBe(20);
+    expect(pipeline.tools.size()).toBe(21);
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {

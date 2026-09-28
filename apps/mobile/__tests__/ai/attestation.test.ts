@@ -5,7 +5,7 @@
  * graceful-fallback path that decides whether a claim even attempts.
  */
 
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 
 import {
@@ -14,7 +14,7 @@ import {
   getPlayIntegrityToken,
 } from '../../src/ai/attestation';
 
-jest.mock('expo-modules-core', () => ({
+jest.mock('expo', () => ({
   requireOptionalNativeModule: jest.fn(),
 }));
 

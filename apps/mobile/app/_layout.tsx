@@ -41,7 +41,7 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
-import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
+import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
@@ -990,6 +990,15 @@ export default function RootLayout() {
                   name="tender"
                   options={{
                     title: 'Tender',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    tabBarStyle: { display: 'none' },
+                  }}
+                />
+                <Tabs.Screen
+                  name="ask-quotes"
+                  options={{
+                    title: 'Ask for quotes',
                     href: null,
                     headerLeft: renderHeaderBackButton,
                     tabBarStyle: { display: 'none' },

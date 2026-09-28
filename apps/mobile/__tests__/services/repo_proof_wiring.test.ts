@@ -15,9 +15,15 @@ jest.mock('@dina/net-expo/repo_proof', () => ({
 }));
 
 const createMock = createRepoProofVerifier as jest.MockedFunction<typeof createRepoProofVerifier>;
-const selfCheckMock = selfCheckRepoProofVerifier as jest.MockedFunction<typeof selfCheckRepoProofVerifier>;
+const selfCheckMock = selfCheckRepoProofVerifier as jest.MockedFunction<
+  typeof selfCheckRepoProofVerifier
+>;
 
-const REQ = { did: 'did:plc:acme0000000000000000000', collection: 'com.dinakernel.plugin.release', rkey: 'abc' };
+const REQ = {
+  did: 'did:plc:acme0000000000000000000',
+  collection: 'com.dinakernel.plugin.release',
+  rkey: 'abc',
+};
 const SECRETISH = 'resolve did:plc:acme0000000000000000000: https://pds.acme.example/xrpc/…';
 
 let warn: jest.SpyInstance;
@@ -44,6 +50,20 @@ describe('makeMobileRepoProofVerifier', () => {
     ]);
   });
 
+  it('the self-check’s detail about the fixture rides along, so a device log names the missing step', async () => {
+    selfCheckMock.mockResolvedValue({
+      ok: false,
+      fault: 'record_malformed',
+      detail: "proof CAR for fixture-rkey: Cannot read property 'digest' of undefined",
+    });
+    await expect(makeMobileRepoProofVerifier()).resolves.toBeNull();
+    expect(warn.mock.calls[0]).toEqual([
+      '[plugins] repo-proof verifier self-check failed; install door stays closed',
+      'record_malformed',
+      "proof CAR for fixture-rkey: Cannot read property 'digest' of undefined",
+    ]);
+  });
+
   it('a self-check that THROWS is a failed self-check, logged by class', async () => {
     selfCheckMock.mockRejectedValue(new ReferenceError(`Buffer is not defined ${SECRETISH}`));
     await expect(makeMobileRepoProofVerifier()).resolves.toBeNull();
@@ -60,7 +80,9 @@ describe('makeMobileRepoProofVerifier', () => {
     const verifier = await makeMobileRepoProofVerifier();
     if (verifier === null) throw new Error('expected a verifier');
     // The platform fetch is handed in; the chain never reaches for a global.
-    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({ fetch: expect.any(Function) }));
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fetch: expect.any(Function) }),
+    );
 
     const result = await verifier(REQ);
     expect(result).toMatchObject({ ok: false, code: 'did_resolution_failed', transient: true });
@@ -72,7 +94,12 @@ describe('makeMobileRepoProofVerifier', () => {
 
   it('a verifier that answers passes its answer through untouched', async () => {
     selfCheckMock.mockResolvedValue({ ok: true });
-    const answer = { ok: true as const, cid: 'bafy…', rev: 'r1', record: { plugin_id: 'com.acme.widget' } };
+    const answer = {
+      ok: true as const,
+      cid: 'bafy…',
+      rev: 'r1',
+      record: { plugin_id: 'com.acme.widget' },
+    };
     createMock.mockReturnValue(async () => answer);
     const verifier = await makeMobileRepoProofVerifier();
     if (verifier === null) throw new Error('expected a verifier');

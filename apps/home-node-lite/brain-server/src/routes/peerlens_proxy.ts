@@ -12,14 +12,26 @@
  * (mobile) IS the full Home Node and keeps calling the AppView directly, so
  * this proxy is web-only.
  *
- * Scope: read-only `com.dinakernel.peerlens.*` xRPCs over GET. Anything else is
- * refused — a narrow forwarder for PUBLIC trust reads (no vault, no keys),
- * never an open proxy.
+ * Scope: read-only xRPCs over GET — `com.dinakernel.peerlens.*` and the three
+ * public discovery reads the supplier finder uses (ASK_FOR_QUOTES_PLAN §1).
+ * Anything else is refused — a narrow forwarder for PUBLIC reads (no vault,
+ * no keys), never an open proxy.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 const ALLOWED_NSID_PREFIX = 'com.dinakernel.peerlens.';
+
+/** Public discovery reads, exact names: catalog search, listing search, one listing. */
+const ALLOWED_DISCOVERY_NSIDS: ReadonlySet<string> = new Set([
+  'com.dinakernel.commerce.searchCatalog',
+  'com.dinakernel.service.search',
+  'com.dinakernel.service.getByUri',
+]);
+
+function forwardable(nsid: string): boolean {
+  return nsid.startsWith(ALLOWED_NSID_PREFIX) || ALLOWED_DISCOVERY_NSIDS.has(nsid);
+}
 
 export interface PeerlensProxyOptions {
   /** The real AppView base URL to forward to. */
@@ -42,10 +54,10 @@ export function registerPeerlensProxyRoutes(
 
   app.get<{ Params: { nsid: string } }>('/api/peerlens/xrpc/:nsid', async (req, reply) => {
     const { nsid } = req.params;
-    // Narrow forwarder: only the public PeerLens read surface. A non-peerlens
-    // NSID (e.g. the test-inject endpoints) is refused, never forwarded.
-    if (!nsid.startsWith(ALLOWED_NSID_PREFIX)) {
-      return reply.code(404).send({ error: 'not_found', reason: 'not a PeerLens read xRPC' });
+    // Narrow forwarder: only the public read surface. Any other NSID (e.g.
+    // the test-inject endpoints) is refused, never forwarded.
+    if (!forwardable(nsid)) {
+      return reply.code(404).send({ error: 'not_found', reason: 'not a public read xRPC' });
     }
     const rawUrl = req.raw.url ?? '';
     const qIdx = rawUrl.indexOf('?');

@@ -21,8 +21,12 @@ import { REPO_PROOF_FIXTURE } from './repo_proof_fixture';
 
 export type RepoProofSelfCheck =
   | { ok: true }
-  /** `fault` is a class name or a failure code — metadata, never request data. */
-  | { ok: false; fault: string };
+  /**
+   * `fault` is a class name or a failure code; `detail` is the chain's message
+   * about the FIXTURE (never a request), so a device log says which library
+   * step could not run on this host.
+   */
+  | { ok: false; fault: string; detail?: string };
 
 /** The fixture's DID document: its signing key and an https PDS the fetch below answers for. */
 function fixtureDidDoc(): DidDoc {
@@ -60,9 +64,11 @@ export async function selfCheckRepoProofChain(libs: AtprotoLibs): Promise<RepoPr
       rkey: REPO_PROOF_FIXTURE.rkey,
     });
   } catch (err) {
-    return { ok: false, fault: err instanceof Error ? err.constructor.name : typeof err };
+    return err instanceof Error
+      ? { ok: false, fault: err.constructor.name, detail: err.message }
+      : { ok: false, fault: typeof err };
   }
-  if (!result.ok) return { ok: false, fault: result.code };
+  if (!result.ok) return { ok: false, fault: result.code, detail: result.message };
   if (result.cid !== REPO_PROOF_FIXTURE.cid) return { ok: false, fault: 'cid_mismatch' };
   return { ok: true };
 }

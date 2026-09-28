@@ -11,6 +11,8 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { OwnerCommerceClient } from '../../../src/client/owner-commerce-client';
+import { inProcessOwnerDispatcher } from '../../../src/client/owner-dispatch';
 import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
@@ -190,6 +192,76 @@ function quotesArrive(unitBySupplier: Record<string, string>): void {
     runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
   }
 }
+
+describe('the owner client starts a tender (ASK_FOR_QUOTES_PLAN §2)', () => {
+  const client = (): OwnerCommerceClient =>
+    new OwnerCommerceClient(inProcessOwnerDispatcher(router, OWNER_CAP));
+
+  it('described lines, a region and limits reach every supplier as Core’s requests', async () => {
+    const answer = await client().createTender({
+      suppliers: [
+        { supplierDid: SUPPLIER_A, serviceRkey: 'self' },
+        { supplierDid: SUPPLIER_B, serviceRkey: 'shop' },
+      ],
+      lines: [
+        {
+          lineId: 'l1',
+          text: 'Floral celebration cake, 20 servings',
+          quantity: '1',
+          unitCode: 'each',
+        },
+      ],
+      region: { scheme: 'postal_area', value: '560001' },
+      currency: 'INR',
+      limits: {
+        targetMinorUnits: '250000',
+        ceilingMinorUnits: '300000',
+        maxRounds: 2,
+        deadlineSeconds: 7200,
+      },
+    });
+    expect(answer.tenderId).toMatch(/^tnd/);
+    expect(answer.negotiating).toBe(true);
+    expect(answer.members.map((m) => [m.supplierDid, m.sent])).toEqual([
+      [SUPPLIER_A, true],
+      [SUPPLIER_B, true],
+    ]);
+    const requests = sent
+      .filter((w) => w.body.capability === 'com.dinakernel.commerce.request_quote')
+      .map((w) => [w.toDid, w.body.params as QuoteRequest] as const);
+    expect(requests.map(([did]) => did)).toEqual([SUPPLIER_A, SUPPLIER_B]);
+    for (const [, request] of requests) {
+      expect(request.lines[0]).toMatchObject({
+        line_id: 'l1',
+        requirement: { text: 'Floral celebration cake, 20 servings' },
+        requested_quantity: { value: '1', unit_code: 'each' },
+        // A described need: the supplier answers with its own item.
+        acceptable_substitutions: 'supplier_may_propose',
+      });
+      expect(request.delivery.projection.region).toEqual({
+        scheme: 'postal_area',
+        value: '560001',
+      });
+    }
+  });
+
+  it('limits Core refuses are raised with its key, and nothing is sent', async () => {
+    await expect(
+      client().createTender({
+        suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'self' }],
+        lines: [{ lineId: 'l1', text: 'Cake', quantity: '1', unitCode: 'each' }],
+        region: { scheme: 'postal_area', value: '560001' },
+        currency: 'INR',
+        limits: { targetMinorUnits: '300000', ceilingMinorUnits: '250000' },
+      }),
+    ).rejects.toMatchObject({ status: 400, errorKey: 'negotiation_invalid' });
+    expect(sent).toEqual([]);
+  });
+
+  it('reads the buyer settings the screen defaults from', async () => {
+    expect(await client().buyerSettings()).toEqual({ configured: false });
+  });
+});
 
 describe('tender policy on creation', () => {
   it('a valid policy starts negotiation; a bad one is refused before any request leaves', async () => {

@@ -548,7 +548,10 @@ export function ApprovalActionCard({
           accessibilityRole="link"
           style={({ pressed }) => [styles.button, styles.linkButton, pressed && styles.pressed]}
           onPress={() => {
-            router.push({ pathname: '/tender', params: { tender_id: item.tenderId } });
+            router.push({
+              pathname: '/tender',
+              params: { tender_id: item.tenderId, from: '/notifications' },
+            });
           }}
         >
           <Text style={styles.linkText}>Open tender</Text>

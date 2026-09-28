@@ -70,10 +70,32 @@ describe('message_display — group_plan wiring (GROUP_COORDINATION §9)', () =>
   beforeEach(() => resetThreads());
 
   it('classifies a group_plan lifecycle message to the group-plan branch and row kind', () => {
-    addLifecycleMessage('t', '', { kind: 'group_plan', status: 'open', planId: 'gp_1', intent: "Emma's birthday" });
+    addLifecycleMessage('t', '', {
+      kind: 'group_plan',
+      status: 'open',
+      planId: 'gp_1',
+      intent: "Emma's birthday",
+    });
     const thread = getThread('t');
     const msg = thread[thread.length - 1] as ChatMessage;
     expect(toDisplayType(msg)).toBe('group-plan');
     expect(chatRowKind('group-plan')).toBe('group-plan');
+  });
+});
+
+describe('message_display — quote_request_draft wiring (ASK_FOR_QUOTES_PLAN §2)', () => {
+  beforeEach(() => resetThreads());
+
+  it('classifies a quote_request_draft lifecycle message to its own branch and row kind', () => {
+    addLifecycleMessage('t', '', {
+      kind: 'quote_request_draft',
+      status: 'ready',
+      draftId: 'qd_1',
+      draft: { lines: [{ text: 'Cake', quantity: '1', unit_code: 'each' }] },
+    });
+    const thread = getThread('t');
+    const msg = thread[thread.length - 1] as ChatMessage;
+    expect(toDisplayType(msg)).toBe('quote-request-draft');
+    expect(chatRowKind('quote-request-draft')).toBe('quote-request-draft');
   });
 });

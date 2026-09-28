@@ -124,7 +124,10 @@ export default function TradeScreen(): React.ReactElement {
   const openItem = useCallback(
     (item: TradeInboxItemDto) => {
       if (item.kind === 'pending_confirm') {
-        router.push({ pathname: '/order-draft', params: { draft_id: item.subject } });
+        router.push({
+          pathname: '/order-draft',
+          params: { draft_id: item.subject, from: '/trade' },
+        });
         return;
       }
       if (item.kind === 'open_tender' || item.kind === 'awarded_tender') {
@@ -133,7 +136,10 @@ export default function TradeScreen(): React.ReactElement {
       }
       if (item.kind === 'pending_quote') {
         const [draftId] = item.subject.split(':');
-        router.push({ pathname: '/order-draft', params: { draft_id: draftId ?? item.subject } });
+        router.push({
+          pathname: '/order-draft',
+          params: { draft_id: draftId ?? item.subject, from: '/trade' },
+        });
         return;
       }
       if (item.counterparty_did !== '') void openStatement(item.counterparty_did);
@@ -203,7 +209,7 @@ export default function TradeScreen(): React.ReactElement {
           <Pressable
             style={styles.laneButton}
             testID="trade-orders"
-            onPress={() => router.push('/orders')}
+            onPress={() => router.push({ pathname: '/orders', params: { from: '/trade' } })}
           >
             <Text style={styles.laneLabel}>Buying</Text>
             <Text style={styles.laneHint}>Photograph &amp; place orders</Text>
@@ -211,12 +217,19 @@ export default function TradeScreen(): React.ReactElement {
           <Pressable
             style={styles.laneButton}
             testID="trade-catalog"
-            onPress={() => router.push('/catalog')}
+            onPress={() => router.push({ pathname: '/catalog', params: { from: '/trade' } })}
           >
             <Text style={styles.laneLabel}>Supplying</Text>
             <Text style={styles.laneHint}>Catalog &amp; incoming orders</Text>
           </Pressable>
         </View>
+        <Pressable
+          style={styles.inviteRow}
+          testID="trade-ask-quotes"
+          onPress={() => router.push('/ask-quotes')}
+        >
+          <Text style={styles.inviteLabel}>Ask for quotes</Text>
+        </Pressable>
         <Pressable
           style={styles.inviteRow}
           testID="trade-invites"

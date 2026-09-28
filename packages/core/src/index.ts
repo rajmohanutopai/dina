@@ -1173,6 +1173,15 @@ export type {
   TenderOfferView,
   TenderRankingView,
 } from './client/tender_views';
+// ASK_FOR_QUOTES_PLAN §2 — the rules the "Ask for quotes" screen checks
+// before sending, the same ones Core applies (pure; no runtime needed).
+export {
+  DEFAULT_DEADLINE_SECONDS,
+  DEFAULT_MAX_ROUNDS,
+  tenderPolicyError,
+} from './commerce/buyer_negotiation';
+export type { TenderPolicyInput } from './commerce/buyer_negotiation';
+export { DEFAULT_TENDER_FANOUT } from './commerce/tender';
 export * from './session/lifecycle';
 export type { AgentSession, SessionGrant } from './session/lifecycle';
 export * from './config/loading';
@@ -1505,6 +1514,10 @@ export type {
   SettingsFindingDto,
   StaffGrantEntry,
   BusinessIdentityAnswer,
+  BuyerSettingsAnswer,
+  CreateTenderAnswer,
+  CreateTenderRequest,
+  TenderLineRequest,
   TradeDocumentAnswer,
   TradeInboxItemDto,
   TradeReminderAnswer,

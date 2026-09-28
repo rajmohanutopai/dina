@@ -193,6 +193,8 @@ export type {
   CapabilityCandidate,
   ServiceProfile,
   IsDiscoverableResult,
+  CommerceCatalogCandidate,
+  SearchCatalogParams,
 } from './appview_client/http';
 export { PDSPublisher, PDSPublisherError } from './pds/publisher';
 export type { PDSPublisherOptions, PutRecordResult } from './pds/publisher';

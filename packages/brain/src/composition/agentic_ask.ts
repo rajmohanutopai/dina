@@ -72,6 +72,7 @@ import {
   type ProductToolCoreClient,
   type ResearchCache,
 } from '../reasoning/product_tools';
+import { createDraftQuoteRequestTool } from '../reasoning/quote_request_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import {
   createGeocodeTool,
@@ -363,6 +364,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // §10 — what a settled plan yields for the vendor lane: the chosen slot
     // and de-identified requirements, and nothing about the households.
     reg.register(createGroupPlanHandoffTool({ core: input.coreClient, logger: input.logger }));
+    // ASK_FOR_QUOTES_PLAN §2 — draft a request for quotes; the card opens the
+    // Ask for quotes screen. No Core client: it sends nothing.
+    reg.register(createDraftQuoteRequestTool());
     // `classify_intent` — lets the agent re-evaluate routing when the
     // plan has shifted mid-loop (gathered new context, found unexpected
     // results). Pre-loop classification still runs as the soft prime;

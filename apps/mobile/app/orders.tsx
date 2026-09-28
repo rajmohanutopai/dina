@@ -213,6 +213,14 @@ export default function OrdersScreen(): React.ReactElement {
           Dina reads the lines off the photo. You confirm every quantity before anything reaches a
           supplier.
         </Text>
+        <Pressable
+          testID="orders-ask-quotes"
+          style={styles.askButton}
+          onPress={() => router.push({ pathname: '/ask-quotes', params: { from: '/orders' } })}
+          accessibilityRole="button"
+        >
+          <Text style={styles.askLabel}>Ask suppliers for quotes</Text>
+        </Pressable>
 
         {loading && <ActivityIndicator style={styles.spinner} />}
         {error !== null && (
@@ -276,6 +284,15 @@ const styles = StyleSheet.create({
   },
   captureBusy: { opacity: 0.7 },
   captureLabel: { ...textStyles.button, color: colors.bgPrimary },
+  askButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  askLabel: { ...textStyles.button, color: colors.accent },
   captureHint: {
     ...textStyles.caption,
     color: colors.textSecondary,

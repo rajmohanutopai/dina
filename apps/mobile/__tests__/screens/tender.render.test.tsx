@@ -7,7 +7,7 @@
  * words, and that a lapsed presence raises the sheet and retries.
  */
 
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 import TenderScreen, { setTenderBackendForTest, type TenderBackend } from '../../app/tender';
@@ -248,5 +248,58 @@ describe('the tender screen', () => {
     const view = render(<TenderScreen />);
     await waitFor(() => expect(view.getByTestId('tender-sent')).toBeTruthy());
     expect(view.queryByTestId('tender-send')).toBeNull();
+  });
+
+  describe('while the owner watches', () => {
+    const WAITING = {
+      ...RANKING,
+      state: 'negotiating' as const,
+      ranked: [],
+      excluded: [
+        { supplier_did: A, reason: 'no_quote' as const },
+        { supplier_did: B, reason: 'no_quote' as const },
+      ],
+    };
+
+    afterEach(() => jest.useRealTimers());
+
+    it('before anyone answers, says it is waiting for quotes, not asking for better prices', async () => {
+      setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => WAITING) }));
+      const view = render(<TenderScreen />);
+      await waitFor(() =>
+        expect(view.getByTestId('tender-state').props.children).toBe(
+          'Waiting for the suppliers to quote',
+        ),
+      );
+    });
+
+    it('an offer that lands while the screen is open shows on the next refresh', async () => {
+      jest.useFakeTimers();
+      const ranking = jest.fn().mockResolvedValueOnce(WAITING).mockResolvedValue(RANKING);
+      setTenderBackendForTest(backend({ tenderRanking: ranking }));
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(view.getByTestId(`tender-excluded-${B}`)).toBeTruthy());
+      expect(view.queryByTestId(`tender-offer-${B}`)).toBeNull();
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+      await waitFor(() => expect(view.getByTestId(`tender-offer-${B}`)).toBeTruthy());
+    });
+
+    it('an awarded tender is final: no more refreshes', async () => {
+      jest.useFakeTimers();
+      const ranking = jest.fn(async () => ({
+        ...RANKING,
+        state: 'awarded' as const,
+        awarded_supplier_did: B,
+      }));
+      setTenderBackendForTest(backend({ tenderRanking: ranking }));
+      render(<TenderScreen />);
+      await waitFor(() => expect(ranking).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      expect(ranking).toHaveBeenCalledTimes(1);
+    });
   });
 });

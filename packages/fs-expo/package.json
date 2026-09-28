@@ -11,7 +11,7 @@
     "@dina/core": "*"
   },
   "peerDependencies": {
-    "expo-file-system": "~55.0.0"
+    "expo-file-system": "~57.0.7"
   },
   "peerDependenciesMeta": {
     "expo-file-system": {

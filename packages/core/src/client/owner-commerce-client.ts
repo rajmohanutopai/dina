@@ -357,6 +357,55 @@ export class OwnerCommerceClient {
     return outcome ?? expectOk<never>(res, 'awardTender');
   }
 
+  /**
+   * ASK_FOR_QUOTES_PLAN §2 — start a private tender: one request per named
+   * supplier, each line a described need (a requirement line), delivered to
+   * `region`. The optional limits start the negotiation loop; Core checks
+   * them before any request leaves. No presence gate: asking spends nothing.
+   */
+  async createTender(input: CreateTenderRequest): Promise<CreateTenderAnswer> {
+    const body = await this.post<{
+      tender_id: string;
+      members: { supplierDid: string; requestId: string; sent: boolean; reason?: string }[];
+      negotiating: boolean;
+    }>(
+      '/v1/commerce/trade/tender',
+      {
+        suppliers: input.suppliers.map((s) => ({
+          supplier_did: s.supplierDid,
+          service_rkey: s.serviceRkey,
+        })),
+        lines: input.lines.map((line) => ({
+          line_id: line.lineId,
+          requirement: { text: line.text },
+          quantity: { value: line.quantity, unit_code: line.unitCode },
+        })),
+        projection: { region: input.region },
+        currency: input.currency,
+        ...(input.limits === undefined
+          ? {}
+          : {
+              negotiation: {
+                target_total: input.limits.targetMinorUnits,
+                budget_ceiling: input.limits.ceilingMinorUnits,
+                ...(input.limits.maxRounds === undefined ? {} : { max_rounds: input.limits.maxRounds }),
+                ...(input.limits.deadlineSeconds === undefined
+                  ? {}
+                  : { deadline_seconds: input.limits.deadlineSeconds }),
+              },
+            }),
+      },
+      'createTender',
+    );
+    return { tenderId: body.tender_id, members: body.members, negotiating: body.negotiating };
+  }
+
+  /** The buyer's commerce settings: saved delivery regions, currency, suppliers. */
+  async buyerSettings(): Promise<BuyerSettingsAnswer> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/buyer' });
+    return expectOk<BuyerSettingsAnswer>(res, 'buyerSettings');
+  }
+
   /** Send an order held from a quote (an award, `from_quote`). */
   async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
     const res = await this.dispatcher.dispatch({
@@ -694,6 +743,52 @@ export interface TradeStatementAnswer {
 }
 
 /** One thing wrong with a settings body, as Core's validator names it. */
+/** A described need to ask suppliers about (a requirement line). */
+export interface TenderLineRequest {
+  lineId: string;
+  /** What is wanted, in the buyer's words: "Floral celebration cake, 20 servings". */
+  text: string;
+  /** Canonical decimal string. */
+  quantity: string;
+  /** A unit from the closed vocabulary: each, case, pallet, g, kg, ml, l. */
+  unitCode: string;
+}
+
+export interface CreateTenderRequest {
+  suppliers: { supplierDid: string; serviceRkey: string }[];
+  lines: TenderLineRequest[];
+  /** Where the goods are delivered. */
+  region: { scheme: 'country' | 'admin_area' | 'postal_area' | 'geohash' | 'custom'; value: string };
+  currency: string;
+  /** Negotiation limits, in minor units of `currency`. */
+  limits?: {
+    targetMinorUnits: string;
+    ceilingMinorUnits: string;
+    maxRounds?: number;
+    deadlineSeconds?: number;
+  };
+}
+
+export interface CreateTenderAnswer {
+  tenderId: string;
+  /** Per supplier: whether the request left, and why not when it did not. */
+  members: { supplierDid: string; requestId: string; sent: boolean; reason?: string }[];
+  negotiating: boolean;
+}
+
+/** `GET /v1/commerce/settings/buyer`: absent until the owner saves them. */
+export type BuyerSettingsAnswer =
+  | { configured: false }
+  | {
+      configured: true;
+      settings: {
+        locations: { scheme: string; value: string }[];
+        currency: string;
+        preferredSuppliers: string[];
+        blockedSuppliers: string[];
+      };
+    };
+
 export interface SettingsFindingDto {
   refusal: string;
   field: string;

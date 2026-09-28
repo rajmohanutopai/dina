@@ -110,6 +110,48 @@
     </p>
 
     <!-- ============================================================ -->
+    <h1 id="ask-for-quotes">
+      Ask for quotes, supplier search, iOS scenes <span class="status wip">IN PROGRESS</span>
+    </h1>
+    <p class="meta">
+      Implementing <code>docs/ASK_FOR_QUOTES_PLAN.md</code>: §1 find suppliers by what they sell, §2 an "Ask for
+      quotes" screen and a chat hand-off that start a tender, §3 the UIScene life cycle the iOS 27 SDK requires.
+    </p>
+
+    <h2>Design decisions</h2>
+    <ul>
+      <li><strong>Supplier search runs on the device against the AppView.</strong> Catalog search (per word, delivery region as a hard filter) plus <code>service.search</code> for <code>request_quote</code> listings; ranked preferred → words matched → trust → items matched. Blocked suppliers never show.</li>
+      <li><strong>Brain's web proxy allows exactly three read-only NSIDs</strong> (<code>searchCatalog</code>, <code>service.search</code>, <code>service.getByUri</code>); look-alikes and POST refused.</li>
+      <li><strong>The screen checks limits with Core's own <code>tenderPolicyError</code></strong> (exported), so the form and the route cannot disagree on rounds or deadline bounds.</li>
+      <li><strong>Chat drafts, the owner sends.</strong> <code>draft_quote_request</code> is terminal and has no Core client; its card opens the screen prefilled. Starting a tender stays an owner act.</li>
+      <li><strong>Scenes via a config plugin</strong> (<code>plugins/with-scene-lifecycle.js</code>), since <code>ios/</code> is generated. Output pinned byte-for-byte to Expo's SDK 58 template; refuses an AppDelegate it does not know.</li>
+    </ul>
+
+    <h2>Deviations</h2>
+    <ul>
+      <li><strong>Expo 55 → 57.</strong> <code>ExpoAppSceneDelegate</code> first ships in 57; SDK 58 is not out. React Native 0.86.3, React 19.2.3.</li>
+      <li><strong>Kept against <code>expo install --fix</code>:</strong> TypeScript ^5.5 (it wanted 6), <code>react-native-get-random-values</code> ^2 (it wanted 1.11), keyboard-controller ~1.21.12.</li>
+      <li><strong>Root devDependencies pin React 19.2.3.</strong> Peer <code>*</code> resolved to the newest React at the root, giving two Reacts; overrides do not reach peers.</li>
+      <li><strong>Imports moved:</strong> react-navigation hooks from <code>expo-router/react-navigation</code> (Expo Router 57 vendors it); <code>requireOptionalNativeModule</code> from <code>expo</code>. Jest maps <code>expo</code> to a mock.</li>
+    </ul>
+
+    <h2>Traps</h2>
+    <ul>
+      <li><strong>Deleting lockfile entries does not make npm resolve them again</strong>; it drops them, and every dependent then resolves the hoisted (wrong) version. <code>expo prebuild</code> failed with "files.map is not a function": <code>@expo/cli</code> got glob 7 for ^13. Fix: remove the <em>requirer's</em> entry and folder, reinstall, repeat until <code>npm ls --all</code> is clean.</li>
+    </ul>
+
+    <h2>Iterations</h2>
+    <ul>
+      <li><strong>§1–§2 built.</strong> Tests: mobile <code>supplier_finder</code> 6, <code>quote_request_form</code> 14, <code>ask_quotes.render</code> 5, draft card 2, message display +1, plugin 5; brain <code>quote_request_tool</code>, agentic tools 21; core tender client (lines, <code>requested_quantity</code>, region and limits reach both suppliers; bad limits refused, nothing sent); brain-server proxy 11.</li>
+      <li><strong>§3 on Expo 57.</strong> Prebuild clean from scratch: <code>SceneDelegate.swift</code> in the target, scene manifest in Info.plist, entitlements and <code>dina://</code> unchanged. Suites: core 9917, brain 3691, mobile 3626, brain-server 127; typecheck clean.</li>
+      <li><strong>iOS build and simulator (Xcode 26.6, iOS 26.5 SDK).</strong> Debug and Release build. Launch through the scene delegate, background → foreground, warm link (<code>dina://reminders</code>) and cold link in Release (<code>dina://runs</code>) pass. Not verified: notification tap (the simulator app has no notification permission; the tap path is the notification-center delegate, not the scene); the iOS 27 SDK's own launch check (needs Xcode 27). A cold link through the dev launcher lands on Chat: the launcher drops it, Release does not.</li>
+      <li><strong>Found on the device: plugin installs were off on every phone.</strong> Metro picks multiformats' browser SHA-2, which calls <code>crypto.subtle</code>; Hermes has none, so the repo-proof self-check failed (<code>record_malformed</code>) and the install door stayed shut. Fixed with a Metro shim on <code>@noble/hashes</code> (<code>src/shims/multiformats_sha2.js</code>); the self-check now reports the library's message about the fixture. Door open on the simulator. Tests: shim 6, net-node self-check, wiring +1.</li>
+      <li><strong>Back chevron.</strong> Trade, Orders, Catalog, Business identity, Staff, Change passphrase were missing from the parent map and fell back to Chat; now Settings. Tender, Ask for quotes, Invites → Trade; drafts → their list; second openers pass <code>?from=</code>. A contract test reads the layout so a new screen cannot miss the map. Checked on the simulator.</li>
+      <li><strong>Live bed run (browser as sancho, phone node).</strong> Search, pick, send, offers on the Tender screen: pass (Alonso ₹60,000 best, Albert ₹66,000 after one revision). Found and fixed: the Tender screen never refreshed while open (now every 10 s until awarded or closed) and said "asking for better prices" before any quote; three suppliers named "ChairMaker Workshop" were indistinguishable (a shared name now shows its DID); the phone keyboard hid the supplier search (keyboard-aware scroll). Bed only: ChairMaker's old outside quote runner declines described lines (<code>not_in_catalog</code>); each bed supplier serves one postal code, so one delivery code finds one supplier.</li>
+      <li><strong>Android:</strong> not built (user decision). Prebuild on Expo 57 runs; the new manifest drops <code>usesCleartextTraffic</code>, which the old generated one had and nothing in the repo sets — a dev build reaching a plain-http node would need it back.</li>
+    </ul>
+
+    <!-- ============================================================ -->
     <h1 id="web-owner-surface">
       One owner interface (web) <span class="status wip">IN PROGRESS</span>
     </h1>
@@ -167,6 +209,28 @@
     <h2>Tradeoffs</h2>
     <ul>
       <li><strong>Refuse at the entry point vs fall through.</strong> A request naming an owner device whose check fails is refused there (401/403), not passed on, so a bad owner signature never reaches a route; any other device falls through before a nonce is spent.</li>
+      <li><strong>Presence per principal vs node-wide.</strong> Node-wide was simpler and matched the old stamp, but let a script ride a browser's proof. Per principal costs one field on the request; staff presence was already keyed per device.</li>
+      <li><strong>Revoked browser: probe vs forget on any refusal.</strong> Forgetting on the first 401/403 would drop the key for a clock skew or a path off the owner surface. One status probe confirms first; timestamp, nonce and throttle refusals never trigger it.</li>
+      <li><strong>Cross-tab state: fresh read vs broadcast only.</strong> A broadcast alone misses a tab that was asleep; reading the stored device on each use cannot be stale. The channel only redraws screens, and opens only while one listens.</li>
+      <li><strong>Busy through the retry: <code>run</code> settles late vs a <code>running</code> flag.</strong> A flag needed every screen changed; settling <code>run</code> after the retry fixed all eight screens at once.</li>
+      <li><strong>Multi-choice on the web: confirms in turn vs a prompt or an in-page picker.</strong> <code>window.prompt</code> means typing; a picker per screen is more code. Sequential confirms serve the two-option cases; true pickers stay on the list.</li>
+      <li><strong>Ask when the browser is not connected: fall through vs fail closed.</strong> Failing closed blocked every Ask on such a browser; the connected-host binding is a convenience, not a policy, so only that one refusal falls through.</li>
+      <li><strong>Rate limit: exempt app files vs raise the default.</strong> Raising it weakens every caller; the app's files are public and carry no authority, so they alone skip the per-IP bucket.</li>
+      <li><strong>Keep the <code>/owner</code> console vs remove it (plan §8.2).</strong> Removing it would strand CLI and server owners whose release ships no web bundle; kept until it does.</li>
+    </ul>
+
+    <h2>Deep review per plan item</h2>
+    <p class="meta">Each item checked against three questions: (1) is this the correct way, (2) smells, poor architecture or workarounds, (3) test issues. Found → fixed.</p>
+    <ul>
+      <li><strong>§3.2 Serving.</strong> (1) Core serves <code>/app</code> under a strict CSP; right. (2) App files spent the per-IP budget; the boot error named a build that baked <code>.env</code> keys; no Brain-origin default. All fixed. (3) Rate-limit and principal tests added.</li>
+      <li><strong>§3.3 Owner device.</strong> (1) Non-extractable key, verified at the entry point; right. (2) Node-wide presence stamp; a revoked browser still "connected"; a per-tab signer cache; a sessionStorage purge that logged out the console; throttling read as refusal. All fixed. (3) +9 device, +5 dispatcher, +2 channel tests.</li>
+      <li><strong>§3.4 Reaching Brain.</strong> (1) Cross-origin with exact origins; right. (2) Other pages could still write without preflight; installer listed one origin; dead <code>@fastify/static</code> (and the lockfile lacked core-server's own). Fixed. Live run: Ask blocked when not connected; fixed. (3) +3 origin-guard tests.</li>
+      <li><strong>§3.5 Web clients.</strong> (1) One set of Core routes for phone and web; right. (2) <code>OwnerRunHttpError</code> dropped the key; raw log lines as messages; nine screens with no connect message; dialogs dead in a browser. Fixed. (3) No client contract against real routes (added 8); screens mocked the client (render test over nine screens added).</li>
+      <li><strong>§3.6 Signing sender.</strong> (1)(2) No findings; D1–D9 pass live. (3) Covered by conformance of the canonical string.</li>
+      <li><strong>§3.7 Console and Brain <code>/web</code>.</strong> (1) Brain's copy and proxy removed; console kept (deviation). (2) Brain's unauthenticated approve/cancel routes survived; comments pointed at deleted files. Removed and corrected. (3) Stale e2e comments fixed.</li>
+      <li><strong>§3.8 Presence.</strong> (1) One rule, per principal; right. (2) Six ungated powers; retry ran with the screen idle; passphrase trimmed; field invisible on the phone; docs claimed gates that convenience mode lacks. Fixed. (3) +17 gate tests, hook 5, tender +2, invites 3; e2e ran only in convenience mode (PR tier now security mode).</li>
+      <li><strong>§4 Phone code.</strong> (2) Staff PIN showed a log line; a dead re-export. Fixed; its cross-language vector test moved to core. (3) Staff-home render test added.</li>
+      <li><strong>Test-quality findings.</strong> A source-scan test pinned the old wiring (updated to the new invariant); the RN test Pressable ignores <code>disabled</code> (the prop is asserted); lint errors in touched tests fixed.</li>
     </ul>
 
     <h2>Open questions</h2>

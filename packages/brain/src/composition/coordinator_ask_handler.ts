@@ -51,6 +51,7 @@ import {
   updateAskLifecycle,
   type CommerceComparisonLifecycle,
   type GroupPlanLifecycle,
+  type QuoteRequestDraftLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import {
@@ -292,6 +293,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // its comparison. The narrative is the answer; this is the evidence.
       postCommerceCard(targetThread, parsed);
       postGroupPlanCard(targetThread, parsed);
+      postQuoteRequestDraftCard(targetThread, parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
@@ -427,6 +429,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       // the answer settled in the fast-path window or the deferred path.
       postCommerceCard(callerThread, answer);
       postGroupPlanCard(callerThread, answer);
+      postQuoteRequestDraftCard(callerThread, answer);
       return {
         response: extractAnswerText(answer),
         sources: reviewSourcesFor(answer),
@@ -665,6 +668,26 @@ function postGroupPlanCard(threadId: string, answer: unknown): void {
     status: 'open',
     planId,
     intent: typeof intent === 'string' ? intent : '',
+  };
+  addLifecycleMessage(threadId, '', lifecycle);
+}
+
+/**
+ * Post the drafted request for quotes (ASK_FOR_QUOTES_PLAN §2) when the
+ * answer carries one. Terminal: the card only opens the Ask for quotes
+ * screen prefilled, so it is never patched. `draftId` is a UI key only.
+ */
+function postQuoteRequestDraftCard(threadId: string, answer: unknown): void {
+  if (typeof answer !== 'object' || answer === null) return;
+  const raw = (answer as Record<string, unknown>).quoteRequestDraft;
+  if (typeof raw !== 'object' || raw === null) return;
+  const draft = raw as QuoteRequestDraftLifecycle['draft'];
+  if (!Array.isArray(draft.lines) || draft.lines.length === 0) return;
+  const lifecycle: QuoteRequestDraftLifecycle = {
+    kind: 'quote_request_draft',
+    status: 'ready',
+    draftId: `quote_request_draft:${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
+    draft,
   };
   addLifecycleMessage(threadId, '', lifecycle);
 }

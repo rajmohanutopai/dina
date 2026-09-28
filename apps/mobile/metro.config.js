@@ -89,13 +89,24 @@ const SHIMS = {
   'dns/promises': path.resolve(projectRoot, 'src/shims/node_dns_promises.js'),
   '@atproto/common': path.resolve(projectRoot, 'src/shims/atproto_common.js'),
 };
+// 8. multiformats' SHA-2 browser build hashes with `crypto.subtle`, which Hermes
+//    lacks (and a browser offers only on a secure origin); every CID check in
+//    `@atproto/repo` threw on the device. Applied on every platform. Matched by
+//    the RESOLVED file, because multiformats reaches it both by its package
+//    subpath and by relative imports its `browser` map redirects.
+const MULTIFORMATS_SHA2_BROWSER = `${path.sep}multiformats${path.sep}dist${path.sep}src${path.sep}hashes${path.sep}sha2-browser.js`;
+const MULTIFORMATS_SHA2_SHIM = path.resolve(projectRoot, 'src/shims/multiformats_sha2.js');
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const shim = SHIMS[moduleName];
   if (shim !== undefined) return { type: 'sourceFile', filePath: shim };
-  return defaultResolveRequest
+  const resolved = defaultResolveRequest
     ? defaultResolveRequest(context, moduleName, platform)
     : context.resolveRequest(context, moduleName, platform);
+  if (resolved.type === 'sourceFile' && resolved.filePath.endsWith(MULTIFORMATS_SHA2_BROWSER)) {
+    return { type: 'sourceFile', filePath: MULTIFORMATS_SHA2_SHIM };
+  }
+  return resolved;
 };
 
 module.exports = config;

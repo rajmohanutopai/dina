@@ -35,7 +35,13 @@ export async function makeMobileRepoProofVerifier(): Promise<RepoProofVerifier |
     check = { ok: false, fault: err instanceof Error ? err.constructor.name : typeof err };
   }
   if (!check.ok) {
-    console.warn('[plugins] repo-proof verifier self-check failed; install door stays closed', check.fault);
+    console.warn(
+      '[plugins] repo-proof verifier self-check failed; install door stays closed',
+      check.fault,
+      // The chain's message about the shipped FIXTURE (which library step
+      // could not run here) — never a request.
+      ...(check.detail !== undefined ? [check.detail] : []),
+    );
     return null;
   }
   const verify = createRepoProofVerifier({ fetch: (url, init) => fetch(url, init) });

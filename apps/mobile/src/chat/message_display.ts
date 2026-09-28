@@ -29,6 +29,7 @@ export type DisplayType =
   | 'quarantine-request'
   | 'commerce-comparison'
   | 'group-plan'
+  | 'quote-request-draft'
   | 'nudge'
   | 'reminder'
   | 'briefing';
@@ -111,6 +112,11 @@ export function toDisplayType(m: ChatMessage): DisplayType {
   if (m.type === 'dina' && lifecycle?.kind === 'group_plan') {
     return 'group-plan';
   }
+  // quote_request_draft card (ASK_FOR_QUOTES_PLAN §2): a request for quotes
+  // Brain drafted; its button opens the Ask for quotes screen prefilled.
+  if (m.type === 'dina' && lifecycle?.kind === 'quote_request_draft') {
+    return 'quote-request-draft';
+  }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
@@ -134,6 +140,8 @@ export function chatRowKind(displayType: DisplayType): string {
       return 'commerce-comparison';
     case 'group-plan':
       return 'group-plan';
+    case 'quote-request-draft':
+      return 'quote-request-draft';
     case 'quarantine-request':
       return 'quarantine';
     case 'ask-approval':

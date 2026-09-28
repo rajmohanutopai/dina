@@ -416,7 +416,13 @@ describe('selfCheckRepoProofChain (§5.C1 — does the chain run on this host?)'
     // The chain maps the throw to `record_malformed`; the self-check surfaces
     // that code as the fault so boot can refuse to wire, instead of a device
     // reporting every genuine release as malformed.
-    await expect(selfCheckRepoProofChain(faulty)).resolves.toEqual({ ok: false, fault: 'record_malformed' });
+    // The detail names the step and the missing global, so a device log is
+    // enough to see what the host lacks.
+    await expect(selfCheckRepoProofChain(faulty)).resolves.toEqual({
+      ok: false,
+      fault: 'record_malformed',
+      detail: expect.stringContaining('Buffer is not defined'),
+    });
   });
 
   it('a signature library that lies fails the check (the fixture must actually verify)', async () => {
@@ -425,6 +431,6 @@ describe('selfCheckRepoProofChain (§5.C1 — does the chain run on this host?)'
       identity: realLibs.identity,
       repo: async () => ({ ...repo, verifyCommitSig: async () => false }) as unknown as Awaited<ReturnType<AtprotoLibs['repo']>>,
     };
-    await expect(selfCheckRepoProofChain(lying)).resolves.toEqual({ ok: false, fault: 'signature_invalid' });
+    await expect(selfCheckRepoProofChain(lying)).resolves.toMatchObject({ ok: false, fault: 'signature_invalid' });
   });
 });

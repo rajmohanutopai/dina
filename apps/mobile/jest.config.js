@@ -13,6 +13,9 @@ module.exports = {
     // `packages/core/` via moduleNameMapper instead of rewriting ~190 imports
     // in 82 test files; the source-code swap to `@dina/core` package imports
     // is a deliberate larger refactor for Phase 2 cleanup.
+    // multiformats exports its subpaths under the `import` condition only,
+    // which Jest's CJS resolver skips; Metro reads it natively.
+    '^multiformats/(.*)$': '<rootDir>/../../node_modules/multiformats/dist/src/$1.js',
     '^\\.\\./\\.\\./\\.\\./core/(.*)$': '<rootDir>/../../packages/core/$1',
     '^\\.\\./\\.\\./\\.\\./brain/(.*)$': '<rootDir>/../../packages/brain/$1',
     // Same fix for the `@dina/test-harness` package name — donor's mapper
@@ -41,6 +44,9 @@ module.exports = {
     // the onboarding AiProviderSet) loads. Tests needing native behaviour
     // override locally with jest.mock (see __tests__/ai/attestation.test.ts).
     '^expo-modules-core$': '<rootDir>/__mocks__/expo-modules-core.ts',
+    // `expo` re-exports those helpers (the SDK 57 public entry the app
+    // imports them from); its entry is TS source Jest does not transform.
+    '^expo$': '<rootDir>/__mocks__/expo.ts',
     // op-sqlite is a native module that can't load in Jest; back it with a
     // real (Node) SQLite so the unlock/persistence path is actually
     // exercised instead of silently swallowing a load failure.
@@ -78,5 +84,5 @@ module.exports = {
       },
     ],
   },
-  transformIgnorePatterns: ['node_modules/(?!(@noble|@scure|ai|@ai-sdk)/)'],
+  transformIgnorePatterns: ['node_modules/(?!(@noble|@scure|ai|@ai-sdk|multiformats)/)'],
 };

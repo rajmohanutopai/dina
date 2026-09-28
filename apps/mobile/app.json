@@ -4,7 +4,11 @@
     "slug": "dina-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": ["dina", "com.dinakernel.mobile", "com.dinakernel.test-mobile"],
+    "scheme": [
+      "dina",
+      "com.dinakernel.mobile",
+      "com.dinakernel.test-mobile"
+    ],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "icon": "./assets/branding/dina-icon.png",
@@ -18,7 +22,10 @@
       "bundleIdentifier": "com.dinakernel.mobile",
       "icon": "./assets/branding/dina-icon.png",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -43,13 +50,17 @@
     "plugins": [
       "expo-router",
       "./plugins/with-monorepo-bundle-inputs",
+      "./plugins/with-scene-lifecycle",
       [
         "expo-notifications",
         {
           "color": "#3b82f6",
           "defaultChannel": "solicited"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "baseUrl": "/app"

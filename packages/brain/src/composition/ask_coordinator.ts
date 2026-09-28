@@ -81,6 +81,7 @@ import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { VaultApprovalWorkflowClient } from './persona_guard';
 import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
 import type { IntentSource } from '../reasoning/intent_classifier';
+import type { QuoteRequestDraftWire } from '../reasoning/quote_request_tool';
 import type { WorkflowTask } from '@dina/core';
 
 /** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
@@ -546,6 +547,13 @@ export function translateLoopResult(
     if (groupPlan !== undefined) {
       answer.groupPlan = groupPlan;
     }
+    // ASK_FOR_QUOTES_PLAN §2 — a request for quotes `draft_quote_request`
+    // drafted rides beside the one-line ack, so the chat bridge can post the
+    // card that opens the Ask for quotes screen prefilled.
+    const quoteRequestDraft = extractQuoteRequestDraftFromToolCalls(result.toolCalls);
+    if (quoteRequestDraft !== undefined) {
+      answer.quoteRequestDraft = quoteRequestDraft;
+    }
     // Provenance for the chat source pill: how many network ("ranked") reviews
     // from other Dinas informed this answer. The mobile bubble turns the count
     // into a label (Ranked reviews ≥ 3, Network reviews 1–2). 0 ⇒ no pill.
@@ -713,6 +721,20 @@ function extractGroupPlanFromToolCalls(
     if (result === null || typeof result !== 'object') continue;
     if (typeof result.plan_id !== 'string' || result.plan_id === '') continue;
     return { planId: result.plan_id, intent: typeof result.intent === 'string' ? result.intent : '' };
+  }
+  return undefined;
+}
+
+/** The last successful `draft_quote_request` call's draft, if any. */
+function extractQuoteRequestDraftFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): QuoteRequestDraftWire | undefined {
+  for (let i = toolCalls.length - 1; i >= 0; i--) {
+    const call = toolCalls[i];
+    if (call.name !== 'draft_quote_request' || !call.outcome.success) continue;
+    const result = call.outcome.result as { draft?: unknown } | null;
+    const draft = result?.draft as QuoteRequestDraftWire | undefined;
+    if (draft !== undefined && Array.isArray(draft.lines) && draft.lines.length > 0) return draft;
   }
   return undefined;
 }

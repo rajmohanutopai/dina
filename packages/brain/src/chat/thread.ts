@@ -21,7 +21,10 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { getChatMessageRepository } from '@dina/core';
 
+import type { QuoteRequestDraftWire } from '../reasoning/quote_request_tool';
 import type { CardSpec } from '@dina/protocol';
+
+export type { QuoteRequestDraftWire } from '../reasoning/quote_request_tool';
 
 export type MessageType =
   | 'user'
@@ -243,6 +246,9 @@ export interface CommerceComparisonLifecycle {
  *   - `review_draft`  — chat-driven `/ask write a review of <X>` flow.
  *   - `commerce_comparison` — money-free where-to-buy card from the
  *                            product-research loop.
+ *   - `group_plan`    — the organizer's plan card.
+ *   - `quote_request_draft` — a drafted request for quotes; opens the
+ *                            Ask for quotes screen.
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
  */
@@ -261,6 +267,20 @@ export interface GroupPlanLifecycle {
   intent: string;
 }
 
+/**
+ * `quote_request_draft` lifecycle metadata (ASK_FOR_QUOTES_PLAN §2) — a
+ * request for quotes Brain drafted from what the owner said. Terminal: the
+ * card only opens the "Ask for quotes" screen prefilled; nothing is sent
+ * until the owner taps Send there. The renderer re-validates `draft` as
+ * untrusted.
+ */
+export interface QuoteRequestDraftLifecycle {
+  kind: 'quote_request_draft';
+  status: 'ready';
+  draftId: string;
+  draft: QuoteRequestDraftWire;
+}
+
 export type MessageLifecycle =
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
@@ -268,7 +288,8 @@ export type MessageLifecycle =
   | ReasoningJobLifecycle
   | ReviewDraftLifecycle
   | CommerceComparisonLifecycle
-  | GroupPlanLifecycle;
+  | GroupPlanLifecycle
+  | QuoteRequestDraftLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -750,6 +771,9 @@ export function addLifecycleMessage(
     case 'group_plan':
       key = lifecycle.planId;
       break;
+    case 'quote_request_draft':
+      key = lifecycle.draftId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -818,6 +842,13 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
     if (typeof lc.intent !== 'string') return null;
     if (lc.status !== 'open' && lc.status !== 'closed') return null;
     return lc as unknown as GroupPlanLifecycle;
+  }
+  if (lc.kind === 'quote_request_draft') {
+    if (typeof lc.draftId !== 'string' || lc.draftId === '') return null;
+    if (lc.status !== 'ready') return null;
+    if (typeof lc.draft !== 'object' || lc.draft === null) return null;
+    if (!Array.isArray((lc.draft as { lines?: unknown }).lines)) return null;
+    return lc as unknown as QuoteRequestDraftLifecycle;
   }
   return null;
 }

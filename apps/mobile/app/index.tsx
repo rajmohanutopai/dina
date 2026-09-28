@@ -8,7 +8,7 @@
  * Styled with Dina warm design system (FAF8F5 palette).
  */
 
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useRef, useCallback } from 'react';
@@ -42,6 +42,7 @@ import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
+import { InlineQuoteRequestDraftCard } from '../src/components/InlineQuoteRequestDraftCard';
 import { InlineReasoningJobCard } from '../src/components/InlineReasoningJobCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
@@ -394,6 +395,15 @@ export default function ChatScreen() {
       // per household, the folded slots, and the organizer's decisions; reads
       // the plan from Core through the owner-marked client and refreshes while
       // the plan is open.
+      // A drafted request for quotes: opens the Ask for quotes screen
+      // prefilled; nothing is sent from the card.
+      if (item.displayType === 'quote-request-draft') {
+        return (
+          <View testID="chat-card-quote-request-draft">
+            <InlineQuoteRequestDraftCard message={item} />
+          </View>
+        );
+      }
       if (item.displayType === 'group-plan') {
         return (
           <View testID="chat-card-group-plan">

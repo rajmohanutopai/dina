@@ -118,5 +118,9 @@ it("a tender-ready card opens its tender: the award is the tender screen's act, 
   fireEvent.press(screen.getByTestId('filter-needs_action'));
   const open = await waitFor(() => screen.getByTestId('approvals-open-tender-tender-ready-tnd-7'));
   fireEvent.press(open);
-  expect(routerPush).toHaveBeenCalledWith({ pathname: '/tender', params: { tender_id: 'tnd-7' } });
+  // `from` makes the tender's back chevron return to Activity.
+  expect(routerPush).toHaveBeenCalledWith({
+    pathname: '/tender',
+    params: { tender_id: 'tnd-7', from: '/notifications' },
+  });
 });

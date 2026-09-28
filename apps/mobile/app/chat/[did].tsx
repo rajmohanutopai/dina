@@ -12,7 +12,7 @@
  * simply never arrives unless both sides have the other in contacts.
  */
 
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {

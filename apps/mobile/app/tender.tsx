@@ -45,6 +45,9 @@ export function setTenderBackendForTest(backend: TenderBackend | null): void {
   backendOverride = backend;
 }
 
+/** How often an open tender re-reads its ranking while the screen is in front. */
+const REFRESH_MS = 10_000;
+
 const STATE_LABEL: Record<TenderRankingView['state'], string> = {
   negotiating: 'Dina is asking the suppliers for better prices',
   ready: 'Ready to award',
@@ -169,9 +172,18 @@ export default function TenderScreen(): React.ReactElement {
     }
   }, [backend, tenderId]);
 
+  // Quotes and counters land while the owner watches (Ask for quotes opens
+  // this screen right after sending), so refresh while the tender can still
+  // change; an awarded or closed tender is final.
+  const liveRef = useRef(true);
+  liveRef.current = view === null || (view.state !== 'awarded' && view.state !== 'closed');
   useFocusEffect(
     useCallback(() => {
       void reload();
+      const timer = setInterval(() => {
+        if (liveRef.current) void reload();
+      }, REFRESH_MS);
+      return () => clearInterval(timer);
     }, [reload]),
   );
 
@@ -240,7 +252,17 @@ export default function TenderScreen(): React.ReactElement {
     view !== null &&
     (view.state === 'ready' || view.state === 'no_policy' || view.state === 'negotiating');
   const awardedTo = view?.awarded_supplier_did ?? '';
-  const heading = useMemo(() => (view === null ? '' : STATE_LABEL[view.state]), [view]);
+  const heading = useMemo(() => {
+    if (view === null) return '';
+    // Before any supplier has answered there is nothing to negotiate yet.
+    const waiting =
+      view.ranked.length === 0 &&
+      view.excluded.length > 0 &&
+      view.excluded.every((row) => row.reason === 'no_quote');
+    return waiting && (view.state === 'negotiating' || view.state === 'no_policy')
+      ? 'Waiting for the suppliers to quote'
+      : STATE_LABEL[view.state];
+  }, [view]);
 
   return (
     <View style={styles.container} testID="tender-screen">

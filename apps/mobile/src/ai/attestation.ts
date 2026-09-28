@@ -20,7 +20,7 @@
  * swapping it in is an internal change to the native module + this seam.
  */
 
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 
 import type { DinaAttestNativeModule } from '../../modules/dina-attest';
