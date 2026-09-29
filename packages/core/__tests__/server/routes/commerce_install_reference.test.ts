@@ -19,8 +19,16 @@ import {
 } from '../../../src/commerce/reference_install';
 import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_manifests';
 import {
+  getCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../../src/commerce/runtime';
+import { InMemoryCommerceSettingsRepository } from '../../../src/commerce/settings_store';
+import {
+  PLACEHOLDER_LISTING_NAME,
   SUPPLIER_LISTING_BINDINGS,
   bindSupplierListing,
+  syncSupplierListingName,
 } from '../../../src/commerce/supplier_listing';
 import { referenceRunnerDevice } from '../../../src/commerce/supplier_runner';
 import { getDeviceByDID, resetDeviceRegistry } from '../../../src/devices/registry';
@@ -52,6 +60,7 @@ import {
   getServiceConfig,
   resetServiceConfigState,
   setServiceConfig,
+  setServiceConfigDurable,
 } from '../../../src/service/service_config';
 import { applyMigrations } from '../../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
@@ -486,5 +495,100 @@ describe('item 1 — a first-party pack updates in place, with the build', () =>
     );
     expect(prepared.status).toBe(409);
     expect(prepared.body).toMatchObject({ ok: false, code: 'cid_unchanged' });
+  });
+});
+
+describe('the listing follows the business’s legal name', () => {
+  // A supplier who enabled selling before filling in Business identity was
+  // published as "Commerce" for good: every bakery in search read
+  // "Commerce · did:plc:…". Saving the legal name now renames that listing and
+  // a later change follows; a name the owner chose for the listing stays.
+  beforeEach(() => {
+    installCommerceRuntime({
+      settings: new InMemoryCommerceSettingsRepository(),
+    } as unknown as CommerceRuntime);
+  });
+  afterEach(() => installCommerceRuntime(null));
+
+  async function activate(): Promise<void> {
+    const { installId } = await begin();
+    const paired = await router.handle(
+      post('/v1/commerce/install/bind_reference_runner', { install_id: installId }),
+    );
+    const deviceDid = (paired.body as { device_did: string }).device_did;
+    const confirmed = await router.handle(
+      post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }),
+    );
+    expect(confirmed.status).toBe(200);
+  }
+
+  function saveBusiness(legalName: string): ReturnType<CoreRouter['handle']> {
+    return router.handle({
+      ...post('/v1/commerce/settings/business', {
+        legalName,
+        registrations: [],
+        address: {
+          line1: '3 Market Road',
+          city: 'Bengaluru',
+          region: 'Karnataka',
+          postalCode: '560001',
+          country: 'IN',
+        },
+      }),
+      method: 'PUT',
+    });
+  }
+
+  it('a listing made before the legal name takes it when Business identity is saved, and follows a change', async () => {
+    await activate();
+    expect(getServiceConfig('self')?.name).toBe(PLACEHOLDER_LISTING_NAME);
+    const saved = await saveBusiness('Sancho Bakery');
+    expect(saved).toEqual({ status: 200, body: { ok: true, listing: 'renamed' } });
+    expect(getServiceConfig('self')?.name).toBe('Sancho Bakery');
+    await saveBusiness('Sancho & Sons Bakery');
+    expect(getServiceConfig('self')?.name).toBe('Sancho & Sons Bakery');
+  });
+
+  it('a name the owner chose for the listing stays theirs', async () => {
+    await activate();
+    const listing = getServiceConfig('self');
+    if (listing === null) throw new Error('listing not written');
+    await setServiceConfigDurable({ ...listing, name: 'Sancho’s Cakes' }, 'self');
+    const saved = await saveBusiness('Sancho Bakery Pvt Ltd');
+    expect(saved.body).toEqual({ ok: true, listing: 'unchanged' });
+    expect(getServiceConfig('self')?.name).toBe('Sancho’s Cakes');
+  });
+
+  it('a node already stuck on the placeholder heals with no owner action: the sync boot runs renames it', async () => {
+    await activate();
+    // The legal name was saved by a build that did not rename the listing.
+    getCommerceRuntime()?.settings.writeBusiness({
+      legalName: 'Sancho Bakery',
+      registrations: [],
+      address: {
+        line1: '3 Market Road',
+        city: 'Bengaluru',
+        region: 'Karnataka',
+        postalCode: '560001',
+        country: 'IN',
+      },
+    });
+    expect(getServiceConfig('self')?.name).toBe(PLACEHOLDER_LISTING_NAME);
+    expect(await syncSupplierListingName({ legalName: 'Sancho Bakery' })).toBe('renamed');
+    expect(getServiceConfig('self')?.name).toBe('Sancho Bakery');
+  });
+
+  it('a self listing that is not a commerce listing is never renamed', async () => {
+    await setServiceConfigDurable(
+      {
+        name: PLACEHOLDER_LISTING_NAME,
+        status: 'active',
+        isDiscoverable: false,
+        capabilities: {},
+      } as never,
+      'self',
+    );
+    expect(await syncSupplierListingName({ legalName: 'Sancho Bakery' })).toBe('unchanged');
+    expect(getServiceConfig('self')?.name).toBe(PLACEHOLDER_LISTING_NAME);
   });
 });

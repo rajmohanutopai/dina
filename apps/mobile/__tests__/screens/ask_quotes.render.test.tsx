@@ -186,3 +186,78 @@ it('a chat draft prefills the form and sends nothing by itself', async () => {
   await waitFor(() => expect(mockCommerce.buyerSettings).toHaveBeenCalled());
   expect(mockCommerce.createTender).not.toHaveBeenCalled();
 });
+
+describe('the tender currency', () => {
+  // Reported from a phone run: the screen was fixed to INR with nowhere to
+  // change it, so negotiation limits were unusable for a buyer trading in
+  // another currency.
+  const noSavedSettings = (): void => {
+    mockCommerce.buyerSettings.mockResolvedValue({ configured: false });
+  };
+  const listedIn = (currency: string, minorUnits: string): void => {
+    mockFind.mockResolvedValue({
+      words: ['cake'],
+      suppliers: [
+        {
+          supplierDid: BAKERY,
+          serviceRkey: 'shop',
+          name: 'Sweet Crumb Bakery',
+          trustScore: 0.8,
+          wordsMatched: 1,
+          itemsMatched: 2,
+          indicativeFrom: { currency, minorUnits },
+          preferred: false,
+        },
+      ],
+    });
+  };
+  async function pick(screen: ReturnType<typeof render>): Promise<void> {
+    fireEvent.changeText(screen.getByTestId('ask-line-text-0'), 'Birthday cake');
+    fireEvent.changeText(screen.getByTestId('ask-postal'), '10001');
+    fireEvent.changeText(screen.getByTestId('supplier-search'), 'cakes');
+    fireEvent.press(screen.getByTestId('supplier-search-go'));
+    await waitFor(() => expect(screen.getByTestId(`supplier-result-${BAKERY}`)).toBeTruthy());
+    fireEvent.press(screen.getByTestId(`supplier-result-${BAKERY}`));
+  }
+
+  it('with no saved buyer currency, the picked supplier’s listed currency is taken', async () => {
+    noSavedSettings();
+    listedIn('USD', '4500');
+    const screen = render(<AskQuotesScreen />);
+    await pick(screen);
+    await waitFor(() => expect(screen.getByTestId('ask-currency').props.value).toBe('USD'));
+    expect(screen.getByText(/from USD 45.00/)).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId('ask-target'), '40');
+    fireEvent.changeText(screen.getByTestId('ask-ceiling'), '50.50');
+    fireEvent.press(screen.getByTestId('ask-send'));
+    await waitFor(() => expect(mockCommerce.createTender).toHaveBeenCalledTimes(1));
+    expect(mockCommerce.createTender).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currency: 'USD',
+        limits: { targetMinorUnits: '4000', ceilingMinorUnits: '5050' },
+      }),
+    );
+  });
+
+  it('the owner’s typed currency wins over the suppliers’, and the note says where they differ', async () => {
+    noSavedSettings();
+    listedIn('USD', '4500');
+    const screen = render(<AskQuotesScreen />);
+    fireEvent.changeText(screen.getByTestId('ask-currency'), 'eur');
+    await pick(screen);
+    expect(screen.getByTestId('ask-currency').props.value).toBe('EUR');
+    await waitFor(() =>
+      expect(screen.getByTestId('ask-currency-note').props.children).toBe(
+        'Some of these suppliers list prices in USD.',
+      ),
+    );
+  });
+
+  it('a saved buyer currency beats the suppliers’ listed one', async () => {
+    listedIn('USD', '4500');
+    const screen = render(<AskQuotesScreen />);
+    await waitFor(() => expect(screen.getByTestId('ask-currency').props.value).toBe('INR'));
+    await pick(screen);
+    expect(screen.getByTestId('ask-currency').props.value).toBe('INR');
+  });
+});

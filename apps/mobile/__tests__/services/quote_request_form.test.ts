@@ -32,6 +32,55 @@ it('turns main-unit amounts into minor units', () => {
   expect(toMinorUnits('1.234')).toBeNull();
 });
 
+it('amounts follow the currency’s own decimals, not always two', () => {
+  expect(toMinorUnits('2500', 0)).toBe('2500');
+  expect(toMinorUnits('2500.5', 0)).toBeNull();
+  expect(toMinorUnits('12.345', 3)).toBe('12345');
+  expect(toMinorUnits('12.3', 3)).toBe('12300');
+});
+
+describe('the tender currency', () => {
+  const withLimits = (currency: string, target: string, ceiling: string) =>
+    draft({ currency, limits: { ...EMPTY_LIMITS, target, ceiling } });
+
+  it('a yen tender sends whole yen: no hundredfold', () => {
+    const outcome = buildTenderRequest(withLimits('JPY', '30000', '40000'));
+    if (!outcome.ok) throw new Error(outcome.problems.join('; '));
+    expect(outcome.request.currency).toBe('JPY');
+    expect(outcome.request.limits).toMatchObject({
+      targetMinorUnits: '30000',
+      ceilingMinorUnits: '40000',
+    });
+  });
+
+  it('a dinar tender sends fils (three decimals)', () => {
+    const outcome = buildTenderRequest(withLimits('BHD', '12.5', '15'));
+    if (!outcome.ok) throw new Error(outcome.problems.join('; '));
+    expect(outcome.request.limits).toMatchObject({
+      targetMinorUnits: '12500',
+      ceilingMinorUnits: '15000',
+    });
+  });
+
+  it('decimals a currency does not have are said in words, in that currency', () => {
+    const outcome = buildTenderRequest(withLimits('JPY', '300.50', '400'));
+    expect(outcome).toEqual({
+      ok: false,
+      problems: ['To negotiate, give both a target and a ceiling in JPY, like 2500.'],
+    });
+  });
+
+  it('a code that is not three letters is refused', () => {
+    const outcome = buildTenderRequest(draft({ currency: 'RUPEES' }));
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.problems).toContain(
+        'The currency must be a three-letter code, like INR or USD.',
+      );
+    }
+  });
+});
+
 it('a complete form becomes the tender request, empty lines dropped, ids numbered', () => {
   const outcome = buildTenderRequest(
     draft({
@@ -114,7 +163,7 @@ it.each([
   [
     'only a target',
     draft({ limits: { ...EMPTY_LIMITS, target: '3000' } }),
-    'To negotiate, give both a target and a ceiling, like 2500 or 2500.50.',
+    'To negotiate, give both a target and a ceiling in INR, like 2500 or 2500.50.',
   ],
   [
     'too many rounds (Core’s rule)',

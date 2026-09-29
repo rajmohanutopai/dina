@@ -36,6 +36,8 @@ import { DispatchIntentSweeper } from './dispatch_intent_sweeper';
 import { CommerceEpochRevalidator } from './epoch_revalidator';
 import { InviteSweeper } from './invite_sweeper';
 import { ReconcilePollSweeper } from './reconcile_sweeper';
+import { getCommerceRuntime } from './runtime';
+import { syncSupplierListingName } from './supplier_listing';
 import { SupplierReferenceRunner } from './supplier_runner';
 
 import type { CommerceAdmissionSweeperOptions } from './admission_sweeper';
@@ -81,7 +83,10 @@ export interface CommerceSweeperOptions {
    * resolves the installed invite service per tick and a node with none
    * ticks quietly. Only cadence and observers configure.
    */
-  invite?: Pick<import('./invite_sweeper').InviteSweeperOptions, 'intervalMs' | 'onSweep' | 'onError'>;
+  invite?: Pick<
+    import('./invite_sweeper').InviteSweeperOptions,
+    'intervalMs' | 'onSweep' | 'onError'
+  >;
   /**
    * The reference supplier runner (item 5). Optional: a host that cannot
    * reach its own routes in process leaves it out, and the pack then waits
@@ -107,6 +112,18 @@ export interface CommerceSweepers {
   negotiation: NegotiationSweeper;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
+}
+
+/**
+ * A node whose listing was published before the business had a legal name
+ * still says "Commerce"; boot is where it heals. Best effort: a failure leaves
+ * the old name, and the next save of Business identity (or the next boot)
+ * tries again.
+ */
+function healSupplierListingName(): void {
+  const business = getCommerceRuntime()?.settings.readBusiness();
+  if (business === undefined || !business.ok) return;
+  void syncSupplierListingName({ legalName: business.settings.legalName }).catch(() => undefined);
 }
 
 /** Construct and start the commerce ticks. */
@@ -142,6 +159,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
   invite.start();
   supplierRunner?.start();
   negotiation.start();
+  healSupplierListingName();
   return {
     admission,
     epoch,

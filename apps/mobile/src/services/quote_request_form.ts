@@ -9,7 +9,12 @@
  * (the same two-decimal display the Tender screen uses).
  */
 
-import { DEFAULT_TENDER_FANOUT, tenderPolicyError, type CreateTenderRequest } from '@dina/core';
+import {
+  currencyExponent,
+  DEFAULT_TENDER_FANOUT,
+  tenderPolicyError,
+  type CreateTenderRequest,
+} from '@dina/core';
 
 /** Units a line may be counted in (the closed §9.2 vocabulary), with their decimals. */
 export const LINE_UNITS: readonly { code: string; label: string; scale: number }[] = [
@@ -66,12 +71,22 @@ export function emptyLine(): LineDraft {
   return { text: '', quantity: '1', unitCode: 'each' };
 }
 
-/** "2500.5" → "250050"; null when it is not an amount with at most two decimals. */
-export function toMinorUnits(amount: string): string | null {
-  const m = /^(\d{1,15})(?:\.(\d{1,2}))?$/.exec(amount.trim());
+/**
+ * An amount in main units → minor units at the currency's own exponent:
+ * "2500.5" INR → "250050", "2500" JPY → "2500", "12.345" BHD → "12345".
+ * Null when it is not an amount, or has more decimals than the currency has.
+ */
+export function toMinorUnits(amount: string, exponent = 2): string | null {
+  const m = /^(\d{1,15})(?:\.(\d+))?$/.exec(amount.trim());
   if (m === null) return null;
-  const minor = `${m[1] ?? ''}${(m[2] ?? '').padEnd(2, '0')}`.replace(/^0+(?=\d)/, '');
-  return minor;
+  const fraction = m[2] ?? '';
+  if (fraction.length > exponent) return null;
+  return `${m[1] ?? ''}${fraction.padEnd(exponent, '0')}`.replace(/^0+(?=\d)/, '');
+}
+
+/** An example amount in the currency's own shape, for messages. */
+function exampleAmount(exponent: number): string {
+  return exponent === 0 ? '2500' : `2500 or 2500.${'5'.padEnd(exponent, '0')}`;
 }
 
 function quantityProblem(line: LineDraft): string | null {
@@ -112,8 +127,10 @@ export function buildTenderRequest(draft: QuoteRequestDraft): BuildOutcome {
   if (draft.region === null || draft.region.value.trim() === '') {
     problems.push('Say where to deliver (a postal code).');
   }
-  if (!/^[A-Z]{3}$/.test(draft.currency))
-    problems.push('The currency must be a three-letter code.');
+  if (!/^[A-Z]{3}$/.test(draft.currency)) {
+    problems.push('The currency must be a three-letter code, like INR or USD.');
+  }
+  const exponent = currencyExponent(draft.currency);
 
   let limits: CreateTenderRequest['limits'];
   const { target, ceiling, maxRounds, deadlineSeconds } = draft.limits;
@@ -123,11 +140,13 @@ export function buildTenderRequest(draft: QuoteRequestDraft): BuildOutcome {
     maxRounds.trim() !== '' ||
     deadlineSeconds !== null;
   if (anyLimit) {
-    const targetMinor = toMinorUnits(target);
-    const ceilingMinor = toMinorUnits(ceiling);
+    const targetMinor = toMinorUnits(target, exponent);
+    const ceilingMinor = toMinorUnits(ceiling, exponent);
     const rounds = maxRounds.trim() === '' ? undefined : Number(maxRounds);
     if (targetMinor === null || ceilingMinor === null) {
-      problems.push('To negotiate, give both a target and a ceiling, like 2500 or 2500.50.');
+      problems.push(
+        `To negotiate, give both a target and a ceiling in ${draft.currency}, like ${exampleAmount(exponent)}.`,
+      );
     } else {
       const policyError = tenderPolicyError({
         currency: draft.currency,

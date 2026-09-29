@@ -10,7 +10,7 @@
  */
 
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
@@ -37,6 +37,15 @@ function shortDid(did: string): string {
   return did.length > 20 ? `${did.slice(0, 12)}…${did.slice(-4)}` : did;
 }
 
+/** Where the tender's currency came from; a higher rank is not overridden by a lower one. */
+type CurrencySource = 'fallback' | 'suppliers' | 'settings' | 'owner';
+const CURRENCY_RANK: Record<CurrencySource, number> = {
+  fallback: 0,
+  suppliers: 1,
+  settings: 2,
+  owner: 3,
+};
+
 export default function AskQuotesScreen(): React.ReactElement {
   const router = useRouter();
   const params = useLocalSearchParams<{ draft?: string }>();
@@ -48,7 +57,17 @@ export default function AskQuotesScreen(): React.ReactElement {
   const [picked, setPicked] = useState<PickedSupplier[]>([]);
   const [postal, setPostal] = useState('');
   const [savedRegions, setSavedRegions] = useState<string[]>([]);
+  // The tender's currency. Where it came from decides whether a later source
+  // may replace it: the owner's own typing is final; the saved buyer currency
+  // beats the suppliers' listed one; INR is the last resort.
   const [currency, setCurrency] = useState('INR');
+  const currencySource = useRef<CurrencySource>('fallback');
+  /** Take `code` unless a stronger source already chose the currency. */
+  const offerCurrency = useCallback((code: string, source: CurrencySource) => {
+    if (CURRENCY_RANK[source] < CURRENCY_RANK[currencySource.current]) return;
+    currencySource.current = source;
+    setCurrency(code);
+  }, []);
   const [preferred, setPreferred] = useState<string[]>([]);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [limits, setLimits] = useState<LimitsDraft>(prefill?.limits ?? EMPTY_LIMITS);
@@ -71,7 +90,9 @@ export default function AskQuotesScreen(): React.ReactElement {
         setSavedRegions(postals);
         if (postals[0] !== undefined)
           setPostal((current) => (current === '' ? (postals[0] ?? '') : current));
-        if (/^[A-Z]{3}$/.test(answer.settings.currency)) setCurrency(answer.settings.currency);
+        if (/^[A-Z]{3}$/.test(answer.settings.currency)) {
+          offerCurrency(answer.settings.currency, 'settings');
+        }
         setPreferred(answer.settings.preferredSuppliers);
         setBlocked(answer.settings.blockedSuppliers);
       })
@@ -81,7 +102,19 @@ export default function AskQuotesScreen(): React.ReactElement {
     return () => {
       live = false;
     };
-  }, []);
+  }, [offerCurrency]);
+
+  // With no saved buyer currency, the picked suppliers' listed prices say
+  // which currency the trade is in — when they agree.
+  const supplierCurrencies = useMemo(
+    () => [...new Set(picked.flatMap((p) => (p.currency !== undefined ? [p.currency] : [])))],
+    [picked],
+  );
+  useEffect(() => {
+    const only = supplierCurrencies.length === 1 ? supplierCurrencies[0] : undefined;
+    if (only !== undefined && /^[A-Z]{3}$/.test(only)) offerCurrency(only, 'suppliers');
+  }, [offerCurrency, supplierCurrencies]);
+  const listedElsewhere = supplierCurrencies.filter((c) => c !== currency);
 
   const setLine = (i: number, patch: Partial<LineDraft>): void =>
     setLines((all) => all.map((line, j) => (j === i ? { ...line, ...patch } : line)));
@@ -241,6 +274,25 @@ export default function AskQuotesScreen(): React.ReactElement {
           max={DEFAULT_TENDER_FANOUT}
         />
 
+        <Text style={styles.sectionTitle}>Currency</Text>
+        <TextInput
+          testID="ask-currency"
+          style={[styles.input, styles.currency]}
+          value={currency}
+          onChangeText={(text) => offerCurrency(text.toUpperCase().replace(/[^A-Z]/g, ''), 'owner')}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={3}
+          placeholder="INR"
+          placeholderTextColor={colors.textMuted}
+          accessibilityLabel="Currency, a three-letter code"
+        />
+        {listedElsewhere.length > 0 && (
+          <Text style={styles.meta} testID="ask-currency-note">
+            {`Some of these suppliers list prices in ${listedElsewhere.join(', ')}.`}
+          </Text>
+        )}
+
         <Text style={styles.sectionTitle}>Negotiate (optional)</Text>
         <Text style={styles.meta}>
           Dina counters toward your target and never accepts above your ceiling, in {currency}.
@@ -352,6 +404,7 @@ const styles = StyleSheet.create({
   quantityRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   quantity: { width: 72 },
   half: { flex: 1 },
+  currency: { width: 96 },
   units: {
     flex: 1,
     flexDirection: 'row',

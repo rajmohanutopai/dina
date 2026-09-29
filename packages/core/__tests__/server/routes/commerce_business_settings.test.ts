@@ -109,7 +109,8 @@ describe('PUT /v1/commerce/settings/business', () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    // No supplier listing on this node, so nothing to rename.
+    expect(res.body).toEqual({ ok: true, listing: 'unchanged' });
     const read = settings.readBusiness();
     expect(read.ok).toBe(true);
     if (!read.ok) throw new Error('expected settings');

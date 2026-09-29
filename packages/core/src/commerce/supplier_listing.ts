@@ -98,6 +98,52 @@ export function describeSupplierListing(): {
   };
 }
 
+/**
+ * The name a supplier listing carries while the business has no legal name.
+ * A placeholder, not a name: search shows it beside the DID, and the listing
+ * takes the legal name as soon as the owner sets one
+ * (`syncSupplierListingName`).
+ */
+export const PLACEHOLDER_LISTING_NAME = 'Commerce';
+
+/** The listing name for a business: its legal name when set, else the placeholder. */
+export function supplierListingNameFor(legalName: string | undefined): string {
+  const name = legalName?.trim() ?? '';
+  return name === '' ? PLACEHOLDER_LISTING_NAME : name;
+}
+
+export type SupplierListingRename = 'renamed' | 'unchanged';
+
+/**
+ * Keep the supplier listing's public name in step with the business's legal
+ * name. A supplier who enabled selling before filling in Business identity was
+ * published as "Commerce" for good: saving the legal name changed nothing, and
+ * binding keeps an existing listing's name. Renames only a commerce listing
+ * still carrying the placeholder or the business's PREVIOUS legal name; a name
+ * the owner chose in Service Sharing stays theirs.
+ */
+export async function syncSupplierListingName(args: {
+  legalName: string | undefined;
+  previousLegalName?: string;
+}): Promise<SupplierListingRename> {
+  const legalName = args.legalName?.trim() ?? '';
+  if (legalName === '') return 'unchanged';
+  const existing = getServiceConfig(SUPPLIER_LISTING_RKEY);
+  if (existing === null || existing.name === legalName) return 'unchanged';
+  const isCommerce = Object.keys(existing.capabilities ?? {}).some((wire) =>
+    SUPPLIER_LISTING_BINDINGS.some((b) => b.wire === wire),
+  );
+  if (!isCommerce) return 'unchanged';
+  const previous = args.previousLegalName?.trim() ?? '';
+  const stale =
+    existing.name === PLACEHOLDER_LISTING_NAME || (previous !== '' && existing.name === previous);
+  if (!stale) return 'unchanged';
+  const checked = validateServiceConfigForSave({ ...existing, name: legalName });
+  if (!checked.ok) return 'unchanged';
+  await setServiceConfigDurable(checked.config, SUPPLIER_LISTING_RKEY);
+  return 'renamed';
+}
+
 export async function bindSupplierListing(args: {
   installId: string;
   name: string;

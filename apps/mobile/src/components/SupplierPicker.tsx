@@ -9,6 +9,8 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { formatMoneyAmount } from '@dina/core';
+
 import { ownerErrorText } from '../services/owner_errors';
 import { findSuppliersHere, type SupplierMatch } from '../services/supplier_finder';
 import { colors, radius, spacing, textStyles } from '../theme';
@@ -17,6 +19,8 @@ export interface PickedSupplier {
   supplierDid: string;
   serviceRkey: string;
   name: string | null;
+  /** The currency the supplier's catalog prices are in, when it lists any. */
+  currency?: string;
 }
 
 export interface SupplierPickerProps {
@@ -46,8 +50,11 @@ export function trustWords(score: number | null): string {
 
 function priceFrom(p: { currency: string; minorUnits: string } | undefined): string | null {
   if (p === undefined || !/^\d+$/.test(p.minorUnits)) return null;
-  const padded = p.minorUnits.padStart(3, '0');
-  return `from ${p.currency} ${padded.slice(0, -2)}.${padded.slice(-2)}`;
+  try {
+    return `from ${p.currency} ${formatMoneyAmount({ currency: p.currency, minor_units: p.minorUnits })}`;
+  } catch {
+    return null; // a price the wire rules refuse is not shown at all
+  }
 }
 
 const keyOf = (s: { supplierDid: string; serviceRkey: string }): string =>
@@ -124,7 +131,12 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
     } else if (props.picked.length < props.max) {
       props.onChange([
         ...props.picked,
-        { supplierDid: s.supplierDid, serviceRkey: s.serviceRkey, name: s.name },
+        {
+          supplierDid: s.supplierDid,
+          serviceRkey: s.serviceRkey,
+          name: s.name,
+          ...(s.indicativeFrom !== undefined ? { currency: s.indicativeFrom.currency } : {}),
+        },
       ]);
     }
   };

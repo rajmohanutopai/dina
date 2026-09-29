@@ -275,7 +275,12 @@ import {
 } from '../../commerce/staff_grants';
 import { setStaffPin } from '../../commerce/staff_pins';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
-import { bindSupplierListing, describeSupplierListing } from '../../commerce/supplier_listing';
+import {
+  bindSupplierListing,
+  describeSupplierListing,
+  supplierListingNameFor,
+  syncSupplierListingName,
+} from '../../commerce/supplier_listing';
 import { bindReferenceRunner } from '../../commerce/supplier_runner';
 import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
 import { compareTender, createTender } from '../../commerce/tender';
@@ -2998,12 +3003,15 @@ function buyerApprovalContextFor(args: {
   };
 }
 
+/** The business's legal name, or undefined when none is saved. */
+function businessLegalName(): string | undefined {
+  const business = getCommerceRuntime()?.settings.readBusiness();
+  return business !== undefined && business.ok ? business.settings.legalName : undefined;
+}
+
 /** The name a freshly created supplier listing carries: the business's legal name when set. */
 function supplierListingName(): string {
-  const business = getCommerceRuntime()?.settings.readBusiness();
-  return business !== undefined && business.ok && business.settings.legalName.trim() !== ''
-    ? business.settings.legalName.trim()
-    : 'Commerce';
+  return supplierListingNameFor(businessLegalName());
 }
 
 function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): void {
@@ -3464,15 +3472,29 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
       if (body === null || typeof body !== 'object') {
         return { status: 400, body: { error: 'settings body is required' } };
       }
+      const previousLegalName = kind === 'business' ? businessLegalName() : undefined;
       const written =
         kind === 'buyer'
           ? runtime.settings.writeBuyer(body as never)
           : kind === 'supplier'
             ? runtime.settings.writeSupplier(body as never)
             : runtime.settings.writeBusiness(body as never);
-      return written.ok
-        ? { status: 200, body: { ok: true } }
-        : { status: 400, body: { ok: false, findings: written.findings } };
+      if (!written.ok) return { status: 400, body: { ok: false, findings: written.findings } };
+      if (kind === 'business') {
+        // The public listing follows the legal name (a listing made before it
+        // was set says "Commerce"). The settings are saved either way; a
+        // listing that could not be renamed says so rather than failing them.
+        try {
+          const listing = await syncSupplierListingName({
+            legalName: businessLegalName(),
+            ...(previousLegalName === undefined ? {} : { previousLegalName }),
+          });
+          return { status: 200, body: { ok: true, listing } };
+        } catch {
+          return { status: 200, body: { ok: true, listing: 'rename_failed' } };
+        }
+      }
+      return { status: 200, body: { ok: true } };
     });
   }
 }

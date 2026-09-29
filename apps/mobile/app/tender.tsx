@@ -13,7 +13,7 @@ import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { StaffCoreClient, staffTransportFor } from '@dina/core';
+import { formatMoneyAmount, StaffCoreClient, staffTransportFor } from '@dina/core';
 
 import { PresenceSheet } from '../src/components/PresenceSheet';
 import { usePresenceGate } from '../src/hooks/usePresenceGate';
@@ -97,9 +97,14 @@ export function refusalText(key: string): string {
 
 function money(minor: string, currency: string): string {
   if (!/^\d+$/.test(minor)) return minor;
-  const padded = minor.padStart(3, '0');
-  const amount = `${padded.slice(0, -2)}.${padded.slice(-2)}`;
-  return currency === '' ? amount : `${currency} ${amount}`;
+  // The currency's own decimals (yen none, dinar three), not always two.
+  try {
+    return `${currency} ${formatMoneyAmount({ currency, minor_units: minor })}`;
+  } catch {
+    const padded = minor.padStart(3, '0');
+    const amount = `${padded.slice(0, -2)}.${padded.slice(-2)}`;
+    return currency === '' ? amount : `${currency} ${amount}`;
+  }
 }
 
 function shortDid(did: string): string {

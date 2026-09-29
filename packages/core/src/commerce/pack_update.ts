@@ -22,7 +22,11 @@ import {
 } from './reference_install';
 import { SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
 import { getCommerceRuntime } from './runtime';
-import { bindSupplierListing, type SupplierListingOutcome } from './supplier_listing';
+import {
+  bindSupplierListing,
+  supplierListingNameFor,
+  type SupplierListingOutcome,
+} from './supplier_listing';
 
 import type { WideningFinding } from '../plugins/update_widening';
 import type { PluginManifest } from '@dina/protocol';
@@ -163,7 +167,7 @@ export async function confirmFirstPartyUpdate(args: {
 
 function listingName(): string {
   const business = getCommerceRuntime()?.settings.readBusiness();
-  return business !== undefined && business.ok && business.settings.legalName.trim() !== ''
-    ? business.settings.legalName.trim()
-    : 'Commerce';
+  return supplierListingNameFor(
+    business !== undefined && business.ok ? business.settings.legalName : undefined,
+  );
 }
