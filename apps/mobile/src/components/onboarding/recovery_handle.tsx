@@ -21,10 +21,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import {
-  resolveAndVerifyDidPlc,
-  type ResolveDidResult,
-} from '../../hooks/useOnboarding';
+import { resolveAndVerifyDidPlc, type ResolveDidResult } from '../../hooks/useOnboarding';
 import { locateStep, type Step } from '../../onboarding/state';
 import { colors, radius, spacing, textStyles } from '../../theme';
 
@@ -52,6 +49,13 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
         return;
       }
       setError(result.message);
+    } catch (err) {
+      // Anything that throws before the lookups (reading saved server
+      // settings, the recovery-phrase maths) used to drop silently: the
+      // button came back and nothing moved on.
+      setError(
+        `Couldn't check that handle: ${err instanceof Error ? err.message : String(err)}. Try again.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -94,12 +98,16 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
         </View>
       ) : null}
 
-      {error !== null ? <Text style={styles.error}>{error}</Text> : null}
+      {error !== null ? (
+        <Text style={styles.error} testID="recovery-handle-error">
+          {error}
+        </Text>
+      ) : null}
 
       <Text style={styles.hint}>
-        Dina checks that the recovery phrase you entered is registered as a rotation key on
-        the handle's PLC document, so a wrong phrase or a wrong handle will fail loudly
-        instead of silently restoring into the wrong account.
+        Dina checks that the recovery phrase you entered is registered as a rotation key on the
+        handle's PLC document, so a wrong phrase or a wrong handle will fail loudly instead of
+        silently restoring into the wrong account.
       </Text>
     </OnboardingShell>
   );

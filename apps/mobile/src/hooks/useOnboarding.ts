@@ -239,6 +239,29 @@ export type ResolveDidResult =
  * `tryBuildPdsPublisher` will do that with the seed-derived password
  * once the DID is persisted.
  */
+/** How long each directory lookup may take before the restore says so. */
+export const RESOLVE_TIMEOUT_MS = 15_000;
+
+/**
+ * `fetch` that gives up after `RESOLVE_TIMEOUT_MS`. Without it a PDS or PLC
+ * directory that never answers left the restore screen on "Verifying…" for
+ * good, with nothing to tell the owner.
+ */
+async function fetchBounded(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`no answer within ${String(RESOLVE_TIMEOUT_MS / 1000)} seconds`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function resolveAndVerifyDidPlc(
   handle: string,
   mnemonicWords: string[],
@@ -266,7 +289,7 @@ export async function resolveAndVerifyDidPlc(
   let did: string;
   try {
     const url = `${pdsURL.replace(/\/$/, '')}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(trimmed)}`;
-    const res = await fetch(url);
+    const res = await fetchBounded(url);
     if (res.status === 400 || res.status === 404) {
       return {
         kind: 'unknown_handle',
@@ -296,7 +319,7 @@ export async function resolveAndVerifyDidPlc(
   let plcDoc: { rotationKeys?: unknown };
   try {
     const url = `${plcURL.replace(/\/$/, '')}/${did}/data`;
-    const res = await fetch(url);
+    const res = await fetchBounded(url);
     if (res.status !== 200) {
       return {
         kind: 'no_plc_doc',
@@ -311,9 +334,7 @@ export async function resolveAndVerifyDidPlc(
   }
 
   const rotationKeys = Array.isArray(plcDoc.rotationKeys) ? plcDoc.rotationKeys : [];
-  const ourKeyMatches = rotationKeys.some(
-    (k) => typeof k === 'string' && k === ourK256DidKey,
-  );
+  const ourKeyMatches = rotationKeys.some((k) => typeof k === 'string' && k === ourK256DidKey);
   if (!ourKeyMatches) {
     return {
       kind: 'wrong_owner',
