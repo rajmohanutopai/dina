@@ -105,3 +105,7 @@ export {
   type FirstPartyConfirmResult,
   type FirstPartyUpdate,
 } from './pack_update';
+
+// The name a supplier listing carries before the business has a legal name;
+// surfaces treat it as no name.
+export { PLACEHOLDER_LISTING_NAME } from './supplier_listing';

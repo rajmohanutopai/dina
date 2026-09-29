@@ -69,13 +69,31 @@ export function PresenceSheet(props: PresenceSheetProps): React.ReactElement {
             </Text>
           )}
           <View style={styles.actions}>
-            <Pressable testID="presence-cancel" onPress={props.onCancel} disabled={props.busy}>
+            {/* Both buttons carry an explicit role, label and state, so screen
+                readers and automation find them the same way. Verify is never
+                disabled for an empty field (a disabled element is hidden from
+                some accessibility tools, and a field filled without typing
+                leaves the state empty); the gate says what is missing. While
+                a proof runs it keeps its label and reads as busy. */}
+            <Pressable
+              testID="presence-cancel"
+              onPress={props.onCancel}
+              disabled={props.busy}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              accessibilityState={{ disabled: props.busy }}
+              hitSlop={8}
+            >
               <Text style={styles.link}>Cancel</Text>
             </Pressable>
             <Pressable
               testID="presence-submit"
               onPress={props.onSubmit}
-              disabled={props.busy || props.secret.trim() === ''}
+              disabled={props.busy}
+              accessibilityRole="button"
+              accessibilityLabel={props.busy ? 'Verifying' : 'Verify'}
+              accessibilityState={{ disabled: props.busy, busy: props.busy }}
+              hitSlop={8}
             >
               {props.busy ? (
                 <ActivityIndicator color={colors.core} />

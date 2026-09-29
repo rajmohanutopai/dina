@@ -10,7 +10,7 @@
  */
 
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatMoneyAmount, StaffCoreClient, staffTransportFor } from '@dina/core';
@@ -21,6 +21,7 @@ import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { CONNECT_OWNER_DEVICE_MESSAGE, errorKeyOf } from '../src/services/owner_errors';
 import { loadStaffIdentity } from '../src/services/staff_identity_store';
 import { makeStaffWebSocket } from '../src/services/staff_transport_rn';
+import { shortDid, supplierLabels, supplierNamesHere } from '../src/services/supplier_names';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type {
@@ -105,10 +106,6 @@ function money(minor: string, currency: string): string {
     const amount = `${padded.slice(0, -2)}.${padded.slice(-2)}`;
     return currency === '' ? amount : `${currency} ${amount}`;
   }
-}
-
-function shortDid(did: string): string {
-  return did.length > 20 ? `${did.slice(0, 12)}…${did.slice(-4)}` : did;
 }
 
 export default function TenderScreen(): React.ReactElement {
@@ -257,6 +254,43 @@ export default function TenderScreen(): React.ReactElement {
     view !== null &&
     (view.state === 'ready' || view.state === 'no_policy' || view.state === 'negotiating');
   const awardedTo = view?.awarded_supplier_did ?? '';
+
+  // Core's tender knows suppliers by DID only; show the owner's name for
+  // them (contact, else listing), and the DID only where no name is known or
+  // two suppliers share one.
+  const [names, setNames] = useState<Map<string, string | null>>(new Map());
+  const refsKey =
+    view === null
+      ? ''
+      : [
+          ...view.ranked.map((o) => `${o.supplier_did}|${o.service_rkey}`),
+          ...view.excluded.map((r) => `${r.supplier_did}|self`),
+        ].join(',');
+  useEffect(() => {
+    if (refsKey === '') return;
+    let live = true;
+    const refs = refsKey.split(',').map((pair) => {
+      const [supplierDid = '', serviceRkey = 'self'] = pair.split('|');
+      return { supplierDid, serviceRkey };
+    });
+    void supplierNamesHere(refs).then((resolved) => {
+      if (live) setNames(resolved);
+    });
+    return () => {
+      live = false;
+    };
+  }, [refsKey]);
+  const labels = useMemo(
+    () =>
+      supplierLabels(
+        [...(view?.ranked ?? []), ...(view?.excluded ?? [])].map((row) => ({
+          supplierDid: row.supplier_did,
+          name: names.get(row.supplier_did) ?? null,
+        })),
+      ),
+    [names, view],
+  );
+  const labelOf = (did: string): string => labels.get(did) ?? shortDid(did);
   const heading = useMemo(() => {
     if (view === null) return '';
     // Before any supplier has answered there is nothing to negotiate yet.
@@ -313,7 +347,7 @@ export default function TenderScreen(): React.ReactElement {
                 <View style={styles.offerText}>
                   <Text style={styles.offerTitle}>
                     {index === 0 ? 'Best offer · ' : ''}
-                    {shortDid(offer.supplier_did)}
+                    {labelOf(offer.supplier_did)}
                   </Text>
                   <Text style={styles.offerTotal} testID={`tender-total-${offer.supplier_did}`}>
                     {money(offer.total_minor, offer.currency)}
@@ -358,7 +392,7 @@ export default function TenderScreen(): React.ReactElement {
                     style={styles.meta}
                     testID={`tender-excluded-${row.supplier_did}`}
                   >
-                    {shortDid(row.supplier_did)} — {EXCLUDED_LABEL[row.reason]}
+                    {labelOf(row.supplier_did)} — {EXCLUDED_LABEL[row.reason]}
                   </Text>
                 ))}
               </>

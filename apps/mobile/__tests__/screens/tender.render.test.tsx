@@ -28,6 +28,11 @@ jest.mock('../../src/services/staff_identity_store', () => ({
   loadStaffIdentity: async () => null,
 }));
 jest.mock('../../src/services/staff_transport_rn', () => ({ makeStaffWebSocket: () => null }));
+const mockNames = new Map<string, string | null>();
+jest.mock('../../src/services/supplier_names', () => ({
+  ...jest.requireActual<object>('../../src/services/supplier_names'),
+  supplierNamesHere: async () => mockNames,
+}));
 
 const A = 'did:plc:supplieraaaa';
 const B = 'did:plc:supplierbbbb';
@@ -79,6 +84,7 @@ function backend(over: Partial<TenderBackend> = {}): TenderBackend & {
 
 beforeEach(() => {
   params = { tender_id: 'tnd-1' };
+  mockNames.clear();
 });
 afterEach(() => setTenderBackendForTest(null));
 
@@ -300,6 +306,35 @@ describe('the tender screen', () => {
         jest.advanceTimersByTime(30_000);
       });
       expect(ranking).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('suppliers by name', () => {
+    // Reported: the offers read "did:plc:mfsy…7goi". Core's tender knows DIDs
+    // only; the screen shows the name it resolves, and the DID only where no
+    // name is known or two suppliers share one.
+    it('an offer and an excluded row show the supplier’s name, not the DID', async () => {
+      mockNames.set(B, 'Albert Timber');
+      mockNames.set(A, 'Alonso Furniture');
+      setTenderBackendForTest(backend());
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(view.getByText(/Albert Timber/)).toBeTruthy());
+      expect(view.getByText(/Best offer · Albert Timber/)).toBeTruthy();
+      expect(view.getByText(/Alonso Furniture — Over your budget/)).toBeTruthy();
+      expect(view.queryByText(/did:plc/)).toBeNull();
+    });
+
+    it('two suppliers with the same name keep their DIDs beside it', async () => {
+      mockNames.set(B, 'ChairMaker Workshop');
+      mockNames.set(A, 'ChairMaker Workshop');
+      setTenderBackendForTest(backend());
+      const view = render(<TenderScreen />);
+      await waitFor(() =>
+        expect(view.getByText(/ChairMaker Workshop · did:plc:supplierbbbb/)).toBeTruthy(),
+      );
+      expect(
+        view.getByText(/ChairMaker Workshop · did:plc:supplieraaaa — Over your budget/),
+      ).toBeTruthy();
     });
   });
 });

@@ -6,7 +6,7 @@
  * a unique name stands alone, and a nameless listing shows its DID.
  */
 
-import { supplierLabels } from '../../src/components/SupplierPicker';
+import { supplierLabels } from '../../src/services/supplier_names';
 
 const A = 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa';
 const B = 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb';

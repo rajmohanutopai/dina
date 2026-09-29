@@ -13,6 +13,7 @@ import { formatMoneyAmount } from '@dina/core';
 
 import { ownerErrorText } from '../services/owner_errors';
 import { findSuppliersHere, type SupplierMatch } from '../services/supplier_finder';
+import { shortDid, supplierLabels } from '../services/supplier_names';
 import { colors, radius, spacing, textStyles } from '../theme';
 
 export interface PickedSupplier {
@@ -36,10 +37,6 @@ export interface SupplierPickerProps {
   max: number;
 }
 
-function shortDid(did: string): string {
-  return did.length > 20 ? `${did.slice(0, 12)}…${did.slice(-4)}` : did;
-}
-
 /** PeerLens trust in words; "no reviews yet" is not the same as low trust. */
 export function trustWords(score: number | null): string {
   if (score === null) return 'No reviews yet';
@@ -59,36 +56,6 @@ function priceFrom(p: { currency: string; minorUnits: string } | undefined): str
 
 const keyOf = (s: { supplierDid: string; serviceRkey: string }): string =>
   `${s.supplierDid}\n${s.serviceRkey}`;
-
-/**
- * A listing's name is the supplier's own claim, and two suppliers may claim
- * the same one (or copy a trusted one). Where a name is shared on screen, the
- * DID goes beside it so the buyer can tell them apart.
- */
-export function supplierLabels(
-  suppliers: readonly { supplierDid: string; name: string | null }[],
-): Map<string, string> {
-  const dids = new Map<string, Set<string>>();
-  for (const s of suppliers) {
-    if (s.name === null) continue;
-    const set = dids.get(s.name) ?? new Set<string>();
-    set.add(s.supplierDid);
-    dids.set(s.name, set);
-  }
-  const labels = new Map<string, string>();
-  for (const s of suppliers) {
-    const shared = s.name !== null && (dids.get(s.name)?.size ?? 0) > 1;
-    labels.set(
-      s.supplierDid,
-      s.name === null
-        ? shortDid(s.supplierDid)
-        : shared
-          ? `${s.name} · ${shortDid(s.supplierDid)}`
-          : s.name,
-    );
-  }
-  return labels;
-}
 
 export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
   const [query, setQuery] = useState(props.initialQuery);

@@ -94,7 +94,7 @@ it('a wrong secret keeps the sheet open and run pending', async () => {
   expect(await settled(running)).toBe(false);
 });
 
-it('a staff PIN is trimmed; an empty secret sends nothing', async () => {
+it('a staff PIN is trimmed; an empty secret sends nothing and says what is missing', async () => {
   const operation = jest.fn().mockRejectedValueOnce(refusal()).mockResolvedValueOnce(undefined);
   const { options, hook } = gate({ secretKind: 'pin' });
   await act(async () => {
@@ -105,6 +105,8 @@ it('a staff PIN is trimmed; an empty secret sends nothing', async () => {
     hook.result.current.sheet.onSubmit();
   });
   expect(options.prove).not.toHaveBeenCalled();
+  // Said on the sheet, not silently ignored: Verify stays pressable.
+  expect(hook.result.current.sheet.error).toBe('Enter your PIN.');
   act(() => hook.result.current.sheet.onChangeSecret(' 4821 '));
   await act(async () => {
     hook.result.current.sheet.onSubmit();

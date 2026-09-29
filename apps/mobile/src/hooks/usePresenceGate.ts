@@ -97,7 +97,13 @@ export function usePresenceGate(options: PresenceGateOptions): PresenceGate {
   );
 
   const submit = useCallback(async () => {
-    if (pending === null || busy || secret.trim() === '') return;
+    if (pending === null || busy) return;
+    if (secret.trim() === '') {
+      // Verify stays pressable (a disabled button is hidden from some
+      // accessibility tools); an empty field is said, not ignored.
+      setError(secretKind === 'pin' ? 'Enter your PIN.' : 'Enter your passphrase.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
