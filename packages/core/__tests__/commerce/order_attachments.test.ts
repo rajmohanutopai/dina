@@ -639,6 +639,9 @@ describe('the owner’s two questions', () => {
       expires_at: EXPIRES,
     });
     expect(task?.description).toContain('through clover');
+    // Named by the supplier, not the order id: the line is the Activity title.
+    expect(task?.description).toContain('to the supplier');
+    expect(task?.description).not.toContain(ORDER.purchase_order_id);
     // Again is the same card, not a second one.
     expect(raiseOrderAttachmentCard(stores, link, T0 + 6, workflow)).toEqual(raised);
     expect(

@@ -541,7 +541,11 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
   describe('searchCatalog', () => {
     it('coerces snake_case candidates into the local camelCase shape', async () => {
       const { fetchFn } = makeFetch([
-        jsonResponse(200, { candidates: [CANDIDATE], examined: 1, suppressed_below_trust_floor: 0 }),
+        jsonResponse(200, {
+          candidates: [CANDIDATE],
+          examined: 1,
+          suppressed_below_trust_floor: 0,
+        }),
       ]);
       const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
       const [cand] = await c.searchCatalog({ q: 'oak chair' });
@@ -553,10 +557,31 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
       expect(cand.validUntil).toBeUndefined();
     });
 
+    it('searchCatalogWithFloor also reports how many items the trust floor dropped', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, {
+          candidates: [CANDIDATE],
+          examined: 3,
+          suppressed_below_trust_floor: 2,
+        }),
+        jsonResponse(200, { candidates: [], suppressed_below_trust_floor: 'lots' }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      const page = await c.searchCatalogWithFloor({ q: 'oak chair' });
+      expect(page.candidates).toHaveLength(1);
+      expect(page.suppressedBelowTrustFloor).toBe(2);
+      // A count that is not a whole number is no count.
+      expect((await c.searchCatalogWithFloor({ q: 'x' })).suppressedBelowTrustFloor).toBe(0);
+    });
+
     it('sends identifiers and categories as REPEATED query params', async () => {
       const { fetchFn, calls } = makeFetch([jsonResponse(200, { candidates: [] })]);
       const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
-      await c.searchCatalog({ identifiers: ['gtin:1', 'gtin:2'], categories: ['a', 'b'], limit: 5 });
+      await c.searchCatalog({
+        identifiers: ['gtin:1', 'gtin:2'],
+        categories: ['a', 'b'],
+        limit: 5,
+      });
       const url = calls[0];
       expect(url).toContain('/xrpc/com.dinakernel.commerce.searchCatalog');
       expect(url).toContain('identifier=gtin%3A1');
@@ -589,7 +614,9 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
             {
               ...CANDIDATE,
               valid_until: '2026-09-01T00:00:00.000Z',
-              fulfilment_regions: [{ scheme: 'iso-3166-2', value: 'IN-KA', issuer_did: 'did:plc:reg' }],
+              fulfilment_regions: [
+                { scheme: 'iso-3166-2', value: 'IN-KA', issuer_did: 'did:plc:reg' },
+              ],
               product: {
                 scheme: 'manufacturer_sku',
                 value: 'SKU1',
@@ -642,7 +669,9 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
     });
 
     it('maps a known DID with no score to null (never scored as zero)', async () => {
-      const { fetchFn } = makeFetch([jsonResponse(200, { did: 'did:plc:s', overallTrustScore: null })]);
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, { did: 'did:plc:s', overallTrustScore: null }),
+      ]);
       const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
       expect(await c.getProfile('did:plc:s')).toEqual({ overallTrustScore: null });
     });

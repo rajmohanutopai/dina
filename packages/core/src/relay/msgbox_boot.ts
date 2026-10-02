@@ -12,6 +12,7 @@ import { setWSDeliverFn } from '../transport/delivery';
 import {
   handleInboundD2D,
   handleInboundRPC,
+  rpcReady,
   handleRPCCancel,
   setRPCRouter,
   sendD2DViaWS,
@@ -28,7 +29,6 @@ import {
 } from './msgbox_ws';
 
 import type { CoreRouter } from '../server/router';
-
 
 export interface MsgBoxBootConfig {
   /** Home node DID (did:key:z...) */
@@ -108,82 +108,52 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
   setIdentity(config.did, config.privateKey);
   setWSFactory(config.wsFactory);
 
-  onD2DMessage((env) => {
-    handleInboundD2D(env, config.resolveSender)
-      .then(async (result) => {
-        // Contact-gate bypass for service.query / service.response: the
-        // receive pipeline validated + parsed the body but does not run
-        // provider-side logic itself. Hand off to the caller's dispatcher
-        // (Brain in production, a stub in tests).
-        if (
-          result.success &&
-          result.pipelineAction === 'bypassed' &&
-          result.bypassedBody !== undefined &&
-          result.messageType !== undefined &&
-          result.senderDID !== undefined &&
-          config.onBypassedD2D !== undefined
-        ) {
-          try {
-            await config.onBypassedD2D({
-              senderDID: result.senderDID,
-              messageType: result.messageType,
-              body: result.bypassedBody,
-            });
-          } catch {
-            // Dispatcher errors are caller-owned; we've done our job.
-          }
-        }
-        if (
-          result.success &&
-          (result.pipelineAction === 'staged' || result.pipelineAction === 'ephemeral') &&
-          result.stagedBody !== undefined &&
-          result.messageType !== undefined &&
-          result.senderDID !== undefined &&
-          config.onStagedD2D !== undefined
-        ) {
-          try {
-            await config.onStagedD2D({
-              senderDID: result.senderDID,
-              messageType: result.messageType,
-              body: result.stagedBody,
-              senderCreatedTime: result.senderCreatedTime,
-            });
-          } catch {
-            // UI fan-out errors are caller-owned; the vault copy is authoritative.
-          }
-        }
-        // Quarantined (unknown sender): surface a review card. Note this
-        // is NOT gated on `result.success` — quarantine is a "false"
-        // outcome (nothing staged), but the user still needs to see it.
-        if (
-          result.pipelineAction === 'quarantined' &&
-          result.quarantineId !== undefined &&
-          result.messageType !== undefined &&
-          result.senderDID !== undefined &&
-          config.onQuarantinedD2D !== undefined
-        ) {
-          try {
-            await config.onQuarantinedD2D({
-              senderDID: result.senderDID,
-              messageType: result.messageType,
-              quarantineId: result.quarantineId,
-            });
-          } catch {
-            // Review-card fan-out errors are caller-owned; the message
-            // remains in the quarantine store for later review.
-          }
-        }
-      })
-      .catch(() => {
-        /* handler errors logged inside handleInboundD2D */
-      });
+  // Each handler returns its promise: the relay connection acks an envelope
+  // when it settles, and keeps (does not ack) one it resolves `false` for.
+  //
+  // Staged, quarantined and refused D2D are acked once the receive pipeline
+  // has run: the vault or quarantine copy is the durable one, and the UI
+  // fan-out runs on its own. Service traffic (`bypassed`) is NOT stored by
+  // the pipeline — the dispatcher is where it is taken in — so its ack waits
+  // for the dispatcher. A node built with no dispatcher drops service
+  // traffic on purpose and acks it: keeping it would not help, because the
+  // pipeline has already recorded the message id against replay, so the
+  // relay's next copy would be refused as a replay and acked anyway.
+  onD2DMessage(async (env) => {
+    const result = await handleInboundD2D(env, config.resolveSender);
+    if (
+      result.success &&
+      result.pipelineAction === 'bypassed' &&
+      result.bypassedBody !== undefined &&
+      result.messageType !== undefined &&
+      result.senderDID !== undefined
+    ) {
+      if (config.onBypassedD2D === undefined) {
+        console.warn(`[d2d] service ${result.messageType} dropped: no service dispatcher on this node`);
+        return undefined;
+      }
+      try {
+        await config.onBypassedD2D({
+          senderDID: result.senderDID,
+          messageType: result.messageType,
+          body: result.bypassedBody,
+        });
+      } catch {
+        // Dispatcher errors are caller-owned; it has had the message.
+      }
+      return undefined;
+    }
+    void fanOutInboundD2D(result, config);
+    return undefined;
   });
 
-  onRPCRequest((env) => {
-    handleInboundRPC(env).catch(() => {
-      /* handler errors logged inside handleInboundRPC */
-    });
-  });
+  onRPCRequest((env) =>
+    rpcReady()
+      ? handleInboundRPC(env).catch(() => {
+          /* handler errors logged inside handleInboundRPC */
+        })
+      : false,
+  );
 
   onRPCCancel((env) => {
     handleRPCCancel(env);
@@ -211,6 +181,58 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
   await connectToMsgBox(config.msgboxURL, {
     readyTimeoutMs: config.readyTimeoutMs ?? 10_000,
   });
+}
+
+/**
+ * Hand a stored inbound D2D result on: staged messages to the UI,
+ * quarantined ones to a review card. (Service traffic goes to the dispatcher
+ * in the D2D handler above, which holds the ack for it.) Errors here are the
+ * caller's; the vault (or quarantine) copy is already authoritative.
+ */
+async function fanOutInboundD2D(
+  result: Awaited<ReturnType<typeof handleInboundD2D>>,
+  config: MsgBoxBootConfig,
+): Promise<void> {
+  if (
+    result.success &&
+    (result.pipelineAction === 'staged' || result.pipelineAction === 'ephemeral') &&
+    result.stagedBody !== undefined &&
+    result.messageType !== undefined &&
+    result.senderDID !== undefined &&
+    config.onStagedD2D !== undefined
+  ) {
+    try {
+      await config.onStagedD2D({
+        senderDID: result.senderDID,
+        messageType: result.messageType,
+        body: result.stagedBody,
+        senderCreatedTime: result.senderCreatedTime,
+      });
+    } catch {
+      // UI fan-out errors are caller-owned; the vault copy is authoritative.
+    }
+  }
+  // Quarantined (unknown sender): surface a review card. Note this
+  // is NOT gated on `result.success` — quarantine is a "false"
+  // outcome (nothing staged), but the user still needs to see it.
+  if (
+    result.pipelineAction === 'quarantined' &&
+    result.quarantineId !== undefined &&
+    result.messageType !== undefined &&
+    result.senderDID !== undefined &&
+    config.onQuarantinedD2D !== undefined
+  ) {
+    try {
+      await config.onQuarantinedD2D({
+        senderDID: result.senderDID,
+        messageType: result.messageType,
+        quarantineId: result.quarantineId,
+      });
+    } catch {
+      // Review-card fan-out errors are caller-owned; the message
+      // remains in the quarantine store for later review.
+    }
+  }
 }
 
 /**

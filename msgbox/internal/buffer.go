@@ -60,6 +60,13 @@ func NewBuffer(dbPath string) (*Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
+	if dbPath == ":memory:" {
+		// Shared-cache tables lock per connection, and SQLITE_LOCKED is not
+		// retried by busy_timeout: a read on one pooled connection during a
+		// write on another fails the write outright. One connection
+		// serializes them. (A file database uses WAL and is not affected.)
+		db.SetMaxOpenConns(1)
+	}
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS messages (
 			id         TEXT PRIMARY KEY,
@@ -78,6 +85,10 @@ func NewBuffer(dbPath string) (*Buffer, error) {
 	// Existing rows get sender="" and expires_at=NULL via defaults.
 	db.Exec("ALTER TABLE messages ADD COLUMN sender TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE messages ADD COLUMN expires_at INTEGER")
+	// Delivery acknowledgement: when a message was written to a connection
+	// that acknowledges what it receives. Such a message stays buffered until
+	// the recipient acks it; NULL = never written to such a connection.
+	db.Exec("ALTER TABLE messages ADD COLUMN delivered_at INTEGER")
 	return &Buffer{db: db}, nil
 }
 
@@ -201,6 +212,36 @@ func (b *Buffer) DeleteForRecipient(msgID, recipientDID string) bool {
 	}
 	n, _ := result.RowsAffected()
 	return n > 0
+}
+
+// MarkDelivered records that a buffered message was written to a connection
+// that acknowledges what it receives. The message stays buffered (and is sent
+// again on the next connect) until the recipient acks it.
+func (b *Buffer) MarkDelivered(msgID string) {
+	b.db.Exec("UPDATE messages SET delivered_at = ? WHERE id = ?", time.Now().Unix(), msgID)
+}
+
+// RecipientOf reports the recipient a buffered message is held for.
+func (b *Buffer) RecipientOf(msgID string) (string, bool) {
+	var recipient string
+	if err := b.db.QueryRow("SELECT recipient FROM messages WHERE id = ?", msgID).Scan(&recipient); err != nil {
+		return "", false
+	}
+	return recipient, true
+}
+
+// CancelBuffered removes a buffered message for a cancel and reports whether
+// it was there and whether it had already been delivered (written, not yet
+// acked). A message never delivered is cancelled here outright; one already
+// delivered may be in the recipient's hands, so the cancel must still reach it.
+func (b *Buffer) CancelBuffered(msgID string) (found bool, delivered bool) {
+	var deliveredAt sql.NullInt64
+	err := b.db.QueryRow("SELECT delivered_at FROM messages WHERE id = ?", msgID).Scan(&deliveredAt)
+	if err != nil {
+		return false, false
+	}
+	b.DeleteIfExists(msgID)
+	return true, deliveredAt.Valid
 }
 
 // DeleteIfExists removes a single message by ID and reports whether a row

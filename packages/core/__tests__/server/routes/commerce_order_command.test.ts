@@ -327,6 +327,36 @@ describe('the projection authorizes the command', () => {
   });
 });
 
+describe('check_status', () => {
+  const CAMEL = ['purchaseOrderId', 'nextPollAtMs', 'pollCount', 'updatedAt'];
+
+  it('answers snake_case, like every other command answer', async () => {
+    buyerOrders.create(SUPPLIER, record({ state: 'accepted', nextPollAtMs: 1 }));
+    const resp = await router.handle(
+      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'check_status' }),
+    );
+    expect(resp.status).toBe(200);
+    const body = resp.body as Record<string, unknown>;
+    expect(body.purchase_order_id).toBe(PO);
+    expect(body).toHaveProperty('next_poll_at_ms');
+    expect(body).toHaveProperty('poll_count');
+    for (const key of CAMEL) expect(body).not.toHaveProperty(key);
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it('answers snake_case on its refusal too', async () => {
+    buyerOrders.create(SUPPLIER, record({ state: 'accepted', nextPollAtMs: 1, serviceRkey: '' }));
+    const resp = await router.handle(
+      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'check_status' }),
+    );
+    expect(resp.status).toBe(409);
+    const body = resp.body as Record<string, unknown>;
+    expect(body.error).toBe('undescribable');
+    expect(body.purchase_order_id).toBe(PO);
+    for (const key of CAMEL) expect(body).not.toHaveProperty(key);
+  });
+});
+
 describe('reconcile_now', () => {
   it('asks even when the automatic poll is not due yet', async () => {
     // The backoff exists to stop the AUTOMATIC loop spinning against a slow

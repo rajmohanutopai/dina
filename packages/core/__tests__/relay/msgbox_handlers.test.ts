@@ -20,6 +20,7 @@ import { deriveDIDKey } from '../../src/identity/did';
 import {
   handleInboundD2D,
   handleInboundRPC,
+  rpcReady,
   handleRPCCancel,
   sendD2DViaWS,
   setRPCRouter,
@@ -389,11 +390,13 @@ describe('MsgBox Envelope Handlers', () => {
       expect(lastCall[4]).toBeInstanceOf(AbortSignal);
     });
 
-    it('silently returns when no router is set', async () => {
+    it('silently returns, and is not ready, when no router is set', async () => {
       resetHandlerState(); // clears router
       const env = buildSealedRPCEnvelope(CLI_SEED, CLI_DID);
       // Should not throw
       await expect(handleInboundRPC(env)).resolves.toBeUndefined();
+      // …and reports itself not ready, so the request stays at the relay.
+      expect(rpcReady()).toBe(false);
     });
 
     it('rejects when identity binding fails (from_did != inner X-DID)', async () => {
@@ -476,6 +479,47 @@ describe('MsgBox Envelope Handlers', () => {
 
       // Resolve the router to let the promise settle
       if (resolveRef.fn) resolveRef.fn({ status: 200, headers: {}, body: '{}' });
+      await rpcPromise;
+    });
+
+    it("another sender's cancel naming the same request id aborts nothing; the sender's own does", async () => {
+      registerDevice(SENDER_DID, 'cli');
+      let signal: AbortSignal | undefined;
+      let release: (() => void) | null = null;
+      const slowRouter: RPCRouterFn = jest.fn(
+        (_m, _p, _h, _b, s?: AbortSignal) =>
+          new Promise((resolve) => {
+            signal = s;
+            release = () => resolve({ status: 200, headers: {}, body: '{}' });
+          }),
+      );
+      setRPCRouter(slowRouter);
+      const env = buildSealedRPCEnvelope(SENDER_SEED, SENDER_DID);
+      const rpcPromise = handleInboundRPC(env);
+      for (let i = 0; i < 50 && signal === undefined; i++) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(signal).toBeDefined();
+
+      handleRPCCancel({
+        type: 'cancel',
+        id: 'x',
+        from_did: 'did:key:zSomeOtherPeer',
+        to_did: HOME_DID,
+        cancel_of: env.id,
+      });
+      expect(signal?.aborted).toBe(false);
+
+      handleRPCCancel({
+        type: 'cancel',
+        id: 'y',
+        from_did: SENDER_DID,
+        to_did: HOME_DID,
+        cancel_of: env.id,
+      });
+      expect(signal?.aborted).toBe(true);
+
+      (release as (() => void) | null)?.();
       await rpcPromise;
     });
 

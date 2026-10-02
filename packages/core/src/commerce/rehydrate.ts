@@ -461,3 +461,31 @@ export function rehydrateCounterTarget(counterJson: string): Money | null {
     return null;
   }
 }
+
+/**
+ * What each line of a retained tender asked for, as the owner described it —
+ * the requirement text, else the product code — for a card or Activity title.
+ * Display only: the lines carry no digest, and a tender's terms are judged
+ * from its members' signed requests, never from this. Null when the stored
+ * lines no longer read as a non-empty list; a line with neither reads as ''.
+ */
+export function rehydrateTenderLineLabels(linesJson: string): string[] | null {
+  const parsed = parse(linesJson);
+  if (!parsed.ok || !Array.isArray(parsed.value) || parsed.value.length === 0) return null;
+  return parsed.value.map((line: unknown) => {
+    const l = (line ?? {}) as {
+      requirement?: { text?: unknown };
+      product?: { value?: unknown };
+      requested_product?: { value?: unknown };
+    };
+    const raw =
+      typeof l.requirement?.text === 'string'
+        ? l.requirement.text
+        : typeof l.product?.value === 'string'
+          ? l.product.value
+          : typeof l.requested_product?.value === 'string'
+            ? l.requested_product.value
+            : '';
+    return raw.trim().replace(/\s+/g, ' ');
+  });
+}

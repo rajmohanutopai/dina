@@ -242,6 +242,8 @@ export type SettingsRefusal =
   | 'endpoint_request_incomplete'
   | 'empty_identity'
   | 'unknown_trading_currency'
+  /** The buyer's saved currency is present but not an ISO 4217 code. */
+  | 'unknown_buyer_currency'
   | 'empty_catalog_categories'
   | 'malformed_catalog_category'
   | 'divergence_threshold_out_of_range'
@@ -398,6 +400,9 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
     { field: 'preferredUnitCodes', kind: 'array' },
     { field: 'workingCapitalRateBps', kind: 'number', optional: true },
     { field: 'divergenceThresholdPct', kind: 'number', optional: true },
+    // Optional so a record saved before currency existed still reads; when
+    // present it must be a string (`null` or a number is refused here).
+    { field: 'currency', kind: 'string', optional: true },
   ]);
   if (structural.length > 0) return { ok: false, findings: structural };
   const findings: SettingsFinding[] = [];
@@ -442,6 +447,35 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
         field: 'preferredSuppliers',
         detail: `${did} is also blocked`,
       });
+    }
+  }
+
+  // ABSENT IS FINE, PRESENT-AND-WRONG IS NOT (as for a supplier's trading
+  // currency): an empty currency means "not chosen", but `inr` or `Rupees`
+  // would be put into every tender and refused at the wire. "A currency" is
+  // the protocol's own test, the one every Money on the wire passes
+  // (`isCurrencyCode`, three uppercase letters) — the same as the supplier's
+  // trading currency; this node keeps no list of every ISO 4217 code.
+  if (typeof settings.currency === 'string' && settings.currency !== '' && !isCurrencyCode(settings.currency)) {
+    findings.push({
+      refusal: 'unknown_buyer_currency',
+      field: 'currency',
+      detail: `expected a three-letter uppercase ISO 4217 code, found ${settings.currency}`,
+    });
+  }
+  // Each delivery area must be a region reference a supplier's catalog can
+  // be filtered by (`postal_area:560001`); a malformed one silently matched
+  // no supplier.
+  if (Array.isArray(settings.locations)) {
+    for (const [index, region] of settings.locations.entries()) {
+      const invalid = validateRegionRef(region);
+      if (invalid !== null) {
+        findings.push({
+          refusal: 'invalid_region',
+          field: 'locations',
+          detail: `locations[${String(index)}]: ${invalid}`,
+        });
+      }
     }
   }
 

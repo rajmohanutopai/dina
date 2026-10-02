@@ -16,6 +16,7 @@
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { sign, getPublicKey } from '../crypto/ed25519';
+import { kvDelete, kvHas, kvList, kvSet } from '../kv/store';
 
 // ---------------------------------------------------------------
 // Envelope types (unified format for all MsgBox frames)
@@ -33,7 +34,15 @@ export interface MsgBoxEnvelope {
   ciphertext?: string;
 }
 
-export type EnvelopeHandler = (envelope: MsgBoxEnvelope) => void;
+/**
+ * Handles one inbound envelope. When it returns (or resolves), the envelope
+ * has been taken in and the relay may drop its copy (see "Delete-on-ack"
+ * below). Returning `false` (or a promise of it) means it was NOT handled — nothing was ready to
+ * take it — so the relay keeps it and sends it again on the next connect. A
+ * handler that throws or rejects has had its turn and is acked like any
+ * other; otherwise one bad message would come back on every reconnect.
+ */
+export type EnvelopeHandler = (envelope: MsgBoxEnvelope) => unknown;
 
 // ---------------------------------------------------------------
 // Backoff constants
@@ -141,6 +150,51 @@ let pongSeen = false;
 // Identity for auth handshake
 let homeNodeDID = '';
 let homeNodePrivateKey: Uint8Array | null = null;
+
+// ---------------------------------------------------------------
+// Delete-on-ack
+//
+// A relay that grants the "ack" feature keeps every message it sends us
+// until we acknowledge it, and sends any unacknowledged message again on the
+// next connect. Without that, a message written into a socket the OS has
+// already frozen (an iOS app moving to the background, a network drop) is
+// gone. We ack each envelope once its handler has settled — after the work,
+// not on receipt — and record it as handled (in the identity store's KV, so
+// the record survives the app being killed or the node restarting), so a
+// message sent again is acked without being handled twice. Relays without
+// the feature never see an ack, and nothing is recorded for them.
+// ---------------------------------------------------------------
+
+/** The feature we declare in `auth_response`. */
+const FEATURE_ACK = 'ack';
+/** Whether the relay on the current connection granted delete-on-ack. */
+let ackGranted = false;
+/** How many handled envelopes we also keep in memory, to answer resends fast. */
+const RECENT_ENVELOPE_LIMIT = 512;
+/** Recently handled `from_did:id` keys, oldest first (evictable). */
+const recentEnvelopes = new Set<string>();
+/**
+ * Keys whose handler is still running. Kept apart from the evictable set: an
+ * entry here may only go when its handler settles, or a resend arriving
+ * behind 512 newer messages would run a still-running handler again.
+ */
+const handlingEnvelopes = new Set<string>();
+/**
+ * Keys handled on an acking connection whose durable record could not be
+ * written (the store failed). They are NOT acked — an ack with no record is
+ * a message that could run twice after a restart — so the relay sends them
+ * again, and that copy retries the record instead of the handler.
+ */
+const unrecordedEnvelopes = new Set<string>();
+/** KV namespace of the durable handled-envelope records. */
+const HANDLED_NAMESPACE = 'msgbox_handled';
+/**
+ * How long a handled record is kept: longer than the relay keeps an unacked
+ * message (24 h, msgbox `MessageTTL`), so no resend can outlive its record.
+ */
+const HANDLED_RETENTION_MS = 25 * 60 * 60 * 1000;
+const HANDLED_PRUNE_EVERY_MS = 60 * 60 * 1000;
+let lastHandledPruneMs = 0;
 
 // Message handlers
 let d2dHandler: EnvelopeHandler | null = null;
@@ -532,6 +586,10 @@ export function resetConnectionState(): void {
   d2dHandler = null;
   rpcHandler = null;
   cancelHandler = null;
+  recentEnvelopes.clear();
+  handlingEnvelopes.clear();
+  unrecordedEnvelopes.clear();
+  lastHandledPruneMs = 0;
   homeNodeDID = '';
   homeNodePrivateKey = null;
   wsFactory = null;
@@ -566,6 +624,7 @@ function doConnect(url: string): void {
   connected = false;
   authenticated = false;
   authChallengeSeen = false;
+  ackGranted = false;
 
   socket.onopen = () => {
     if (!isCurrentSocket(socket, generation)) return;
@@ -777,7 +836,11 @@ function handleFrameText(text: string, socket: WSLike, generation: number): void
     // Same rationale as auth_challenge — happy-path trace.
 
     console.log('[WS] frame=auth_success — authenticated');
+    // The relay echoes the features it granted. One that predates them
+    // sends none, and keeps delete-on-write: we then send no acks.
+    ackGranted = Array.isArray(msg.features) && msg.features.includes(FEATURE_ACK);
     markAuthenticated(socket, generation);
+    if (ackGranted) void pruneHandledRecords(Date.now());
     return;
   }
   if (!authenticated && isEnvelopeLike(msg) && authChallengeSeen) {
@@ -792,7 +855,7 @@ function handleFrameText(text: string, socket: WSLike, generation: number): void
     console.log(
       `[WS] dispatch type=${msg.type} id=${typeof msg.id === 'string' ? msg.id.slice(0, 8) : '-'} dir=${typeof msg.direction === 'string' ? msg.direction : '-'}`,
     );
-    dispatchEnvelope(msg as unknown as MsgBoxEnvelope);
+    receiveEnvelope(msg as unknown as MsgBoxEnvelope);
   } else {
     // Pre-auth drop — *expected* during initial handshake (the relay
     // emits an auth_challenge before we accept any other frame). The
@@ -838,6 +901,7 @@ function handleAuthChallenge(
         did: homeNodeDID,
         sig,
         pub: pubHex,
+        features: [FEATURE_ACK],
       }),
     );
   } catch (err) {
@@ -916,7 +980,170 @@ function isEnvelopeLike(msg: unknown): msg is MsgBoxEnvelope {
   return (m.type === 'd2d' || m.type === 'rpc' || m.type === 'cancel') && typeof m.id === 'string';
 }
 
-function dispatchEnvelope(env: MsgBoxEnvelope): void {
+/** The relay's buffer key for an envelope, or null when it names none. */
+function envelopeKey(env: MsgBoxEnvelope): string | null {
+  if (typeof env.id !== 'string' || env.id === '') return null;
+  if (typeof env.from_did !== 'string' || env.from_did === '') return null;
+  return `${env.from_did}:${env.id}`;
+}
+
+function rememberHandled(key: string): void {
+  recentEnvelopes.delete(key);
+  recentEnvelopes.add(key);
+  while (recentEnvelopes.size > RECENT_ENVELOPE_LIMIT) {
+    const oldest = recentEnvelopes.values().next().value;
+    if (oldest === undefined) break;
+    recentEnvelopes.delete(oldest);
+  }
+}
+
+/**
+ * Whether a durable record says this envelope was handled: `null` when the
+ * store cannot say (an error is not "never handled" — reading it as such
+ * would run a handled message again).
+ */
+async function handledDurably(key: string): Promise<boolean | null> {
+  try {
+    return await kvHas(key, HANDLED_NAMESPACE);
+  } catch {
+    return null;
+  }
+}
+
+/** Drop handled records older than the relay could still resend. */
+async function pruneHandledRecords(nowMs: number): Promise<void> {
+  if (nowMs - lastHandledPruneMs < HANDLED_PRUNE_EVERY_MS) return;
+  lastHandledPruneMs = nowMs;
+  try {
+    const prefix = `${HANDLED_NAMESPACE}:`;
+    for (const entry of await kvList(HANDLED_NAMESPACE)) {
+      const handledAt = Number(entry.value);
+      if (Number.isFinite(handledAt) && nowMs - handledAt <= HANDLED_RETENTION_MS) continue;
+      const key = entry.key.startsWith(prefix) ? entry.key.slice(prefix.length) : entry.key;
+      await kvDelete(key, HANDLED_NAMESPACE);
+    }
+  } catch {
+    // Pruning is housekeeping; the next connect tries again.
+  }
+}
+
+/**
+ * Hand an envelope to its handler once, and ack it when the handler settles.
+ * A copy the relay sends again (we never acked, or the ack was lost) is
+ * acked straight away if it was handled — in this process or, on an acking
+ * connection, before a restart — and skipped while the first copy is still
+ * being handled; that copy acks when it finishes. On an acking connection
+ * the in-memory "handled" set only ever holds keys durably recorded, so its
+ * fast-path ack never runs ahead of the record.
+ */
+function receiveEnvelope(env: MsgBoxEnvelope): void {
+  const key = envelopeKey(env);
+  if (key === null) {
+    void handleEnvelope(env, null, false);
+    return;
+  }
+  if (recentEnvelopes.has(key)) {
+    sendAck(env);
+    return;
+  }
+  if (handlingEnvelopes.has(key)) return;
+  handlingEnvelopes.add(key);
+  void handleEnvelope(env, key, ackGranted);
+}
+
+async function handleEnvelope(
+  env: MsgBoxEnvelope,
+  key: string | null,
+  durable: boolean,
+): Promise<void> {
+  if (key !== null && unrecordedEnvelopes.has(key)) {
+    // Handled already; only its record is missing. Retry that, not the handler.
+    await finishHandled(env, key, durable);
+    return;
+  }
+  if (key !== null && durable) {
+    const seen = await handledDurably(key);
+    if (seen === null) {
+      // The store cannot say: leave it with the relay and ask again with
+      // the next copy, rather than risk running it twice.
+      handlingEnvelopes.delete(key);
+      return;
+    }
+    if (seen) {
+      handlingEnvelopes.delete(key);
+      rememberHandled(key);
+      sendAck(env);
+      return;
+    }
+  }
+  let handled = true;
+  try {
+    handled = (await dispatchEnvelope(env)) !== false;
+  } catch (err) {
+    // A handler that threw has had its turn; acking it stops one bad
+    // message coming back on every reconnect.
+    console.error(`[WS] handler threw id=${env.id?.slice(0, 8)}: ${(err as Error).message}`);
+  }
+  if (key === null) {
+    if (handled) sendAck(env);
+    return;
+  }
+  if (!handled) {
+    handlingEnvelopes.delete(key); // not taken in: the next copy is handled afresh
+    return;
+  }
+  await finishHandled(env, key, durable);
+}
+
+/**
+ * A handled envelope: record it (on an acking connection), then ack. The
+ * record comes BEFORE the ack — a crash between the two leaves a record and
+ * an unacked message, whose resend is acked without running again — and a
+ * record that cannot be written means no ack.
+ */
+async function finishHandled(env: MsgBoxEnvelope, key: string, durable: boolean): Promise<void> {
+  if (durable) {
+    try {
+      await kvSet(key, String(Date.now()), HANDLED_NAMESPACE);
+    } catch {
+      unrecordedEnvelopes.add(key);
+      handlingEnvelopes.delete(key);
+      return;
+    }
+  }
+  unrecordedEnvelopes.delete(key);
+  handlingEnvelopes.delete(key);
+  rememberHandled(key);
+  sendAck(env);
+  // A node that stays connected for days prunes too, not only on connect.
+  if (durable) void pruneHandledRecords(Date.now());
+}
+
+/**
+ * Tell the relay it may drop its copy. Best-effort: an ack that cannot be
+ * sent now (no socket, or the socket died) is made up for when the relay
+ * sends the message again and `receiveEnvelope` recognises it.
+ */
+function sendAck(env: MsgBoxEnvelope): void {
+  if (!ackGranted || !authenticated) return;
+  const socket = ws;
+  if (socket === null || socket.readyState !== WS_OPEN) return;
+  try {
+    socket.send(
+      new TextEncoder().encode(JSON.stringify({ type: 'ack', id: env.id, from_did: env.from_did })),
+    );
+  } catch {
+    // The socket died; the relay resends on the next connect.
+  }
+}
+
+/**
+ * Route an envelope to its handler. Returns what the handler returned;
+ * `false` when no handler is registered yet (keep it at the relay). An
+ * envelope dropped on purpose — misdirected, expired, an RPC response we do
+ * not route — returns nothing and is acked, so the relay drops it too.
+ */
+function dispatchEnvelope(env: MsgBoxEnvelope): unknown {
   // Finding #9: Validate to_did matches our DID — reject misdirected envelopes
   if (env.to_did && homeNodeDID && env.to_did !== homeNodeDID) {
     console.error(`[WS] dispatch DROP misdirected id=${env.id?.slice(0, 8)}`);
@@ -933,27 +1160,28 @@ function dispatchEnvelope(env: MsgBoxEnvelope): void {
 
   switch (env.type) {
     case 'd2d':
-      if (d2dHandler) d2dHandler(env);
-      else console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
-      break;
+      if (d2dHandler) return d2dHandler(env);
+      console.error(`[WS] dispatch DROP no d2dHandler id=${env.id?.slice(0, 8)}`);
+      return false;
     case 'rpc':
-      if (env.direction === 'request' && rpcHandler) rpcHandler(env);
-      else if (env.direction === 'request')
+      if (env.direction === 'request' && rpcHandler) return rpcHandler(env);
+      if (env.direction === 'request') {
         console.error(`[WS] dispatch DROP no rpcHandler id=${env.id?.slice(0, 8)}`);
-      else
-        // RPC responses on the home node are an expected case (the
-        // home node only consumes incoming *requests*; responses
-        // come back along the same socket but are routed by id, not
-        // by handler) — trace, not error.
-
-        console.log(
-          `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
-        );
-      break;
+        return false;
+      }
+      // RPC responses on the home node are an expected case (the
+      // home node only consumes incoming *requests*; responses
+      // come back along the same socket but are routed by id, not
+      // by handler) — trace, not error. Acked: nothing will take it.
+      console.log(
+        `[WS] dispatch IGNORE rpc dir=${env.direction ?? '-'} (home node only routes requests) id=${env.id?.slice(0, 8)}`,
+      );
+      return undefined;
     case 'cancel':
-      if (cancelHandler) cancelHandler(env);
-      break;
+      if (cancelHandler) return cancelHandler(env);
+      return false;
   }
+  return undefined;
 }
 
 function scheduleReconnect(): void {

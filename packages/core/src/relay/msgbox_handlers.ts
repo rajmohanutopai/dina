@@ -69,7 +69,18 @@ export function setRPCRouter(router: RPCRouterFn): void {
 // In-flight RPC tracking (for cancel support)
 // ---------------------------------------------------------------
 
+/**
+ * Keyed by SENDER and request id (`inFlightKey`). A request id alone is
+ * chosen by its sender, so any relay-authenticated peer that learned (or
+ * guessed) another caller's id could otherwise abort that caller's request.
+ * The relay binds a cancel's `from_did` to its authenticated connection, so
+ * keying on it limits a cancel to its own sender's requests.
+ */
 const inFlightRequests = new Map<string, AbortController>();
+
+function inFlightKey(fromDid: string, requestId: string): string {
+  return `${fromDid}\n${requestId}`;
+}
 
 // ---------------------------------------------------------------
 // D2D Inbound Handler
@@ -220,6 +231,21 @@ export async function handleInboundD2D(
 // ---------------------------------------------------------------
 
 /**
+ * Whether an inbound RPC can be handled now: an identity to decrypt with and
+ * a router to dispatch to. When not, the relay connection leaves the request
+ * unacked, so an acking relay sends it again rather than it being dropped.
+ */
+export function rpcReady(): boolean {
+  if (rpcRouter === null) return false;
+  try {
+    identity();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Handle an inbound RPC request over MsgBox.
  *
  * Two code paths share the decrypt + dispatch + response plumbing:
@@ -251,7 +277,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
   if (!privateKey || !rpcRouter) return;
 
   const controller = new AbortController();
-  inFlightRequests.set(env.id, controller);
+  inFlightRequests.set(inFlightKey(env.from_did, env.id), controller);
   // Once the request decrypts, every response (including auth failures) must
   // use the sender's sealed-box nonce scheme. dina-cli uses libsodium/BLAKE2b;
   // replying with the SHA-512 default makes a valid error response undecryptable.
@@ -456,7 +482,7 @@ export async function handleInboundRPC(env: MsgBoxEnvelope): Promise<void> {
       nonceScheme,
     );
   } finally {
-    inFlightRequests.delete(env.id);
+    inFlightRequests.delete(inFlightKey(env.from_did, env.id));
   }
 }
 
@@ -508,10 +534,11 @@ function extractPairPublicKey(body: unknown): string | null {
  */
 export function handleRPCCancel(env: MsgBoxEnvelope): void {
   const cancelId = env.cancel_of ?? env.id;
-  const controller = inFlightRequests.get(cancelId);
+  const key = inFlightKey(env.from_did, cancelId);
+  const controller = inFlightRequests.get(key);
   if (controller) {
     controller.abort();
-    inFlightRequests.delete(cancelId);
+    inFlightRequests.delete(key);
     const myDID = getIdentity()?.did ?? '';
     appendAudit(env.from_did, 'rpc_cancelled', myDID, `id=${cancelId}`);
   }

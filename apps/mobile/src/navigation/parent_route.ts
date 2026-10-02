@@ -70,6 +70,7 @@ const SECTION_PARENTS: Record<string, string> = {
   orders: '/settings',
   catalog: '/settings',
   'business-identity': '/settings',
+  'buyer-settings': '/settings',
   'staff-grants': '/settings',
   tender: '/trade',
   'ask-quotes': '/trade',

@@ -296,3 +296,30 @@ describe('a supplier can say which listing serves the catalog', () => {
     expect(validateCatalogPointer(result.pointer)).toBeNull();
   });
 });
+
+describe('`images` is a minor 1.1 field', () => {
+  it('a catalog without photos keeps the version it was given (its bytes do not change)', () => {
+    const result = publish(chairs(2));
+    if (!result.ok) throw new Error(result.error);
+    expect(result.pointer.protocol_version).toBe('1.0');
+    expect(result.snapshot?.protocol_version).toBe('1.0');
+  });
+
+  it('a catalog with a photo is stamped 1.1, and the chain still advances from a 1.0 head', () => {
+    const genesis = publish(chairs(1));
+    if (!genesis.ok || genesis.snapshot === undefined) throw new Error('genesis failed');
+    const next = publish(
+      [
+        {
+          sku: 'CHAIR-0',
+          name: 'Oak dining chair 0',
+          images: ['https://cdn.example.test/chair.jpg'],
+        },
+      ],
+      { pointer: genesis.pointer, snapshotDigest: genesis.snapshot.snapshot_digest },
+    );
+    if (!next.ok) throw new Error(next.error);
+    expect(next.pointer.protocol_version).toBe('1.1');
+    expect(next.snapshot?.protocol_version).toBe('1.1');
+  });
+});

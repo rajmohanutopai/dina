@@ -501,9 +501,9 @@ describe('useServiceInbox', () => {
     setInboxCoreClient(client);
     const [link, evidence] = await listPendingApprovals();
     expect(link).toMatchObject({ kind: 'order_checkout_link', capability: 'clover', serviceName: 'Payment link', requesterDID: 'did:plc:supplier5678', linkUrl: 'https://pay.example.com/s/cs_1', expiresAt: 1_800_100_000 });
-    expect(link.paramsPreview).toBe('order po-1\nINR 500.00');
+    expect(link.paramsPreview).toBe('INR 500.00');
     expect(evidence).toMatchObject({ kind: 'payment_evidence_record', capability: 'clover', serviceName: 'Payment reported', requesterDID: 'did:plc:supplier5678' });
-    expect(evidence.paramsPreview).toBe('order po-1\nINR 500.00\nref ch_1');
+    expect(evidence.paramsPreview).toBe('INR 500.00\nref ch_1');
     expect(evidence.linkUrl).toBeUndefined();
   });
 

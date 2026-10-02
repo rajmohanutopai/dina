@@ -40,6 +40,11 @@ jest.mock('../../src/services/supplier_names', () => ({
       ]),
     ),
 }));
+/** The confirm dialog: captured, and declined so nothing is decided. */
+const mockConfirm = jest.fn(async (_headline: string, _subline: string) => false);
+jest.mock('../../src/services/confirm_decision', () => ({
+  confirmDecision: (headline: string, subline: string) => mockConfirm(headline, subline),
+}));
 /** The buyer's placed orders — where the payment cards find the supplier's name. */
 let mockPlaced: { supplierDid: string; serviceRkey?: string; supplierName?: string }[] = [];
 jest.mock('../../src/services/owner_commerce_client', () => ({
@@ -118,6 +123,7 @@ beforeEach(() => {
   resetNotifications();
   mockPlaced = [];
   mockListed.clear();
+  mockConfirm.mockClear();
 });
 
 describe('order-attachment cards on the owner surface', () => {
@@ -138,7 +144,7 @@ describe('order-attachment cards on the owner surface', () => {
     expect(screen.getByTestId('approvals-attachment-why-order-checkout-abc').props.children).toBe(
       'Pay INR 500.00 for order po-1 through clover?',
     );
-    expect(screen.getByText('order po-1\nINR 500.00')).toBeTruthy();
+    expect(screen.getByText('INR 500.00')).toBeTruthy();
     fireEvent.press(screen.getByTestId('approvals-open-link-order-checkout-abc'));
     expect(open).toHaveBeenCalledWith('https://pay.example.com/s/cs_1');
     expect(screen.getByText('Dismiss')).toBeTruthy();
@@ -200,5 +206,38 @@ describe('the supplier on the order-attachment cards', () => {
     await waitFor(() => expect(screen.getByText('Record this payment?')).toBeTruthy());
     expect(screen.queryByText(/ValueCrumb/)).toBeNull();
     expect(screen.getByText(/did:plc:/)).toBeTruthy();
+  });
+
+  it('the approve confirmation leads with the name, not a shortened DID', async () => {
+    mockPlaced = [{ supplierDid: 'did:plc:supplier5678', serviceRkey: 'self' }];
+    mockListed.set('did:plc:supplier5678|self', 'ValueCrumb Bakery');
+    const stub = stubClient([PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText(/ValueCrumb Bakery \(did:plc:/)).toBeTruthy());
+    fireEvent.press(screen.getByTestId('approvals-approve-payment-evidence-def'));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    const subline = mockConfirm.mock.calls[0]?.[1] ?? '';
+    expect(subline.startsWith('ValueCrumb Bakery\n')).toBe(true);
+    expect(subline).not.toContain('did:plc');
+    // Nor Dina's own order key: the owner checks the amount.
+    expect(subline).not.toMatch(/po[-_]/);
+    expect(subline).toContain('INR 500.00');
+  });
+
+  it('with no name known, the confirmation says so in words, not with a DID', async () => {
+    const stub = stubClient([PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText('Record this payment?')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('approvals-approve-payment-evidence-def'));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    const subline = mockConfirm.mock.calls[0]?.[1] ?? '';
+    expect(subline.startsWith('someone not in your contacts\n')).toBe(true);
+    expect(subline).not.toContain('did:plc');
   });
 });

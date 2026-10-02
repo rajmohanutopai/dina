@@ -7,7 +7,7 @@
  */
 
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { OwnerCommerceHttpError } from '@dina/core';
@@ -15,6 +15,7 @@ import { OwnerCommerceHttpError } from '@dina/core';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { ownerErrorText } from '../src/services/owner_errors';
 import { showMessage } from '../src/services/show_message';
+import { supplierLabels, supplierNamesHere } from '../src/services/supplier_names';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type { TradeInboxItemDto, TradeStatementAnswer } from '@dina/core';
@@ -54,10 +55,6 @@ export function railCheckLabel(check: NonNullable<TradeInboxItemDto['rail_check'
     case 'closed':
       return 'Rail check did not complete';
   }
-}
-
-function shortDid(did: string): string {
-  return did.length > 20 ? `${did.slice(0, 12)}…${did.slice(-4)}` : did;
 }
 
 export default function TradeScreen(): React.ReactElement {
@@ -148,6 +145,41 @@ export default function TradeScreen(): React.ReactElement {
   );
 
   const counterparties = [...new Set(items.map((i) => i.counterparty_did).filter((d) => d !== ''))];
+
+  // Counterparties by name — the owner's contact name, else their listing's —
+  // and a DID only where no name is known or two share one.
+  const [names, setNames] = useState<Map<string, string | null>>(new Map());
+  const counterpartyKey = counterparties.join(',');
+  useEffect(() => {
+    if (counterpartyKey === '') return;
+    let live = true;
+    void supplierNamesHere(counterpartyKey.split(',').map((did) => ({ supplierDid: did }))).then(
+      (resolved) => {
+        if (live) setNames(resolved);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [counterpartyKey]);
+  const labels = useMemo(
+    () =>
+      supplierLabels(
+        (counterpartyKey === '' ? [] : counterpartyKey.split(',')).map((did) => ({
+          supplierDid: did,
+          name: names.get(did) ?? null,
+        })),
+      ),
+    [names, counterpartyKey],
+  );
+  // A trading partner is always a contact, so a name is expected; until one
+  // resolves (or if none does) the row says so in words, never the raw DID.
+  // A name two partners share keeps its short DID beside it (supplierLabels):
+  // that tells a copied name from the real one.
+  const nameOf = (did: string): string => {
+    const name = names.get(did);
+    return name === undefined || name === null ? 'Unnamed contact' : (labels.get(did) ?? name);
+  };
 
   /**
    * §5.D — ask the counterparty for a matured payment. Owner-initiated: this
@@ -258,7 +290,7 @@ export default function TradeScreen(): React.ReactElement {
               <Text style={styles.itemTitle}>{KIND_LABEL[item.kind] ?? item.kind}</Text>
               <Text style={styles.itemMeta}>
                 {ROLE_LABEL[item.role]}
-                {item.counterparty_did !== '' ? ` · ${shortDid(item.counterparty_did)}` : ''}
+                {item.counterparty_did !== '' ? ` · ${nameOf(item.counterparty_did)}` : ''}
               </Text>
               {item.rail_check !== undefined ? (
                 <Text style={styles.itemMeta} testID={`trade-rail-check-${item.subject}`}>
@@ -280,7 +312,7 @@ export default function TradeScreen(): React.ReactElement {
                 testID={`trade-khata-${did}`}
                 onPress={() => void openStatement(did)}
               >
-                <Text style={[styles.itemTitle, styles.itemText]}>{shortDid(did)}</Text>
+                <Text style={[styles.itemTitle, styles.itemText]}>{nameOf(did)}</Text>
                 <Text style={styles.chev}>›</Text>
               </Pressable>
             ))}
@@ -289,7 +321,7 @@ export default function TradeScreen(): React.ReactElement {
 
         {statementFor !== null && (
           <View style={styles.statementCard} testID="trade-statement">
-            <Text style={styles.itemTitle}>{shortDid(statementFor)}</Text>
+            <Text style={styles.itemTitle}>{nameOf(statementFor)}</Text>
             {statements === null ? (
               <ActivityIndicator style={styles.spinner} />
             ) : (

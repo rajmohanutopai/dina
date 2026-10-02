@@ -1523,6 +1523,8 @@ export type {
   StaffGrantEntry,
   BusinessIdentityAnswer,
   BuyerSettingsAnswer,
+  BuyerSettingsDto,
+  BuyerSettingsToEdit,
   CreateTenderAnswer,
   CreateTenderRequest,
   TenderLineRequest,

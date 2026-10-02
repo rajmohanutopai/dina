@@ -24,6 +24,7 @@ import {
 import { OrderProgress, orderStepsReached } from '../src/components/OrderProgress';
 import { PresenceSheet } from '../src/components/PresenceSheet';
 import { usePresenceGate } from '../src/hooks/usePresenceGate';
+import { confirmDecision } from '../src/services/confirm_decision';
 import {
   publishedItemFor,
   supplierTrustFor,
@@ -33,7 +34,13 @@ import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { CONNECT_OWNER_DEVICE_MESSAGE, errorKeyOf } from '../src/services/owner_errors';
 import { loadStaffIdentity } from '../src/services/staff_identity_store';
 import { makeStaffWebSocket } from '../src/services/staff_transport_rn';
+import { ownerDidHere } from '../src/services/supplier_finder';
 import { shortDid, supplierLabels, supplierNamesHere } from '../src/services/supplier_names';
+import {
+  loadOwnSupplierReviews,
+  setAsideFor,
+  type OwnReview,
+} from '../src/services/supplier_trust';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type {
@@ -61,6 +68,12 @@ export interface TenderBackend {
   supplierTrust?(supplierDid: string): Promise<SupplierTrust | null>;
   /** The owner's placed orders, to follow this tender's order once it is sent. */
   placedOrders?(): Promise<PlacedOrdersAnswer>;
+  /**
+   * The owner's own PeerLens reviews of suppliers, by supplier DID — the
+   * first thing Ask for quotes sets a supplier aside by. Absent for a clerk:
+   * the owner's reviews are not theirs to read, so only PeerLens applies.
+   */
+  ownReviews?(): Promise<ReadonlyMap<string, OwnReview>>;
   awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome>;
   sendHeldOrder(approvalId: string): Promise<OrderSendOutcome>;
   provePresence(secret: string): Promise<unknown>;
@@ -195,6 +208,7 @@ export default function TenderScreen(): React.ReactElement {
         offeredItem: (did, product) => publishedItemFor(did, product),
         supplierTrust: (did) => supplierTrustFor(did),
         placedOrders: () => owner.placedOrders(),
+        ownReviews: async () => loadOwnSupplierReviews(await ownerDidHere()),
         awardTender: (args) => owner.awardTender(args),
         sendHeldOrder: (id) => owner.sendHeldOrder(id),
         provePresence: (passphrase) => owner.provePresence(passphrase),
@@ -211,6 +225,12 @@ export default function TenderScreen(): React.ReactElement {
     return {
       presence: 'pin',
       tenderRanking: (id) => staff.tenderRanking(id),
+      // The clerk sees what the owner sees of the bargaining: the story (the
+      // same purchasing check as the ranking), the catalogue photo and the
+      // supplier's PeerLens trust (public reads). Placed orders stay the owner's.
+      tenderStory: (id) => staff.tenderStory(id),
+      offeredItem: (did, product) => publishedItemFor(did, product),
+      supplierTrust: (did) => supplierTrustFor(did),
       awardTender: (args) => staff.awardTender(args),
       sendHeldOrder: (id) => staff.sendHeldOrder(id),
       provePresence: (pin) => staff.provePresence(pin),
@@ -416,6 +436,53 @@ export default function TenderScreen(): React.ReactElement {
     [names, view],
   );
   const labelOf = (did: string): string => labels.get(did) ?? shortDid(did);
+
+  /**
+   * Award, after a word of warning when the supplier is one Ask for quotes
+   * would set aside — by the same rule: the owner's own poor review first,
+   * else a low PeerLens score over enough reviews to mean something. The
+   * owner may still award. The check never rests on trust still loading in
+   * the background: a supplier with no answer yet is looked up here first.
+   */
+  const awardChecked = async (supplierDid: string): Promise<void> => {
+    const client = await backend();
+    if (client === null) return;
+    let rated = trust.get(supplierDid);
+    if (rated === undefined) {
+      rated = (await client.supplierTrust?.(supplierDid).catch(() => null)) ?? null;
+      const known = rated;
+      setTrust((prev) => new Map(prev).set(supplierDid, known));
+    }
+    // Read afresh for every award: the screen stays mounted, and a review the
+    // owner wrote since (or a lookup that failed last time) must count now.
+    const ownReviews =
+      (await client.ownReviews?.().catch(() => null)) ?? new Map<string, OwnReview>();
+    const ownReview = ownReviews.get(supplierDid);
+    const poor = setAsideFor({
+      ...(ownReview !== undefined ? { ownReview } : {}),
+      trustScore: rated?.score ?? null,
+      reviewCount: rated?.reviewCount ?? null,
+    });
+    if (poor !== null) {
+      const name = labelOf(supplierDid);
+      const reviews =
+        rated?.reviewCount !== null && rated?.reviewCount !== undefined
+          ? ` (${String(rated.reviewCount)} reviews)`
+          : '';
+      const why =
+        poor.reason === 'own_poor_review'
+          ? `You rated ${name} poorly on PeerLens.`
+          : `${name} has poor reviews on PeerLens${reviews}.`;
+      const ok = await confirmDecision(
+        `Award to ${name}?`,
+        `${why} Award anyway?`,
+        'Award anyway',
+        false,
+      );
+      if (!ok) return;
+    }
+    await award(supplierDid);
+  };
   const heading = useMemo(() => {
     if (view === null) return '';
     // Before any supplier has answered there is nothing to negotiate yet.
@@ -513,7 +580,7 @@ export default function TenderScreen(): React.ReactElement {
                   <Pressable
                     style={[styles.awardButton, busy && styles.disabled]}
                     disabled={busy}
-                    onPress={() => void award(offer.supplier_did)}
+                    onPress={() => void awardChecked(offer.supplier_did)}
                     testID={`tender-award-${offer.supplier_did}`}
                     accessibilityRole="button"
                   >

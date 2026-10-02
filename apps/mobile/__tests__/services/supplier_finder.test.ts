@@ -48,14 +48,19 @@ function fakeAppView(opts: {
   trust?: Record<string, number | null>;
   /** Reviews about each DID, as `attestationSummary.total`. */
   reviews?: Record<string, number>;
+  /** Items the AppView's trust floor dropped, per searched word. */
+  suppressed?: Record<string, number>;
 }) {
   const calls = { catalog: [] as { q?: string; region?: string }[], services: [] as unknown[] };
   return {
     calls,
     client: {
-      searchCatalog: jest.fn(async (p: { q?: string; region?: string }) => {
+      searchCatalogWithFloor: jest.fn(async (p: { q?: string; region?: string }) => {
         calls.catalog.push({ q: p.q, region: p.region });
-        return opts.catalog[p.q ?? ''] ?? [];
+        return {
+          candidates: opts.catalog[p.q ?? ''] ?? [],
+          suppressedBelowTrustFloor: opts.suppressed?.[p.q ?? ''] ?? 0,
+        };
       }),
       searchServices: jest.fn(async (p: unknown) => {
         calls.services.push(p);
@@ -191,9 +196,27 @@ describe('findSuppliers', () => {
 
   it('nothing worth searching sends no query', async () => {
     const { client } = fakeAppView({ catalog: {} });
-    expect(await findSuppliers(client, { text: 'near me' })).toEqual({ suppliers: [], words: [] });
-    expect(client.searchCatalog).not.toHaveBeenCalled();
+    expect(await findSuppliers(client, { text: 'near me' })).toEqual({
+      suppliers: [],
+      words: [],
+      hiddenForPoorReviews: false,
+    });
+    expect(client.searchCatalogWithFloor).not.toHaveBeenCalled();
     expect(client.searchServices).not.toHaveBeenCalled();
+  });
+});
+
+describe('suppliers the AppView hid for poor reviews', () => {
+  it('says that someone was hidden, without saying whom', async () => {
+    const { client } = fakeAppView({ catalog: { cake: [] }, suppressed: { cake: 2 } });
+    const found = await findSuppliers(client, { text: 'cake' });
+    expect(found.hiddenForPoorReviews).toBe(true);
+    expect(found.suppliers).toEqual([]);
+  });
+
+  it('says nothing when nothing was hidden', async () => {
+    const { client } = fakeAppView({ catalog: { cake: [] } });
+    expect((await findSuppliers(client, { text: 'cake' })).hiddenForPoorReviews).toBe(false);
   });
 });
 

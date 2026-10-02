@@ -152,6 +152,14 @@ const AUTHZ_RULES: {
     exact: true,
     allowed: new Set(['owner', 'staff']),
   },
+  // The bargaining story behind the ranking: read-only, the same purchasing
+  // check as the ranking (the handler re-checks the clerk's live grant).
+  {
+    prefix: '/v1/commerce/trade/tender/story',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'staff']),
+  },
   {
     prefix: '/v1/commerce/buyer/quotes',
     method: 'GET',

@@ -32,7 +32,12 @@ export type ReadSettings<T> =
   | { ok: true; settings: T }
   /** Absent is not an error: a node that has not configured commerce has none. */
   | { ok: false; absent: true }
-  | { ok: false; absent: false; findings: SettingsFinding[] };
+  /**
+   * Stored but refused. `stored` is the parsed row when it parsed at all, so
+   * the owner's surface can show what is there beside the findings and let
+   * the owner save it right; nothing in the node acts on it.
+   */
+  | { ok: false; absent: false; findings: SettingsFinding[]; stored?: unknown };
 
 export interface CommerceSettingsRepository {
   readBuyer(): ReadSettings<BuyerSettings>;
@@ -86,7 +91,7 @@ export class SQLiteCommerceSettingsRepository implements CommerceSettingsReposit
     }
     return verdict.ok
       ? { ok: true, settings: parsed }
-      : { ok: false, absent: false, findings: verdict.findings };
+      : { ok: false, absent: false, findings: verdict.findings, stored: parsed };
   }
 
   private write(kind: SettingsKind, settings: unknown): void {
@@ -148,7 +153,7 @@ export class InMemoryCommerceSettingsRepository implements CommerceSettingsRepos
     const verdict = validateBuyerSettings(this.buyer);
     return verdict.ok
       ? { ok: true, settings: this.buyer }
-      : { ok: false, absent: false, findings: verdict.findings };
+      : { ok: false, absent: false, findings: verdict.findings, stored: this.buyer };
   }
 
   readSupplier(): ReadSettings<SupplierSettings> {

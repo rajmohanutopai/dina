@@ -127,8 +127,8 @@ describe('what the owner sees', () => {
 
     const resp = await router.handle(req('owner'));
     expect(resp.status).toBe(200);
-    const body = resp.body as { quotes: { quoteId: string; state: string; actions: string[] }[] };
-    const byId = new Map(body.quotes.map((q) => [q.quoteId, q]));
+    const body = resp.body as { quotes: { quote_id: string; state: string; actions: string[] }[] };
+    const byId = new Map(body.quotes.map((q) => [q.quote_id, q]));
     expect(byId.get('q-live')?.state).toBe('live');
     expect(byId.get('q-live')?.actions).toEqual(['view']);
     // The route reports what the projection says rather than deriving its own
@@ -143,9 +143,9 @@ describe('what the owner sees', () => {
     outcomes.set(`${BUYER} q-lost`, NOW_ISH);
     const resp = await router.handle(req('owner'));
     const body = resp.body as {
-      quotes: { quoteId: string; state: string; detail: string | null }[];
+      quotes: { quote_id: string; state: string; detail: string | null }[];
     };
-    const byId = new Map(body.quotes.map((q) => [q.quoteId, q]));
+    const byId = new Map(body.quotes.map((q) => [q.quote_id, q]));
     expect(byId.get('q-lost')?.state).toBe('not_awarded');
     expect(byId.get('q-lost')?.detail).toMatch(/could still order/);
     expect(byId.get('q-other')?.state).toBe('live');
@@ -182,8 +182,10 @@ describe('the listing itself', () => {
     ledger.holdUse('q-1', 'po-2', NOW_ISH);
 
     const resp = await router.handle(req('owner'));
-    const body = resp.body as { quotes: { quoteId: string; state: string; usesSpent: number }[] };
-    expect(body.quotes[0]?.usesSpent).toBe(2);
+    const body = resp.body as { quotes: { quote_id: string; state: string; uses_spent: number }[] };
+    expect(body.quotes[0]?.uses_spent).toBe(2);
+    // The wire is snake_case, like the rest of Core's HTTP surface.
+    expect(Object.keys(body.quotes[0] ?? {}).filter((k) => /[A-Z]/.test(k))).toEqual([]);
     expect(body.quotes[0]?.state).toBe('consumed');
   });
 });

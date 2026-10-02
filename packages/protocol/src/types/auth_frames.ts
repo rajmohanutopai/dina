@@ -52,6 +52,12 @@ export interface AuthResponseFrame {
   did: string;
   sig: string;
   pub: string;
+  /**
+   * Optional relay features the client supports (conformance §7.1). The
+   * one defined feature is `"ack"`: delete-on-ack delivery. Older clients
+   * omit it and keep delete-on-write.
+   */
+  features?: string[];
 }
 
 /**
@@ -63,6 +69,12 @@ export interface AuthResponseFrame {
  */
 export interface AuthSuccessFrame {
   type: typeof AUTH_SUCCESS;
+  /**
+   * The features the relay granted this connection — a subset of those the
+   * client asked for (§7.1). Absent from relays that predate features; a
+   * client treats absence as "none granted".
+   */
+  features?: string[];
 }
 
 /** Discriminated union of all three handshake frame shapes. */

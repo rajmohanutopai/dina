@@ -352,7 +352,13 @@ describe('a supplier PeerLens sets aside is shown, never asked by default', () =
     fireEvent.press(screen.getByTestId(`supplier-review-${POOR}`));
     expect(mockPush).toHaveBeenCalledWith({
       pathname: '/peerlens/write',
-      params: { createKind: 'organization', initialName: 'Crumb & Co', initialDid: POOR },
+      params: {
+        createKind: 'organization',
+        initialName: 'Crumb & Co',
+        initialDid: POOR,
+        // Back from the review returns to this screen, not PeerLens home.
+        returnTo: '/ask-quotes',
+      },
     });
     // Reviewing does not pick: the supplier is still set aside.
     expect(screen.queryByTestId(`supplier-chip-${POOR}`)).toBeNull();
@@ -374,4 +380,12 @@ describe('a supplier PeerLens sets aside is shown, never asked by default', () =
     ]);
     expect(request.notAsked).toBeUndefined();
   });
+});
+
+it('says when suppliers were not shown because of poor reviews', async () => {
+  mockFind.mockResolvedValue({ words: ['cake'], suppliers: [], hiddenForPoorReviews: true });
+  const screen = render(<AskQuotesScreen />);
+  fireEvent.changeText(screen.getByTestId('supplier-search'), 'cakes');
+  fireEvent.press(screen.getByTestId('supplier-search-go'));
+  await waitFor(() => expect(screen.getByTestId('supplier-hidden-reviews')).toBeTruthy());
 });

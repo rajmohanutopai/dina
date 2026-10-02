@@ -44,6 +44,7 @@ import {
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../audit/service';
+import { getContact } from '../contacts/directory';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
@@ -58,6 +59,16 @@ import { getCommerceRuntime, type CommerceRuntime } from './runtime';
 
 import type { SupplierNegotiationPolicy } from './negotiation_policy';
 import type { ApprovalDecisionHandler, WorkflowHooks, WorkflowService } from '../workflow/service';
+
+/** The owner's name for a buyer on a card line: their contact name, else "A buyer". */
+function buyerLabel(buyerDid: string): string {
+  try {
+    const name = getContact(buyerDid)?.displayName.trim() ?? '';
+    return name === '' ? 'A buyer' : name;
+  } catch {
+    return 'A buyer';
+  }
+}
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -620,7 +631,9 @@ function askOwner(
     workflow.create({
       id: taskId,
       kind: WorkflowTaskKind.Approval,
-      description: `A buyer asks for a lower price on quote ${counter.quote_id} (${String(fresh.length)} line(s)) below your automatic limit. Offer it?`,
+      // The buyer by the owner's contact name, never `q:…`: this line is the
+      // card's and the Activity title. The quote id stays in the payload.
+      description: `${buyerLabel(counter.buyer_did)} asks for a lower price on your quote (${String(fresh.length)} line(s)), below your automatic limit. Offer it?`,
       payload: JSON.stringify(payload),
       idempotencyKey: `negotiation_price:${counter.counter_digest}`,
       correlationId: counter.quote_id,

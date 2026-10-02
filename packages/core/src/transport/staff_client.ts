@@ -15,6 +15,7 @@ import {
   type OrderSendOutcome,
   type TenderAwardOutcome,
   type TenderRankingView,
+  type TenderStoryView,
 } from '../client/tender_views';
 import { getPublicKey } from '../crypto/ed25519';
 import { deriveDIDKey, publicKeyToMultibase } from '../identity/did';
@@ -167,6 +168,14 @@ export class StaffCoreClient {
     return this.call(
       'GET',
       `/v1/commerce/trade/tender/ranking?tender_id=${encodeURIComponent(tenderId)}`,
+    );
+  }
+
+  /** The bargaining story behind the ranking (opening prices, counters, revisions), read-only. */
+  async tenderStory(tenderId: string): Promise<TenderStoryView> {
+    return this.call(
+      'GET',
+      `/v1/commerce/trade/tender/story?tender_id=${encodeURIComponent(tenderId)}`,
     );
   }
 

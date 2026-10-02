@@ -211,6 +211,9 @@ export interface WriteScreenProps {
   composePersonas?: readonly string[];
 }
 
+/** A route path this screen may return to after a review (see `returnTo`). */
+const IN_APP_PATH = /^(\/[A-Za-z0-9_-]+)+$/;
+
 export default function WriteScreen(props: WriteScreenProps = {}): React.ReactElement {
   // Hooks unconditional. Production path reads `subjectId` from the
   // route's query params; tests pass form state directly so the
@@ -226,6 +229,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     initialName?: string | string[];
     /** With `createKind=did|organization`: the subject's DID (a supplier row's "Review"). */
     initialDid?: string | string[];
+    /**
+     * Where Back, Cancel and a finished publish return to, when the composer
+     * was opened from outside PeerLens (Ask for quotes' "Review" link). The
+     * Stack's own back would pop to PeerLens home. An in-app path only.
+     */
+    returnTo?: string | string[];
     /**
      * Edit-mode params (TN-MOB-013 follow-up). When `editingUri` is
      * present the screen flips into edit mode: header copy switches
@@ -298,6 +307,12 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
   })();
   const paramDraftId = readParam(params.draftId);
   const paramThreadId = readParam(params.threadId);
+  const rawReturnTo = readParam(params.returnTo);
+  // Only a plain in-app route path: slash-separated segments of letters,
+  // digits, `-` and `_`. No scheme, no `//` or `\` (a URL parser reads
+  // `/\host` as another origin), no query or fragment.
+  const returnTo =
+    rawReturnTo !== undefined && IN_APP_PATH.test(rawReturnTo) ? rawReturnTo : undefined;
   // `?createKind=product|place|organization|content|did|dataset|claim`
   // flips the form into "describe a new subject" mode. Without this
   // signal the form stays review-only — backwards compatible with the
@@ -485,6 +500,10 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
           router.replace('/'); // chat-draft origin → back to the chat tab
           return;
         }
+        if (returnTo !== undefined) {
+          router.replace(returnTo as never); // opened from another screen → back there
+          return;
+        }
         if (router.canGoBack()) router.back();
         else router.replace('/peerlens');
       };
@@ -576,6 +595,10 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
         paramThreadId.length > 0
       ) {
         router.replace('/');
+        return;
+      }
+      if (returnTo !== undefined) {
+        router.replace(returnTo as never);
         return;
       }
       if (router.canGoBack()) router.back();
@@ -964,22 +987,39 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     paramDraftId.length > 0 &&
     paramThreadId !== undefined &&
     paramThreadId.length > 0;
-  const stackOptions = fromChatDraft
-    ? {
-        title: headerTitle,
-        headerLeft: () => (
-          <Pressable
-            onPress={() => router.replace('/')}
-            accessibilityRole="button"
-            accessibilityLabel="Back to chat"
-            hitSlop={8}
-            style={{ paddingHorizontal: spacing.sm }}
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </Pressable>
-        ),
-      }
-    : { title: headerTitle };
+  const stackOptions =
+    returnTo !== undefined && !fromChatDraft
+      ? {
+          title: headerTitle,
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.replace(returnTo as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              testID="write-back-return"
+              hitSlop={8}
+              style={{ paddingHorizontal: spacing.sm }}
+            >
+              <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+            </Pressable>
+          ),
+        }
+      : fromChatDraft
+        ? {
+            title: headerTitle,
+            headerLeft: () => (
+              <Pressable
+                onPress={() => router.replace('/')}
+                accessibilityRole="button"
+                accessibilityLabel="Back to chat"
+                hitSlop={8}
+                style={{ paddingHorizontal: spacing.sm }}
+              >
+                <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+              </Pressable>
+            ),
+          }
+        : { title: headerTitle };
 
   return (
     <>

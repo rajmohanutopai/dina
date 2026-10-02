@@ -849,8 +849,10 @@ function toEntry(task: WorkflowTask): InboxEntry {
   if (payloadType === 'order_checkout_link' || payloadType === 'payment_evidence_record') {
     const isLink = payloadType === 'order_checkout_link';
     const provider = typeof parsed.provider === 'string' ? parsed.provider : '';
-    const orderId = typeof parsed.purchase_order_id === 'string' ? parsed.purchase_order_id : '';
-    const lines = [`order ${oneLine(orderId, 60)}`, moneyLine(parsed.amount)];
+    // The amount (and the provider's payment reference) is what the owner
+    // checks; the purchase-order id is Dina's own key and means nothing to
+    // them. The card's description already names the supplier.
+    const lines = [moneyLine(parsed.amount)];
     if (!isLink && typeof parsed.provider_ref === 'string') lines.push(`ref ${oneLine(parsed.provider_ref, 60)}`);
     return {
       id: task.id,

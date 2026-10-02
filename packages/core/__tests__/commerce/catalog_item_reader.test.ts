@@ -5,6 +5,12 @@
  * itself, and none of them yields an item.
  */
 
+import {
+  catalogPageDigest,
+  catalogPayloadRoot,
+  catalogSnapshotDigest,
+} from '@dina/commerce-protocol';
+
 import { readPublishedItem } from '../../src/commerce/catalog_item_reader';
 import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
 
@@ -148,5 +154,77 @@ describe('readPublishedItem', () => {
         sha256: hash,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe('the 1.1 gate on images', () => {
+  it('the publisher stamps a catalogue with photos 1.1, snapshot and pointer alike', () => {
+    const { pointer, snapshotRecord } = published();
+    expect(pointer.protocol_version).toBe('1.1');
+    expect(snapshotRecord.snapshot?.protocol_version).toBe('1.1');
+  });
+
+  /** A snapshot built by hand, the way any publisher could have built it. */
+  function handBuilt(protocolVersion: string, items: CatalogItem[]) {
+    const page = {
+      catalog_id: 'oak-and-oven',
+      snapshot_sequence: 1,
+      page_index: 0,
+      items,
+      page_digest: '',
+    };
+    const pageDigest = catalogPageDigest(page, hash);
+    const snapshotDraft = {
+      supplier_did: SUPPLIER,
+      catalog_id: 'oak-and-oven',
+      snapshot_sequence: 1,
+      protocol_version: protocolVersion,
+      published_at: '2026-09-30T00:00:00.000Z',
+      page_digests: [pageDigest],
+      item_count: items.length,
+      payload_root: catalogPayloadRoot([pageDigest], hash),
+      snapshot_digest: '',
+    };
+    const snapshot = {
+      ...snapshotDraft,
+      snapshot_digest: catalogSnapshotDigest(snapshotDraft, hash),
+    };
+    const pointer = {
+      supplier_did: SUPPLIER,
+      catalog_id: 'oak-and-oven',
+      snapshot_sequence: 1,
+      protocol_version: protocolVersion,
+      published_at: '2026-09-30T00:00:00.000Z',
+      snapshot_rkey: snapshot.snapshot_digest,
+      snapshot_digest: snapshot.snapshot_digest,
+    };
+    return readPublishedItem({
+      supplierDid: SUPPLIER,
+      pointer,
+      snapshotRecord: { snapshot, pages: [{ ...page, page_digest: pageDigest }] },
+      product: CAKE,
+      sha256: hash,
+    });
+  }
+
+  it('a catalogue published with photos before the gate (a 1.0 snapshot) keeps its item, without the photo', () => {
+    const read = handBuilt('1.0', [item('OO-7', 'Floral celebration cake', { images: [PHOTO] })]);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.item?.name).toBe('Floral celebration cake');
+    expect(read.item).not.toHaveProperty('images');
+  });
+
+  it('below 1.1 even a photo field that would not validate is ignored, not held against the item', () => {
+    const read = handBuilt('1.0', [item('OO-7', 'Floral celebration cake', { images: [] })]);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.item?.name).toBe('Floral celebration cake');
+    expect(read.item).not.toHaveProperty('images');
+  });
+
+  it('at 1.1 the same malformed photo field drops the item, as any malformed field does', () => {
+    const read = handBuilt('1.1', [item('OO-7', 'Floral celebration cake', { images: [] })]);
+    expect(read).toEqual({ ok: true, item: null });
   });
 });

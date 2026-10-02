@@ -307,7 +307,13 @@ function business(overrides: Partial<BusinessSettings> = {}): BusinessSettings {
   return {
     legalName: 'Utopai Furniture LLP',
     registrations: [{ scheme: 'gstin', value: GSTIN }],
-    address: { line1: '12 Nehru Road', city: 'Bengaluru', region: 'Karnataka', postalCode: '560001', country: 'IN' },
+    address: {
+      line1: '12 Nehru Road',
+      city: 'Bengaluru',
+      region: 'Karnataka',
+      postalCode: '560001',
+      country: 'IN',
+    },
     ...overrides,
   };
 }
@@ -347,7 +353,10 @@ describe('the node’s own business, on paper (§5.D)', () => {
     );
     expect(verdict.ok).toBe(false);
     if (verdict.ok) throw new Error('expected refusal');
-    expect(verdict.findings.map((f) => f.field).sort()).toEqual(['address.country', 'address.line1']);
+    expect(verdict.findings.map((f) => f.field).sort()).toEqual([
+      'address.country',
+      'address.line1',
+    ]);
   });
 
   it('refuses a credential-shaped key: settings print on documents, they never hold secrets', () => {
@@ -361,7 +370,10 @@ describe('the node’s own business, on paper (§5.D)', () => {
   });
 
   it('refuses a body whose containers are the wrong shape, before any field rule runs', () => {
-    const verdict = validateBusinessSettings({ legalName: 'x', registrations: 'gstin' } as unknown as BusinessSettings);
+    const verdict = validateBusinessSettings({
+      legalName: 'x',
+      registrations: 'gstin',
+    } as unknown as BusinessSettings);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) throw new Error('expected refusal');
     expect(verdict.findings.map((f) => f.refusal)).toEqual(['wrong_field_shape']);
@@ -395,7 +407,8 @@ describe('the settings store', () => {
   });
 
   it('stores the NORMALISED business identity — what was judged is what is kept', async () => {
-    const { InMemoryCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+    const { InMemoryCommerceSettingsRepository } =
+      await import('../../src/commerce/settings_store');
     const store = new InMemoryCommerceSettingsRepository();
     expect(store.readBusiness()).toEqual({ ok: false, absent: true });
     expect(
@@ -414,7 +427,8 @@ describe('the settings store', () => {
   });
 
   it('refuses to write a business identity it would refuse to read, and stores nothing', async () => {
-    const { InMemoryCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+    const { InMemoryCommerceSettingsRepository } =
+      await import('../../src/commerce/settings_store');
     const store = new InMemoryCommerceSettingsRepository();
     expect(store.writeBusiness(business({ legalName: '' })).ok).toBe(false);
     expect(store.readBusiness()).toEqual({ ok: false, absent: true });
@@ -423,7 +437,8 @@ describe('the settings store', () => {
   it.each([['null'], ['"a string"'], ['[]'], ['7']])(
     'a stored row whose JSON is %s REFUSES rather than throwing out of the read',
     async (settingsJson) => {
-      const { SQLiteCommerceSettingsRepository } = await import('../../src/commerce/settings_store');
+      const { SQLiteCommerceSettingsRepository } =
+        await import('../../src/commerce/settings_store');
       // The store's contract: a row that no longer validates is refused, never
       // partially believed — and never a 500 out of a read.
       const adapter = {
@@ -601,7 +616,9 @@ describe('catalog category ids', () => {
   it('accepts a supplier with none, and a supplier with well-formed ids', () => {
     expect(validateSupplierSettings(supplier())).toEqual({ ok: true });
     expect(
-      validateSupplierSettings(supplier({ catalogCategoryIds: ['food.preserves', 'food:pickle-1'] })),
+      validateSupplierSettings(
+        supplier({ catalogCategoryIds: ['food.preserves', 'food:pickle-1'] }),
+      ),
     ).toEqual({ ok: true });
   });
 
@@ -682,6 +699,52 @@ describe('a PARTIAL wire body is findings, never a throw (live 500, 2026-08-18)'
     if (!verdict.ok) {
       expect(verdict.findings).toEqual([
         expect.objectContaining({ refusal: 'missing_field', field: 'quoteFanoutCeiling' }),
+      ]);
+    }
+  });
+});
+
+describe('buyer currency and delivery areas', () => {
+  it('a present but malformed currency is refused; an empty one means "not chosen"', () => {
+    const bad = validateBuyerSettings(buyer({ currency: 'Rupees' }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.findings.map((f) => f.refusal)).toContain('unknown_buyer_currency');
+    expect(validateBuyerSettings(buyer({ currency: '' })).ok).toBe(true);
+    expect(validateBuyerSettings(buyer({ currency: 'USD' })).ok).toBe(true);
+  });
+
+  it('a currency that is not a string (null, a number) is refused as the wrong shape', () => {
+    for (const currency of [null, 42]) {
+      const verdict = validateBuyerSettings(buyer({ currency: currency as never }));
+      expect(verdict.ok).toBe(false);
+      if (!verdict.ok) {
+        expect(verdict.findings).toEqual([
+          expect.objectContaining({ refusal: 'wrong_field_shape', field: 'currency' }),
+        ]);
+      }
+    }
+    // A record saved before the field existed still reads.
+    const { currency: _omitted, ...withoutCurrency } = buyer({});
+    expect(validateBuyerSettings(withoutCurrency as never).ok).toBe(true);
+  });
+
+  it('a delivery area that is not a region reference is refused, by position', () => {
+    const verdict = validateBuyerSettings(
+      buyer({
+        locations: [
+          { scheme: 'postal_area', value: '560001' },
+          { scheme: 'postcode', value: '94103' } as never,
+        ],
+      }),
+    );
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.findings).toEqual([
+        expect.objectContaining({
+          refusal: 'invalid_region',
+          field: 'locations',
+          detail: expect.stringContaining('locations[1]'),
+        }),
       ]);
     }
   });

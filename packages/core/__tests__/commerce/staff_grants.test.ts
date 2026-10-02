@@ -304,6 +304,25 @@ describe('escalateStaffOperation', () => {
     ).toBe('unavailable');
   });
 
+  it('an unnamed device is named in words on the card, never by its DID', () => {
+    const repo = new InMemoryWorkflowRepository();
+    setWorkflowService(new WorkflowService({ repository: repo }));
+    const out = escalateStaffOperation({
+      deviceDid: DEVICE,
+      scope: 'commerce_receive_goods',
+      subject: 'note-digest',
+      value: { currency: 'INR', minor_units: '80000' },
+      reason: 'value exceeds the grant cap',
+      nowMs: T0,
+    });
+    expect(out.kind).toBe('escalated');
+    const [task] = repo.listByKindAndState('approval', WorkflowTaskState.PendingApproval, 10);
+    expect(task?.description).toBe(
+      'An unnamed staff device attempted commerce_receive_goods for INR 800.00 — value exceeds the grant cap',
+    );
+    expect(task?.description).not.toContain('did:');
+  });
+
   it('creates ONE pending-approval task per (device, scope, subject, VALUE); the card carries no lines', () => {
     const repo = new InMemoryWorkflowRepository();
     setWorkflowService(new WorkflowService({ repository: repo }));

@@ -236,6 +236,11 @@ import {
   staffPresentNow,
 } from '../../commerce/owner_presence';
 import {
+  ownerOrderViewWire,
+  ownerQuoteViewWire,
+  placedOrderWire,
+} from '../../commerce/owner_views_wire';
+import {
   confirmFirstPartyUpdate,
   listFirstPartyUpdates,
   prepareFirstPartyUpdate,
@@ -893,7 +898,7 @@ function fulfilmentOf(
   runtime: { buyerStatus: BuyerStatusRepository },
   supplierDid: string,
   purchaseOrderId: string,
-): { fulfilment?: { state: string; sequence: string; updatedAt: string } } {
+): { fulfilment?: { state: string; sequence: string; updated_at: string } } {
   let chain: CommerceOrderStatus[];
   try {
     chain = runtime.buyerStatus.chain(supplierDid, purchaseOrderId);
@@ -906,7 +911,7 @@ function fulfilmentOf(
   const head = chain[chain.length - 1];
   if (head === undefined) return {};
   return {
-    fulfilment: { state: head.state, sequence: head.sequence, updatedAt: head.updated_at },
+    fulfilment: { state: head.state, sequence: head.sequence, updated_at: head.updated_at },
   };
 }
 
@@ -2488,7 +2493,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         // `detail`, and letting the spread win would replace the reason with an
         // unrelated sentence.
         body: {
-          ...view,
+          ...ownerOrderViewWire(view),
           error: 'action_not_offered',
           offered: view.actions,
         },
@@ -2515,7 +2520,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           ok: asked,
           asked,
           ...(asked ? {} : { error: result.undescribable === 1 ? 'undescribable' : 'not_sent' }),
-          ...describeOrderForOwner(runtime.buyerOrders.get(supplierDid, purchaseOrderId) ?? record),
+          ...ownerOrderViewWire(
+            describeOrderForOwner(runtime.buyerOrders.get(supplierDid, purchaseOrderId) ?? record),
+          ),
         },
       };
     }
@@ -2530,7 +2537,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         // guessed at: a query with no service_uri is checked against the
         // supplier's DEFAULT listing, so guessing would ask the wrong one and
         // be refused by exactly the suppliers who run more than one.
-        return { status: 409, body: { ...view, error: 'undescribable' } };
+        return { status: 409, body: { ...ownerOrderViewWire(view), error: 'undescribable' } };
       }
       const ask = makeServiceQueryStatusAsk({ dispatch });
       const asked = await ask({
@@ -2551,7 +2558,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           ok: asked.sent,
           asked: asked.sent,
           ...(asked.sent ? {} : { error: 'not_sent' }),
-          ...view,
+          ...ownerOrderViewWire(view),
           ...fulfilmentOf(runtime, supplierDid, purchaseOrderId),
         },
       };
@@ -2602,10 +2609,20 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         return {
           // A resend is a send: same three answers. See `unanswerableStatus`.
           status: unanswerableStatus(result.refusal),
-          body: { ok: false, refusal: result.refusal, error: result.error, record: result.record },
+          body: {
+            ok: false,
+            refusal: result.refusal,
+            error: result.error,
+            ...(result.record !== null && result.record !== undefined
+              ? { order: ownerOrderViewWire(describeOrderForOwner(result.record)) }
+              : {}),
+          },
         };
       }
-      return { status: 200, body: { ok: true, ...describeOrderForOwner(result.record) } };
+      return {
+        status: 200,
+        body: { ok: true, ...ownerOrderViewWire(describeOrderForOwner(result.record)) },
+      };
     }
 
     // `wait` and `view_acknowledgement` are not commands. The first is the
@@ -2634,11 +2651,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         quotes: runtime.families
           .listForOwner()
           .map(({ head, usesSpent }) =>
-            describeQuoteForOwner(
-              head,
-              usesSpent,
-              now,
-              runtime.negotiation.outcomeFor(head.buyerDid, head.quoteId)?.receivedAt ?? null,
+            ownerQuoteViewWire(
+              describeQuoteForOwner(
+                head,
+                usesSpent,
+                now,
+                runtime.negotiation.outcomeFor(head.buyerDid, head.quoteId)?.receivedAt ?? null,
+              ),
             ),
           ),
       },
@@ -2661,8 +2680,8 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       status: 200,
       body: {
         orders: runtime.buyerOrders.listUnsettled().map((entry) => ({
-          supplierDid: entry.supplierDid,
-          ...describeOrderForOwner(entry.record),
+          supplier_did: entry.supplierDid,
+          ...ownerOrderViewWire(describeOrderForOwner(entry.record)),
         })),
       },
     };
@@ -2710,16 +2729,18 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       // The owner's own name for the supplier, when the supplier is a contact.
       // Core keeps no supplier name on the tender, quote or order records.
       nameFor: (did) => getContact(did)?.displayName ?? null,
-    }).map(({ orderDigest, ...order }) => ({
-      ...order,
-      progress: money.available
-        ? summarizePlacedOrderProgress(
-            money.stores,
-            { orderDigest, supplierDid: order.supplierDid, purchaseOrderId: order.purchaseOrderId },
-            nowMs,
-          )
-        : null,
-    }));
+    }).map(({ orderDigest, ...order }) =>
+      placedOrderWire(
+        order,
+        money.available
+          ? summarizePlacedOrderProgress(
+              money.stores,
+              { orderDigest, supplierDid: order.supplierDid, purchaseOrderId: order.purchaseOrderId },
+              nowMs,
+            )
+          : null,
+      ),
+    );
     return {
       status: 200,
       body: {
@@ -3520,11 +3541,26 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
       // ABSENT and INVALID are different answers. "Not configured yet" is a
       // starting point; "stored settings no longer validate" is a fault an
       // owner has to see, because the node is failing closed on their policy.
+      // The buyer's refused record goes back with the findings, so the
+      // Buying preferences screen can show it and the owner can save it
+      // right — never one that carries credential-shaped keys.
+      const repairable =
+        !read.absent &&
+        kind === 'buyer' &&
+        read.stored !== null &&
+        typeof read.stored === 'object' &&
+        !Array.isArray(read.stored) &&
+        !read.findings.some((f) => f.refusal === 'credential_material_present');
       return read.absent
         ? { status: 200, body: { configured: false } }
         : {
             status: 409,
-            body: { configured: true, error: 'settings_invalid', findings: read.findings },
+            body: {
+              configured: true,
+              error: 'settings_invalid',
+              findings: read.findings,
+              ...(repairable ? { settings: read.stored } : {}),
+            },
           };
     });
 

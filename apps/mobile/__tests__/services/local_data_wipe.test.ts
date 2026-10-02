@@ -189,6 +189,27 @@ describe('eraseEverythingLocal', () => {
     ]);
   });
 
+  it('also deletes databases unlock set aside as unreadable, and leaves other files alone', async () => {
+    // Unlock renames a database it cannot open to `<name>.unreadable-<stamp>`
+    // instead of deleting it; "Erase everything" must not leave those behind.
+    __setEntries([
+      'identity.sqlite.unreadable-1790000000000',
+      'identity.sqlite-wal.unreadable-1790000000000',
+      'general.sqlite.unreadable-1790000000000',
+      'notes.unreadable-1790000000000.txt',
+      '.dina_install',
+    ]);
+    await eraseEverythingLocal();
+    expect(__getDeletedEntries().sort()).toEqual(
+      [
+        'general.sqlite.unreadable-1790000000000',
+        'identity.sqlite-wal.unreadable-1790000000000',
+        'identity.sqlite.unreadable-1790000000000',
+      ].sort(),
+    );
+    expect(__getEntries()).toEqual(['notes.unreadable-1790000000000.txt', '.dina_install']);
+  });
+
   it('cancels every scheduled local notification (P0 — wiped device must not ping the user)', async () => {
     await eraseEverythingLocal();
     expect(Notifications.cancelAllScheduledNotificationsAsync).toHaveBeenCalledTimes(1);

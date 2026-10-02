@@ -32,11 +32,23 @@
 
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
+import { getDeviceByDID } from '../devices/registry';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
+import { formatMoneyAmount } from './money_display';
+
 import type { StaffScope } from './staff_grants';
 import type { Money } from '@dina/commerce-protocol';
+
+/** Minor units as money for a sentence ("INR 1200.00"); the raw digits if unreadable. */
+function moneyText(value: Money): string {
+  try {
+    return `${value.currency} ${formatMoneyAmount(value)}`;
+  } catch {
+    return `${value.minor_units} ${value.currency} (minor units)`;
+  }
+}
 
 export const STAFF_ESCALATION_APPROVAL_TYPE = 'commerce_staff_escalation';
 
@@ -110,17 +122,18 @@ export function escalateStaffOperation(args: {
     value: args.value,
     reason: args.reason,
   };
-  const shortDid =
-    args.deviceDid.length > 24
-      ? `${args.deviceDid.slice(0, 16)}…${args.deviceDid.slice(-6)}`
-      : args.deviceDid;
-  const valueText =
-    args.value === null ? '' : ` for ${args.value.minor_units} ${args.value.currency} (minor units)`;
+  // The device by the name the owner gave it at pairing, and the amount as
+  // money: this line is the card's and the Activity title.
+  // An unnamed device reads as one in words, never by its DID (the payload
+  // keeps the DID; the card's decision binds to it, not to this line).
+  const deviceName = getDeviceByDID(args.deviceDid)?.deviceName.trim() ?? '';
+  const who = deviceName !== '' ? `Staff device ${deviceName}` : 'An unnamed staff device';
+  const valueText = args.value === null ? '' : ` for ${moneyText(args.value)}`;
   const id = `staff-escalation-${bytesToHex(randomBytes(8))}`;
   service.create({
     id,
     kind: WorkflowTaskKind.Approval,
-    description: `Staff device ${shortDid} attempted ${args.scope}${valueText} — ${args.reason}`,
+    description: `${who} attempted ${args.scope}${valueText} — ${args.reason}`,
     payload: JSON.stringify(payload),
     expiresAtSec: Math.floor(args.nowMs / 1000) + STAFF_ESCALATION_TTL_SEC,
     idempotencyKey: idemKey,

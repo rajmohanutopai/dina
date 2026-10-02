@@ -41,10 +41,10 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
-import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter, usePathname, useGlobalSearchParams } from 'expo-router';
+import { getFocusedRouteNameFromRoute } from 'expo-router/react-navigation';
 import React, { useEffect, useSyncExternalStore } from 'react';
 import {
   Linking,
@@ -1242,6 +1242,15 @@ export default function RootLayout() {
                     // Reached from Settings; no tab of its own.
                     href: null,
 
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="buyer-settings"
+                  options={{
+                    title: 'Buying preferences',
+                    // Reached from Settings; no tab of its own.
+                    href: null,
                     headerLeft: renderHeaderBackButton,
                   }}
                 />

@@ -270,9 +270,20 @@ export function useApprovalInbox(): ApprovalInbox {
       const headline = namesCapability
         ? `${verb} "${entry.capability}"?`
         : `${verb} "${entry.serviceName || entry.capability}"?`;
+      // Who is asking, by name when the inbox knows one (a contact, a
+      // supplier's listing, a paired agent); in words when it does not —
+      // never the raw DID.
+      const who =
+        entry.requesterName !== undefined && entry.requesterName.trim() !== ''
+          ? entry.requesterName
+          : entry.requesterDID !== ''
+            ? namesCapability
+              ? 'an unnamed agent'
+              : 'someone not in your contacts'
+            : '';
       const subline = namesCapability
-        ? `${entry.requesterDID !== '' ? `agent ${entry.requesterDID.slice(0, 28)}…\n` : ''}${entry.paramsPreview || '(no target)'}`
-        : `${entry.requesterName !== undefined ? `${entry.requesterName} · ` : ''}${entry.requesterDID.slice(0, 28)}…\n${entry.paramsPreview || '(no params)'}`;
+        ? `${who !== '' ? `agent ${who}\n` : ''}${entry.paramsPreview || '(no target)'}`
+        : `${who !== '' ? `${who}\n` : ''}${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
       // confirm on web (RN-Web's Alert.alert is a no-op — without this the
       // web thin-client's Approve/Deny confirm never appears; F4).

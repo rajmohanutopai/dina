@@ -321,6 +321,57 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
     expect(getByTestId('write-subject-did-input').props.value).toBe('did:plc:crumbandcoo');
   });
 
+  /** Stand in for the router so a test can see where the screen leaves to. */
+  function spyRouter(): { replace: jest.Mock; back: jest.Mock; routerSpy: jest.SpyInstance } {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- spy on the module object the screen imports
+    const expoRouter = require('expo-router');
+    const replace = jest.fn();
+    const back = jest.fn();
+    const routerSpy = jest
+      .spyOn(expoRouter, 'useRouter')
+      .mockReturnValue({ replace, back, push: jest.fn(), canGoBack: () => true });
+    return { replace, back, routerSpy };
+  }
+
+  it('opened from Ask for quotes, Cancel goes back there, not to PeerLens home', () => {
+    mockParams({
+      createKind: 'organization',
+      initialName: 'Crumb & Co',
+      initialDid: 'did:plc:crumbandcoo',
+      returnTo: '/ask-quotes',
+    });
+    const { replace, back, routerSpy } = spyRouter();
+    try {
+      const { getByTestId } = render(<WriteScreen />);
+      fireEvent.press(getByTestId('write-cancel'));
+      expect(replace).toHaveBeenCalledWith('/ask-quotes');
+      expect(back).not.toHaveBeenCalled();
+    } finally {
+      routerSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    'https://evil.example/x',
+    '//evil.example/x',
+    '/\\evil.example',
+    '/ask-quotes?next=https://evil.example',
+    '/ask-quotes#x',
+    '/../settings',
+    '',
+  ])('a returnTo that is not a plain in-app path (%s) is ignored', (returnTo) => {
+    mockParams({ createKind: 'organization', returnTo });
+    const { replace, back, routerSpy } = spyRouter();
+    try {
+      const { getByTestId } = render(<WriteScreen />);
+      fireEvent.press(getByTestId('write-cancel'));
+      expect(replace).not.toHaveBeenCalled();
+      expect(back).toHaveBeenCalled();
+    } finally {
+      routerSpy.mockRestore();
+    }
+  });
+
   it('an initialDid that is not a DID is not filled in', () => {
     mockParams({ createKind: 'organization', initialName: 'Crumb & Co', initialDid: 'crumb.example' });
     const { getByTestId } = render(<WriteScreen />);

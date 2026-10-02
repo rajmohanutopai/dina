@@ -22,6 +22,7 @@
  */
 
 import {
+  catalogProtocolVersionFor,
   MAX_CATALOG_PAGES,
   MAX_CATALOG_PAGE_ITEMS,
   catalogPageDigest,
@@ -174,6 +175,10 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
     };
   }
 
+  // `images` exists from minor 1.1: a catalog carrying photos is stamped 1.1
+  // (snapshot and pointer alike); one without keeps the version it was given,
+  // so its bytes and digest do not change.
+  const protocolVersion = catalogProtocolVersionFor(args.items, args.protocolVersion);
   const sequence = args.previous === null ? 1 : args.previous.pointer.snapshot_sequence + 1;
   const pages = paginate(args.items, pageSize, args.catalogId, sequence, args.sha256);
   const pageDigests = pages.map((page) => page.page_digest);
@@ -182,7 +187,7 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
     supplier_did: args.supplierDid,
     catalog_id: args.catalogId,
     snapshot_sequence: sequence,
-    protocol_version: args.protocolVersion,
+    protocol_version: protocolVersion,
     published_at: args.publishedAt,
     page_digests: pageDigests,
     item_count: args.items.length,
@@ -198,7 +203,7 @@ export function buildCatalogSnapshot(args: BuildCatalogSnapshotArgs): CatalogPub
     supplier_did: args.supplierDid,
     catalog_id: args.catalogId,
     snapshot_sequence: sequence,
-    protocol_version: args.protocolVersion,
+    protocol_version: protocolVersion,
     published_at: args.publishedAt,
     snapshot_rkey: snapshot.snapshot_digest,
     snapshot_digest: snapshot.snapshot_digest,

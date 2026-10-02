@@ -449,11 +449,14 @@ describe('GET /v1/commerce/orders/unsettled', () => {
     const resp = await router.handle(get('owner'));
     expect(resp.status).toBe(200);
     const body = resp.body as {
-      orders: { headline: string; actions: string[]; supplierDid: string; pollCount: number }[];
+      orders: { headline: string; actions: string[]; supplier_did: string; poll_count: number }[];
     };
     expect(body.orders).toHaveLength(1);
-    expect(body.orders[0]?.supplierDid).toBe('did:plc:chairmaker99');
-    expect(body.orders[0]?.pollCount).toBe(3);
+    // The wire is snake_case, like the rest of Core's HTTP surface.
+    expect(body.orders[0]?.supplier_did).toBe('did:plc:chairmaker99');
+    expect(body.orders[0]?.poll_count).toBe(3);
+    expect(body.orders[0]).toMatchObject({ purchase_order_id: 'po-1', next_poll_at_ms: 5_000 });
+    expect(Object.keys(body.orders[0] ?? {}).filter((k) => /[A-Z]/.test(k))).toEqual([]);
     // The dangerous action is absent, and the headline does not claim failure.
     expect(body.orders[0]?.actions).not.toContain('resend');
     expect(body.orders[0]?.headline.toLowerCase()).not.toContain('failed');

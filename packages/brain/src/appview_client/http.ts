@@ -520,6 +520,18 @@ export class AppViewClient {
    * not an error. Throws `AppViewError` on HTTP failure past the retry budget.
    */
   async searchCatalog(params: SearchCatalogParams): Promise<CommerceCatalogCandidate[]> {
+    return (await this.searchCatalogWithFloor(params)).candidates;
+  }
+
+  /**
+   * `searchCatalog`, plus how many matching catalog ITEMS the AppView's trust
+   * floor dropped (`suppressed_below_trust_floor`, §3.6) — so a buyer can be
+   * told that discovery hid someone for poor reviews, without being told whom.
+   * The count is of items, not suppliers.
+   */
+  async searchCatalogWithFloor(
+    params: SearchCatalogParams,
+  ): Promise<{ candidates: CommerceCatalogCandidate[]; suppressedBelowTrustFloor: number }> {
     const query: Record<string, string | string[]> = {};
     if (params.q !== undefined && params.q !== '') query.q = params.q;
     if (params.identifiers !== undefined && params.identifiers.length > 0) {
@@ -533,11 +545,20 @@ export class AppViewClient {
     if (params.limit !== undefined) query.limit = String(params.limit);
 
     const body = await this.get('/xrpc/com.dinakernel.commerce.searchCatalog', query);
-    const candidates = (body as { candidates?: unknown }).candidates;
-    if (!Array.isArray(candidates)) return [];
-    return candidates
-      .map(coerceCatalogCandidate)
-      .filter((c): c is CommerceCatalogCandidate => c !== null);
+    const raw = body as { candidates?: unknown; suppressed_below_trust_floor?: unknown };
+    const suppressed =
+      typeof raw.suppressed_below_trust_floor === 'number' &&
+      Number.isSafeInteger(raw.suppressed_below_trust_floor) &&
+      raw.suppressed_below_trust_floor > 0
+        ? raw.suppressed_below_trust_floor
+        : 0;
+    if (!Array.isArray(raw.candidates)) return { candidates: [], suppressedBelowTrustFloor: suppressed };
+    return {
+      candidates: raw.candidates
+        .map(coerceCatalogCandidate)
+        .filter((c): c is CommerceCatalogCandidate => c !== null),
+      suppressedBelowTrustFloor: suppressed,
+    };
   }
 
   /**

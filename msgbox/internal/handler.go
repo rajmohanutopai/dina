@@ -71,7 +71,8 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(MaxPayloadSize) // 1 MiB — matches /forward body limit
 
 	// Authenticate with PLC resolver if configured.
-	did, authErr := AuthenticateWithResolver(r.Context(), ws, h.PLCResolver)
+	auth, authErr := AuthenticateWithResolverEx(r.Context(), ws, h.PLCResolver)
+	did := auth.DID
 	if authErr != nil {
 		slog.Warn("msgbox.auth_failed", "error", authErr, "remote", r.RemoteAddr)
 		ws.Close(websocket.StatusCode(4001), "auth failed")
@@ -94,6 +95,7 @@ func (h *Handler) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		RemoteAddr: r.RemoteAddr,
 		Ctx:        connCtx,
 		Cancel:     func() { ws.Close(websocket.StatusNormalClosure, "closing") },
+		Ack:        auth.Ack,
 	}
 	h.Hub.Register(conn)
 
@@ -160,6 +162,8 @@ func (h *Handler) handleJSONEnvelope(conn *MsgBoxConn, data []byte) {
 		h.routeCancel(conn, &env)
 	case "ping":
 		h.routePing(conn)
+	case "ack":
+		h.routeAck(conn, &env)
 	default:
 		slog.Debug("msgbox.unknown_envelope_type", "type", env.Type, "from", conn.DID)
 	}
@@ -178,6 +182,19 @@ func (h *Handler) routePing(conn *MsgBoxConn) {
 	if err := conn.WS.Write(ctx, websocket.MessageBinary, pong); err != nil {
 		slog.Debug("msgbox.pong_write_failed", "did", conn.DID, "error", err)
 	}
+}
+
+// routeAck deletes a message the client confirms it has handled
+// ({"type":"ack","id":<envelope id>,"from_did":<its sender>}). The buffer key
+// is the sender-scoped composite every route stores under; the delete is
+// scoped to this connection's DID, so a client can only ack its own mail.
+// An unknown or already-acked id is a no-op (acks may repeat).
+func (h *Handler) routeAck(conn *MsgBoxConn, env *envelope) {
+	if env.ID == "" || env.FromDID == "" {
+		slog.Debug("msgbox.ack_missing_fields", "did", conn.DID)
+		return
+	}
+	h.Hub.Ack(conn.DID, env.FromDID+":"+env.ID)
 }
 
 // routeD2D validates and routes a D2D envelope to the recipient.
@@ -312,21 +329,34 @@ func (h *Handler) routeCancel(conn *MsgBoxConn, env *envelope) {
 		return
 	}
 
-	// Composite key matches what routeRPC stored.
+	// Composite key matches what routeRPC stored. A message still buffered
+	// and NEVER delivered is cancelled here outright. One an acking client
+	// was already sent (and has not acked) is also removed, but it may be in
+	// the recipient's hands, so the cancel still goes on to it.
 	compositeKey := env.FromDID + ":" + env.CancelOf
-	if h.Hub.buf.DeleteIfExists(compositeKey) {
-		slog.Info("msgbox.cancel_deleted_buffered", "cancel_of", env.CancelOf, "from", conn.DID)
-		return
-	}
 
 	// Already delivered — relay cancel to recipient (best-effort).
 	// Include sender and short expiry so it doesn't linger in the 24h buffer.
-	if env.ToDID != "" {
-		cancelPayload, _ := json.Marshal(env)
+	// The relayed copy carries an id of its own, minted here (the CLI sends
+	// cancels without one), and is keyed sender:id like every other message,
+	// so an acking recipient can name it in its ack. A fresh id also keeps it
+	// clear of the key the cancelled request was stored under.
+	relayed := h.Hub.Cancel(env.ToDID, compositeKey, func(recipient string, deliver func(string, []byte, ...AddOption)) {
+		out := *env
+		out.ID = generateMsgID()
+		// Addressed to whoever actually holds the request: a recipient drops
+		// an envelope whose to_did is not its own, and the cancel would be
+		// lost with the request still running.
+		out.ToDID = recipient
+		cancelPayload, _ := json.Marshal(out)
 		cancelExpiry := time.Now().Unix() + 120 // 2-minute expiry for relayed cancels
-		h.Hub.Deliver(env.ToDID, generateMsgID(), cancelPayload,
+		deliver(out.FromDID+":"+out.ID, cancelPayload,
 			WithSender(env.FromDID), WithExpiresAt(cancelExpiry))
-		slog.Info("msgbox.cancel_relayed", "cancel_of", env.CancelOf, "to", env.ToDID)
+	})
+	if relayed {
+		slog.Info("msgbox.cancel_relayed", "cancel_of", env.CancelOf, "from", conn.DID)
+	} else {
+		slog.Info("msgbox.cancel_deleted_buffered", "cancel_of", env.CancelOf, "from", conn.DID)
 	}
 }
 

@@ -204,7 +204,8 @@ On WebSocket connect, the flow is exactly three frames (shapes from
 `types/auth_frames.ts`):
 
 1. **Server → Client** — `{"type":"auth_challenge","nonce":"<hex>","ts":<unix_seconds>}`
-2. **Client → Server** — `{"type":"auth_response","did":"did:plc:...","sig":"<hex>","pub":"<hex>"}`
+2. **Client → Server** — `{"type":"auth_response","did":"did:plc:...","sig":"<hex>","pub":"<hex>"}`,
+   optionally with `"features":["ack"]` (§7.1)
    where `sig = Ed25519.Sign(privateKey, buildAuthSignedPayload(nonce, ts))`.
    The signed payload is the literal string:
 
@@ -215,14 +216,48 @@ On WebSocket connect, the flow is exactly three frames (shapes from
    `\n` is one ASCII newline (0x0A). `{nonce}` is the exact hex
    string the server sent; `{ts}` is the integer Unix-seconds value
    rendered as a decimal string.
-3. **Server → Client** — `{"type":"auth_success"}` (no payload fields
-   — introduced in msgbox 0.14, strict fail-closed).
+3. **Server → Client** — `{"type":"auth_success"}` (introduced in
+   msgbox 0.14, strict fail-closed), optionally with `"features":[…]`
+   naming the features granted (§7.1).
 
 Frame type literals come from `AUTH_CHALLENGE` / `AUTH_RESPONSE` /
 `AUTH_SUCCESS`. Signature is hex-encoded (not base64); public key
 is hex-encoded and corresponds to the signing key published in the
 sender's `did:plc` document. Anything outside this schema is a
 protocol violation; the relay MUST close with WebSocket code 1008.
+The one exception is the optional `features` array in §7.1: a relay
+MUST accept it and ignore feature names it does not know, and a
+client MUST treat an `auth_success` without `features` as granting
+none.
+
+### 7.1 Relay features: delete-on-ack (`"ack"`)
+
+A client lists the features it supports in `auth_response.features`; the
+relay answers with the ones it grants in `auth_success.features` (always a
+subset; unknown names are dropped). One feature is defined:
+
+- **`ack` — delete-on-ack delivery.** Without it a relay deletes a message
+  once it has written it to the recipient's socket (delete-on-write), so a
+  socket that dies after the write loses the message. With it granted:
+  - the relay keeps every message for the recipient until the recipient
+    acknowledges it, writes it again on every later connect until then
+    (subject to the message's own expiry and the relay's retention), and
+    refuses (does not write) a message it cannot keep;
+  - the recipient acknowledges an envelope once it has handled it, with a
+    binary frame `{"type":"ack","id":"<envelope id>","from_did":"<envelope
+    from_did>"}`. The relay deletes only the recipient's own message with
+    that sender and id; an unknown or repeated ack is a no-op;
+  - a recipient SHOULD ack only after handling (not on receipt), SHOULD
+    NOT ack an envelope nothing could take (so it is sent again), and MUST
+    tolerate the same envelope arriving more than once — recognising one
+    already handled, across restarts, and acking it again without
+    re-running it;
+  - a cancel for a message the recipient was never sent deletes it
+    silently. A cancel for one already written is relayed to the recipient
+    with an `id` of its own, so the recipient can ack the cancel too.
+
+A client that does not ask for `ack`, or a relay that does not grant it,
+keeps delete-on-write unchanged.
 
 ## 8. DID document (L1 requirement)
 
@@ -456,6 +491,17 @@ describe the network-level exchange but require a live loopback.
   families, all field shapes, and every frozen conformance vector are
   unchanged. Ports that do not implement it never send it, and receiving
   an unknown type was already a drop, so forward-compat holds.
+
+- **2026-10-02** — **MsgBox relay features + delete-on-ack (additive).**
+  §7: `auth_response` and `auth_success` gain an optional `features`
+  string array (`AuthResponseFrame.features`, `AuthSuccessFrame.features`);
+  new §7.1 defines the `ack` feature, the client-to-relay `{"type":"ack",
+  "id","from_did"}` frame, and that a relayed cancel carries a relay-minted
+  `id`. ADDITIVE: a client that sends no `features` and a relay that grants
+  none behave exactly as before (delete-on-write), the three-frame
+  handshake and its signed payload are unchanged, and no frozen
+  conformance vector covers these frames. The strict "anything else closes
+  with 1008" rule now explicitly excepts the optional `features` array.
 
 ## 16. See also
 

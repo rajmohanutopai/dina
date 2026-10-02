@@ -168,3 +168,36 @@ describe('an identity that no longer validates', () => {
     expect(res.body).toMatchObject({ configured: true, error: 'settings_invalid' });
   });
 });
+
+describe('a buyer record that no longer validates', () => {
+  it('comes back with its findings AND the record, so the owner can save it right', async () => {
+    const stored = {
+      actingIdentityDid: 'did:plc:owner',
+      locations: [{ scheme: 'postal_area', value: '560001' }],
+      preferredSuppliers: [],
+      blockedSuppliers: [],
+      allowedCategoryIds: [],
+      quoteFanoutCeiling: 4,
+      approvalPolicySummary: '',
+      currency: 'inr',
+      preferredUnitCodes: [],
+      publishReviews: false,
+    };
+    (settings as unknown as { buyer: unknown }).buyer = stored;
+    const res = await router.handle(request('GET', '/v1/commerce/settings/buyer'));
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({
+      configured: true,
+      error: 'settings_invalid',
+      findings: [expect.objectContaining({ refusal: 'unknown_buyer_currency' })],
+      settings: stored,
+    });
+  });
+
+  it('a record that is not an object comes back with its findings only', async () => {
+    (settings as unknown as { buyer: unknown }).buyer = ['not', 'settings'];
+    const res = await router.handle(request('GET', '/v1/commerce/settings/buyer'));
+    expect(res.status).toBe(409);
+    expect(res.body).not.toHaveProperty('settings');
+  });
+});

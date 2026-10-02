@@ -435,6 +435,56 @@ export class OwnerCommerceClient {
     return expectOk<BuyerSettingsAnswer>(res, 'buyerSettings');
   }
 
+  /**
+   * The buyer's settings as the Buying preferences screen edits them: the
+   * stored record, and — when Core refuses it as stored (`settings_invalid`)
+   * — the findings, with the record itself when Core hands it back for
+   * repair (`settings: null` when it does not). Other refusals throw.
+   */
+  async buyerSettingsToEdit(): Promise<BuyerSettingsToEdit> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/buyer' });
+    const body = (res.body ?? {}) as {
+      error?: string;
+      findings?: SettingsFindingDto[];
+      settings?: unknown;
+    };
+    if (res.status === 409 && body.error === 'settings_invalid') {
+      const stored =
+        body.settings !== null && typeof body.settings === 'object' && !Array.isArray(body.settings)
+          ? (body.settings as Partial<BuyerSettingsDto>)
+          : null;
+      return { configured: true, settings: stored, findings: body.findings ?? [] };
+    }
+    const answer = expectOk<BuyerSettingsAnswer>(res, 'buyerSettingsToEdit');
+    return answer.configured
+      ? { configured: true, settings: answer.settings, findings: [] }
+      : { configured: false };
+  }
+
+  /**
+   * Save the buyer's settings, whole. Core asks a person to be present
+   * (they hand out authority in advance): a refusal arrives as
+   * `no_user_presence`, which the screen's presence sheet answers and retries.
+   * A setting Core refuses comes back as findings, nothing stored.
+   */
+  async saveBuyerSettings(
+    settings: BuyerSettingsDto,
+  ): Promise<{ ok: true } | { ok: false; findings: SettingsFindingDto[] }> {
+    const res = await this.dispatcher.dispatch({
+      method: 'PUT',
+      path: '/v1/commerce/settings/buyer',
+      body: settings,
+    });
+    if (res.status === 200) return { ok: true };
+    const body = (res.body ?? {}) as { findings?: SettingsFindingDto[]; error?: string };
+    if (body.findings !== undefined) return { ok: false, findings: body.findings };
+    throw new OwnerCommerceHttpError(
+      `saveBuyerSettings failed (${String(res.status)})`,
+      res.status,
+      body.error ?? '',
+    );
+  }
+
   /** Send an order held from a quote (an award, `from_quote`). */
   async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
     const res = await this.dispatcher.dispatch({
@@ -457,7 +507,12 @@ export class OwnerCommerceClient {
       path: '/v1/commerce/orders/placed',
       ...(limit !== undefined ? { query: { limit: String(limit) } } : {}),
     });
-    return expectOk<PlacedOrdersAnswer>(res, 'placedOrders');
+    // The wire is snake_case (`owner_views_wire`); the app's DTO is camelCase.
+    const body = expectOk<{ orders: Record<string, unknown>[]; evidence: string }>(
+      res,
+      'placedOrders',
+    );
+    return { orders: body.orders.map(placedOrderFromWire), evidence: body.evidence };
   }
 
   // -------------------------------------------------------------------------
@@ -799,6 +854,66 @@ export interface PlacedOrderProgressDto {
   } | null;
 }
 
+type WireRecord = Record<string, unknown>;
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const strOrNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+function progressFromWire(raw: unknown): PlacedOrderProgressDto | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const p = raw as WireRecord;
+  const link = p.checkout_link as WireRecord | null | undefined;
+  const fulfilment = p.fulfilment as WireRecord | null | undefined;
+  return {
+    checkoutLink:
+      link === null || link === undefined
+        ? null
+        : {
+            url: str(link.url),
+            amount: link.amount as MoneyDto,
+            provider: str(link.provider),
+            expiresAt: strOrNull(link.expires_at),
+            expired: link.expired === true,
+          },
+    payment: (p.payment ?? null) as PlacedOrderProgressDto['payment'],
+    paymentRecorded: p.payment_recorded === true,
+    fulfilment:
+      fulfilment === null || fulfilment === undefined
+        ? null
+        : {
+            state: fulfilment.state as NonNullable<PlacedOrderProgressDto['fulfilment']>['state'],
+            provider: str(fulfilment.provider),
+            reportedAt: str(fulfilment.reported_at),
+          },
+  };
+}
+
+/** One placed order off the snake_case wire. */
+export function placedOrderFromWire(o: WireRecord): PlacedOrderDto {
+  return {
+    purchaseOrderId: str(o.purchase_order_id),
+    supplierDid: str(o.supplier_did),
+    serviceRkey: str(o.service_rkey),
+    supplierName: strOrNull(o.supplier_name),
+    total: (o.total ?? null) as MoneyDto | null,
+    submittedAt: strOrNull(o.submitted_at),
+    state: o.state as PlacedOrderDto['state'],
+    headline: str(o.headline),
+    detail: strOrNull(o.detail),
+    actions: Array.isArray(o.actions) ? (o.actions as string[]) : [],
+    nextPollAtMs: typeof o.next_poll_at_ms === 'number' ? o.next_poll_at_ms : null,
+    pollCount: typeof o.poll_count === 'number' ? o.poll_count : 0,
+    progress: progressFromWire(o.progress),
+    quoteId: str(o.quote_id),
+    lines: (Array.isArray(o.lines) ? (o.lines as WireRecord[]) : []).map((line) => ({
+      lineId: str(line.line_id),
+      product: line.product as PlacedOrderLineDto['product'],
+      quantity: line.quantity as PlacedOrderLineDto['quantity'],
+      name: strOrNull(line.name),
+    })),
+    tenderId: strOrNull(o.tender_id),
+  };
+}
+
 /** One order the buyer placed (`GET /v1/commerce/orders/placed`). */
 export interface PlacedOrderDto {
   purchaseOrderId: string;
@@ -915,17 +1030,39 @@ export interface CreateTenderAnswer {
   negotiating: boolean;
 }
 
+/** The buyer's saved commerce settings, whole (what `PUT` takes back). */
+export interface BuyerSettingsDto {
+  actingIdentityDid: string;
+  locations: { scheme: string; value: string }[];
+  preferredSuppliers: string[];
+  blockedSuppliers: string[];
+  allowedCategoryIds: string[];
+  quoteFanoutCeiling: number;
+  approvalPolicySummary: string;
+  currency: string;
+  preferredUnitCodes: string[];
+  publishReviews: boolean;
+  divergenceThresholdPct?: number;
+  workingCapitalRateBps?: number;
+}
+
 /** `GET /v1/commerce/settings/buyer`: absent until the owner saves them. */
 export type BuyerSettingsAnswer =
   | { configured: false }
+  | { configured: true; settings: BuyerSettingsDto };
+
+/**
+ * What Buying preferences opens with. `findings` is empty for a record Core
+ * accepts; non-empty when the stored record is refused, and then `settings`
+ * is the record as stored (possibly malformed — the screen checks each field
+ * it reads) or null when Core did not hand it back.
+ */
+export type BuyerSettingsToEdit =
+  | { configured: false }
   | {
       configured: true;
-      settings: {
-        locations: { scheme: string; value: string }[];
-        currency: string;
-        preferredSuppliers: string[];
-        blockedSuppliers: string[];
-      };
+      settings: Partial<BuyerSettingsDto> | null;
+      findings: SettingsFindingDto[];
     };
 
 export interface SettingsFindingDto {

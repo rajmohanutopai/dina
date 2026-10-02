@@ -46,6 +46,7 @@ import {
 import { canonicalJson } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
+import { getContact } from '../contacts/directory';
 import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
 import { WorkflowConflictError } from '../workflow/repository';
 import {
@@ -688,6 +689,16 @@ export type RaisedCard =
       detail?: string;
     };
 
+/** The owner's name for a supplier on a card line: their contact name, else "the supplier". */
+function supplierLabel(supplierDid: string): string {
+  try {
+    const name = getContact(supplierDid)?.displayName.trim() ?? '';
+    return name === '' ? 'the supplier' : name;
+  } catch {
+    return 'the supplier';
+  }
+}
+
 function shortMoney(amount: Money): string {
   const units = amount.minor_units;
   const whole = units.length > 2 ? units.slice(0, -2) : '0';
@@ -771,7 +782,9 @@ function cardFor(
     return {
       id: `order-checkout-${attachment.attachment_digest.slice(0, 32)}`,
       idempotencyKey: `order_attachment:${attachment.attachment_digest}`,
-      description: `Pay ${shortMoney(attachment.payload.amount)} for order ${attachment.purchase_order_id} through ${attachment.source.provider}?`,
+      // Named by the supplier (the owner's contact name), never `po_…`: this
+      // line is the card's and the Activity title. The order id stays in the payload.
+      description: `Pay ${shortMoney(attachment.payload.amount)} to ${supplierLabel(attachment.supplier_did)} through ${attachment.source.provider}?`,
       payload,
       ...(attachment.expires_at !== undefined
         ? { expiresAtSec: Math.floor(Date.parse(attachment.expires_at) / 1000) }
@@ -808,7 +821,7 @@ function cardFor(
     return {
       id: paymentCardId(attachment.supplier_did, attachment.payload.provider_ref),
       idempotencyKey: `payment_evidence_record:${attachment.supplier_did}:${attachment.payload.provider_ref}`,
-      description: `Record ${shortMoney(attachment.payload.amount)} as paid for order ${attachment.purchase_order_id}? ${attachment.source.provider} reports it captured.`,
+      description: `Record ${shortMoney(attachment.payload.amount)} as paid to ${supplierLabel(attachment.supplier_did)}? ${attachment.source.provider} reports it captured.`,
       payload,
     };
   }

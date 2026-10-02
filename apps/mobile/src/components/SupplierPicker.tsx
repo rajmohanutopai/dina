@@ -76,6 +76,7 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
   const router = useRouter();
   const [query, setQuery] = useState(props.initialQuery);
   const [results, setResults] = useState<SupplierMatch[] | null>(null);
+  const [hiddenForReviews, setHiddenForReviews] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +95,7 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
           : {}),
       });
       setResults(found.suppliers);
+      setHiddenForReviews(found.hiddenForPoorReviews);
       props.onSetAside?.(
         found.suppliers.flatMap((f) =>
           f.setAside === null
@@ -112,6 +114,7 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
       if (found.words.length === 0) setError('Type what you want, like “cakes”.');
     } catch (err) {
       setResults(null);
+      setHiddenForReviews(false);
       setError(ownerErrorText(err));
     } finally {
       setSearching(false);
@@ -127,7 +130,13 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
   const review = (s: SupplierMatch): void => {
     router.push({
       pathname: '/peerlens/write',
-      params: { createKind: 'organization', initialName: s.name ?? '', initialDid: s.supplierDid },
+      params: {
+        createKind: 'organization',
+        initialName: s.name ?? '',
+        initialDid: s.supplierDid,
+        // Back, Cancel and a finished publish come back here, form intact.
+        returnTo: '/ask-quotes',
+      },
     });
   };
   const reviewLink = (s: SupplierMatch): React.ReactElement => (
@@ -206,6 +215,11 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
       {error !== null && (
         <Text style={styles.error} testID="supplier-search-error">
           {error}
+        </Text>
+      )}
+      {hiddenForReviews && (
+        <Text style={styles.meta} testID="supplier-hidden-reviews">
+          Some matching suppliers were not shown because of poor reviews on PeerLens.
         </Text>
       )}
       {results !== null && results.length === 0 && error === null && (

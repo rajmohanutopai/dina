@@ -40,7 +40,7 @@ import {
 
 import { requestQuote, type QuoteRequestLineInput } from './buyer_quote_request';
 import { rehydrateDeclineDocument } from './decline_documents';
-import { rehydrateListedPrice } from './rehydrate';
+import { rehydrateListedPrice, rehydrateTenderLineLabels } from './rehydrate';
 import { getCommerceRuntime } from './runtime';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
@@ -576,3 +576,19 @@ export function compareTender(args: {
   }
   return { ok: true, members };
 }
+
+/**
+ * What a tender asked for, in the owner's words, for a card or an Activity
+ * title: the first line's described requirement (or its product code), with
+ * "and N more" for the rest. Never the tender id — an owner does not know
+ * their tenders by `tnd_…`. `null` when the stored lines cannot be read.
+ */
+export function tenderSubject(linesJson: string): string | null {
+  const labels = rehydrateTenderLineLabels(linesJson);
+  const text = labels?.[0] ?? '';
+  if (labels === null || text === '') return null;
+  const shown = text.length > 60 ? `${text.slice(0, 57)}…` : text;
+  const more = labels.length > 1 ? ` and ${String(labels.length - 1)} more` : '';
+  return `“${shown}”${more}`;
+}
+

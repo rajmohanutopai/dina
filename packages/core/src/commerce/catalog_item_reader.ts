@@ -17,6 +17,7 @@
  */
 
 import {
+  catalogImagesAllowed,
   validateCatalogItemForIngest,
   validateCatalogPointer,
   verifyCatalogPage,
@@ -85,12 +86,24 @@ export function readPublishedItem(args: {
   for (const page of pages) {
     const pageError = verifyCatalogPage(page, snapshot, args.sha256);
     if (pageError !== null) return { ok: false, reason: pageError };
+    const imagesAllowed = catalogImagesAllowed(snapshot.protocol_version);
     for (const item of page.items) {
+      // `images` exists from minor 1.1: on an older snapshot it is ignored,
+      // as if absent — so it is removed BEFORE validation, and an ignored
+      // field that would not validate (an empty list, a bad URL) cannot cost
+      // the item. (A catalog published with photos before the gate keeps its
+      // items and shows no photo until it is republished at 1.1.) The page
+      // digest above was checked over the item as published.
+      const candidate =
+        !imagesAllowed && item !== null && typeof item === 'object' && 'images' in item
+          ? (({ images: _ignored, ...rest }) => rest)(item as CatalogItem)
+          : item;
       // The reader rule: a later minor's extra field is tolerated, a
       // malformed or forbidden one drops just that item from consideration.
-      if (validateCatalogItemForIngest(item) !== null) continue;
-      const typed = item as CatalogItem;
-      if (typed.supplier_did === args.supplierDid) items.push(typed);
+      if (validateCatalogItemForIngest(candidate) !== null) continue;
+      const typed = candidate as CatalogItem;
+      if (typed.supplier_did !== args.supplierDid) continue;
+      items.push(typed);
     }
   }
   return { ok: true, item: findPublishedItem(items, args.product) };

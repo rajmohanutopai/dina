@@ -70,6 +70,44 @@ export const MAX_CATALOG_IMAGES = 4;
 export const MAX_CATALOG_IMAGE_URL_LENGTH = 1000;
 
 /**
+ * `CatalogItem.images` exists from protocol minor 1.1, the way
+ * `payment_terms.due_basis` does on quotes. A publisher stamps a snapshot (and
+ * its pointer) 1.1 only when an item carries images, so a catalog without
+ * photos keeps its 1.0 bytes and digest. A reader ignores `images` on a
+ * snapshot below 1.1 — as if absent — rather than refusing the page: catalogs
+ * published with photos at 1.0 before the gate keep their items and simply
+ * show no photo until republished.
+ */
+export const CATALOG_IMAGES_MIN_MINOR = 1;
+
+function minorOf(protocolVersion: string): number {
+  const minor = Number(String(protocolVersion).split('.')[1] ?? '0');
+  return Number.isFinite(minor) ? minor : 0;
+}
+
+/** Whether a snapshot at this protocol version may carry (and be read for) images. */
+export function catalogImagesAllowed(protocolVersion: string): boolean {
+  return minorOf(protocolVersion) >= CATALOG_IMAGES_MIN_MINOR;
+}
+
+/**
+ * The version a snapshot of these items must be stamped with: `base`, raised
+ * to 1.1 when any item carries images and `base` is below it.
+ */
+export function catalogProtocolVersionFor(items: readonly unknown[], base: string): string {
+  if (catalogImagesAllowed(base)) return base;
+  const anyImages = items.some(
+    (item) =>
+      item !== null &&
+      typeof item === 'object' &&
+      (item as { images?: unknown }).images !== undefined,
+  );
+  if (!anyImages) return base;
+  const major = String(base).split('.')[0] ?? '1';
+  return `${major}.${String(CATALOG_IMAGES_MIN_MINOR)}`;
+}
+
+/**
  * Every key a `CatalogItem` may carry. Nothing else reaches the wire.
  *
  * WHY AN EXACT LIST RATHER THAN A FIELD-BY-FIELD CHECK. The validator below

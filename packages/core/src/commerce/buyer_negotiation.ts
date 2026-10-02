@@ -37,11 +37,21 @@ import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
 import { getCommerceServiceQueryDispatch } from './buyer_sender';
+import { formatMoneyAmount } from './money_display';
 import { TENDER_READY_TYPE } from './negotiation_policy';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
-import { DEFAULT_WORKING_CAPITAL_RATE_BPS, financingBenefitMinor } from './tender';
+import { DEFAULT_WORKING_CAPITAL_RATE_BPS, financingBenefitMinor, tenderSubject } from './tender';
 
 import type { SentCounter, TenderNegotiation, TenderNotice } from './buyer_negotiation_store';
+
+/** Minor units as money for a sentence: "INR 600.00"; the raw digits if unreadable. */
+function moneyText(currency: string, minor: string): string {
+  try {
+    return `${currency} ${formatMoneyAmount({ currency, minor_units: minor })}`;
+  } catch {
+    return `${currency} ${minor}`;
+  }
+}
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -771,6 +781,8 @@ function markReady(
   const workflow = getWorkflowService();
   if (workflow === null) return;
   const best = ranked[0];
+  const stored = runtime.tenders.getTender(tender.tenderId);
+  const subject = (stored === null ? null : tenderSubject(stored.linesJson)) ?? 'your items';
   const payload: TenderReadyCardPayload = {
     type: TENDER_READY_TYPE,
     tender_id: tender.tenderId,
@@ -783,10 +795,12 @@ function markReady(
     workflow.create({
       id: `tender-ready-${tender.tenderId}`,
       kind: WorkflowTaskKind.Approval,
+      // Named by what was asked for and priced in money, never `tnd_…` or
+      // "minor units": this line is the card's and the Activity title.
       description:
         best === undefined
-          ? `Tender ${tender.tenderId} closed with no offer within budget.`
-          : `Tender ${tender.tenderId} is ready: ${String(ranked.length)} offer(s) within budget, best ${tender.currency} ${best.total_minor} minor units. Award it from the tender screen.`,
+          ? `Your tender for ${subject} closed with no offer within budget.`
+          : `Your tender for ${subject} is ready: ${String(ranked.length)} offer(s) within budget, best ${moneyText(tender.currency, best.total_minor)}. Award it from the tender screen.`,
       payload: JSON.stringify(payload),
       idempotencyKey: `tender_ready:${tender.tenderId}`,
       correlationId: tender.tenderId,

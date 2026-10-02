@@ -330,6 +330,18 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Business identity</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* The buyer's saved currency and delivery areas — what Ask for quotes
+            starts from. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/buyer-settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Buying preferences"
+          testID="settings-row-buyer-settings"
+        >
+          <Text style={styles.rowLabel}>Buying preferences</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* §6 — staff grants: scoped, value-capped authority for the shop's
             other hands. */}
         <TouchableOpacity

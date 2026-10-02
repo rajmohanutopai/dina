@@ -149,12 +149,17 @@ export async function eraseEverythingLocal(): Promise<void> {
   writeInstallMarker();
 }
 
-/** True for SQLite database files (and their WAL/SHM sidecars). */
+/**
+ * True for SQLite database files (and their WAL/SHM sidecars), including
+ * ones unlock set aside as unreadable (`<name>.unreadable-<stamp>`, see
+ * `setAsideUnreadableVaultFiles`): "Erase everything" means nothing survives.
+ */
 function isSqliteArtifact(name: string): boolean {
+  const base = name.replace(/\.unreadable-\d+$/, '');
   return (
-    name.endsWith('.sqlite') ||
-    name.endsWith('.sqlite-wal') ||
-    name.endsWith('.sqlite-shm') ||
-    name.endsWith('.sqlite-journal')
+    base.endsWith('.sqlite') ||
+    base.endsWith('.sqlite-wal') ||
+    base.endsWith('.sqlite-shm') ||
+    base.endsWith('.sqlite-journal')
   );
 }

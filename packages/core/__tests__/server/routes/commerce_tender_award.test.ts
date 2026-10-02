@@ -750,7 +750,13 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     clockOffset = 100_000;
     await runNegotiationTick(start + 100_000);
     expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('ready');
-    expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('pending_approval');
+    const card = workflow.store().getById(`tender-ready-${tenderId}`);
+    expect(card?.status).toBe('pending_approval');
+    // The card line is the Activity title: named by what was asked for and
+    // priced in money — never `tnd_…`, never "minor units".
+    expect(card?.description).toMatch(/^Your tender for “.+” is ready: 2 offer\(s\) within budget, best /);
+    expect(card?.description).not.toContain(tenderId);
+    expect(card?.description).not.toContain('minor units');
     return { tenderId, start };
   }
 
@@ -1245,6 +1251,12 @@ describe('NEGOTIATION_PLAN §4.7 — a clerk awards inside the cap the owner set
       staffCall('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
     );
     expect(ranking.status).toBe(200);
+    // The clerk sees the bargaining too, under the same purchasing check.
+    const story = await router.handle(
+      staffCall('GET', '/v1/commerce/trade/tender/story', {}, { tender_id: tenderId }),
+    );
+    expect(story.status).toBe(200);
+    expect(story.body).toMatchObject({ tender_id: tenderId });
     const award = await staffAward(tenderId);
     expect(award.status).toBe(200);
     const body = award.body as {

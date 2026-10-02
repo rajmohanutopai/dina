@@ -4,6 +4,8 @@ import {
   validateCatalogItem,
   validateCatalogItemForIngest,
   validateProductRelationshipClaim,
+  catalogImagesAllowed,
+  catalogProtocolVersionFor,
 } from '../src/catalog';
 
 import { SUPPLIER_DID } from './helpers/fixtures';
@@ -226,5 +228,22 @@ describe('validateProductRelationshipClaim (§9.4)', () => {
         effective_until: '2026-08-01T00:00:00Z',
       }),
     ).toMatch(/after effective_from/);
+  });
+});
+
+describe('images is a minor 1.1 field (like quote due_basis)', () => {
+  it('is allowed from 1.1, not on 1.0', () => {
+    expect(catalogImagesAllowed('1.0')).toBe(false);
+    expect(catalogImagesAllowed('1.1')).toBe(true);
+    expect(catalogImagesAllowed('1.4')).toBe(true);
+  });
+
+  it('a snapshot is raised to 1.1 only when an item carries images', () => {
+    expect(catalogProtocolVersionFor([{ name: 'x' }], '1.0')).toBe('1.0');
+    expect(
+      catalogProtocolVersionFor([{ name: 'x' }, { images: ['https://a.test/p.jpg'] }], '1.0'),
+    ).toBe('1.1');
+    expect(catalogProtocolVersionFor([{ images: ['https://a.test/p.jpg'] }], '1.2')).toBe('1.2');
+    expect(catalogProtocolVersionFor([], '1.0')).toBe('1.0');
   });
 });

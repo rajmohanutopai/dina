@@ -275,19 +275,19 @@ describe('GET /v1/commerce/orders/placed', () => {
     const res = await router.handle(get());
     expect(res.status).toBe(200);
     const body = res.body as Body;
-    expect(body.orders.map((o) => o.purchaseOrderId)).toEqual(['po-second', 'po-first']);
+    expect(body.orders.map((o) => o.purchase_order_id)).toEqual(['po-second', 'po-first']);
     expect(body.orders[0]).toMatchObject({
-      supplierDid: SUPPLIER_DID,
-      serviceRkey: 'shop',
-      supplierName: null,
+      supplier_did: SUPPLIER_DID,
+      service_rkey: 'shop',
+      supplier_name: null,
       state: 'submitted_unconfirmed',
       headline: 'Sent. Waiting for the supplier to confirm.',
       total: QUOTE.total,
-      submittedAt: '2026-09-29T08:00:00.000Z',
+      submitted_at: '2026-09-29T08:00:00.000Z',
       progress: {
-        checkoutLink: null,
+        checkout_link: null,
         payment: null,
-        paymentRecorded: false,
+        payment_recorded: false,
         fulfilment: null,
       },
     });
@@ -298,7 +298,9 @@ describe('GET /v1/commerce/orders/placed', () => {
       total: QUOTE.total,
     });
     // The order digest is how the route joins evidence; it is not part of the view.
-    expect(body.orders[0]).not.toHaveProperty('orderDigest');
+    expect(body.orders[0]).not.toHaveProperty('order_digest');
+    // The wire is snake_case, like the rest of Core's HTTP surface.
+    expect(Object.keys(body.orders[0] ?? {}).filter((k) => /[A-Z]/.test(k))).toEqual([]);
   });
 
   it('carries the accepted lines, named as the supplier named them, and the tender the quote answered', async () => {
@@ -335,11 +337,11 @@ describe('GET /v1/commerce/orders/placed', () => {
 
     const body = (await router.handle(get())).body as Body;
     expect(body.orders[0]).toMatchObject({
-      quoteId: QUOTE.quote_id,
-      tenderId: 'tnd-cake',
+      quote_id: QUOTE.quote_id,
+      tender_id: 'tnd-cake',
       lines: [
         {
-          lineId: line.line_id,
+          line_id: line.line_id,
           product: line.offered_product,
           quantity: line.quantity,
           name: 'Floral Celebration Cake',
@@ -351,7 +353,7 @@ describe('GET /v1/commerce/orders/placed', () => {
   it('an order from no tender, whose quote named nothing, says so rather than guessing', async () => {
     placeOrder('po-plain', '2026-09-29T08:00:00.000Z');
     const body = (await router.handle(get())).body as Body;
-    expect(body.orders[0]).toMatchObject({ tenderId: null, quoteId: QUOTE.quote_id });
+    expect(body.orders[0]).toMatchObject({ tender_id: null, quote_id: QUOTE.quote_id });
     expect((body.orders[0]?.lines as { name: unknown }[])[0]?.name).toBeNull();
   });
 
@@ -362,7 +364,7 @@ describe('GET /v1/commerce/orders/placed', () => {
     addContact(SUPPLIER_DID, 'ValueCrumb Bakery', 'verified');
     placeOrder('po-named', '2026-09-29T08:00:00.000Z');
     const body = (await router.handle(get())).body as Body;
-    expect(body.orders[0]).toMatchObject({ supplierName: 'ValueCrumb Bakery' });
+    expect(body.orders[0]).toMatchObject({ supplier_name: 'ValueCrumb Bakery' });
   });
 
   it('summarises the payment link, the processor, the buyer’s own record and the newest fulfilment step', async () => {
@@ -425,26 +427,26 @@ describe('GET /v1/commerce/orders/placed', () => {
 
     let body = (await router.handle(get())).body as Body;
     expect(body.orders[0]?.progress).toEqual({
-      checkoutLink: {
+      checkout_link: {
         url: 'https://pay.example.com/new',
         amount: order.approved_total,
         provider: 'clover',
-        expiresAt: later,
+        expires_at: later,
         expired: false,
       },
       payment: { state: 'captured', amount: order.approved_total, provider: 'clover' },
-      paymentRecorded: false,
+      payment_recorded: false,
       fulfilment: {
         state: 'handed_to_carrier',
         provider: 'clover',
-        reportedAt: new Date(NOW - 1_000).toISOString(),
+        reported_at: new Date(NOW - 1_000).toISOString(),
       },
     });
 
     // The buyer records the payment (a yes on the "record as paid?" card).
     recordPayment(['po-paid'], 'pay_1');
     body = (await router.handle(get())).body as Body;
-    expect(body.orders[0]?.progress).toMatchObject({ paymentRecorded: true });
+    expect(body.orders[0]?.progress).toMatchObject({ payment_recorded: true });
   });
 
   it('a lapsed link is history: returned with expired = true', async () => {
@@ -460,7 +462,7 @@ describe('GET /v1/commerce/orders/placed', () => {
     );
     const body = (await router.handle(get())).body as Body;
     expect(body.orders[0]?.progress).toMatchObject({
-      checkoutLink: { url: 'https://pay.example.com/1', expiresAt: lapsed, expired: true },
+      checkout_link: { url: 'https://pay.example.com/1', expires_at: lapsed, expired: true },
     });
   });
 
@@ -469,7 +471,7 @@ describe('GET /v1/commerce/orders/placed', () => {
     accept(order);
     recordPayment(['po-somewhere-else']);
     const body = (await router.handle(get())).body as Body;
-    expect(body.orders[0]?.progress).toMatchObject({ paymentRecorded: false });
+    expect(body.orders[0]?.progress).toMatchObject({ payment_recorded: false });
   });
 
   it('with the money line closed every order is still listed, with no progress and the reason', async () => {
@@ -486,7 +488,7 @@ describe('GET /v1/commerce/orders/placed', () => {
     const body = res.body as Body;
     expect(body.evidence).toBe('pack_paused');
     expect(body.orders).toHaveLength(1);
-    expect(body.orders[0]).toMatchObject({ purchaseOrderId: 'po-closed', progress: null });
+    expect(body.orders[0]).toMatchObject({ purchase_order_id: 'po-closed', progress: null });
   });
 
   it('honours limit and refuses one outside 1–100', async () => {
@@ -494,7 +496,7 @@ describe('GET /v1/commerce/orders/placed', () => {
     placeOrder('po-b', '2026-09-28T08:00:00.000Z');
     placeOrder('po-c', '2026-09-29T08:00:00.000Z');
     const page = (await router.handle(get({ limit: '2' }))).body as Body;
-    expect(page.orders.map((o) => o.purchaseOrderId)).toEqual(['po-c', 'po-b']);
+    expect(page.orders.map((o) => o.purchase_order_id)).toEqual(['po-c', 'po-b']);
     for (const limit of ['0', '101', 'ten', '-1', '1.5']) {
       expect(await router.handle(get({ limit }))).toMatchObject({
         status: 400,

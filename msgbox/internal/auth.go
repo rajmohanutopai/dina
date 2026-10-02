@@ -35,6 +35,10 @@ type AuthResponse struct {
 	DID  string `json:"did"`
 	Sig  string `json:"sig"` // hex-encoded Ed25519 signature
 	Pub  string `json:"pub"` // hex-encoded 32-byte Ed25519 public key
+	// Features the client supports. "ack": it acknowledges each message it
+	// has handled, and wants delete-on-ack delivery. Optional; older clients
+	// send none and keep delete-on-write.
+	Features []string `json:"features,omitempty"`
 }
 
 // AuthTimeout is how long the msgbox waits for a valid auth response.
@@ -125,14 +129,33 @@ func (c *CachingPLCResolver) ResolveDinaSigningKey(ctx context.Context, did stri
 // AuthenticateWithResolver performs challenge-response with full DID verification.
 // For did:key: self-certifying (public key is the DID).
 // For did:plc: fetches PLC document via resolver, verifies #dina_signing key.
+// FeatureAck is the client feature that turns on delete-on-ack delivery.
+const FeatureAck = "ack"
+
+// AuthResult is a passed handshake: the authenticated DID and the features
+// this relay granted the connection.
+type AuthResult struct {
+	DID string
+	Ack bool
+}
+
+// AuthenticateWithResolver is AuthenticateWithResolverEx without the features.
 func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver PLCResolver) (string, error) {
+	res, err := AuthenticateWithResolverEx(ctx, ws, resolver)
+	return res.DID, err
+}
+
+// AuthenticateWithResolverEx runs the challenge-response handshake and
+// reports the features granted. The granted features are echoed in
+// `auth_success` so a client knows whether this relay acts on its acks.
+func AuthenticateWithResolverEx(ctx context.Context, ws *websocket.Conn, resolver PLCResolver) (AuthResult, error) {
 	authCtx, cancel := context.WithTimeout(ctx, AuthTimeout)
 	defer cancel()
 
 	// 1. Generate and send challenge.
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("auth: generate nonce: %w", err)
+		return AuthResult{}, fmt.Errorf("auth: generate nonce: %w", err)
 	}
 	ts := time.Now().Unix()
 	challenge := AuthChallenge{
@@ -142,29 +165,29 @@ func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver 
 	}
 	chalBytes, _ := json.Marshal(challenge)
 	if err := ws.Write(authCtx, websocket.MessageText, chalBytes); err != nil {
-		return "", fmt.Errorf("auth: write challenge: %w", err)
+		return AuthResult{}, fmt.Errorf("auth: write challenge: %w", err)
 	}
 
 	// 2. Read response.
 	_, respBytes, err := ws.Read(authCtx)
 	if err != nil {
-		return "", fmt.Errorf("auth: read response: %w", err)
+		return AuthResult{}, fmt.Errorf("auth: read response: %w", err)
 	}
 	var resp AuthResponse
 	if err := json.Unmarshal(respBytes, &resp); err != nil {
-		return "", fmt.Errorf("auth: parse response: %w", err)
+		return AuthResult{}, fmt.Errorf("auth: parse response: %w", err)
 	}
 	if resp.Type != AuthResponseType {
-		return "", errors.New("auth: unexpected frame type")
+		return AuthResult{}, errors.New("auth: unexpected frame type")
 	}
 	if resp.DID == "" || resp.Sig == "" || resp.Pub == "" {
-		return "", errors.New("auth: missing required fields")
+		return AuthResult{}, errors.New("auth: missing required fields")
 	}
 
 	// 3. Decode provided public key.
 	pubBytes, err := hex.DecodeString(resp.Pub)
 	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
-		return "", errors.New("auth: invalid public key")
+		return AuthResult{}, errors.New("auth: invalid public key")
 	}
 
 	// 4. Verify the public key is bound to the claimed DID.
@@ -172,7 +195,7 @@ func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver 
 	case strings.HasPrefix(resp.DID, "did:key:"):
 		// Self-certifying: derive did:key from provided pubkey, must match.
 		if err := verifyDIDKeyDirect(resp.DID, pubBytes); err != nil {
-			return "", fmt.Errorf("auth: %w", err)
+			return AuthResult{}, fmt.Errorf("auth: %w", err)
 		}
 	case strings.HasPrefix(resp.DID, "did:plc:"):
 		// Fetch PLC document, extract #dina_signing key, compare to provided key.
@@ -184,23 +207,23 @@ func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver 
 		}
 		plcKey, err := resolver.ResolveDinaSigningKey(authCtx, resp.DID)
 		if err != nil {
-			return "", fmt.Errorf("auth: resolve PLC document: %w", err)
+			return AuthResult{}, fmt.Errorf("auth: resolve PLC document: %w", err)
 		}
 		if !ed25519.PublicKey(pubBytes).Equal(plcKey) {
-			return "", errors.New("auth: public key does not match #dina_signing in PLC document")
+			return AuthResult{}, errors.New("auth: public key does not match #dina_signing in PLC document")
 		}
 	default:
-		return "", fmt.Errorf("auth: unsupported DID method: %s", resp.DID)
+		return AuthResult{}, fmt.Errorf("auth: unsupported DID method: %s", resp.DID)
 	}
 
 	// 5. Verify Ed25519 signature over challenge payload.
 	sigBytes, err := hex.DecodeString(resp.Sig)
 	if err != nil || len(sigBytes) != ed25519.SignatureSize {
-		return "", errors.New("auth: invalid signature encoding")
+		return AuthResult{}, errors.New("auth: invalid signature encoding")
 	}
 	challengePayload := fmt.Sprintf("AUTH_RELAY\n%s\n%d", challenge.Nonce, challenge.TS)
 	if !ed25519.Verify(pubBytes, []byte(challengePayload), sigBytes) {
-		return "", errors.New("auth: signature verification failed")
+		return AuthResult{}, errors.New("auth: signature verification failed")
 	}
 
 	// 6. Tell the client the handshake passed. Older clients never waited
@@ -208,12 +231,23 @@ func AuthenticateWithResolver(ctx context.Context, ws *websocket.Conn, resolver 
 	// which is racy under slow links. Writing an explicit {"type":
 	// "auth_success"} lets new clients block until the server confirms.
 	// Best-effort: if the write fails the connection is already dead.
+	wantsAck := false
+	for _, f := range resp.Features {
+		if f == FeatureAck {
+			wantsAck = true
+		}
+	}
+	granted := []string{}
+	if wantsAck {
+		granted = append(granted, FeatureAck)
+	}
 	ack, _ := json.Marshal(struct {
-		Type string `json:"type"`
-	}{Type: AuthSuccessType})
+		Type     string   `json:"type"`
+		Features []string `json:"features"`
+	}{Type: AuthSuccessType, Features: granted})
 	_ = ws.Write(authCtx, websocket.MessageText, ack)
 
-	return resp.DID, nil
+	return AuthResult{DID: resp.DID, Ack: wantsAck}, nil
 }
 
 // deriveDIDKey computes did:key:z... from a raw Ed25519 public key.

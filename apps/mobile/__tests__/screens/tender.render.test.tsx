@@ -29,6 +29,10 @@ jest.mock('../../src/services/staff_identity_store', () => ({
   loadStaffIdentity: async () => null,
 }));
 jest.mock('../../src/services/staff_transport_rn', () => ({ makeStaffWebSocket: () => null }));
+const mockConfirm = jest.fn(async (_title: string, _message: string) => true);
+jest.mock('../../src/services/confirm_decision', () => ({
+  confirmDecision: (title: string, message: string) => mockConfirm(title, message),
+}));
 const mockNames = new Map<string, string | null>();
 jest.mock('../../src/services/supplier_names', () => ({
   ...jest.requireActual<object>('../../src/services/supplier_names'),
@@ -86,6 +90,7 @@ function backend(over: Partial<TenderBackend> = {}): TenderBackend & {
 beforeEach(() => {
   params = { tender_id: 'tnd-1' };
   mockNames.clear();
+  mockConfirm.mockClear();
 });
 afterEach(() => setTenderBackendForTest(null));
 
@@ -517,6 +522,111 @@ describe('the tender screen', () => {
       );
       // A supplier whose quote has no lines is not looked up.
       expect(offeredItem).toHaveBeenCalledTimes(1);
+    });
+
+    it('awarding a supplier PeerLens rates poorly asks first; declining awards nothing', async () => {
+      mockConfirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      const supplierTrust = jest.fn(async () => ({ score: 0.15, reviewCount: 6 }));
+      const b = backend({ tenderStory: jest.fn(async () => STORY), supplierTrust });
+      setTenderBackendForTest(b);
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
+      await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
+
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+      expect(mockConfirm.mock.calls[0]?.[1]).toMatch(
+        /poor reviews on PeerLens \(6 reviews\)\. Award anyway\?$/,
+      );
+      expect(b.awardTender).not.toHaveBeenCalled();
+
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() =>
+        expect(b.awardTender).toHaveBeenCalledWith({ tenderId: 'tnd-1', supplierDid: B }),
+      );
+    });
+
+    it('Award tapped before trust has loaded still checks it first', async () => {
+      // The story never arrives, so the background lookup never runs; the
+      // award must not read "no answer yet" as "fine".
+      const supplierTrust = jest.fn(async () => ({ score: 0.15, reviewCount: 6 }));
+      const b = backend({
+        tenderStory: jest.fn(() => new Promise<never>(() => undefined)),
+        supplierTrust,
+      });
+      setTenderBackendForTest(b);
+      mockConfirm.mockResolvedValueOnce(false);
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
+      expect(supplierTrust).not.toHaveBeenCalled();
+
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+      expect(supplierTrust).toHaveBeenCalledWith(B);
+      expect(b.awardTender).not.toHaveBeenCalled();
+    });
+
+    it("the owner's own poor review asks first even when PeerLens trust is fine", async () => {
+      const supplierTrust = jest.fn(async () => ({ score: 0.8, reviewCount: 7 }));
+      const ownReviews = jest.fn(
+        async () =>
+          new Map([
+            [
+              B,
+              {
+                sentiment: 'negative' as const,
+                text: 'Late twice',
+                createdAt: '2026-09-01T00:00:00.000Z',
+              },
+            ],
+          ]),
+      );
+      const b = backend({ tenderStory: jest.fn(async () => STORY), supplierTrust, ownReviews });
+      setTenderBackendForTest(b);
+      mockConfirm.mockResolvedValueOnce(false);
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+      expect(mockConfirm.mock.calls[0]?.[1]).toMatch(
+        /^You rated .+ poorly on PeerLens\. Award anyway\?$/,
+      );
+      expect(b.awardTender).not.toHaveBeenCalled();
+    });
+
+    it('own reviews are read again for each award: a review written since counts', async () => {
+      const supplierTrust = jest.fn(async () => ({ score: 0.8, reviewCount: 7 }));
+      const negative = new Map([
+        [B, { sentiment: 'negative' as const, text: null, createdAt: '2026-10-01T00:00:00.000Z' }],
+      ]);
+      const ownReviews = jest
+        .fn(async () => negative)
+        .mockRejectedValueOnce(new Error('AppView down'));
+      const b = backend({ tenderStory: jest.fn(async () => STORY), supplierTrust, ownReviews });
+      setTenderBackendForTest(b);
+      mockConfirm.mockResolvedValue(false);
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
+      // The first lookup fails: only PeerLens applies, and it is fine.
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(b.awardTender).toHaveBeenCalledTimes(1));
+      expect(mockConfirm).not.toHaveBeenCalled();
+      // The next award reads again and finds the owner's poor review.
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+      expect(ownReviews).toHaveBeenCalledTimes(2);
+      expect(b.awardTender).toHaveBeenCalledTimes(1);
+    });
+
+    it('a well-reviewed supplier is awarded without a warning', async () => {
+      const supplierTrust = jest.fn(async () => ({ score: 0.8, reviewCount: 7 }));
+      const b = backend({ tenderStory: jest.fn(async () => STORY), supplierTrust });
+      setTenderBackendForTest(b);
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
+      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(b.awardTender).toHaveBeenCalled());
+      expect(mockConfirm).not.toHaveBeenCalled();
     });
 
     it('a supplier not asked shows what it listed from', async () => {

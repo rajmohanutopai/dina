@@ -100,11 +100,17 @@ export interface FindSuppliersResult {
   suppliers: SupplierMatch[];
   /** The words actually searched, so the screen can show them. */
   words: string[];
+  /**
+   * True when the AppView's trust floor dropped matching catalog items for
+   * poor reviews (§3.6): the screen says that someone was not shown, without
+   * saying whom. False when nothing was hidden.
+   */
+  hiddenForPoorReviews: boolean;
 }
 
 type Finder = Pick<
   AppViewClient,
-  'searchCatalog' | 'searchServices' | 'resolveServiceByUri' | 'getProfile'
+  'searchCatalogWithFloor' | 'searchServices' | 'resolveServiceByUri' | 'getProfile'
 >;
 
 /** A plural made singular, for substring matching ("bakeries" → "bakery"). */
@@ -148,7 +154,7 @@ export async function findSuppliers(
   input: FindSuppliersInput,
 ): Promise<FindSuppliersResult> {
   const words = searchWords(input.text);
-  if (words.length === 0) return { suppliers: [], words };
+  if (words.length === 0) return { suppliers: [], words, hiddenForPoorReviews: false };
   const blocked = new Set(input.blockedSuppliers ?? []);
   const preferred = new Set(input.preferredSuppliers ?? []);
 
@@ -184,15 +190,16 @@ export async function findSuppliers(
   };
 
   const catalogHits = await Promise.all(
-    words.map(async (word) => ({
-      word,
-      candidates: await appView.searchCatalog({
+    words.map(async (word) => {
+      const page = await appView.searchCatalogWithFloor({
         q: word,
         ...(input.region !== undefined && input.region !== '' ? { region: input.region } : {}),
         limit: RESULTS_PER_SOURCE,
-      }),
-    })),
+      });
+      return { word, candidates: page.candidates, suppressed: page.suppressedBelowTrustFloor };
+    }),
   );
+  const hiddenForPoorReviews = catalogHits.some((hit) => hit.suppressed > 0);
   for (const { word, candidates } of catalogHits) {
     for (const c of candidates as CommerceCatalogCandidate[]) {
       const row = rowFor(c.supplierDid, c.serviceRkey, c.serviceUri);
@@ -281,18 +288,35 @@ export async function findSuppliers(
         b.itemsMatched - a.itemsMatched ||
         a.supplierDid.localeCompare(b.supplierDid),
     );
-  return { suppliers, words };
+  return { suppliers, words, hiddenForPoorReviews };
 }
 
 /**
  * `findSuppliers` against this surface's AppView: the hosted one on the
  * phone, Brain's read-only proxy on the web (`appViewBase`).
  */
-export async function findSuppliersHere(input: FindSuppliersInput): Promise<FindSuppliersResult> {
-  const client = new AppViewClient({ appViewURL: await appViewBase() });
+/**
+ * The owner's DID, whose own reviews decide first: the phone's booted node;
+ * in the browser (which boots no node) the Home Node it is connected to as an
+ * owner device (`home_did` from owner setup). Null when neither is known —
+ * then only the network rule applies.
+ */
+export async function ownerDidHere(): Promise<string | null> {
   // Loaded lazily: the booted node is the phone's; the browser has none.
   const { getBootedNode } = await import('../hooks/useNodeBootstrap');
-  const ownReviews =
-    input.ownReviews ?? (await loadOwnSupplierReviews(getBootedNode()?.did ?? null));
+  const booted = getBootedNode()?.did ?? null;
+  if (booted !== null && booted !== '') return booted;
+  try {
+    const { getOwnerSetupClient } = await import('./owner_setup_client');
+    const home = (await getOwnerSetupClient()?.status())?.home_did ?? null;
+    return home !== null && home !== '' ? home : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function findSuppliersHere(input: FindSuppliersInput): Promise<FindSuppliersResult> {
+  const client = new AppViewClient({ appViewURL: await appViewBase() });
+  const ownReviews = input.ownReviews ?? (await loadOwnSupplierReviews(await ownerDidHere()));
   return findSuppliers(client, { ...input, ownReviews });
 }

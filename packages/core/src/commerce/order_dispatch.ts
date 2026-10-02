@@ -26,6 +26,7 @@ import {
   type SubmitRefusal,
 } from './buyer_executor';
 import { describeOrderForOwner } from './buyer_reconciliation';
+import { ownerOrderViewWire } from './owner_views_wire';
 
 import type { BuyerApprovalContext } from './approval_payload';
 import type { RetainedOrderApproval } from './order_approvals';
@@ -216,10 +217,20 @@ export async function dispatchUnderRetainedApproval(
       // (the right answer to a repeated tap), 409 for a well-formed request
       // the world disagreed with. See `unanswerableStatus`.
       status: unanswerableStatus(result.refusal),
-      body: { ok: false, refusal: result.refusal, error: result.error, record: result.record },
+      body: {
+        ok: false,
+        refusal: result.refusal,
+        error: result.error,
+        ...(result.record !== null && result.record !== undefined
+          ? { order: ownerOrderViewWire(describeOrderForOwner(result.record)) }
+          : {}),
+      },
     };
   }
-  return { status: 200, body: { ok: true, ...describeOrderForOwner(result.record) } };
+  return {
+    status: 200,
+    body: { ok: true, ...ownerOrderViewWire(describeOrderForOwner(result.record)) },
+  };
 }
 
 // ---------------------------------------------------------------------------
