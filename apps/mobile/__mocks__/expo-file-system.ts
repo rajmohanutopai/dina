@@ -18,10 +18,12 @@
 interface MockEntry {
   name: string;
   delete: () => void;
+  rename: (newName: string) => void;
 }
 
 let entries: MockEntry[] = [];
 let deleted: string[] = [];
+let renamed: Array<{ from: string; to: string }> = [];
 let exists = true;
 let throwOnList = false;
 let throwOnDelete = new Set<string>();
@@ -42,6 +44,10 @@ function makeEntry(name: string): MockEntry {
       }
       deleted.push(name);
       entries = entries.filter((e) => e.name !== name);
+    },
+    rename(newName: string): void {
+      renamed.push({ from: name, to: newName });
+      entries = entries.map((e) => (e.name === name ? makeEntry(newName) : e));
     },
   };
 }
@@ -104,6 +110,10 @@ export function __getDeletedEntries(): string[] {
   return [...deleted];
 }
 
+export function __getRenamedEntries(): Array<{ from: string; to: string }> {
+  return [...renamed];
+}
+
 export function __setExists(value: boolean): void {
   exists = value;
 }
@@ -139,6 +149,7 @@ export function __throwOnFileWrite(name: string): void {
 export function __resetFileSystemMock(): void {
   entries = [];
   deleted = [];
+  renamed = [];
   exists = true;
   throwOnList = false;
   throwOnDelete = new Set();

@@ -83,6 +83,9 @@ function buildMarkerBody(now: number): string {
  */
 const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.vault.wrapped_seed',
+  // The vault salt goes with the databases it keys: cleared on reinstall and
+  // "Erase everything", kept by "Sign out" (see vault_salt_store).
+  'dina.vault.salt',
   'dina.startup.mode',
   'dina.startup.passphrase',
   'dina.node_identity.did',
@@ -253,6 +256,38 @@ export function wipeOrphanVaultFiles(): void {
     // were trying to prevent. There's no better recovery path
     // available pre-init without an SQLite handle.
   }
+}
+
+/**
+ * Move every SQLCipher file in the documents directory aside, renamed
+ * `<name>.unreadable-<stamp>`, and return how many were moved.
+ *
+ * For the case `wipeOrphanVaultFiles` must NOT handle: the seed unwrapped,
+ * yet a database will not open with the derived key. That is a key that
+ * changed (a passphrase change once re-keyed every vault this way, and the
+ * old self-heal deleted them all), not data nobody can read. The renamed
+ * files keep their bytes for recovery; the new names no longer end in
+ * `.sqlite`, so neither op-sqlite nor a later sweep touches them.
+ */
+export function setAsideUnreadableVaultFiles(stamp: number): number {
+  let moved = 0;
+  try {
+    const docDir = Paths.document;
+    if (!docDir.exists) return 0;
+    const entries: readonly (Directory | File)[] = docDir.list();
+    for (const entry of entries) {
+      if (!isSqliteArtifact(entry.name)) continue;
+      try {
+        entry.rename(`${entry.name}.unreadable-${String(stamp)}`);
+        moved += 1;
+      } catch {
+        // One file failing must not stop the rest; it stays where it was.
+      }
+    }
+  } catch {
+    // Listing failed: nothing moved, nothing deleted.
+  }
+  return moved;
 }
 
 /** Recognises SQLCipher database files + their WAL/SHM/journal sidecars. */

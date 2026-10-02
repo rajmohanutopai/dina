@@ -29,7 +29,9 @@ import { openAllPersonasForInAppUser } from '@dina/home-node';
 
 import { seedDefaultPersonas } from '../onboarding/default_personas';
 import { loadPersistedDid } from '../services/identity_record';
-import { wipeOrphanVaultFiles } from '../services/install_marker';
+import { setAsideUnreadableVaultFiles } from '../services/install_marker';
+import { emitRuntimeWarning } from '../services/runtime_warnings';
+import { ensureVaultSalt } from '../services/vault_salt_store';
 import {
   initializePersistence,
   openPersonaDB,
@@ -156,37 +158,38 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //     masterSeed + userSalt drive the per-persona DEK derivation in
   //     ProductionDBProvider. Only initialize once per process.
   if (!isPersistenceReady()) {
+    // The vault keys' salt is the device's permanent vault salt
+    // (`vault_salt_store`), NOT the passphrase-wrap salt: a passphrase change
+    // or a recovery re-wraps with a new salt, and keys that followed it could
+    // not open the databases at the next start. A device set up before the
+    // vault salt existed pins its current wrap salt here — the salt its
+    // vaults were made with.
+    const vaultSalt = await ensureVaultSalt(wrappedSeed.salt).catch(() => wrappedSeed.salt);
     try {
-      await initializePersistence(masterSeed, wrappedSeed.salt);
+      await initializePersistence(masterSeed, vaultSalt);
     } catch (err) {
-      // Self-heal for SQLCipher DEK mismatch. op-sqlite throws
-      // "file is not a database" when the on-disk file was encrypted
-      // with a different DEK than the one we just derived from the
-      // unwrapped seed. The two known causes:
-      //   1. Orphan SQLite file left from a prior install whose
-      //      keychain we wiped (covered prospectively by `unlock_gate`'s
-      //      install-marker check, but historical installs hit this
-      //      state before the marker existed).
-      //   2. The user provisioned a new identity OVER an existing one
-      //      (rare, e.g. a backup-restore that retained Documents but
-      //      not Keychain).
-      // Either way: the only data the file contains was encrypted
-      // with a key the user no longer has — it's already lost.
-      // Wiping the orphan + retrying once gets the user out of
-      // dev-degraded mode without any data loss they could have
-      // recovered from anyway.
+      // SQLCipher could not open a database with the key we derived
+      // ("file is not a database"). The seed unwrapped fine, so this is NOT
+      // "a key the user no longer has": it can be a key that changed (the
+      // passphrase bug this replaces deleted every vault here). Nothing is
+      // deleted: the unreadable files are renamed aside, kept for recovery,
+      // the owner is told, and Dina starts on fresh files so the app works.
+      // A real orphan from a previous install never reaches here — the
+      // install-marker check clears it at the gate.
       const message = err instanceof Error ? err.message : String(err);
       if (/file is not a database/i.test(message)) {
-         
-        console.warn(
-          '[unlock] SQLCipher DEK mismatch — wiping orphan vault files and retrying',
+        console.warn('[unlock] SQLCipher key mismatch — setting unreadable vault files aside');
+        // Close whatever the failed bring-up opened before moving its files.
+        await shutdownAllPersistence().catch(() => undefined);
+        const setAside = setAsideUnreadableVaultFiles(Date.now());
+        emitRuntimeWarning(
+          'vault.unreadable_set_aside',
+          `Dina could not open ${String(setAside)} saved database file(s) with this device's key. They were kept aside, not deleted, and Dina started fresh. Contact support before reinstalling.`,
         );
-        wipeOrphanVaultFiles();
         try {
-          await initializePersistence(masterSeed, wrappedSeed.salt);
+          await initializePersistence(masterSeed, vaultSalt);
         } catch (retryErr) {
-           
-          console.warn('[unlock] persistence init failed after orphan wipe:', retryErr);
+          console.warn('[unlock] persistence init failed after setting files aside:', retryErr);
         }
       } else {
         // Persistence bring-up is best-effort from the unlock path: a
@@ -194,7 +197,7 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
         // shouldn't brick unlock. The boot service's in-memory fallback
         // will fire with `persistence.in_memory` so the banner makes it
         // visible.
-         
+
         console.warn('[unlock] persistence init failed:', err);
       }
     }
@@ -221,11 +224,8 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   state.step = 'opening_vaults';
   notify();
   const opened = await openAllPersonasForInAppUser({
-    openVaultDB: isPersistenceReady()
-      ? (persona: string) => openPersonaDB(persona)
-      : undefined,
+    openVaultDB: isPersistenceReady() ? (persona: string) => openPersonaDB(persona) : undefined,
     onVaultOpenError: (persona: string, err: unknown) => {
-       
       console.warn(`[unlock] openPersonaDB failed for "${persona}":`, err);
     },
   });

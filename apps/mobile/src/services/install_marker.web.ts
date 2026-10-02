@@ -82,3 +82,8 @@ export async function clearOrphanKeychainState(): Promise<void> {
 export function wipeOrphanVaultFiles(): void {
   /* no-op */
 }
+
+/** No-op on web, like `wipeOrphanVaultFiles`: the browser keeps no vault files. */
+export function setAsideUnreadableVaultFiles(_stamp: number): number {
+  return 0;
+}

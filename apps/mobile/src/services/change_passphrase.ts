@@ -4,9 +4,10 @@
  *
  * The passphrase never encrypts vault content directly; it wraps the
  * master seed (Argon2id KEK → AES-256-GCM). So "changing the passphrase"
- * is a re-wrap of the SAME seed, which means every persona DEK (derived
- * from the seed via HKDF) is untouched and all existing vault data keeps
- * decrypting. No re-encryption of content, no data migration.
+ * is a re-wrap of the SAME seed. Every vault key is HKDF over the seed and
+ * the device's vault salt (`vault_salt_store`) — never the wrap salt, which
+ * the re-wrap replaces — so all existing vault data keeps decrypting. No
+ * re-encryption of content, no data migration.
  *
  * The four steps, in the only safe order:
  *   1. Load the persisted wrapped seed (the source of truth for unlock).
@@ -30,10 +31,8 @@ import { changePassphrase } from '@dina/core';
 
 import { validatePassphrase } from '../hooks/useSecurity';
 
-import {
-  loadStartupMode,
-  saveAutoPassphrase,
-} from './startup_preferences';
+import { loadStartupMode, saveAutoPassphrase } from './startup_preferences';
+import { ensureVaultSalt } from './vault_salt_store';
 import { loadWrappedSeed, saveWrappedSeed } from './wrapped_seed_store';
 
 export type ChangePassphraseResult = { ok: true } | { ok: false; error: string };
@@ -78,6 +77,16 @@ export async function changeVaultPassphrase(
     // Wrong old passphrase (GCM tag mismatch) or a corrupt seed. One
     // generic surface — don't leak which step failed.
     return { ok: false, error: 'That current passphrase is incorrect.' };
+  }
+
+  // Pin the vault salt BEFORE the re-wrap replaces the wrap salt. Unlock has
+  // normally pinned it already; a device that never did would otherwise
+  // derive its vault keys from the NEW wrap salt at the next start and could
+  // not open any database. If it cannot be pinned, the change does not happen.
+  try {
+    await ensureVaultSalt(wrapped.salt);
+  } catch {
+    return { ok: false, error: "Couldn't change your passphrase. Nothing was changed; try again." };
   }
 
   // The wrapped seed is the unlock source of truth — write it first so
