@@ -24,12 +24,20 @@ export interface QuoteRequestDraftWire {
     ceiling_minor?: string;
     max_rounds?: number;
     deadline_seconds?: number;
-  };
+  }; /** The currency the amounts are in, ISO 4217 ("USD"); absent when the owner named none. */
+  currency?: string;
+  /**
+   * What Dina drew from the owner's own notes to shape the draft, in one line
+   * ("You love floral celebration cakes"), so the card can say so. Absent when
+   * nothing remembered was used.
+   */
+  from_memory?: string;
 }
 
 const UNIT_CODES = new Set(['each', 'kg', 'g', 'l', 'ml', 'case']);
 const MAX_LINES = 10;
 const MAX_TEXT = 200;
+const MAX_FROM_MEMORY = 140;
 
 /** A main-unit amount the model heard (3000, "3,000", "2500.50") → minor units. */
 function minorUnits(v: unknown): string | undefined {
@@ -73,6 +81,14 @@ export function draftFromToolArgs(args: Record<string, unknown>): QuoteRequestDr
   const ceiling = minorUnits(args.ceiling_amount);
   const rounds = wholeNumber(args.max_rounds, 1, 10);
   const deadline = wholeNumber(args.reply_within_seconds, 10, 86_400);
+  const currency =
+    typeof args.currency === 'string' && /^[A-Za-z]{3}$/.test(args.currency.trim())
+      ? args.currency.trim().toUpperCase()
+      : undefined;
+  const fromMemory =
+    typeof args.from_memory === 'string'
+      ? args.from_memory.replace(/\s+/g, ' ').trim().slice(0, MAX_FROM_MEMORY)
+      : '';
   const limits = {
     ...(target !== undefined ? { target_minor: target } : {}),
     ...(ceiling !== undefined ? { ceiling_minor: ceiling } : {}),
@@ -83,6 +99,8 @@ export function draftFromToolArgs(args: Record<string, unknown>): QuoteRequestDr
     lines,
     ...(query !== '' ? { supplier_query: query } : {}),
     ...(Object.keys(limits).length > 0 ? { limits } : {}),
+    ...(currency !== undefined ? { currency } : {}),
+    ...(fromMemory !== '' ? { from_memory: fromMemory } : {}),
   };
 }
 
@@ -91,7 +109,7 @@ export function createDraftQuoteRequestTool(): AgentTool {
     name: 'draft_quote_request',
     terminal: true,
     description:
-      'Draft a request for quotes from suppliers when the user wants to buy something and asks you to find sellers or get prices from several ("ask bakeries near me for a cake for 20", "get quotes for 50 kg basmati"). Give each item in the user\'s words with a quantity and unit, a short phrase to find suppliers by (what they sell, e.g. "cakes"), and any target price, ceiling, rounds or reply time the user said. Nothing is sent: a card opens the Ask for quotes screen, where the user picks suppliers and sends. Say in one line that the draft is ready.',
+      'Draft a request for quotes from suppliers when the user wants to buy something and asks you to find sellers or get prices from several ("ask bakeries near me for a cake for 20", "get quotes for 50 kg basmati"). Give each item in the user\'s words with a quantity and unit, a short phrase to find suppliers by (what they sell, e.g. "cakes"), and any target price, ceiling, currency, rounds or reply time the user said. When something the user told you before (their own notes) makes the item more exact, such as a favourite kind or an allergy, use it in the item and say what you used in from_memory. Nothing is sent: a card opens the Ask for quotes screen, where the user picks suppliers and sends. Say in one line that the draft is ready.',
     parameters: {
       type: 'object',
       properties: {
@@ -106,7 +124,11 @@ export function createDraftQuoteRequestTool(): AgentTool {
                 description:
                   'The item in the user\'s words, e.g. "Floral celebration cake, 20 servings".',
               },
-              quantity: { type: 'number', description: 'How many or how much; 1 when unsaid.' },
+              quantity: {
+                type: 'number',
+                description:
+                  'How many of the item to buy, or how much; 1 when unsaid. Not the number of people or servings: "a cake for 20 people" is quantity 1, with "20 servings" in the description.',
+              },
               unit: {
                 type: 'string',
                 enum: ['each', 'kg', 'g', 'l', 'ml', 'case'],
@@ -127,6 +149,16 @@ export function createDraftQuoteRequestTool(): AgentTool {
         ceiling_amount: {
           type: 'number',
           description: 'The most the user will pay, in their currency.',
+        },
+        currency: {
+          type: 'string',
+          description:
+            'The currency of the amounts as a three-letter code when the user named one: USD for dollars, INR for rupees, EUR for euros.',
+        },
+        from_memory: {
+          type: 'string',
+          description:
+            'Only when something the user told you before shaped the items: that thing in one short line in the user\'s words, e.g. "You love floral celebration cakes". Leave it out otherwise; never invent one.',
         },
         max_rounds: { type: 'number', description: 'Rounds of counter-offers, 1 to 10.' },
         reply_within_seconds: {

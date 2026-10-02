@@ -14,9 +14,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
-import { DEFAULT_TENDER_FANOUT } from '@dina/core';
+import { DEFAULT_TENDER_FANOUT, MAX_NOT_ASKED, MAX_NOT_ASKED_NOTE } from '@dina/core';
 
-import { SupplierPicker, type PickedSupplier } from '../src/components/SupplierPicker';
+import {
+  SupplierPicker,
+  type PickedSupplier,
+  type SetAsideSupplier,
+} from '../src/components/SupplierPicker';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { ownerErrorText } from '../src/services/owner_errors';
 import { parseQuoteRequestDraftParam } from '../src/services/quote_request_draft';
@@ -55,6 +59,17 @@ export default function AskQuotesScreen(): React.ReactElement {
     prefill !== null && prefill.lines.length > 0 ? prefill.lines : [emptyLine()],
   );
   const [picked, setPicked] = useState<PickedSupplier[]>([]);
+  // Suppliers PeerLens set aside in any search on this screen, by DID. Not
+  // asked; the tender keeps them (and why) so its screen can say so.
+  const [setAside, setSetAside] = useState<ReadonlyMap<string, SetAsideSupplier>>(new Map());
+  const noteSetAside = useCallback((found: SetAsideSupplier[]) => {
+    if (found.length === 0) return;
+    setSetAside((held) => {
+      const next = new Map(held);
+      for (const s of found) next.set(s.supplierDid, s);
+      return next;
+    });
+  }, []);
   const [postal, setPostal] = useState('');
   const [savedRegions, setSavedRegions] = useState<string[]>([]);
   // The tender's currency. Where it came from decides whether a later source
@@ -71,6 +86,10 @@ export default function AskQuotesScreen(): React.ReactElement {
   const [preferred, setPreferred] = useState<string[]>([]);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [limits, setLimits] = useState<LimitsDraft>(prefill?.limits ?? EMPTY_LIMITS);
+  // A currency the owner named in chat ("150 dollars") is the owner's own word.
+  useEffect(() => {
+    if (prefill?.currency !== undefined) offerCurrency(prefill.currency, 'owner');
+  }, [offerCurrency, prefill?.currency]);
   const [problems, setProblems] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -139,7 +158,21 @@ export default function AskQuotesScreen(): React.ReactElement {
     }
     setSending(true);
     try {
-      const answer = await client.createTender(outcome.request);
+      const asked = new Set(picked.map((p) => p.supplierDid));
+      const notAsked = [...setAside.values()]
+        .filter((s) => !asked.has(s.supplierDid))
+        .slice(0, MAX_NOT_ASKED)
+        .map((s) => ({
+          supplierDid: s.supplierDid,
+          serviceRkey: s.serviceRkey,
+          reason: s.setAside.reason,
+          ...(s.setAside.note !== '' ? { note: s.setAside.note.slice(0, MAX_NOT_ASKED_NOTE) } : {}),
+          ...(s.indicativeFrom !== undefined ? { listedFrom: s.indicativeFrom } : {}),
+        }));
+      const answer = await client.createTender({
+        ...outcome.request,
+        ...(notAsked.length > 0 ? { notAsked } : {}),
+      });
       const missed = answer.members.filter((m) => !m.sent);
       const open = (): void =>
         router.replace({ pathname: '/tender', params: { tender_id: answer.tenderId } });
@@ -161,7 +194,7 @@ export default function AskQuotesScreen(): React.ReactElement {
     } finally {
       setSending(false);
     }
-  }, [currency, limits, lines, picked, postal, router]);
+  }, [currency, limits, lines, picked, postal, router, setAside]);
 
   const firstText = lines[0]?.text ?? '';
   const initialQuery = prefill?.supplierQuery ?? firstText;
@@ -272,6 +305,7 @@ export default function AskQuotesScreen(): React.ReactElement {
           picked={picked}
           onChange={setPicked}
           max={DEFAULT_TENDER_FANOUT}
+          onSetAside={noteSetAside}
         />
 
         <Text style={styles.sectionTitle}>Currency</Text>

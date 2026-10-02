@@ -897,7 +897,8 @@ describe('items 6, 8, 9 — two suppliers, one tender, the loop runs to ready', 
     const before = rankTender({ tenderId: created.tenderId, nowMs: NOW });
     expect(before.ok && before.ranking.ranked.map((r) => r.supplier_did)).toEqual([SUPPLIER_B]);
     expect(before.ok && before.ranking.excluded).toEqual([
-      { supplier_did: SUPPLIER_DID, reason: 'over_budget' },
+      // The listing key rides along so a surface can name the supplier.
+      { supplier_did: SUPPLIER_DID, service_rkey: 'self', reason: 'over_budget' },
     ]);
 
     /** One loop pass, then every counter it sent answered by its supplier. */

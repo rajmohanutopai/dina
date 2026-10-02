@@ -867,6 +867,31 @@ describe('useServiceInbox', () => {
       expect(entry.executionResult).toBeUndefined();
     });
 
+    it("a card Core retired itself reads closed with why; only the owner's own deny is denied (iPhone buyer run 2026-09-29)", async () => {
+      const { client } = stubResolvedClient({
+        cancelled: [
+          makeTask({ id: 'awarded', status: 'cancelled', cancel_reason: 'tender_awarded' }),
+          makeTask({ id: 'lapsed', status: 'cancelled', cancel_reason: 'tender_expired' }),
+          makeTask({ id: 'price', status: 'cancelled', cancel_reason: 'negotiation_closed' }),
+          makeTask({ id: 'owner', status: 'cancelled', cancel_reason: 'denied_by_operator' }),
+          makeTask({ id: 'route', status: 'cancelled', cancel_reason: 'approval_denied' }),
+          makeTask({ id: 'typed', status: 'cancelled', cancel_reason: 'not this week' }),
+          // An older Core names no reason: still read as the owner's deny.
+          makeTask({ id: 'legacy', status: 'cancelled' }),
+        ],
+      });
+      setInboxCoreClient(client);
+      const entries = await listResolvedApprovals();
+      const byId = Object.fromEntries(entries.map((e) => [e.id, e]));
+      expect(byId.awarded).toMatchObject({ outcome: 'closed', closedBecause: 'awarded' });
+      expect(byId.lapsed).toMatchObject({ outcome: 'closed', closedBecause: 'expired' });
+      expect(byId.price).toMatchObject({ outcome: 'closed', closedBecause: 'negotiation ended' });
+      for (const id of ['owner', 'route', 'typed', 'legacy']) {
+        expect(byId[id]?.outcome).toBe('denied');
+        expect(byId[id]).not.toHaveProperty('closedBecause');
+      }
+    });
+
     it("treats a TTL-lapsed task (failed + error='expired') as expired, not denied", async () => {
       // The expiry sweeper closes a lapsed approval as state='failed' with
       // error='expired' (repository.expireTasks). That error string is the

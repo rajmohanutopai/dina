@@ -376,6 +376,55 @@ export function wakeRelay(): void {
 }
 
 /**
+ * Close the relay socket for a stretch in the background, keeping the
+ * ability to come back.
+ *
+ * MsgBox counts a frame as delivered once it is written to the socket it
+ * holds for this DID (`msgbox/internal/hub.go` Deliver). A suspended iOS app
+ * leaves that socket open but unread, so every frame sent to it while the
+ * app sits in the background is written, counted as delivered, and lost —
+ * a supplier's payment evidence or checkout link never reaches the buyer.
+ * Closing the socket on the way to the background makes MsgBox see the DID
+ * offline and buffer instead; `wakeRelay()` on the way back reconnects, and
+ * MsgBox drains the buffer on register.
+ *
+ * Unlike `disconnect()` this keeps `shouldReconnect` and `currentURL`, so
+ * `wakeRelay()` still works. Handlers are detached before the close so its
+ * `onclose` cannot schedule a reconnect while the app is in the background.
+ * A no-op when the relay was never connected, was deliberately
+ * `disconnect()`ed, or is already suspended.
+ */
+export function suspendRelay(): void {
+  if (!shouldReconnect || currentURL === null) return;
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (stateHeartbeatTimer !== null) {
+    clearInterval(stateHeartbeatTimer);
+    stateHeartbeatTimer = null;
+  }
+  if (ws === null) return;
+  const socket = ws;
+  connectionGeneration++;
+  ws = null;
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onclose = null;
+  socket.onerror = null;
+  try {
+    socket.close();
+  } catch {
+    /* already dead — fine */
+  }
+  connected = false;
+  authenticated = false;
+  authChallengeSeen = false;
+  reconnectAttempt = 0;
+  console.log('[WS] suspendRelay — closed for background; MsgBox buffers until wakeRelay');
+}
+
+/**
  * Send a raw envelope over the WebSocket as a **Binary** frame.
  *
  * The MsgBox relay only forwards binary frames after the auth handshake;

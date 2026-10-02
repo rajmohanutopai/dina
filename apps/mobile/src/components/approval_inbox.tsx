@@ -38,6 +38,7 @@ import { confirmDecision } from '../services/confirm_decision';
 import { OWNER_DECIDES_ON_THIS_SURFACE } from '../services/inbox_client_resolver';
 import { getOwnerCommerceClient } from '../services/owner_commerce_client';
 import { isPresenceRefusal, ownerErrorText } from '../services/owner_errors';
+import { placedOrderRefs, supplierNamesHere } from '../services/supplier_names';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
@@ -47,6 +48,41 @@ import { SafeCardRenderer } from './SafeCardRenderer';
 import type { PresenceSheetProps } from './PresenceSheet';
 
 export type { InboxEntry, ResolvedInboxEntry };
+
+/** The buyer's order cards: Core names the supplier by DID only. */
+const SUPPLIER_CARD_KINDS: ReadonlySet<string> = new Set([
+  'order_checkout_link',
+  'payment_evidence_record',
+]);
+
+const unnamedSupplierCard = (e: InboxEntry): boolean =>
+  SUPPLIER_CARD_KINDS.has(e.kind) && e.requesterName === undefined && e.requesterDID !== '';
+
+/**
+ * Names the supplier on the buyer's payment cards the way My Orders does: the
+ * placed order carries the listing (or the owner's contact) that names it.
+ * Null when there is nothing to name, so the caller keeps the list it has.
+ */
+export async function nameSupplierCards(
+  entries: readonly InboxEntry[],
+): Promise<InboxEntry[] | null> {
+  const dids = new Set(entries.filter(unnamedSupplierCard).map((e) => e.requesterDID));
+  if (dids.size === 0) return null;
+  const client = getOwnerCommerceClient();
+  if (client === null) return null;
+  const orders = (await client.placedOrders(50)).orders.filter((o) => dids.has(o.supplierDid));
+  const listed = await supplierNamesHere(placedOrderRefs(orders));
+  const names = new Map<string, string>();
+  for (const o of orders) {
+    const name = o.supplierName ?? listed.get(o.supplierDid) ?? null;
+    if (name !== null && !names.has(o.supplierDid)) names.set(o.supplierDid, name);
+  }
+  if (names.size === 0) return null;
+  return entries.map((e) => {
+    const name = unnamedSupplierCard(e) ? names.get(e.requesterDID) : undefined;
+    return name === undefined ? e : { ...e, requesterName: name };
+  });
+}
 
 /** What `useApprovalInbox` exposes to the Activity tab. */
 export interface ApprovalInbox {
@@ -113,6 +149,14 @@ export function useApprovalInbox(): ApprovalInbox {
       ]);
       setPending(pendingList);
       setResolved(resolvedList);
+      // Named after the list shows: a slow or refused lookup keeps the DID.
+      void nameSupplierCards(pendingList)
+        .then((named) => {
+          if (named === null) return;
+          const byId = new Map(named.map((e) => [e.id, e]));
+          setPending((current) => current.map((e) => byId.get(e.id) ?? e));
+        })
+        .catch(() => undefined);
     } catch (err) {
       if (err instanceof InboxNotConfiguredError) {
         // The inbox client is wired during boot (same block as the
@@ -672,7 +716,7 @@ export function ApprovalActionCard({
 
 /**
  * Read-only resolved approval card — service/action, an outcome badge
- * (Approved / Denied / Expired), and when it resolved. Moved verbatim
+ * (Approved / Denied / Closed · why / Expired), and when it resolved. Moved verbatim
  * from the old screen's `renderResolvedItem`.
  */
 export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): React.JSX.Element {
@@ -704,9 +748,12 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
   const outcomeStyle =
     item.outcome === 'approved'
       ? [styles.outcomeBadge, styles.outcomeApproved]
-      : item.outcome === 'expired' || item.outcome === 'unknown'
+      : item.outcome === 'expired' || item.outcome === 'unknown' || item.outcome === 'closed'
         ? [styles.outcomeBadge, styles.outcomeExpired]
         : [styles.outcomeBadge, styles.outcomeDenied];
+  // A card Dina retired itself (the tender was awarded or ran out, the
+  // negotiation ended) reads "Closed · why", never "Denied": the owner did not
+  // refuse it (iPhone buyer run 2026-09-29).
   const outcomeLabel =
     item.outcome === 'approved'
       ? 'Approved'
@@ -714,7 +761,11 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         ? 'Expired'
         : item.outcome === 'unknown'
           ? 'Unconfirmed'
-          : 'Denied';
+          : item.outcome === 'closed'
+            ? item.closedBecause !== undefined
+              ? `Closed · ${item.closedBecause}`
+              : 'Closed'
+            : 'Denied';
   // PLG-31 #16: the EXECUTION result, separate from the owner decision — so an
   // owner-approved task that later failed reads "Approved · Run failed", not
   // "Denied".
@@ -730,7 +781,9 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         <Text style={styles.serviceName} numberOfLines={1}>
           {headline}
         </Text>
-        <Text style={outcomeStyle}>{outcomeLabel}</Text>
+        <Text style={outcomeStyle} testID={`approvals-resolved-outcome-${item.id}`}>
+          {outcomeLabel}
+        </Text>
       </View>
       {executionNote !== null ? <Text style={styles.riskHint}>{executionNote}</Text> : null}
       {(isIntent || isPlugin) && item.capability !== '' ? (

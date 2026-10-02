@@ -629,6 +629,18 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
       expect(calls[0]).toContain('did=did%3Aplc%3As');
     });
 
+    it('carries how many reviews are about the DID, when the AppView says', async () => {
+      const { fetchFn } = makeFetch([
+        jsonResponse(200, {
+          did: 'did:plc:s',
+          overallTrustScore: 0.2,
+          attestationSummary: { total: 4, positive: 0, neutral: 1, negative: 3 },
+        }),
+      ]);
+      const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+      expect(await c.getProfile('did:plc:s')).toEqual({ overallTrustScore: 0.2, reviewCount: 4 });
+    });
+
     it('maps a known DID with no score to null (never scored as zero)', async () => {
       const { fetchFn } = makeFetch([jsonResponse(200, { did: 'did:plc:s', overallTrustScore: null })]);
       const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });

@@ -15,8 +15,9 @@ import AskQuotesScreen from '../../app/ask-quotes';
 
 let mockParams: Record<string, string> = {};
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn(), back: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush, back: jest.fn() }),
   useLocalSearchParams: () => mockParams,
   Stack: { Screen: () => null },
 }));
@@ -61,6 +62,8 @@ beforeEach(() => {
         serviceRkey: 'shop',
         name: 'Sweet Crumb Bakery',
         trustScore: 0.8,
+        reviewCount: null,
+        setAside: null,
         wordsMatched: 1,
         itemsMatched: 2,
         indicativeFrom: { currency: 'INR', minorUnits: '90000' },
@@ -187,6 +190,21 @@ it('a chat draft prefills the form and sends nothing by itself', async () => {
   expect(mockCommerce.createTender).not.toHaveBeenCalled();
 });
 
+it('a currency named in chat is the tender currency, ahead of the saved one', async () => {
+  mockParams = {
+    draft: JSON.stringify({
+      lines: [{ text: 'Floral celebration cake, 20 servings', quantity: '1', unit_code: 'each' }],
+      supplier_query: 'cakes',
+      limits: { target_minor: '15000' },
+      currency: 'USD',
+    }),
+  };
+  const screen = render(<AskQuotesScreen />);
+  await waitFor(() => expect(mockCommerce.buyerSettings).toHaveBeenCalled());
+  // The saved buyer currency is INR; the owner said dollars.
+  await waitFor(() => expect(screen.getByTestId('ask-currency').props.value).toBe('USD'));
+});
+
 describe('the tender currency', () => {
   // Reported from a phone run: the screen was fixed to INR with nowhere to
   // change it, so negotiation limits were unusable for a buyer trading in
@@ -203,6 +221,8 @@ describe('the tender currency', () => {
           serviceRkey: 'shop',
           name: 'Sweet Crumb Bakery',
           trustScore: 0.8,
+          reviewCount: null,
+          setAside: null,
           wordsMatched: 1,
           itemsMatched: 2,
           indicativeFrom: { currency, minorUnits },
@@ -259,5 +279,99 @@ describe('the tender currency', () => {
     await waitFor(() => expect(screen.getByTestId('ask-currency').props.value).toBe('INR'));
     await pick(screen);
     expect(screen.getByTestId('ask-currency').props.value).toBe('INR');
+  });
+});
+
+describe('a supplier PeerLens sets aside is shown, never asked by default', () => {
+  const POOR = 'did:plc:crumbandcoo';
+  const poorMatch = {
+    supplierDid: POOR,
+    serviceRkey: 'bakery',
+    name: 'Crumb & Co',
+    trustScore: null,
+    reviewCount: 1,
+    setAside: {
+      reason: 'own_poor_review',
+      words: 'You rated them poorly on PeerLens',
+      note: 'Stale bread, delivered late',
+    },
+    wordsMatched: 1,
+    itemsMatched: 3,
+    indicativeFrom: { currency: 'USD', minorUnits: '12900' },
+    preferred: false,
+  };
+  beforeEach(() => {
+    mockFind.mockResolvedValue({
+      words: ['cake'],
+      suppliers: [
+        {
+          supplierDid: BAKERY,
+          serviceRkey: 'shop',
+          name: 'Sweet Crumb Bakery',
+          trustScore: 0.8,
+          reviewCount: null,
+          setAside: null,
+          wordsMatched: 1,
+          itemsMatched: 2,
+          preferred: false,
+        },
+        poorMatch,
+      ],
+    });
+  });
+
+  it('lists it with why, cannot be picked by a tap, and the tender keeps it as not asked', async () => {
+    const screen = render(<AskQuotesScreen />);
+    await describeAndPick(screen);
+    expect(screen.getByTestId(`supplier-set-aside-why-${POOR}`).props.children).toBe(
+      '⚠ You rated them poorly on PeerLens · not asked',
+    );
+    expect(screen.getByText('“Stale bread, delivered late”')).toBeTruthy();
+    // No pick target: only the explicit "Ask anyway".
+    expect(screen.queryByTestId(`supplier-result-${POOR}`)).toBeNull();
+
+    fireEvent.press(screen.getByTestId('ask-send'));
+    await waitFor(() => expect(mockCommerce.createTender).toHaveBeenCalledTimes(1));
+    const request = mockCommerce.createTender.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request.suppliers).toEqual([{ supplierDid: BAKERY, serviceRkey: 'shop' }]);
+    expect(request.notAsked).toEqual([
+      {
+        supplierDid: POOR,
+        serviceRkey: 'bakery',
+        reason: 'own_poor_review',
+        note: 'Stale bread, delivered late',
+        // What it listed from, so the tender can say it was the cheaper option.
+        listedFrom: { currency: 'USD', minorUnits: '12900' },
+      },
+    ]);
+  });
+
+  it('"Review" opens PeerLens on that supplier, by name and DID, so the review is about it', async () => {
+    const screen = render(<AskQuotesScreen />);
+    await describeAndPick(screen);
+    fireEvent.press(screen.getByTestId(`supplier-review-${POOR}`));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/peerlens/write',
+      params: { createKind: 'organization', initialName: 'Crumb & Co', initialDid: POOR },
+    });
+    // Reviewing does not pick: the supplier is still set aside.
+    expect(screen.queryByTestId(`supplier-chip-${POOR}`)).toBeNull();
+  });
+
+  it('"Ask anyway" picks it: it is asked, and not reported as set aside', async () => {
+    const screen = render(<AskQuotesScreen />);
+    await describeAndPick(screen);
+    fireEvent.press(screen.getByTestId(`supplier-ask-anyway-${POOR}`));
+    await waitFor(() => expect(screen.getByTestId(`supplier-chip-${POOR}`)).toBeTruthy());
+    expect(screen.getByText(/You rated them poorly on PeerLens · asked anyway/)).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('ask-send'));
+    await waitFor(() => expect(mockCommerce.createTender).toHaveBeenCalledTimes(1));
+    const request = mockCommerce.createTender.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request.suppliers).toEqual([
+      { supplierDid: BAKERY, serviceRkey: 'shop' },
+      { supplierDid: POOR, serviceRkey: 'bakery' },
+    ]);
+    expect(request.notAsked).toBeUndefined();
   });
 });

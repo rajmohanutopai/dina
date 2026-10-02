@@ -26,7 +26,10 @@ import {
 } from '../../src/commerce/approval_payload';
 import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
-import { SQLiteBuyerOrderRepository } from '../../src/commerce/buyer_orders';
+import {
+  InMemoryBuyerOrderRepository,
+  SQLiteBuyerOrderRepository,
+} from '../../src/commerce/buyer_orders';
 import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
@@ -189,6 +192,30 @@ describe('the round trip through real SQL', () => {
       'po-early',
       'po-late',
     ]);
+  });
+
+  it('lists every order newest-placed first, settled or not; a settle does not move it (both stores)', () => {
+    for (const store of [repo, new InMemoryBuyerOrderRepository()]) {
+      store.create(SUPPLIER, record('po-1'));
+      store.create(SUPPLIER, record('po-2', { state: 'accepted' }));
+      store.create(SUPPLIER, record('po-3', { state: 'outcome_unknown', nextPollAtMs: 1_000 }));
+      // An UPDATE to the oldest order — the settle an acknowledgement makes.
+      const live = store.get(SUPPLIER, 'po-1');
+      expect(live).not.toBeNull();
+      expect(store.put(SUPPLIER, { ...(live as BuyerOrderRecord), state: 'rejected' })).toBe(true);
+
+      expect(store.listRecent(10).map((e) => e.record.purchaseOrderId)).toEqual([
+        'po-3',
+        'po-2',
+        'po-1',
+      ]);
+      expect(store.listRecent(2).map((e) => e.record.purchaseOrderId)).toEqual(['po-3', 'po-2']);
+      expect(store.listRecent(10)[2]).toMatchObject({
+        supplierDid: SUPPLIER,
+        record: { state: 'rejected', serviceRkey: DESCRIBED.serviceRkey },
+      });
+      expect(store.listRecent(0)).toEqual([]);
+    }
   });
 
   it('carries the description onto the listing, not only onto the single read', () => {

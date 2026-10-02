@@ -46,6 +46,8 @@ function fakeAppView(opts: {
   listings?: (ServiceProfile & { trustScore?: number | null })[];
   names?: Record<string, string>;
   trust?: Record<string, number | null>;
+  /** Reviews about each DID, as `attestationSummary.total`. */
+  reviews?: Record<string, number>;
 }) {
   const calls = { catalog: [] as { q?: string; region?: string }[], services: [] as unknown[] };
   return {
@@ -67,7 +69,12 @@ function fakeAppView(opts: {
           : ({ did, name, capabilities: [], isDiscoverable: true } as ServiceProfile);
       }),
       getProfile: jest.fn(async (did: string) =>
-        did in (opts.trust ?? {}) ? { overallTrustScore: opts.trust?.[did] ?? null } : null,
+        did in (opts.trust ?? {})
+          ? {
+              overallTrustScore: opts.trust?.[did] ?? null,
+              ...(opts.reviews?.[did] !== undefined ? { reviewCount: opts.reviews[did] } : {}),
+            }
+          : null,
       ),
     },
   };
@@ -148,6 +155,9 @@ describe('findSuppliers', () => {
         serviceRkey: 'orders',
         name: 'Cake & Co Caterers',
         trustScore: 0.7,
+        // A good score from the search needs no review count: nothing to set aside.
+        reviewCount: null,
+        setAside: null,
         wordsMatched: 1,
         itemsMatched: 0,
         preferred: false,
@@ -184,5 +194,73 @@ describe('findSuppliers', () => {
     expect(await findSuppliers(client, { text: 'near me' })).toEqual({ suppliers: [], words: [] });
     expect(client.searchCatalog).not.toHaveBeenCalled();
     expect(client.searchServices).not.toHaveBeenCalled();
+  });
+});
+
+describe('PeerLens sets a supplier aside: shown, last, never asked by default', () => {
+  const cakes = (did: string): CommerceCatalogCandidate[] => [item(did, 'cake')];
+  const catalog = { cake: [...cakes(BAKERY), ...cakes(PATISSERIE), ...cakes(CATERER)] };
+  const own = (sentiment: 'positive' | 'neutral' | 'negative', text = 'Stale bread, late') =>
+    ({ sentiment, text, createdAt: '2026-09-29T10:00:00Z' }) as const;
+
+  it("the owner's own poor review sets a supplier aside, even as its only review", async () => {
+    const { client } = fakeAppView({
+      catalog,
+      trust: { [BAKERY]: 0.9, [PATISSERIE]: null, [CATERER]: 0.8 },
+      reviews: { [BAKERY]: 12, [PATISSERIE]: 1, [CATERER]: 5 },
+    });
+    const { suppliers } = await findSuppliers(client, {
+      text: 'cake',
+      ownReviews: new Map([[PATISSERIE, own('negative')]]),
+    });
+    expect(suppliers.map((s) => s.supplierDid)).toEqual([BAKERY, CATERER, PATISSERIE]);
+    expect(suppliers[2]?.setAside).toEqual({
+      reason: 'own_poor_review',
+      words: 'You rated them poorly on PeerLens',
+      note: 'Stale bread, late',
+    });
+    expect(suppliers[0]?.setAside).toBeNull();
+  });
+
+  it('a low score sets a supplier aside only over three or more reviews', async () => {
+    const { client } = fakeAppView({
+      catalog,
+      trust: { [BAKERY]: 0.2, [PATISSERIE]: 0.1, [CATERER]: 0.8 },
+      reviews: { [BAKERY]: 4, [PATISSERIE]: 2, [CATERER]: 5 },
+    });
+    const { suppliers } = await findSuppliers(client, { text: 'cake' });
+    const byDid = new Map(suppliers.map((s) => [s.supplierDid, s]));
+    expect(byDid.get(BAKERY)?.setAside).toEqual({
+      reason: 'low_peerlens_trust',
+      words: 'Low PeerLens trust · 4 reviews',
+      note: '',
+    });
+    // Two strangers' reviews are not a verdict.
+    expect(byDid.get(PATISSERIE)?.setAside).toBeNull();
+    expect(byDid.get(PATISSERIE)?.reviewCount).toBe(2);
+    expect(suppliers[suppliers.length - 1]?.supplierDid).toBe(BAKERY);
+  });
+
+  it("the owner's own good review answers a low network score", async () => {
+    const { client } = fakeAppView({
+      catalog,
+      trust: { [BAKERY]: 0.1, [PATISSERIE]: 0.9, [CATERER]: 0.8 },
+      reviews: { [BAKERY]: 9, [PATISSERIE]: 3, [CATERER]: 3 },
+    });
+    const { suppliers } = await findSuppliers(client, {
+      text: 'cake',
+      ownReviews: new Map([[BAKERY, own('positive', 'Always on time')]]),
+    });
+    expect(suppliers.every((s) => s.setAside === null)).toBe(true);
+  });
+
+  it('a supplier with no reviews is not low trust', async () => {
+    const { client } = fakeAppView({ catalog, trust: {} });
+    const { suppliers } = await findSuppliers(client, { text: 'cake' });
+    expect(suppliers.map((s) => [s.trustScore, s.reviewCount, s.setAside])).toEqual([
+      [null, null, null],
+      [null, null, null],
+      [null, null, null],
+    ]);
   });
 });

@@ -59,6 +59,14 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **ADDITIVE (PHOTO_CATALOG_LANE §7)** — `CatalogItem.images`: optional,
+  1–4 absolute https URLs (no credentials, ≤ 1000 characters each), the
+  supplier's own opt-in product photos, first is the cover. Absent — never
+  `[]` — when there are none, so every existing item keeps its canonical bytes
+  and digest. A reader that predates it tolerates it by the reader rule
+  (`validateCatalogItemForIngest`); a projection with no column for it simply
+  does not store it. `image_url` stays FORBIDDEN: nothing a lane extracted
+  from a photograph may publish under it, and this field is not that image.
 - **ADDITIVE (NEGOTIATION_PLAN §4.2, §4.5, §4.6)** — `CounterOffer`: a
   buyer's non-binding ask for a lower whole-quote total on the exact head it
   holds (`quote_digest`), with a `round` and a `respond_by`. Digest-sealed

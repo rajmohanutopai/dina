@@ -23,6 +23,7 @@ import {
   isAuthenticated,
   isConnected,
   wakeRelay,
+  suspendRelay,
   KEEPALIVE_TICK_MS,
   PING_INTERVAL_MS,
   PONG_STALE_MS,
@@ -374,5 +375,81 @@ describe('wakeRelay — foreground reconnect (issue #351 complement)', () => {
     setup();
     wakeRelay();
     expect(sockets.length).toBe(0);
+  });
+});
+
+describe('suspendRelay — close for the background so MsgBox buffers', () => {
+  let sockets: MockWS[];
+
+  async function connectAndAuth(): Promise<MockWS> {
+    const pubKey = getPublicKey(TEST_ED25519_SEED);
+    setIdentity(deriveDIDKey(pubKey), TEST_ED25519_SEED);
+    setWSFactory(() => {
+      const ws = makeMockWS();
+      sockets.push(ws);
+      return ws;
+    });
+    await connectToMsgBox('wss://relay.test/ws');
+    const ws = sockets[sockets.length - 1];
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n1', ts: 1 }) });
+    ws.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    return ws;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    sockets = [];
+    resetConnectionState();
+  });
+
+  afterEach(() => {
+    resetConnectionState();
+    jest.useRealTimers();
+  });
+
+  it('closes the socket so the relay sees this DID offline', async () => {
+    const ws = await connectAndAuth();
+    suspendRelay();
+    expect(ws.closeCalls).toBe(1);
+    expect(isConnected()).toBe(false);
+    expect(isAuthenticated()).toBe(false);
+  });
+
+  it('schedules no reconnect and no keepalive while in the background', async () => {
+    await connectAndAuth();
+    suspendRelay();
+    jest.advanceTimersByTime(FALLBACK_STALE_MS * 2);
+    expect(sockets.length).toBe(1);
+    expect(pingsSent(sockets[0]).length).toBe(0);
+  });
+
+  it('wakeRelay reconnects after a suspend (the foreground edge drains the buffer)', async () => {
+    await connectAndAuth();
+    suspendRelay();
+    wakeRelay();
+    expect(sockets.length).toBe(2);
+    const fresh = sockets[1];
+    fresh.onopen?.();
+    fresh.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n2', ts: 2 }) });
+    fresh.onmessage?.({ data: JSON.stringify({ type: 'auth_success' }) });
+    expect(isAuthenticated()).toBe(true);
+  });
+
+  it('is a no-op after an explicit disconnect() and before any connect', async () => {
+    suspendRelay();
+    expect(sockets.length).toBe(0);
+    await connectAndAuth();
+    await disconnect();
+    suspendRelay();
+    wakeRelay();
+    expect(sockets.length).toBe(1);
+  });
+
+  it('a second suspend is harmless', async () => {
+    const ws = await connectAndAuth();
+    suspendRelay();
+    suspendRelay();
+    expect(ws.closeCalls).toBe(1);
   });
 });

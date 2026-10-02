@@ -90,7 +90,10 @@ describe('v50 migration — tender notices keyed by outcome', () => {
       // The bed's chairmaker, 2026-09-27: v49 recorded, this table absent.
       adapter.execute('DROP TABLE commerce_tender_notices');
 
-      expect(applyMigrations(adapter, IDENTITY_MIGRATIONS)).toBe(1);
+      // v50 and every migration after it.
+      expect(applyMigrations(adapter, IDENTITY_MIGRATIONS)).toBe(
+        IDENTITY_MIGRATIONS.filter((m) => m.version >= 50).length,
+      );
       expect(new SQLiteBuyerNegotiationRepository(adapter).listNotices('pending')).toEqual([]);
     });
   });

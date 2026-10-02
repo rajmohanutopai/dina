@@ -104,6 +104,10 @@ export const PUBLIC_CATALOG_FIELDS: ReadonlySet<string> = new Set([
   'category_ids',
   'category',
   'brand',
+  // `images` is the wire key (the supplier's opt-in product photos, §9.5);
+  // `image_url` the flat CSV column it is imported from. The URL strings are
+  // still walked by the scan like any other value.
+  'images',
   'image_url',
   // --- commercial surface a buyer needs to decide whether to ask for a quote -
   'pack',

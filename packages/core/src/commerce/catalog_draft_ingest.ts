@@ -211,7 +211,11 @@ export function createCatalogDraft(
     identity: args.identity,
     // The draft's class decides whether a row's category is read, here and
     // on every repair, so a rebuild reads the rows the same way.
-    settings: { ...args.settings, rowCategories: args.provenanceClass !== 'model_derived' },
+    settings: {
+      ...args.settings,
+      rowCategories: args.provenanceClass !== 'model_derived',
+      rowImages: args.provenanceClass !== 'model_derived',
+    },
     stamp,
   });
 

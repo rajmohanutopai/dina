@@ -192,11 +192,42 @@ export function isPluginInvocation(task: Pick<WorkflowTask, 'payload'>): boolean
  * execution result). The Completed tab shows this as the primary badge:
  *   - `approved` — owner approved (queued / running / completed / recorded / failed)
  *   - `denied`   — owner denied (cancelled by operator)
+ *   - `closed`   — Dina retired the card itself, the question gone (a tender
+ *                  awarded or expired, a negotiation that ended); never the
+ *                  owner's no, so never "Denied"
  *   - `expired`  — TTL lapsed before the owner decided
  *   - `unknown`  — PLG-31 #14: `outcome_unknown` — the owner approved but an
  *                  external effect may have happened that Dina cannot confirm (§9.5)
  */
-export type ApprovalOutcome = 'approved' | 'denied' | 'expired' | 'unknown';
+export type ApprovalOutcome = 'approved' | 'denied' | 'closed' | 'expired' | 'unknown';
+
+/**
+ * The reasons Core cancels a card for itself (`workflow.cancel(id, reason)`,
+ * read back as the task's `cancel_reason`), each with why in the owner's
+ * words. Any other reason — `approval_denied`, `denied_by_operator`, or one
+ * the owner typed — is the owner's own deny.
+ */
+const SYSTEM_CLOSE_REASONS: Readonly<Record<string, string>> = {
+  // retireTenderReadyCard (commerce/buyer_negotiation.ts)
+  tender_awarded: 'awarded',
+  tender_expired: 'expired',
+  // withdrawOwnerQuestions (commerce/negotiation_supplier.ts)
+  negotiation_closed: 'negotiation ended',
+  quote_not_awarded: 'not awarded',
+  // order_attachments.ts: a newer card replaced this one
+  superseded: 'replaced',
+  superseded_by_processor: 'replaced',
+  // remote_approval.ts: the device that asked took the question back
+  'withdrawn by source device': 'withdrawn',
+};
+
+/** Why Dina closed a card itself, in words; null when the owner denied it. */
+export function systemCloseReason(cancelReason: string | undefined): string | null {
+  if (cancelReason === undefined) return null;
+  return Object.prototype.hasOwnProperty.call(SYSTEM_CLOSE_REASONS, cancelReason)
+    ? (SYSTEM_CLOSE_REASONS[cancelReason] ?? null)
+    : null;
+}
 
 /**
  * The EXECUTION result of the approved work, orthogonal to the owner decision
@@ -208,6 +239,8 @@ export type ExecutionResult = 'pending' | 'completed' | 'failed' | 'unknown';
 /** A resolved approval row — base entry plus its terminal outcome + time. */
 export type ResolvedInboxEntry = InboxEntry & {
   outcome: ApprovalOutcome;
+  /** `closed` only: why Dina retired the card ("awarded", "expired", …). */
+  closedBecause?: string;
   /** PLG-31 #16: the execution result, separate from the owner decision. */
   executionResult?: ExecutionResult;
   /**
@@ -371,9 +404,14 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
   const merged: ResolvedInboxEntry[] = [];
   for (const tasks of batches) {
     for (const task of tasks) {
+      const closedBecause =
+        task.status === 'cancelled' || task.status === 'canceled'
+          ? systemCloseReason(task.cancel_reason)
+          : null;
       merged.push({
         ...toEntry(task),
         outcome: outcomeForTask(task),
+        ...(closedBecause !== null ? { closedBecause } : {}),
         executionResult: executionResultForTask(task),
         ...pluginAnswer(task),
         resolvedAt: task.updated_at ?? task.created_at,
@@ -400,10 +438,11 @@ function outcomeForTask(task: WorkflowTask): ApprovalOutcome {
     // PLG-31 #16: OWNER DECISION only. A task that reached queued/running/
     // completed/recorded/failed got PAST pending_approval — i.e. the owner
     // APPROVED it; a later execution failure is NOT an owner denial (that lived
-    // in `executionResult`). Only an operator cancel is a denial.
+    // in `executionResult`). Only an operator cancel is a denial: a card Core
+    // retired itself (its `cancel_reason` says so) is closed, not denied.
     case 'cancelled':
     case 'canceled':
-      return 'denied';
+      return systemCloseReason(task.cancel_reason) !== null ? 'closed' : 'denied';
     // PLG-31 #14: unconfirmed external effect — its own bucket, not "denied".
     case 'outcome_unknown':
       return 'unknown';

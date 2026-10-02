@@ -15,6 +15,7 @@ import {
   type OrderSendOutcome,
   type TenderAwardOutcome,
   type TenderRankingView,
+  type TenderStoryView,
 } from './tender_views';
 
 import type { OwnerDispatcher } from './owner-dispatch';
@@ -343,6 +344,16 @@ export class OwnerCommerceClient {
     return expectOk<TenderRankingView>(res, 'tenderRanking');
   }
 
+  /** How each supplier in the tender got where the ranking shows it. */
+  async tenderStory(tenderId: string): Promise<TenderStoryView> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/trade/tender/story',
+      query: { tender_id: tenderId },
+    });
+    return expectOk<TenderStoryView>(res, 'tenderStory');
+  }
+
   /** Award the best offer, or the one named. Presence is checked by Core. */
   async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
     const res = await this.dispatcher.dispatch({
@@ -375,6 +386,24 @@ export class OwnerCommerceClient {
           supplier_did: s.supplierDid,
           service_rkey: s.serviceRkey,
         })),
+        ...(input.notAsked === undefined || input.notAsked.length === 0
+          ? {}
+          : {
+              not_asked: input.notAsked.map((n) => ({
+                supplier_did: n.supplierDid,
+                service_rkey: n.serviceRkey,
+                reason: n.reason,
+                ...(n.note === undefined ? {} : { note: n.note }),
+                ...(n.listedFrom === undefined
+                  ? {}
+                  : {
+                      listed_from: {
+                        currency: n.listedFrom.currency,
+                        minor_units: n.listedFrom.minorUnits,
+                      },
+                    }),
+              })),
+            }),
         lines: input.lines.map((line) => ({
           line_id: line.lineId,
           requirement: { text: line.text },
@@ -415,6 +444,20 @@ export class OwnerCommerceClient {
       });
     const outcome = readOrderSend(res.status, res.body);
     return outcome ?? expectOk<never>(res, 'sendHeldOrder');
+  }
+
+  /**
+   * The buyer's placed orders, settled and unsettled, newest placed first —
+   * what "My Orders" lists after Award → Send. `limit` defaults to Core's page
+   * size (20); Core refuses anything outside 1–100 with `invalid_limit`.
+   */
+  async placedOrders(limit?: number): Promise<PlacedOrdersAnswer> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/orders/placed',
+      ...(limit !== undefined ? { query: { limit: String(limit) } } : {}),
+    });
+    return expectOk<PlacedOrdersAnswer>(res, 'placedOrders');
   }
 
   // -------------------------------------------------------------------------
@@ -720,6 +763,93 @@ export interface OrderSubmitAnswer {
   [extra: string]: unknown;
 }
 
+/** A money amount on the wire: ISO 4217 code + canonical minor-units string. */
+export interface MoneyDto {
+  currency: string;
+  minor_units: string;
+}
+
+/**
+ * What a placed order has got to, from the supplier integration's evidence
+ * and the buyer's own khata. Null on the order when the money line is closed
+ * (see `PlacedOrdersAnswer.evidence`).
+ */
+export interface PlacedOrderProgressDto {
+  /** The latest checkout link — always https. `expired` links are history, not an offer. */
+  checkoutLink: {
+    url: string;
+    amount: MoneyDto;
+    provider: string;
+    expiresAt: string | null;
+    expired: boolean;
+  } | null;
+  /** The newest processor report on the most recent payment. */
+  payment: {
+    state: 'authorized' | 'captured' | 'refunded' | 'failed';
+    amount: MoneyDto;
+    provider: string;
+  } | null;
+  /** True once this buyer recorded a payment (a PaymentNote) against the order. */
+  paymentRecorded: boolean;
+  /** The newest fulfilment step the supplier's integration reported. */
+  fulfilment: {
+    state: 'production_started' | 'ready' | 'handed_to_carrier';
+    provider: string;
+    reportedAt: string;
+  } | null;
+}
+
+/** One order the buyer placed (`GET /v1/commerce/orders/placed`). */
+export interface PlacedOrderDto {
+  purchaseOrderId: string;
+  supplierDid: string;
+  /** The listing the order went to ('' on an old record). */
+  serviceRkey: string;
+  /** The owner's contact name for the supplier; null when Core has none. */
+  supplierName: string | null;
+  /** The approved total; null when the retained proposal cannot be read back. */
+  total: MoneyDto | null;
+  submittedAt: string | null;
+  state:
+    | 'submitted_unconfirmed'
+    | 'outcome_unknown'
+    | 'accepted'
+    | 'rejected'
+    | 'countered'
+    | 'never_received';
+  /** Core's one-line projection (`describeOrderForOwner`) — render as given. */
+  headline: string;
+  detail: string | null;
+  actions: string[];
+  nextPollAtMs: number | null;
+  pollCount: number;
+  progress: PlacedOrderProgressDto | null;
+  /** The quote the order accepted ('' when Core cannot read the proposal back). */
+  quoteId: string;
+  /** The accepted lines, named by the supplier's signed quote where it named them. */
+  lines: PlacedOrderLineDto[];
+  /** The tender the order came from, when it did; null otherwise. */
+  tenderId: string | null;
+}
+
+/** One line of a placed order. */
+export interface PlacedOrderLineDto {
+  lineId: string;
+  product: { scheme: string; value: string; issuer_did?: string };
+  quantity: { value: string; unit_code: string };
+  /** The supplier's name for the item; null when its quote gave none. */
+  name: string | null;
+}
+
+export interface PlacedOrdersAnswer {
+  orders: PlacedOrderDto[];
+  /**
+   * `available` when the progress was read; otherwise why the money line is
+   * closed (`pack_not_installed`, `pack_paused`, …) and every `progress` is null.
+   */
+  evidence: string;
+}
+
 export interface TradeInboxItemDto {
   kind: string;
   role: 'buyer' | 'supplier';
@@ -756,6 +886,15 @@ export interface TenderLineRequest {
 
 export interface CreateTenderRequest {
   suppliers: { supplierDid: string; serviceRkey: string }[];
+  /** Suppliers set aside and not asked (a PeerLens reason), kept on the tender. */
+  notAsked?: {
+    supplierDid: string;
+    serviceRkey: string;
+    reason: 'own_poor_review' | 'low_peerlens_trust';
+    note?: string;
+    /** The lowest price the supplier listed for what was asked. */
+    listedFrom?: { currency: string; minorUnits: string };
+  }[];
   lines: TenderLineRequest[];
   /** Where the goods are delivered. */
   region: { scheme: 'country' | 'admin_area' | 'postal_area' | 'geohash' | 'custom'; value: string };

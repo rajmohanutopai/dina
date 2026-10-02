@@ -42,7 +42,7 @@ export * from './catalog_offers';
 // Re-exported so kernel consumers (e.g. the Brain research tool) get the
 // commerce quantity/money types through `@dina/core` without depending on
 // `@dina/commerce-protocol` directly.
-export type { Quantity, Money } from '@dina/commerce-protocol';
+export type { CatalogItem, Quantity, Money, ProductRef } from '@dina/commerce-protocol';
 export * from './probing_resistance';
 export * from './product_evidence';
 export * from './quote_fanout';
@@ -59,6 +59,7 @@ export * from './catalog_record_writer';
 export * from './continuity_release_sweeper';
 export * from './catalog_feed_policy';
 export * from './catalog_ingest';
+export * from './catalog_item_reader';
 export * from './rehydrate';
 export * from './money_rehydrate';
 export * from './buyer_reconciliation';

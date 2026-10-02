@@ -310,6 +310,24 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
       .mockReturnValue(params);
   }
 
+  it("a supplier row's Review opens a new organisation subject with its name and DID", () => {
+    mockParams({
+      createKind: 'organization',
+      initialName: 'Crumb & Co',
+      initialDid: 'did:plc:crumbandcoo',
+    });
+    const { getByTestId } = render(<WriteScreen />);
+    expect(getByTestId('write-subject-name-input').props.value).toBe('Crumb & Co');
+    expect(getByTestId('write-subject-did-input').props.value).toBe('did:plc:crumbandcoo');
+  });
+
+  it('an initialDid that is not a DID is not filled in', () => {
+    mockParams({ createKind: 'organization', initialName: 'Crumb & Co', initialDid: 'crumb.example' });
+    const { getByTestId } = render(<WriteScreen />);
+    expect(getByTestId('write-subject-name-input').props.value).toBe('Crumb & Co');
+    expect(getByTestId('write-subject-did-input').props.value).toBe('');
+  });
+
   it('flips into edit mode when editingUri is in URL params', () => {
     mockParams({
       editingUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',

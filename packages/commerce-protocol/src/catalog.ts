@@ -45,6 +45,16 @@ export interface CatalogItem {
     valid_until?: string;
   };
   attributes?: Record<string, string | number | boolean>;
+  /**
+   * Photos the supplier chose to publish for this item: absolute https URLs,
+   * first is the cover. Opt-in and public by intent — a supplier publishes a
+   * product photo it already shows the world. Distinct from the forbidden
+   * `image_url`: nothing a lane EXTRACTED (a photographed price list, a shop
+   * counter) ever lands here; the photo lane keeps those in the vault (§7).
+   * Absent, never `[]`, when there are none, so an item without photos keeps
+   * the bytes and digest it had before this field existed.
+   */
+  images?: string[];
 }
 
 export const MAX_CATALOG_NAME_LENGTH = 200;
@@ -56,6 +66,8 @@ export const MAX_ATTRIBUTE_VALUE_LENGTH = 200;
 export const MAX_CATALOG_REGIONS = 50;
 export const MAX_CATALOG_IDENTIFIERS = 10;
 export const MAX_UNITS_PER_PACK_DIGITS = 6;
+export const MAX_CATALOG_IMAGES = 4;
+export const MAX_CATALOG_IMAGE_URL_LENGTH = 1000;
 
 /**
  * Every key a `CatalogItem` may carry. Nothing else reaches the wire.
@@ -99,6 +111,7 @@ const CATALOG_ITEM_KEY_MAP: Record<keyof CatalogItem, true> = {
   minimum_order: true,
   freshness: true,
   attributes: true,
+  images: true,
 };
 
 const CATALOG_ITEM_KEYS: ReadonlySet<string> = new Set(Object.keys(CATALOG_ITEM_KEY_MAP));
@@ -111,8 +124,9 @@ const CATALOG_ITEM_KEYS: ReadonlySet<string> = new Set(Object.keys(CATALOG_ITEM_
  * (§9.13). These four are different: they are known, named, and forbidden.
  * Live stock and buyer-specific terms belong in a live service result and
  * never in a public snapshot (§10.4 / FR-A7), and the photo lane's image stays
- * in the vault (§7) — `CatalogItem` has no media field precisely so there is
- * nothing to publish.
+ * in the vault (§7). `CatalogItem.images` is the supplier's own opt-in product
+ * photos, not that image: `image_url` stays forbidden so nothing extracted can
+ * ride out under the old flat name.
  *
  * A reader that tolerated these would index an item whose very presence is the
  * violation, so the tolerance for additive fields stops exactly here.
@@ -307,7 +321,44 @@ function validateCatalogItemFields(item: Record<string, unknown>): string | null
       }
     }
   }
+  if (item.images !== undefined) {
+    const err = validateCatalogImages(item.images);
+    if (err) return err;
+  }
   return null;
+}
+
+/**
+ * `images`: 1..MAX absolute https URLs with a host and no credentials. An
+ * https-only rule because a reader renders these on a device; anything else
+ * (http, data:, file:, a relative path) is refused, not rewritten.
+ */
+export function validateCatalogImages(images: unknown): string | null {
+  if (!Array.isArray(images)) return 'catalogItem.images: must be an array';
+  if (images.length === 0) return 'catalogItem.images: omit the field when there are no images';
+  if (images.length > MAX_CATALOG_IMAGES) {
+    return `catalogItem.images: exceeds ${MAX_CATALOG_IMAGES} images`;
+  }
+  for (const [index, url] of images.entries()) {
+    if (typeof url !== 'string' || url.length === 0) {
+      return `catalogItem.images[${index}]: must be a non-empty string`;
+    }
+    if (url.length > MAX_CATALOG_IMAGE_URL_LENGTH) {
+      return `catalogItem.images[${index}]: exceeds ${MAX_CATALOG_IMAGE_URL_LENGTH} characters`;
+    }
+    if (!isHttpsImageUrl(url)) {
+      return `catalogItem.images[${index}]: must be an absolute https URL with no credentials`;
+    }
+  }
+  return null;
+}
+
+/** Parsed by hand so the zero-dependency package needs no URL global. */
+function isHttpsImageUrl(url: string): boolean {
+  const match = /^https:\/\/([^/?#\s]+)[^\s]*$/.exec(url);
+  const authority = match?.[1];
+  if (authority === undefined) return false;
+  return !authority.includes('@') && /^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(authority);
 }
 
 // ---------------------------------------------------------------------------

@@ -144,6 +144,18 @@ describe('what the assembler produces', () => {
     for (const item of result.items) expect(validateCatalogItem(item)).toBeNull();
   });
 
+  it("publishes a non-model row's photos as images, and never a model's", () => {
+    const photo = 'https://images.example.test/cake.jpg';
+    const withPhotos = row({ images: [photo] });
+    const published = assemble([withPhotos], settings({ rowImages: true }));
+    if (!published.ok) throw new Error(JSON.stringify(published.findings));
+    expect(published.items[0]?.images).toEqual([photo]);
+    // The photo lane leaves the flag unset: a URL a model wrote is a guess.
+    const modelRead = assemble([withPhotos]);
+    if (!modelRead.ok) throw new Error(JSON.stringify(modelRead.findings));
+    expect('images' in (modelRead.items[0] ?? {})).toBe(false);
+  });
+
   it('a long category text is clipped to the wire bound rather than refusing the row', () => {
     const result = assemble(
       [row({ category: 'x'.repeat(500) })],

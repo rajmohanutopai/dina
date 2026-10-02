@@ -28,6 +28,25 @@ jest.mock('../../src/storage/init', () => ({
   openPersonaDB: jest.fn(),
   isPersistenceReady: (): boolean => true,
 }));
+/** Listing names by `did|rkey` — no AppView in tests. */
+const mockListed = new Map<string, string>();
+jest.mock('../../src/services/supplier_names', () => ({
+  ...jest.requireActual<object>('../../src/services/supplier_names'),
+  supplierNamesHere: async (refs: { supplierDid: string; serviceRkey?: string }[]) =>
+    new Map(
+      refs.map((r) => [
+        r.supplierDid,
+        mockListed.get(`${r.supplierDid}|${r.serviceRkey ?? 'self'}`) ?? null,
+      ]),
+    ),
+}));
+/** The buyer's placed orders — where the payment cards find the supplier's name. */
+let mockPlaced: { supplierDid: string; serviceRkey?: string; supplierName?: string }[] = [];
+jest.mock('../../src/services/owner_commerce_client', () => ({
+  getOwnerCommerceClient: () => ({
+    placedOrders: async () => ({ orders: mockPlaced, evidence: 'available' }),
+  }),
+}));
 
 const CALLS_PER_LOAD = 16;
 
@@ -97,6 +116,8 @@ function stubClient(pending: WorkflowTask[]): {
 beforeEach(() => {
   resetInboxCoreClient();
   resetNotifications();
+  mockPlaced = [];
+  mockListed.clear();
 });
 
 describe('order-attachment cards on the owner surface', () => {
@@ -142,5 +163,42 @@ describe('order-attachment cards on the owner surface', () => {
     expect(screen.queryByTestId('approvals-open-link-order-checkout-http')).toBeNull();
     expect(open).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+});
+
+describe('the supplier on the order-attachment cards', () => {
+  it("is named from the placed order's listing, with the DID beside it", async () => {
+    mockPlaced = [{ supplierDid: 'did:plc:supplier5678', serviceRkey: 'self' }];
+    mockListed.set('did:plc:supplier5678|self', 'ValueCrumb Bakery');
+    const stub = stubClient([PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText(/ValueCrumb Bakery \(did:plc:/)).toBeTruthy());
+  });
+
+  it("the owner's contact name wins over the listing", async () => {
+    mockPlaced = [
+      { supplierDid: 'did:plc:supplier5678', serviceRkey: 'self', supplierName: 'Val (my baker)' },
+    ];
+    mockListed.set('did:plc:supplier5678|self', 'ValueCrumb Bakery');
+    const stub = stubClient([PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText(/Val \(my baker\) \(did:plc:/)).toBeTruthy());
+  });
+
+  it('keeps the DID when no placed order names the supplier', async () => {
+    const stub = stubClient([PAYMENT]);
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText('Record this payment?')).toBeTruthy());
+    expect(screen.queryByText(/ValueCrumb/)).toBeNull();
+    expect(screen.getByText(/did:plc:/)).toBeTruthy();
   });
 });

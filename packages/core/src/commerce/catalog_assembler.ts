@@ -107,6 +107,13 @@ export interface AssemblySettings {
    * leaves this unset and its items carry the settings unchanged.
    */
   rowCategories?: boolean;
+  /**
+   * Whether a row's `image_url` publishes as `images`. The same rule as
+   * `rowCategories`: true only for rows no model produced. A photographed
+   * price list has no product photos to offer, and a URL a model wrote is a
+   * guess — so the photo lane leaves this unset and its items carry none.
+   */
+  rowImages?: boolean;
 }
 
 /**
@@ -156,6 +163,7 @@ export const CATALOG_FIELD_ORIGIN: Readonly<Record<keyof CatalogItem, 'row' | 'm
   formulation_ref: 'row',
   relationship_claim_refs: 'row',
   attributes: 'row',
+  images: 'row',
 };
 
 /**
@@ -319,6 +327,9 @@ export function assembleCatalogItems(args: {
         : {}),
       ...(source.brand === undefined ? {} : { brand: source.brand }),
       ...(source.description === undefined ? {} : { description: source.description }),
+      ...(settings.rowImages === true && source.images !== undefined
+        ? { images: [...source.images] }
+        : {}),
       ...(source.variant_of === undefined ? {} : { family_ref: source.variant_of }),
       ...(source.min_order_quantity === undefined
         ? {}

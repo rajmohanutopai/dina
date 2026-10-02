@@ -18,6 +18,8 @@ import { appViewBase } from '../peerlens/appview_base';
 
 import { loadContacts } from './contacts_source';
 
+import type { PlacedOrderDto } from '@dina/core';
+
 export interface SupplierRef {
   supplierDid: string;
   /** The listing the supplier answered under; `self` when unknown. */
@@ -92,6 +94,14 @@ export async function supplierNamesHere(
       (await appView.resolveServiceByUri(`at://${did}/com.dinakernel.service.profile/${rkey}`))
         ?.name ?? null,
   });
+}
+
+/** A placed order's supplier, under the listing the order came from. */
+export function placedOrderRefs(orders: readonly PlacedOrderDto[]): SupplierRef[] {
+  return orders.map((o) => ({
+    supplierDid: o.supplierDid,
+    ...(o.serviceRkey ? { serviceRkey: o.serviceRkey } : {}),
+  }));
 }
 
 /** `did:plc:abcd…wxyz` — enough to tell two suppliers apart. */

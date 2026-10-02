@@ -26,12 +26,13 @@ import {
   resetNotifications,
 } from '../../../../packages/brain/src/notifications/inbox';
 import NotificationsScreen from '../../app/notifications';
-import { supportsAllow24h } from '../../src/components/approval_inbox';
+import { ResolvedApprovalCard, supportsAllow24h } from '../../src/components/approval_inbox';
 import {
   resetInboxCoreClient,
   setInboxCoreClient,
   type InboxCoreClient,
   type InboxEntry,
+  type ResolvedInboxEntry,
 } from '../../src/hooks/useServiceInbox';
 
 import type { WorkflowTask } from '@dina/core';
@@ -615,6 +616,39 @@ describe('Approval inbox inline in Activity — All filter shows resolved cards'
     expect(screen.getByText('Approved')).toBeTruthy();
     expect(screen.getByText('Agent action approval')).toBeTruthy();
     expect(screen.queryByTestId('approvals-approve-done-1')).toBeNull();
+  });
+});
+
+describe('a resolved card Dina retired itself (iPhone buyer run 2026-09-29)', () => {
+  const tenderReady: ResolvedInboxEntry = {
+    id: 'tender-ready-tnd_1',
+    kind: 'tender_ready',
+    capability: '',
+    serviceName: 'Tender ready — Award it?',
+    description: '',
+    requesterDID: '',
+    paramsPreview: '',
+    riskLevel: '',
+    createdAt: 0,
+    outcome: 'closed',
+    resolvedAt: 1,
+  } as unknown as ResolvedInboxEntry;
+  const badge = (entry: ResolvedInboxEntry): unknown =>
+    render(<ResolvedApprovalCard entry={entry} />).getByTestId(
+      `approvals-resolved-outcome-${entry.id}`,
+    ).props.children;
+
+  it('reads "Closed · why", never "Denied"', () => {
+    expect(badge({ ...tenderReady, closedBecause: 'awarded' })).toBe('Closed · awarded');
+    expect(badge({ ...tenderReady, closedBecause: 'expired' })).toBe('Closed · expired');
+    expect(badge({ ...tenderReady, closedBecause: 'negotiation ended' })).toBe(
+      'Closed · negotiation ended',
+    );
+    expect(badge(tenderReady)).toBe('Closed');
+  });
+
+  it("the owner's own deny still reads Denied", () => {
+    expect(badge({ ...tenderReady, outcome: 'denied' })).toBe('Denied');
   });
 });
 

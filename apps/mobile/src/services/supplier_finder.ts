@@ -15,12 +15,22 @@
  * description, so a phrase is searched word by word ("floral cake" would
  * match nothing as one string); a supplier matching more of the words ranks
  * higher, then higher trust. The buyer's blocked suppliers are removed, the
- * preferred ones listed first. Read-only: nothing here contacts a supplier.
+ * preferred ones listed first. A supplier PeerLens sets aside (the owner's own
+ * poor review, or a low score over enough reviews: `supplier_trust`) is kept
+ * in the list, last, with why. Read-only: nothing here contacts a supplier.
  */
 
 import { AppViewClient } from '@dina/brain';
 
 import { appViewBase } from '../peerlens/appview_base';
+
+import {
+  loadOwnSupplierReviews,
+  LOW_TRUST_BELOW,
+  setAsideFor,
+  type OwnReview,
+  type SetAside,
+} from './supplier_trust';
 
 import type { CommerceCatalogCandidate, ServiceProfile } from '@dina/brain';
 
@@ -63,6 +73,10 @@ export interface SupplierMatch {
   name: string | null;
   /** PeerLens trust, 0..1; null when the supplier has no trust history. */
   trustScore: number | null;
+  /** How many PeerLens reviews are about the supplier; null when unknown. */
+  reviewCount: number | null;
+  /** Why PeerLens sets this supplier aside; null when it may be asked. */
+  setAside: SetAside | null;
   /** How many of the searched words this supplier matched. */
   wordsMatched: number;
   /** Catalog items that matched, for "3 matching items". */
@@ -78,6 +92,8 @@ export interface FindSuppliersInput {
   region?: string;
   preferredSuppliers?: readonly string[];
   blockedSuppliers?: readonly string[];
+  /** The owner's own newest review of each supplier, by DID. */
+  ownReviews?: ReadonlyMap<string, OwnReview>;
 }
 
 export interface FindSuppliersResult {
@@ -142,6 +158,7 @@ export async function findSuppliers(
     serviceUri: string;
     name: string | null;
     trustScore: number | null | undefined;
+    reviewCount: number | null | undefined;
     words: Set<string>;
     items: Set<string>;
     indicativeFrom?: { currency: string; minorUnits: string };
@@ -157,6 +174,7 @@ export async function findSuppliers(
         serviceUri: uri,
         name: null,
         trustScore: undefined,
+        reviewCount: undefined,
         words: new Set(),
         items: new Set(),
       };
@@ -213,29 +231,50 @@ export async function findSuppliers(
           row.name = null;
         }
       }
-      if (row.trustScore === undefined) {
+      // The review count only matters where it could set the supplier aside:
+      // no score yet, or a low one the owner has no review of their own to answer.
+      const needsCount =
+        row.trustScore === undefined ||
+        (row.trustScore !== null &&
+          row.trustScore < LOW_TRUST_BELOW &&
+          input.ownReviews?.has(row.supplierDid) !== true);
+      if (needsCount) {
         try {
-          row.trustScore = (await appView.getProfile(row.supplierDid))?.overallTrustScore ?? null;
+          const profile = await appView.getProfile(row.supplierDid);
+          if (row.trustScore === undefined) row.trustScore = profile?.overallTrustScore ?? null;
+          row.reviewCount = profile?.reviewCount ?? null;
         } catch {
-          row.trustScore = null;
+          if (row.trustScore === undefined) row.trustScore = null;
+          row.reviewCount = null;
         }
       }
     }),
   );
 
   const suppliers: SupplierMatch[] = kept
-    .map((row) => ({
-      supplierDid: row.supplierDid,
-      serviceRkey: row.serviceRkey,
-      name: row.name,
-      trustScore: row.trustScore ?? null,
-      wordsMatched: row.words.size,
-      itemsMatched: row.items.size,
-      ...(row.indicativeFrom !== undefined ? { indicativeFrom: row.indicativeFrom } : {}),
-      preferred: preferred.has(row.supplierDid),
-    }))
+    .map((row) => {
+      const ownReview = input.ownReviews?.get(row.supplierDid);
+      return {
+        supplierDid: row.supplierDid,
+        serviceRkey: row.serviceRkey,
+        name: row.name,
+        trustScore: row.trustScore ?? null,
+        reviewCount: row.reviewCount ?? null,
+        setAside: setAsideFor({
+          ...(ownReview !== undefined ? { ownReview } : {}),
+          trustScore: row.trustScore ?? null,
+          reviewCount: row.reviewCount ?? null,
+        }),
+        wordsMatched: row.words.size,
+        itemsMatched: row.items.size,
+        ...(row.indicativeFrom !== undefined ? { indicativeFrom: row.indicativeFrom } : {}),
+        preferred: preferred.has(row.supplierDid),
+      };
+    })
     .sort(
       (a, b) =>
+        // Set aside goes last: still listed, never ahead of a supplier to ask.
+        Number(a.setAside !== null) - Number(b.setAside !== null) ||
         Number(b.preferred) - Number(a.preferred) ||
         b.wordsMatched - a.wordsMatched ||
         (b.trustScore ?? -1) - (a.trustScore ?? -1) ||
@@ -251,5 +290,9 @@ export async function findSuppliers(
  */
 export async function findSuppliersHere(input: FindSuppliersInput): Promise<FindSuppliersResult> {
   const client = new AppViewClient({ appViewURL: await appViewBase() });
-  return findSuppliers(client, input);
+  // Loaded lazily: the booted node is the phone's; the browser has none.
+  const { getBootedNode } = await import('../hooks/useNodeBootstrap');
+  const ownReviews =
+    input.ownReviews ?? (await loadOwnSupplierReviews(getBootedNode()?.did ?? null));
+  return findSuppliers(client, { ...input, ownReviews });
 }

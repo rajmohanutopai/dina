@@ -3,6 +3,7 @@
  *
  *   GET  /v1/commerce/reconciliation → the post-restore census
  *   GET  /v1/commerce/orders/unsettled  → what the buyer is still waiting on
+ *   GET  /v1/commerce/orders/placed     → every order the buyer placed, newest first
  *   POST /v1/commerce/orders/submit     → send an order the owner approved
  *   GET/PUT /v1/commerce/settings/{buyer,supplier} → §18.2 / §18.3 policy
  *   GET  /v1/commerce/inbox            → §18.6 what needs the supplier
@@ -207,6 +208,7 @@ import {
   isSuppliedOrder,
   listOrderAttachments,
   pendingEvidenceRefs,
+  summarizePlacedOrderProgress,
 } from '../../commerce/order_attachments';
 import {
   TRADE_INVITE_CAPABILITIES,
@@ -238,6 +240,11 @@ import {
   listFirstPartyUpdates,
   prepareFirstPartyUpdate,
 } from '../../commerce/pack_update';
+import {
+  listPlacedOrders,
+  PLACED_ORDERS_DEFAULT_LIMIT,
+  PLACED_ORDERS_MAX_LIMIT,
+} from '../../commerce/placed_orders';
 import { checkPriceDivergence } from '../../commerce/price_divergence';
 import { chooseOffer, planProcurement } from '../../commerce/procurement_service';
 import { describeQuoteForOwner } from '../../commerce/quote_read_model';
@@ -283,7 +290,13 @@ import {
 } from '../../commerce/supplier_listing';
 import { bindReferenceRunner } from '../../commerce/supplier_runner';
 import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_export';
-import { compareTender, createTender } from '../../commerce/tender';
+import {
+  compareTender,
+  createTender,
+  NOT_ASKED_REASONS,
+  type NotAskedReason,
+} from '../../commerce/tender';
+import { tenderStory } from '../../commerce/tender_story';
 import { getTradeDocumentDispatcher, installTradeDocumentDispatcher } from '../../commerce/trade_dispatch';
 import { buildTradeInbox } from '../../commerce/trade_inbox';
 import { drainTradeSpool } from '../../commerce/trade_ingress';
@@ -294,6 +307,7 @@ import {
 } from '../../commerce/trade_ledger';
 import { TradeLedgerService } from '../../commerce/trade_ledger_service';
 import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
+import { getContact } from '../../contacts/directory';
 import { getDeviceByDID, revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
 import {
@@ -2650,6 +2664,67 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           supplierDid: entry.supplierDid,
           ...describeOrderForOwner(entry.record),
         })),
+      },
+    };
+  });
+
+  /**
+   * The buyer's placed orders, settled and unsettled, newest placed first.
+   *
+   * `/orders/unsettled` answers "what am I still waiting on"; this answers
+   * "what did I order and where has it got to" — which is the question an
+   * owner asks after the Award → Send flow, when neither the drafts list nor
+   * the trade inbox holds the order any more.
+   *
+   * READ-ONLY. It raises no card and asks no supplier. The progress (link,
+   * payment, fulfilment) is the money line's evidence, so it is joined only
+   * while the Commerce Pack is active; with the pack off every order is still
+   * listed, with `progress: null` and `evidence` naming why.
+   */
+  router.get('/v1/commerce/orders/placed', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+
+    const runtime = getCommerceRuntime();
+    if (runtime === null) {
+      // Distinguishable from "you have placed no orders", for the same reason
+      // the census and `/orders/unsettled` are.
+      return { status: 503, body: { error: 'commerce_unavailable' } };
+    }
+
+    let limit = PLACED_ORDERS_DEFAULT_LIMIT;
+    if (req.query.limit !== undefined) {
+      if (!/^\d{1,4}$/.test(req.query.limit)) {
+        return { status: 400, body: { error: 'invalid_limit' } };
+      }
+      limit = Number(req.query.limit);
+      if (limit < 1 || limit > PLACED_ORDERS_MAX_LIMIT) {
+        return { status: 400, body: { error: 'invalid_limit' } };
+      }
+    }
+
+    const money = runtime.money();
+    const nowMs = runtime.now();
+    const orders = listPlacedOrders(runtime, {
+      limit,
+      // The owner's own name for the supplier, when the supplier is a contact.
+      // Core keeps no supplier name on the tender, quote or order records.
+      nameFor: (did) => getContact(did)?.displayName ?? null,
+    }).map(({ orderDigest, ...order }) => ({
+      ...order,
+      progress: money.available
+        ? summarizePlacedOrderProgress(
+            money.stores,
+            { orderDigest, supplierDid: order.supplierDid, purchaseOrderId: order.purchaseOrderId },
+            nowMs,
+          )
+        : null,
+    }));
+    return {
+      status: 200,
+      body: {
+        orders,
+        evidence: money.available ? 'available' : money.reason,
       },
     };
   });
@@ -5886,6 +5961,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
                   ? {}
                   : { tradingCurrency: settings.tradingCurrency }),
                 rowCategories: draft.provenanceClass !== 'model_derived',
+                rowImages: draft.provenanceClass !== 'model_derived',
               },
               // The draft's OWN stamp. A repair is not a new draft, and
               // re-minting would move every item's revision and timestamp — and
@@ -7092,6 +7168,60 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       }
       suppliers.push({ supplierDid: named.supplier_did, serviceRkey: named.service_rkey });
     }
+    // Who the owner's surface set aside (never asked) and why — a PeerLens
+    // reason it read; Core keeps it so the tender can say who was left out.
+    const notAsked: {
+      supplierDid: string;
+      serviceRkey: string;
+      reason: NotAskedReason;
+      note?: string;
+      listedFrom?: { currency: string; minor_units: string };
+    }[] = [];
+    if (body.not_asked !== undefined) {
+      if (!Array.isArray(body.not_asked)) {
+        return { status: 400, body: { error: 'not_asked must be an array' } };
+      }
+      for (const entry of body.not_asked) {
+        const named = (entry ?? {}) as Record<string, unknown>;
+        const listed = named.listed_from as Record<string, unknown> | undefined;
+        const listedOk =
+          listed === undefined ||
+          (listed !== null &&
+            typeof listed === 'object' &&
+            typeof listed.currency === 'string' &&
+            /^[A-Z]{3}$/.test(listed.currency) &&
+            typeof listed.minor_units === 'string' &&
+            /^(0|[1-9][0-9]{0,17})$/.test(listed.minor_units));
+        if (
+          typeof named.supplier_did !== 'string' ||
+          typeof named.service_rkey !== 'string' ||
+          !NOT_ASKED_REASONS.includes(named.reason as NotAskedReason) ||
+          (named.note !== undefined && typeof named.note !== 'string') ||
+          !listedOk
+        ) {
+          return {
+            status: 400,
+            body: {
+              error: `every not_asked entry names supplier_did, service_rkey and a reason (${NOT_ASKED_REASONS.join(', ')})`,
+            },
+          };
+        }
+        notAsked.push({
+          supplierDid: named.supplier_did,
+          serviceRkey: named.service_rkey,
+          reason: named.reason as NotAskedReason,
+          ...(typeof named.note === 'string' ? { note: named.note } : {}),
+          ...(listed !== undefined
+            ? {
+                listedFrom: {
+                  currency: String(listed.currency),
+                  minor_units: String(listed.minor_units),
+                },
+              }
+            : {}),
+        });
+      }
+    }
     // §9.13 wire law is snake_case; the tender line input is an internal
     // camelCase domain shape. Accept `line_id` and normalize to `lineId`
     // so a hand-written or ported client follows the wire convention.
@@ -7121,6 +7251,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     const created = await createTender({
       suppliers,
+      ...(notAsked.length > 0 ? { notAsked } : {}),
       lines: tenderLines as never,
       projection: completeProjection(body.projection as Record<string, unknown>) as never,
       ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
@@ -7194,8 +7325,34 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           : {}),
         ranked: ranked.ranking.ranked,
         excluded: ranked.ranking.excluded,
+        not_asked: runtime.tenders.listNotAsked(tenderId).map((n) => ({
+          supplier_did: n.supplierDid,
+          service_rkey: n.serviceRkey,
+          reason: n.reason,
+          note: n.note,
+          ...(n.listedFrom !== undefined ? { listed_from: n.listedFrom } : {}),
+        })),
       },
     };
+  });
+
+  // NEGOTIATION_PLAN §4.5 — how each supplier got where the ranking shows it:
+  // the offered lines, every signed revision, and this tender's counters.
+  router.get('/v1/commerce/trade/tender/story', (req): CoreResponse => {
+    const caller = purchasingCaller(req, ownerOnlyGuard, { presence: false });
+    if (!('kind' in caller)) return caller;
+    const tenderId = req.query?.tender_id;
+    if (typeof tenderId !== 'string' || tenderId === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const story = tenderStory(tenderId);
+    if (!story.ok) {
+      return {
+        status: story.refusal === 'no_such_tender' ? 404 : 503,
+        body: { error: story.refusal },
+      };
+    }
+    return { status: 200, body: { tender_id: tenderId, suppliers: story.suppliers } };
   });
 
   /**

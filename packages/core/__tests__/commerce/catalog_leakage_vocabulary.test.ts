@@ -60,6 +60,7 @@ function maximalItem(): Record<string, unknown> {
     minimum_order: { value: '4', unit_code: 'each' },
     freshness: { generated_at: '2026-08-08T09:00:00.000Z', valid_until: '2026-09-08T09:00:00.000Z' },
     attributes: { finish: 'matte', stackable: true, seat_height_cm: 45 },
+    images: ['https://images.example.test/chair-1.jpg'],
   };
 }
 

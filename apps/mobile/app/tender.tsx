@@ -9,14 +9,26 @@
  * or send is over the cap, which is a normal outcome, not an error.
  */
 
-import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatMoneyAmount, StaffCoreClient, staffTransportFor } from '@dina/core';
 
+import { BargainingTimeline } from '../src/components/BargainingTimeline';
+import {
+  OfferedItemCard,
+  type OfferedItem,
+  type SupplierTrust,
+} from '../src/components/OfferedItemCard';
+import { OrderProgress, orderStepsReached } from '../src/components/OrderProgress';
 import { PresenceSheet } from '../src/components/PresenceSheet';
 import { usePresenceGate } from '../src/hooks/usePresenceGate';
+import {
+  publishedItemFor,
+  supplierTrustFor,
+  type OfferedProduct,
+} from '../src/services/offered_catalog';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { CONNECT_OWNER_DEVICE_MESSAGE, errorKeyOf } from '../src/services/owner_errors';
 import { loadStaffIdentity } from '../src/services/staff_identity_store';
@@ -25,16 +37,30 @@ import { shortDid, supplierLabels, supplierNamesHere } from '../src/services/sup
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
 import type {
+  CatalogItem,
   OrderSendOutcome,
+  PlacedOrderDto,
+  PlacedOrdersAnswer,
   TenderAwardOutcome,
   TenderExclusionReason,
+  TenderNotAskedView,
   TenderRankingView,
+  TenderStorySupplierView,
+  TenderStoryView,
 } from '@dina/core';
 
 /** What the screen needs from either client. */
 export interface TenderBackend {
   presence: 'passphrase' | 'pin';
   tenderRanking(tenderId: string): Promise<TenderRankingView>;
+  /** How each supplier got here; absent where the client cannot read it. */
+  tenderStory?(tenderId: string): Promise<TenderStoryView>;
+  /** The supplier's published catalogue item for an offered product (photo, description). */
+  offeredItem?(supplierDid: string, product: OfferedProduct): Promise<CatalogItem | null>;
+  /** The supplier's PeerLens trust, shown beside what it offered. */
+  supplierTrust?(supplierDid: string): Promise<SupplierTrust | null>;
+  /** The owner's placed orders, to follow this tender's order once it is sent. */
+  placedOrders?(): Promise<PlacedOrdersAnswer>;
   awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome>;
   sendHeldOrder(approvalId: string): Promise<OrderSendOutcome>;
   provePresence(secret: string): Promise<unknown>;
@@ -48,6 +74,26 @@ export function setTenderBackendForTest(backend: TenderBackend | null): void {
 
 /** How often an open tender re-reads its ranking while the screen is in front. */
 const REFRESH_MS = 10_000;
+
+/**
+ * What the supplier offered, as its catalogue shows it: the quote's first line
+ * named in the supplier's own signed words, with the catalogue's photo and
+ * description when its published catalogue lists the product.
+ */
+export function offeredItem(
+  story: TenderStorySupplierView | undefined,
+  published: CatalogItem | null | undefined,
+): OfferedItem | null {
+  const line = story?.lines[0];
+  if (story === undefined || line === undefined) return null;
+  const more = story.lines.length > 1 ? ` · and ${String(story.lines.length - 1)} more` : '';
+  return {
+    name: line.name ?? published?.name ?? line.product.value,
+    description: published?.description ?? null,
+    quantityText: `${line.quantity.value} ${line.quantity.unit_code}${more}`,
+    imageUrl: published?.images?.[0] ?? null,
+  };
+}
 
 const STATE_LABEL: Record<TenderRankingView['state'], string> = {
   negotiating: 'Dina is asking the suppliers for better prices',
@@ -63,6 +109,12 @@ const EXCLUDED_LABEL: Record<TenderExclusionReason, string> = {
   expired: 'Quote expired',
   currency_mismatch: 'Quoted in another currency',
   over_budget: 'Over your budget',
+};
+
+/** Why a supplier was set aside and never asked (PeerLens), in the owner's words. */
+const NOT_ASKED_LABEL: Record<TenderNotAskedView['reason'], string> = {
+  own_poor_review: 'you rated them poorly on PeerLens',
+  low_peerlens_trust: 'low PeerLens trust',
 };
 
 /** Core's refusal keys, in words a buyer acts on. */
@@ -115,11 +167,21 @@ export default function TenderScreen(): React.ReactElement {
   const staffRef = useRef<StaffCoreClient | null>(null);
 
   const [view, setView] = useState<TenderRankingView | null>(null);
+  const [story, setStory] = useState<ReadonlyMap<string, TenderStorySupplierView>>(new Map());
+  // Per supplier, read once: its catalogue item for what it offered, and its
+  // PeerLens trust. Both are detail; the ranking never waits for them.
+  const [catalog, setCatalog] = useState<ReadonlyMap<string, CatalogItem | null>>(new Map());
+  const [trust, setTrust] = useState<ReadonlyMap<string, SupplierTrust | null>>(new Map());
+  const detailAsked = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** The held order to send: from this visit's award, or the tender's own record. */
   const [heldApproval, setHeldApproval] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The order this tender sent, as My Orders sees it: followed live until it
+  // is on its way, so the screen does not stop at "sent".
+  const [myOrder, setMyOrder] = useState<PlacedOrderDto | null>(null);
+  const router = useRouter();
 
   const backend = useCallback(async (): Promise<TenderBackend | null> => {
     if (backendOverride !== null) return backendOverride;
@@ -129,6 +191,10 @@ export default function TenderScreen(): React.ReactElement {
       return {
         presence: 'passphrase',
         tenderRanking: (id) => owner.tenderRanking(id),
+        tenderStory: (id) => owner.tenderStory(id),
+        offeredItem: (did, product) => publishedItemFor(did, product),
+        supplierTrust: (did) => supplierTrustFor(did),
+        placedOrders: () => owner.placedOrders(),
         awardTender: (args) => owner.awardTender(args),
         sendHeldOrder: (id) => owner.sendHeldOrder(id),
         provePresence: (passphrase) => owner.provePresence(passphrase),
@@ -169,16 +235,72 @@ export default function TenderScreen(): React.ReactElement {
       if (answer.held_order === 'sent' || answer.held_order === 'lapsed') setHeldApproval(null);
       else if (answer.approval_id !== undefined) setHeldApproval(answer.approval_id);
       setError(null);
+      if (answer.held_order === 'sent' && client.placedOrders !== undefined) {
+        try {
+          const placed = await client.placedOrders();
+          const mine = placed.orders.find(
+            (o) =>
+              o.tenderId === tenderId &&
+              (answer.awarded_supplier_did === undefined ||
+                o.supplierDid === answer.awarded_supplier_did),
+          );
+          if (mine !== undefined) {
+            setMyOrder(mine);
+            // The send's one-line answer is history once the order is followed live.
+            setNotice(null);
+          }
+        } catch {
+          // The tender stands on its own; the order is still in My Orders.
+        }
+      }
+      if (client.tenderStory !== undefined) {
+        try {
+          const told = await client.tenderStory(tenderId);
+          setStory(new Map(told.suppliers.map((s) => [s.supplier_did, s])));
+        } catch {
+          // The ranking still stands on its own; the story is detail.
+        }
+      }
     } catch (err) {
       setError(refusalText(errorKeyOf(err)));
     }
   }, [backend, tenderId]);
 
+  useEffect(() => {
+    const wanted = [...story.values()].flatMap((s) => {
+      const product = s.lines[0]?.product;
+      return product === undefined || detailAsked.current.has(s.supplier_did)
+        ? []
+        : [{ did: s.supplier_did, product }];
+    });
+    if (wanted.length === 0) return;
+    for (const w of wanted) detailAsked.current.add(w.did);
+    void (async () => {
+      const client = await backend();
+      if (client === null) return;
+      await Promise.all(
+        wanted.map(async ({ did, product }) => {
+          const [item, rated] = await Promise.all([
+            client.offeredItem?.(did, product).catch(() => null) ?? null,
+            client.supplierTrust?.(did).catch(() => null) ?? null,
+          ]);
+          setCatalog((prev) => new Map(prev).set(did, item));
+          setTrust((prev) => new Map(prev).set(did, rated));
+        }),
+      );
+    })();
+  }, [story, backend]);
+
   // Quotes and counters land while the owner watches (Ask for quotes opens
   // this screen right after sending), so refresh while the tender can still
-  // change; an awarded or closed tender is final.
+  // change; an awarded or closed tender is final — except that its SENT order
+  // is followed until it is on its way (or has no track: refused, countered).
+  const orderSettled = myOrder !== null && (orderStepsReached(myOrder) ?? 5) >= 5;
   const liveRef = useRef(true);
-  liveRef.current = view === null || (view.state !== 'awarded' && view.state !== 'closed');
+  liveRef.current =
+    view === null ||
+    (view.state !== 'awarded' && view.state !== 'closed') ||
+    (view.state === 'awarded' && view.held_order === 'sent' && !orderSettled);
   useFocusEffect(
     useCallback(() => {
       void reload();
@@ -264,7 +386,8 @@ export default function TenderScreen(): React.ReactElement {
       ? ''
       : [
           ...view.ranked.map((o) => `${o.supplier_did}|${o.service_rkey}`),
-          ...view.excluded.map((r) => `${r.supplier_did}|self`),
+          ...view.excluded.map((r) => `${r.supplier_did}|${r.service_rkey ?? 'self'}`),
+          ...(view.not_asked ?? []).map((n) => `${n.supplier_did}|${n.service_rkey}`),
         ].join(',');
   useEffect(() => {
     if (refsKey === '') return;
@@ -283,10 +406,12 @@ export default function TenderScreen(): React.ReactElement {
   const labels = useMemo(
     () =>
       supplierLabels(
-        [...(view?.ranked ?? []), ...(view?.excluded ?? [])].map((row) => ({
-          supplierDid: row.supplier_did,
-          name: names.get(row.supplier_did) ?? null,
-        })),
+        [...(view?.ranked ?? []), ...(view?.excluded ?? []), ...(view?.not_asked ?? [])].map(
+          (row) => ({
+            supplierDid: row.supplier_did,
+            name: names.get(row.supplier_did) ?? null,
+          }),
+        ),
       ),
     [names, view],
   );
@@ -349,9 +474,27 @@ export default function TenderScreen(): React.ReactElement {
                     {index === 0 ? 'Best offer · ' : ''}
                     {labelOf(offer.supplier_did)}
                   </Text>
+                  {(() => {
+                    const item = offeredItem(
+                      story.get(offer.supplier_did),
+                      catalog.get(offer.supplier_did),
+                    );
+                    return item === null ? null : (
+                      <OfferedItemCard
+                        item={item}
+                        trust={trust.get(offer.supplier_did) ?? null}
+                        testID={`tender-offered-${offer.supplier_did}`}
+                      />
+                    );
+                  })()}
                   <Text style={styles.offerTotal} testID={`tender-total-${offer.supplier_did}`}>
                     {money(offer.total_minor, offer.currency)}
                   </Text>
+                  <BargainingTimeline
+                    story={story.get(offer.supplier_did)}
+                    supplierLabel={labelOf(offer.supplier_did)}
+                    testID={`tender-bargaining-${offer.supplier_did}`}
+                  />
                   <Text style={styles.meta}>
                     {offer.credit_days > 0 ? `${String(offer.credit_days)} days' credit · ` : ''}
                     valid until {offer.valid_until.slice(0, 10)}
@@ -386,22 +529,84 @@ export default function TenderScreen(): React.ReactElement {
             {view.excluded.length > 0 && (
               <>
                 <Text style={styles.sectionTitle}>Not in the running</Text>
-                {view.excluded.map((row) => (
-                  <Text
-                    key={row.supplier_did}
-                    style={styles.meta}
-                    testID={`tender-excluded-${row.supplier_did}`}
-                  >
-                    {labelOf(row.supplier_did)} — {EXCLUDED_LABEL[row.reason]}
-                  </Text>
+                {view.excluded.map((row) => {
+                  // The offer's own price beside why it is out: an exclusion
+                  // with the number hidden reads as arbitrary.
+                  const told = story.get(row.supplier_did);
+                  const head = told?.revisions.at(-1);
+                  return (
+                    <View key={row.supplier_did}>
+                      <Text style={styles.meta} testID={`tender-excluded-${row.supplier_did}`}>
+                        {labelOf(row.supplier_did)} —{' '}
+                        {head !== undefined
+                          ? `${money(head.total.minor_units, head.total.currency)} · `
+                          : ''}
+                        {EXCLUDED_LABEL[row.reason]}
+                      </Text>
+                      {(() => {
+                        const item = offeredItem(told, catalog.get(row.supplier_did));
+                        return item === null ? null : (
+                          <OfferedItemCard
+                            item={item}
+                            trust={trust.get(row.supplier_did) ?? null}
+                            testID={`tender-offered-${row.supplier_did}`}
+                          />
+                        );
+                      })()}
+                      <BargainingTimeline
+                        story={told}
+                        supplierLabel={labelOf(row.supplier_did)}
+                        testID={`tender-bargaining-${row.supplier_did}`}
+                      />
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            {(view.not_asked ?? []).length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Not asked</Text>
+                {(view.not_asked ?? []).map((row) => (
+                  <View key={row.supplier_did} testID={`tender-not-asked-${row.supplier_did}`}>
+                    <Text style={styles.meta}>
+                      {labelOf(row.supplier_did)} —{' '}
+                      {row.listed_from !== undefined
+                        ? `listed from ${money(row.listed_from.minor_units, row.listed_from.currency)} · `
+                        : ''}
+                      {NOT_ASKED_LABEL[row.reason]}
+                    </Text>
+                    {row.note !== '' && (
+                      <Text style={styles.meta} numberOfLines={2}>
+                        {`“${row.note}”`}
+                      </Text>
+                    )}
+                  </View>
                 ))}
               </>
             )}
 
             {heldApproval === null && view.held_order === 'sent' && (
-              <Text style={styles.notice} testID="tender-sent">
-                Order sent to the supplier.
-              </Text>
+              <View style={styles.heldCard} testID="tender-sent">
+                <Text style={styles.offerTitle}>Your order</Text>
+                <Text style={styles.meta} testID="tender-order-headline">
+                  {myOrder?.headline ?? 'Order sent to the supplier.'}
+                </Text>
+                {myOrder !== null && (
+                  <OrderProgress
+                    order={myOrder}
+                    supplier={labelOf(myOrder.supplierDid)}
+                    testID="tender-order-progress"
+                  />
+                )}
+                <Pressable
+                  onPress={() => router.push('/orders')}
+                  testID="tender-open-orders"
+                  accessibilityRole="link"
+                >
+                  <Text style={styles.link}>Open in My Orders</Text>
+                </Pressable>
+              </View>
             )}
             {heldApproval === null && view.held_order === 'lapsed' && (
               <Text style={styles.meta} testID="tender-lapsed">
@@ -476,6 +681,7 @@ const styles = StyleSheet.create({
   awardLabel: { ...textStyles.button, color: colors.bgPrimary },
   awardedTag: { ...textStyles.caption, color: colors.textSecondary, fontWeight: '600' },
   disabled: { opacity: 0.5 },
+  link: { ...textStyles.caption, color: colors.accent, marginTop: spacing.sm },
   heldCard: {
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.lg,

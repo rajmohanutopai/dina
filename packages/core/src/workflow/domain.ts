@@ -182,6 +182,14 @@ export interface WorkflowTask {
    * by the sweeper on transient failure).
    */
   internal_stash?: string;
+  /**
+   * Wire-only, on a `cancelled` task read through the workflow routes: the
+   * reason `cancel(id, reason)` recorded (from the task's `cancelled` event).
+   * An owner's deny (`approval_denied`, `denied_by_operator`, …) or a card
+   * Dina retired itself (`tender_awarded`, `tender_expired`,
+   * `negotiation_closed`, …). Never stored on the row.
+   */
+  cancel_reason?: string;
   created_at: number;
   updated_at: number;
 }

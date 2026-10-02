@@ -22,8 +22,17 @@
  *   socket the suspended period left behind and reconnects from
  *   attempt 0 (no backoff penalty — the user is back).
  *
- * `background` / `inactive` are ignored — sealing/teardown is
- * `useAutoLock`'s job; this hook only needs the resume edge.
+ * On `background` (native only) it calls `suspendRelay()`: MsgBox counts a
+ * frame as delivered once written to the socket it holds for this DID, and a
+ * suspended app leaves that socket open but unread — so anything a peer sent
+ * while the app was in the background (a checkout link, payment evidence)
+ * was written, counted as delivered, and lost. Closing the socket first makes
+ * MsgBox see the DID offline and buffer; the `active` edge's `wakeRelay()`
+ * reconnects and MsgBox drains the buffer. The web build keeps its socket: a
+ * hidden browser tab still runs and reads it.
+ *
+ * `inactive` is ignored (a transient overlay, not a suspension); sealing
+ * the vault stays `useAutoLock`'s job.
  *
  * Two-phase (pure function + React mount), matching `useAutoLock`:
  *   - `installRelayWake({ wakeFn })` — pure, Node-testable, no RN/AppState.
@@ -31,9 +40,9 @@
  */
 
 import { useEffect } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 
-import { wakeRelay } from '@dina/core';
+import { suspendRelay, wakeRelay } from '@dina/core';
 
 export interface RelayWakeSubscription {
   /** Drive a state transition from a test or a real listener. */
@@ -49,6 +58,12 @@ export interface InstallRelayWakeOptions {
    * already healthy, so calling it eagerly is safe).
    */
   wakeFn?: () => void;
+  /**
+   * Suspend function — called on each durable `background` transition so
+   * MsgBox buffers instead of writing into a socket nobody reads. Absent,
+   * nothing is suspended (the hook passes `suspendRelay` on native only).
+   */
+  suspendFn?: () => void;
 }
 
 /**
@@ -57,6 +72,7 @@ export interface InstallRelayWakeOptions {
  */
 export function installRelayWake(opts: InstallRelayWakeOptions = {}): RelayWakeSubscription {
   const wakeFn = opts.wakeFn ?? wakeRelay;
+  const suspendFn = opts.suspendFn;
   // Track the last DURABLE state so we only wake on a real
   // background→active (or inactive→active) edge, not on the redundant
   // active→active duplicates RN emits on iOS Sequoia + RN 0.74+.
@@ -78,6 +94,9 @@ export function installRelayWake(opts: InstallRelayWakeOptions = {}): RelayWakeS
     if (next === 'active' && prev !== 'active') {
       wakeFn();
     }
+    if (next === 'background' && prev !== 'background') {
+      suspendFn?.();
+    }
   };
 
   return {
@@ -97,7 +116,7 @@ export function installRelayWake(opts: InstallRelayWakeOptions = {}): RelayWakeS
 export function useRelayWake(unlocked: boolean): void {
   useEffect(() => {
     if (!unlocked) return;
-    const sub = installRelayWake();
+    const sub = installRelayWake({ suspendFn: Platform.OS === 'web' ? undefined : suspendRelay });
     const listener = AppState.addEventListener('change', (next) => {
       sub.notify(next);
     });

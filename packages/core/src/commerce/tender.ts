@@ -32,6 +32,7 @@ import {
   productRefsEqual,
   roundRationalHalfEven,
   type DeliveryProjection,
+  type Money,
   type ProductRef,
   type PurchaseOrderProposal,
   type SignedQuote,
@@ -39,6 +40,7 @@ import {
 
 import { requestQuote, type QuoteRequestLineInput } from './buyer_quote_request';
 import { rehydrateDeclineDocument } from './decline_documents';
+import { rehydrateListedPrice } from './rehydrate';
 import { getCommerceRuntime } from './runtime';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
@@ -71,6 +73,29 @@ export interface TenderMember {
   serviceRkey: string;
 }
 
+/**
+ * Why the owner's surface left a supplier out of a tender. A PeerLens reason
+ * the surface read (Core does not reach the AppView): the owner's own poor
+ * review of the supplier, or a low score over enough reviews.
+ */
+export type NotAskedReason = 'own_poor_review' | 'low_peerlens_trust';
+export const NOT_ASKED_REASONS: readonly NotAskedReason[] = ['own_poor_review', 'low_peerlens_trust'];
+/** At most this many set-aside suppliers ride along with one tender. */
+export const MAX_NOT_ASKED = 20;
+/** A note (the owner's review, or the score in words) is cut to this length. */
+export const MAX_NOT_ASKED_NOTE = 280;
+
+/** A supplier the tender deliberately did not ask, and why. */
+export interface TenderNotAsked {
+  tenderId: string;
+  supplierDid: string;
+  serviceRkey: string;
+  reason: NotAskedReason;
+  note: string;
+  /** The lowest price the supplier listed for what was asked, when the surface saw one. */
+  listedFrom?: Money;
+}
+
 export interface TenderRepository {
   putTender(tender: TenderRecord): void;
   getTender(tenderId: string): TenderRecord | null;
@@ -80,6 +105,9 @@ export interface TenderRepository {
   listMembers(tenderId: string): TenderMember[];
   memberByRequestId(requestId: string): TenderMember | null;
   setMemberQuote(requestId: string, quoteId: string): void;
+  putNotAsked(entry: TenderNotAsked): void;
+  /** Who the tender left out, by supplier DID. */
+  listNotAsked(tenderId: string): TenderNotAsked[];
 }
 
 function tenderFromRow(row: Record<string, unknown>): TenderRecord {
@@ -162,6 +190,44 @@ export class SQLiteTenderRepository implements TenderRepository {
       requestId,
     ]);
   }
+
+  putNotAsked(entry: TenderNotAsked): void {
+    this.db.run(
+      `INSERT OR REPLACE INTO commerce_tender_not_asked
+         (tender_id, supplier_did, service_rkey, reason, note, listed_from_json)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        entry.tenderId,
+        entry.supplierDid,
+        entry.serviceRkey,
+        entry.reason,
+        entry.note,
+        entry.listedFrom === undefined ? '' : JSON.stringify(entry.listedFrom),
+      ],
+    );
+  }
+
+  listNotAsked(tenderId: string): TenderNotAsked[] {
+    return this.db
+      .query(
+        `SELECT * FROM commerce_tender_not_asked WHERE tender_id = ? ORDER BY supplier_did`,
+        [tenderId],
+      )
+      .map((row) => ({
+        tenderId: String(row.tender_id),
+        supplierDid: String(row.supplier_did),
+        serviceRkey: String(row.service_rkey),
+        reason: String(row.reason) as NotAskedReason,
+        note: String(row.note ?? ''),
+        ...listedFrom(row.listed_from_json),
+      }));
+  }
+}
+
+/** The not-asked row's listed price, when it reads back as Money. */
+function listedFrom(raw: unknown): { listedFrom?: Money } {
+  const money = typeof raw === 'string' ? rehydrateListedPrice(raw) : null;
+  return money === null ? {} : { listedFrom: money };
 }
 
 function memberFromRow(row: DBRow): TenderMember {
@@ -179,6 +245,7 @@ function memberFromRow(row: DBRow): TenderMember {
 export class InMemoryTenderRepository implements TenderRepository {
   private readonly tenders = new Map<string, TenderRecord>();
   private readonly members = new Map<string, TenderMember>();
+  private readonly notAsked = new Map<string, TenderNotAsked>();
 
   putTender(tender: TenderRecord): void {
     this.tenders.set(tender.tenderId, { ...tender });
@@ -215,6 +282,17 @@ export class InMemoryTenderRepository implements TenderRepository {
     const member = this.members.get(requestId);
     if (member !== undefined) this.members.set(requestId, { ...member, quoteId });
   }
+
+  putNotAsked(entry: TenderNotAsked): void {
+    this.notAsked.set(`${entry.tenderId}\n${entry.supplierDid}`, { ...entry });
+  }
+
+  listNotAsked(tenderId: string): TenderNotAsked[] {
+    return [...this.notAsked.values()]
+      .filter((n) => n.tenderId === tenderId)
+      .sort((a, b) => a.supplierDid.localeCompare(b.supplierDid))
+      .map((n) => ({ ...n }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +317,14 @@ export function noteTenderQuoteSettled(requestId: string, quoteId: string): void
 
 export interface CreateTenderInput {
   suppliers: { supplierDid: string; serviceRkey: string }[];
+  /** Suppliers the owner's surface set aside (never asked), and why. */
+  notAsked?: {
+    supplierDid: string;
+    serviceRkey: string;
+    reason: NotAskedReason;
+    note?: string;
+    listedFrom?: Money;
+  }[];
   lines: QuoteRequestLineInput[];
   projection: DeliveryProjection;
   currency?: string;
@@ -270,6 +356,15 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
   }
   const seen = new Set(input.suppliers.map((s) => s.supplierDid));
   if (seen.size !== input.suppliers.length) return { ok: false, refusal: 'duplicate_supplier' };
+  const notAsked = input.notAsked ?? [];
+  if (notAsked.length > MAX_NOT_ASKED) return { ok: false, refusal: 'not_asked_too_many' };
+  const setAside = new Set(notAsked.map((n) => n.supplierDid));
+  if (setAside.size !== notAsked.length) return { ok: false, refusal: 'duplicate_not_asked' };
+  // Asked and set aside at once is a surface bug: the owner chose one or the other.
+  if ([...setAside].some((did) => seen.has(did))) return { ok: false, refusal: 'asked_and_not_asked' };
+  if (notAsked.some((n) => !NOT_ASKED_REASONS.includes(n.reason))) {
+    return { ok: false, refusal: 'not_asked_reason_unknown' };
+  }
 
   const tenderId = `tnd_${bytesToHex(randomBytes(12))}`;
   const members: { supplierDid: string; requestId: string; sent: boolean; reason?: string }[] = [];
@@ -324,6 +419,16 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
     expiresAt,
     createdAt: input.nowMs,
   });
+  for (const n of notAsked) {
+    runtime.tenders.putNotAsked({
+      tenderId,
+      supplierDid: n.supplierDid,
+      serviceRkey: n.serviceRkey,
+      reason: n.reason,
+      note: (n.note ?? '').slice(0, MAX_NOT_ASKED_NOTE),
+      ...(n.listedFrom !== undefined ? { listedFrom: n.listedFrom } : {}),
+    });
+  }
   return { ok: true, tenderId, members };
 }
 

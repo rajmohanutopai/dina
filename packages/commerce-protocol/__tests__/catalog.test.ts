@@ -1,5 +1,6 @@
 import {
   MAX_CATALOG_ATTRIBUTES,
+  MAX_CATALOG_IMAGES,
   validateCatalogItem,
   validateCatalogItemForIngest,
   validateProductRelationshipClaim,
@@ -54,6 +55,33 @@ describe('validateCatalogItem (§9.5)', () => {
     const additive = { ...validItem(), rrp_minor_units: '1500' };
     expect(validateCatalogItem(additive)).toMatch(/unknown field "rrp_minor_units"/);
     expect(validateCatalogItemForIngest(additive)).toBeNull();
+  });
+
+  describe("images: the supplier's own opt-in product photos", () => {
+    const cover = 'https://images.example.test/cake-1.jpg?w=800';
+    it('accepts https photos on both paths', () => {
+      const item = { ...validItem(), images: [cover, 'https://cdn.example.test:8443/p/2.png'] };
+      expect(validateCatalogItem(item)).toBeNull();
+      expect(validateCatalogItemForIngest(item)).toBeNull();
+    });
+    it.each([
+      ['not an array', cover, /must be an array/],
+      ['empty (omit it instead)', [], /omit the field/],
+      ['too many', Array.from({ length: MAX_CATALOG_IMAGES + 1 }, () => cover), /exceeds 4 images/],
+      ['http', ['http://images.example.test/a.jpg'], /absolute https URL/],
+      ['data URI', ['data:image/png;base64,AAAA'], /absolute https URL/],
+      ['relative', ['/a.jpg'], /absolute https URL/],
+      ['credentials', ['https://user:pw@images.example.test/a.jpg'], /absolute https URL/],
+      ['whitespace', ['https://images.example.test/a b.jpg'], /absolute https URL/],
+      ['too long', [`https://images.example.test/${'a'.repeat(1000)}`], /exceeds 1000 characters/],
+      ['a non-string', [42], /non-empty string/],
+    ])('refuses %s', (_label, images, message) => {
+      expect(validateCatalogItem({ ...validItem(), images })).toMatch(message);
+    });
+    it('leaves the forbidden image_url forbidden', () => {
+      const both = { ...validItem(), images: [cover], image_url: cover };
+      expect(validateCatalogItemForIngest(both)).toMatch(/forbidden field "image_url"/);
+    });
   });
 
   it('refuses a FORBIDDEN field on the read path, unknown though it is', () => {

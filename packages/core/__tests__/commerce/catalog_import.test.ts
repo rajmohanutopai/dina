@@ -21,6 +21,43 @@ function csv(...rows: string[]): string {
 }
 
 describe('importing a supplier spreadsheet', () => {
+  describe("image_url: the supplier's own product photos", () => {
+    const header = 'sku,name,unit_code,image_url';
+    it('reads one or more space-separated https URLs into images', () => {
+      const result = importCatalogCsv({
+        csv: [
+          header,
+          'CAKE-1,Floral cake,each,https://img.example.test/a.jpg https://img.example.test/b.jpg',
+          'CAKE-2,Plain cake,each,',
+        ].join('\n'),
+        defaultScheme: 'sku',
+        supplierDid: SUPPLIER,
+      });
+      if (!result.ok) throw new Error(JSON.stringify(result.findings));
+      expect(result.items[0]?.images).toEqual([
+        'https://img.example.test/a.jpg',
+        'https://img.example.test/b.jpg',
+      ]);
+      expect(result.items[1]?.images).toBeUndefined();
+    });
+
+    it('refuses the whole import on a URL that is not https, naming the row', () => {
+      const result = importCatalogCsv({
+        csv: [header, 'CAKE-1,Floral cake,each,http://img.example.test/a.jpg'].join('\n'),
+        defaultScheme: 'sku',
+        supplierDid: SUPPLIER,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.findings[0]).toMatchObject({
+        refusal: 'bad_image_url',
+        row: 2,
+        column: 'image_url',
+      });
+      expect(result.findings[0]?.detail).toMatch(/^image_url\[0\]: must be an absolute https URL/);
+    });
+  });
+
   it('turns an ordinary export into catalog items', () => {
     const result = importCatalogCsv({
       csv: csv('CHAIR-1,Oak dining chair,each,1,14', 'CHAIR-2,Ash dining chair,each,1,21'),

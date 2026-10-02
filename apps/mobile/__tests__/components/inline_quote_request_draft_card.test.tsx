@@ -53,6 +53,37 @@ it('shows the draft and opens the screen with it', () => {
   });
 });
 
+it('says what Dina used from your notes, and the currency you named', () => {
+  const screen = render(
+    <InlineQuoteRequestDraftCard
+      message={message({
+        kind: 'quote_request_draft',
+        status: 'ready',
+        draftId: 'qd_3',
+        draft: { ...DRAFT, currency: 'USD', from_memory: 'You love floral celebration cakes' },
+      })}
+    />,
+  );
+  expect(screen.getByText('target USD 2500, up to USD 3000')).toBeTruthy();
+  expect(screen.getByTestId('quote-draft-memory-qd_3').props.children).toBe(
+    'From what you told me: You love floral celebration cakes',
+  );
+});
+
+it('says nothing about memory when nothing remembered was used', () => {
+  const screen = render(
+    <InlineQuoteRequestDraftCard
+      message={message({
+        kind: 'quote_request_draft',
+        status: 'ready',
+        draftId: 'qd_4',
+        draft: DRAFT,
+      })}
+    />,
+  );
+  expect(screen.queryByTestId('quote-draft-memory-qd_4')).toBeNull();
+});
+
 it('a malformed draft is no card', () => {
   const screen = render(
     <InlineQuoteRequestDraftCard

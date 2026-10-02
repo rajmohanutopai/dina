@@ -2914,6 +2914,34 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         ON commerce_tender_notices(state, updated_at);
     `,
   },
+  {
+    version: 51,
+    name: 'commerce_tender_not_asked',
+    // The suppliers the owner's surface set aside when it sent a tender, and
+    // why: the owner's own poor PeerLens review of them, or a low PeerLens
+    // score over enough reviews. They were never asked (no request, no member
+    // row); the row only lets the tender say who was left out and why.
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_tender_not_asked (
+        tender_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        service_rkey TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('own_poor_review', 'low_peerlens_trust')),
+        note TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (tender_id, supplier_did)
+      );
+    `,
+  },
+  {
+    version: 52,
+    name: 'commerce_tender_not_asked_listed_price',
+    // What a set-aside supplier listed its matching items from, as the
+    // owner's surface saw it when it left the supplier out ('' when it saw
+    // no price), so the tender can say "listed from …" beside the reason.
+    sql: `
+      ALTER TABLE commerce_tender_not_asked ADD COLUMN listed_from_json TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

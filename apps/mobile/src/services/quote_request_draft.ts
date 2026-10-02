@@ -22,6 +22,10 @@ export interface QuoteRequestPrefill {
   /** What to search suppliers for, e.g. "cakes". */
   supplierQuery?: string;
   limits: LimitsDraft;
+  /** The currency the owner named ("USD"), when they named one. */
+  currency?: string;
+  /** What Dina drew from the owner's own notes, in one line, when anything. */
+  fromMemory?: string;
 }
 
 const UNIT_CODES = new Set(LINE_UNITS.map((u) => u.code));
@@ -70,9 +74,13 @@ export function parseQuoteRequestDraftParam(raw: unknown): QuoteRequestPrefill |
   const rounds = limits?.max_rounds;
   const deadline = limits?.deadline_seconds;
   const query = str(draft.supplier_query)?.trim();
+  const currency = str(draft.currency)?.trim().toUpperCase();
+  const fromMemory = str(draft.from_memory)?.replace(/\s+/g, ' ').trim().slice(0, 140);
   return {
     lines,
     ...(query !== undefined && query !== '' ? { supplierQuery: query.slice(0, 100) } : {}),
+    ...(currency !== undefined && /^[A-Z]{3}$/.test(currency) ? { currency } : {}),
+    ...(fromMemory !== undefined && fromMemory !== '' ? { fromMemory } : {}),
     limits:
       limits === undefined || limits === null
         ? EMPTY_LIMITS

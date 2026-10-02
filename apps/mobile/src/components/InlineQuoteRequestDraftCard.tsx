@@ -30,8 +30,10 @@ export function InlineQuoteRequestDraftCard({
   if (draft === null || draft.lines.length === 0) return null;
 
   const limits: string[] = [];
-  if (draft.limits.target !== '') limits.push(`target ${draft.limits.target}`);
-  if (draft.limits.ceiling !== '') limits.push(`up to ${draft.limits.ceiling}`);
+  const money = (amount: string): string =>
+    draft.currency !== undefined ? `${draft.currency} ${amount}` : amount;
+  if (draft.limits.target !== '') limits.push(`target ${money(draft.limits.target)}`);
+  if (draft.limits.ceiling !== '') limits.push(`up to ${money(draft.limits.ceiling)}`);
 
   return (
     <View style={styles.card} testID={`quote-draft-${lc.draftId}`}>
@@ -45,6 +47,11 @@ export function InlineQuoteRequestDraftCard({
         <Text style={styles.meta}>Suppliers who sell: {draft.supplierQuery}</Text>
       )}
       {limits.length > 0 && <Text style={styles.meta}>{limits.join(', ')}</Text>}
+      {draft.fromMemory !== undefined && (
+        <Text style={styles.memory} testID={`quote-draft-memory-${lc.draftId}`}>
+          {`From what you told me: ${draft.fromMemory}`}
+        </Text>
+      )}
       <Pressable
         testID={`quote-draft-open-${lc.draftId}`}
         style={styles.button}
@@ -74,6 +81,7 @@ const styles = StyleSheet.create({
   },
   line: { ...textStyles.body, color: colors.textPrimary },
   meta: { ...textStyles.caption, color: colors.textSecondary },
+  memory: { ...textStyles.caption, color: colors.textPrimary, fontStyle: 'italic' },
   button: {
     backgroundColor: colors.accent,
     borderRadius: radius.md,

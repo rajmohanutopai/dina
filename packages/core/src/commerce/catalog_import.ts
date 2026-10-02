@@ -25,7 +25,12 @@
  * catalog".
  */
 
-import { unitDef, validateProductRef, type ProductRef } from '@dina/commerce-protocol';
+import {
+  unitDef,
+  validateCatalogImages,
+  validateProductRef,
+  type ProductRef,
+} from '@dina/commerce-protocol';
 
 /** Columns the importer understands. Everything else is a finding. */
 const KNOWN_COLUMNS: ReadonlySet<string> = new Set([
@@ -44,6 +49,7 @@ const KNOWN_COLUMNS: ReadonlySet<string> = new Set([
   'variant_of',
   'list_price_minor_units',
   'currency',
+  'image_url',
 ]);
 
 /**
@@ -76,6 +82,8 @@ export type ImportRefusal =
   | 'duplicate_identifier'
   | 'unknown_variant_parent'
   | 'malformed_csv'
+  /** `image_url`: not https, too many, or too long (the §9.5 `images` rule). */
+  | 'bad_image_url'
   /**
    * §4.2 (photo lanes): the identifier is reserved to ANOTHER product in
    * the issuer's ledger — an edit collision, or the same printed SKU in a
@@ -106,6 +114,11 @@ export interface CatalogImportItem {
   lead_time_days?: number;
   variant_of?: ProductRef;
   list_price?: { currency: string; minor_units: string };
+  /**
+   * From `image_url`: one or more https photo URLs, space-separated, that the
+   * supplier chose to publish. Becomes `CatalogItem.images`.
+   */
+  images?: string[];
 }
 
 export type CatalogImport =
@@ -513,6 +526,22 @@ export function importCatalogRows(args: {
         continue;
       }
       item.list_price = { currency, minor_units: priceMinor };
+    }
+
+    const imageCell = get('image_url');
+    if (imageCell !== '') {
+      const images = imageCell.split(/\s+/).filter((url) => url !== '');
+      const imageError = validateCatalogImages(images);
+      if (imageError !== null) {
+        findings.push({
+          refusal: 'bad_image_url',
+          row: rowNumber,
+          column: 'image_url',
+          detail: imageError.replace(/^catalogItem\.images/, 'image_url'),
+        });
+        continue;
+      }
+      item.images = images;
     }
 
     for (const column of ['sku', 'mpn', 'name', 'description', 'category', 'brand'] as const) {

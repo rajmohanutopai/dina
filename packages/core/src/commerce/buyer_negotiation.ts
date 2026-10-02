@@ -390,9 +390,16 @@ export type ExclusionReason =
   | 'currency_mismatch'
   | 'over_budget';
 
+export interface TenderExcludedOffer {
+  supplier_did: string;
+  /** The listing the request went to, so a surface can name the supplier. */
+  service_rkey: string;
+  reason: ExclusionReason;
+}
+
 export interface TenderRanking {
   ranked: RankedTenderOffer[];
-  excluded: { supplier_did: string; reason: ExclusionReason }[];
+  excluded: TenderExcludedOffer[];
 }
 
 /**
@@ -437,26 +444,31 @@ export function rankTender(args: {
   const ranked: RankedTenderOffer[] = [];
   const excluded: TenderRanking['excluded'] = [];
   for (const member of runtime.tenders.listMembers(args.tenderId)) {
+    const out = (reason: ExclusionReason): TenderExcludedOffer => ({
+      supplier_did: member.supplierDid,
+      service_rkey: member.serviceRkey,
+      reason,
+    });
     if (runtime.declineDocuments.answersTo(member.requestDigest).length > 0) {
-      excluded.push({ supplier_did: member.supplierDid, reason: 'declined' });
+      excluded.push(out('declined'));
       continue;
     }
     const head = member.quoteId === '' ? null : headOf(runtime, member.supplierDid, member.quoteId);
     if (head === null) {
-      excluded.push({ supplier_did: member.supplierDid, reason: 'no_quote' });
+      excluded.push(out('no_quote'));
       continue;
     }
     if (Date.parse(head.valid_until) <= args.nowMs) {
-      excluded.push({ supplier_did: member.supplierDid, reason: 'expired' });
+      excluded.push(out('expired'));
       continue;
     }
     if (currency !== undefined && head.total.currency !== currency) {
-      excluded.push({ supplier_did: member.supplierDid, reason: 'currency_mismatch' });
+      excluded.push(out('currency_mismatch'));
       continue;
     }
     const total = moneyMinorUnits(head.total);
     if (ceiling !== null && total > ceiling) {
-      excluded.push({ supplier_did: member.supplierDid, reason: 'over_budget' });
+      excluded.push(out('over_budget'));
       continue;
     }
     const creditDays = head.payment_terms?.credit_days ?? 0;

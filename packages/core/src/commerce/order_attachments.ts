@@ -499,6 +499,148 @@ export function verifyInboundOrderAttachment(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Buyer: what a placed order has got to (the "Placed orders" list)
+// ---------------------------------------------------------------------------
+
+/**
+ * A placed order's progress, read from the evidence the supplier's
+ * integration attached and from the buyer's own khata. A READ: it raises no
+ * card and authors nothing — the cards are the questions, this is the
+ * summary an owner scrolls past.
+ *
+ * Each field is the NEWEST word on its subject and claims no more than the
+ * evidence does: `payment` is what the processor reported, `paymentRecorded`
+ * is whether THIS buyer authored a PaymentNote for the order, and the two are
+ * reported separately because "the processor says captured" is not "you
+ * recorded it as paid".
+ */
+export interface PlacedOrderProgress {
+  /** The latest checkout link; https only (the wire already refuses anything else). */
+  checkoutLink: {
+    url: string;
+    amount: Money;
+    provider: string;
+    expiresAt: string | null;
+    /** True when `expiresAt` has passed — shown as history, never offered. */
+    expired: boolean;
+  } | null;
+  /** The newest revision of the most recently reported processor payment. */
+  payment: {
+    state: 'authorized' | 'captured' | 'refunded' | 'failed';
+    amount: Money;
+    provider: string;
+  } | null;
+  /** Whether this buyer authored a PaymentNote naming the order (or its processor payment). */
+  paymentRecorded: boolean;
+  /** The newest fulfilment step the supplier's integration reported. */
+  fulfilment: {
+    state: 'production_started' | 'ready' | 'handed_to_carrier';
+    provider: string;
+    reportedAt: string;
+  } | null;
+}
+
+/** Newest per `provider_ref` by `version`, then the one whose newest row arrived last. */
+function newestByRef<T extends { payload: { provider_ref: string; version: string } }>(
+  entries: { createdAt: number; attachment: T }[],
+): T | null {
+  const byRef = new Map<string, { createdAt: number; attachment: T }>();
+  for (const entry of entries) {
+    const held = byRef.get(entry.attachment.payload.provider_ref);
+    if (
+      held === undefined ||
+      BigInt(entry.attachment.payload.version) > BigInt(held.attachment.payload.version)
+    ) {
+      byRef.set(entry.attachment.payload.provider_ref, entry);
+    }
+  }
+  let latest: { createdAt: number; attachment: T } | null = null;
+  for (const entry of byRef.values()) {
+    if (latest === null || entry.createdAt >= latest.createdAt) latest = entry;
+  }
+  return latest?.attachment ?? null;
+}
+
+export function summarizePlacedOrderProgress(
+  stores: Pick<CommerceMoneyStores, 'orderAttachments' | 'tradeDocuments'>,
+  order: { orderDigest: string; supplierDid: string; purchaseOrderId: string },
+  nowMs: number,
+): PlacedOrderProgress {
+  const checkouts: (OrderAttachment & { kind: 'checkout_handoff' })[] = [];
+  const payments: {
+    createdAt: number;
+    attachment: OrderAttachment & { kind: 'payment_evidence' };
+  }[] = [];
+  const steps: {
+    createdAt: number;
+    attachment: OrderAttachment & { kind: 'fulfilment_evidence' };
+  }[] = [];
+  // An order this node cannot restate (a pre-digest record) has no evidence
+  // it can bind, so it reads as "nothing attached" rather than as a lookup on ''.
+  if (order.orderDigest !== '') {
+    for (const { row, attachment } of listOrderAttachments(stores, order.orderDigest)) {
+      // INBOUND, from this order's supplier, about this order. On a node that
+      // also supplies, the same store holds what its own connector authored.
+      if (row.direction !== 'inbound') continue;
+      if (attachment.supplier_did !== order.supplierDid) continue;
+      if (attachment.purchase_order_id !== order.purchaseOrderId) continue;
+      if (attachment.kind === 'checkout_handoff') checkouts.push(attachment);
+      else if (attachment.kind === 'payment_evidence')
+        payments.push({ createdAt: row.createdAt, attachment });
+      else steps.push({ createdAt: row.createdAt, attachment });
+    }
+  }
+
+  // The newest link wins (rows are oldest first); a later one supersedes it,
+  // as it supersedes the pending card. Belt and braces on https: the validator
+  // already refuses anything else, and the phone opens what this returns.
+  const link = checkouts[checkouts.length - 1] ?? null;
+  const checkoutLink =
+    link === null || !link.payload.url.startsWith('https://')
+      ? null
+      : {
+          url: link.payload.url,
+          amount: link.payload.amount,
+          provider: link.source.provider,
+          expiresAt: link.expires_at ?? null,
+          expired: link.expires_at !== undefined && Date.parse(link.expires_at) <= nowMs,
+        };
+
+  const payment = newestByRef(payments);
+  const step = newestByRef(steps);
+
+  const refs = new Set(payments.map((p) => p.attachment.payload.provider_ref));
+  const paymentRecorded = stores.tradeDocuments
+    .listByCounterparty(order.supplierDid, 'payment_note')
+    .some((row) => {
+      if (row.direction !== 'outbound') return false;
+      const note = rehydratePaymentNote(row.recordJson, hash);
+      if (!note.ok) return false;
+      return (
+        (note.value.order_refs ?? []).includes(order.purchaseOrderId) ||
+        (note.value.external_ref !== undefined && refs.has(note.value.external_ref))
+      );
+    });
+
+  return {
+    checkoutLink,
+    payment:
+      payment === null
+        ? null
+        : {
+            state: payment.payload.state,
+            amount: payment.payload.amount,
+            provider: payment.source.provider,
+          },
+    paymentRecorded,
+    fulfilment:
+      step === null
+        ? null
+        : { state: step.payload.state, provider: step.source.provider, reportedAt: step.issued_at },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The owner's two questions
 // ---------------------------------------------------------------------------
 

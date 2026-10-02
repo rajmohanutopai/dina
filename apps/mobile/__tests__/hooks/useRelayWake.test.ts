@@ -118,4 +118,34 @@ describe('installRelayWake', () => {
     sub.notify('active'); // fresh cold-start edge after re-mount
     expect(wakeFn).toHaveBeenCalledTimes(2);
   });
+
+  it('suspends on the way to the background, and wakes on the way back', () => {
+    const wakeFn = jest.fn();
+    const suspendFn = jest.fn();
+    const sub = installRelayWake({ wakeFn, suspendFn });
+
+    sub.notify('active'); // cold start
+    sub.notify('background'); // app suspended -> relay closed so MsgBox buffers
+    expect(suspendFn).toHaveBeenCalledTimes(1);
+    sub.notify('inactive'); // transient on the way back up
+    sub.notify('active'); // resume -> reconnect drains the buffer
+    expect(wakeFn).toHaveBeenCalledTimes(2);
+    expect(suspendFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not suspend on inactive or on a repeated background', () => {
+    const suspendFn = jest.fn();
+    const sub = installRelayWake({ wakeFn: jest.fn(), suspendFn });
+    sub.notify('inactive');
+    expect(suspendFn).not.toHaveBeenCalled();
+    sub.notify('background');
+    sub.notify('background');
+    expect(suspendFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to no suspend when none is given (the web build)', () => {
+    const wakeFn = jest.fn();
+    const sub = installRelayWake({ wakeFn });
+    expect(() => sub.notify('background')).not.toThrow();
+  });
 });

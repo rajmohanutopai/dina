@@ -55,7 +55,7 @@ import {
   type InstalledBuyerPack,
 } from '../../commerce/helpers';
 
-import type { QuoteRequest } from '@dina/commerce-protocol';
+import type { QuoteRequest, SignedQuote } from '@dina/commerce-protocol';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 const SUPPLIER_A = 'did:plc:supplieraaaa';
@@ -197,6 +197,28 @@ describe('the owner client starts a tender (ASK_FOR_QUOTES_PLAN §2)', () => {
   const client = (): OwnerCommerceClient =>
     new OwnerCommerceClient(inProcessOwnerDispatcher(router, OWNER_CAP));
 
+  it('a supplier set aside for PeerLens rides along as not asked, and reads back on the ranking', async () => {
+    const answer = await client().createTender({
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'self' }],
+      notAsked: [
+        {
+          supplierDid: SUPPLIER_B,
+          serviceRkey: 'shop',
+          reason: 'low_peerlens_trust',
+        },
+      ],
+      lines: [{ lineId: 'l1', text: 'Sourdough loaves', quantity: '10', unitCode: 'each' }],
+      region: { scheme: 'postal_area', value: '560001' },
+      currency: 'INR',
+    });
+    expect(answer.members.map((m) => m.supplierDid)).toEqual([SUPPLIER_A]);
+    expect(sent.map((w) => w.toDid)).not.toContain(SUPPLIER_B);
+    const ranking = await client().tenderRanking(answer.tenderId);
+    expect(ranking.not_asked).toEqual([
+      { supplier_did: SUPPLIER_B, service_rkey: 'shop', reason: 'low_peerlens_trust', note: '' },
+    ]);
+  });
+
   it('described lines, a region and limits reach every supplier as Core’s requests', async () => {
     const answer = await client().createTender({
       suppliers: [
@@ -301,7 +323,7 @@ describe('ranking and award', () => {
     expect(ranking.body).toMatchObject({
       state: 'negotiating',
       ranked: [{ supplier_did: SUPPLIER_B, total_minor: '48000', service_rkey: 'shop' }],
-      excluded: [{ supplier_did: SUPPLIER_A, reason: 'over_budget' }],
+      excluded: [{ supplier_did: SUPPLIER_A, reason: 'over_budget', service_rkey: 'self' }],
     });
     const wider = await router.handle(
       call(
@@ -453,6 +475,240 @@ describe('ranking and award', () => {
   });
 });
 
+describe('a supplier set aside for poor PeerLens reviews is shown, never asked', () => {
+  const SET_ASIDE = 'did:plc:supplierpoor';
+  const tenderBody = (extra: Record<string, unknown>): Record<string, unknown> => ({
+    suppliers: [
+      { supplier_did: SUPPLIER_A, service_rkey: 'self' },
+      { supplier_did: SUPPLIER_B, service_rkey: 'shop' },
+    ],
+    lines: LINES,
+    projection: makeProjection(),
+    currency: 'INR',
+    ...extra,
+  });
+
+  it('the tender keeps who was left out and why, and its ranking says so', async () => {
+    const opened = await router.handle(
+      call(
+        'POST',
+        '/v1/commerce/trade/tender',
+        tenderBody({
+          not_asked: [
+            {
+              supplier_did: SET_ASIDE,
+              service_rkey: 'bakery',
+              reason: 'own_poor_review',
+              note: 'Stale bread, delivered late.',
+            },
+          ],
+        }),
+      ),
+    );
+    expect(opened.status).toBe(200);
+    const tenderId = String((opened.body as { tender_id: string }).tender_id);
+    expect(sent.some((w) => w.toDid === SET_ASIDE)).toBe(false);
+    quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
+    const ranking = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(ranking.status).toBe(200);
+    const body = ranking.body as {
+      ranked: { supplier_did: string }[];
+      excluded: { supplier_did: string }[];
+      not_asked: Record<string, unknown>[];
+    };
+    expect(body.not_asked).toEqual([
+      {
+        supplier_did: SET_ASIDE,
+        service_rkey: 'bakery',
+        reason: 'own_poor_review',
+        note: 'Stale bread, delivered late.',
+      },
+    ]);
+    // Never ranked, never excluded: it was never in the tender to begin with.
+    expect([...body.ranked, ...body.excluded].map((r) => r.supplier_did)).not.toContain(SET_ASIDE);
+  });
+
+  it('a tender with nobody set aside answers an empty list', async () => {
+    const opened = await openTender();
+    const ranking = await router.handle(
+      call(
+        'GET',
+        '/v1/commerce/trade/tender/ranking',
+        {},
+        { tender_id: String(opened.body.tender_id) },
+      ),
+    );
+    expect((ranking.body as { not_asked: unknown[] }).not_asked).toEqual([]);
+  });
+
+  it('refuses a malformed entry (400) and a supplier both asked and set aside (409), sending nothing', async () => {
+    const before = sent.length;
+    const badReason = await router.handle(
+      call(
+        'POST',
+        '/v1/commerce/trade/tender',
+        tenderBody({ not_asked: [{ supplier_did: SET_ASIDE, service_rkey: 'b', reason: 'rude' }] }),
+      ),
+    );
+    expect(badReason.status).toBe(400);
+    const notArray = await router.handle(
+      call('POST', '/v1/commerce/trade/tender', tenderBody({ not_asked: 'everyone' })),
+    );
+    expect(notArray.status).toBe(400);
+    const both = await router.handle(
+      call(
+        'POST',
+        '/v1/commerce/trade/tender',
+        tenderBody({
+          not_asked: [
+            { supplier_did: SUPPLIER_A, service_rkey: 'self', reason: 'low_peerlens_trust' },
+          ],
+        }),
+      ),
+    );
+    expect(both.status).toBe(409);
+    expect((both.body as { error: string }).error).toBe('asked_and_not_asked');
+    expect(sent.length).toBe(before);
+  });
+});
+
+describe('the tender story: what each supplier offered and how it moved', () => {
+  const client = (): OwnerCommerceClient =>
+    new OwnerCommerceClient(inProcessOwnerDispatcher(router, OWNER_CAP));
+
+  /** One supplier's opening quote, with the runner's signed evidence naming its item. */
+  function quoteArrivesNamed(supplierDid: string, unit: string, name: string): SignedQuote {
+    const wire = sent.find(
+      (w) =>
+        w.toDid === supplierDid && w.body.capability === 'com.dinakernel.commerce.request_quote',
+    );
+    const request = wire?.body.params as QuoteRequest;
+    const product = request.lines[0]?.product;
+    if (product === undefined) throw new Error('request has no line');
+    const quote = makeSignedQuote(request, {
+      quote_id: `q-${supplierDid.slice(-4)}`,
+      valid_until: '2036-01-01T00:00:00.000Z',
+      lines: [
+        {
+          line_id: 'l1',
+          requested_product: product,
+          offered_product: product,
+          quantity: { value: '100', unit_code: 'each' },
+          price_basis: { value: '1', unit_code: 'each' },
+          unit_price: { currency: 'INR', minor_units: unit },
+          line_subtotal: { currency: 'INR', minor_units: String(Number(unit) * 100) },
+          stock_status: 'available',
+          substitution_evidence: [`matched "cake for 20" to "${name}" (3 of 4 words)`],
+        },
+      ],
+      total: { currency: 'INR', minor_units: String(Number(unit) * 100) },
+    });
+    runtime.buyerQuotes.append({
+      supplierDid,
+      quoteId: quote.quote_id,
+      quote,
+      acceptedAt: Date.now(),
+    });
+    runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
+    return quote;
+  }
+
+  it('names the offered item, where each supplier opened, and the counter Dina sent', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quoteArrivesNamed(SUPPLIER_A, '500', 'Floral Celebration Cake, 10-inch');
+    // Evidence that names nothing gives no name, never an empty one.
+    quoteArrivesNamed(SUPPLIER_B, '480', '');
+    const counter = await router.handle(
+      call('POST', '/v1/commerce/trade/counter', {
+        supplier_did: SUPPLIER_A,
+        quote_id: 'q-aaaa',
+        target_total: { currency: 'INR', minor_units: '45000' },
+        tender_id: tenderId,
+      }),
+    );
+    expect(counter.status).toBe(202);
+
+    const res = await client().tenderStory(tenderId);
+    const byDid = new Map(res.suppliers.map((s) => [s.supplier_did, s]));
+    const a = byDid.get(SUPPLIER_A);
+    expect(a?.lines).toEqual([
+      expect.objectContaining({
+        line_id: 'l1',
+        name: 'Floral Celebration Cake, 10-inch',
+        unit_price: { currency: 'INR', minor_units: '500' },
+      }),
+    ]);
+    expect(a?.revisions).toEqual([
+      expect.objectContaining({ total: { currency: 'INR', minor_units: '50000' } }),
+    ]);
+    const b = byDid.get(SUPPLIER_B);
+    expect(b?.lines[0]?.name).toBeNull();
+    expect(b?.counters).toEqual([]);
+    // A counter the owner sent by hand on this tender's quote is part of its story.
+    expect(a?.counters.map((c) => [c.round, c.target_total, c.state])).toEqual([
+      [1, { currency: 'INR', minor_units: '45000' }, 'sent'],
+    ]);
+  });
+
+  it('a supplier that has not answered has no revisions and no lines yet', async () => {
+    const opened = await openTender();
+    const res = await client().tenderStory(String(opened.body.tender_id));
+    expect(res.suppliers.map((s) => [s.quote_id, s.revisions.length, s.lines.length])).toEqual([
+      ['', 0, 0],
+      ['', 0, 0],
+    ]);
+  });
+
+  it('refuses a missing tender id (400) and an unknown tender (404)', async () => {
+    const missing = await router.handle(call('GET', '/v1/commerce/trade/tender/story', {}, {}));
+    expect(missing.status).toBe(400);
+    const unknown = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/story', {}, { tender_id: 'tnd_nope' }),
+    );
+    expect(unknown.status).toBe(404);
+  });
+
+  it("a set-aside supplier's listed price rides along and reads back on the ranking", async () => {
+    const answer = await client().createTender({
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'self' }],
+      notAsked: [
+        {
+          supplierDid: SUPPLIER_B,
+          serviceRkey: 'shop',
+          reason: 'own_poor_review',
+          note: 'Late',
+          listedFrom: { currency: 'INR', minorUnits: '12900' },
+        },
+      ],
+      lines: [{ lineId: 'l1', text: 'Cake', quantity: '1', unitCode: 'each' }],
+      region: { scheme: 'postal_area', value: '560001' },
+      currency: 'INR',
+    });
+    const ranking = await client().tenderRanking(answer.tenderId);
+    expect(ranking.not_asked?.[0]?.listed_from).toEqual({ currency: 'INR', minor_units: '12900' });
+    const bad = await router.handle(
+      call('POST', '/v1/commerce/trade/tender', {
+        suppliers: [{ supplier_did: SUPPLIER_A, service_rkey: 'self' }],
+        not_asked: [
+          {
+            supplier_did: SUPPLIER_B,
+            service_rkey: 'shop',
+            reason: 'own_poor_review',
+            listed_from: { currency: 'inr', minor_units: '-5' },
+          },
+        ],
+        lines: LINES,
+        projection: makeProjection(),
+        currency: 'INR',
+      }),
+    );
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe('owner cards that outlive their question (integration report 2026-09-27)', () => {
   let workflow: WorkflowService;
   const DAY = 24 * 60 * 60 * 1000;
@@ -466,8 +722,23 @@ describe('owner cards that outlive their question (integration report 2026-09-27
   beforeEach(() => {
     workflow = new WorkflowService({ repository: new InMemoryWorkflowRepository() });
     setWorkflowService(workflow);
+    registerWorkflowRoutes(router, OWNER_CAP);
   });
   afterEach(() => setWorkflowService(null));
+
+  /**
+   * The retired card as the Activity list reads it: cancelled, with WHY, so it
+   * never reads as the owner's "Denied" (iPhone buyer run 2026-09-29).
+   */
+  async function cardAsListed(tenderId: string): Promise<Record<string, unknown> | undefined> {
+    const res = await router.handle(
+      call('GET', '/v1/workflow/tasks', {}, { kind: 'approval', state: 'cancelled' }),
+    );
+    expect(res.status).toBe(200);
+    return (res.body as { tasks: Record<string, unknown>[] }).tasks.find(
+      (t) => t.id === `tender-ready-${tenderId}`,
+    );
+  }
 
   /** Counters out to both, the deadline passes: the tender is ready, with its card. */
   async function readyTender(): Promise<{ tenderId: string; start: number }> {
@@ -507,6 +778,10 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     );
     expect(award.status).toBe(200);
     expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+    expect(await cardAsListed(tenderId)).toMatchObject({
+      status: 'cancelled',
+      cancel_reason: 'tender_awarded',
+    });
     // The replay lists only the loser's not-awarded notice.
     const replay = await router.handle(
       call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
@@ -518,6 +793,17 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     ).toEqual([SUPPLIER_A]);
   });
 
+  it("the owner's own deny of the card reads back with the owner's reason", async () => {
+    const { tenderId } = await readyTender();
+    const denied = await router.handle(
+      call('POST', `/v1/workflow/tasks/tender-ready-${tenderId}/cancel`, {
+        reason: 'denied_by_operator',
+      }),
+    );
+    expect(denied.status).toBe(200);
+    expect(await cardAsListed(tenderId)).toMatchObject({ cancel_reason: 'denied_by_operator' });
+  });
+
   it('a window that runs out unawarded closes the tender, takes the card down and tells every supplier', async () => {
     const { tenderId, start } = await readyTender();
     const mark = sent.length;
@@ -525,6 +811,13 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     await runNegotiationTick(start + DAY + 60_000);
     expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('closed');
     expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+    expect(await cardAsListed(tenderId)).toMatchObject({ cancel_reason: 'tender_expired' });
+    const single = await router.handle(
+      call('GET', `/v1/workflow/tasks/tender-ready-${tenderId}`, {}, {}),
+    );
+    expect((single.body as { task: Record<string, unknown> }).task.cancel_reason).toBe(
+      'tender_expired',
+    );
     // No counter goes on a closing tender; only the notices.
     expect(
       sent.slice(mark).filter((w) => w.body.capability === 'com.dinakernel.commerce.counter_offer'),

@@ -7,6 +7,9 @@
  */
 
 import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
   tradeRecordDigest,
@@ -14,6 +17,7 @@ import {
   type Sha256Fn,
   type SignedQuote,
 } from '@dina/commerce-protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { InMemoryBuyerQuoteRepository } from '../../src/commerce/buyer_quotes';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
@@ -26,10 +30,13 @@ import {
   createTender,
   financingBenefitMinor,
   InMemoryTenderRepository,
+  MAX_NOT_ASKED,
   SQLiteTenderRepository,
   type TenderComparisonDeps,
 } from '../../src/commerce/tender';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 import { makeProjection, makeSignedQuote, makeQuoteRequest, moneyClosed } from './helpers';
 
@@ -289,5 +296,137 @@ describe('SQLite tender repository parity', () => {
     expect(memory.memberByRequestId('r1')?.quoteId).toBe('q1');
     expect(memory.listMembers('t1')).toHaveLength(1);
     expect(SQLiteTenderRepository).toBeDefined();
+  });
+});
+
+describe('suppliers set aside and not asked (demo: a vendor with poor PeerLens reviews)', () => {
+  const SET_ASIDE = 'did:plc:tendersetaside000000000000';
+  const lines = [
+    {
+      lineId: 'l1',
+      product: { scheme: 'gtin' as const, value: '09506000134352' },
+      quantity: { value: '100', unit_code: 'each' },
+    },
+  ];
+
+  it('is kept on the tender with why, and is never sent a request', async () => {
+    const created = await createTender({
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'wholesale' }],
+      notAsked: [
+        {
+          supplierDid: SET_ASIDE,
+          serviceRkey: 'shop',
+          reason: 'own_poor_review',
+          note: 'Stale bread, delivered late. '.repeat(20),
+        },
+      ],
+      lines,
+      projection: makeProjection(),
+      currency: 'INR',
+      nowMs: T0,
+    });
+    if (!created.ok) throw new Error(created.refusal);
+    expect(dispatched.map((d) => d.toDid)).toEqual([SUPPLIER_A]);
+    expect(created.members.map((m) => m.supplierDid)).toEqual([SUPPLIER_A]);
+    const kept = tenders.listNotAsked(created.tenderId);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({
+      supplierDid: SET_ASIDE,
+      serviceRkey: 'shop',
+      reason: 'own_poor_review',
+    });
+    // The note is the owner's review in their words, cut to a card's length.
+    expect(kept[0]?.note.length).toBe(280);
+  });
+
+  it('refuses a supplier both asked and set aside, duplicates, unknown reasons and too many', async () => {
+    const base = { lines, projection: makeProjection(), nowMs: T0 };
+    const both = await createTender({
+      ...base,
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'w' }],
+      notAsked: [{ supplierDid: SUPPLIER_A, serviceRkey: 'w', reason: 'low_peerlens_trust' }],
+    });
+    expect(!both.ok && both.refusal).toBe('asked_and_not_asked');
+    const dup = await createTender({
+      ...base,
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'w' }],
+      notAsked: [
+        { supplierDid: SET_ASIDE, serviceRkey: 'w', reason: 'own_poor_review' },
+        { supplierDid: SET_ASIDE, serviceRkey: 'w', reason: 'low_peerlens_trust' },
+      ],
+    });
+    expect(!dup.ok && dup.refusal).toBe('duplicate_not_asked');
+    const unknown = await createTender({
+      ...base,
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'w' }],
+      notAsked: [{ supplierDid: SET_ASIDE, serviceRkey: 'w', reason: 'rude' as never }],
+    });
+    expect(!unknown.ok && unknown.refusal).toBe('not_asked_reason_unknown');
+    const many = await createTender({
+      ...base,
+      suppliers: [{ supplierDid: SUPPLIER_A, serviceRkey: 'w' }],
+      notAsked: Array.from({ length: MAX_NOT_ASKED + 1 }, (_, i) => ({
+        supplierDid: `did:plc:aside${String(i)}`,
+        serviceRkey: 'w',
+        reason: 'low_peerlens_trust' as const,
+      })),
+    });
+    expect(!many.ok && many.refusal).toBe('not_asked_too_many');
+    // Nothing left before a refusal: no request went anywhere.
+    expect(dispatched).toHaveLength(0);
+  });
+
+  it('SQLite keeps them per tender, and the table refuses a reason it does not know', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-tender-not-asked-'));
+    const adapter = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: 'ab'.repeat(32),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    try {
+      applyMigrations(adapter, IDENTITY_MIGRATIONS);
+      const repo = new SQLiteTenderRepository(adapter);
+      repo.putNotAsked({
+        tenderId: 't1',
+        supplierDid: SET_ASIDE,
+        serviceRkey: 'shop',
+        reason: 'own_poor_review',
+        note: 'Stale bread',
+        listedFrom: { currency: 'USD', minor_units: '12900' },
+      });
+      repo.putNotAsked({
+        tenderId: 't2',
+        supplierDid: SUPPLIER_B,
+        serviceRkey: 'self',
+        reason: 'low_peerlens_trust',
+        note: '',
+      });
+      expect(repo.listNotAsked('t1')).toEqual([
+        {
+          tenderId: 't1',
+          supplierDid: SET_ASIDE,
+          serviceRkey: 'shop',
+          reason: 'own_poor_review',
+          note: 'Stale bread',
+          listedFrom: { currency: 'USD', minor_units: '12900' },
+        },
+      ]);
+      // No listed price stored reads back with none.
+      expect(repo.listNotAsked('t2')[0]).not.toHaveProperty('listedFrom');
+      expect(repo.listNotAsked('t3')).toEqual([]);
+      expect(() =>
+        repo.putNotAsked({
+          tenderId: 't1',
+          supplierDid: SUPPLIER_A,
+          serviceRkey: 'self',
+          reason: 'rude' as never,
+          note: '',
+        }),
+      ).toThrow();
+    } finally {
+      adapter.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

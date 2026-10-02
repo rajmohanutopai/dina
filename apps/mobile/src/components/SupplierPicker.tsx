@@ -6,6 +6,7 @@
  * search adds to them rather than replacing them.
  */
 
+import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -16,12 +17,24 @@ import { findSuppliersHere, type SupplierMatch } from '../services/supplier_find
 import { shortDid, supplierLabels } from '../services/supplier_names';
 import { colors, radius, spacing, textStyles } from '../theme';
 
+import type { SetAside } from '../services/supplier_trust';
+
 export interface PickedSupplier {
   supplierDid: string;
   serviceRkey: string;
   name: string | null;
   /** The currency the supplier's catalog prices are in, when it lists any. */
   currency?: string;
+}
+
+/** A supplier PeerLens set aside in a search, and why (not asked unless picked). */
+export interface SetAsideSupplier {
+  supplierDid: string;
+  serviceRkey: string;
+  name: string | null;
+  setAside: SetAside;
+  /** The lowest price it listed for what was searched, when it listed one. */
+  indicativeFrom?: { currency: string; minorUnits: string };
 }
 
 export interface SupplierPickerProps {
@@ -35,6 +48,8 @@ export interface SupplierPickerProps {
   onChange: (picked: PickedSupplier[]) => void;
   /** At most this many may be picked (a tender's fan-out). */
   max: number;
+  /** After each search: the suppliers PeerLens set aside in it. */
+  onSetAside?: (suppliers: SetAsideSupplier[]) => void;
 }
 
 /** PeerLens trust in words; "no reviews yet" is not the same as low trust. */
@@ -58,6 +73,7 @@ const keyOf = (s: { supplierDid: string; serviceRkey: string }): string =>
   `${s.supplierDid}\n${s.serviceRkey}`;
 
 export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
+  const router = useRouter();
   const [query, setQuery] = useState(props.initialQuery);
   const [results, setResults] = useState<SupplierMatch[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -78,6 +94,21 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
           : {}),
       });
       setResults(found.suppliers);
+      props.onSetAside?.(
+        found.suppliers.flatMap((f) =>
+          f.setAside === null
+            ? []
+            : [
+                {
+                  supplierDid: f.supplierDid,
+                  serviceRkey: f.serviceRkey,
+                  name: f.name,
+                  setAside: f.setAside,
+                  ...(f.indicativeFrom !== undefined ? { indicativeFrom: f.indicativeFrom } : {}),
+                },
+              ],
+        ),
+      );
       if (found.words.length === 0) setError('Type what you want, like “cakes”.');
     } catch (err) {
       setResults(null);
@@ -85,12 +116,31 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
     } finally {
       setSearching(false);
     }
-  }, [props.blockedSuppliers, props.preferredSuppliers, props.region, query]);
+  }, [props.blockedSuppliers, props.onSetAside, props.preferredSuppliers, props.region, query]);
 
   const pickedKeys = new Set(props.picked.map(keyOf));
   const labels = supplierLabels([...props.picked, ...(results ?? [])]);
   const labelOf = (s: { supplierDid: string }): string =>
     labels.get(s.supplierDid) ?? shortDid(s.supplierDid);
+  // Review the supplier on PeerLens as an organisation with its DID, so the
+  // review is about this supplier and the next search reads it.
+  const review = (s: SupplierMatch): void => {
+    router.push({
+      pathname: '/peerlens/write',
+      params: { createKind: 'organization', initialName: s.name ?? '', initialDid: s.supplierDid },
+    });
+  };
+  const reviewLink = (s: SupplierMatch): React.ReactElement => (
+    <Pressable
+      testID={`supplier-review-${s.supplierDid}`}
+      style={styles.reviewLink}
+      onPress={() => review(s)}
+      accessibilityRole="link"
+      accessibilityLabel={`Review ${labelOf(s)} on PeerLens`}
+    >
+      <Text style={styles.reviewLinkText}>Review</Text>
+    </Pressable>
+  );
   const toggle = (s: SupplierMatch): void => {
     const key = keyOf(s);
     if (pickedKeys.has(key)) {
@@ -167,31 +217,70 @@ export function SupplierPicker(props: SupplierPickerProps): React.ReactElement {
         const picked = pickedKeys.has(keyOf(s));
         const full = !picked && props.picked.length >= props.max;
         const price = priceFrom(s.indicativeFrom);
-        return (
-          <Pressable
-            key={keyOf(s)}
-            testID={`supplier-result-${s.supplierDid}`}
-            style={[styles.row, picked && styles.rowPicked, full && styles.disabled]}
-            disabled={full}
-            onPress={() => toggle(s)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: picked, disabled: full }}
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.name}>
-                {labelOf(s)}
-                {s.preferred ? ' · preferred' : ''}
-              </Text>
-              <Text style={styles.meta}>
-                {trustWords(s.trustScore)}
-                {s.itemsMatched > 0
-                  ? ` · ${String(s.itemsMatched)} matching item${s.itemsMatched === 1 ? '' : 's'}`
-                  : ''}
-                {price !== null ? ` · ${price}` : ''}
-              </Text>
+        if (s.setAside !== null && !picked) {
+          // Shown so the owner sees PeerLens at work, never picked by a stray
+          // tap: asking this supplier takes the explicit "Ask anyway".
+          return (
+            <View
+              key={keyOf(s)}
+              testID={`supplier-set-aside-${s.supplierDid}`}
+              style={[styles.row, styles.rowSetAside]}
+            >
+              <View style={styles.rowText}>
+                <Text style={styles.name}>{labelOf(s)}</Text>
+                <Text style={styles.warning} testID={`supplier-set-aside-why-${s.supplierDid}`}>
+                  {`⚠ ${s.setAside.words} · not asked`}
+                </Text>
+                {s.setAside.note !== '' && (
+                  <Text style={styles.meta} numberOfLines={2}>
+                    {`“${s.setAside.note}”`}
+                  </Text>
+                )}
+              </View>
+              {reviewLink(s)}
+              <Pressable
+                testID={`supplier-ask-anyway-${s.supplierDid}`}
+                style={[styles.askAnyway, full && styles.disabled]}
+                disabled={full}
+                onPress={() => toggle(s)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ask ${labelOf(s)} anyway`}
+                accessibilityState={{ disabled: full }}
+              >
+                <Text style={styles.askAnywayLabel}>Ask anyway</Text>
+              </Pressable>
             </View>
-            <Text style={styles.tick}>{picked ? '✓' : ''}</Text>
-          </Pressable>
+          );
+        }
+        return (
+          <View key={keyOf(s)} style={[styles.row, picked && styles.rowPicked]}>
+            <Pressable
+              testID={`supplier-result-${s.supplierDid}`}
+              style={[styles.rowPick, full && styles.disabled]}
+              disabled={full}
+              onPress={() => toggle(s)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: picked, disabled: full }}
+            >
+              <View style={styles.rowText}>
+                <Text style={styles.name}>
+                  {labelOf(s)}
+                  {s.preferred ? ' · preferred' : ''}
+                </Text>
+                <Text style={styles.meta}>
+                  {s.setAside !== null
+                    ? `⚠ ${s.setAside.words} · asked anyway`
+                    : trustWords(s.trustScore)}
+                  {s.itemsMatched > 0
+                    ? ` · ${String(s.itemsMatched)} matching item${s.itemsMatched === 1 ? '' : 's'}`
+                    : ''}
+                  {price !== null ? ` · ${price}` : ''}
+                </Text>
+              </View>
+              <Text style={styles.tick}>{picked ? '✓' : ''}</Text>
+            </Pressable>
+            {reviewLink(s)}
+          </View>
         );
       })}
     </View>
@@ -238,6 +327,24 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   rowPicked: { borderColor: colors.accent },
+  rowPick: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  reviewLink: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.xs,
+  },
+  reviewLinkText: { ...textStyles.caption, color: colors.accent },
+  rowSetAside: { opacity: 0.75, borderColor: colors.warning },
+  warning: { ...textStyles.caption, color: colors.warning, marginTop: spacing.xs },
+  askAnyway: {
+    borderWidth: 1,
+    borderColor: colors.textSecondary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginLeft: spacing.sm,
+  },
+  askAnywayLabel: { ...textStyles.caption, color: colors.textPrimary },
   rowText: { flex: 1 },
   name: { ...textStyles.body, color: colors.textPrimary },
   tick: { ...textStyles.body, color: colors.accent, width: 20, textAlign: 'right' },

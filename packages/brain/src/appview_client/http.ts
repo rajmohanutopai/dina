@@ -549,7 +549,9 @@ export class AppViewClient {
    * the ranker, which must not be scored as zero (§13.4). Throws `AppViewError`
    * on HTTP failure.
    */
-  async getProfile(did: string): Promise<{ overallTrustScore: number | null } | null> {
+  async getProfile(
+    did: string,
+  ): Promise<{ overallTrustScore: number | null; reviewCount?: number } | null> {
     if (!did) {
       throw new AppViewError(
         'getProfile: did is required',
@@ -560,7 +562,19 @@ export class AppViewClient {
     const body = await this.get('/xrpc/com.dinakernel.peerlens.getProfile', { did });
     if (body === null || typeof body !== 'object') return null;
     const score = (body as Record<string, unknown>).overallTrustScore;
-    return { overallTrustScore: typeof score === 'number' ? score : null };
+    // How many reviews are ABOUT this DID: a score over one or two reviews
+    // is not yet a verdict (the app ranks PeerLens at three or more).
+    const summary = (body as Record<string, unknown>).attestationSummary;
+    const total =
+      summary !== null && typeof summary === 'object'
+        ? (summary as Record<string, unknown>).total
+        : undefined;
+    return {
+      overallTrustScore: typeof score === 'number' ? score : null,
+      ...(typeof total === 'number' && Number.isInteger(total) && total >= 0
+        ? { reviewCount: total }
+        : {}),
+    };
   }
 
   // -------------------------------------------------------------------------

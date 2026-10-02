@@ -224,6 +224,8 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     subjectDid?: string | string[];
     createKind?: string | string[];
     initialName?: string | string[];
+    /** With `createKind=did|organization`: the subject's DID (a supplier row's "Review"). */
+    initialDid?: string | string[];
     /**
      * Edit-mode params (TN-MOB-013 follow-up). When `editingUri` is
      * present the screen flips into edit mode: header copy switches
@@ -264,6 +266,7 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
       ? (paramSubjectKindRaw as SubjectKind)
       : null;
   const paramInitialName = readParam(params.initialName);
+  const paramInitialDid = readParam(params.initialDid);
   // Edit-mode params. `editingUri` is the gate — without it none of
   // the other edit fields apply.
   const paramEditingUri = readParam(params.editingUri);
@@ -374,16 +377,24 @@ export default function WriteScreen(props: WriteScreenProps = {}): React.ReactEl
     }
     if (createKind !== null) {
       const base = emptyWriteFormStateWithSubject(createKind);
-      if (paramInitialName !== undefined && paramInitialName.length > 0 && base.subject) {
-        return { ...base, subject: { ...base.subject, name: paramInitialName } };
-      }
-      return base;
+      if (base.subject === null) return base;
+      // A DID only for the kinds that carry one, and only a DID-shaped one.
+      const did =
+        (createKind === 'did' || createKind === 'organization') &&
+        paramInitialDid !== undefined &&
+        paramInitialDid.startsWith('did:')
+          ? paramInitialDid
+          : '';
+      const name = paramInitialName ?? '';
+      if (name === '' && did === '') return base;
+      return { ...base, subject: { ...base.subject, name, did } };
     }
     return emptyWriteFormState();
   }, [
     paramSubjectId,
     createKind,
     paramInitialName,
+    paramInitialDid,
     paramEditingUri,
     paramEditingSentiment,
     paramEditingConfidence,

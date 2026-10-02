@@ -45,6 +45,17 @@ export interface BuyerOrderRepository {
   put(supplierDid: string, record: BuyerOrderRecord): boolean;
   /** Orders still waiting on an answer, oldest poll first. */
   listUnsettled(): { supplierDid: string; record: BuyerOrderRecord }[];
+  /**
+   * Every tracked order, settled or not, most recently PLACED first, at most
+   * `limit` of them — the owner's "placed orders" list.
+   *
+   * Placement order is insertion order: a row is created once, when the order
+   * is first recorded, and every later write (a settle, a re-poll, a resend)
+   * is an UPDATE that leaves its position alone. The table has no creation
+   * clock of its own, and adding one for a display list would be a migration
+   * bought with nothing the insertion order does not already say.
+   */
+  listRecent(limit: number): { supplierDid: string; record: BuyerOrderRecord }[];
 }
 
 const COLUMNS =
@@ -227,6 +238,16 @@ export class SQLiteBuyerOrderRepository implements BuyerOrderRepository {
     ) as unknown as Row[];
     return rows.map((row) => ({ supplierDid: row.supplier_did, record: toRecord(row) }));
   }
+
+  listRecent(limit: number): { supplierDid: string; record: BuyerOrderRecord }[] {
+    // `rowid` is the insertion sequence (the table is not WITHOUT ROWID), so
+    // DESC is newest-placed first; see the interface for why not a clock.
+    const rows = this.db.query(
+      `SELECT ${COLUMNS} FROM commerce_buyer_orders ORDER BY rowid DESC LIMIT ?`,
+      [Math.max(0, Math.floor(limit))],
+    ) as unknown as Row[];
+    return rows.map((row) => ({ supplierDid: row.supplier_did, record: toRecord(row) }));
+  }
 }
 
 /** Test double. A production caller would be the bug. */
@@ -272,5 +293,11 @@ export class InMemoryBuyerOrderRepository implements BuyerOrderRepository {
           (a.record.nextPollAtMs ?? 0) - (b.record.nextPollAtMs ?? 0) ||
           (a.record.purchaseOrderId < b.record.purchaseOrderId ? -1 : 1),
       );
+  }
+
+  listRecent(limit: number): { supplierDid: string; record: BuyerOrderRecord }[] {
+    // A Map iterates in insertion order and `put` replaces in place, which is
+    // exactly the SQLite store's rowid order.
+    return [...this.rows.values()].reverse().slice(0, Math.max(0, Math.floor(limit)));
   }
 }

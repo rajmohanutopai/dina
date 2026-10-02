@@ -34,6 +34,7 @@ import {
   validatePurchaseOrderProposal,
   validateOrderAcknowledgement,
   validateQuoteRequest,
+  validateMoney,
   type CatalogPointer,
   type CommerceOrderStatus,
   type OrderAcknowledgement,
@@ -51,7 +52,8 @@ import {
   type InviteActivationAck,
   type InviteConfirmation,
   type InviteOffer,
-  type InviteRedemption} from '@dina/commerce-protocol';
+  type InviteRedemption,
+  type Money} from '@dina/commerce-protocol';
 
 
 import type { BuyerApprovalContext } from './approval_payload';
@@ -422,4 +424,40 @@ export function rehydrateStoredInviteActivationAck(json: string): InviteActivati
     validateInviteActivationAck,
     'invite activation ack',
   );
+}
+
+/** A value that passes the Money validator, copied to its two fields; null otherwise. */
+function moneyOrNull(value: unknown): Money | null {
+  if (validateMoney(value) !== null) return null;
+  const money = value as Money;
+  return { currency: money.currency, minor_units: money.minor_units };
+}
+
+/**
+ * A price the owner's surface saw and a tender kept beside a supplier it left
+ * out (the "listed from" of a not-asked row). '' — no price was seen — and a
+ * stored value that no longer reads as Money are both null: the row still
+ * says why the supplier was not asked, just without a price.
+ */
+export function rehydrateListedPrice(json: string): Money | null {
+  if (json === '') return null;
+  try {
+    return moneyOrNull(JSON.parse(json));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The target a retained counter asked for (NEGOTIATION_PLAN §4.3), read back
+ * from the counter this node signed and kept. Null when the record no longer
+ * reads: the story then says "asked for less" rather than inventing a number.
+ */
+export function rehydrateCounterTarget(counterJson: string): Money | null {
+  try {
+    const parsed = JSON.parse(counterJson) as { target_total?: unknown } | null;
+    return moneyOrNull(parsed?.target_total);
+  } catch {
+    return null;
+  }
 }

@@ -41,7 +41,67 @@ export interface TenderRankingView {
   /** Present once awarded: whether that order is still held, sent, or lapsed unsent. */
   held_order?: 'held' | 'sent' | 'lapsed';
   ranked: TenderOfferView[];
-  excluded: { supplier_did: string; reason: TenderExclusionReason }[];
+  excluded: {
+    supplier_did: string;
+    reason: TenderExclusionReason;
+    /** The listing the request went to (absent from a Core before 2026-09-29). */
+    service_rkey?: string;
+  }[];
+  /**
+   * Suppliers the owner's surface set aside and never asked, with why
+   * (absent from a Core before 2026-09-29).
+   */
+  not_asked?: TenderNotAskedView[];
+}
+
+/** A supplier a tender deliberately left out, and why. */
+export interface TenderNotAskedView {
+  supplier_did: string;
+  service_rkey: string;
+  reason: 'own_poor_review' | 'low_peerlens_trust';
+  /** The owner's review, or the score in words; '' when there was none. */
+  note: string;
+  /** The lowest price the supplier listed for what was asked, when the surface saw one. */
+  listed_from?: { currency: string; minor_units: string };
+}
+
+/**
+ * `GET /v1/commerce/trade/tender/story` — how each supplier got where the
+ * ranking shows it (absent from a Core before 2026-09-30).
+ */
+export interface TenderStoryView {
+  tender_id: string;
+  suppliers: TenderStorySupplierView[];
+}
+
+export interface TenderStorySupplierView {
+  supplier_did: string;
+  service_rkey: string;
+  /** '' until a quote answered the supplier's request. */
+  quote_id: string;
+  /** Every signed revision, oldest first: the first is where the supplier opened. */
+  revisions: {
+    revision: string;
+    total: { currency: string; minor_units: string };
+    issued_at: string;
+  }[];
+  /** The tender's counters to this supplier, in the order they were sent. */
+  counters: {
+    round: number;
+    target_total: { currency: string; minor_units: string } | null;
+    state: 'sent' | 'revised' | 'held' | 'pending' | 'refused' | 'unsent';
+    sent_at: number;
+    answered_at: number | null;
+  }[];
+  /** The newest revision's lines; `name` is the supplier's own item name, when it stated one. */
+  lines: {
+    line_id: string;
+    product: { scheme: string; value: string };
+    name: string | null;
+    quantity: { value: string; unit_code: string };
+    unit_price: { currency: string; minor_units: string };
+    line_subtotal: { currency: string; minor_units: string };
+  }[];
 }
 
 export type TenderAwardOutcome =

@@ -465,6 +465,33 @@ function eventForCaller(req: CoreRequest, event: WorkflowEvent): WorkflowEvent {
     : { ...event, details: JSON.stringify({ ...details, task_payload: redacted }) };
 }
 
+/**
+ * A cancelled task carries why it was cancelled (`cancel_reason`), read from
+ * its `cancelled` event: `workflow.cancel(id, reason)` records the reason
+ * there, not on the task row. A surface needs it to tell an owner's deny from
+ * a card Dina retired itself (a tender awarded or expired, a negotiation that
+ * ended), which must not read as "Denied".
+ */
+function withCancelReason(
+  service: NonNullable<ReturnType<typeof getWorkflowService>>,
+  task: WorkflowTask,
+): WorkflowTask {
+  if (task.status !== WorkflowTaskState.Cancelled) return task;
+  const events = service.store().listEventsForTask(task.id);
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event === undefined || event.event_kind !== 'cancelled') continue;
+    try {
+      const reason = (JSON.parse(event.details) as { reason?: unknown }).reason;
+      if (typeof reason === 'string' && reason !== '') return { ...task, cancel_reason: reason };
+    } catch {
+      /* a malformed event names no reason */
+    }
+    break;
+  }
+  return task;
+}
+
 async function getTask(req: CoreRequest): Promise<CoreResponse> {
   const service = getWorkflowService();
   if (service === null) return j(503, { error: 'workflow service not wired' });
@@ -474,7 +501,7 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   if (task === null) return j(404, { error: 'task not found' });
   const denied = agentReadGuard(req, task);
   if (denied !== null) return denied;
-  return j(200, { task: forCaller(req, task) });
+  return j(200, { task: forCaller(req, withCancelReason(service, task)) });
 }
 
 async function listTasks(req: CoreRequest): Promise<CoreResponse> {
@@ -488,7 +515,10 @@ async function listTasks(req: CoreRequest): Promise<CoreResponse> {
   const requested = Number(req.query.limit ?? 100);
   const limit = clampLimit(requested);
   const tasks = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
-  return j(200, { tasks: tasks.map((task) => forCaller(req, task)), count: tasks.length });
+  return j(200, {
+    tasks: tasks.map((task) => forCaller(req, withCancelReason(service, task))),
+    count: tasks.length,
+  });
 }
 
 async function claimTask(req: CoreRequest): Promise<CoreResponse> {

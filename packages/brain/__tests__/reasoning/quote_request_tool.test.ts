@@ -67,6 +67,45 @@ describe('draftFromToolArgs', () => {
   });
 });
 
+describe('currency and what was remembered (iPhone demo 2026-09-29)', () => {
+  const cake = [{ description: 'Floral celebration cake, 20 servings', quantity: 1 }];
+
+  it('keeps a named currency as a three-letter code, and drops anything else', () => {
+    expect(draftFromToolArgs({ items: cake, currency: ' usd ' }).currency).toBe('USD');
+    for (const currency of ['dollars', '$', 'US', 'USDT', 42]) {
+      expect(draftFromToolArgs({ items: cake, currency }).currency).toBeUndefined();
+    }
+  });
+
+  it('carries what Dina drew from the notes in one bounded line, and never an empty one', () => {
+    const draft = draftFromToolArgs({
+      items: cake,
+      from_memory: '  You love floral\n celebration   cakes ',
+    });
+    expect(draft.from_memory).toBe('You love floral celebration cakes');
+    expect(
+      draftFromToolArgs({ items: cake, from_memory: 'x'.repeat(500) }).from_memory,
+    ).toHaveLength(140);
+    expect('from_memory' in draftFromToolArgs({ items: cake, from_memory: '   ' })).toBe(false);
+    expect('from_memory' in draftFromToolArgs({ items: cake })).toBe(false);
+  });
+
+  it('tells the model a cake for 20 people is one cake', () => {
+    const tool = createDraftQuoteRequestTool();
+    const items = (
+      tool.parameters as {
+        properties: Record<
+          string,
+          { items?: { properties: Record<string, { description?: string }> } }
+        >;
+      }
+    ).properties.items;
+    expect(items?.items?.properties.quantity?.description).toMatch(
+      /Not the number of people or servings/,
+    );
+  });
+});
+
 describe('the tool', () => {
   it('ends the turn and returns the draft; it is built with no Core client', async () => {
     const tool = createDraftQuoteRequestTool();

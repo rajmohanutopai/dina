@@ -1172,6 +1172,9 @@ export type {
   TenderExclusionReason,
   TenderOfferView,
   TenderRankingView,
+  TenderNotAskedView,
+  TenderStoryView,
+  TenderStorySupplierView,
 } from './client/tender_views';
 // ASK_FOR_QUOTES_PLAN §2 — the rules the "Ask for quotes" screen checks
 // before sending, the same ones Core applies (pure; no runtime needed).
@@ -1181,7 +1184,7 @@ export {
   tenderPolicyError,
 } from './commerce/buyer_negotiation';
 export type { TenderPolicyInput } from './commerce/buyer_negotiation';
-export { DEFAULT_TENDER_FANOUT } from './commerce/tender';
+export { DEFAULT_TENDER_FANOUT, MAX_NOT_ASKED, MAX_NOT_ASKED_NOTE } from './commerce/tender';
 export * from './session/lifecycle';
 export type { AgentSession, SessionGrant } from './session/lifecycle';
 export * from './config/loading';
@@ -1290,6 +1293,7 @@ export {
   setWSFactory,
   connectToMsgBox,
   wakeRelay,
+  suspendRelay,
   disconnect as disconnectMsgBox,
   isConnected as isMsgBoxConnected,
   isAuthenticated as isMsgBoxAuthenticated,
@@ -1511,6 +1515,10 @@ export type {
   OrderSendAnswer,
   OrderSubmitAnswer,
   PhotoCaptureResult,
+  PlacedOrderDto,
+  PlacedOrderLineDto,
+  PlacedOrderProgressDto,
+  PlacedOrdersAnswer,
   SettingsFindingDto,
   StaffGrantEntry,
   BusinessIdentityAnswer,
