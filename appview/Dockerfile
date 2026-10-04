@@ -17,14 +17,17 @@ WORKDIR /repo
 # that compiles cleanly on a developer's machine.
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
+COPY packages/a2a/package.json packages/a2a/
 COPY appview/package.json appview/
-RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/appview --ignore-scripts
+RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
 
 # The protocol is built FIRST: appview resolves its `compiled` condition, which
 # points at `dist/`. Without this step the import resolves to TypeScript source
 # and Node refuses it at startup — loudly, which is the failure mode we want.
 COPY packages/commerce-protocol/ packages/commerce-protocol/
 RUN npm run build --workspace @dina/commerce-protocol
+COPY packages/a2a/ packages/a2a/
+RUN npm run build --workspace @dina/a2a
 
 COPY appview/tsconfig.json appview/
 COPY appview/src/ appview/src/
@@ -46,10 +49,12 @@ FROM node:22-alpine AS migrator
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
+COPY packages/a2a/package.json packages/a2a/
 COPY appview/package.json appview/
-RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/appview --ignore-scripts
+RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
 
 COPY packages/commerce-protocol/ packages/commerce-protocol/
+COPY packages/a2a/ packages/a2a/
 COPY appview/drizzle.config.ts appview/tsconfig.json appview/
 COPY appview/drizzle/ appview/drizzle/
 COPY appview/src/ appview/src/
@@ -69,12 +74,14 @@ FROM node:22-alpine AS runner
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
+COPY packages/a2a/package.json packages/a2a/
 COPY appview/package.json appview/
-RUN npm ci --omit=dev --workspace @dina/commerce-protocol --workspace @dina/appview --ignore-scripts
+RUN npm ci --omit=dev --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
 
-# The protocol's BUILD only — its source never reaches the runtime image, which
+# The protocol packages' BUILDS only — their source never reaches the runtime image, which
 # is the point of the `compiled` condition.
 COPY --from=builder /repo/packages/commerce-protocol/dist packages/commerce-protocol/dist/
+COPY --from=builder /repo/packages/a2a/dist packages/a2a/dist/
 COPY --from=builder /repo/appview/dist appview/dist/
 WORKDIR /repo/appview
 

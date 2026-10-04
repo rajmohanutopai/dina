@@ -18,12 +18,21 @@ import ts from 'typescript';
 interface Findings {
   namesApiPath: boolean;
   callsRaw: boolean;
+  /** Reads through `appViewBase()` (on the web: Brain's AppView proxy). */
+  usesAppViewBase: boolean;
+  /** Builds an `AppViewClient` without handing it a `fetch`. */
+  appViewClientWithoutFetch: boolean;
 }
 
 /** Parse the file (comments are not code) and note `/api/` literals and raw calls. */
 function scan(fileName: string, source: string): Findings {
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
-  const found: Findings = { namesApiPath: false, callsRaw: false };
+  const found: Findings = {
+    namesApiPath: false,
+    callsRaw: false,
+    usesAppViewBase: false,
+    appViewClientWithoutFetch: false,
+  };
   const visit = (node: ts.Node): void => {
     if (
       (ts.isStringLiteral(node) ||
@@ -46,6 +55,27 @@ function scan(fileName: string, source: string): Findings {
       node.expression.text === 'EventSource'
     ) {
       found.callsRaw = true;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'appViewBase'
+    ) {
+      found.usesAppViewBase = true;
+    }
+    if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'AppViewClient'
+    ) {
+      const options = node.arguments?.[0];
+      const passesFetch =
+        options !== undefined &&
+        ts.isObjectLiteralExpression(options) &&
+        options.properties.some(
+          (p) => (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && p.name.getText() === 'fetch',
+        );
+      if (!passesFetch) found.appViewClientWithoutFetch = true;
     }
     ts.forEachChild(node, visit);
   };
@@ -76,6 +106,28 @@ describe('the web page reaches Brain only through the runtime-config helpers', (
       if (found.namesApiPath && found.callsRaw) offenders.push(relative(root, file));
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('a module reading PeerLens through appViewBase() sends with appViewFetch (signed on the web)', async () => {
+    const root = join(__dirname, '..', '..');
+    const files = [
+      ...(await listTsFiles(join(root, 'src'))),
+      ...(await listTsFiles(join(root, 'app'))),
+    ];
+    const offenders: string[] = [];
+    for (const file of files) {
+      const found = scan(file, await readFile(file, 'utf8'));
+      if (found.usesAppViewBase && (found.callsRaw || found.appViewClientWithoutFetch)) {
+        offenders.push(relative(root, file));
+      }
+    }
+    expect(offenders).toEqual([]);
+    const shape = (code: string): Findings => scan('x.ts', code);
+    expect(shape('const u = await appViewBase();\nawait fetch(u);').callsRaw).toBe(true);
+    expect(shape('new AppViewClient({ appViewURL: await appViewBase() });').appViewClientWithoutFetch).toBe(true);
+    expect(
+      shape('new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });').appViewClientWithoutFetch,
+    ).toBe(false);
   });
 
   it('the scan sees what it must (self-check on known shapes)', () => {

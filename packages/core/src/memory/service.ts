@@ -27,6 +27,7 @@
  */
 
 import { currentDataScope, isGuidedDemoScope } from '../scope/data_scope';
+import { recordTopicRelease, type ReleaseContext } from '../vault/release';
 
 import {
   getTopicRepository,
@@ -113,8 +114,11 @@ export class MemoryService {
    *   undefined = "all unlocked" (via `listPersonas`).
    * @param limit max entries in the returned list (capping applied
    *   after the merge). Values ≤ 0 yield `[]`.
+   * @param release the conversation the topics are released into (A2A
+   *   §4.2 (b)): each persona whose topics are returned is logged, since
+   *   topic names reach the model and taint what it writes.
    */
-  async toc(personas: string[] | undefined, limit: number): Promise<TocEntry[]> {
+  async toc(personas: string[] | undefined, limit: number, release?: ReleaseContext): Promise<TocEntry[]> {
     if (limit <= 0) return [];
 
     // Data-scope isolation: the working-memory tables are NOT scope-partitioned,
@@ -167,7 +171,11 @@ export class MemoryService {
     // stable in ES2019+, so ties preserve per-persona insertion
     // order — keeps results deterministic across process runs.
     merged.sort((a, b) => b.salience - a.salience);
-    return merged.slice(0, limit);
+    const returned = merged.slice(0, limit);
+    const byPersona = new Map<string, string[]>();
+    for (const entry of returned) byPersona.set(entry.persona, [...(byPersona.get(entry.persona) ?? []), entry.topic]);
+    for (const [persona, topics] of byPersona) recordTopicRelease(release, persona, topics);
+    return returned;
   }
 }
 

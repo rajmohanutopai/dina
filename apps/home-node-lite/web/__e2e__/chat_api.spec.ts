@@ -24,15 +24,38 @@
  * Source: docs/HOME_NODE_LITE_WEB_UI_TASKS.md Phase 4 "Chat tab".
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+
+import { readOwnerCapability } from './fixtures/backstage';
+import { pairOwnerSigner, type OwnerSigner } from './fixtures/owner_signer';
 
 // The page is Core-served; Brain's API is its own origin (the stack publishes it).
 const BRAIN = process.env.DINA_E2E_BRAIN_URL ?? 'http://127.0.0.1:18299';
+const CORE = `http://127.0.0.1:${process.env.DINA_CORE_E2E_PORT ?? 18298}`;
+
+// Brain serves signed callers only (A2A design §4.1): these calls come from an
+// owner device, paired through Core's owner routes as the web app pairs one.
+let owner: OwnerSigner;
+test.beforeAll(async () => {
+  owner = await pairOwnerSigner(CORE, readOwnerCapability(), process.env.DINA_E2E_OWNER_PASSPHRASE ?? '');
+});
+
+/** POST JSON to Brain, signed by the owner device. */
+function ownerPost(request: APIRequestContext, path: string, data: unknown) {
+  const body = JSON.stringify(data);
+  return request.post(`${BRAIN}${path}`, {
+    headers: { 'content-type': 'application/json', ...owner.headers('POST', `${BRAIN}${path}`, body) },
+    data: body,
+  });
+}
+
+test('Brain refuses an unsigned caller, even on loopback', async ({ request }) => {
+  const resp = await request.post(`${BRAIN}/api/v1/chat`, { data: { text: '/help', threadId: 'unsigned' } });
+  expect(resp.status()).toBe(401);
+});
 
 test('POST /api/v1/chat with /help returns a non-empty ChatResponse', async ({ request }) => {
-  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
-    data: { text: '/help', threadId: 'phase-4-smoke' },
-  });
+  const resp = await ownerPost(request, '/api/v1/chat', { text: '/help', threadId: 'phase-4-smoke' });
   expect(resp.status()).toBe(200);
   const body = (await resp.json()) as { intent: string; response: string };
   expect(typeof body.intent).toBe('string');
@@ -45,9 +68,7 @@ test('POST /api/v1/chat with /help returns a non-empty ChatResponse', async ({ r
 });
 
 test('POST /api/v1/chat rejects empty text with 400 (input validation)', async ({ request }) => {
-  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
-    data: { text: '' },
-  });
+  const resp = await ownerPost(request, '/api/v1/chat', { text: '' });
   expect(resp.status()).toBe(400);
   const body = (await resp.json()) as { error: string };
   expect(typeof body.error).toBe('string');
@@ -63,12 +84,10 @@ test('POST /api/v1/chat with /remember writes a memory record and acknowledges',
   // /remember handler → Core. We assert the round-trip ack here;
   // verifying the record actually landed in Core is a Core-side
   // integration concern already covered by Core's own staging tests.
-  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
-    data: {
+  const resp = await ownerPost(request, '/api/v1/chat', {
       text: '/remember Emma loves dinosaurs',
       threadId: 'phase-4-remember',
-    },
-  });
+    });
   expect(resp.status()).toBe(200);
   const body = (await resp.json()) as {
     intent: string;
@@ -85,12 +104,8 @@ test('POST /api/v1/chat with /remember writes a memory record and acknowledges',
 
 test('POST /api/v1/chat/reset clears a thread', async ({ request }) => {
   // Seed a message first so the reset has something to wipe.
-  await request.post(`${BRAIN}/api/v1/chat`, {
-    data: { text: '/help', threadId: 'phase-4-reset' },
-  });
-  const resp = await request.post(`${BRAIN}/api/v1/chat/reset`, {
-    data: { threadId: 'phase-4-reset' },
-  });
+  await ownerPost(request, '/api/v1/chat', { text: '/help', threadId: 'phase-4-reset' });
+  const resp = await ownerPost(request, '/api/v1/chat/reset', { threadId: 'phase-4-reset' });
   expect(resp.status()).toBe(200);
   const body = (await resp.json()) as { ok: boolean };
   expect(body.ok).toBe(true);

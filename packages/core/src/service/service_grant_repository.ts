@@ -60,6 +60,11 @@ export interface ServiceGrantRepository {
   listByGrantee(granteeDid: string): ServiceGrant[];
   /** Revoke a grant. Returns true if a row was updated. */
   revoke(grantId: string, nowSec: number): boolean;
+  /**
+   * Revoke every live grant held by one grantee (an A2A client revoked by
+   * its owner, design §5.1). Returns how many were revoked.
+   */
+  revokeAllForGrantee(granteeDid: string, nowSec: number): number;
 }
 
 /** Singleton repository (null = not wired). */
@@ -181,5 +186,13 @@ export class SQLiteServiceGrantRepository implements ServiceGrantRepository {
       grantId,
     ]);
     return true;
+  }
+
+  revokeAllForGrantee(granteeDid: string, nowSec: number): number {
+    if (granteeDid === '') return 0;
+    return this.db.run(
+      'UPDATE service_grants SET revoked_at = ? WHERE grantee_did = ? AND revoked_at IS NULL',
+      [nowSec, granteeDid],
+    );
   }
 }

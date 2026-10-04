@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 
+import { parseA2APublicOrigin } from '@dina/core';
 import {
   HomeNodeEndpointConfigError,
   resolveServerHostedDinaEndpoints,
@@ -119,6 +120,37 @@ const ServicesSchema = z.object({
   internalBrainEnabled: z.boolean().optional(),
 });
 
+/**
+ * A2A Lane 2 (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1, §7.1). Set the public
+ * origin and the gateway DID together to serve outside agents through the
+ * gateway process; set neither to leave Lane 2 off.
+ *
+ * - `publicOrigin`: the gateway's public https origin. Core puts it on the
+ *   card it signs and never takes it from the gateway.
+ * - `gatewayDid`: the did:key of the gateway's own service key, registered
+ *   as caller type `gateway` (the gateway never holds Core's or Brain's keys).
+ *
+ * Every outside client's call arrives under the gateway's one DID, so Core
+ * exempts it from the per-DID bucket (and its routes from the per-address
+ * one); Core's per-client budgets and the gateway's per-address edge limit
+ * do the per-caller limiting (design §4.1).
+ */
+const A2ASchema = z
+  .object({
+    publicOrigin: z
+      .string()
+      .refine((value) => parseA2APublicOrigin(value) !== null, 'must be a bare https origin (no path, query or credentials)')
+      .optional(),
+    gatewayDid: z
+      .string()
+      .refine((value) => value.startsWith('did:key:'), 'must be a did:key')
+      .optional(),
+  })
+  .refine((v) => (v.publicOrigin === undefined) === (v.gatewayDid === undefined), {
+    message: 'set DINA_A2A_PUBLIC_URL and DINA_A2A_GATEWAY_DID together',
+    path: ['gatewayDid'],
+  });
+
 /** Full server config — every subsection required. */
 export const CoreServerConfigSchema = z.object({
   endpoints: EndpointSchema.optional(),
@@ -131,6 +163,7 @@ export const CoreServerConfigSchema = z.object({
   // `services`) typecheck-clean while still surfacing the loaded
   // shape via `LoadedCoreServerConfig` below.
   services: ServicesSchema.optional(),
+  a2a: A2ASchema.optional(),
 });
 
 export type CoreServerConfig = z.infer<typeof CoreServerConfigSchema>;
@@ -245,6 +278,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
   //   DINA_CORS_ORIGIN     → cors.allowOrigin   (optional; matches Go's AllowOrigin)
   //   DINA_BRAIN_DID       → services.brainDid  (optional; install-lite + paired-stack tests set this)
   //   DINA_INTERNAL_BRAIN_ENABLED → services.internalBrainEnabled (default false)
+  //   DINA_A2A_PUBLIC_URL  → a2a.publicOrigin   (optional; with DINA_A2A_GATEWAY_DID)
+  //   DINA_A2A_GATEWAY_DID → a2a.gatewayDid     (optional; with DINA_A2A_PUBLIC_URL)
 
   const endpoints = readEndpoints(env);
   const internalBrainEnabled = readBool(env, 'DINA_INTERNAL_BRAIN_ENABLED', false);
@@ -275,6 +310,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
       brainDid: readString(env, 'DINA_BRAIN_DID'),
       brainUrl: readString(env, 'DINA_BRAIN_URL'),
       ...(internalBrainEnabled ? { internalBrainEnabled: true } : {}),
+    },
+    a2a: {
+      publicOrigin: readString(env, 'DINA_A2A_PUBLIC_URL'),
+      gatewayDid: readString(env, 'DINA_A2A_GATEWAY_DID'),
     },
   };
 

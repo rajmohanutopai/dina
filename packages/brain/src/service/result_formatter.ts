@@ -15,10 +15,15 @@
  *         (format_service_query_result + _format_eta + _format_generic)
  */
 
-import type { EtaQueryResult, EtaQueryStatus } from './capabilities/eta_query';
+import type { EtaQueryResult, EtaQueryStatus } from '@dina/core';
 
 /** Shape Core emits in `workflow_event.details` for service_query tasks. */
 export interface ServiceQueryEventDetails {
+  /**
+   * Set for an A2A Lane 1 delivery (docs/A2A_GATEWAY_ARCHITECTURE.md A2A-I7):
+   * the operation, and the conversation its result returns to.
+   */
+  a2a?: { operation_id: string; reply_to: string | null };
   /** One of "success" | "unavailable" | "error" | "expired". */
   response_status?: string;
   /** Capability name (e.g. "eta_query"). */

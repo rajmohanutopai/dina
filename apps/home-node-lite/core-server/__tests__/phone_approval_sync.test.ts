@@ -4,6 +4,7 @@ import {
   createFacadeActionApproval,
   createCodingGateApproval,
   getWorkflowService,
+  inboundReviewDisplay,
   remoteApprovalProposalId,
   setCodingPermitAuthority,
   setWorkflowService,
@@ -344,5 +345,141 @@ describe('phone approval synchronization worker', () => {
     release();
     await Promise.all([tick, stopping]);
     expect(stopped).toBe(true);
+  });
+});
+
+describe('A2A consent cards on the paired phone (plan §3.20)', () => {
+  beforeEach(() => {
+    resetKVStore();
+    setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
+  });
+  afterEach(() => {
+    setWorkflowService(null);
+    resetKVStore();
+  });
+
+  function consentTask(id: string, text: string): void {
+    const card = {
+      type: 'a2a_delegation_consent',
+      operation_id: `op-${id}`,
+      consent_hash: 'c'.repeat(64),
+      consent: {
+        remote_agent_id: 'ra-1',
+        card_hash: 'a'.repeat(64),
+        endpoint: 'https://agent.example/rpc',
+        skill: 'summarize',
+        action_class: 'read',
+        credential_ref: 'cr-1',
+        credential_revision: 1,
+        labels: ['may_contain_sensitive', 'unverified'],
+        projection: { parts: [{ text }] },
+      },
+      display: {
+        agent_name: 'Summarizer',
+        card_url: 'https://agent.example/.well-known/agent-card.json',
+        endpoint: 'https://agent.example/rpc',
+        signature_state: 'unsigned',
+        signature_detail: 'The card carries no signature.',
+        skill_name: 'Summarize',
+        credential: 'No credential. The agent receives no secret from Dina.',
+        labels: ['Dina cannot yet prove where any of this text came from.'],
+        placeholders: [],
+        effect: 'The agent is asked for information.',
+      },
+    };
+    getWorkflowService()?.create({
+      id,
+      kind: 'approval',
+      description: 'Send to Summarizer: Summarize',
+      payload: JSON.stringify(card),
+      expiresAtSec: Math.floor(NOW / 1000) + 600,
+      origin: 'system',
+      initialState: 'pending_approval',
+    });
+  }
+
+  it('mirrors the card with every byte that would be sent', async () => {
+    consentTask('a2a-consent-1', 'Summarize: the meeting moved to Friday.');
+    const client = clientFor('pending');
+    await runPhoneApprovalSyncTick({ client, nowMs: NOW });
+    const body = (client.request as jest.Mock).mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      source_task_id: 'a2a-consent-1',
+      source_payload_hash: 'c'.repeat(64),
+      agent_did: 'a2a:ra-1',
+      action: 'a2a_delegate',
+      proposal_type: 'facade_action',
+      display_title: 'Send to Summarizer: Summarize',
+    });
+    expect(String(body.display_detail)).toContain('Exactly what will be sent:\nSummarize: the meeting moved to Friday.');
+  });
+
+  it('keeps a card the phone cannot show in full on the console', async () => {
+    consentTask('a2a-consent-2', 'x'.repeat(5_000));
+    consentTask('a2a-consent-3', 'line one\r\nline two');
+    const client = clientFor('pending');
+    await runPhoneApprovalSyncTick({ client, nowMs: NOW });
+    expect((client.request as jest.Mock).mock.calls).toEqual([]);
+  });
+});
+
+
+describe('A2A inbound review cards on the paired phone (design §7.3)', () => {
+  beforeEach(() => {
+    resetKVStore();
+    setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
+  });
+  afterEach(() => {
+    setWorkflowService(null);
+    resetKVStore();
+  });
+
+  function reviewTask(id: string, params: Parameters<typeof inboundReviewDisplay>[0]['params']): void {
+    const fields = {
+      client_name: 'Acme agent',
+      skill: 'appointment_book@clinic',
+      action_class: 'booking' as const,
+      params,
+      service_name: 'Dr. Lee',
+    };
+    getWorkflowService()?.create({
+      id,
+      kind: 'approval',
+      description: 'A2A call under review',
+      payload: JSON.stringify({
+        type: 'a2a_inbound_review',
+        operation_id: `op-${id}`,
+        client_id: 'ac_1',
+        ...fields,
+        post_hash: 'd'.repeat(64),
+        display: inboundReviewDisplay({ ...fields, proof: { kind: 'bearer' } }),
+      }),
+      expiresAtSec: Math.floor(NOW / 1000) + 600,
+      origin: 'system',
+      initialState: 'pending_approval',
+    });
+  }
+
+  it('mirrors Core’s words and the exact params, bound to the call’s hash', async () => {
+    reviewTask('a2a-in-1', { slot: '9am' });
+    const client = clientFor('pending');
+    await runPhoneApprovalSyncTick({ client, nowMs: NOW });
+    const body = (client.request as jest.Mock).mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body).toMatchObject({
+      source_task_id: 'a2a-in-1',
+      source_payload_hash: 'd'.repeat(64),
+      agent_did: 'a2a:ac_1',
+      action: 'a2a_inbound',
+      proposal_type: 'facade_action',
+      display_title: 'Acme agent asks to use appointment_book@clinic',
+    });
+    expect(String(body.display_detail)).toContain('Exactly what it sent:\n{\n  "slot": "9am"\n}');
+  });
+
+  it('keeps a card too long for the phone on the console', async () => {
+    reviewTask('a2a-in-2', { note: 'x'.repeat(5_000) });
+    const client = clientFor('pending');
+    await runPhoneApprovalSyncTick({ client, nowMs: NOW });
+    expect((client.request as jest.Mock).mock.calls).toEqual([]);
   });
 });

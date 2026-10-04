@@ -22,7 +22,7 @@
 
 import { AppViewClient } from '@dina/brain';
 
-import { appViewBase } from '../peerlens/appview_base';
+import { appViewBase, appViewFetch } from '../peerlens/appview_base';
 
 import {
   loadOwnSupplierReviews,
@@ -316,7 +316,7 @@ export async function ownerDidHere(): Promise<string | null> {
 }
 
 export async function findSuppliersHere(input: FindSuppliersInput): Promise<FindSuppliersResult> {
-  const client = new AppViewClient({ appViewURL: await appViewBase() });
+  const client = new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });
   const ownReviews = input.ownReviews ?? (await loadOwnSupplierReviews(await ownerDidHere()));
   return findSuppliers(client, { ...input, ownReviews });
 }

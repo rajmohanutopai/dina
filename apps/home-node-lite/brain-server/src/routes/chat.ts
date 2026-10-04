@@ -25,6 +25,7 @@ import {
   getThread,
   subscribeToThread,
   createServiceQueryDeliverer,
+  deliverA2AOutcome,
 } from '@dina/brain/chat';
 import { deliverWatchResult } from '@dina/brain/notifications';
 import { type WatchFilter, type WorkflowEvent, type WorkflowTask } from '@dina/core';
@@ -205,6 +206,39 @@ export function registerChatRoutes(
   );
 
   // ────────────────────────────────────────────────────────────────
+  // POST /api/v1/chat/a2a-result — an A2A Lane 1 outcome for the asking
+  // conversation (docs/A2A_GATEWAY_ARCHITECTURE.md A2A-I7). As with service
+  // results, Core owns the workflow-event consumer and the thread lives here,
+  // so Core forwards Dina's own sentence (and a released result, which the
+  // guard has already cleared). Idempotent by event id: Core re-forwards on
+  // a failed delivery.
+  // ────────────────────────────────────────────────────────────────
+  app.post(
+    `${prefix}/chat/a2a-result`,
+    async (req: FastifyRequest<{ Body: Record<string, unknown> }>, reply: FastifyReply) => {
+      const body = req.body ?? {};
+      const eventId = body.event_id;
+      if (
+        typeof body.text !== 'string' ||
+        typeof body.operation_id !== 'string' ||
+        typeof eventId !== 'number' ||
+        !Number.isSafeInteger(eventId)
+      ) {
+        return reply.status(400).send({ error: 'text, operation_id and event_id are required' });
+      }
+      const threadId =
+        typeof body.reply_to === 'string' && body.reply_to !== '' ? body.reply_to.slice(0, 200) : 'main';
+      const message = deliverA2AOutcome({
+        threadId,
+        text: body.text,
+        eventId,
+        operationId: body.operation_id,
+      });
+      return reply.status(200).send({ ok: true, message_id: message.id });
+    },
+  );
+
+  // ────────────────────────────────────────────────────────────────
   // GET /api/v1/chat/stream?threadId=X  —  Server-Sent Events
   //
   // Mirrors mobile's in-process `subscribeToThread` listener over HTTP.
@@ -237,7 +271,7 @@ export function registerChatRoutes(
           ? req.query.threadId
           : 'main';
 
-      openEventStream(reply);
+      if (!openEventStream(req, reply)) return;
 
       // Flush existing history so a fresh subscriber sees the current
       // thread state without a separate GET. `getThread` returns the

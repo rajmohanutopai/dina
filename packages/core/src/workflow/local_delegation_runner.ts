@@ -35,19 +35,53 @@
 
 import { LOCAL_RUNNER_NAME } from '@dina/protocol';
 
+import { admitInboundClaim, authorizeInboundEffect, type InboundEffectBoundary } from '../a2a/inbound';
+import { requestInboundInput } from '../a2a/inbound_turns';
+
 import type { WorkflowTask } from './domain';
 import type { WorkflowRepository } from './repository';
 import type { WorkflowService } from './service';
 
 /**
+ * What a capability may do besides return a result, for the call it runs.
+ */
+export interface CapabilityTurn {
+  /**
+   * Cross the effect boundary (A2A design §7.3): call it right before the
+   * first effect (a write, a message out). False means the call's
+   * authority is gone and the capability must act on nothing; the runner
+   * has already ended the call. Always true for a call that needs no
+   * authorization.
+   */
+  authorizeEffect(): boolean;
+}
+
+/**
+ * Returned by a capability that needs more from its requester before it
+ * can act (A2A multi-turn, design §7.7). Only a call from an A2A client
+ * can ask, and only before its effect boundary; anything else fails.
+ */
+export class CapabilityInputRequired {
+  constructor(
+    readonly prompt: string,
+    /** A JSON Schema of `type: "object"` the answer must meet. */
+    readonly inputSchema: Record<string, unknown>,
+  ) {}
+}
+
+/**
  * Caller-supplied capability handler. Receives the parsed payload's
  * capability + params and returns the result to attach to the
- * workflow task. Throwing marks the task failed.
+ * workflow task, or a `CapabilityInputRequired` to ask the requester for
+ * more. Throwing marks the task failed. `turn` is absent when the
+ * capability is invoked outside this runner (a direct call has no effect
+ * boundary to keep and no requester to ask).
  */
 export type LocalCapabilityRunner = (
   capability: string,
   params: unknown,
   task: WorkflowTask,
+  turn?: CapabilityTurn,
 ) => Promise<unknown>;
 
 export interface LocalDelegationRunnerOptions {
@@ -73,6 +107,16 @@ export interface LocalDelegationRunnerOptions {
    * daemons: being unfiltered it would race them for routed tasks.
    */
   runnerFilter?: string;
+  /**
+   * The capabilities that call `turn.authorizeEffect()` before every
+   * effect they make (design §7.3, §7.7). An inbound A2A round of one of
+   * these crosses its effect boundary when the capability calls it, or
+   * just before its result is handed over, and may ask its requester for
+   * input until then. Every other capability's round crosses it at the
+   * claim, before the capability runs. A capability is named here only by
+   * the code that wrote it: the promise is its own.
+   */
+  effectAuthorizingCapabilities?: ReadonlySet<string>;
   /** How often to poll for new claims. Default 5_000 ms. */
   pollIntervalMs?: number;
   /** Initial lease length (ms). Default 30_000. */
@@ -88,6 +132,8 @@ export interface LocalDelegationRunnerOptions {
   onClaimed?: (task: WorkflowTask) => void;
   onCompleted?: (task: WorkflowTask, result: unknown) => void;
   onFailed?: (task: WorkflowTask, err: unknown) => void;
+  /** A capability asked its requester for input; the task now waits on the answer. */
+  onInputRequired?: (task: WorkflowTask) => void;
   onError?: (err: unknown) => void;
 }
 
@@ -101,6 +147,7 @@ export class LocalDelegationRunner {
   private readonly agentDID: string;
   private readonly runCapability: LocalCapabilityRunner;
   private readonly runnerFilter: string;
+  private readonly effectAuthorizingCapabilities: ReadonlySet<string>;
   private readonly pollIntervalMs: number;
   private readonly leaseMs: number;
   private readonly heartbeatIntervalMs: number;
@@ -110,6 +157,7 @@ export class LocalDelegationRunner {
   private readonly onClaimed: (t: WorkflowTask) => void;
   private readonly onCompleted: (t: WorkflowTask, r: unknown) => void;
   private readonly onFailed: (t: WorkflowTask, e: unknown) => void;
+  private readonly onInputRequired: (t: WorkflowTask) => void;
   private readonly onError: (e: unknown) => void;
 
   private handle: unknown | null = null;
@@ -127,6 +175,7 @@ export class LocalDelegationRunner {
     this.agentDID = options.agentDID;
     this.runCapability = options.runner;
     this.runnerFilter = options.runnerFilter ?? LOCAL_RUNNER_NAME;
+    this.effectAuthorizingCapabilities = options.effectAuthorizingCapabilities ?? new Set();
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
@@ -146,6 +195,11 @@ export class LocalDelegationRunner {
       });
     this.onFailed =
       options.onFailed ??
+      (() => {
+        /* silent */
+      });
+    this.onInputRequired =
+      options.onInputRequired ??
       (() => {
         /* silent */
       });
@@ -247,6 +301,18 @@ export class LocalDelegationRunner {
         return;
       }
 
+      // A2A design §7.3: an inbound A2A child is admitted (runner, authority,
+      // permit) before the capability runs, and its effect authorized at the
+      // boundary this runner keeps. A refused one is already failed and settled.
+      const boundary: InboundEffectBoundary = this.effectAuthorizingCapabilities.has(payload.capability)
+        ? 'deferred'
+        : 'at_claim';
+      if (admitInboundClaim(task, this.agentDID, boundary) === 'refused') return;
+      const claimed = task;
+      const turn: CapabilityTurn = {
+        authorizeEffect: () => authorizeInboundEffect(claimed, this.agentDID) !== 'refused',
+      };
+
       this.onClaimed(task);
 
       // Lease fence: when a heartbeat write fails (returns false), the
@@ -273,9 +339,18 @@ export class LocalDelegationRunner {
       }, this.heartbeatIntervalMs);
 
       try {
-        const result = await this.runCapability(payload.capability, payload.params, task);
+        const result = await this.runCapability(payload.capability, payload.params, task, turn);
         this.clearIntervalFn(hbHandle);
         if (leaseLost) return; // fenced — see above
+        if (result instanceof CapabilityInputRequired) {
+          this.askRequester(task, result);
+          return;
+        }
+        // A deferred boundary is crossed here at the latest, before the
+        // result goes anywhere. A round whose capability crossed it already is
+        // authorized again, unjudged (its effect began). A refusal has already
+        // ended the task.
+        if (boundary === 'deferred' && !turn.authorizeEffect()) return;
         // safeComplete is responsible for both serialization failure
         // (issue #15) and status derivation (issue #16).
         const completed = this.safeComplete(task, result);
@@ -291,6 +366,27 @@ export class LocalDelegationRunner {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Park the task on its requester's answer (A2A design §7.7), or fail it
+   * when it cannot ask: not an A2A call, or past its effect boundary.
+   */
+  private askRequester(task: WorkflowTask, ask: CapabilityInputRequired): void {
+    const verdict = requestInboundInput({
+      taskId: task.id,
+      claimantDid: this.agentDID,
+      claimId: task.claim_id,
+      request: { prompt: ask.prompt, input_schema: ask.inputSchema },
+    });
+    if (verdict.kind === 'parked') {
+      this.onInputRequired(task);
+      return;
+    }
+    const why = verdict.kind === 'not_inbound' ? 'only a call from an A2A client can ask for input' : verdict.reason;
+    const err = new Error(`input_required refused: ${why}`);
+    this.safeFail(task, err);
+    this.onFailed(task, err);
   }
 
   private parsePayload(task: WorkflowTask): {

@@ -6,7 +6,8 @@
  *   - D2D ingress for `service.query`: checks whether the requested
  *     capability is configured locally (contact-gate bypass).
  *   - Brain `ServicePublisher`: publishes the profile to the community PDS.
- *   - Brain `ServiceHandler`: validates inbound params against published schema.
+ *   - Core's service-query ingress (`service/query_ingress.ts`): validates
+ *     inbound params against the published schema.
  *
  * Persistence shape is a single row `(key='self', value=<JSON>)`. The schema
  * matches what the Python reference stores under a dedicated table — one row
@@ -27,10 +28,12 @@ import {
 
 import { getPluginInstallRepository } from '../plugins/registry';
 
+import { capabilitySchemaHash } from './capability_schema_hash';
 import { configEventChannel } from './config_event_channel';
+import { namesReservedLane } from './reserved_lanes';
 import { getServiceConfigRepository } from './service_config_repository';
 
-import type { ListingValidationError , ServiceConfig } from '@dina/protocol';
+import type { ListingValidationError, ServiceCapabilityConfig, ServiceConfig } from '@dina/protocol';
 // Layer 5 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1) — canonicalize the
 // inbound capability so an alias-configured provider accepts the
 // canonical query. Pure/sync from the shared registry; keeps
@@ -235,7 +238,7 @@ export function validateServiceConfigForSave(
       details: listing.errors,
     };
   }
-  const bindingErrors = resolvePluginBindings(value);
+  const bindingErrors = [...resolvePluginBindings(value), ...laneAndSchemaErrors(value)];
   if (bindingErrors.length > 0) {
     return {
       ok: false,
@@ -244,6 +247,38 @@ export function validateServiceConfigForSave(
     };
   }
   return { ok: true, config: value };
+}
+
+/**
+ * A2A plan §4.2a — two things only Core can check at save. An `mcpServer`
+ * that names a lane only Core fills (`dina.local`, a plugin, A2A or
+ * reasoning lane) would have Core queue a stranger's query there; and a
+ * published schema with no canonical JSON form has no `schema_hash`, so it
+ * could be neither published nor checked.
+ */
+function laneAndSchemaErrors(config: ServiceConfig): ListingValidationError[] {
+  const errors: ListingValidationError[] = [];
+  for (const [name, cap] of Object.entries(config.capabilities ?? {})) {
+    if (namesReservedLane(cap)) {
+      errors.push({
+        code: 'reserved_runner_lane',
+        capability: name,
+        message: `"${name}" names the runner "${cap.mcpServer ?? ''}", a lane only Dina itself fills.`,
+      });
+    }
+  }
+  for (const [name, schema] of Object.entries(config.capabilitySchemas ?? {})) {
+    try {
+      capabilitySchemaHash(schema);
+    } catch {
+      errors.push({
+        code: 'schema_not_canonical',
+        capability: name,
+        message: `"${name}" has a schema with no canonical JSON form (too deep, or text that is not valid Unicode).`,
+      });
+    }
+  }
+  return errors;
 }
 
 /**
@@ -270,64 +305,58 @@ export function validateServiceConfigForSave(
  */
 function resolvePluginBindings(config: ServiceConfig): ListingValidationError[] {
   const errors: ListingValidationError[] = [];
-  const capabilities = config.capabilities ?? {};
-  for (const [name, cap] of Object.entries(capabilities)) {
+  for (const [name, cap] of Object.entries(config.capabilities ?? {})) {
+    const problem = pluginBindingProblem(cap);
+    if (problem === null) continue;
     const installId = cap.pluginInstallId ?? '';
-    const boundCid = cap.pluginManifestCid ?? '';
     const capabilityId = cap.pluginCapabilityId ?? '';
-    // An incomplete binding is already `partial_plugin_binding`; an absent one
-    // is simply a non-plugin capability. Neither is this check's business.
-    if (installId === '' || boundCid === '' || capabilityId === '') continue;
-
-    const installs = getPluginInstallRepository();
-    const install = installs?.getById(installId) ?? null;
-    if (install === null) {
-      errors.push({
-        code: 'plugin_install_unknown',
-        capability: name,
-        message: `"${name}" is bound to plugin install ${installId}, which is not installed on this node.`,
-      });
-      continue;
-    }
-    if (install.status !== 'active') {
-      errors.push({
-        code: 'plugin_install_not_active',
-        capability: name,
-        message: `"${name}" is bound to a plugin install that is ${install.status}. Activate it before publishing this capability.`,
-      });
-      continue;
-    }
-    if (install.currentCid !== boundCid) {
-      errors.push({
-        code: 'plugin_binding_stale',
-        capability: name,
-        message: `"${name}" pins a manifest this install no longer runs. Re-bind it to the current version before publishing.`,
-      });
-      continue;
-    }
-    const declared = install.manifest.capabilities.find(
-      (c: { id: string; kinds?: readonly string[] }) => c.id === capabilityId,
-    );
-    if (declared === undefined) {
-      errors.push({
-        code: 'plugin_capability_unknown',
-        capability: name,
-        message: `"${name}" names capability ${capabilityId}, which this plugin's manifest does not declare.`,
-      });
-      continue;
-    }
-    if (!(declared.kinds ?? []).includes('provider')) {
-      // A tool capability answers Dina's own questions; a provider capability
-      // answers a PEER's. Publishing a tool as a service would route a
-      // stranger's query into a capability consented for something else.
-      errors.push({
-        code: 'plugin_capability_not_provider',
-        capability: name,
-        message: `"${name}" names capability ${capabilityId}, which is not consented as a provider capability.`,
-      });
-    }
+    const message: Record<PluginBindingProblem, string> = {
+      plugin_install_unknown: `"${name}" is bound to plugin install ${installId}, which is not installed on this node.`,
+      plugin_install_not_active: `"${name}" is bound to a plugin install that is not active. Activate it before publishing this capability.`,
+      plugin_binding_stale: `"${name}" pins a manifest this install no longer runs. Re-bind it to the current version before publishing.`,
+      plugin_capability_unknown: `"${name}" names capability ${capabilityId}, which this plugin's manifest does not declare.`,
+      plugin_capability_not_provider: `"${name}" names capability ${capabilityId}, which is not consented as a provider capability.`,
+    };
+    errors.push({ code: problem, capability: name, message: message[problem] });
   }
   return errors;
+}
+
+export type PluginBindingProblem =
+  | 'plugin_install_unknown'
+  | 'plugin_install_not_active'
+  | 'plugin_binding_stale'
+  | 'plugin_capability_unknown'
+  | 'plugin_capability_not_provider';
+
+/**
+ * Whether a capability's complete plugin binding resolves to a live provider
+ * capability on this node: the install exists and is active, still runs the
+ * pinned manifest, and declares the capability as a provider. `null` for a
+ * capability with no complete binding (an incomplete one is already
+ * `partial_plugin_binding`) and for a sound one. The save checks it; A2A
+ * executor selection checks it again at read time (design §7.1, §7.3).
+ *
+ * FAIL CLOSED: a binding on a node with no plugin registry is unknown.
+ */
+export function pluginBindingProblem(cap: ServiceCapabilityConfig): PluginBindingProblem | null {
+  const installId = cap.pluginInstallId ?? '';
+  const boundCid = cap.pluginManifestCid ?? '';
+  const capabilityId = cap.pluginCapabilityId ?? '';
+  if (installId === '' || boundCid === '' || capabilityId === '') return null;
+  const install = getPluginInstallRepository()?.getById(installId) ?? null;
+  if (install === null) return 'plugin_install_unknown';
+  if (install.status !== 'active') return 'plugin_install_not_active';
+  if (install.currentCid !== boundCid) return 'plugin_binding_stale';
+  // A tool capability answers Dina's own questions; a provider capability
+  // answers a PEER's. Publishing a tool as a service would route a
+  // stranger's query into a capability consented for something else.
+  const declared = install.manifest.capabilities.find(
+    (c: { id: string; kinds?: readonly string[] }) => c.id === capabilityId,
+  );
+  if (declared === undefined) return 'plugin_capability_unknown';
+  if (!(declared.kinds ?? []).includes('provider')) return 'plugin_capability_not_provider';
+  return null;
 }
 
 /**

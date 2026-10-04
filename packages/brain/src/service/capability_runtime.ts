@@ -28,13 +28,12 @@
  * `tier1_runner.ts`.
  */
 
-import { listPersonas } from '@dina/core';
+import { listPersonas, serviceSchemaError } from '@dina/core';
 
 import { runAgenticTurn, type AgenticLoopResult } from '../reasoning/agentic_loop';
 import { ToolRegistry, type AgentTool } from '../reasoning/tool_registry';
 import { createVaultSearchTool } from '../reasoning/vault_tool';
 
-import { validateAgainstSchema } from './capabilities/schema_validator';
 
 import type { VaultFactBuilder } from './capabilities/vault_facts';
 import type { LLMProvider } from '../llm/adapters/provider';
@@ -242,7 +241,7 @@ function validateCandidate(
     return 'final answer is not a JSON object';
   }
   if (resultSchema === undefined) return null;
-  return validateAgainstSchema(candidate, resultSchema, 'result');
+  return serviceSchemaError(candidate, resultSchema, 'result');
 }
 
 /**

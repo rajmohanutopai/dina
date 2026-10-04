@@ -14,5 +14,7 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node", "jest"]
   },
-  "include": ["src/**/*", "__tests__/**/*"]
+  "include": ["src/**/*", "__tests__/**/*"],
+  // A cross-app test (both lite apps, one process): checked by tsconfig.cross-app.json, whose root holds both.
+  "exclude": ["__tests__/lane1_two_node.test.ts"]
 }

@@ -32,74 +32,35 @@ import {
   type ChatResponse,
 } from '@dina/brain/chat';
 
+import { closeChatStream, openChatStream, runChatTurn } from '../../src/hooks/chat_transport.web';
 import {
-  closeChatStream,
-  openChatStream,
-  runChatTurn,
-} from '../../src/hooks/chat_transport.web';
-import { BRAIN, configLoaded, installCoreServedPage } from '../setup/web_brain';
+  BRAIN,
+  installBrainStreams,
+  installCoreServedPage,
+  streamDelivered,
+  type FakeBrainStream,
+} from '../setup/web_brain';
 
 const ORIG_FETCH = globalThis.fetch;
 let lastRequest: { url: string; init: RequestInit | undefined } | null = null;
 
-// --- EventSource stub --------------------------------------------------------
-// jsdom doesn't ship EventSource. We stub the smallest surface the
-// transport touches and capture the open instance so each test can
-// drive the "server" by hand.
+// --- Brain's event streams ----------------------------------------------------
+// The chat stream is read through `fetch` (it must carry the owner device's
+// signature), so the fake server is a streaming response the test drives.
 
-interface StubEventSourceLike {
-  url: string;
-  close(): void;
-  emitMessage(data: string): void;
-  emitError(): void;
-}
-
-const openedSources: StubEventSourceLike[] = [];
+let streams: ReturnType<typeof installBrainStreams>;
 /** The most recently opened stream, or null before any opened. */
-function latest(): StubEventSourceLike | null {
-  return openedSources[openedSources.length - 1] ?? null;
+function latest(): FakeBrainStream | null {
+  return streams.latest();
 }
-const ORIG_EVENT_SOURCE = (globalThis as { EventSource?: unknown }).EventSource;
-
-class StubEventSource implements StubEventSourceLike {
-  url: string;
-  private listeners: Record<string, ((ev: unknown) => void)[]> = {};
-  private closed = false;
-
-  constructor(url: string) {
-    this.url = url;
-    openedSources.push(this);
-  }
-
-  addEventListener(type: string, fn: (ev: unknown) => void): void {
-    (this.listeners[type] ??= []).push(fn);
-  }
-
-  removeEventListener(type: string, fn: (ev: unknown) => void): void {
-    const arr = this.listeners[type];
-    if (!arr) return;
-    const idx = arr.indexOf(fn);
-    if (idx !== -1) arr.splice(idx, 1);
-  }
-
-  close(): void {
-    this.closed = true;
-    this.listeners = {};
-  }
-
-  emitMessage(data: string): void {
-    if (this.closed) return;
-    const ev = { data } as unknown;
-    for (const fn of this.listeners['message'] ?? []) fn(ev);
-  }
-
-  emitError(): void {
-    if (this.closed) return;
-    for (const fn of this.listeners['error'] ?? []) fn({});
-  }
+/** Push one `message` frame on the latest stream and let the page read it. */
+async function emitMessage(data: string): Promise<void> {
+  latest()?.send(null, data);
+  await streamDelivered();
 }
 
 function mockFetch(response: { status: number; body: unknown }): void {
+  const opened = streams?.opened ?? [];
   installCoreServedPage(async (url, init) => {
     lastRequest = { url, init };
     return new Response(JSON.stringify(response.body), {
@@ -107,6 +68,10 @@ function mockFetch(response: { status: number; body: unknown }): void {
       headers: { 'content-type': 'application/json' },
     });
   });
+  // Keep the streams a test already opened in view across a re-mock.
+  const fresh = installBrainStreams();
+  fresh.opened.unshift(...opened);
+  streams = fresh;
 }
 
 function plainChatResponse(text: string, intent = 'PLAIN'): ChatResponse {
@@ -138,18 +103,12 @@ function serverChatMessage(
 beforeEach(() => {
   resetThreads();
   lastRequest = null;
-  openedSources.length = 0;
-  (globalThis as { EventSource?: unknown }).EventSource = StubEventSource;
+  streams = { opened: [], latest: () => null };
   mockFetch({ status: 200, body: {} });
 });
 
 afterEach(() => {
   globalThis.fetch = ORIG_FETCH;
-  if (ORIG_EVENT_SOURCE === undefined) {
-    delete (globalThis as { EventSource?: unknown }).EventSource;
-  } else {
-    (globalThis as { EventSource?: unknown }).EventSource = ORIG_EVENT_SOURCE;
-  }
   closeChatStream('thread-x');
   closeChatStream('main');
   closeChatStream('thread-stream');
@@ -191,64 +150,70 @@ describe('chat_transport.web — POST contract', () => {
 });
 
 describe('chat_transport.web — SSE contract', () => {
-  it('opens an EventSource on /api/v1/chat/stream with the threadId', async () => {
+  it('opens a stream on /api/v1/chat/stream with the threadId', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hello', 'thread-stream');
+    await streamDelivered();
     expect(latest()).not.toBeNull();
     expect(latest()?.url).toBe(`${BRAIN}/api/v1/chat/stream?threadId=thread-stream`);
   });
 
-  it('reuses the same EventSource across calls on the same thread', async () => {
+  it('reuses the same stream across calls on the same thread', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('one', 'thread-x');
-    const first = latest();
     await runChatTurn('two', 'thread-x');
-    // No new EventSource was constructed for the second call.
-    expect(latest()).toBe(first);
+    await streamDelivered();
+    // No second stream was opened for the second call.
+    expect(streams.opened.filter((s) => s.url.endsWith('threadId=thread-x'))).toHaveLength(1);
   });
 
   it('ref-counts open/close: a second consumer unmounting does NOT tear down the stream', async () => {
     // Two mounted consumers (e.g. a duplicate/hidden route) open the same thread.
     openChatStream('thread-x');
     openChatStream('thread-x');
-    await configLoaded();
+    await streamDelivered();
     const es = latest();
     expect(es).not.toBeNull();
 
     // One unmounts — the stream MUST stay open for the still-active view: a
-    // pushed message is still mirrored (the stub no-ops emit once closed).
+    // pushed message is still mirrored.
     closeChatStream('thread-x');
-    es?.emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'still live')));
+    await emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'still live')));
     expect(getThread('thread-x')).toHaveLength(1);
+    expect(es?.closed).toBe(false);
 
     // The LAST consumer unmounts — now the stream is torn down; a further push
     // is ignored (proves it actually closed at ref-count 0).
     closeChatStream('thread-x');
-    es?.emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'after close')));
+    await emitMessage(JSON.stringify(serverChatMessage('thread-x', 'dina', 'after close')));
     expect(getThread('thread-x')).toHaveLength(1);
+    expect(es?.closed).toBe(true);
   });
 
   it('a view that unmounts before Brain’s address is known opens no stream', async () => {
     openChatStream('thread-x');
     closeChatStream('thread-x');
-    await configLoaded();
+    await streamDelivered();
     expect(latest()).toBeNull();
   });
 
   it('mirrors server-pushed user + dina messages into the local thread store', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ack', 'REMEMBER') });
     await runChatTurn('/remember Emma loves dinosaurs', 'main');
+    await streamDelivered();
 
     // Server emits the two messages handleChat would have written. The user
     // message is the CLEAN payload + the mode in metadata (no slash prefix) —
     // docs/COMPOSER_MODES_DESIGN.md section 7.1. Mirroring must preserve both,
     // so the web SPA renders the clean bubble + a mode chip, just like mobile.
-    latest()?.emitMessage(
+    await emitMessage(
       JSON.stringify(
-        serverChatMessage('main', 'user', 'Emma loves dinosaurs', { metadata: { mode: 'remember' } }),
+        serverChatMessage('main', 'user', 'Emma loves dinosaurs', {
+          metadata: { mode: 'remember' },
+        }),
       ),
     );
-    latest()?.emitMessage(
+    await emitMessage(
       JSON.stringify(serverChatMessage('main', 'dina', 'Got it — saved to your vault.')),
     );
 
@@ -265,11 +230,12 @@ describe('chat_transport.web — SSE contract', () => {
   it('preserves server-assigned message IDs (lifecycle patches need them)', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
+    await streamDelivered();
 
     const srvMsg = serverChatMessage('thread-x', 'dina', 'first version', {
       id: 'srv-fixed-id',
     });
-    latest()?.emitMessage(JSON.stringify(srvMsg));
+    await emitMessage(JSON.stringify(srvMsg));
 
     const after = getThread('thread-x');
     expect(after.find((m) => m.id === 'srv-fixed-id')).toBeDefined();
@@ -278,15 +244,16 @@ describe('chat_transport.web — SSE contract', () => {
   it('replaces existing messages when the server re-emits with the same id', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
+    await streamDelivered();
 
-    const placeholder = serverChatMessage('thread-x', 'dina', "Working on it…", {
+    const placeholder = serverChatMessage('thread-x', 'dina', 'Working on it…', {
       id: 'srv-ask-1',
     });
-    latest()?.emitMessage(JSON.stringify(placeholder));
+    await emitMessage(JSON.stringify(placeholder));
     const patched = serverChatMessage('thread-x', 'dina', 'Final answer.', {
       id: 'srv-ask-1',
     });
-    latest()?.emitMessage(JSON.stringify(patched));
+    await emitMessage(JSON.stringify(patched));
 
     const msgs = getThread('thread-x');
     expect(msgs.filter((m) => m.id === 'srv-ask-1')).toHaveLength(1);
@@ -296,10 +263,9 @@ describe('chat_transport.web — SSE contract', () => {
   it('ignores messages whose threadId does not match the subscribed thread', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
+    await streamDelivered();
 
-    latest()?.emitMessage(
-      JSON.stringify(serverChatMessage('OTHER-THREAD', 'user', 'foo')),
-    );
+    await emitMessage(JSON.stringify(serverChatMessage('OTHER-THREAD', 'user', 'foo')));
     expect(getThread('thread-x')).toHaveLength(0);
     expect(getThread('OTHER-THREAD')).toHaveLength(0);
   });
@@ -307,9 +273,11 @@ describe('chat_transport.web — SSE contract', () => {
   it('silently drops malformed SSE frames', async () => {
     mockFetch({ status: 200, body: plainChatResponse('ok') });
     await runChatTurn('hi', 'thread-x');
+    await streamDelivered();
 
-    latest()?.emitMessage('not-json');
-    latest()?.emitError(); // also tolerated
+    await emitMessage('not-json');
+    latest()?.end(); // a dropped connection is also tolerated
+    await streamDelivered();
 
     expect(getThread('thread-x')).toHaveLength(0);
   });

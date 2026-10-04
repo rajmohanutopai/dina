@@ -48,11 +48,14 @@ export {
   buildServiceQueryExecutionPayload,
   parseServiceQueryExecutionPayload,
   parseServiceExecutionSchemaSnapshot,
+  parseServiceExecutionContinuation,
 } from './types/service_execution';
 export type {
   ServiceQueryExecutionPayload,
   ServiceQueryExecutionPayloadInput,
   ServiceExecutionSchemaSnapshot,
+  ServiceExecutionContinuation,
+  ServiceExecutionTurn,
 } from './types/service_execution';
 export type {
   CategoryLifecycle,

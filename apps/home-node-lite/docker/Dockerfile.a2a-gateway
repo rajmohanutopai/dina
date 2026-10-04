@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.7
+#
+# Home Node Lite — A2A gateway container (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1).
+#
+# The public door for outside A2A agents. Holds no Core or Brain key, no
+# vault and no state: only its own service key, in its own volume, read by
+# its own non-root user. On the compose file's `dina-a2a` network it can
+# reach Core and nothing else (not Brain).
+#
+# Build context: repo root.
+#   docker build -f apps/home-node-lite/docker/Dockerfile.a2a-gateway -t dina-lite-a2a-gateway:dev .
+
+# ─── Builder stage ────────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+# Toolchain kept minimal — no build-base unless a native dep asks for it.
+# The lightest practical combo for Brain's current dep set. If Phase 5d
+# lands local llama via node-llama-cpp, extend here or split a
+# separate `Dockerfile.brain-local-llm` profile.
+RUN apk add --no-cache python3
+
+WORKDIR /workspace
+
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json tsconfig.json ./
+
+# Workspace package manifests (same set as core — npm ci resolves the
+# graph before any src file exists, so this list doesn't vary by which
+# app we're building).
+COPY packages/protocol/package.json packages/protocol/tsconfig.json packages/protocol/
+COPY packages/a2a/package.json packages/a2a/tsconfig.json packages/a2a/
+COPY packages/commerce-protocol/package.json packages/commerce-protocol/tsconfig.json packages/commerce-protocol/
+COPY packages/home-node/package.json packages/home-node/tsconfig.json packages/home-node/
+COPY packages/core/package.json packages/core/tsconfig.json packages/core/
+COPY packages/brain/package.json packages/brain/tsconfig.json packages/brain/
+COPY packages/crypto-node/package.json packages/crypto-node/tsconfig.json packages/crypto-node/
+COPY packages/storage-node/package.json packages/storage-node/tsconfig.json packages/storage-node/
+COPY packages/fs-node/package.json packages/fs-node/tsconfig.json packages/fs-node/
+COPY packages/net-node/package.json packages/net-node/tsconfig.json packages/net-node/
+COPY packages/keystore-node/package.json packages/keystore-node/tsconfig.json packages/keystore-node/
+COPY packages/adapters-node/package.json packages/adapters-node/tsconfig.json packages/adapters-node/
+COPY packages/fixtures/package.json packages/fixtures/
+COPY packages/test-harness/package.json packages/test-harness/tsconfig.json packages/test-harness/
+COPY apps/home-node-lite/a2a-gateway/package.json apps/home-node-lite/a2a-gateway/tsconfig.json apps/home-node-lite/a2a-gateway/
+
+RUN npm ci --workspaces --include-workspace-root
+
+COPY packages/ ./packages/
+COPY apps/home-node-lite/a2a-gateway/ ./apps/home-node-lite/a2a-gateway/
+
+# ─── Runtime stage ────────────────────────────────────────────────────────
+FROM node:22-alpine AS runtime
+
+RUN apk add --no-cache tini
+
+# Its own non-root user, distinct from Core's and Brain's (10001).
+RUN addgroup -g 10003 -S dina-gw \
+ && adduser  -u 10003 -S -G dina-gw -s /sbin/nologin dina-gw \
+ && mkdir -p /var/lib/dina-gateway \
+ && chown dina-gw:dina-gw /var/lib/dina-gateway \
+ && chmod 700 /var/lib/dina-gateway
+
+WORKDIR /app
+
+COPY --from=builder --chown=root:root /workspace ./
+
+USER dina-gw
+
+EXPOSE 8400
+
+ENV NODE_ENV=production \
+    DINA_A2A_GATEWAY_HOST=0.0.0.0 \
+    DINA_A2A_GATEWAY_KEY_DIR=/var/lib/dina-gateway
+
+HEALTHCHECK --start-period=15s --interval=30s --timeout=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8400/healthz || exit 1
+
+# The script is the entrypoint, so `docker compose run --rm a2a-gateway keygen`
+# passes `keygen` to it: create the key once, print its DID for Core.
+ENTRYPOINT ["/sbin/tini", "--", "node_modules/.bin/tsx", "apps/home-node-lite/a2a-gateway/src/bin.ts"]

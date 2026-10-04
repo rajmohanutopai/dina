@@ -48,6 +48,13 @@ import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
+import {
+  createDelegateToA2AAgentTool,
+  createListA2AAgentsTool,
+  createSearchA2AAgentsTool,
+  type A2ADirectoryCoreClient,
+  type A2AToolCoreClient,
+} from '../reasoning/a2a_tools';
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { createDraftReviewTool } from '../reasoning/draft_review_tool';
@@ -112,7 +119,9 @@ export interface BuildAgenticAskPipelineInput {
     Parameters<typeof createSearchPeerlensTool>[0]['appViewClient'] &
     Parameters<typeof createQueryServiceTool>[0]['appViewClient'] &
     Parameters<typeof createProductResearchTools>[0]['appViewClient'] &
-    Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'];
+    Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'] &
+    // Only a host that runs Lane 1 searches the A2A directory (the phone does not).
+    Partial<Parameters<typeof createSearchA2AAgentsTool>[0]['appViewClient']>;
   /** Lazy orchestrator handle for `query_service` — callers wire a thunk-backed
    *  proxy when the orchestrator is constructed later in the boot sequence. */
   orchestratorHandle: Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
@@ -138,6 +147,13 @@ export interface BuildAgenticAskPipelineInput {
    * still work.
    */
   workflowClient?: Parameters<typeof createDelegateToAgentTool>[0]['core'];
+  /**
+   * A2A Lane 1 surface (docs/A2A_GATEWAY_ARCHITECTURE.md §6.2) for
+   * `list_a2a_agents` / `delegate_to_a2a_agent`. Only a host that runs Lane 1
+   * (the server node) passes it; the phone omits it in M1a, so its loop has
+   * no A2A tools at all.
+   */
+  a2aClient?: A2AToolCoreClient & A2ADirectoryCoreClient;
   /** Structured-log sink — propagated to the WM-BRAIN-06d telemetry path. */
   logger?: (entry: Record<string, unknown>) => void;
   /**
@@ -193,6 +209,20 @@ export interface AskToolContext {
    * new `dina session start` requires a fresh vault-read approval.
    */
   sessionId?: string;
+  /**
+   * The conversation this ask's vault reads are released into: Core logs
+   * every release under it (A2A design §4.2 (b)), and an A2A proposal is
+   * bound to it. `chat:<thread>` for the owner's chat, `ask:<id>` otherwise.
+   */
+  releaseSession?: string;
+  /** The chat thread an A2A result returns to; `main` when absent. */
+  replyTo?: string;
+}
+
+/** What the tools of one ask share: the conversation they serve. */
+interface AskToolScope {
+  releaseSession?: string;
+  replyTo?: string;
 }
 
 export interface AgenticAskPipeline {
@@ -295,13 +325,21 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
   // One research cache for every registry this pipeline builds (§5.A6): a
   // `research_id` minted before a Pattern A pause resolves after the resume.
   const researchCache: ResearchCache = createResearchCache();
-  const buildToolsWithGuard = (guard?: VaultPersonaGuard, sessionName?: string): ToolRegistry => {
+  const buildToolsWithGuard = (
+    guard?: VaultPersonaGuard,
+    sessionName?: string,
+    scope: AskToolScope = {},
+  ): ToolRegistry => {
     const reg = new ToolRegistry();
-    reg.register(createListPersonasTool());
+    const vaultOpts = {
+      ...(guard ? { personaGuard: guard } : {}),
+      ...(scope.releaseSession !== undefined ? { releaseSession: scope.releaseSession } : {}),
+    };
+    reg.register(createListPersonasTool(vaultOpts));
     reg.register(createFindPersonTool());
-    reg.register(createVaultSearchTool(guard ? { personaGuard: guard } : {}));
-    reg.register(createBrowseVaultTool(guard ? { personaGuard: guard } : {}));
-    reg.register(createGetFullContentTool(guard ? { personaGuard: guard } : {}));
+    reg.register(createVaultSearchTool(vaultOpts));
+    reg.register(createBrowseVaultTool(vaultOpts));
+    reg.register(createGetFullContentTool(vaultOpts));
     reg.register(createGeocodeTool());
     reg.register(
       createSearchPeerlensTool({
@@ -371,7 +409,12 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // plan has shifted mid-loop (gathered new context, found unexpected
     // results). Pre-loop classification still runs as the soft prime;
     // this tool is the "called multiple times" path.
-    reg.register(createClassifyIntentTool({ classifier: intentClassifier }));
+    reg.register(
+      createClassifyIntentTool({
+        classifier: intentClassifier,
+        ...(scope.releaseSession !== undefined ? { releaseSession: scope.releaseSession } : {}),
+      }),
+    );
     // `draft_review` — LLM-decided trigger for the inline review-draft
     // card flow. Replaces the regex pre-empt that previously short-
     // circuited "/ask write a review of <X>". The actual lifecycle
@@ -385,6 +428,35 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // information"). The LLM resolves natural-language times to a
     // concrete due_at before calling.
     reg.register(createScheduleReminderTool());
+    // A2A Lane 1 — propose a message to a remote agent the owner set up.
+    // Core builds and scrubs the exact message; the owner approves it on a
+    // card before anything leaves. See `reasoning/a2a_tools.ts`.
+    // Only a registry built for a conversation offers them: a proposal is
+    // bound to the conversation's owner turn (§6.2 step 0).
+    // The public directory (§8.4): candidates the owner might set up, never
+    // grants. Offered wherever Lane 1 runs, since registering one is Lane 1's.
+    const directory = input.appViewClient.searchA2AAgents?.bind(input.appViewClient);
+    if (input.a2aClient !== undefined && directory !== undefined) {
+      reg.register(
+        createSearchA2AAgentsTool({
+          appViewClient: { searchA2AAgents: directory },
+          // The node's DID comes from Core: the owner's DID is another
+          // identity on a server node, and the directory names the node.
+          core: input.a2aClient,
+          ...(input.logger !== undefined ? { logger: input.logger } : {}),
+        }),
+      );
+    }
+    if (input.a2aClient !== undefined && scope.releaseSession !== undefined) {
+      const a2a = {
+        core: input.a2aClient,
+        replyTo: scope.replyTo ?? 'main',
+        releaseSession: scope.releaseSession,
+        ...(input.logger !== undefined ? { logger: input.logger } : {}),
+      };
+      reg.register(createListA2AAgentsTool(a2a));
+      reg.register(createDelegateToA2AAgentTool(a2a));
+    }
     // `delegate_to_agent` — hand a self-contained task to a paired
     // agent (a separate device running `dina-agent`; the agent's
     // runtime owns execution choice, Brain stays unaware). Closes the
@@ -438,7 +510,10 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         guardOpts.sessionId = ctx.sessionId;
       }
       const guard = createPersonaGuard(guardOpts);
-      return buildToolsWithGuard(guard, ctx.sessionId);
+      return buildToolsWithGuard(guard, ctx.sessionId, {
+        ...(ctx.releaseSession !== undefined ? { releaseSession: ctx.releaseSession } : {}),
+        ...(ctx.replyTo !== undefined ? { replyTo: ctx.replyTo } : {}),
+      });
     };
   }
 
@@ -489,11 +564,15 @@ function buildIntentClassifier(router: LLMRouter): IntentClassifier {
       });
       return response.content;
     },
-    tocFetcher: async () => {
+    tocFetcher: async (releaseSession) => {
       const svc = getMemoryService();
       if (svc === null) return [];
       try {
-        return await svc.toc(undefined, 20);
+        return await svc.toc(
+          undefined,
+          20,
+          releaseSession !== undefined ? { sessionId: releaseSession, audience: 'brain' } : undefined,
+        );
       } catch {
         return [];
       }

@@ -73,7 +73,9 @@ export function rebindListingsForUpdate(
       changed = true;
     }
     if (!changed) continue;
-    db.execute('UPDATE service_configs SET config_json = ? WHERE rkey = ?', [
+    // A rebind is a config write: it bumps the revision an inbound snapshot
+    // pins, so a snapshot taken before it voids (A2A design §9).
+    db.execute('UPDATE service_configs SET config_json = ?, revision = revision + 1 WHERE rkey = ?', [
       JSON.stringify(config),
       row.rkey,
     ]);

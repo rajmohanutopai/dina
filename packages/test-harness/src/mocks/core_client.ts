@@ -22,6 +22,14 @@
 import { WorkflowConflictError } from '@dina/core';
 
 import type {
+  A2ACallableAgent,
+  A2ADelegateInput,
+  A2ADelegateResult,
+  A2AGuardVerdictInput,
+  A2AGuardVerdictResult,
+  OwnerTurnInput,
+  A2AGuardWork,
+  A2AOperationStatus,
   ApproveWorkflowTaskOptions,
   CoreClient,
   CoreHealth,
@@ -38,6 +46,7 @@ import type {
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
+  VaultReleaseOptions,
   VaultListResult,
   VaultDeleteResult,
   SignResult,
@@ -344,18 +353,19 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('vaultQuery', [persona, query], () => this.vaultQueryResult);
   }
 
-  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
-    return this.dispatch('vaultGet', [persona, itemId], () => this.vaultGetResult);
+  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
+    return this.dispatch('vaultGet', [persona, itemId, ...(opts !== undefined ? [opts] : [])], () => this.vaultGetResult);
   }
 
   async vaultItemsForPerson(
     persona: string,
     personId: string,
     limit: number,
+    opts?: VaultReleaseOptions,
   ): Promise<VaultQueryItem[]> {
     return this.dispatch(
       'vaultItemsForPerson',
-      [persona, personId, limit],
+      [persona, personId, limit, ...(opts !== undefined ? [opts] : [])],
       () => this.vaultItemsForPersonResult,
     );
   }
@@ -691,6 +701,51 @@ export class MockCoreClient implements CoreClient {
 
   async invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult> {
     return this.dispatch('invokePluginTool', [input], () => this.invokePluginToolResult);
+  }
+
+  /** A2A Lane 1 — the callable agents; default: none (Lane 1 not installed). */
+  a2aAgents: A2ACallableAgent[] = [];
+  /** What `delegateToA2AAgent` answers; default: Lane 1 not installed. */
+  a2aDelegateResult: A2ADelegateResult = { ok: false, status: 503, reason: 'a2a_unavailable' };
+  /** What `getA2AOperation` answers; default: not found. */
+  a2aOperation: A2AOperationStatus | null = null;
+  /** What `claimA2AGuardJob` answers; default: no work. */
+  a2aGuardWork: A2AGuardWork | null = null;
+  /** What `submitA2AGuardVerdict` answers; default: accepted. */
+  a2aGuardVerdictResult: A2AGuardVerdictResult = { ok: true, state: 'completed' };
+
+  async listA2AAgents(): Promise<A2ACallableAgent[]> {
+    return this.dispatch('listA2AAgents', [], () => this.a2aAgents);
+  }
+
+  /** What `a2aSelfDid` answers; default: Core has no DID yet. */
+  a2aSelf: string | null = null;
+
+  async a2aSelfDid(): Promise<string | null> {
+    return this.dispatch('a2aSelfDid', [], () => this.a2aSelf);
+  }
+
+  async delegateToA2AAgent(input: A2ADelegateInput): Promise<A2ADelegateResult> {
+    return this.dispatch('delegateToA2AAgent', [input], () => this.a2aDelegateResult);
+  }
+
+  async getA2AOperation(operationId: string): Promise<A2AOperationStatus | null> {
+    return this.dispatch('getA2AOperation', [operationId], () => this.a2aOperation);
+  }
+
+  async claimA2AGuardJob(): Promise<A2AGuardWork | null> {
+    return this.dispatch('claimA2AGuardJob', [], () => this.a2aGuardWork);
+  }
+
+  async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
+    return this.dispatch('submitA2AGuardVerdict', [input], () => this.a2aGuardVerdictResult);
+  }
+
+  /** What `recordOwnerTurn` answers; default: recorded. */
+  ownerTurnRecorded = true;
+
+  async recordOwnerTurn(input: OwnerTurnInput): Promise<boolean> {
+    return this.dispatch('recordOwnerTurn', [input], () => this.ownerTurnRecorded);
   }
 
   /** GROUP_COORDINATION §11 — what `openGroupPlan` answers; default: a refusal (no plan store). */

@@ -29,7 +29,7 @@ import { parsePluginEnvelope } from './plugin_envelope';
 // as well is what stops a proposal being answered as a result — see
 // `complete()`.
 import { carriesHostOperationMarker } from '../plugins/host_operation_lane';
-import { WorkflowConflictError, type WorkflowRepository } from './repository';
+import { WorkflowConflictError, type RequeueObserver, type WorkflowRepository } from './repository';
 
 import type { PluginCompletionHandler } from '../plugins/host_operation_completion';
 
@@ -88,8 +88,8 @@ export class WorkflowTransitionError extends Error {
 /**
  * Payload shape the Response Bridge receives when a delegation task whose
  * payload.type is `service_query_execution` reaches `completed`. Matches
- * the fields `ServiceHandler.createExecutionTaskRaw` persists (see
- * `brain/src/service/service_handler.ts`).
+ * the fields Core's service-query ingress persists
+ * (`service/query_ingress.ts`, `createExecutionTaskRaw`).
  */
 export interface ServiceQueryBridgeContext {
   taskId: string;
@@ -102,7 +102,7 @@ export interface ServiceQueryBridgeContext {
   serviceName: string;
   /**
    * GAP-SH-05 / GAP-WIRE-01: the provider's published schema as of
-   * task-creation time, captured by `ServiceHandler` into
+   * task-creation time, captured by the service-query ingress into
    * `payload.schema_snapshot`. Propagated here so the Response Bridge
    * can validate the runner's output against the `result` schema the
    * requester saw on AppView — not whatever the live config says at
@@ -229,7 +229,7 @@ function deserialiseBridgeCtx(raw: string): ServiceQueryBridgeContext | null {
 
 /**
  * Accept-or-reject a `schema_snapshot` shape from either the task
- * payload (written by `ServiceHandler`) or a stash ctx (written by
+ * payload (written by the service-query ingress) or a stash ctx (written by
  * `serialiseBridgeCtx`). Returns `undefined` for anything that isn't
  * a plain object with the three required keys — a malformed snapshot
  * shouldn't block the bridge, just skip result validation.
@@ -340,10 +340,25 @@ export interface WorkflowServiceOptions {
    * (transition, then tell), not the meaning. A throw is the handler's own.
    */
   approvalDecisionHandler?: ApprovalDecisionHandler | null;
+  /**
+   * Told of each task a lapsed lease returns to the queue, inside the
+   * repository's transaction (`WorkflowRepository.observeRequeues`). The
+   * service installs it on its repository when given one; a service built
+   * without it leaves the repository's observer as it was.
+   */
+  onTaskRequeued?: RequeueObserver | null;
 }
 
 /** See `WorkflowServiceOptions.responseEgressGate`. */
-export type ResponseEgressGate = (ctx: ServiceQueryBridgeContext) => IngressResultDecision;
+export type ResponseEgressGate = (ctx: ServiceQueryBridgeContext) => ResponseEgressDecision;
+
+/**
+ * What the egress gate may answer: the three ingress decisions, or
+ * `delivered` — the result already left by another lane (an inbound A2A
+ * child's result is attached to its operation, design §7.3), so nothing goes
+ * out over D2D and nothing was withheld.
+ */
+export type ResponseEgressDecision = IngressResultDecision | { kind: 'delivered' };
 
 /** See `WorkflowServiceOptions.approvalDecisionHandler`. */
 export type ApprovalDecisionHandler = (args: {
@@ -354,10 +369,12 @@ export type ApprovalDecisionHandler = (args: {
 /** How an approval task left `pending_approval`: the owner's yes, their no, or silence past its deadline. */
 export type ApprovalDecision = 'approved' | 'denied' | 'lapsed';
 
-/** The two hooks a feature contributes to the workflow service, as one value. */
+/** The hooks a feature contributes to the workflow service, as one value. */
 export interface WorkflowHooks {
   responseEgressGate: ResponseEgressGate;
   approvalDecisionHandler: ApprovalDecisionHandler;
+  /** Only features that keep state about a queued task's wait need it (A2A Lane 2). */
+  onTaskRequeued?: RequeueObserver;
 }
 
 /**
@@ -384,6 +401,15 @@ export function composeWorkflowHooks(...parts: readonly WorkflowHooks[]): Workfl
           part.approvalDecisionHandler(args);
         } catch {
           /* the handler owns its own reporting; the next still runs */
+        }
+      }
+    },
+    onTaskRequeued: (task) => {
+      for (const part of parts) {
+        try {
+          part.onTaskRequeued?.(task);
+        } catch {
+          /* each observer's throw is its own; the next still runs */
         }
       }
     },
@@ -517,6 +543,7 @@ export class WorkflowService {
     this.pluginCompletionHandler = options.pluginCompletionHandler ?? null;
     this.responseEgressGate = options.responseEgressGate ?? null;
     this.approvalDecisionHandler = options.approvalDecisionHandler ?? null;
+    if (options.onTaskRequeued != null) this.repo.observeRequeues(options.onTaskRequeued);
   }
 
   /** Expose the underlying repository for callers that need read access (e.g. sweepers). */
@@ -869,7 +896,7 @@ export class WorkflowService {
   private applyEgressGate(ctx: ServiceQueryBridgeContext): ServiceQueryBridgeContext | null {
     const gate = this.responseEgressGate;
     if (gate === null) return ctx;
-    let decision: IngressResultDecision;
+    let decision: ResponseEgressDecision;
     try {
       decision = gate(ctx);
     } catch (error) {
@@ -878,6 +905,7 @@ export class WorkflowService {
         reason: `egress_gate_threw: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+    if (decision.kind === 'delivered') return null;
     if (decision.kind === 'withhold') {
       try {
         this.onIngressResultWithheld?.({

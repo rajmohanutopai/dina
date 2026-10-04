@@ -108,6 +108,8 @@ export type AskExecuteFn = (input: {
    * (docs/COMPOSER_MODES_DESIGN.md 6.5-6.6). Absent for plain Ask.
    */
   forcedSources?: readonly IntentSource[];
+  /** The owner's chat thread this ask serves, when it came from chat (A2A §4.2). */
+  conversation?: string;
   signal?: AbortSignal;
 }) => Promise<ExecuteOutcome>;
 
@@ -120,6 +122,8 @@ export interface AskSubmitRequest {
   sessionId?: string;
   /** Explicit composer lane — propagated through to `AskExecuteFn`. See there. */
   forcedSources?: readonly IntentSource[];
+  /** The owner's chat thread, when the ask came from chat — propagated to `AskExecuteFn`. */
+  conversation?: string;
   /** TTL override. */
   ttlMs?: number;
 }
@@ -234,6 +238,9 @@ export function createAskHandler(
     if (req.forcedSources !== undefined && req.forcedSources.length > 0) {
       enqueueInput.forcedSources = req.forcedSources;
     }
+    if (req.conversation !== undefined && req.conversation !== '') {
+      enqueueInput.conversation = req.conversation;
+    }
     if (req.ttlMs !== undefined) enqueueInput.ttlMs = req.ttlMs;
     await registry.enqueue(enqueueInput);
 
@@ -256,6 +263,9 @@ export function createAskHandler(
             : {}),
           ...(req.forcedSources !== undefined && req.forcedSources.length > 0
             ? { forcedSources: req.forcedSources }
+            : {}),
+          ...(req.conversation !== undefined && req.conversation !== ''
+            ? { conversation: req.conversation }
             : {}),
         });
       } catch (err) {

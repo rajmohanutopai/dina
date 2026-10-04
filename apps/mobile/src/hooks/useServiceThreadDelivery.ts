@@ -28,6 +28,7 @@ export type DeliveryCoreClient = Pick<
   | 'acknowledgeWorkflowEvent'
   | 'getWorkflowTask'
   | 'failWorkflowEventDelivery'
+  | 'getA2AOperation'
 >;
 
 export interface ThreadDeliveryOptions {

@@ -47,7 +47,7 @@ import {
   type CoreRouter,
   type ServiceConfig,
   type ResponseBridgeSender,
-} from '@dina/core';
+ ApprovalNotifier, ServiceInboundNotifier } from '@dina/core';
 // `setD2DSender` registers the generic D2D egress callback for the `/v1/msg/send`
 // route. It lives on the runtime subpath (route module), not the main barrel.
 import { sign as ed25519Sign, verify as ed25519Verify } from '@dina/core';
@@ -64,7 +64,7 @@ import { makeHttpTier1Runner } from './http_tier1_runner';
 
 import type { PdsIdentity } from '../identity/provision_pds';
 import type { Logger } from '../logger';
-import type { ApprovalNotifier, OrchestratorAppView, ServiceInboundNotifier } from '@dina/brain';
+import type { OrchestratorAppView } from '@dina/brain';
 import type { DinaMessage } from '@dina/core/runtime';
 import type { DatabaseAdapter } from '@dina/core/storage';
 
@@ -91,6 +91,11 @@ export interface WireWorkflowPlaneOptions {
    * LLM) via `makeHttpTier1Runner`.
    */
   brainUrl: string;
+  /**
+   * The `fetch` every call to Brain goes through: Core's signed one on a
+   * server node (A2A design §4.1; Brain serves no unsigned caller).
+   */
+  brainFetch?: typeof fetch;
   /** Boot logger; receives structured events from sweepers + runtime. */
   logger: Logger;
 }
@@ -100,7 +105,7 @@ export interface WiredWorkflowPlane {
    * Callback the MsgBox bootstrap passes as `onBypassedD2D`. Routes
    * inbound `service.query` / `service.response` D2D envelopes
    * (bypassed past the contact gate) into the local dispatcher,
-   * which fans out to `ServiceHandler`. Without this wiring, inbound
+   * which hands `service.query` to Core's service-query ingress. Without this wiring, inbound
    * service traffic is decrypted + validated then silently dropped.
    */
   onBypassedD2D(info: { senderDID: string; messageType: string; body: unknown }): Promise<void>;
@@ -121,6 +126,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     brainUrl,
     logger,
   } = options;
+  const brainFetch = options.brainFetch ?? fetch;
 
   // Self-key resolver — every signed request that lands locally
   // (Response Bridge outbound, dina-agent calling /v1/workflow/...)
@@ -305,6 +311,25 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
         // (`service_query_execution`) have no requester chat card here → skip.
         // Throw on failure so the consumer backs off + retries (the Brain
         // endpoint is idempotent by task id).
+        // A2A Lane 1 (design A2A-I7): Dina's sentence about a remote agent's
+        // outcome, for the conversation that asked. The text is Dina's own or a
+        // result the guard released; the thread lives in the Brain.
+        if (details.a2a !== undefined) {
+          const forwarded = await brainFetch(`${brainUrl}/api/v1/chat/a2a-result`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              event_id: event.event_id,
+              operation_id: details.a2a.operation_id,
+              reply_to: details.a2a.reply_to,
+            }),
+          });
+          if (!forwarded.ok) {
+            throw new Error(`forward a2a-result to brain failed: ${forwarded.status}`);
+          }
+          return;
+        }
         if (task.kind !== 'service_query') return;
         // R3-03 — the WATCH delivery policy (active + wake filter) can only be
         // resolved in THIS (Core) process, where the WatchService lives. Resolve it
@@ -324,7 +349,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
         } catch {
           /* not a watch origin → no policy */
         }
-        const res = await fetch(`${brainUrl}/api/v1/chat/service-result`, {
+        const res = await brainFetch(`${brainUrl}/api/v1/chat/service-result`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
@@ -378,7 +403,7 @@ export function wireWorkflowPlane(options: WireWorkflowPlaneOptions): WiredWorkf
     repository: workflowRepository,
     workflowService: shared.workflowService,
     agentDID: pdsIdentity.did,
-    runner: makeHttpTier1Runner({ brainUrl, logger }),
+    runner: makeHttpTier1Runner({ brainUrl, logger, fetchImpl: brainFetch }),
     // runnerFilter defaults to the reserved 'dina.local' lane.
   });
   tier1Runner.start();

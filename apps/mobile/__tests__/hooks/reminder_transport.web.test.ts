@@ -16,7 +16,13 @@ import {
   transportDelete,
   watchFiredReminders,
 } from '../../src/hooks/reminder_transport.web';
-import { BRAIN, configLoaded, installCoreServedPage } from '../setup/web_brain';
+import {
+  BRAIN,
+  configLoaded,
+  installBrainStreams,
+  installCoreServedPage,
+  streamDelivered,
+} from '../setup/web_brain';
 
 type FetchMock = jest.Mock<Promise<unknown>, [string, unknown?]>;
 
@@ -50,6 +56,8 @@ describe('reminder_transport.web — fetch surface', () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [{ id: 'r1' }] }));
     const out = await transportListPending(123);
     expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders/pending?now=123`, {
+      method: 'GET',
+      headers: {},
       credentials: 'omit',
     });
     expect(out).toEqual([{ id: 'r1' }]);
@@ -59,6 +67,8 @@ describe('reminder_transport.web — fetch surface', () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [] }));
     await transportListPending();
     expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders/pending`, {
+      method: 'GET',
+      headers: {},
       credentials: 'omit',
     });
   });
@@ -67,6 +77,8 @@ describe('reminder_transport.web — fetch surface', () => {
     fetchMock.mockResolvedValue(okRes({ reminders: [] }));
     await transportListByPersona('he/alth');
     expect(fetchMock).toHaveBeenCalledWith(`${BRAIN}/api/v1/reminders?persona=he%2Falth`, {
+      method: 'GET',
+      headers: {},
       credentials: 'omit',
     });
   });
@@ -104,69 +116,38 @@ describe('reminder_transport.web — fetch surface', () => {
   });
 });
 
-describe('reminder_transport.web — fired SSE stream', () => {
+describe('reminder_transport.web — fired event stream', () => {
+  let streams: ReturnType<typeof installBrainStreams>;
   beforeEach(() => {
     installCoreServedPage(jest.fn());
-  });
-  afterEach(() => {
-    delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
+    streams = installBrainStreams();
   });
 
   it('subscribes to /stream, parses fired frames, drops malformed, disposes', async () => {
-    const listeners: Record<string, (ev: { data: string }) => void> = {};
-    const closeSpy = jest.fn();
-    let openedUrl = '';
-    class FakeEventSource {
-      constructor(url: string) {
-        openedUrl = url;
-      }
-      addEventListener(type: string, fn: (ev: { data: string }) => void): void {
-        listeners[type] = fn;
-      }
-      close(): void {
-        closeSpy();
-      }
-    }
-    (globalThis as unknown as { EventSource: unknown }).EventSource = FakeEventSource;
-
     const fired: { id: string }[] = [];
     const dispose = watchFiredReminders((r) => fired.push(r as { id: string }));
-    await configLoaded();
+    await streamDelivered();
 
-    expect(openedUrl).toBe(`${BRAIN}/api/v1/reminders/stream`);
-
-    const fire = listeners.fired;
-    if (fire === undefined) throw new Error('no fired listener attached');
-    fire({ data: JSON.stringify({ id: 'r9', message: 'ring' }) });
+    const stream = streams.latest();
+    expect(stream?.url).toBe(`${BRAIN}/api/v1/reminders/stream`);
+    stream?.send('fired', JSON.stringify({ id: 'r9', message: 'ring' }));
+    await streamDelivered();
     expect(fired).toEqual([{ id: 'r9', message: 'ring' }]);
 
-    // Malformed frame is dropped, not thrown.
-    expect(() => fire({ data: 'not-json' })).not.toThrow();
+    // A malformed frame is dropped, not thrown.
+    stream?.send('fired', 'not-json');
+    await streamDelivered();
     expect(fired).toHaveLength(1);
 
     dispose();
-    expect(closeSpy).toHaveBeenCalledTimes(1);
+    await streamDelivered();
+    expect(stream?.closed).toBe(true);
   });
 
   it('disposed before Brain’s address is known: the stream never opens', async () => {
-    let opened = 0;
-    (globalThis as unknown as { EventSource: unknown }).EventSource = class {
-      addEventListener = jest.fn();
-      close = jest.fn();
-      constructor() {
-        opened += 1;
-      }
-    };
     const dispose = watchFiredReminders(jest.fn());
     dispose();
-    await configLoaded();
-    expect(opened).toBe(0);
-  });
-
-  it('is a no-op (no throw) when EventSource is unavailable (SSR/test env)', () => {
-    delete (globalThis as unknown as { EventSource?: unknown }).EventSource;
-    const dispose = watchFiredReminders(jest.fn());
-    expect(typeof dispose).toBe('function');
-    expect(() => dispose()).not.toThrow();
+    await streamDelivered();
+    expect(streams.opened).toHaveLength(0);
   });
 });

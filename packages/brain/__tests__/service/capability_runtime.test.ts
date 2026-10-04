@@ -12,7 +12,7 @@
 import {
   AppointmentAvailabilityResultSchema,
   AppointmentBookResultSchema,
-} from '../../src/service/capabilities/appointment';
+} from '@dina/core';
 import { getVaultFactBuilder } from '../../src/service/capabilities/vault_facts';
 import {
   buildCapabilityRuntime,

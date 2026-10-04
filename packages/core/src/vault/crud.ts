@@ -32,6 +32,8 @@ import {
 } from '../constants';
 import { searchIndex, hasIndex } from '../embedding/persona_index';
 
+import { isVaultOperationAllowed, type VaultOrigin } from './origin_capability';
+import { recordVaultRelease, type ReleaseContext } from './release';
 import {
   getVaultRepository,
   setVaultRepository,
@@ -39,7 +41,6 @@ import {
   InMemoryVaultRepository,
   type VaultRepository,
 } from './repository';
-import { isVaultOperationAllowed, type VaultOrigin } from './origin_capability';
 import { validateVaultItem, SEARCHABLE_RETRIEVAL_POLICIES } from './validation';
 
 import type { VaultItem, SearchQuery } from '@dina/test-harness';
@@ -310,13 +311,32 @@ export function storeBatch(persona: string, items: VaultItemWrite[]): string[] {
  * person resolves to — bypasses FTS/name matching entirely. Returns []
  * when no repo is wired for the persona (matches the read-path contract).
  */
-export function getItemsForPerson(persona: string, personId: string, limit: number): VaultItem[] {
+export function getItemsForPerson(
+  persona: string,
+  personId: string,
+  limit: number,
+  release?: ReleaseContext,
+): VaultItem[] {
   const repo = getVaultRepository(persona);
   if (repo === null) return [];
-  return repo.getItemsForPersonSync(personId, limit);
+  return released(release, persona, repo.getItemsForPersonSync(personId, limit));
 }
 
-export function queryVault(persona: string, query: SearchQuery): VaultItem[] {
+/** Record a release of `items` (when the read is one) and hand them back. */
+function released<T extends VaultItem | null>(release: ReleaseContext | undefined, persona: string, items: T[]): T[] {
+  recordVaultRelease(
+    release,
+    persona,
+    items.filter((i): i is NonNullable<T> => i !== null),
+  );
+  return items;
+}
+
+export function queryVault(persona: string, query: SearchQuery, release?: ReleaseContext): VaultItem[] {
+  return released(release, persona, searchVault(persona, query));
+}
+
+function searchVault(persona: string, query: SearchQuery): VaultItem[] {
   const mode = query.mode || 'fts5';
 
   switch (mode) {
@@ -599,8 +619,8 @@ function toFloat32(v: Float32Array | Uint8Array): Float32Array {
  * invisible to callers — only query/search results are filtered by
  * retrieval_policy, but getItem filters only by deleted flag.
  */
-export function getItem(persona: string, itemId: string): VaultItem | null {
-  return requireRepo(persona).getItemSync(itemId);
+export function getItem(persona: string, itemId: string, release?: ReleaseContext): VaultItem | null {
+  return released(release, persona, [requireRepo(persona).getItemSync(itemId)])[0] ?? null;
 }
 
 /**
@@ -650,7 +670,36 @@ export function vaultItemCount(persona: string): number {
  * intent and returns items ordered by timestamp DESC instead. Matches
  * Python's `core.search_vault(persona, query="")` behaviour.
  */
-export function listRecentItems(persona: string, limit: number, type?: string): VaultItem[] {
+export function listRecentItems(
+  persona: string,
+  limit: number,
+  type?: string,
+  release?: ReleaseContext,
+): VaultItem[] {
+  return released(release, persona, recentItems(persona, limit, type));
+}
+
+/** Deepest page offset a list may ask for; past it the answer is an empty page. */
+export const MAX_LIST_OFFSET = 1000;
+
+/**
+ * One page of the newest items, and whether more follow. Records only the
+ * page it returns: the look-ahead item that answers `more` is not released.
+ * An offset past `MAX_LIST_OFFSET` gets an empty page, never another page.
+ */
+export function listRecentPage(
+  persona: string,
+  page: { offset: number; limit: number; type?: string },
+  release?: ReleaseContext,
+): { items: VaultItem[]; more: boolean } {
+  if (page.offset > MAX_LIST_OFFSET) return { items: [], more: false };
+  const offset = Math.max(0, page.offset);
+  const window = recentItems(persona, offset + page.limit + 1, page.type);
+  const items = window.slice(offset, offset + page.limit);
+  return { items: released(release, persona, items), more: window.length > offset + page.limit };
+}
+
+function recentItems(persona: string, limit: number, type?: string): VaultItem[] {
   if (limit <= 0) return [];
   const repo = requireRepo(persona);
   const wantType = type !== undefined && type !== '' ? type : undefined;
@@ -737,7 +786,12 @@ export function browseRecent(
   after: number,
   before: number,
   limit = 20,
+  release?: ReleaseContext,
 ): VaultItem[] {
+  return released(release, persona, recentBetween(persona, after, before, limit));
+}
+
+function recentBetween(persona: string, after: number, before: number, limit: number): VaultItem[] {
   if (after > before) return [];
   const results: VaultItem[] = [];
   for (const item of requireRepo(persona).valuesSync()) {

@@ -1,0 +1,464 @@
+{
+ "generator": "apps/home-node-lite/core-server/__tests__/a2a/reference/card_forms.py vectors",
+ "sdk": "a2a-sdk 1.2.1",
+ "cards": [
+  {
+   "name": "dina_projected",
+   "card": {
+    "name": "Bus 42",
+    "description": "Arrival times for route 42.",
+    "supportedInterfaces": [
+     {
+      "url": "https://dina.example.org/a2a/v1",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     },
+     {
+      "url": "https://dina.example.org/a2a/rest",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "1.0.0+0000000000000000",
+    "capabilities": {
+     "streaming": true,
+     "pushNotifications": true,
+     "extensions": [
+      {
+       "uri": "https://dinakernel.com/a2a/ext/v1",
+       "description": "Dina invocation contract: the node DID; per skill, the params JSON Schema and its hash; and how a DID-bound client signs its requests.",
+       "params": {
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "skills": {
+         "eta_query@bus": {
+          "paramsSchema": {
+           "type": "object",
+           "required": [
+            "route_id"
+           ],
+           "additionalProperties": false,
+           "properties": {
+            "route_id": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 16
+            },
+            "stops_ahead": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 10
+            }
+           }
+          },
+          "schemaHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+         }
+        },
+        "requestSigning": {
+         "headers": [
+          "X-DID",
+          "X-Timestamp",
+          "X-Nonce",
+          "X-Signature"
+         ],
+         "canonical": "dina-a2a-request:v1\n{NODE_DID}\n{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}",
+         "audience": "NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other",
+         "signature": "Ed25519, lower-case hex",
+         "timestamp": "RFC 3339 UTC, within five minutes",
+         "nonce": "16 to 128 characters of [A-Za-z0-9_-], never reused",
+         "keys": "Ed25519 keys under authentication; in a document with none (did:plc), its Ed25519 verification methods",
+         "binding": "/a2a/v1/did-binding"
+        }
+       }
+      }
+     ],
+     "extendedAgentCard": true
+    },
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query@bus",
+      "name": "ETA / arrival time",
+      "description": "Estimated arrival time for a transit route at a stop. Call with one JSON data part {\"skill\": <this id>, \"params\": {...}}. Required params: route_id (string).",
+      "tags": [
+       "transit"
+      ],
+      "inputModes": [
+       "application/json"
+      ],
+      "outputModes": [
+       "application/json"
+      ],
+      "examples": [
+       "{\"params\":{\"route_id\":\"x\"},\"skill\":\"eta_query@bus\"}"
+      ]
+     }
+    ],
+    "securitySchemes": {
+     "bearer": {
+      "httpAuthSecurityScheme": {
+       "scheme": "Bearer",
+       "description": "A client token the node’s owner issues to your agent."
+      }
+     }
+    },
+    "securityRequirements": [
+     {
+      "schemes": {
+       "bearer": {
+        "list": []
+       }
+      }
+     }
+    ]
+   },
+   "sdk_payload": "{\"capabilities\":{\"extendedAgentCard\":true,\"extensions\":[{\"description\":\"Dina invocation contract: the node DID; per skill, the params JSON Schema and its hash; and how a DID-bound client signs its requests.\",\"params\":{\"did\":\"did:plc:ewvi7nxzyoun6zhxrhs64oiz\",\"requestSigning\":{\"audience\":\"NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other\",\"binding\":\"/a2a/v1/did-binding\",\"canonical\":\"dina-a2a-request:v1\\n{NODE_DID}\\n{METHOD}\\n{PATH}\\n{QUERY}\\n{TIMESTAMP}\\n{NONCE}\\n{SHA256_HEX(BODY)}\",\"headers\":[\"X-DID\",\"X-Timestamp\",\"X-Nonce\",\"X-Signature\"],\"keys\":\"Ed25519 keys under authentication; in a document with none (did:plc), its Ed25519 verification methods\",\"nonce\":\"16 to 128 characters of [A-Za-z0-9_-], never reused\",\"signature\":\"Ed25519, lower-case hex\",\"timestamp\":\"RFC 3339 UTC, within five minutes\"},\"skills\":{\"eta_query@bus\":{\"paramsSchema\":{\"additionalProperties\":false,\"properties\":{\"route_id\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"},\"stops_ahead\":{\"maximum\":10,\"minimum\":0,\"type\":\"integer\"}},\"required\":[\"route_id\"],\"type\":\"object\"},\"schemaHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}}},\"uri\":\"https://dinakernel.com/a2a/ext/v1\"}],\"pushNotifications\":true,\"streaming\":true},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Arrival times for route 42.\",\"name\":\"Bus 42\",\"securitySchemes\":{\"bearer\":{\"httpAuthSecurityScheme\":{\"description\":\"A client token the node’s owner issues to your agent.\",\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"Estimated arrival time for a transit route at a stop. Call with one JSON data part {\\\"skill\\\": <this id>, \\\"params\\\": {...}}. Required params: route_id (string).\",\"examples\":[\"{\\\"params\\\":{\\\"route_id\\\":\\\"x\\\"},\\\"skill\\\":\\\"eta_query@bus\\\"}\"],\"id\":\"eta_query@bus\",\"inputModes\":[\"application/json\"],\"name\":\"ETA / arrival time\",\"outputModes\":[\"application/json\"],\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://dina.example.org/a2a/v1\"},{\"protocolBinding\":\"HTTP+JSON\",\"protocolVersion\":\"1.0\",\"url\":\"https://dina.example.org/a2a/rest\"}],\"version\":\"1.0.0+0000000000000000\"}"
+  },
+  {
+   "name": "bearer_requirement",
+   "card": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "1.2.0",
+    "capabilities": {
+     "streaming": true
+    },
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query",
+      "name": "ETA",
+      "description": "When the bus comes.",
+      "tags": [
+       "transit"
+      ]
+     }
+    ],
+    "securitySchemes": {
+     "bearer": {
+      "httpAuthSecurityScheme": {
+       "scheme": "Bearer"
+      }
+     }
+    },
+    "securityRequirements": [
+     {
+      "schemes": {
+       "bearer": {
+        "list": []
+       }
+      }
+     }
+    ]
+   },
+   "sdk_payload": "{\"capabilities\":{\"streaming\":true},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Answers when the next bus comes.\",\"name\":\"Transit agent\",\"securitySchemes\":{\"bearer\":{\"httpAuthSecurityScheme\":{\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"When the bus comes.\",\"id\":\"eta_query\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://agent.example/a2a\"}],\"version\":\"1.2.0\"}"
+  },
+  {
+   "name": "empties",
+   "card": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "",
+    "capabilities": {
+     "streaming": false,
+     "extensions": [
+      {
+       "uri": "urn:x",
+       "required": false,
+       "params": {
+        "a": "",
+        "b": [],
+        "c": {},
+        "d": null,
+        "e": 0,
+        "f": false,
+        "g": {
+         "h": ""
+        }
+       }
+      }
+     ]
+    },
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "s",
+      "name": "S",
+      "description": "",
+      "tags": [],
+      "examples": []
+     }
+    ],
+    "documentationUrl": "",
+    "securitySchemes": {
+     "oauth": {
+      "oauth2SecurityScheme": {
+       "flows": {
+        "clientCredentials": {
+         "tokenUrl": "https://agent.example/token",
+         "scopes": {
+          "read": "",
+          "write": "Write"
+         }
+        }
+       }
+      }
+     }
+    },
+    "securityRequirements": [
+     {
+      "schemes": {
+       "oauth": {
+        "list": [
+         "read"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "sdk_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"e\":0,\"f\":false},\"uri\":\"urn:x\"}],\"streaming\":false},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Answers when the next bus comes.\",\"name\":\"Transit agent\",\"securityRequirements\":[{\"schemes\":{\"oauth\":{\"list\":[\"read\"]}}}],\"securitySchemes\":{\"oauth\":{\"oauth2SecurityScheme\":{\"flows\":{\"clientCredentials\":{\"scopes\":{\"write\":\"Write\"},\"tokenUrl\":\"https://agent.example/token\"}}}}},\"skills\":[{\"id\":\"s\",\"name\":\"S\"}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://agent.example/a2a\"}]}"
+  },
+  {
+   "name": "unknown_members",
+   "card": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "1.2.0",
+    "capabilities": {
+     "streaming": true
+    },
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query",
+      "name": "ETA",
+      "description": "When the bus comes.",
+      "tags": [
+       "transit"
+      ]
+     }
+    ],
+    "url": "https://agent.example/a2a",
+    "preferredTransport": "JSONRPC",
+    "protocolVersion": "0.3.0",
+    "x_vendor": {
+     "k": "v"
+    },
+    "provider": {
+     "url": "https://agent.example",
+     "organization": "Agent Co",
+     "x_extra": "kept by 8.4.1"
+    }
+   },
+   "sdk_payload": "{\"capabilities\":{\"streaming\":true},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Answers when the next bus comes.\",\"name\":\"Transit agent\",\"provider\":{\"organization\":\"Agent Co\",\"url\":\"https://agent.example\"},\"skills\":[{\"description\":\"When the bus comes.\",\"id\":\"eta_query\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://agent.example/a2a\"}],\"version\":\"1.2.0\"}"
+  },
+  {
+   "name": "plain",
+   "card": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "1.2.0",
+    "capabilities": {
+     "streaming": true
+    },
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query",
+      "name": "ETA",
+      "description": "When the bus comes.",
+      "tags": [
+       "transit"
+      ]
+     }
+    ]
+   },
+   "sdk_payload": "{\"capabilities\":{\"streaming\":true},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Answers when the next bus comes.\",\"name\":\"Transit agent\",\"skills\":[{\"description\":\"When the bus comes.\",\"id\":\"eta_query\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://agent.example/a2a\"}],\"version\":\"1.2.0\"}"
+  }
+ ],
+ "signed": {
+  "jwks": {
+   "keys": [
+    {
+     "kty": "EC",
+     "crv": "P-256",
+     "kid": "sdk-test-key",
+     "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+     "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"
+    }
+   ]
+  },
+  "cards": {
+   "bearer_requirement": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     }
+    ],
+    "version": "1.2.0",
+    "capabilities": {
+     "streaming": true
+    },
+    "securitySchemes": {
+     "bearer": {
+      "httpAuthSecurityScheme": {
+       "scheme": "Bearer"
+      }
+     }
+    },
+    "securityRequirements": [
+     {
+      "schemes": {
+       "bearer": {}
+      }
+     }
+    ],
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query",
+      "name": "ETA",
+      "description": "When the bus comes.",
+      "tags": [
+       "transit"
+      ]
+     }
+    ],
+    "signatures": [
+     {
+      "protected": "eyJhbGciOiJFUzI1NiIsImprdSI6Imh0dHBzOi8vYWdlbnQuZXhhbXBsZS9qd2tzLmpzb24iLCJraWQiOiJzZGstdGVzdC1rZXkiLCJ0eXAiOiJKT1NFIn0",
+      "signature": "WOhCU8VtlTU_OnzndmnLZbA8Owe3CiDLsl0Zerge7N8a7u8knnKeEVpVvAY95KqzQc1s-gYUrjRKgnDHipHzJg"
+     }
+    ]
+   },
+   "dual_version": {
+    "name": "Transit agent",
+    "description": "Answers when the next bus comes.",
+    "supportedInterfaces": [
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+     },
+     {
+      "url": "https://agent.example/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "0.3"
+     }
+    ],
+    "version": "1.2.0",
+    "capabilities": {
+     "streaming": true
+    },
+    "securitySchemes": {
+     "bearer": {
+      "httpAuthSecurityScheme": {
+       "scheme": "Bearer"
+      },
+      "scheme": "Bearer",
+      "type": "http"
+     }
+    },
+    "securityRequirements": [
+     {
+      "schemes": {
+       "bearer": {}
+      }
+     }
+    ],
+    "defaultInputModes": [
+     "application/json"
+    ],
+    "defaultOutputModes": [
+     "application/json"
+    ],
+    "skills": [
+     {
+      "id": "eta_query",
+      "name": "ETA",
+      "description": "When the bus comes.",
+      "tags": [
+       "transit"
+      ]
+     }
+    ],
+    "signatures": [
+     {
+      "protected": "eyJhbGciOiJFUzI1NiIsImprdSI6Imh0dHBzOi8vYWdlbnQuZXhhbXBsZS9qd2tzLmpzb24iLCJraWQiOiJzZGstdGVzdC1rZXkiLCJ0eXAiOiJKT1NFIn0",
+      "signature": "HpAwHjjlrfpTYv8p-di9-m_BWXSycAIDf9pwuSy-rU3xoyawbhBwqPtr2Evdto5TP3S-_a6VHD4wBKiA7TAOzQ"
+     }
+    ],
+    "preferredTransport": "JSONRPC",
+    "protocolVersion": "0.3",
+    "security": [
+     {
+      "bearer": []
+     }
+    ],
+    "url": "https://agent.example/a2a"
+   }
+  }
+ }
+}

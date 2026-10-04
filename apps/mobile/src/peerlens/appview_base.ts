@@ -10,3 +10,6 @@ import { mobileHostedEndpoints } from '../services/hosted_endpoints';
 export function appViewBase(): Promise<string> {
   return Promise.resolve(mobileHostedEndpoints().appViewBaseUrl);
 }
+
+/** How those reads are sent: the AppView is public, so a plain fetch. */
+export const appViewFetch: typeof fetch = (input, init) => fetch(input, init);

@@ -130,6 +130,7 @@ beforeEach(() => {
     isAuthorized: () => false,
     listByGrantee: () => [],
     revoke: () => true,
+    revokeAllForGrantee: () => 0,
   });
   setD2DSender(async (to, type, body) => {
     sent.push({ to, type, body });

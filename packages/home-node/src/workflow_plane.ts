@@ -31,8 +31,8 @@
  * copies of this composition. Both now consume this module.
  */
 
-import { validateAgainstSchema } from '@dina/brain';
 import { appendNotification } from '@dina/brain/notifications';
+import { serviceSchemaError } from '@dina/core';
 import {
   BridgePendingSweeper,
   LeaseExpirySweeper,
@@ -53,6 +53,8 @@ import {
   setWorkflowRepository,
   setWorkflowService,
   composeWorkflowHooks,
+  a2aWorkflowHooks,
+  getA2ARuntime,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
@@ -97,7 +99,7 @@ export interface WireWorkflowPlaneOptions {
    * callbacks. `directResponder` is optional — when omitted we
    * synthesize one over the same `sendD2D` egress path.
    */
-  runtime: Omit<BuildHomeNodeServiceRuntimeOptions, 'directResponder'> & {
+  runtime: Omit<BuildHomeNodeServiceRuntimeOptions, 'directResponder' | 'workflow'> & {
     directResponder?: BuildHomeNodeServiceRuntimeOptions['directResponder'];
   };
   /**
@@ -180,7 +182,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
         });
       }
     },
-    validateResult: validateAgainstSchema,
+    validateResult: serviceSchemaError,
     onMalformedResult: (ctx: ServiceQueryBridgeContext, err: Error) =>
       log({
         event: 'response_bridge.malformed_result',
@@ -223,6 +225,9 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       integrationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       orderAttachmentWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       negotiationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+      // A2A Lane 1: mints the permit and dispatch child when the owner approves
+      // a consent card (a no-op where Lane 1 is not installed).
+      a2aWorkflowHooks(getA2ARuntime),
     ),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator
@@ -288,6 +293,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
 
   const runtime = buildHomeNodeServiceRuntime({
     ...opts.runtime,
+    workflow: workflowService,
     directResponder,
     ...(opts.setInterval !== undefined ? { setInterval: opts.setInterval } : {}),
     ...(opts.clearInterval !== undefined ? { clearInterval: opts.clearInterval } : {}),

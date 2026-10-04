@@ -133,24 +133,38 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
   async put(rkey: string, valueJSON: string, updatedAtMs: number): Promise<void> {
     // `created_at` is preserved on conflict (only set on first insert);
     // `updated_at` always advances. Mirrors the AppView createdAt/updatedAt split.
+    // `revision` counts every write (A2A design §9): an inbound execution
+    // snapshot pins it, and a timestamp is not a revision.
     this.db.execute(
-      `INSERT INTO service_configs (rkey, config_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO service_configs (rkey, config_json, created_at, updated_at, revision)
+       VALUES (?, ?, ?, ?,
+         1 + COALESCE((SELECT revision FROM service_config_revision_floor WHERE rkey = ?), 0))
        ON CONFLICT(rkey) DO UPDATE SET
          config_json = excluded.config_json,
          updated_at = excluded.updated_at,
+         revision = service_configs.revision + 1,
          publication_state = 'pending',
          last_published_uri = NULL,
          last_published_cid = NULL,
          last_publish_error = NULL,
          last_publish_attempt_at = NULL,
          next_publish_retry_at = NULL`,
-      [rkey, valueJSON, updatedAtMs, updatedAtMs],
+      [rkey, valueJSON, updatedAtMs, updatedAtMs, rkey],
     );
   }
 
   async remove(rkey: string): Promise<void> {
-    this.db.execute('DELETE FROM service_configs WHERE rkey = ?', [rkey]);
+    // Keep the listing's last revision, so a listing made again under this
+    // rkey continues the count instead of starting at 1 (A2A design §9).
+    this.db.transaction(() => {
+      this.db.execute(
+        `INSERT INTO service_config_revision_floor (rkey, revision)
+           SELECT rkey, revision FROM service_configs WHERE rkey = ?
+         ON CONFLICT(rkey) DO UPDATE SET revision = MAX(service_config_revision_floor.revision, excluded.revision)`,
+        [rkey],
+      );
+      this.db.execute('DELETE FROM service_configs WHERE rkey = ?', [rkey]);
+    });
   }
 
   async getPublicationStatus(rkey: string): Promise<ServicePublicationStatus | null> {

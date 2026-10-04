@@ -34,11 +34,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a task 4.3.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+
 import {
   AppViewClient,
   classifyAttestationPublishError,
   createAppViewReasoningEvidenceSource,
   createReasoningOutputGuard,
+  PDSPublisherError,
   publishAttestationToPDS,
 } from '@dina/brain';
 import {
@@ -78,6 +81,24 @@ import {
   type CommerceSweepers,
   getWorkflowService,
   composeWorkflowHooks,
+  A2AStore,
+  a2aWorkflowHooks,
+  buildInboundCard,
+  cardPublicKey,
+  getA2ACardConfig,
+  getA2ARuntime,
+  getA2AStore,
+  installA2A,
+  installA2ACardConfig,
+  installA2ADidResolver,
+  installA2APublisher,
+  installA2ADirectoryEvidence,
+  newA2AId,
+  sign as ed25519Sign,
+  verify as ed25519Verify,
+  installCoreServiceDid,
+  deriveP256SigningKey,
+  setA2AHostTransport,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
@@ -98,6 +119,7 @@ import {
   WorkflowService,
   type CoreRouter,
 } from '@dina/core';
+import { DIDResolver } from '@dina/core/runtime';
 import {
   bootstrapMsgBox,
   disconnectMsgBox,
@@ -105,13 +127,15 @@ import {
   type MsgBoxBootConfig,
   type WSFactory,
 } from '@dina/core/runtime';
-import { makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
-import { makeNodeWebSocketFactory } from '@dina/net-node';
+import { A2ADispatchRunner, ensureA2ACardKey, makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
+import { createA2AHostTransport, makeNodeWebSocketFactory } from '@dina/net-node';
 
 import { createAgentFacades } from './agent/facades';
 import { makeHttpAskHandler } from './agent/http_ask_handler';
 import { PhoneApprovalManager } from './approval/phone_approval_manager';
+import { A2ACardPublisher, cardKeyCheck, cardRepoOverPds } from './appview/a2a_card_publisher';
 import { wireServiceProfilePublisher, type WiredServicePublisher } from './appview/wire_publisher';
+import { createSignedBrainFetch } from './brain_link';
 import { wireCommerceEpoch } from './commerce/wire_epoch';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
@@ -290,9 +314,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // "Rate limit exceeded". Mobile already calls `configureRateLimiter` at boot
   // for exactly this reason; the lite Core server must too. Drive it from the
   // same DINA_RATE_LIMIT knob so one env var controls both layers.
+  // A2A Lane 2: the gateway's own service DID, exempt from the per-DID
+  // bucket (design §4.1; see config.ts `a2a`). Unset, Lane 2 stays off and
+  // no caller is a gateway.
+  const a2aGatewayDid = config.a2a?.gatewayDid;
+  if (a2aGatewayDid !== undefined) {
+    registerService(a2aGatewayDid, 'gateway');
+    logger.info({ gatewayDid: a2aGatewayDid }, 'a2a gateway service DID registered');
+  }
   configureRateLimiter({
     maxRequests: config.runtime.rateLimitPerMinute,
     windowSeconds: 60,
+    ...(a2aGatewayDid === undefined ? {} : { perDidMax: { [a2aGatewayDid]: Number.POSITIVE_INFINITY } }),
   });
   logger.info(
     { maxRequestsPerMinute: config.runtime.rateLimitPerMinute },
@@ -437,6 +470,21 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     elapsedMs: 0,
     pendingReason: '@dina/adapters-node FileKeystore wiring pending identity',
   });
+
+  // Core's calls to Brain are signed with Core's service key (A2A design
+  // §4.1, plan §3.18): Brain serves no unsigned caller, and learns this DID
+  // from Core. Without a seed in hand there is no key, and Brain refuses
+  // Core's calls until there is.
+  let brainFetch: typeof fetch = fetch;
+  if (
+    identity !== undefined &&
+    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
+  ) {
+    const coreService = deriveIdentity({ masterSeed: identity.seed }).services.core;
+    const coreServiceDid = deriveDIDKey(coreService.publicKey);
+    brainFetch = createSignedBrainFetch({ did: coreServiceDid, privateKey: coreService.privateKey });
+    installCoreServiceDid(coreServiceDid);
+  }
 
   // PDS provisioning — analog of mobile onboarding's `provisionIdentity`
   // for the Node runtime. Off by default (DINA_PDS_PROVISION=1 +
@@ -603,6 +651,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // reads it per tick through this holder.
   const inProcessRouter: { current: CoreRouter | null } = { current: null };
   let phoneApprovalManager: PhoneApprovalManager | null = null;
+  let a2aRunner: A2ADispatchRunner | null = null;
+  let a2aCardPublisher: A2ACardPublisher | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
@@ -631,6 +681,41 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       );
 
       identityDBForWorkflow = result.identityDB;
+      // A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1, §6.6): the A2A
+      // store on the identity connection (its rows commit with workflow rows),
+      // and the host transport that resolves, vets and pins before connecting.
+      // The runner starts below, once a workflow service exists.
+      installA2A({ store: new A2AStore(result.identityDB) });
+      setA2AHostTransport(createA2AHostTransport());
+      // The owner's review of a remote agent shows the directory's PeerLens
+      // evidence for the Dina node its card names (§6.1, §8.4), read by this
+      // trusted host, never relayed by Brain. Display only.
+      const directory = new AppViewClient({ appViewURL: config.endpoints.appViewBaseUrl });
+      installA2ADirectoryEvidence(async (did) => {
+        const listed = await directory.getA2ACard(did);
+        return listed === null
+          ? null
+          : {
+              endpoint: listed.endpoint,
+              trustScore: listed.trustScore,
+              recommendation: listed.recommendation,
+              indexedAt: listed.indexedAt,
+              stale: listed.stale,
+            };
+      });
+      // Lane 2's card (§7.1): signed with the ES256 card key from the master
+      // seed (plan D4, generation 0), for the public origin Core is told,
+      // never one the gateway names.
+      if (config.a2a?.publicOrigin !== undefined) {
+        installA2ACardConfig({
+          key: { privateKey: deriveP256SigningKey(identity.seed, 0).privateKey, generation: 0 },
+          publicOrigin: config.a2a.publicOrigin,
+        });
+        // A client binding a did:plc (design §5.1, M4): the host looks its
+        // document up, uncached; Core reads the keys and checks the signature.
+        const didResolver = new DIDResolver();
+        installA2ADidResolver((did) => didResolver.lookup(did));
+      }
       const localWorkflowRepository = new SQLiteWorkflowRepository(result.identityDB);
       setWorkflowRepository(localWorkflowRepository);
       localWorkflowService = new WorkflowService({
@@ -668,9 +753,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           integrationWorkflowHooks(),
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
+          a2aWorkflowHooks(getA2ARuntime),
         ),
       });
       setWorkflowService(localWorkflowService);
+      // Lane 1's runner reads the CURRENT runtime every tick, so it follows
+      // the service the workflow plane installs later in boot.
+      a2aRunner = new A2ADispatchRunner({
+        runtime: getA2ARuntime,
+        runnerDid: `${getNodeDID() ?? 'did:key:local'}#a2a-runner`,
+        log: (entry) => logger.info(entry, 'a2a lane 1'),
+      });
+      a2aRunner.start();
       localTaskExpiry = new TaskExpirySweeper({
         // Through the service, so a lapsed disclosure review still answers.
         repository: localWorkflowService,
@@ -691,6 +785,54 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
         wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
+        // Lane 3 (A2A design §8.2): the card publisher, a trusted host process
+        // beside the profile publisher, on the same repo session. It writes
+        // nothing until the owner switches the listing on and activates it.
+        // It runs whenever the node can write its repository, gateway or not:
+        // a card published while a gateway was configured is taken down once
+        // it is not ("predicate-false always drives an unpublish"), across
+        // restarts. Without a gateway its activation answers not_configured:
+        // no listing can go out without one.
+        const a2aStore = getA2AStore();
+        if (a2aStore !== null) {
+          const signingKey = deriveIdentity({ masterSeed: identity.seed }).root;
+          const signingKeyId = Buffer.from(signingKey.publicKey).toString('hex');
+          const cardDid = pdsIdentity.did;
+          const seed = identity.seed;
+          a2aCardPublisher = new A2ACardPublisher({
+            store: a2aStore,
+            repo: cardRepoOverPds(wiredPublisher.pdsPublisher, cardDid),
+            nodeDid: cardDid,
+            buildCard: async () => {
+              const config = getA2ACardConfig();
+              if (config === null) return { ok: false, reason: 'gateway_unconfigured' };
+              const built = await buildInboundCard(a2aStore, { nodeDid: cardDid, config });
+              return built.ok ? { ok: true, card: built.card } : { ok: false, reason: built.reason };
+            },
+            gatewayLive: () => getA2ACardConfig() !== null,
+            sign: (message) => ed25519Sign(signingKey.privateKey, message),
+            verify: (message, signature) => ed25519Verify(signingKey.publicKey, message, signature),
+            signingKeyId: () => signingKeyId,
+            // The key that signs the card now: the check follows it, so a new key is put in the document first.
+            cardKeyReady: cardKeyCheck(
+              (cardPublicKey) =>
+                ensureA2ACardKey({ did: cardDid, cardPublicKey, masterSeed: seed, plcURL: config.endpoints.plcDirectoryUrl }),
+              () => {
+                const current = getA2ACardConfig();
+                return current === null ? null : cardPublicKey(current.key);
+              },
+            ),
+            sha256: (bytes) => sha256(bytes),
+            isLostSwap: (err) => err instanceof PDSPublisherError && err.casLost,
+            newInstance: newA2AId,
+            log: (entry) => logger.info(entry, 'a2a lane 3'),
+          });
+          // The owner's port, whatever the configuration: with no card
+          // configuration its activation answers not_configured, and its
+          // deactivation still works.
+          installA2APublisher(a2aCardPublisher);
+          a2aCardPublisher.start();
+        }
         // §10.2/WS-5.1 — how a catalog reaches this node's own repo. Core owns
         // the ORDER (snapshot before pointer, and no pointer if the snapshot
         // did not land); this half only writes. Installed alongside the profile
@@ -910,6 +1052,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ),
       agentFacades: createAgentFacades({
         brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
+        brainFetch,
         appViewUrl: config.endpoints.appViewBaseUrl,
         ...(wiredPublisher !== undefined && pdsIdentity !== undefined
           ? {
@@ -921,6 +1064,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ask: {
         handler: makeHttpAskHandler({
           brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
+          fetchImpl: brainFetch,
         }),
       },
     });
@@ -969,6 +1113,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // Co-located Brain (has the LLM) for the Tier-1 dina.local lane. Defaults
       // to the brain's default host:port when DINA_BRAIN_URL is unset.
       brainUrl: config.services?.brainUrl ?? LOCAL_BRAIN_URL,
+      brainFetch,
       logger,
     });
     // GROUP_COORDINATION §5: a guest asked for reach through the 1:1 preflight
@@ -977,6 +1122,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     // every other module singleton this boot installs.
     wireGroupCoordinationOfferReplay();
   }
+  // The final workflow service is in place: Lane 1 must share its connection.
+  // A mismatch throws here, stopping boot, instead of failing every approval.
+  getA2ARuntime();
 
   const reasoningWorkflowService = getWorkflowService();
   const reasoningWorkflowRepository = getWorkflowRepository();
@@ -1089,6 +1237,15 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ],
     });
     app.addHook('onClose', async () => {
+      await a2aRunner?.stop();
+      await a2aCardPublisher?.stop();
+      installA2APublisher(null);
+      installA2ADirectoryEvidence(null);
+      setA2AHostTransport(null);
+      installA2ADidResolver(null);
+      installA2A(null);
+      installA2ACardConfig(null);
+      installCoreServiceDid(null);
       await reasoningCommitSupervisor?.stop();
       if (getReasoningBroker() === localReasoningBroker) {
         setReasoningBroker(null);

@@ -21,9 +21,8 @@
  * Source: brain/src/service/service_publisher.py  (Python reference)
  */
 
+import { capabilitySchemaHash } from '@dina/core';
 import { isValidServiceListingRkey } from '@dina/protocol';
-
-import { computeSchemaHash } from './capabilities/registry';
 
 import type { PDSPublisher, PutRecordResult } from '../pds/publisher';
 
@@ -324,30 +323,6 @@ export function buildRecord(
 }
 
 /**
- * THE canonical capability schema hash — SHA-256 over the canonical JSON
- * of `{params, result, description}` (description defaults to '').
- * This is what `serialiseSchemas` publishes as `schema_hash`, what
- * requesters echo back on `service.query`, and what the provider's
- * `checkSchemaHash` compares against — so EVERY writer of a local
- * `capabilitySchemas[].schemaHash` (the mobile listing editor, CLI,
- * env seeds) must use this function, never `computeSchemaHash(params)`
- * alone. A params-only hash made form-created listings unreachable
- * (`schema_version_mismatch` on every hash-carrying query) — found
- * live in the Tier 1 salon demo.
- */
-export function canonicalCapabilitySchemaHash(s: {
-  params: Record<string, unknown>;
-  result: Record<string, unknown>;
-  description?: string;
-}): string {
-  return computeSchemaHash({
-    params: s.params,
-    result: s.result,
-    description: s.description ?? '',
-  });
-}
-
-/**
  * The published schema_hash is ALWAYS the canonical hash computed
  * from `{params, result, description}`. Caller-supplied hashes are
  * treated as advisory / potentially stale cache — never truth. A
@@ -367,7 +342,16 @@ function serialiseSchemas(
   const out: Record<string, unknown> = {};
   for (const [cap, s] of Object.entries(schemas)) {
     const description = s.description ?? '';
-    const canonical = canonicalCapabilitySchemaHash(s);
+    // THE canonical hash — Core's `capabilitySchemaHash` over
+    // `{params, result, description}`: what requesters echo back and what
+    // Core's service-query ingress checks. Every local writer of
+    // `capabilitySchemas[].schemaHash` uses the same function.
+    let canonical: string;
+    try {
+      canonical = capabilitySchemaHash(s);
+    } catch {
+      throw new PublisherConfigError(`capability ${cap}: schema has no canonical JSON form, so no schema_hash`);
+    }
     if (s.schemaHash !== '' && s.schemaHash !== canonical) {
       log({
         event: 'service_publisher.schema_hash_mismatch',

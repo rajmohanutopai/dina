@@ -39,7 +39,7 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({}),
 }));
 
-import { unwrapSeed, mnemonicToEntropy, generateMnemonic } from '@dina/core';
+import { unwrapSeed, entropyToMnemonic } from '@dina/core';
 
 import RecoveryPhraseScreen from '../../app/recovery-phrase';
 import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
@@ -47,16 +47,22 @@ import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
 const loadWrappedSeedMock = loadWrappedSeed as jest.MockedFunction<typeof loadWrappedSeed>;
 const unwrapSeedMock = unwrapSeed as jest.MockedFunction<typeof unwrapSeed>;
 
-// A deterministic 24-word fixture we'll use across tests. Generating
-// once-per-test is overkill and slow; one fixed mnemonic exercises
-// the same code paths.
-const FIXTURE_MNEMONIC = generateMnemonic();
-const FIXTURE_ENTROPY = mnemonicToEntropy(FIXTURE_MNEMONIC);
+// A fixed 24-word fixture used across tests: fixed entropy, so every run
+// shows the same words. Its 24 words are all different (asserted below),
+// so a word looked up on screen is found once; a random mnemonic repeats
+// a word now and then, and the lookup then finds two.
+const FIXTURE_ENTROPY = new Uint8Array(32).map((_, i) => (i * 37 + 11) & 0xff);
+const FIXTURE_MNEMONIC = entropyToMnemonic(FIXTURE_ENTROPY);
 
 beforeEach(() => {
   loadWrappedSeedMock.mockReset();
   unwrapSeedMock.mockReset();
   backCalls.length = 0;
+});
+
+it('the fixture is 24 different words', () => {
+  const words = FIXTURE_MNEMONIC.split(' ');
+  expect([words.length, new Set(words).size]).toEqual([24, 24]);
 });
 
 describe('recovery-phrase gate', () => {

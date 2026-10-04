@@ -408,6 +408,9 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       result = await coordinator.handleAsk({
         question: query,
         requesterDid,
+        // The owner's chat thread: vault reads release into it, and an A2A
+        // result returns to it (A2A design §4.2).
+        conversation: callerThread,
         // Forced composer lane (Services/Reviews) — propagate so the coordinator's
         // executeFn enforces the lane (skip inference, scope tools, gate result).
         // Without this the production /ask path silently ran plain Ask behavior

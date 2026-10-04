@@ -1,3 +1,4 @@
+import { defaultServerConditions } from 'vite'
 import { defineConfig } from 'vitest/config'
 import path from 'path'
 
@@ -23,6 +24,13 @@ export default defineConfig({
      */
     conditions: ['compiled'],
   },
+  /**
+   * The same condition where vitest resolves: tests run in Vite's SSR
+   * environment, whose resolver reads `ssr.resolve.conditions`, not
+   * `resolve.conditions`. Setting it replaces Vite's defaults, so they are
+   * kept after `compiled`. `tests/unit/test_what_ships.test.ts` holds this.
+   */
+  ssr: { resolve: { conditions: ['compiled', ...defaultServerConditions] } },
   test: {
     include: ['tests/**/*.test.ts'],
     globals: true,

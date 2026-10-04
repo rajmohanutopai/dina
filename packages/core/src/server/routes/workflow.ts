@@ -15,8 +15,15 @@
  *   POST /v1/workflow/events/:id/ack      — ack + retire from queue
  */
 
-import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
+import { isA2ALane } from '@dina/a2a';
+import { LOCAL_RUNNER_NAME, SERVICE_QUERY_EXECUTION_TYPE, isPluginLane } from '@dina/protocol';
 
+import { isA2ATaskNamespace } from '../../a2a/ids';
+import { admitInboundClaim } from '../../a2a/inbound';
+import { A2A_INBOUND_REVIEW_TYPE } from '../../a2a/inbound_review_card';
+import { requestInboundInput, type InputRequestRefusal } from '../../a2a/inbound_turns';
+import { A2A_DELEGATION_CONSENT_TYPE, A2A_DISPATCH_PAYLOAD_TYPE } from '../../a2a/proposal';
+import { getA2AStore } from '../../a2a/runtime';
 import {
   activateAgentPersonaGrant,
   isAgentPersonaAccessApproval,
@@ -53,6 +60,7 @@ import {
   recordInvocationDecision,
 } from '../../plugins/invoke';
 import { getPluginInstallRepository } from '../../plugins/registry';
+import { isReservedLane } from '../../service/reserved_lanes';
 import {
   STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
   denyApproval,
@@ -123,6 +131,89 @@ function payloadDeclaresPluginType(payload: unknown): boolean {
 }
 
 /**
+ * A task on an `a2a:` lane (an A2A dispatch child) is moved only by Core's
+ * own A2A code, in process: the runner records the remote outcome and the
+ * operation in one commit. No HTTP caller moves it — not Brain, not an agent,
+ * not the owner console, whose cancel goes through the A2A operation route
+ * so the operation and its child stay in step (A2A design §6.3, §6.4).
+ */
+function a2aLaneTaskGuard(id: string): CoreResponse | null {
+  const task = id === '' ? null : (getWorkflowService()?.store().getById(id) ?? null);
+  if (task === null || !isA2ALane(task.requested_runner ?? '')) return null;
+  return j(403, { error: 'a2a_lane_reserved', reason: 'tasks on an A2A lane are moved by Core only' });
+}
+
+/**
+ * A2A design §7.3: an inbound child pinned to a runner is that runner's
+ * alone. Every executor verb on it carries the pinned runner's DID and the
+ * claim token (the store then checks the token by compare-and-swap); no
+ * other device or agent may report on it or read it. Brain reads no inbound
+ * execution child at all (`inboundChildBrainReadGuard`); the owner and admin
+ * read it as they read any task.
+ */
+function inboundPinnedChildGuard(req: CoreRequest, id: string, verb: boolean): CoreResponse | null {
+  const pep = id === '' ? null : (getA2AStore()?.getChild(id)?.pep_did ?? null);
+  if (pep === null) return null;
+  if ((req.headers['x-did'] ?? '') !== pep) {
+    return j(403, { error: 'access_denied', reason: 'only the runner this call is pinned to may act on it' });
+  }
+  if (!verb) return null;
+  const claimId = (req.body as Record<string, unknown> | undefined)?.claim_id;
+  if (typeof claimId !== 'string' || claimId === '') {
+    return j(400, { error: 'claim_id is required', reason: 'an A2A child is reported on with the claim token minted at claim' });
+  }
+  return null;
+}
+
+/**
+ * A2A design §7.3, §7.4: an inbound call is stopped by its caller (CancelTask,
+ * which applies the pre-effect rule) or by the owner, never by Brain (an
+ * untrusted tenant), whose cancel of a running execution would report a
+ * stop Dina cannot vouch for.
+ */
+function inboundChildCancelGuard(req: CoreRequest, id: string): CoreResponse | null {
+  const child = id === '' ? null : (getA2AStore()?.getChild(id) ?? null);
+  if (child === null || req.callerType !== 'brain') return null;
+  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is cancelled by its caller or the owner' });
+}
+
+/**
+ * A2A design §7.3, §10 ("compromised Brain corrupts inbound execution"): an
+ * inbound child is moved by the runner it was claimed for, never by Brain,
+ * an untrusted tenant. A pinned child's runner proves itself (above); an
+ * in-process (`dina.local`) child is claimed and reported by Core's own
+ * runner, which asks Brain only for the answer, so Brain has no report to
+ * make on any inbound child.
+ */
+function inboundChildBrainGuard(req: CoreRequest, id: string): CoreResponse | null {
+  if (req.callerType !== 'brain' || id === '') return null;
+  if ((getA2AStore()?.getChild(id) ?? null) === null) return null;
+  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is reported by the runner that claimed it' });
+}
+
+/**
+ * A2A design §7.3, §10: an inbound call's execution child holds a
+ * stranger's params, and its result answers that stranger. Brain, an
+ * untrusted tenant, reads none of it: it answers an in-process round through
+ * Core's own runner, never through these routes, and none of the child's
+ * events reach its delivery feed (migration v62). The single read refuses
+ * Brain, and Brain's list leaves the child out (`listTasks`).
+ */
+function inboundChildBrainReadGuard(req: CoreRequest, id: string): CoreResponse | null {
+  if (req.callerType !== 'brain' || !isInboundExecutionChild(id)) return null;
+  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is read by the runner that claimed it' });
+}
+
+function isInboundExecutionChild(id: string): boolean {
+  return id !== '' && getA2AStore()?.getChild(id)?.role === 'execution';
+}
+
+/** The A2A rules for an executor verb on task `id`. */
+function a2aTaskGuard(req: CoreRequest, id: string): CoreResponse | null {
+  return a2aLaneTaskGuard(id) ?? inboundChildBrainGuard(req, id) ?? inboundPinnedChildGuard(req, id, true);
+}
+
+/**
  * @param ownerCapability — the boot-minted owner capability (§12.5). An
  *   `owner`-marked caller (a server node's owner console presenting the
  *   capability header on the approve/cancel surface) must carry exactly it;
@@ -133,6 +224,7 @@ function payloadDeclaresPluginType(payload: unknown): boolean {
 export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerConsole = makeOwnerGuard(ownerCapability, 'owner authorization required');
   const decisionGuard = (req: CoreRequest): CoreResponse | null =>
+    a2aLaneTaskGuard(req.params.id ?? '') ??
     ownerDecisionGuard(req) ??
     (req.callerType === 'owner' ? ownerConsole(req) : null) ??
     brainAgentTaskGuard(req, req.params.id ?? '') ??
@@ -142,8 +234,12 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
   router.get('/v1/workflow/tasks/:id', getTask);
   router.get('/v1/workflow/tasks', listTasks);
   router.post('/v1/workflow/tasks/claim', claimTask);
-  router.post('/v1/workflow/tasks/:id/heartbeat', heartbeatTask);
-  router.post('/v1/workflow/tasks/:id/progress', progressTask);
+  router.post('/v1/workflow/tasks/:id/heartbeat', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? heartbeatTask(req));
+  router.post('/v1/workflow/tasks/:id/progress', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? progressTask(req));
+  // A2A multi-turn (§7.7): the runner holding an inbound round's claim asks
+  // the caller for more input. The same guard as every executor verb on an
+  // A2A child: the pinned runner, the claim token.
+  router.post('/v1/workflow/tasks/:id/input-required', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? inputRequiredTask(req));
   // dina-agent calls /running after claim to confirm task ownership;
   // TS Core's claim already transitions to running, so this is an
   // idempotent no-op that just echoes the current task.
@@ -154,7 +250,9 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     if (id === '') return j(400, { error: 'id required' });
     const task = service.store().getById(id);
     if (task === null) return j(404, { error: 'task not found' });
-    const denied = agentReadGuard(req, task); // round-10 #2: own-task-only for agents
+    // round-10 #2: own-task-only for agents; an A2A child pinned to a
+    // runner only to that runner (§7.3).
+    const denied = inboundChildBrainReadGuard(req, id) ?? inboundPinnedChildGuard(req, id, false) ?? agentReadGuard(req, task);
     if (denied !== null) return denied;
     return j(200, forCaller(req, task));
   });
@@ -166,10 +264,10 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     );
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
-    return decisionGuard(req) ?? runAction(req, cancelTask);
+    return decisionGuard(req) ?? inboundChildCancelGuard(req, req.params.id ?? '') ?? runAction(req, cancelTask);
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
-    const guard = agentCompletionGuard(req);
+    const guard = a2aTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
     const claimId = extractClaimId(req);
     if (claimId instanceof Object) return claimId;
     return (
@@ -269,6 +367,7 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     // proposal, an order attachment's question) is the OWNER's to decide in
     // every direction — failing it from pending_approval would be Brain's no.
     const guard =
+      a2aTaskGuard(req, req.params.id ?? '') ??
       brainAgentTaskGuard(req, req.params.id ?? '') ??
       brainDisclosureReviewGuard(req, req.params.id ?? '') ??
       agentCompletionGuard(req);
@@ -358,7 +457,10 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
   }
   const body = req.body as Record<string, unknown>;
   const payloadType = safeParseBody(strField(body.payload, ''))?.type;
-  if (typeof payloadType === 'string' && CORE_MINTED_PAYLOAD_TYPES.has(payloadType)) {
+  if (
+    typeof payloadType === 'string' &&
+    (CORE_MINTED_PAYLOAD_TYPES.has(payloadType) || CORE_CREATED_PAYLOAD_TYPES.has(payloadType))
+  ) {
     return j(400, {
       error: 'reserved_payload_type',
       reason: `${payloadType} is minted by Core, never created through the API`,
@@ -367,8 +469,15 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
   // The escalation key namespace is Core's alone: a task created under one of
   // its keys could stand where the owner's yes is looked for.
   const idempotencyKey = optStrField(body.idempotency_key);
-  if (idempotencyKey !== undefined && idempotencyKey.startsWith(STAFF_ESCALATION_KEY_PREFIX)) {
+  if (
+    idempotencyKey !== undefined &&
+    (idempotencyKey.startsWith(STAFF_ESCALATION_KEY_PREFIX) || isA2ATaskNamespace(idempotencyKey))
+  ) {
     return j(400, { error: 'reserved_idempotency_key', reason: 'this key namespace is minted by Core' });
+  }
+  // Likewise the A2A task ids: Core names the consent card and dispatch child.
+  if (isA2ATaskNamespace(optStrField(body.id))) {
+    return j(400, { error: 'reserved_task_id', reason: 'this id namespace is minted by Core', field: 'id' });
   }
   const input = {
     id: strField(body.id),
@@ -387,6 +496,21 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
     initialState: optStrField(body.initial_state) as WorkflowTaskState | undefined,
     requestedRunner: optStrField(body.requested_runner),
   };
+  // Reserved lanes are filled by Core's own producers through the workflow
+  // service, never through this route (A2A design §6.3): Core's service-query
+  // ingress fills `dina.local` (Tier 1), plugin invocation and provider
+  // ingress fill `plugin:*`, the A2A proposal path fills `a2a:*`, the
+  // reasoning broker fills `reasoning:*`. A task created here on one of those
+  // lanes would arrive with no admitted query, no consent, no grant and no
+  // permit behind it. One rule (`service/reserved_lanes.ts`) for all of them.
+  const lane = input.requestedRunner ?? '';
+  if (isReservedLane(lane) || input.kind === 'reasoning') {
+    return j(400, {
+      error: 'reserved_runner',
+      reason: 'tasks on this lane are created by Core only',
+      field: 'requested_runner',
+    });
+  }
   try {
     const task = service.create(input);
     return j(201, { task: forCaller(req, task) });
@@ -414,9 +538,11 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
  * asks the owner about, and one of them can be the hard floor. The floor is
  * the owner's alone: Brain is an untrusted tenant and may learn a card
  * exists, never the numbers on it. The owner's own surfaces (the phone's
- * in-process inbox, the owner console) read it whole.
+ * in-process inbox, the owner console) read it whole. An A2A inbound review
+ * card is redacted the same way: Brain learns it exists, never the outside
+ * client's words.
  */
-function redactPriceCardForBrain(payload: string): string {
+function redactCardForBrain(payload: string): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -425,6 +551,14 @@ function redactPriceCardForBrain(payload: string): string {
   }
   if (parsed === null || typeof parsed !== 'object') return payload;
   const card = parsed as { type?: unknown; lines?: unknown };
+  // A2A design §11 (Law 4), A2A-I9: an inbound review card's params and its
+  // display (which quotes them) are an outside client's words, unguarded; the
+  // owner reads them on the card, Brain's model never does. What Dina wrote
+  // stays: the skill, the owner's name for the client, the listing.
+  if (card.type === A2A_INBOUND_REVIEW_TYPE) {
+    const { params: _params, display: _display, ...kept } = parsed as Record<string, unknown>;
+    return JSON.stringify({ ...kept, redacted: 'owner_only' });
+  }
   if (card.type !== NEGOTIATION_PRICE_APPROVAL_TYPE) return payload;
   const lines = Array.isArray(card.lines)
     ? card.lines.map((line) =>
@@ -439,12 +573,12 @@ function redactPriceCardForBrain(payload: string): string {
 /**
  * EVERY route that returns a task goes through this, so no path — a read, a
  * claim, `/running`, a deduped create, an action's echo — hands Brain a
- * price card's numbers.
+ * price card's numbers or an inbound review card's remote text.
  */
 function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown> {
   const out = withPayloadType(task);
   if (req.callerType !== 'brain' || typeof task.payload !== 'string') return out;
-  return { ...out, payload: redactPriceCardForBrain(task.payload) };
+  return { ...out, payload: redactCardForBrain(task.payload) };
 }
 
 /** The same rule for the events feed, whose details can embed a task payload. */
@@ -459,7 +593,7 @@ function eventForCaller(req: CoreRequest, event: WorkflowEvent): WorkflowEvent {
   if (details === null || typeof details !== 'object') return event;
   const embedded = (details as { task_payload?: unknown }).task_payload;
   if (typeof embedded !== 'string') return event;
-  const redacted = redactPriceCardForBrain(embedded);
+  const redacted = redactCardForBrain(embedded);
   return redacted === embedded
     ? event
     : { ...event, details: JSON.stringify({ ...details, task_payload: redacted }) };
@@ -499,7 +633,8 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   if (id === '') return j(400, { error: 'id required' });
   const task = service.store().getById(id);
   if (task === null) return j(404, { error: 'task not found' });
-  const denied = agentReadGuard(req, task);
+  const denied =
+    inboundChildBrainReadGuard(req, id) ?? (req.callerType === 'agent' ? inboundPinnedChildGuard(req, id, false) : null) ?? agentReadGuard(req, task);
   if (denied !== null) return denied;
   return j(200, { task: forCaller(req, withCancelReason(service, task)) });
 }
@@ -514,7 +649,9 @@ async function listTasks(req: CoreRequest): Promise<CoreResponse> {
   }
   const requested = Number(req.query.limit ?? 100);
   const limit = clampLimit(requested);
-  const tasks = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
+  const listed = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
+  // Brain reads no inbound A2A execution child (`inboundChildBrainReadGuard`).
+  const tasks = req.callerType === 'brain' ? listed.filter((task) => !isInboundExecutionChild(task.id)) : listed;
   return j(200, {
     tasks: tasks.map((task) => forCaller(req, withCancelReason(service, task))),
     count: tasks.length,
@@ -558,6 +695,16 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
       reason: 'plugin lanes are served only by their paired plugin instance',
     });
   }
+  // A2A dispatch lanes (A2A design §6.3) are served only by the host's
+  // in-process A2A runner, which claims through the repository and runs the
+  // dispatch transaction (permit consume + snapshot re-check) before any
+  // byte leaves. No caller over HTTP may claim one, whatever its role.
+  if (isA2ALane(runnerFilter)) {
+    return j(403, {
+      error: 'access_denied',
+      reason: 'A2A dispatch lanes are served only by the in-process A2A runner',
+    });
+  }
   // Plugin callers (PLUGIN_ARCHITECTURE.md §9.1): the server ignores the
   // client-sent runner_filter ENTIRELY and forces exact-match on the lane
   // registered to this instance's install; the six claim-time checks run
@@ -582,6 +729,10 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   }
   const task = service.store().claimDelegationTask(agentDID, Date.now(), leaseMs, runnerFilter);
   if (task === null) return j(204, undefined);
+  // A2A design §7.3: a claimed inbound child is admitted at the effect
+  // boundary (authority re-checked, an effectful permit consumed). A refused
+  // one is failed and settled already; the runner gets nothing this time.
+  if (admitInboundClaim(task, agentDID) === 'refused') return j(204, undefined);
   // dina-agent (Python) reads `body.id` / `body.payload` directly off
   // the response body — no `task` envelope. Match Go-Core's wire shape
   // so the daemon's URL formation (e.g. POST /v1/workflow/tasks/{id}/...)
@@ -591,6 +742,41 @@ async function claimTask(req: CoreRequest): Promise<CoreResponse> {
   // LLM prompt with structured capability/params instead of falling
   // back to the abstract description.
   return j(200, forCaller(req, task));
+}
+
+const INPUT_REQUIRED_STATUS: Record<InputRequestRefusal, number> = {
+  request_malformed: 400,
+  not_the_pinned_runner: 403,
+  operation_settled: 409,
+  executor_cannot_ask: 409,
+  effect_started: 409,
+  too_many_rounds: 409,
+  claim_lost: 409,
+};
+
+/**
+ * `POST /v1/workflow/tasks/:id/input-required` `{claim_id, prompt,
+ * input_schema}`: park the round, ask the caller (`requestInboundInput`).
+ * Only an inbound A2A round can ask; anything else is 409.
+ */
+async function inputRequiredTask(req: CoreRequest): Promise<CoreResponse> {
+  const id = req.params.id ?? '';
+  if (id === '') return j(400, { error: 'id required' });
+  const agentDID = req.headers['x-did'] ?? '';
+  if (agentDID === '') return j(400, { error: 'X-DID header is required' });
+  const body = req.body;
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return j(400, { error: 'request_malformed' });
+  const { claim_id: claimId, ...request } = body as Record<string, unknown>;
+  if (typeof claimId !== 'string' || claimId === '') return j(400, { error: 'claim_id is required' });
+  const verdict = requestInboundInput({ taskId: id, claimantDid: agentDID, claimId, request });
+  switch (verdict.kind) {
+    case 'parked':
+      return j(200, { status: 'awaiting_input', task_id: id, expires_at: verdict.question.expires_at });
+    case 'not_inbound':
+      return j(409, { error: 'not_an_a2a_call', reason: 'only a call from an A2A client can ask its caller for input' });
+    case 'refused':
+      return j(INPUT_REQUIRED_STATUS[verdict.reason], { error: verdict.reason });
+  }
 }
 
 async function heartbeatTask(req: CoreRequest): Promise<CoreResponse> {
@@ -1277,7 +1463,27 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
   // cap. A yes lets money move: Brain may neither mint nor decide one.
   STAFF_ESCALATION_APPROVAL_TYPE,
+  // A2A design §6.2 step 6 — "send exactly this to that remote agent?" Brain
+  // proposes the message; only the owner may approve what leaves.
+  A2A_DELEGATION_CONSENT_TYPE,
+  // §6.3 — the dispatch child the owner's yes mints. Not a card, but Core's
+  // alone all the same: Brain may neither forge one nor move one.
+  A2A_DISPATCH_PAYLOAD_TYPE,
+  // §7.2 (M2) — "let this outside agent's call run?" An outside client's
+  // request is the owner's to approve; Brain may neither mint nor decide it.
+  A2A_INBOUND_REVIEW_TYPE,
 ]);
+
+/**
+ * Payload types only Core CREATES, though a caller may still decide them.
+ * A service card or execution (`service_query_execution`) comes only from
+ * Core's service-query ingress, which checked the requester's query against
+ * the live listing (A2A plan §4.2a): a card made through this route would
+ * carry a lane, a tool and params no admission ever checked, and the
+ * owner's yes to it would make Core queue that work. Brain still answers
+ * these cards (`/service_approve`), so they are not in the set above.
+ */
+export const CORE_CREATED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([SERVICE_QUERY_EXECUTION_TYPE]);
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
   const service = getWorkflowService();

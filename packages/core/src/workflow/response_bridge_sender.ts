@@ -66,10 +66,9 @@ export interface MakeResponseBridgeSenderOptions {
    * sending. A violation produces an `error` response rather than a
    * `success` with a drifted payload — main-dina's behaviour.
    *
-   * The callback is `(value, schema) => error | null`, compatible
-   * with `brain/src/service/capabilities/schema_validator.ts`. The
-   * bootstrap wires it in so core stays free of the validator
-   * dependency.
+   * The callback is `(value, schema) => error | null`: both boots wire
+   * Core's `serviceSchemaError` (`service/capabilities/schema.ts`), the
+   * validator the service-query ingress checks params with.
    */
   validateResult?: (value: unknown, schema: unknown) => string | null;
   /**

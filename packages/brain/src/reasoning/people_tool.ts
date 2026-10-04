@@ -74,11 +74,14 @@ export function createFindPersonTool(options: FindPersonToolOptions = {}): Agent
         status: p.status,
         surfaces: (p.surfaces ?? [])
           .filter((s) => s.status !== 'rejected')
+          // No excerpt of the source item: it is vault text whose persona the
+          // people graph does not record, so it could not be logged as a
+          // release into the conversation (A2A §4.2 (b)). The id is no
+          // content; reading the item goes through the logged vault tools.
           .map((s) => ({
             surface: s.surface,
             surfaceType: s.surfaceType,
             sourceItemId: s.sourceItemId,
-            sourceExcerpt: s.sourceExcerpt,
           })),
       }));
       return {

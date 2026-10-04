@@ -209,7 +209,7 @@ describe('Service-query end-to-end runtime composition', () => {
     }
   });
 
-  it('dispatcher routes inbound service.query to the registered ServiceHandler (issues #5, #6)', async () => {
+  it('dispatcher routes inbound service.query to Core’s service-query ingress (issues #5, #6)', async () => {
     const handlerLog: Record<string, unknown>[] = [];
     const { node } = await composeNode({ handlerLog });
     try {
@@ -232,7 +232,7 @@ describe('Service-query end-to-end runtime composition', () => {
       expect(dispatch.dropped).toBe(false);
       expect(dispatch.handlerError).toBeNull();
 
-      // ServiceHandler should have created a delegation task — prove it
+      // Core's ingress should have created a delegation task — prove it
       // by asking Core for queued delegations.
       const tasks = await node.coreClient.listWorkflowTasks({
         kind: 'delegation',
@@ -279,7 +279,7 @@ describe('Service-query end-to-end runtime composition', () => {
       await node.dispatcher.dispatch(REMOTE_PEER_DID, raw, body);
 
       // No delegation task should have been created — the config check
-      // in ServiceHandler.handleQuery (reading from Core's global via
+      // in Core's ServiceQueryIngress.admitQuery (reading from Core's global via
       // getServiceConfig) rejects unknown capabilities.
       const tasks = await node.coreClient.listWorkflowTasks({
         kind: 'delegation',

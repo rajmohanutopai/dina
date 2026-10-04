@@ -20,7 +20,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { AppViewClient } from '@dina/brain';
 import { defaultFetch, readPublishedItem } from '@dina/core';
 
-import { appViewBase } from '../peerlens/appview_base';
+import { appViewBase, appViewFetch } from '../peerlens/appview_base';
 
 import { lookupPlc } from './plc_lookup';
 
@@ -132,7 +132,7 @@ export async function supplierTrustFor(
   supplierDid: string,
 ): Promise<{ score: number | null; reviewCount: number | null } | null> {
   try {
-    const client = new AppViewClient({ appViewURL: await appViewBase() });
+    const client = new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });
     const profile = await client.getProfile(supplierDid);
     return {
       score: profile?.overallTrustScore ?? null,

@@ -42,7 +42,11 @@ describe('quarantine_sync.web', () => {
     syncQuarantineCards('main');
     await flush();
 
-    expect(brain).toHaveBeenCalledWith(`${BRAIN}/api/v1/d2d/quarantine`, { credentials: 'omit' });
+    expect(brain).toHaveBeenCalledWith(`${BRAIN}/api/v1/d2d/quarantine`, {
+      method: 'GET',
+      headers: {},
+      credentials: 'omit',
+    });
     const thread = getThread('main');
     expect(thread).toHaveLength(2);
     const [first, second] = thread;

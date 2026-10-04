@@ -275,6 +275,11 @@ sync_files() {
         --exclude='node_modules' --exclude='dist' \
         "$PROJECT_ROOT/packages/commerce-protocol/" \
         "$REMOTE:$REMOTE_DIR/appview-src/packages/commerce-protocol/"
+    # @dina/a2a: the A2A directory checks cards and envelopes with it (Dockerfile COPYs it).
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' \
+        "$PROJECT_ROOT/packages/a2a/" \
+        "$REMOTE:$REMOTE_DIR/appview-src/packages/a2a/"
     rsync -az --delete \
         --exclude='node_modules' \
         --exclude='dist' \

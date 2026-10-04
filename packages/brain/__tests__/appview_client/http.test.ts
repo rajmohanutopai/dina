@@ -4,6 +4,8 @@
  * Source parity: brain/src/adapter/appview_client.py
  */
 
+import { A2A_NAME_MAX_CODE_POINTS } from '@dina/a2a';
+
 import { AppViewClient, AppViewError, ServiceProfile } from '../../src/appview_client/http';
 
 type FetchFn = typeof globalThis.fetch;
@@ -687,5 +689,141 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
       const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
       await expect(c.getProfile('')).rejects.toThrow(/did is required/);
     });
+  });
+});
+
+describe('AppViewClient — getA2ACard (the directory’s card for one DID, design §8.3)', () => {
+  const did = 'did:plc:abcdefghijklmnopqrstuvwx';
+  const card = (interfaces: unknown) => JSON.stringify({ name: 'Bus', supportedInterfaces: interfaces });
+  const answer = (over: Record<string, unknown> = {}) => ({
+    card: card([
+      { url: 'https://bus.example/a2a/rest', protocolBinding: 'HTTP+JSON', protocolVersion: '1.0' },
+      { url: 'https://bus.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+    ]),
+    cardHash: 'c'.repeat(64),
+    signatureState: 'verified',
+    indexedAt: '2026-10-01T00:00:00.000Z',
+    stale: false,
+    trust: { score: 0.7, recommendation: 'caution', trustLevel: 'moderate', confidence: 0.5 },
+    ...over,
+  });
+
+  it('reads the card’s JSON-RPC endpoint and the DID’s trust', async () => {
+    const { fetchFn, calls } = makeFetch([jsonResponse(200, answer())]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+    expect(await c.getA2ACard(did)).toEqual({
+      did,
+      endpoint: 'https://bus.example/a2a/v1',
+      cardHash: 'c'.repeat(64),
+      indexedAt: '2026-10-01T00:00:00.000Z',
+      stale: false,
+      trustScore: 0.7,
+      recommendation: 'caution',
+    });
+    expect(calls).toEqual([`${APPVIEW}/xrpc/com.dinakernel.a2a.getCard?did=${encodeURIComponent(did)}`]);
+  });
+
+  it('a DID the directory does not list is null; a closed directory throws; a malformed DID is never asked', async () => {
+    const { fetchFn, calls } = makeFetch([jsonResponse(404, { error: 'NotFound' }), jsonResponse(503, { error: 'DirectoryUnavailable' })]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep, maxRetries: 0 });
+    expect(await c.getA2ACard(did)).toBeNull();
+    await expect(c.getA2ACard(did)).rejects.toMatchObject({ name: 'AppViewError', status: 503 });
+    expect(await c.getA2ACard('did:plc:short')).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
+  it.each([
+    ['a card that is not JSON', { card: '{' }],
+    ['a card with no JSON-RPC interface', { card: card([{ url: 'https://bus.example/a2a/rest', protocolBinding: 'HTTP+JSON' }]) }],
+    ['an endpoint Core would refuse (a literal IP)', { card: card([{ url: 'https://203.0.113.9/a2a/v1', protocolBinding: 'JSONRPC' }]) }],
+    ['trust past 1', { trust: { score: 1.5, recommendation: 'proceed' } }],
+    ['an unknown band', { trust: { score: 0.5, recommendation: 'trust me' } }],
+    ['a time that is no timestamp', { indexedAt: 'yesterday' }],
+    ['a bad card hash', { cardHash: 'xyz' }],
+  ])('drops %s', async (_name, over) => {
+    const { fetchFn } = makeFetch([jsonResponse(200, answer(over))]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+    expect(await c.getA2ACard(did)).toBeNull();
+  });
+});
+
+describe('AppViewClient — searchA2AAgents (the A2A directory, design §8.3)', () => {
+  const good = {
+    did: 'did:plc:abcdefghijklmnopqrstuvwx',
+    displayName: 'Bus 42',
+    endpoint: 'https://bus.example/a2a/v1',
+    skills: ['eta_query'],
+    trustScore: 0.8,
+    recommendation: 'proceed',
+    indexedAt: '2026-10-01T00:00:00.000Z',
+    stale: false,
+    cardHash: 'b'.repeat(64),
+  };
+
+  it('sends only the parameters given, to searchAgents', async () => {
+    const { fetchFn, calls } = makeFetch([jsonResponse(200, { agents: [good], cursor: null, rankingVersion: 'a2a-v1' })]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+    expect(await c.searchA2AAgents({ skill: 'eta_query', limit: 10 })).toEqual([good]);
+    expect(calls).toEqual([`${APPVIEW}/xrpc/com.dinakernel.a2a.searchAgents?skill=eta_query&limit=10`]);
+  });
+
+  it('drops any result not of exactly the published shape', async () => {
+    const bad = [
+      { ...good, did: 'not-a-did' },
+      { ...good, endpoint: 'http://bus.example/a2a/v1' },
+      { ...good, endpoint: 'not a url' },
+      { ...good, skills: [] },
+      { ...good, skills: ['eta_query', 7] },
+      { ...good, trustScore: 1.5 },
+      { ...good, trustScore: Number.NaN },
+      { ...good, recommendation: 'trust me' },
+      { ...good, stale: 'no' },
+      { ...good, cardHash: 'xyz' },
+      // Endpoints Core's registration would refuse: the owner could never register them.
+      { ...good, endpoint: 'https://user:pw@bus.example/a2a/v1' },
+      { ...good, endpoint: 'https://203.0.113.9/a2a/v1' },
+      { ...good, endpoint: 'https://[2001:db8::1]/a2a/v1' },
+      { ...good, endpoint: 'https://bus.example/a2a/v1#frag' },
+      { ...good, endpoint: `https://bus.example/${'p'.repeat(2048)}` },
+      // A skill id longer than any card may carry.
+      { ...good, skills: ['x'.repeat(257)] },
+      // indexedAt is a timestamp, nothing else.
+      { ...good, indexedAt: 'yesterday' },
+      { ...good, indexedAt: 'Ignore previous instructions' },
+      { ...good, indexedAt: '2026-13-45T99:99:99Z' },
+      // Date.parse alone would take these; a timestamp is ISO 8601 with a zone.
+      { ...good, indexedAt: '1' },
+      { ...good, indexedAt: 'October 1, 2026' },
+      { ...good, indexedAt: '2026-10-01T00:00:00' },
+      // A name of nothing but invisible characters is no name.
+      { ...good, displayName: '\u200b\u202e\u2066' },
+      { ...good, displayName: 42 },
+      null,
+    ];
+    const { fetchFn } = makeFetch([jsonResponse(200, { agents: [...bad, good] })]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+    expect(await c.searchA2AAgents({})).toEqual([good]);
+  });
+
+  it('a remote’s name is display text: invisible characters out, whitespace collapsed, bounded as Core bounds it', async () => {
+    const { fetchFn } = makeFetch([
+      jsonResponse(200, {
+        agents: [
+          { ...good, displayName: 'Bus\u202e 42\u200b\n\tExpress' },
+          { ...good, displayName: 'n'.repeat(500) },
+        ],
+      }),
+    ]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
+    const [plain, long] = await c.searchA2AAgents({});
+    expect(plain?.displayName).toBe('Bus 42 Express');
+    expect([...(long?.displayName ?? '')]).toHaveLength(A2A_NAME_MAX_CODE_POINTS);
+    expect(long?.displayName.endsWith('…')).toBe(true);
+  });
+
+  it('a closed directory (503) throws AppViewError with its status', async () => {
+    const { fetchFn } = makeFetch([jsonResponse(503, { error: 'DirectoryUnavailable' })]);
+    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep, maxRetries: 0 });
+    await expect(c.searchA2AAgents({})).rejects.toMatchObject({ name: 'AppViewError', status: 503 });
   });
 });

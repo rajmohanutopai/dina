@@ -61,8 +61,8 @@ export function registerNotificationApiRoutes(
   // GET /api/v1/notifications/stream — SSE of appended notifications. The SPA
   // subscribes here + folds each item into its own in-browser inbox for a live
   // Activity badge without polling.
-  app.get(`${prefix}/notifications/stream`, async (_req: FastifyRequest, reply: FastifyReply) => {
-    openEventStream(reply);
+  app.get(`${prefix}/notifications/stream`, async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!openEventStream(req, reply)) return;
 
     const unsubscribe = subscribeNotifications((entry) => {
       if (entry.type !== 'appended') return;

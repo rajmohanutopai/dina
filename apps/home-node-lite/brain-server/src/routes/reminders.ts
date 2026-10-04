@@ -85,8 +85,8 @@ export function registerReminderApiRoutes(
 
   // GET /api/v1/reminders/stream — SSE of fired reminders (server fires;
   // the browser fire-watcher subscribes here instead of firing locally).
-  app.get(`${prefix}/reminders/stream`, async (_req: FastifyRequest, reply: FastifyReply) => {
-    openEventStream(reply);
+  app.get(`${prefix}/reminders/stream`, async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!openEventStream(req, reply)) return;
 
     const write = (reminder: Reminder): void => {
       if (reply.raw.destroyed || reply.raw.writableEnded) return;

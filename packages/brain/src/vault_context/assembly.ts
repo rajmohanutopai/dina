@@ -41,6 +41,23 @@ export interface VaultReadBackend {
   vaultItemsForPerson?: CoreClient['vaultItemsForPerson'];
 }
 
+/**
+ * The vault-read backend over a `CoreClient`, every argument passed through —
+ * the release session above all (A2A §4.2 (b)): a wrapper that dropped it
+ * would release items into a conversation with no record. The server's boot
+ * installs this; it is shared so a test can pin it.
+ */
+export function vaultReadBackendFromCore(
+  core: Pick<CoreClient, 'vaultQuery' | 'vaultGet' | 'vaultList' | 'vaultItemsForPerson'>,
+): Required<VaultReadBackend> {
+  return {
+    vaultQuery: (persona, query) => core.vaultQuery(persona, query),
+    vaultGet: (persona, itemId, opts) => core.vaultGet(persona, itemId, opts),
+    vaultList: (persona, opts) => core.vaultList(persona, opts),
+    vaultItemsForPerson: (persona, personId, limit, opts) => core.vaultItemsForPerson(persona, personId, limit, opts),
+  };
+}
+
 let vaultBackend: VaultReadBackend | null = null;
 
 /**
@@ -240,12 +257,14 @@ export function propagateUserOrigin(origin: string): string {
 }
 
 /**
- * Execute a vault search tool call.
+ * Execute a vault search tool call. `releaseSession` names the conversation
+ * the results go into; Core logs the release (A2A design §4.2 (b)).
  */
 export async function executeToolSearch(
   persona: string,
   query: string,
   limit?: number,
+  releaseSession?: string,
 ): Promise<ContextItem[]> {
   // Security: only search personas the user has access to
   if (!getAccessiblePersonas().includes(persona)) return [];
@@ -260,6 +279,7 @@ export async function executeToolSearch(
       mode: 'fts5',
       text: query,
       limit: searchLimit,
+      ...(releaseSession !== undefined ? { releaseSession } : {}),
     });
     return result.items.map((raw, index) => {
       const item = raw as VaultQueryItem;
@@ -274,7 +294,11 @@ export async function executeToolSearch(
     });
   }
 
-  const results = queryVault(persona, { mode: 'fts5', text: query, limit: searchLimit });
+  const results = queryVault(
+    persona,
+    { mode: 'fts5', text: query, limit: searchLimit },
+    releaseSession !== undefined ? { sessionId: releaseSession, audience: 'brain' } : undefined,
+  );
   return results.map((item, index) => ({
     id: item.id,
     content_l0: item.content_l0 || item.summary || '',

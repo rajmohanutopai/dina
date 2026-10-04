@@ -16,6 +16,13 @@ export interface RateLimitConfig {
   maxRequests: number;
   /** Window size in seconds. Default: 60. */
   windowSeconds: number;
+  /**
+   * Ceilings for named DIDs that differ from `maxRequests`;
+   * `Number.POSITIVE_INFINITY` exempts one. The A2A gateway carries every
+   * outside client's calls under one DID, so it is exempt: a shared bucket
+   * would let a few busy clients throttle all the rest (design §4.1).
+   */
+  perDidMax?: Readonly<Record<string, number>>;
 }
 
 interface Bucket {
@@ -31,6 +38,16 @@ export class PerDIDRateLimiter {
     this.config = config;
   }
 
+  /** How many DIDs hold a bucket: only callers Core knows spend one. */
+  get tracked(): number {
+    return this.buckets.size;
+  }
+
+  /** The DIDs with a ceiling of their own (`Infinity`: exempt), as configured. */
+  ceilings(): Readonly<Record<string, number>> {
+    return { ...(this.config.perDidMax ?? {}) };
+  }
+
   /**
    * Check if a DID is within its rate limit. Consumes one request token.
    *
@@ -41,7 +58,7 @@ export class PerDIDRateLimiter {
     const now = Date.now();
     const bucket = this.getOrCreateBucket(did, now);
 
-    if (bucket.count >= this.config.maxRequests) {
+    if (bucket.count >= this.maxFor(did)) {
       return false;
     }
 
@@ -60,15 +77,22 @@ export class PerDIDRateLimiter {
     const bucket = this.buckets.get(did);
 
     if (!bucket) {
-      return this.config.maxRequests;
+      return this.maxFor(did);
     }
 
     // Window expired — full quota
     if (now - bucket.windowStart >= this.config.windowSeconds * 1000) {
-      return this.config.maxRequests;
+      return this.maxFor(did);
     }
 
-    return Math.max(0, this.config.maxRequests - bucket.count);
+    return Math.max(0, this.maxFor(did) - bucket.count);
+  }
+
+  private maxFor(did: string): number {
+    const named = this.config.perDidMax;
+    return named !== undefined && Object.prototype.hasOwnProperty.call(named, did)
+      ? (named[did] ?? this.config.maxRequests)
+      : this.config.maxRequests;
   }
 
   /**

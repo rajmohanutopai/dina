@@ -113,7 +113,9 @@ export async function registerWebOriginCors(
           ? {
               origin,
               methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-              allowedHeaders: ['content-type'],
+              // The owner device signs each call (caller_auth.ts): its four
+              // signature headers must survive the preflight.
+              allowedHeaders: ['content-type', 'x-did', 'x-timestamp', 'x-nonce', 'x-signature'],
               credentials: false,
               maxAge: 600,
             }

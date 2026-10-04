@@ -1,8 +1,9 @@
 /**
  * Anti-DNS-rebinding Host allowlist for the brain-server HTTP surface.
  *
- * The `/api/v1/*` API is unauthenticated + loopback-bound by design. Loopback
- * binding stops direct remote access, but a browser tricked into resolving an
+ * The `/api/v1/*` API is loopback-bound, and every call is signed by Core or
+ * an owner device (caller_auth.ts). This guard is a wall beside that check:
+ * loopback binding stops direct remote access, but a browser tricked into resolving an
  * attacker hostname to 127.0.0.1 (DNS rebinding) would still reach the server
  * — sending the attacker's hostname in the `Host` header — and could POST the
  * state-mutating agent-approval gate (approve/cancel) or read owner-private

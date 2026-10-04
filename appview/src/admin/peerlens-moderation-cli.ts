@@ -42,6 +42,7 @@
 import 'dotenv/config'
 import { eq } from 'drizzle-orm'
 import { createDb, type DrizzleDB } from '@/db/connection.js'
+import { a2aCardTakedowns } from '@/db/schema/a2a.js'
 import { attestations } from '@/db/schema/attestations.js'
 import { services } from '@/db/schema/services.js'
 import { subjects } from '@/db/schema/subjects.js'
@@ -90,7 +91,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   // Two-word commands: `subject tombstone`, `attestation takedown`, etc.
   // Single-word: `audit-log`.
   let subcommand: string | undefined
-  if (command === 'subject' || command === 'attestation' || command === 'service') {
+  if (command === 'subject' || command === 'attestation' || command === 'service' || command === 'a2a-card') {
     if (cursor >= args.length) {
       throw new Error(`Missing subcommand for "${command}".`)
     }
@@ -131,6 +132,8 @@ USAGE
   attestation restore <at://uri>     --actor <DID> --reason <"text">
   service tombstone <at://uri>       --actor <DID> --reason <"text">
   service untombstone <at://uri>     --actor <DID> --reason <"text">
+  a2a-card takedown <did>            --actor <DID> --reason <"text">
+  a2a-card restore <did>             --actor <DID> --reason <"text">
   audit-log                          [--actor <DID>] [--target <id>] [--action <verb>] [--limit <N>]
 
 FLAGS
@@ -338,6 +341,80 @@ export interface TakedownResult {
   before: { isTakedown: boolean; reason: string | null }
   after: { isTakedown: boolean; reason: string | null }
   auditLogId: bigint
+}
+
+export interface A2ACardTakedownResult {
+  did: string
+  before: { takenDownAt: Date | null; reason: string | null }
+  after: { takenDownAt: Date | null; reason: string | null }
+  auditLogId: bigint
+}
+
+/**
+ * Take a DID's agent card out of the A2A directory (design §8.3). The
+ * moderator's gate is its own table: the ingester never writes it, so the
+ * owner republishing never lifts it, and it holds whether or not a card is
+ * indexed (or ever was). Taking down again replaces the reason.
+ */
+export async function takedownA2ACard(
+  db: DrizzleDB,
+  args: { did: string; actorDid: string; reason: string },
+): Promise<A2ACardTakedownResult> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ takenDownAt: a2aCardTakedowns.takenDownAt, reason: a2aCardTakedowns.reason })
+      .from(a2aCardTakedowns)
+      .where(eq(a2aCardTakedowns.did, args.did))
+      .limit(1)
+      .for('update')
+    const before = { takenDownAt: existing?.takenDownAt ?? null, reason: existing?.reason ?? null }
+    const auditLogId = await recordAdminAction(tx, {
+      actorDid: args.actorDid,
+      action: 'takedown_a2a_card',
+      targetId: args.did,
+      reason: args.reason,
+      context: { before_taken_down_at: before.takenDownAt?.toISOString() ?? null, before_reason: before.reason },
+    })
+    const now = new Date()
+    const [after] = await tx
+      .insert(a2aCardTakedowns)
+      .values({ did: args.did, takenDownAt: now, reason: args.reason, auditLogId })
+      .onConflictDoUpdate({
+        target: a2aCardTakedowns.did,
+        set: { takenDownAt: now, reason: args.reason, auditLogId },
+      })
+      .returning({ takenDownAt: a2aCardTakedowns.takenDownAt, reason: a2aCardTakedowns.reason })
+    if (after === undefined) throw new Error(`Takedown did not land: ${args.did}`)
+    return { did: args.did, before, after, auditLogId }
+  })
+}
+
+/**
+ * Lift a takedown. The card serves again only if every other gate allows
+ * it: a card the owner deleted meanwhile stays deleted.
+ */
+export async function restoreA2ACard(
+  db: DrizzleDB,
+  args: { did: string; actorDid: string; reason: string },
+): Promise<A2ACardTakedownResult> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ takenDownAt: a2aCardTakedowns.takenDownAt, reason: a2aCardTakedowns.reason })
+      .from(a2aCardTakedowns)
+      .where(eq(a2aCardTakedowns.did, args.did))
+      .limit(1)
+      .for('update')
+    if (existing === undefined) throw new Error(`No takedown to lift for ${args.did}`)
+    const auditLogId = await recordAdminAction(tx, {
+      actorDid: args.actorDid,
+      action: 'restore_a2a_card',
+      targetId: args.did,
+      reason: args.reason,
+      context: { before_taken_down_at: existing.takenDownAt.toISOString(), before_reason: existing.reason },
+    })
+    await tx.delete(a2aCardTakedowns).where(eq(a2aCardTakedowns.did, args.did))
+    return { did: args.did, before: existing, after: { takenDownAt: null, reason: null }, auditLogId }
+  })
 }
 
 export async function takedownAttestation(
@@ -653,6 +730,19 @@ export async function dispatch(
     throw new Error(
       `Unknown attestation subcommand: ${parsed.subcommand}. Valid: takedown, restore`,
     )
+  }
+
+  if (parsed.command === 'a2a-card') {
+    if (parsed.subcommand === 'takedown' || parsed.subcommand === 'restore') {
+      const did = singlePositional(parsed, 'DID')
+      if (!DID_REGEX.test(did)) throw new Error(`Expected a DID, got "${did}"`)
+      const actorDid = requireDidFlag(parsed.flags, envActor, 'actor')
+      const reason = requireFlag(parsed.flags, undefined, 'reason')
+      return parsed.subcommand === 'takedown'
+        ? takedownA2ACard(db, { did, actorDid, reason })
+        : restoreA2ACard(db, { did, actorDid, reason })
+    }
+    throw new Error(`Unknown a2a-card subcommand: ${parsed.subcommand}. Valid: takedown, restore`)
   }
 
   if (parsed.command === 'audit-log') {

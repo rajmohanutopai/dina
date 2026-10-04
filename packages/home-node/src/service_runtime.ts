@@ -1,26 +1,30 @@
 import {
   ApprovalReconciler,
   D2DDispatcher,
-  ServiceHandler,
   ServiceQueryOrchestrator,
   WorkflowEventConsumer,
-  type ApprovalNotifier,
   type OrchestratorAppView,
-  type ServiceInboundNotifier,
-  type ServiceDirectResponder,
   type WorkflowEventDeliverer,
 } from '@dina/brain';
-import { createProviderIngressSubmitter, getWorkflowService } from '@dina/core';
+import { ServiceQueryIngress, createProviderIngressSubmitter } from '@dina/core';
 
-import type { CoreClient, ProviderIngressSubmitter, ServiceReasoningSubmitter } from '@dina/core';
+import type {
+  ApprovalNotifier,
+  CoreClient,
+  ProviderIngressSubmitter,
+  ServiceDirectResponder,
+  ServiceInboundNotifier,
+  ServiceReasoningSubmitter,
+  WorkflowService,
+} from '@dina/core';
 import type { ServiceConfig, ServiceResponseStatus } from '@dina/protocol';
 
 export interface HomeNodeServiceRuntimeOptions {
   /**
    * Returns the ServiceConfig for a listing. `rkey` selects WHICH listing
    * (multi-listing per DID — the rkey carried by a query's `service_uri`);
-   * omitted ⇒ the default `self` listing. Forwarded verbatim to the
-   * ServiceHandler so a query for `…/route-7` executes against route-7.
+   * omitted ⇒ the default `self` listing. Forwarded verbatim to Core's
+   * service-query ingress so a query for `…/route-7` executes against route-7.
    */
   readConfig: (rkey?: string) => ServiceConfig | null;
   directResponder: ServiceDirectResponder;
@@ -35,12 +39,13 @@ export interface HomeNodeServiceRuntimeOptions {
   /** Optional shared connected-Brain execution strategy. */
   reasoningSubmitter?: ServiceReasoningSubmitter;
   /**
-   * Optional override for the §11.2a plugin plane. Defaulted from the wired
-   * `WorkflowService`, so both boots get it without remembering to pass it —
+   * Optional override for the §11.2a plugin plane. Defaulted from the
+   * node's `workflow`, so both boots get it without remembering to pass it —
    * the alternative is a plane that exists, validates, publishes, and then
    * answers `unavailable` on the one node where somebody forgot the line.
-   * Tests pass their own; a node with no workflow service gets null and
-   * plugin-bound capabilities refuse.
+   * (It was read from the global once, which the phone installs only at
+   * `start()`, after this runtime is built: the phone's plugin plane
+   * answered `unavailable` to every query.) Tests pass their own.
    */
   providerIngressSubmitter?: ProviderIngressSubmitter;
   workflowEventIntervalMs?: number;
@@ -57,11 +62,19 @@ export interface HomeNodeServiceRuntimeOptions {
 
 export interface BuildHomeNodeServiceRuntimeOptions extends HomeNodeServiceRuntimeOptions {
   core: CoreClient;
+  /**
+   * The node's workflow service. Core's ingress creates every task an
+   * inbound query needs through it, and the plugin plane hands off through
+   * it. Passed in, never read from the global: the phone installs the
+   * global only at `start()`, after this runtime is built.
+   */
+  workflow: WorkflowService;
   appView: OrchestratorAppView;
 }
 
 export interface HomeNodeServiceRuntime {
-  handler: ServiceHandler;
+  /** Core's ingress for admitted `service.query` traffic (A2A plan §4.2a). */
+  ingress: ServiceQueryIngress;
   orchestrator: ServiceQueryOrchestrator;
   dispatcher: D2DDispatcher;
   events: WorkflowEventConsumer;
@@ -79,20 +92,21 @@ export function buildHomeNodeServiceRuntime(
   validateServiceRuntimeOptions(options);
 
   // §11.2a plugin plane. Resolved HERE rather than at each boot: the
-  // capability is a property of the node (does it run a workflow service?),
-  // not a decision each composition root should make differently.
-  const workflow = getWorkflowService();
+  // capability is a property of the node, not a decision each composition
+  // root should make differently.
+  const workflow = options.workflow;
   const providerIngressSubmitter =
     options.providerIngressSubmitter ??
-    (workflow === null
-      ? null
-      : createProviderIngressSubmitter({
-          workflow,
-          ...(options.nowMsFn !== undefined ? { nowMs: options.nowMsFn } : {}),
-        }));
+    createProviderIngressSubmitter({
+      workflow,
+      ...(options.nowMsFn !== undefined ? { nowMs: options.nowMsFn } : {}),
+    });
 
-  const handler = new ServiceHandler({
-    coreClient: options.core,
+  // The ingress is Core's (A2A plan §4.2a): Brain no longer validates an
+  // admitted query or creates its tasks. This runtime only routes the
+  // dispatcher's `service.query` and the consumer's `approved` event to it.
+  const ingress = new ServiceQueryIngress({
+    workflow,
     readConfig: options.readConfig,
     directResponder: options.directResponder,
     ...(options.approvalNotifier !== undefined ? { notifier: options.approvalNotifier } : {}),
@@ -100,7 +114,7 @@ export function buildHomeNodeServiceRuntime(
     ...(options.reasoningSubmitter !== undefined
       ? { reasoningSubmitter: options.reasoningSubmitter }
       : {}),
-    ...(providerIngressSubmitter === null ? {} : { providerIngressSubmitter }),
+    providerIngressSubmitter,
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.nowSecFn !== undefined ? { nowSecFn: options.nowSecFn } : {}),
     ...(options.generateUUID !== undefined ? { generateUUID: options.generateUUID } : {}),
@@ -108,7 +122,7 @@ export function buildHomeNodeServiceRuntime(
 
   const dispatcher = new D2DDispatcher();
   const unregisterQuery = dispatcher.register('service.query', async (fromDID, body) => {
-    await handler.handleQuery(fromDID, body);
+    await ingress.admitQuery(fromDID, body);
   });
 
   const orchestrator = new ServiceQueryOrchestrator({
@@ -119,8 +133,10 @@ export function buildHomeNodeServiceRuntime(
   const events = new WorkflowEventConsumer({
     coreClient: options.core,
     deliver: options.deliver,
-    onApproved: async ({ task, payload }) => {
-      await handler.executeAndRespond(task.id, payload);
+    // Core re-reads the card and its payload itself, and starts nothing
+    // unless the owner's approve moved it out of `pending_approval`.
+    onApproved: async ({ task }) => {
+      await ingress.executeApproved(task.id);
     },
     ...(options.workflowEventIntervalMs !== undefined
       ? { intervalMs: options.workflowEventIntervalMs }
@@ -145,7 +161,7 @@ export function buildHomeNodeServiceRuntime(
   let disposed = false;
 
   const runtime: HomeNodeServiceRuntime = {
-    handler,
+    ingress,
     orchestrator,
     dispatcher,
     events,
@@ -180,6 +196,9 @@ export function buildHomeNodeServiceRuntime(
 function validateServiceRuntimeOptions(options: BuildHomeNodeServiceRuntimeOptions): void {
   if (options.core === undefined) {
     throw new Error('buildHomeNodeServiceRuntime: core is required');
+  }
+  if (options.workflow === undefined) {
+    throw new Error('buildHomeNodeServiceRuntime: workflow is required');
   }
   if (options.appView === undefined) {
     throw new Error('buildHomeNodeServiceRuntime: appView is required');

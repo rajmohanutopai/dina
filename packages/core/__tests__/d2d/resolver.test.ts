@@ -9,7 +9,7 @@
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { getPublicKey } from '../../src/crypto/ed25519';
-import { DIDResolver, type ResolvedDID } from '../../src/d2d/resolver';
+import { DIDResolver } from '../../src/d2d/resolver';
 import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
 import { buildDIDDocument } from '../../src/identity/did_document';
 
@@ -228,6 +228,70 @@ describe('DIDResolver', () => {
       await expect(resolver.resolve('did:web:example.com')).rejects.toThrow(
         'unsupported DID method',
       );
+    });
+  });
+
+  describe('lookup (a DID as it stands, for A2A clients)', () => {
+    const PLC = 'did:plc:lookup0000000000000000000';
+
+    it.each([
+      [410, { kind: 'deactivated' }],
+      [404, { kind: 'not_found' }],
+      [500, { kind: 'unavailable' }],
+      [429, { kind: 'unavailable' }],
+    ])('reads HTTP %i as %j', async (status, expected) => {
+      const resolver = new DIDResolver({ fetch: createMockFetch({}, status).mockFetch });
+      expect(await resolver.lookup(PLC)).toEqual(expected);
+    });
+
+    it('returns a document that has dropped every key: none of the messaging checks run', async () => {
+      const bare = { id: PLC, verificationMethod: [] };
+      const resolver = new DIDResolver({ fetch: createMockFetch(bare).mockFetch });
+      expect(await resolver.lookup(PLC)).toEqual({ kind: 'document', document: bare });
+    });
+
+    it.each([
+      ['a document for another DID', { id: 'did:plc:other' }],
+      ['an array', [PLC]],
+      ['null', null],
+    ])('reads %s as unavailable', async (_name, body) => {
+      const resolver = new DIDResolver({ fetch: createMockFetch(body).mockFetch });
+      expect(await resolver.lookup(PLC)).toEqual({ kind: 'unavailable' });
+    });
+
+    it('reads a failed fetch, a body that is not JSON, and an unsupported method as unavailable, never throwing', async () => {
+      const down = new DIDResolver({
+        fetch: (async () => {
+          throw new Error('ECONNREFUSED');
+        }) as typeof fetch,
+      });
+      expect(await down.lookup(PLC)).toEqual({ kind: 'unavailable' });
+      const garbled = new DIDResolver({
+        fetch: (async () => ({ ok: true, status: 200, json: async () => JSON.parse('{') }) as unknown as Response) as typeof fetch,
+      });
+      expect(await garbled.lookup(PLC)).toEqual({ kind: 'unavailable' });
+      expect(await down.lookup('did:web:example.com')).toEqual({ kind: 'unavailable' });
+    });
+
+    it('gives up on a directory that stalls, past its deadline', async () => {
+      const stalled = new DIDResolver({
+        lookupTimeoutMs: 20,
+        fetch: ((_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          })) as typeof fetch,
+      });
+      expect(await stalled.lookup(PLC)).toEqual({ kind: 'unavailable' });
+    });
+
+    it('asks the directory every time, and derives a did:key locally', async () => {
+      const { mockFetch, calls } = createMockFetch(buildPlcDocument(PLC));
+      const resolver = new DIDResolver({ fetch: mockFetch });
+      await resolver.lookup(PLC);
+      await resolver.lookup(PLC);
+      expect(calls).toHaveLength(2);
+      expect(await resolver.lookup(testDID)).toEqual({ kind: 'document', document: expect.objectContaining({ id: testDID }) });
+      expect(calls).toHaveLength(2);
     });
   });
 });

@@ -14,6 +14,7 @@ import * as http from 'node:http';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { CallerDirectory, registerCallerAuth } from '../src/caller_auth';
 import { registerHostAllowlistGuard } from '../src/host_guard';
 import { registerNotificationApiRoutes } from '../src/routes/notifications';
 import { parseWebOrigins, registerOriginGuard, registerWebOriginCors } from '../src/web_origin';
@@ -92,7 +93,10 @@ describe('CORS for the Core-served page', () => {
     expect(res.statusCode).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe(CORE);
     expect(String(res.headers['access-control-allow-methods'])).toContain('POST');
-    expect(String(res.headers['access-control-allow-headers']).toLowerCase()).toBe('content-type');
+    // The owner device signs each call: its four headers must pass the preflight.
+    expect(String(res.headers['access-control-allow-headers']).toLowerCase()).toBe(
+      'content-type, x-did, x-timestamp, x-nonce, x-signature',
+    );
   });
 
   it('any other origin gets no CORS header, so the browser keeps the answer from it', async () => {
@@ -207,5 +211,42 @@ describe('CORS for the Core-served page', () => {
     expect(listed.headers['access-control-allow-origin']).toBe(CORE);
     const other = await read('http://evil.example');
     expect(other.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('CORS with the caller check on, in boot’s order', () => {
+  const ORIGIN = 'http://127.0.0.1:8100';
+  let app: FastifyInstance;
+  beforeEach(async () => {
+    app = Fastify({ logger: false });
+    registerHostAllowlistGuard(app);
+    registerOriginGuard(app, [ORIGIN]);
+    await registerWebOriginCors(app, [ORIGIN]);
+    registerCallerAuth(app, { directory: new CallerDirectory(async () => ({ core: null, ownerDevices: [] })) });
+    app.get('/api/v1/contacts', async () => ({ contacts: [] }));
+    await app.ready();
+  });
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('the preflight passes unsigned and admits the four signature headers', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/contacts',
+      headers: {
+        origin: ORIGIN,
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'x-did, x-timestamp, x-nonce, x-signature',
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(String(res.headers['access-control-allow-headers'])).toContain('x-signature');
+  });
+
+  it('an unsigned call from the page is refused, in a way the page can read', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/contacts', headers: { origin: ORIGIN } });
+    expect(res.statusCode).toBe(401);
+    expect(res.headers['access-control-allow-origin']).toBe(ORIGIN);
   });
 });

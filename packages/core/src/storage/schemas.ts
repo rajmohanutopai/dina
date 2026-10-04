@@ -2942,6 +2942,536 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE commerce_tender_not_asked ADD COLUMN listed_from_json TEXT NOT NULL DEFAULT '';
     `,
   },
+  {
+    version: 53,
+    name: 'a2a_outbound_lane',
+    // A2A Lane 1, M1a (docs/A2A_GATEWAY_ARCHITECTURE.md §9, plan §4.2): the
+    // remote agents the owner registered, their skill bindings and credential
+    // references, one operation row per delegation, every workflow child an
+    // operation ever has, durable single-use permits, the guard jobs that hold
+    // a remote result until it is checked, and claim-independent cancellation.
+    // New tables only: no workflow_tasks rebuild (its three cascading children
+    // would lose their rows), no service_configs change.
+    //
+    // The child tables reference a2a_tasks(id) with no ON DELETE rule, so a
+    // sweep deletes children first and the operation last.
+    sql: `
+      CREATE TABLE IF NOT EXISTS a2a_remote_agents (
+        agent_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        card_url TEXT NOT NULL,
+        card_json TEXT NOT NULL,
+        card_hash TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        endpoint_tenant TEXT NOT NULL DEFAULT '',
+        auth_endpoints_json TEXT,
+        schemes_json TEXT NOT NULL,
+        signature_state TEXT NOT NULL CHECK (signature_state IN ('verified','unsigned','invalid')),
+        signature_detail TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('candidate','active','changed','revoked')),
+        approved_at INTEGER,
+        last_verified_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_remote_agents_url
+        ON a2a_remote_agents(card_url) WHERE status != 'revoked';
+
+      CREATE TABLE IF NOT EXISTS a2a_remote_credentials (
+        credential_ref TEXT PRIMARY KEY,
+        remote_agent_id TEXT NOT NULL REFERENCES a2a_remote_agents(agent_id),
+        kind TEXT NOT NULL CHECK (kind IN ('none','api_key','bearer','oauth2_client')),
+        audience TEXT,
+        scope_json TEXT NOT NULL,
+        scope_hash TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active','revoked')),
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_remote_credentials_agent
+        ON a2a_remote_credentials(remote_agent_id);
+
+      CREATE TABLE IF NOT EXISTS a2a_skill_bindings (
+        remote_agent_id TEXT NOT NULL REFERENCES a2a_remote_agents(agent_id),
+        card_hash TEXT NOT NULL,
+        skill TEXT NOT NULL,
+        action_class TEXT NOT NULL CHECK (action_class IN ('read','quote','write','booking','agentic')),
+        result_schema_json TEXT,
+        credential_ref TEXT NOT NULL REFERENCES a2a_remote_credentials(credential_ref),
+        revision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        PRIMARY KEY (remote_agent_id, card_hash, skill)
+      );
+
+      CREATE TABLE IF NOT EXISTS a2a_tasks (
+        id INTEGER PRIMARY KEY,
+        external_id TEXT NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
+        principal TEXT NOT NULL,
+        internal_id TEXT,
+        context_id TEXT,
+        state TEXT NOT NULL,
+        reason_code TEXT,
+        result_json TEXT,
+        result_quarantine TEXT,
+        quarantine_digest TEXT,
+        guard_receipt_id TEXT,
+        message_id TEXT,
+        request_hash TEXT,
+        card_hash TEXT,
+        submission_phase TEXT CHECK (submission_phase IN ('built','transmitting','acknowledged','terminal')),
+        effect_phase TEXT CHECK (effect_phase IN ('pre_effect','effect_started','done')),
+        continuation_generation INTEGER NOT NULL DEFAULT 0,
+        input_required_json TEXT,
+        snapshot_json TEXT,
+        consent_json TEXT,
+        reply_to TEXT,
+        remote_agent_id TEXT,
+        remote_task_id TEXT,
+        remote_context_id TEXT,
+        status_updated_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_tasks_ext
+        ON a2a_tasks(direction, principal, external_id);
+      CREATE INDEX IF NOT EXISTS idx_a2a_tasks_internal ON a2a_tasks(internal_id);
+      CREATE INDEX IF NOT EXISTS idx_a2a_tasks_list
+        ON a2a_tasks(principal, status_updated_at DESC, id);
+      CREATE INDEX IF NOT EXISTS idx_a2a_tasks_state ON a2a_tasks(direction, state);
+
+      CREATE TABLE IF NOT EXISTS a2a_task_children (
+        child_task_id TEXT PRIMARY KEY,
+        operation_ref INTEGER NOT NULL REFERENCES a2a_tasks(id),
+        generation INTEGER NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('approval','execution','dispatch')),
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_task_children_op
+        ON a2a_task_children(operation_ref, generation);
+
+      CREATE TABLE IF NOT EXISTS a2a_permits (
+        permit_id TEXT PRIMARY KEY,
+        direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
+        operation_ref INTEGER NOT NULL REFERENCES a2a_tasks(id),
+        execution_child_id TEXT NOT NULL DEFAULT '',
+        approval_task_id TEXT,
+        payload_hash TEXT NOT NULL,
+        action_class TEXT NOT NULL,
+        pep_did TEXT,
+        authority_snapshot_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('minted','consumed','void')),
+        void_reason TEXT,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        consumed_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_permits_execution
+        ON a2a_permits(operation_ref, execution_child_id) WHERE state != 'void';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_permits_approval
+        ON a2a_permits(approval_task_id) WHERE direction = 'outbound';
+
+      CREATE TABLE IF NOT EXISTS a2a_guard_jobs (
+        job_id TEXT PRIMARY KEY,
+        operation_ref INTEGER NOT NULL UNIQUE REFERENCES a2a_tasks(id),
+        quarantine_digest TEXT NOT NULL,
+        scanner_version TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending','claimed','passed','blocked')),
+        claim_id TEXT,
+        claimed_until INTEGER,
+        verdict_json TEXT,
+        held_notice_at INTEGER,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_guard_jobs_state ON a2a_guard_jobs(state, created_at);
+
+      CREATE TABLE IF NOT EXISTS a2a_cancel_requests (
+        operation_ref INTEGER PRIMARY KEY REFERENCES a2a_tasks(id),
+        state TEXT NOT NULL CHECK (state IN ('requested','attempting','confirmed','refused')),
+        resolving_claim_id TEXT,
+        requested_at INTEGER NOT NULL,
+        resolved_at INTEGER
+      );
+    `,
+  },
+  {
+    version: 54,
+    name: 'a2a_provenance',
+    // A2A Lane 1, M1b (docs/A2A_GATEWAY_ARCHITECTURE.md §4.2, §5.3, §6.2):
+    // what Core released to Brain, per conversation (the release-context
+    // log, written by the vault read functions on both boots); the owner's
+    // turns (v55 holds their digests); the originals behind
+    // placeholders in proved spans, sealed under the source persona's DEK
+    // (or, for the owner's own words, kept in this SQLCipher file); and the
+    // material of real outbound credentials, which leaves only through one
+    // door. Log rows expire; entity rows purge with their operation.
+    sql: `
+      CREATE TABLE IF NOT EXISTS a2a_disclosures (
+        session_id TEXT NOT NULL,
+        audience TEXT NOT NULL CHECK (audience IN ('brain')),
+        persona TEXT NOT NULL,
+        persona_tier TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        content_digest TEXT NOT NULL,
+        released_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, audience, persona, item_id, content_digest)
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_disclosures_expiry ON a2a_disclosures(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_a2a_disclosures_persona ON a2a_disclosures(persona);
+
+      CREATE TABLE IF NOT EXISTS a2a_entities (
+        operation_ref INTEGER NOT NULL REFERENCES a2a_tasks(id),
+        placeholder TEXT NOT NULL,
+        seal TEXT NOT NULL CHECK (seal IN ('persona_dek','identity_db')),
+        persona TEXT,
+        sealed BLOB NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (operation_ref, placeholder)
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_entities_persona ON a2a_entities(persona);
+      CREATE INDEX IF NOT EXISTS idx_a2a_entities_expiry ON a2a_entities(expires_at);
+
+      CREATE TABLE IF NOT EXISTS a2a_proposal_refusals (
+        refused_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_proposal_refusals_at ON a2a_proposal_refusals(refused_at);
+
+      CREATE TABLE IF NOT EXISTS a2a_credential_secrets (
+        credential_ref TEXT PRIMARY KEY REFERENCES a2a_remote_credentials(credential_ref),
+        material TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      ALTER TABLE a2a_tasks ADD COLUMN release_session_id TEXT;
+      ALTER TABLE a2a_remote_credentials ADD COLUMN replaced_by TEXT;
+    `,
+  },
+  {
+    version: 55,
+    name: 'a2a_utterance_digests',
+    // A2A M1b (design §4.2 (a), §6.2 step 2): a proof covers a whole message
+    // the owner sent, so Core keeps a digest of each one and never the words.
+    // Built here, after dropping any table an earlier draft of v54 made with
+    // the words in it; its rows lived 24 hours, so nothing of value goes.
+    sql: `
+      DROP TABLE IF EXISTS a2a_utterances;
+      CREATE TABLE a2a_utterances (
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        recorded_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, turn_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_utterances_expiry ON a2a_utterances(expires_at);
+    `,
+  },
+  {
+    version: 56,
+    name: 'a2a_inbound',
+    // A2A Lane 2, M2 (docs/A2A_GATEWAY_ARCHITECTURE.md §5.1, §7.2, §7.3, §9):
+    // the listing config revision an execution snapshot pins (bumped with
+    // every config write and every runner-binding write: a timestamp is not
+    // a revision); inbound executor bindings, lane → paired device DID; the
+    // A2A clients and their credential history; idempotency receipts, keyed
+    // by principal, operation and message id.
+    sql: `
+      ALTER TABLE service_configs ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+      -- The last revision of a deleted listing, so one made again under the
+      -- same rkey keeps counting up: a snapshot pinned to the old listing
+      -- can never match the new one.
+      CREATE TABLE IF NOT EXISTS service_config_revision_floor (
+        rkey TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL
+      );
+
+      -- The executor DID an inbound child is pinned to (design §7.3), on the
+      -- child itself so a claim can leave out children pinned to another
+      -- device: a bound runner's DID, or a plugin install's paired device.
+      -- NULL for children Core runs in-process and for outbound children.
+      ALTER TABLE a2a_task_children ADD COLUMN pep_did TEXT;
+
+      CREATE TABLE IF NOT EXISTS a2a_runner_bindings (
+        lane TEXT PRIMARY KEY,
+        device_did TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS a2a_clients (
+        client_id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        token_hash TEXT,
+        token_expires_at INTEGER,
+        bound_did TEXT,
+        expected_did TEXT,
+        scope_json TEXT,
+        last_used_at INTEGER,
+        status TEXT NOT NULL CHECK (status IN ('active','revoked')),
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_clients_bound_did ON a2a_clients(bound_did)
+        WHERE bound_did IS NOT NULL AND status = 'active';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_a2a_clients_token ON a2a_clients(token_hash)
+        WHERE token_hash IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS a2a_credential_bindings (
+        id INTEGER PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES a2a_clients(client_id),
+        binding_type TEXT NOT NULL CHECK (binding_type IN ('bearer','did')),
+        value_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_credential_bindings_client ON a2a_credential_bindings(client_id);
+
+      CREATE TABLE IF NOT EXISTS a2a_idempotency_receipts (
+        principal TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        request_hash_pre TEXT NOT NULL,
+        request_hash_post TEXT,
+        mapped_external_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (principal, operation, message_id)
+      );
+    `,
+  },
+  {
+    version: 57,
+    name: 'a2a_delivery',
+    // A2A Lane 2, M3 (docs/A2A_GATEWAY_ARCHITECTURE.md §7.5, §9): task-event
+    // delivery. Each inbound task counts the events recorded for it and keeps
+    // the client-visible state its last event reported, so a change is
+    // recorded once. Webhook configs belong to one task; the outbox holds one
+    // row per event per target ('' = the task's streams), unique per target,
+    // under a claim lease.
+    sql: `
+      ALTER TABLE a2a_tasks ADD COLUMN event_seq INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE a2a_tasks ADD COLUMN event_state TEXT;
+
+      CREATE TABLE IF NOT EXISTS a2a_push_configs (
+        id TEXT PRIMARY KEY,
+        operation_ref INTEGER NOT NULL REFERENCES a2a_tasks(id),
+        url TEXT NOT NULL,
+        token TEXT,
+        auth_json TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_push_configs_op ON a2a_push_configs(operation_ref);
+
+      CREATE TABLE IF NOT EXISTS a2a_push_outbox (
+        id INTEGER PRIMARY KEY,
+        operation_ref INTEGER NOT NULL REFERENCES a2a_tasks(id),
+        source_event_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        target_kind TEXT NOT NULL CHECK (target_kind IN ('sse','webhook')),
+        target_id TEXT NOT NULL DEFAULT '',
+        event_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending','claimed','delivered','failed','suppressed')),
+        claim_id TEXT,
+        claimed_by TEXT,
+        claimed_until INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE (source_event_id, target_kind, target_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_push_outbox_due ON a2a_push_outbox(status, id);
+      CREATE INDEX IF NOT EXISTS idx_a2a_push_outbox_target
+        ON a2a_push_outbox(operation_ref, target_kind, target_id, status);
+    `,
+  },
+  {
+    version: 58,
+    name: 'a2a_did_auth',
+    // A2A Lane 2, M4 (docs/A2A_GATEWAY_ARCHITECTURE.md §5.1): DID credentials.
+    // A bound client keeps the Ed25519 key that signed its binding (requests
+    // are checked against it, and a host re-check clears it once it leaves
+    // the DID's document), and the owner's binding challenges are single use,
+    // for one client and the one DID the owner named, short-lived. Spent
+    // request nonces are kept on disk, so a replay fails after a restart too.
+    sql: `
+      ALTER TABLE a2a_clients ADD COLUMN bound_key TEXT;
+
+      -- The challenge is kept as its sha256 (design §9), like a bearer token.
+      CREATE TABLE IF NOT EXISTS a2a_did_challenges (
+        challenge_hash TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL REFERENCES a2a_clients(client_id),
+        did TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_did_challenges_client ON a2a_did_challenges(client_id);
+
+      -- Each DID's spent request nonces, kept until the signature they came
+      -- with can no longer pass the time check, across restarts.
+      CREATE TABLE IF NOT EXISTS a2a_request_nonces (
+        did TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (did, nonce)
+      );
+      CREATE INDEX IF NOT EXISTS idx_a2a_request_nonces_expiry ON a2a_request_nonces(expires_at);
+    `,
+  },
+  {
+    version: 59,
+    name: 'a2a_card_publication',
+    // A2A Lane 3, M5 (docs/A2A_GATEWAY_ARCHITECTURE.md §8.2, §9): the node's
+    // one directory publication, its owner switch, its fencing state and its
+    // durable attempt. The row is made by code, with a fresh random publisher
+    // instance; an archive carries no A2A table, so a restored node starts
+    // with none, its publication off until the owner activates it.
+    //
+    // `card_projection_revision` counts every write that can change the
+    // public card, bumped in the writer's own transaction by the triggers
+    // below: every listing write (each bumps `service_configs.revision`,
+    // runner-binding changes included) and every plugin-install change (an
+    // install decides whether its capability can be reached). The owner's
+    // switch bumps it in code. Before the row exists the triggers change
+    // nothing: the publisher builds from the live projection at the first
+    // activation, so earlier writes need no history.
+    //
+    // `card_maybe_present` is the durable unpublish intent: whether the
+    // repository may hold a card this node answers for. Every publish claim
+    // and every activation set it (a write may land unheard; a handoff leaves
+    // the old holder's card under the new fence); only evidence clears it.
+    // `fence_key_id` and `published_key_id` name the `dina_signing` key that
+    // signed the fence and the published envelope: a mismatch with the
+    // current key is a rotation, re-signed at once (§8.2 trigger c).
+    sql: `
+      CREATE TABLE IF NOT EXISTS a2a_card_publication (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        listing_enabled INTEGER NOT NULL DEFAULT 0,
+        publication_active INTEGER NOT NULL DEFAULT 0,
+        card_projection_revision INTEGER NOT NULL DEFAULT 0,
+        desired_card_hash TEXT,
+        freshness_epoch INTEGER NOT NULL DEFAULT 0,
+        publisher_epoch INTEGER NOT NULL DEFAULT 0,
+        publisher_instance TEXT NOT NULL,
+        fencing_generation INTEGER NOT NULL DEFAULT 0,
+        fence_key_id TEXT,
+        state TEXT NOT NULL DEFAULT 'not_published'
+          CHECK (state IN ('pending', 'published', 'failed', 'not_published', 'stood_down', 'deactivating')),
+        card_maybe_present INTEGER NOT NULL DEFAULT 0,
+        attempt_tuple_json TEXT,
+        attempt_expected_cid TEXT,
+        attempt_expected_repo_commit_cid TEXT,
+        published_revision INTEGER,
+        last_published_uri TEXT,
+        last_published_cid TEXT,
+        last_published_card_hash TEXT,
+        last_published_at INTEGER,
+        published_publisher_epoch INTEGER,
+        published_key_id TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_retry_at INTEGER,
+        notice TEXT,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_listing_ai AFTER INSERT ON service_configs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_listing_au AFTER UPDATE OF revision ON service_configs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_listing_ad AFTER DELETE ON service_configs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_plugin_ai AFTER INSERT ON plugin_installs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_plugin_au AFTER UPDATE ON plugin_installs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_card_projection_plugin_ad AFTER DELETE ON plugin_installs BEGIN
+        UPDATE a2a_card_publication SET card_projection_revision = card_projection_revision + 1 WHERE id = 1;
+      END;
+    `,
+  },
+  {
+    version: 60,
+    name: 'a2a_credential_generations',
+    // A2A design §10 ("stolen bearer: rotation"): what a credential set up
+    // ends when the credential does. A client's credential generation rises
+    // each time one of its credentials ends (its bearer rotated, its DID
+    // binding ended or changed, the client revoked). The gateway holds the
+    // streams and Core cannot list them, so each stream keeps the client and
+    // generation it was opened under, each stream event carries the current
+    // generation, and every delivery claim repeats the client's fence until
+    // `streams_fence_until`: an older stream ends, and none opens.
+    sql: `
+      ALTER TABLE a2a_clients ADD COLUMN credential_gen INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE a2a_clients ADD COLUMN streams_fence_until INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_a2a_clients_streams_fence ON a2a_clients(streams_fence_until)
+        WHERE streams_fence_until IS NOT NULL;
+    `,
+  },
+  {
+    version: 61,
+    name: 'a2a_outbound_sent_at',
+    // A2A design §6.4: an outbound operation's poll ends a fixed time after
+    // its SendMessage, however often a restart or a lost lease resumes it.
+    // \`sent_at\` is written with the \`transmitting\` phase, before the send.
+    // A running operation was sent when it became running, and its status has
+    // not changed since, so that time is its send time. An ended operation's
+    // status time is its end, so it keeps none: nothing resumes it.
+    sql: `
+      ALTER TABLE a2a_tasks ADD COLUMN sent_at INTEGER;
+      UPDATE a2a_tasks SET sent_at = status_updated_at
+        WHERE direction = 'outbound' AND state = 'running';
+    `,
+  },
+  {
+    version: 62,
+    name: 'a2a_inbound_child_events_silent',
+    // A2A design §7.3, A2A-I7 (Law 1): an inbound call's execution child
+    // answers its caller through the A2A outbox, never the owner. Its
+    // workflow events (created, completed, failed, cancelled, ...) are kept
+    // for the audit stream but not handed to Brain's delivery feed, whose
+    // consumer would post each round's result in the owner's chat for every
+    // outside call. In the database, so every writer of an event obeys it:
+    // the first trigger covers events written once the child is linked, the
+    // second the `created` event written before the link.
+    sql: `
+      UPDATE workflow_events SET needs_delivery = 0
+        WHERE needs_delivery = 1
+          AND task_id IN (SELECT child_task_id FROM a2a_task_children WHERE role = 'execution');
+      CREATE TRIGGER IF NOT EXISTS a2a_inbound_child_event_silent AFTER INSERT ON workflow_events
+        WHEN NEW.needs_delivery = 1
+         AND EXISTS (SELECT 1 FROM a2a_task_children WHERE child_task_id = NEW.task_id AND role = 'execution')
+      BEGIN
+        UPDATE workflow_events SET needs_delivery = 0 WHERE event_id = NEW.event_id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS a2a_inbound_child_linked_silent AFTER INSERT ON a2a_task_children
+        WHEN NEW.role = 'execution'
+      BEGIN
+        UPDATE workflow_events SET needs_delivery = 0 WHERE task_id = NEW.child_task_id AND needs_delivery = 1;
+      END;
+    `,
+  },
+  {
+    version: 63,
+    name: 'a2a_publication_retry_operation',
+    // A2A design §8.2: "predicate-false always drives an unpublish". A failed
+    // attempt's wait holds back the operation that failed, and only it: a
+    // publish that failed must not keep a card the owner withdrew in the
+    // directory until its retry time. Set with \`next_retry_at\`, cleared with it;
+    // a wait from before this column applies to both.
+    sql: `
+      ALTER TABLE a2a_card_publication ADD COLUMN retry_operation TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

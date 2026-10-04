@@ -1,13 +1,17 @@
 /** @type {import('jest').Config} */
 module.exports = {
+  ...require('../../../jest.memory'),
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],
   testMatch: ['**/*.test.ts'],
   setupFilesAfterEnv: ['<rootDir>/__tests__/setup.ts'],
+  // tsconfig.jest.json sets `isolatedModules`, so ts-jest transpiles each file
+  // without type checking it: far less memory per worker. `npm run typecheck`
+  // (tsc --noEmit over src and __tests__) is where type errors are caught.
   transform: {
     '^.+\\.[jt]sx?$': ['ts-jest', {
-      tsconfig: '<rootDir>/tsconfig.json',
+      tsconfig: '<rootDir>/tsconfig.jest.json',
       useESM: false,
     }],
   },

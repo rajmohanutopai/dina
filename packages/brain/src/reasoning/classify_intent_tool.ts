@@ -47,6 +47,8 @@ const CLASSIFY_INTENT_PARAMETERS = {
  */
 export function createClassifyIntentTool(opts: {
   classifier: IntentClassifier;
+  /** The conversation the topics it reads are released into (A2A §4.2). */
+  releaseSession?: string;
 }): AgentTool {
   return {
     name: 'classify_intent',
@@ -68,7 +70,10 @@ export function createClassifyIntentTool(opts: {
       }
       // IntentClassifier.classify already swallows every error and
       // returns a default — we don't need a try/catch here.
-      return await opts.classifier.classify(query);
+      return await opts.classifier.classify(
+        query,
+        opts.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : {},
+      );
     },
   };
 }

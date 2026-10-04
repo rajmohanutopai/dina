@@ -1,14 +1,18 @@
 /**
- * SLIP-0010 hierarchical key derivation for Ed25519 and secp256k1.
+ * SLIP-0010 hierarchical key derivation for Ed25519, secp256k1 and P-256.
  *
  * Derives all Dina keys from the master seed using hardened-only paths.
  *
  * Ed25519: HMAC key "ed25519 seed", child key = IL (direct).
  * secp256k1: HMAC key "Bitcoin seed", child key = (parse256(IL) + kpar) mod n (BIP-32).
+ * P-256: HMAC key "Nist256p1 seed", child key as secp256k1 but with SLIP-0010's
+ *   retry rule instead of failing on an invalid key (n is close enough to 2^256
+ *   that IL >= n happens about once in 2^32 derivations).
  *
  * SLIP-0010 spec: https://github.com/satoshilabs/slips/blob/master/slip-0010.md
  */
 
+import { p256 } from '@noble/curves/nist.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { sha512 } from '@noble/hashes/sha2.js';
@@ -27,6 +31,7 @@ export interface DerivedKey {
 
 const HARDENED_OFFSET = HARDENED;
 const SECP256K1_ORDER = secp256k1.Point.Fn.ORDER;
+const P256_ORDER = p256.Point.Fn.ORDER;
 
 /**
  * Parse a SLIP-0010 path string into an array of uint32 indices.
@@ -54,11 +59,14 @@ function parsePath(path: string): number[] {
       );
     }
 
+    // Canonical decimal only, below 2^31: `parseInt` would read "1.5'" as 1
+    // and "01'" as 1, and an index of 2^31 or more would overflow the
+    // hardened offset into a different key.
     const numStr = seg.slice(0, -1);
-    const num = parseInt(numStr, 10);
-    if (isNaN(num) || num < 0) {
-      throw new Error(`slip0010: invalid index "${seg}" — must be a non-negative integer`);
+    if (!/^(?:0|[1-9][0-9]{0,9})$/.test(numStr) || Number(numStr) >= HARDENED_OFFSET) {
+      throw new Error(`slip0010: invalid index "${seg}" — must be a non-negative integer below 2^31`);
     }
+    const num = Number(numStr);
 
     indices.push(num + HARDENED_OFFSET);
   }
@@ -79,14 +87,7 @@ function validateSeed(seed: Uint8Array): void {
   if (seed.length < 16) {
     throw new Error(`slip0010: seed too short (${seed.length} bytes, need >= 16)`);
   }
-  let allZero = true;
-  for (let i = 0; i < seed.length; i++) {
-    if (seed[i] !== 0) {
-      allZero = false;
-      break;
-    }
-  }
-  if (allZero) {
+  if (seed.every((byte) => byte === 0)) {
     throw new Error('slip0010: all-zero seed rejected (fail-closed)');
   }
 }
@@ -236,6 +237,83 @@ export function derivePathSecp256k1(seed: Uint8Array, path: string): DerivedKey 
 }
 
 // ---------------------------------------------------------------
+// Public API: P-256 (nist256p1)
+// ---------------------------------------------------------------
+
+function serIndex(index: number): Uint8Array {
+  return new Uint8Array([(index >>> 24) & 0xff, (index >>> 16) & 0xff, (index >>> 8) & 0xff, index & 0xff]);
+}
+
+function parse256(bytes: Uint8Array): bigint {
+  return BigInt('0x' + bytesToHex(bytes));
+}
+
+function ser256(value: bigint): Uint8Array {
+  return hexToBytes(value.toString(16).padStart(64, '0'));
+}
+
+/**
+ * SLIP-0010 master key for P-256: if IL is 0 or >= n, set S := I and
+ * hash again (SLIP-0010 "Master key generation", step 4).
+ */
+export function deriveMasterKeyP256(seed: Uint8Array): { key: Uint8Array; chainCode: Uint8Array } {
+  const curveKey = new TextEncoder().encode('Nist256p1 seed');
+  let data = seed;
+  for (;;) {
+    const I = hmac(sha512, curveKey, data);
+    const il = parse256(I.slice(0, 32));
+    if (il !== 0n && il < P256_ORDER) return { key: I.slice(0, 32), chainCode: I.slice(32, 64) };
+    data = I;
+  }
+}
+
+/**
+ * SLIP-0010 hardened CKDpriv for P-256. When parse256(IL) >= n or the
+ * child key is 0, re-hash with 0x01 || IR || ser32(i) and try again
+ * (SLIP-0010 "Private parent key → private child key", step 5).
+ */
+function deriveChildP256(
+  parentKey: Uint8Array,
+  parentChainCode: Uint8Array,
+  index: number,
+): { key: Uint8Array; chainCode: Uint8Array } {
+  const kpar = parse256(parentKey);
+  const data = new Uint8Array(1 + 32 + 4);
+  data[0] = 0x00;
+  data.set(parentKey, 1);
+  data.set(serIndex(index), 33);
+  let I = hmac(sha512, parentChainCode, data);
+  for (;;) {
+    const IL = I.slice(0, 32);
+    const IR = I.slice(32, 64);
+    const il = parse256(IL);
+    const child = (il + kpar) % P256_ORDER;
+    if (il < P256_ORDER && child !== 0n) return { key: ser256(child), chainCode: IR };
+    const retry = new Uint8Array(1 + 32 + 4);
+    retry[0] = 0x01;
+    retry.set(IR, 1);
+    retry.set(serIndex(index), 33);
+    I = hmac(sha512, parentChainCode, retry);
+  }
+}
+
+/**
+ * Derive a P-256 keypair at a SLIP-0010 hardened path ("Nist256p1 seed").
+ * The public key is the 33-byte compressed point.
+ */
+export function derivePathP256(seed: Uint8Array, path: string): DerivedKey {
+  validateSeed(seed);
+  const indices = parsePath(path);
+  let { key, chainCode } = deriveMasterKeyP256(seed);
+  for (const index of indices) {
+    const child = deriveChildP256(key, chainCode, index);
+    key = child.key;
+    chainCode = child.chainCode;
+  }
+  return { privateKey: key, publicKey: p256.getPublicKey(key, true), chainCode };
+}
+
+// ---------------------------------------------------------------
 // Convenience functions
 // ---------------------------------------------------------------
 
@@ -291,4 +369,21 @@ export function deriveServiceKey(seed: Uint8Array, serviceIndex: number): Derive
  */
 export function deriveNamespaceKey(seed: Uint8Array, namespaceIndex: number): DerivedKey {
   return derivePath(seed, `m/9999'/4'/${namespaceIndex}'`);
+}
+
+/**
+ * Derive the P-256 (ES256) signing key at `m/9999'/5'/{generation}'`.
+ *
+ * Purpose 5 is the next free slot after the PeerLens namespaces (purpose 4).
+ * One key serves the standards that require ES256 and will not take Ed25519:
+ * A2A Agent Card signatures, UCP request signatures and AP2 mandates
+ * (docs/A2A_IMPLEMENTATION_PLAN.md D4, docs/AP2_AGENT_PAYMENTS.md §6.1). It
+ * stays in the signing tree, apart from the HKDF branch that makes vault keys.
+ * A rotation moves to the next generation, as the root key does.
+ */
+export function deriveP256SigningKey(seed: Uint8Array, generation: number): DerivedKey {
+  if (!Number.isSafeInteger(generation) || generation < 0 || generation >= HARDENED_OFFSET) {
+    throw new Error('slip0010: P-256 key generation must be an integer in [0, 2^31)');
+  }
+  return derivePathP256(seed, `m/9999'/5'/${generation}'`);
 }

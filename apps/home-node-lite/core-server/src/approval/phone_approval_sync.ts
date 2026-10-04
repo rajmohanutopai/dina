@@ -1,8 +1,12 @@
 import {
   REMOTE_APPROVAL_API_PREFIX,
   applyOwnerWorkflowDecision,
+  delegationConsentMirror,
+  inboundReviewMirror,
   getWorkflowService,
   parseCodingGateApprovalPayload,
+  parseDelegationConsentCard,
+  parseInboundReviewCard,
   parseFacadeActionApprovalPayload,
   remoteApprovalProposalId,
 } from '@dina/core';
@@ -213,6 +217,40 @@ function proposalForTask(raw: string): PhoneProposalSource | null {
       agentDid: coding.agent_did,
       action: coding.action,
       toolName: coding.tool,
+    };
+  }
+  // A2A Lane 1 (plan §3.20): the server runs the lane and the paired phone
+  // decides its consent cards. Mirrored only when the phone can show every
+  // byte that would be sent; otherwise the owner decides on the console.
+  const consent = parseDelegationConsentCard(raw);
+  if (consent !== null) {
+    const mirror = delegationConsentMirror(consent);
+    if (mirror === null) return null;
+    return {
+      payloadHash: consent.consent_hash,
+      agentDid: `a2a:${consent.consent.remote_agent_id}`,
+      action: 'a2a_delegate',
+      toolName: 'a2a_delegate',
+      proposalType: 'facade_action',
+      displayTitle: mirror.title,
+      displayDetail: mirror.detail,
+    };
+  }
+  // A2A Lane 2 (design §7.3): an outside agent's call under review. The
+  // phone shows Core's words and the exact params; the decision binds to the
+  // hash of the normalized call.
+  const inbound = parseInboundReviewCard(raw);
+  if (inbound !== null) {
+    const mirror = inboundReviewMirror(inbound);
+    if (mirror === null) return null;
+    return {
+      payloadHash: inbound.post_hash,
+      agentDid: `a2a:${inbound.client_id}`,
+      action: 'a2a_inbound',
+      toolName: 'a2a_inbound',
+      proposalType: 'facade_action',
+      displayTitle: mirror.title,
+      displayDetail: mirror.detail,
     };
   }
   const facade = parseFacadeActionApprovalPayload(raw);

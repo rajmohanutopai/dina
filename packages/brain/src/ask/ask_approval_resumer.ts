@@ -98,6 +98,8 @@ export interface ResumeContext {
    * re-applies the lane block + tool scope + result gate). Absent for plain Ask.
    */
   forcedSources?: readonly IntentSource[];
+  /** The owner's chat thread the ask came from (A2A §4.2), so the resume releases into it. */
+  conversation?: string;
 }
 
 /**
@@ -238,6 +240,7 @@ export class AskApprovalResumer {
         ...(record.forcedSources !== undefined && record.forcedSources.length > 0
           ? { forcedSources: record.forcedSources }
           : {}),
+        ...(record.conversation !== undefined ? { conversation: record.conversation } : {}),
       };
       let result: AgenticLoopResult;
       try {
@@ -266,6 +269,7 @@ export class AskApprovalResumer {
           ...(record.forcedSources !== undefined && record.forcedSources.length > 0
             ? { forcedSources: record.forcedSources }
             : {}),
+          ...(record.conversation !== undefined ? { conversation: record.conversation } : {}),
         });
       } catch (err) {
         const detail = stringifyError(err);

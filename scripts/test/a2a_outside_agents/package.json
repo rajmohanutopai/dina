@@ -1,0 +1,8 @@
+{
+  "name": "a2a-outside-agents",
+  "private": true,
+  "description": "Outside A2A agents on the official SDKs, calling a Dina node (see README.md).",
+  "dependencies": {
+    "@a2a-js/sdk": "1.3.0"
+  }
+}

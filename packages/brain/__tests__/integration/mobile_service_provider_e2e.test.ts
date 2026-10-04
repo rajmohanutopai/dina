@@ -9,7 +9,7 @@
  * processes the query.
  *
  * This test takes that captured wire payload and runs it through the
- * **provider** half end-to-end: service provider's `ServiceHandler` →
+ * **provider** half end-to-end: Core's service-query ingress →
  * delegation task → `LocalDelegationRunner` (acting as the
  * out-of-process dina-agent / OpenClaw) → `WorkflowService.complete`
  * → `bridgeServiceQueryCompletion` → outbound `service.response` body.
@@ -24,7 +24,7 @@
  *   ─── opaque bytes on the wire (in prod: D2D MsgBox; here: in-memory) │
  *                                                                       │
  *   service provider side (this test):                                         │
- *     ServiceHandler.handleQuery(body)  ◀──────────────────────────────┘
+ *     ServiceQueryIngress.admitQuery(body)  ◀──────────────────────────┘
  *       → workflow task (kind=delegation, payload.type=service_query_execution)
  *       → LocalDelegationRunner claims + runs `eta_query` capability
  *       → WorkflowService.complete (fires response bridge)
@@ -60,13 +60,12 @@ import {
   setWorkflowRepository, LocalDelegationRunner ,
   setServiceConfig,
   getServiceConfig,
-  resetServiceConfigState, makeServiceResponseBridgeSender } from '@dina/core';
+  resetServiceConfigState, makeServiceResponseBridgeSender,
+  ServiceQueryIngress,
+  serviceSchemaError,
+} from '@dina/core';
 
-import { validateAgainstSchema } from '../../src/service/capabilities/schema_validator';
-import { ServiceHandler } from '../../src/service/service_handler';
-
-import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import type { WorkflowTask, WorkflowTaskState , ServiceQueryBody, ServiceResponseBody } from '@dina/core';
+import type { ServiceQueryBody, ServiceResponseBody } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 const ALONSO_DID = 'did:plc:alonso-test';
@@ -131,7 +130,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
     if (capability !== 'eta_query') {
       return Promise.reject(new Error(`unsupported capability: ${capability}`));
     }
-    // Cast at the boundary — ServiceHandler validated against the
+    // Cast at the boundary — the ingress validated against the
     // schema before the task was created, so by the time the runner
     // sees `params` it already conforms.
     const p = params as { route_id: string; location: { lat: number; lng: number } };
@@ -190,7 +189,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
         sendResponse: async (recipientDID, body) => {
           capturedResponses.push({ to: recipientDID, body });
         },
-        validateResult: (value, schema) => validateAgainstSchema(value, schema),
+        validateResult: (value, schema) => serviceSchemaError(value, schema),
       }),
     });
     setWorkflowService(workflowService);
@@ -203,39 +202,9 @@ describe('Service-query — provider-side cross-node E2E', () => {
     resetServiceConfigState();
   });
 
-  /**
-   * Build the `ServiceHandlerCoreClient` slice (`createWorkflowTask` +
-   * `cancelWorkflowTask`) — routes to `WorkflowService` so the
-   * bridge fires on completion. Same adapter shape used by
-   * `approve_event_to_delegation.test.ts`; matches what mobile
-   * bootstrap wires production-side via `InProcessTransport`.
-   */
-  function buildHandlerCoreClient(): ServiceHandlerCoreClient {
-    return {
-      async createWorkflowTask(input) {
-        const task = workflowService.create({
-          id: input.id,
-          kind: input.kind as WorkflowTask['kind'],
-          payload: input.payload,
-          description: input.description ?? '',
-          policy: input.policy,
-          correlationId: input.correlationId,
-          origin: input.origin,
-          initialState: input.initialState as WorkflowTaskState | undefined,
-          expiresAtSec: input.expiresAtSec,
-          priority: input.priority as WorkflowTask['priority'] | undefined,
-        });
-        return { task, deduped: false };
-      },
-      async cancelWorkflowTask(id, reason) {
-        return workflowService.cancel(id, reason ?? '');
-      },
-    };
-  }
-
   it('full provider round-trip: handle service.query → delegation → runner → service.response', async () => {
-    const handler = new ServiceHandler({
-      coreClient: buildHandlerCoreClient(),
+    const ingress = new ServiceQueryIngress({
+      workflow: workflowService,
       readConfig: () => getServiceConfig(),
     });
 
@@ -253,8 +222,8 @@ describe('Service-query — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    // ── Step 1: service provider's ServiceHandler validates + creates task ──
-    await handler.handleQuery(ALONSO_DID, inboundQuery);
+    // ── Step 1: Core's ingress validates + creates the task ──
+    await ingress.admitQuery(ALONSO_DID, inboundQuery);
 
     // Workflow repo now holds exactly one delegation task with the
     // shape the runner is allowed to claim (kind=delegation,
@@ -318,8 +287,8 @@ describe('Service-query — provider-side cross-node E2E', () => {
 
   it('schema-hash mismatch on inbound query → error response, no task created', async () => {
     const handlerCalls: { to: string; body: unknown }[] = [];
-    const handler = new ServiceHandler({
-      coreClient: buildHandlerCoreClient(),
+    const ingress = new ServiceQueryIngress({
+      workflow: workflowService,
       readConfig: () => getServiceConfig(),
       directResponder: async (recipientDID, body) => {
         handlerCalls.push({ to: recipientDID, body });
@@ -337,7 +306,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    await handler.handleQuery(ALONSO_DID, staleQuery);
+    await ingress.admitQuery(ALONSO_DID, staleQuery);
 
     // No task should have been created — schema check rejects FIRST
     // (handler short-circuits before createWorkflowTask).
@@ -360,8 +329,8 @@ describe('Service-query — provider-side cross-node E2E', () => {
 
   it('invalid params (route_id missing) → error response, no task created', async () => {
     const handlerCalls: { to: string; body: unknown }[] = [];
-    const handler = new ServiceHandler({
-      coreClient: buildHandlerCoreClient(),
+    const ingress = new ServiceQueryIngress({
+      workflow: workflowService,
       readConfig: () => getServiceConfig(),
       directResponder: async (recipientDID, body) => {
         handlerCalls.push({ to: recipientDID, body });
@@ -379,7 +348,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    await handler.handleQuery(ALONSO_DID, badQuery);
+    await ingress.admitQuery(ALONSO_DID, badQuery);
 
     // Schema-hash mismatch rejected before any task creation —
     // confirm by checking every state bucket is empty.
@@ -390,8 +359,8 @@ describe('Service-query — provider-side cross-node E2E', () => {
   });
 
   it('runner throws → bridge fires error envelope (not silent TTL)', async () => {
-    const handler = new ServiceHandler({
-      coreClient: buildHandlerCoreClient(),
+    const ingress = new ServiceQueryIngress({
+      workflow: workflowService,
       readConfig: () => getServiceConfig(),
     });
 
@@ -428,7 +397,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    await handler.handleQuery(ALONSO_DID, query);
+    await ingress.admitQuery(ALONSO_DID, query);
     await runner.runTick();
 
     // The original task transitioned to `failed` (runner threw).
@@ -450,8 +419,8 @@ describe('Service-query — provider-side cross-node E2E', () => {
   });
 
   it('runner returns drifted result (missing required field) → bridge sends error, not bad data', async () => {
-    const handler = new ServiceHandler({
-      coreClient: buildHandlerCoreClient(),
+    const ingress = new ServiceQueryIngress({
+      workflow: workflowService,
       readConfig: () => getServiceConfig(),
     });
 
@@ -496,7 +465,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
       ttl_seconds: 60,
     };
 
-    await handler.handleQuery(ALONSO_DID, query);
+    await ingress.admitQuery(ALONSO_DID, query);
     await runner.runTick();
 
     expect(capturedResponses).toHaveLength(1);

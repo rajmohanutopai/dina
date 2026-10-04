@@ -65,6 +65,12 @@ export interface AskRecord {
    * plain Ask. In-memory only — ask records are not durably persisted.
    */
   readonly forcedSources?: readonly IntentSource[];
+  /**
+   * The owner's chat thread the ask came from, kept so a resume releases
+   * vault reads into the same conversation (A2A §4.2). Absent for asks that
+   * did not come from chat.
+   */
+  readonly conversation?: string;
   /** JSON-stringified answer when `complete`. */
   answerJson?: string;
   /** JSON-stringified error when `failed`. */
@@ -94,6 +100,8 @@ export interface AskEnqueueInput {
   sessionId?: string;
   /** Explicit composer lane — preserved on the record for approval-resume. */
   forcedSources?: readonly IntentSource[];
+  /** The owner's chat thread — preserved on the record for approval-resume. */
+  conversation?: string;
   /** TTL override (ms). Defaults to the registry-level default. */
   ttlMs?: number;
 }
@@ -211,6 +219,9 @@ export class AskRegistry {
       deadlineMs: now + ttl,
       ...(input.forcedSources !== undefined && input.forcedSources.length > 0
         ? { forcedSources: input.forcedSources }
+        : {}),
+      ...(input.conversation !== undefined && input.conversation !== ''
+        ? { conversation: input.conversation }
         : {}),
       ...(input.sessionId !== undefined && input.sessionId !== ''
         ? { sessionId: input.sessionId }
@@ -442,6 +453,7 @@ function cloneAsk(r: AskRecord): AskRecord {
     // explicit fields) so the forced composer lane reaches the approval-resume.
     // Set in the literal because it is readonly (can't be assigned after).
     ...(r.forcedSources !== undefined ? { forcedSources: r.forcedSources } : {}),
+    ...(r.conversation !== undefined ? { conversation: r.conversation } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
   };
   if (r.answerJson !== undefined) clone.answerJson = r.answerJson;

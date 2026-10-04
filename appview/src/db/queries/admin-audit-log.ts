@@ -53,6 +53,9 @@ export const ADMIN_ACTIONS = [
   // Service profile moderation (parallel to subject tombstone)
   'tombstone_service',
   'untombstone_service',
+  // A2A directory moderation (design §8.3): a gate of its own, beside the card
+  'takedown_a2a_card',
+  'restore_a2a_card',
 ] as const
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number]

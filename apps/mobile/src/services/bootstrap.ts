@@ -7,7 +7,7 @@
  *     optional `PDSPublisher`) + a storage backend (`WorkflowRepository`)
  *     + a `ServiceConfig` accessor.
  *   - Bootstrap owns: constructing `WorkflowService` with the Response
- *     Bridge wired, `ServiceHandler` (inbound), orchestrator
+ *     Bridge wired, Core's service-query ingress (inbound), orchestrator
  *     (outbound), `WorkflowEventConsumer` (delivers chat + dispatches
  *     approvals), `ApprovalReconciler` (TTL sweeper).
  *   - Chat-orchestrator globals (`setServiceCommandHandler` et al) are
@@ -54,8 +54,10 @@ import {
   onGrantRequestPending,
   onServiceOfferReceived,
   onServiceConfigChanged,
+  a2aWorkflowHooks,
   composeWorkflowHooks,
   coordinationWorkflowHooks,
+  getA2ARuntime,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
   orderAttachmentWorkflowHooks,
@@ -128,12 +130,11 @@ import {
   makeAgenticAskHandler,
   makeServiceApproveHandler,
   makeServiceDenyHandler,
+  PublisherConfigError,
   ServicePublisher,
   toPublisherConfig,
-  validateAgainstSchema,
   wireServiceOrchestrator,
   type AgenticAskHandlerOptions,
-  type ApprovalNotifier,
   type ApprovalReconciler,
   type AskCoordinator,
   type CreateCoordinatorAskHandlerOptions,
@@ -142,8 +143,6 @@ import {
   type OrchestratorAppView,
   type PDSPublisher,
   type PDSSession,
-  type ServiceHandler,
-  type ServiceInboundNotifier,
   type ServiceQueryOrchestrator,
   type ToolRegistry,
   type WorkflowEventConsumer,
@@ -156,6 +155,7 @@ import {
   setServiceDenyCommandHandler,
   resetServiceDenyCommandHandler,
   setAskCommandHandler,
+  setOwnerTurnRecorder,
   resetAskCommandHandler,
   setContactServiceHandler,
   resetContactServiceHandler,
@@ -195,6 +195,11 @@ import {
   installInviteService,
   sign as ed25519Sign,
   verify as ed25519Verify,
+  serviceSchemaError,
+  type ApprovalNotifier,
+  type IdentityKeypair,
+  type ServiceInboundNotifier,
+  type ServiceQueryIngress,
 } from '@dina/core';
 import { makeResolveSender } from '@dina/home-node';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
@@ -221,11 +226,10 @@ import {
   stashPendingPreflight,
   takePendingPreflight,
 } from './pending_preflight';
-import { clearRuntimeWarning } from './runtime_warnings';
+import { clearRuntimeWarning, emitRuntimeWarning } from './runtime_warnings';
 import { installServerNotifications } from './server_notifications';
 import { resolveServiceConfigCoreClient } from './service_config_resolver';
 
-import type { IdentityKeypair } from '@dina/core';
 
 export type NodeRole = 'requester' | 'provider' | 'both';
 
@@ -483,7 +487,8 @@ export interface DinaNode extends HomeNodeLifecycle {
   pdsPublisher?: PDSPublisher;
   workflowService: WorkflowService;
   orchestrator: ServiceQueryOrchestrator;
-  handler: ServiceHandler;
+  /** Core's ingress for admitted `service.query` traffic (A2A plan §4.2a). */
+  ingress: ServiceQueryIngress;
   /** D2D dispatcher — service.query + service.response routed here. */
   dispatcher: D2DDispatcher;
   runners: {
@@ -715,7 +720,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // checks runner output against the frozen `schema_snapshot.result`.
     // A violation becomes a `result_schema_violation` error response
     // rather than a drifted success payload.
-    validateResult: validateAgainstSchema,
+    validateResult: serviceSchemaError,
     onMalformedResult: (ctx, err) =>
       log({
         event: 'bridge.malformed_result',
@@ -754,6 +759,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       integrationWorkflowHooks({ nowMs: nowMsFn }),
       orderAttachmentWorkflowHooks({ nowMs: nowMsFn }),
       negotiationWorkflowHooks({ nowMs: nowMsFn }),
+      // A2A Lane 1 is server-only in M1a (plan D6): the phone installs no
+      // Lane 1 runtime, so this handler finds none and does nothing. Composed
+      // anyway so the two boots carry the same hooks.
+      a2aWorkflowHooks(getA2ARuntime),
     ),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the
@@ -892,7 +901,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   }
   // `setWorkflowService` is deferred to start() via installCoreGlobals.
 
-  // ServiceHandler reads config through a thunk. Default to Core's
+  // Core's ingress reads config through a thunk. Default to Core's
   // global (shared with the D2D ingress pipeline and the route handler)
   // so the two sides can't diverge.
   const readConfig =
@@ -938,13 +947,15 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       }).then(() => undefined);
     },
   });
-  // 2-5. Shared service runtime — handler + dispatcher (with
+  // 2-5. Shared service runtime — Core's ingress + dispatcher (with
   // service.query registered) + orchestrator + workflow-event consumer
   // + approval reconciler. The mobile-specific bits feed in through
   // the option surface (custom `deliver`, `inboundNotifier`,
   // `directResponder` that wraps `options.sendD2D`).
   const serviceRuntime = buildHomeNodeServiceRuntime({
     core: options.coreClient,
+    // The node's own service: the global is installed only at start().
+    workflow: workflowService,
     appView: options.appViewClient as OrchestratorAppView,
     readConfig,
     directResponder: async (to, body) => {
@@ -967,7 +978,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
     ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
   });
-  const { handler, dispatcher, orchestrator, events, approvals } = serviceRuntime;
+  const { ingress, dispatcher, orchestrator, events, approvals } = serviceRuntime;
 
   // 5a. TaskExpirySweeper — requester-side TTL enforcement (issue #9).
   //     Calls WorkflowRepository.expireTasks on a cadence so stuck
@@ -1288,6 +1299,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       const { handler, dispose } = createCoordinatorAskHandler(bridgeOpts);
       setAskCommandHandler(handler);
       globalDisposers.push(resetAskCommandHandler);
+      // A2A §4.2 (a): the owner's words are recorded in Core at turn start.
+      setOwnerTurnRecorder((input) => options.coreClient.recordOwnerTurn(input));
+      globalDisposers.push(() => setOwnerTurnRecorder(null));
       // Bridge subscribed to the coordinator's event stream — release
       // that subscription on dispose so re-bootstrapping doesn't leak.
       globalDisposers.push(dispose);
@@ -1361,7 +1375,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     pdsPublisher: options.pdsPublisher,
     workflowService,
     orchestrator,
-    handler,
+    ingress,
     dispatcher,
     runners: {
       events,
@@ -1555,7 +1569,22 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         const listings = listServiceConfigs();
         if (listings.length > 0) {
           for (const { rkey, config } of listings) {
-            await publisher.sync(toPublisherConfig(config), rkey);
+            try {
+              await publisher.sync(toPublisherConfig(config), rkey);
+            } catch (err) {
+              // A listing that cannot be published as it stands (a schema
+              // with no canonical form, saved before the save refused one)
+              // is the owner's to fix, not a reason to stop the node: the
+              // other listings publish, and the owner is told. A network or
+              // identity failure still fails start() (issue #18).
+              if (!(err instanceof PublisherConfigError)) throw err;
+              log({ event: 'node.service_profile_unpublishable', rkey });
+              emitRuntimeWarning(
+                `service.listing_unpublishable.${rkey}`,
+                'A service listing could not be published. Open its settings and save it again.',
+              );
+              continue;
+            }
             log({
               event: 'node.service_profile_synced',
               is_public: config.isDiscoverable,
@@ -1922,7 +1951,7 @@ function defaultApprovalNotifier(threadId: string): ApprovalNotifier {
 
 /**
  * Provider-side chat visibility hook. When an external Home Node sends a
- * `service.query` and ServiceHandler accepts it, post a system line into
+ * `service.query` and Core's ingress accepts it, post a system line into
  * the operator's chat so they see the inbound traffic. Pairs with the
  * `sendResponse` wrapper above (which posts a follow-up line when the
  * bridge sends the `service.response`).

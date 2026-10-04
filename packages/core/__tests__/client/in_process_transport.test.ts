@@ -6,7 +6,9 @@
 
 import { WorkflowConflictError } from '../../src';
 import { InProcessTransport } from '../../src/client/in-process-transport';
+import { setNodeDID } from '../../src/pairing/ceremony';
 import { CoreRouter } from '../../src/server/router';
+import { registerA2ARoutes } from '../../src/server/routes/a2a';
 
 function buildRouter(opts: { contactsStatus?: number } = {}): CoreRouter {
   const r = new CoreRouter();
@@ -1866,5 +1868,16 @@ describe('InProcessTransport (task 1.30)', () => {
     await expect(t.reasoningHeartbeat('task-1', input)).rejects.toMatchObject({
       status: 409,
     });
+  });
+});
+
+describe('A2A: the node’s own DID (design §8.4)', () => {
+  it('a2aSelfDid reaches Core’s route: null before Core has a DID, the DID after', async () => {
+    const router = new CoreRouter();
+    registerA2ARoutes(router, 'owner-capability-for-tests');
+    const t = new InProcessTransport(router);
+    expect(await t.a2aSelfDid()).toBeNull();
+    setNodeDID('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
+    expect(await t.a2aSelfDid()).toBe('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
   });
 });

@@ -9,7 +9,7 @@ import {
   type BuildProfileInput,
   type CapabilitySchemaInput,
 } from '../src/appview/profile_builder';
-import { computeSchemaHash } from '../src/appview/schema_hash';
+import { capabilitySchemaHash } from '@dina/core';
 
 function etaSchema(): CapabilitySchemaInput {
   return {
@@ -127,7 +127,7 @@ describe('buildServiceProfile (task 6.17)', () => {
       const cfg = baseConfig();
       const profile = buildServiceProfile(cfg);
       const eta = cfg.capabilitySchemas.eta_query!;
-      const expected = computeSchemaHash({
+      const expected = capabilitySchemaHash({
         description: eta.description,
         params: eta.params,
         result: eta.result,

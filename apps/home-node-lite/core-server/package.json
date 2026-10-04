@@ -12,9 +12,10 @@
     "build": "tsc",
     "start": "tsx src/bin.ts",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.cross-app.json"
   },
   "dependencies": {
+    "@dina/a2a": "*",
     "@dina/adapters-node": "*",
     "@dina/brain": "*",
     "@dina/core": "*",
@@ -26,6 +27,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/sensible": "^6.0.4",
     "@fastify/static": "^9.3.0",
+    "@noble/hashes": "^2.0.0",
     "fastify": "^5.8.5",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",

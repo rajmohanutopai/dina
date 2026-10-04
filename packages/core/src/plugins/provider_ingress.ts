@@ -103,14 +103,15 @@ export type ProviderIngressResult =
     };
 
 /**
- * The seam Brain's `ServiceHandler` calls to answer a query whose capability
+ * The seam Core's service-query ingress (`service/query_ingress.ts`) calls to
+ * answer a query whose capability
  * is bound to a provider plugin (§11.2a).
  *
  * Injected rather than imported, for the same reason
- * `ServiceReasoningSubmitter` is: the handler decides WHICH plane answers a
- * query, and Core owns what that plane does. Brain never learns about plugin
- * installs, workflow tasks, or manifest CIDs — it hands over an authenticated
- * query and receives a typed outcome.
+ * `ServiceReasoningSubmitter` is: the ingress decides WHICH plane answers a
+ * query, and this module owns what that plane does. The ingress never learns
+ * about plugin installs, workflow tasks, or manifest CIDs — it hands over an
+ * authenticated query and receives a typed outcome.
  */
 export type ProviderIngressSubmitter = (args: {
   capabilityConfig: Pick<
@@ -499,8 +500,8 @@ function admitInboundOrder(
 
 /**
  * Create the ingress task for a service query whose capability config
- * carries a plugin binding. The caller (Brain's ServiceHandler via the
- * injected submitter, or a Core route) has already run the generic
+ * carries a plugin binding. The caller (Core's service-query ingress via
+ * the injected submitter, or a Core route) has already run the generic
  * ingress checks.
  */
 export function createProviderIngressTask(args: {
@@ -852,7 +853,7 @@ export function createProviderIngressTask(args: {
 }
 
 /**
- * Build the submitter Brain's `ServiceHandler` is given at composition.
+ * Build the submitter Core's service-query ingress is given at composition.
  *
  * `nowMs` is a parameter for the same reason it is everywhere else in this
  * subsystem: dedup keys and task deadlines must be reproducible in a test

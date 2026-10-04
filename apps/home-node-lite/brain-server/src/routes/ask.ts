@@ -24,14 +24,41 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
+import { callerOf } from '../caller_auth';
+
 import type { AskCoordinator } from '@dina/brain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-
 export interface RegisterAskRoutesOptions {
   coordinator: AskCoordinator;
+  /**
+   * The node owner's DID. An ask an owner device sends is the owner's own,
+   * whatever its body says (A2A design §4.1, plan §3.18).
+   */
+  ownerDid?: string;
   /** Route prefix override (defaults to /api/v1). */
   prefix?: string;
+}
+
+/**
+ * Who an ask is for. Core forwards an agent's ask with the requester it
+ * authenticated, so Core's word stands; an owner device's ask is the
+ * owner's own. With the caller check off (development), the body says.
+ */
+function requesterFor(
+  req: FastifyRequest,
+  claimed: string | undefined,
+  ownerDid: string | undefined,
+): string | undefined {
+  const caller = callerOf(req);
+  if (caller?.kind === 'owner_device') return ownerDid ?? claimed;
+  return claimed;
+}
+
+/** Approving or denying is the owner's act: an owner device, or anyone when the check is off. */
+function mayDecide(req: FastifyRequest): boolean {
+  const caller = callerOf(req);
+  return caller === null || caller.kind === 'owner_device';
 }
 
 interface SubmitBody {
@@ -69,7 +96,14 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
       if (typeof body.question !== 'string' || body.question.trim() === '') {
         return reply.status(400).send({ error: 'question must be a non-empty string' });
       }
-      if (typeof body.requesterDid !== 'string' || body.requesterDid.trim() === '') {
+      const requesterDid = requesterFor(
+        req,
+        typeof body.requesterDid === 'string' && body.requesterDid.trim() !== ''
+          ? body.requesterDid
+          : undefined,
+        opts.ownerDid,
+      );
+      if (requesterDid === undefined) {
         return reply.status(400).send({ error: 'requesterDid must be a non-empty string' });
       }
       if (body.ttlMs !== undefined && typeof body.ttlMs !== 'number') {
@@ -83,7 +117,7 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
         typeof headerVal === 'string' ? headerVal : Array.isArray(headerVal) ? headerVal[0] : null;
       const submitInput: Parameters<AskCoordinator['handleAsk']>[0] = {
         question: body.question,
-        requesterDid: body.requesterDid,
+        requesterDid,
         requestIdHeader: requestIdHeader ?? null,
       };
       if (typeof body.sessionId === 'string' && body.sessionId !== '') {
@@ -103,10 +137,13 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
       reply: FastifyReply,
     ) => {
       const id = req.params.id;
-      const requesterDid =
+      const requesterDid = requesterFor(
+        req,
         typeof req.query.requesterDid === 'string' && req.query.requesterDid !== ''
           ? req.query.requesterDid
-          : undefined;
+          : undefined,
+        opts.ownerDid,
+      );
       const sessionId =
         typeof req.query.sessionId === 'string' && req.query.sessionId !== ''
           ? req.query.sessionId
@@ -120,6 +157,7 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
   app.post(
     `${prefix}/ask/:id/approve`,
     async (req: FastifyRequest<{ Params: IdParams }>, reply: FastifyReply) => {
+      if (!mayDecide(req)) return reply.status(403).send({ error: 'owner_only' });
       const id = req.params.id;
       const record = await coordinator.registry.get(id);
       if (record === null || record.approvalId === undefined) {
@@ -144,10 +182,8 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
   // POST /api/v1/ask/:id/deny — operator denies
   app.post(
     `${prefix}/ask/:id/deny`,
-    async (
-      req: FastifyRequest<{ Params: IdParams; Body: DenyBody }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Params: IdParams; Body: DenyBody }>, reply: FastifyReply) => {
+      if (!mayDecide(req)) return reply.status(403).send({ error: 'owner_only' });
       const id = req.params.id;
       const body = req.body ?? {};
       const reason = typeof body.reason === 'string' ? body.reason : undefined;

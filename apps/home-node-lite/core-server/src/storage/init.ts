@@ -18,6 +18,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
+  A2AReleaseLog,
+  installA2AReleaseLog,
   createPersona,
   getNodeDID,
   getPersonaTier,
@@ -298,6 +300,9 @@ export async function initializeStorage(
   // Group plans (GROUP_COORDINATION §7): owner-private, beside the contact
   // metadata they are made of, in the identity store (migration v45).
   setGroupPlanRepository(new SQLiteGroupPlanRepository(identityDB));
+  // A2A §4.2 (b): what Core releases to Brain in a conversation, logged by the
+  // vault read functions (the same seam the phone uses).
+  installA2AReleaseLog(new A2AReleaseLog(identityDB));
   // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
   // grants (constraints, per-execution consumption) + owner-private
   // decision log.

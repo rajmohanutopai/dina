@@ -716,6 +716,7 @@ def test_coding_profile_removes_runner_and_reasoning_tools(monkeypatch):
         "dina_task_complete",
         "dina_task_fail",
         "dina_task_progress",
+        "dina_task_input_required",
         "dina_reasoning_backends",
         "dina_context_prepare",
         "dina_memory_propose",
@@ -738,6 +739,7 @@ def test_connected_profile_keeps_reasoning_but_removes_runner_tools(monkeypatch)
         "dina_task_complete",
         "dina_task_fail",
         "dina_task_progress",
+        "dina_task_input_required",
     ]
 
 
@@ -879,3 +881,47 @@ def test_reasoning_schemas_require_object_payloads():
 
     assert begin_schema["type"] == "object"
     assert complete_schema["type"] == "object"
+
+
+def test_task_tools_report_under_the_claim_token(fake_client):
+    """Core requires the claim token on an A2A call's task (design §7.3)."""
+    mcp_server.dina_task_complete.fn(task_id="t-1", result='{"ok":true}', claim_id="claim-1")
+    mcp_server.dina_task_fail.fn(task_id="t-2", error="broke", claim_id="claim-2")
+    mcp_server.dina_task_progress.fn(task_id="t-3", message="half", claim_id="claim-3")
+    fake_client.task_complete.assert_called_once_with("t-1", '{"ok":true}', claim_id="claim-1")
+    fake_client.task_fail.assert_called_once_with("t-2", "broke", claim_id="claim-2")
+    fake_client.task_progress.assert_called_once_with("t-3", "half", claim_id="claim-3")
+
+
+def test_task_tools_without_a_claim_token_send_none(fake_client):
+    mcp_server.dina_task_complete.fn(task_id="t-1", result="done")
+    fake_client.task_complete.assert_called_once_with("t-1", "done", claim_id="")
+
+
+def test_input_required_asks_the_requester_and_returns_cores_answer(fake_client):
+    fake_client.task_input_required.return_value = {"status": "awaiting_input", "task_id": "t-1"}
+    out = mcp_server.dina_task_input_required.fn(
+        task_id="t-1",
+        claim_id="claim-1",
+        prompt="Which stop?",
+        input_schema={"type": "object", "required": ["stop"]},
+    )
+    assert out == {"status": "awaiting_input", "task_id": "t-1"}
+    fake_client.task_input_required.assert_called_once_with(
+        "t-1", "Which stop?", {"type": "object", "required": ["stop"]}, "claim-1"
+    )
+
+
+def test_a_refused_ask_tells_the_agent_to_finish_the_task(fake_client):
+    """An effectful call's runner cannot ask (its claim started the effect):
+    the refusal must not read as a pause, or the agent stops and the lease
+    lapses with nothing done."""
+    from dina_cli.client import DinaClientError
+
+    fake_client.task_input_required.side_effect = DinaClientError("HTTP 409: effect_started")
+    out = mcp_server.dina_task_input_required.fn(
+        task_id="t-1", claim_id="claim-1", prompt="Which stop?", input_schema={"type": "object"}
+    )
+    assert out["status"] == "refused"
+    assert "effect_started" in out["error"]
+    assert "dina_task_complete" in out["next"] and "dina_task_fail" in out["next"]

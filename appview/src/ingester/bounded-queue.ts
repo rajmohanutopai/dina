@@ -16,11 +16,19 @@ import { metrics } from '@/shared/utils/metrics.js'
  * fully processed.
  */
 
+/** `WebSocket.OPEN` (ws imports only as a type here). */
+const WS_OPEN = 1
+
 export interface QueueItem {
   /** Microsecond timestamp from Jetstream */
   timestampUs: number
   /** The raw event data to process */
   data: unknown
+  /**
+   * What the consumer knew when the event came off the socket, carried to
+   * processing unchanged (the A2A directory's gap generation at receipt).
+   */
+  context?: Readonly<Record<string, unknown>>
 }
 
 type ProcessFn = (item: QueueItem) => Promise<void>
@@ -74,16 +82,45 @@ export class BoundedIngestionQueue {
     }, 300_000) // every 5 minutes
   }
 
-  /** Attach a WebSocket for backpressure signaling */
+  /**
+   * Attach a WebSocket for backpressure signaling. The consumer keeps one
+   * queue for its whole life and re-points it at each new socket, so events
+   * still waiting from an earlier socket keep holding the safe cursor. A new
+   * socket starts unpaused; if the queue is still full it is held as soon as
+   * it can be (`holdIfFull`, again when it opens: `ws.pause()` does nothing
+   * on a socket that is still connecting).
+   */
   setWebSocket(ws: WebSocket): void {
     this.ws = ws
+    this.paused = false
+    this.holdIfFull()
+  }
+
+  /**
+   * Pause the socket when the queue is full and the socket is open. Never
+   * marks a socket paused that `pause()` could not pause, so the next push
+   * onto a full queue still pauses it.
+   */
+  holdIfFull(): void {
+    if (this.paused || this.ws === null || this.queue.length < this.maxSize) return
+    if (this.ws.readyState !== WS_OPEN) return
+    this.paused = true
+    this.ws.pause()
+    logger.warn({ depth: this.queue.length }, '[Queue] Backpressure: WebSocket paused')
+    metrics.incr('ingester.queue.backpressure')
   }
 
   /**
    * Push an item onto the queue.
    * Returns false if the queue is full (item was dropped).
+   *
+   * A `required` item is never dropped: a full queue still takes it (and
+   * pauses the socket, as for any other). The A2A directory's card events
+   * and account events are required (design §8.3: backpressure over loss).
+   * The socket is paused once the queue is full, so the overshoot is what
+   * was already in flight on it, not a stream.
    */
-  push(item: QueueItem): boolean {
+  push(item: QueueItem, options: { required?: boolean } = {}): boolean {
     if (this.queue.length >= this.maxSize) {
       // Apply backpressure: pause the WebSocket
       if (!this.paused && this.ws) {
@@ -92,8 +129,10 @@ export class BoundedIngestionQueue {
         logger.warn({ depth: this.queue.length }, '[Queue] Backpressure: WebSocket paused')
         metrics.incr('ingester.queue.backpressure')
       }
-      this.dropCount++
-      return false
+      if (options.required !== true) {
+        this.dropCount++
+        return false
+      }
     }
 
     this.queue.push(item)

@@ -27,7 +27,12 @@ import {
   type StoredNotificationItem,
 } from '@dina/core';
 
-import { brainEventStream, brainFetch, type BrainEventStream } from './web_runtime';
+import {
+  brainEventStream,
+  brainFetch,
+  type BrainEventStream,
+  type BrainStreamEvent,
+} from './web_runtime';
 
 class WebNotificationLogRepository implements NotificationLogRepository {
   async append(): Promise<void> {
@@ -51,7 +56,8 @@ class WebNotificationLogRepository implements NotificationLogRepository {
 
   async listAll(limit?: number): Promise<StoredNotificationItem[]> {
     try {
-      const url = limit !== undefined ? `/api/v1/notifications?limit=${limit}` : '/api/v1/notifications';
+      const url =
+        limit !== undefined ? `/api/v1/notifications?limit=${limit}` : '/api/v1/notifications';
       const res = await brainFetch(url);
       if (!res.ok) return [];
       // R5-08 — the server returns snake_case wire rows.
@@ -78,7 +84,7 @@ class WebNotificationLogRepository implements NotificationLogRepository {
   }
 }
 
-function foldAppended(ev: MessageEvent): void {
+function foldAppended(ev: BrainStreamEvent): void {
   try {
     // R5-08 — SSE frames carry the snake_case wire DTO.
     const stored = wireToStoredNotification(JSON.parse(ev.data));
@@ -118,7 +124,6 @@ export function installServerNotifications(): () => void {
       /* offline — SSE + reconnect reconciliation below still catch up */
     }
     if (disposed) return;
-    if (typeof EventSource === 'undefined') return; // the hydrate delivered the backlog
     stream = brainEventStream('/api/v1/notifications/stream', (source) => {
       source.addEventListener('appended', foldAppended);
       // R5-09 — reconcile from the durable snapshot on every (re)connect. The

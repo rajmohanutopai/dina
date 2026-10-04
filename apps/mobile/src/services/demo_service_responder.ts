@@ -28,7 +28,7 @@
 
 import { getWorkflowService } from '@dina/core';
 
-import type { EtaQueryParams, EtaQueryResult } from '@dina/brain';
+import type { EtaQueryParams, EtaQueryResult } from '@dina/core';
 
 export const DEMO_DEMO_PROVIDER_DID = 'did:plc:bus42demo';
 

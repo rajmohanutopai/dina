@@ -33,6 +33,12 @@ export type AppviewFlagKey = keyof typeof FLAG_DEFAULTS
 export const FLAG_DEFAULTS = Object.freeze({
   /** Master kill-switch for the `com.dinakernel.peerlens.*` V1 surface. Plan §13.10 cutover defaults to ON. */
   trust_v1_enabled: true,
+  /**
+   * A2A directory (Lane 3, design §8.3): gates processing and serving, never
+   * recording. Off by default: card events spool until an operator turns it
+   * on, the spool drains, and only then does the directory serve.
+   */
+  a2a_directory_enabled: false,
 } as const)
 
 /**

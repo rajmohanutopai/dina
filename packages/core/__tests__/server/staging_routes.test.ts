@@ -367,6 +367,9 @@ describe('staging routes', () => {
     });
 
     it('#10: clamps a past expires_at forward so it is not swept immediately', async () => {
+      // Read before the request: the clamp is at least this plus 60 (read after,
+      // a second boundary between the two clocks failed the test by one).
+      const nowSec = Math.floor(Date.now() / 1000);
       const resp = await post('/v1/staging/ingest', {
         source: 'chat',
         source_id: 'exp-past',
@@ -375,7 +378,6 @@ describe('staging routes', () => {
       });
       expect(resp.status).toBe(201);
       const id = (resp.body as { id: string }).id;
-      const nowSec = Math.floor(Date.now() / 1000);
       expect(getItem(id)?.expires_at ?? 0).toBeGreaterThanOrEqual(nowSec + 60);
     });
 

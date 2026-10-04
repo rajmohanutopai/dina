@@ -29,7 +29,16 @@
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
-
+import {
+  a2aDelegateBody,
+  a2aGuardVerdictBody,
+  ownerTurnBody,
+  parseA2AAgentsResponse,
+  parseA2ASelfResponse,
+  parseA2ADelegateResponse,
+  parseA2AGuardVerdictResponse,
+  parseOwnerTurnResponse,
+} from './a2a_wire';
 import {
   parseInvokePluginToolResponse,
   parseOpenGroupPlanResponse,
@@ -38,6 +47,14 @@ import {
 } from './core-client';
 
 import type {
+  A2ACallableAgent,
+  A2ADelegateInput,
+  A2ADelegateResult,
+  A2AGuardVerdictInput,
+  A2AGuardVerdictResult,
+  OwnerTurnInput,
+  A2AGuardWork,
+  A2AOperationStatus,
   ApproveWorkflowTaskOptions,
   InvokePluginToolInput,
   InvokePluginToolResult,
@@ -54,6 +71,7 @@ import type {
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
+  VaultReleaseOptions,
   VaultListResult,
   VaultDeleteResult,
   SignResult,
@@ -153,6 +171,11 @@ export interface HttpResponse {
  * 409 already-resolved) instead of flattening everything to 502. Extends
  * `Error` so existing `instanceof Error` / message-only handling still works.
  */
+/** The release session as a query parameter, when the read names one. */
+function releaseQuery(opts: VaultReleaseOptions | undefined): Record<string, string> {
+  return opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {};
+}
+
 export class CoreHttpError extends Error {
   constructor(
     message: string,
@@ -206,6 +229,16 @@ export interface HttpCoreTransportOptions {
  * `InProcessTransport` on the wire side (same routes, same bodies) —
  * only the dispatch mechanism changes.
  */
+/** A response body as JSON, or undefined when empty or unreadable. */
+function decodeJson(body: Uint8Array): unknown {
+  if (body.byteLength === 0) return undefined;
+  try {
+    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 export class HttpCoreTransport implements CoreClient {
   private readonly baseUrl: string;
   private readonly httpClient: HttpClient;
@@ -230,6 +263,7 @@ export class HttpCoreTransport implements CoreClient {
     if (query.limit !== undefined) body.limit = query.limit;
     if (query.embedding !== undefined) body.embedding = query.embedding;
     if (query.type !== undefined) body.type = query.type;
+    if (query.releaseSession !== undefined) body.release_session = query.releaseSession;
     return this.call<VaultQueryResult>(
       'POST',
       '/v1/vault/query',
@@ -239,12 +273,12 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
-  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
+  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
     try {
       return await this.call<VaultQueryItem>(
         'GET',
         `/v1/vault/item/${encodeURIComponent(itemId)}`,
-        { persona },
+        { persona, ...releaseQuery(opts) },
         undefined,
         `vaultGet(persona=${persona}, id=${itemId})`,
       );
@@ -264,11 +298,12 @@ export class HttpCoreTransport implements CoreClient {
     persona: string,
     personId: string,
     limit: number,
+    opts?: VaultReleaseOptions,
   ): Promise<VaultQueryItem[]> {
     const res = await this.call<{ items?: VaultQueryItem[] }>(
       'GET',
       '/v1/vault/subjects',
-      { persona, person_id: personId, limit: String(limit) },
+      { persona, person_id: personId, limit: String(limit), ...releaseQuery(opts) },
       undefined,
       `vaultItemsForPerson(persona=${persona}, personId=${personId})`,
     );
@@ -293,6 +328,7 @@ export class HttpCoreTransport implements CoreClient {
     if (opts?.limit !== undefined) query.limit = String(opts.limit);
     if (opts?.offset !== undefined) query.offset = String(opts.offset);
     if (opts?.type !== undefined) query.type = opts.type;
+    Object.assign(query, releaseQuery(opts));
     return this.call<VaultListResult>(
       'GET',
       '/v1/vault/list',
@@ -802,6 +838,46 @@ export class HttpCoreTransport implements CoreClient {
       parsed = undefined;
     }
     return parseInvokePluginToolResponse(res.status, parsed);
+  }
+
+  async listA2AAgents(): Promise<A2ACallableAgent[]> {
+    const res = await this.callRaw('GET', '/v1/a2a/agents', undefined, undefined);
+    // 503 = Lane 1 not installed on this node: nothing to propose to.
+    return res.status === 200 ? parseA2AAgentsResponse(decodeJson(res.body)) : [];
+  }
+
+  async a2aSelfDid(): Promise<string | null> {
+    const res = await this.callRaw('GET', '/v1/a2a/self', undefined, undefined);
+    return parseA2ASelfResponse(res.status, decodeJson(res.body));
+  }
+
+  async delegateToA2AAgent(input: A2ADelegateInput): Promise<A2ADelegateResult> {
+    const res = await this.callRaw('POST', '/v1/a2a/delegate', undefined, a2aDelegateBody(input));
+    return parseA2ADelegateResponse(res.status, decodeJson(res.body));
+  }
+
+  async getA2AOperation(operationId: string): Promise<A2AOperationStatus | null> {
+    const res = await this.callRaw('GET', `/v1/a2a/operations/${encodeURIComponent(operationId)}`, undefined, undefined);
+    if (res.status === 404) return null;
+    if (res.status !== 200) throw new CoreHttpError(`getA2AOperation() failed ${res.status}`, res.status, decodeJson(res.body));
+    return decodeJson(res.body) as A2AOperationStatus;
+  }
+
+  async claimA2AGuardJob(): Promise<A2AGuardWork | null> {
+    const res = await this.callRaw('POST', '/v1/a2a/guard/next', undefined, {});
+    if (res.status === 204) return null;
+    if (res.status !== 200) throw new CoreHttpError(`claimA2AGuardJob() failed ${res.status}`, res.status, decodeJson(res.body));
+    return decodeJson(res.body) as A2AGuardWork;
+  }
+
+  async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
+    const res = await this.callRaw('POST', '/v1/a2a/guard/verdict', undefined, a2aGuardVerdictBody(input));
+    return parseA2AGuardVerdictResponse(res.status, decodeJson(res.body));
+  }
+
+  async recordOwnerTurn(input: OwnerTurnInput): Promise<boolean> {
+    const res = await this.callRaw('POST', '/v1/a2a/turns', undefined, ownerTurnBody(input));
+    return parseOwnerTurnResponse(res.status, decodeJson(res.body));
   }
 
   async openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult> {

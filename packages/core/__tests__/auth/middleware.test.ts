@@ -10,10 +10,12 @@ import { registerService, resetCallerTypeState } from '../../src/auth/caller_typ
 import { signRequest } from '../../src/auth/canonical';
 import {
   authenticateRequest,
+  getRateLimiter,
   registerPublicKeyResolver,
   resetMiddlewareState,
 } from '../../src/auth/middleware';
 import { getPublicKey } from '../../src/crypto/ed25519';
+import { deriveDIDKey } from '../../src/identity/did';
 
 
 const pubKey = getPublicKey(TEST_ED25519_SEED);
@@ -165,6 +167,26 @@ describe('Auth Middleware Orchestration', () => {
       const result = authenticateRequest(req);
       expect(result.authenticated).toBe(false);
       expect(result.rejectedAt).toBe('rate_limit');
+    });
+  });
+
+  describe('rate limiting spends a bucket only for a caller Core knows', () => {
+    // Cold audit C3-9: a did:key carries its own key, so anyone can sign as a fresh one.
+    it('a validly signed request from a DID no caller holds is refused at authorization, and leaves no bucket', () => {
+      for (let i = 1; i <= 60; i += 1) {
+        const seed = new Uint8Array(32).fill(i);
+        const stranger = deriveDIDKey(getPublicKey(seed));
+        const bodyBytes = new Uint8Array();
+        const req = { method: 'GET', path: '/v1/vault/query', query: '', body: bodyBytes, headers: signRequest('GET', '/v1/vault/query', '', bodyBytes, seed, stranger) };
+        expect(authenticateRequest(req).rejectedAt).toBe('authorization');
+      }
+      expect(getRateLimiter().tracked).toBe(0);
+    });
+
+    it('control: a known caller spends one bucket, however many requests it sends', () => {
+      for (let i = 0; i < 3; i += 1) expect(authenticateRequest(signedRequest('GET', '/healthz')).authenticated).toBe(true);
+      expect(getRateLimiter().tracked).toBe(1);
+      expect(getRateLimiter().remaining(did)).toBe(47);
     });
   });
 

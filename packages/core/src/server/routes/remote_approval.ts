@@ -10,6 +10,14 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import {
+  MIRROR_MAX_DETAIL,
+  MIRROR_MAX_LABEL,
+  bounded,
+  boundedMultiline,
+  hasUnsafeMultilineText,
+  hasUnsafeText,
+} from '../../approval/mirror_text';
 import { WorkflowTaskState } from '../../workflow/domain';
 import {
   WorkflowConflictError,
@@ -26,7 +34,7 @@ export const REMOTE_APPROVAL_API_PREFIX = '/v1/agent/approval-sync/v1';
 const MAX_TTL_SECONDS = 15 * 60;
 const MIN_TTL_SECONDS = 15;
 const MAX_DESCRIPTION = 500;
-const MAX_LABEL = 160;
+const MAX_LABEL = MIRROR_MAX_LABEL;
 const MAX_PENDING_PER_DEVICE = 20;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
@@ -198,7 +206,7 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
   const expiresAt = value.expires_at;
   const proposalType = value.proposal_type;
   const displayTitle = bounded(value.display_title, MAX_LABEL);
-  const displayDetail = boundedMultiline(value.display_detail, 4_000);
+  const displayDetail = boundedMultiline(value.display_detail, MIRROR_MAX_DETAIL);
   const nowSec = Math.floor(Date.now() / 1000);
 
   if (sourceTaskId === '') return { error: 'source_task_id is required' };
@@ -316,48 +324,6 @@ function proposalResponse(
     expires_at: expiresAt,
     deduped,
   };
-}
-
-function bounded(value: unknown, max: number): string {
-  return typeof value === 'string' && value.length > 0 && value.length <= max ? value : '';
-}
-
-function boundedMultiline(value: unknown, max: number): string {
-  return typeof value === 'string' && value.length > 0 && value.length <= max ? value : '';
-}
-
-function hasUnsafeText(value: string): boolean {
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return true;
-    if (
-      (code >= 0x200b && code <= 0x200f) ||
-      (code >= 0x202a && code <= 0x202e) ||
-      (code >= 0x2066 && code <= 0x2069) ||
-      code === 0xfeff
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function hasUnsafeMultilineText(value: string): boolean {
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code === 0x0a || code === 0x09) continue;
-    if (
-      code <= 0x1f ||
-      (code >= 0x7f && code <= 0x9f) ||
-      (code >= 0x200b && code <= 0x200f) ||
-      (code >= 0x202a && code <= 0x202e) ||
-      (code >= 0x2066 && code <= 0x2069) ||
-      code === 0xfeff
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function json(status: number, body: unknown): CoreResponse {

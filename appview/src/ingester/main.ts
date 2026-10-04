@@ -1,6 +1,10 @@
 import { createDb } from '@/db/connection.js'
 import { ensureFtsColumns } from '@/db/fts_columns.js'
 import { JetstreamConsumer } from './jetstream-consumer.js'
+import { A2ADirectory } from './a2a-directory.js'
+import { env } from '@/config/env.js'
+import { createPlcDidResolver } from '@/shared/a2a/did-resolver.js'
+import { metrics } from '@/shared/utils/metrics.js'
 import { registeredReviewFeeds, setReviewFeedRegistry } from '@/config/review-feeds.js'
 import { logger } from '@/shared/utils/logger.js'
 import 'dotenv/config'
@@ -29,8 +33,25 @@ async function main() {
 
   const consumer = new JetstreamConsumer(db)
 
+  // A2A directory (Lane 3, design §8.3): records every card event, and
+  // processes them while `a2a_directory_enabled` is on (it is off until an
+  // operator turns it on). Publishers' DID documents come from the PLC
+  // directory, over HTTPS (plain HTTP only outside production).
+  const a2aDirectory = new A2ADirectory({
+    db,
+    resolveDid: createPlcDidResolver({
+      plcUrl: env.A2A_PLC_URL,
+      allowInsecure: env.NODE_ENV !== 'production',
+    }),
+    rejection: { logger, metrics },
+    log: logger,
+    retentionUs: env.A2A_JETSTREAM_RETENTION_HOURS * 3_600_000_000,
+  })
+  consumer.setA2ADirectory(a2aDirectory)
+
   logger.info('Starting Ingester daemon')
   await consumer.start()
+  a2aDirectory.start()
 }
 
 main().catch((err) => {

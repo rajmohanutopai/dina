@@ -36,6 +36,7 @@ import { networkFeed, NetworkFeedParams } from '@/api/xrpc/network-feed.js'
 import { subjectGet, SubjectGetParams } from '@/api/xrpc/subject-get.js'
 import { getAlternatives, GetAlternativesParams } from '@/api/xrpc/get-alternatives.js'
 import { getNegativeSpace, GetNegativeSpaceParams } from '@/api/xrpc/get-negative-space.js'
+import { getCard, GetCardParams, searchAgents, SearchAgentsParams } from '@/api/xrpc/a2a-directory.js'
 
 export interface XrpcRoute {
   /** A zod schema, or anything with a throwing `parse`. */
@@ -74,5 +75,14 @@ export const XRPC_ROUTES: Record<string, XrpcRoute> = {
   'com.dinakernel.commerce.getSupplierDimensions': {
     params: CommerceSupplierDimensionsParams,
     handler: getSupplierDimensions,
+  },
+  // The A2A directory (Lane 3, design §8.3): candidates, never grants.
+  'com.dinakernel.a2a.searchAgents': {
+    params: SearchAgentsParams,
+    handler: (db: any, params: any) => searchAgents(db, params),
+  },
+  'com.dinakernel.a2a.getCard': {
+    params: GetCardParams,
+    handler: (db: any, params: any) => getCard(db, params),
   },
 }

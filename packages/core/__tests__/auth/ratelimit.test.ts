@@ -114,4 +114,29 @@ describe('Per-DID Rate Limiter', () => {
       expect(limiter.allow(brainDID)).toBe(true); // new window
     });
   });
+
+  describe('named ceilings', () => {
+    it('gives a named DID its own ceiling and everyone else the default', () => {
+      const limiter = new PerDIDRateLimiter({ maxRequests: 2, windowSeconds: 60, perDidMax: { 'did:key:gateway': 5 } });
+      for (let i = 0; i < 5; i += 1) expect(limiter.allow('did:key:gateway')).toBe(true);
+      expect(limiter.allow('did:key:gateway')).toBe(false);
+      expect(limiter.allow('did:key:other')).toBe(true);
+      expect(limiter.allow('did:key:other')).toBe(true);
+      expect(limiter.allow('did:key:other')).toBe(false);
+      expect(limiter.remaining('did:key:fresh')).toBe(2);
+    });
+
+    it('exempts a DID whose ceiling is infinite', () => {
+      const limiter = new PerDIDRateLimiter({ maxRequests: 1, windowSeconds: 60, perDidMax: { 'did:key:gateway': Number.POSITIVE_INFINITY } });
+      for (let i = 0; i < 10_000; i += 1) expect(limiter.allow('did:key:gateway')).toBe(true);
+      expect(limiter.allow('did:key:other')).toBe(true);
+      expect(limiter.allow('did:key:other')).toBe(false);
+    });
+
+    it('reads only the map’s own keys', () => {
+      const limiter = new PerDIDRateLimiter({ maxRequests: 1, windowSeconds: 60, perDidMax: {} });
+      expect(limiter.remaining('constructor')).toBe(1);
+      expect(limiter.remaining('__proto__')).toBe(1);
+    });
+  });
 });

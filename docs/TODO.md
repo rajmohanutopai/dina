@@ -1,3 +1,61 @@
+# Major issue
+Nothing is backed up. Everything should be backed up from PDS to a S3. Otherwise, a single crash and everyones data is lost
+
+# Issues found
+Problems I confirmed in the code
+
+┌─────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────┐
+│  #  │                                                                         Problem                                                                         │                    Where                     │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 1   │ The server's remember loop sends unscrubbed text to the cloud LLM. It gets the bare adapter with no routed PII scrub. Memory text, D2D bodies and       │ brain-server/src/boot.ts:381                 │
+│     │ recalled facts leave as they are. The phone does scrub.                                                                                                 │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 2   │ The phone sets up the plugin host runtime and commerce runtime twice, and the second, thinner copy wins. Permitted host operations then have no         │ storage/init.ts:300 vs                       │
+│     │ executors. The held-evidence check also goes, but that one fails closed.                                                                                │ boot_service.ts:482,515                      │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 3   │ The phone quietly makes a new random signing key if the Keychain rows are missing, then pairs it with the stored did:plc. Peers would reject its D2D    │ boot_capabilities.ts:707-727                 │
+│     │ messages. The correct key could be derived from the master seed.                                                                                        │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 4   │ The passphrase fix still has a weak path. If reading the vault salt throws, unlock falls back to the wrap salt. After a passphrase change it then       │ useUnlock.ts:167                             │
+│     │ renames every database aside and starts empty. Nothing is deleted.                                                                                      │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 5   │ The buyer's status request sends the bare order_status. The supplier listing declares only the full name, so the request is probably refused. No screen │ buyer_status.ts:531                          │
+│     │  calls it today.                                                                                                                                        │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 6   │ A stopped epoch is held only in memory. A plain restart adopts the higher live record and starts signing again.                                         │ epoch_service.ts:270-300                     │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 7   │ Core's calls to Brain are unsigned. The CLI also starts Core and Brain as the same user with the same environment. So on the native install the split   │ http_ask_handler.ts,                         │
+│     │ rests on code alone, with no OS boundary.                                                                                                               │ home_node_supervisor.py:161                  │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 8   │ Signed Brain gets 403 on /v1/vault/list, /v1/vault/subjects and /v1/people, because no authz row covers them. So vault browse and find-person likely    │ auth/authz.ts:322-378                        │
+│     │ fail on the server.                                                                                                                                     │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 9   │ Brain could likely run a plugin with no owner card. The task-create route doesn't refuse plugin-lane tasks, and the claim guard only checks provenance  │ routes/workflow.ts:352, claim_guard.ts:452   │
+│     │ for grant-backed tasks. So a signed Brain could probably queue one directly. This needs a test.                                                         │                                              │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 10  │ The lite model tier does nothing for OpenAI, Claude and OpenRouter. AISDKAdapter ignores the model picked per call.                                     │ llm/adapters/aisdk.ts:116                    │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 11  │ The phone raises the rate limit to 10,000/min for every DID, paired agents included. Its comment's reason is wrong.                                     │ boot_service.ts:380-386                      │
+├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+│ 12  │ On the server, catalog photos go from inside the Core process straight to OpenAI.                                                                       │ core-server/src/image_pipeline.ts:90-110     │
+└─────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
+
+Problems the readers reported that I didn't check myself
+
+- D2D replay. The replay cache lives only in memory and nothing checks created_time, so an old message could replay after a restart.
+- Duplicate D2D sends. Outbox resends mint a new message id each time, so an offline peer may get up to 5 copies.
+- New contacts. They default to trust unknown, so their replies land in quarantine.
+- delegate_to_agent leaks PII. It stores the raw values in the task payload, which the agent then receives.
+- Brain's /api/v1/ask on the server takes the requester's DID from the request body.
+- Commerce gaps.
+  - Tenders ignore the owner's blocked-supplier list.
+  - A quote arriving after the 300 s window is dropped.
+  - A delivery note doesn't check that the order was accepted.
+  - Invite teardown deletes grants that existed before the invite.
+- AppView. Its namespace and PDS-suspension gates are never switched on. Sybil and coordinatSubjects with over 10,000 reviews never get rescored.
+- MsgBox has no global buffer quota.
+- Docker. The Dockerfiles miss two workspace packages, so the build likely fails.
+
 # Control Plane
 AGENT_CONTROL_PLANE.md
 
@@ -624,7 +682,7 @@ go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
     at appview/src/api/xrpc/service-is-discoverable.ts:29. Core uses that endpoint for service-query bypass in packages/core/src/appview/service_resolver.ts:160. A service hidden from search may still be treated
     as discoverable if directly addressed.
   - Medium-high: Capability architecture is still partially hardcoded.
-    packages/brain/src/service/capabilities/registry.ts:47 hardcodes eta_query. Provider-side schema validation exists, but packages/brain/src/service/service_handler.ts:577 still falls back to the registry.
+    packages/core/src/service/capabilities/registry.ts hardcodes eta_query. Provider-side schema validation exists, but Core's service-query ingress (`validateQueryParams`, packages/core/src/service/query_ingress.ts) still falls back to the registry.
     Sender-side explicit validation in packages/brain/src/service/service_query_orchestrator.ts:282 also uses local registry logic. This is okay for the bus demo, but not for the long-term “provider-published
     capability schema” architecture.
   - Medium: Persona access policy is not centralized.

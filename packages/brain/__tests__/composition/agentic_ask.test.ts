@@ -229,6 +229,45 @@ describe('buildAgenticAskPipeline', () => {
     expect(pipeline.tools.size()).toBe(21);
   });
 
+  it('search_a2a_agents is offered only where Lane 1 runs and the client can search the directory', async () => {
+    const self = 'did:plc:selfaaaaaaaaaaaaaaaaaaaa';
+    const a2aClient = {
+      listA2AAgents: async () => [],
+      delegateToA2AAgent: async () => ({ ok: false }),
+      a2aSelfDid: async () => self,
+    } as never;
+    const names = (input: Parameters<typeof buildAgenticAskPipeline>[0]) =>
+      buildAgenticAskPipeline(input).tools.toDefinitions().map((t) => t.name);
+    // No Lane 1 (the phone): not offered, even if the client could search.
+    const searching = { ...fakeAppView(), searchA2AAgents: async () => [] };
+    expect(names({ ...makeBuilderInput(), appViewClient: searching })).not.toContain('search_a2a_agents');
+    // Lane 1, but a client with no directory method: not offered.
+    expect(names({ ...makeBuilderInput(), a2aClient })).not.toContain('search_a2a_agents');
+    // Both: offered, and it never returns this node's own card. The node's
+    // DID comes from Core, never from the owner's DID (another identity on a
+    // server node, where it defaults to a placeholder).
+    const card = {
+      did: self,
+      displayName: 'Me',
+      endpoint: 'https://me.example/a2a/v1',
+      skills: ['eta_query'],
+      trustScore: 1,
+      recommendation: 'proceed' as const,
+      indexedAt: '2026-10-01T00:00:00.000Z',
+      stale: false,
+      cardHash: 'c'.repeat(64),
+    };
+    const pipeline = buildAgenticAskPipeline({
+      ...makeBuilderInput(),
+      a2aClient,
+      ownerDid: 'did:key:dina-lite-owner',
+      appViewClient: { ...fakeAppView(), searchA2AAgents: async () => [card] },
+    });
+    expect(pipeline.tools.toDefinitions().map((t) => t.name)).toContain('search_a2a_agents');
+    const outcome = await pipeline.tools.execute('search_a2a_agents', { skill: 'eta_query' });
+    expect(outcome).toEqual(expect.objectContaining({ success: true, result: expect.objectContaining({ candidates: [] }) }));
+  });
+
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {
     const input = makeBuilderInput();
     expect(input.sensitivePersonas).toBeUndefined();

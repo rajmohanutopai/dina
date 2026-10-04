@@ -65,6 +65,8 @@ export interface PreFlightContext {
   requesterDid?: string;
   /** dina-agent CLI session id, for the session-grant shortcut. */
   sessionId?: string;
+  /** The conversation the pre-fetched items go into (A2A §4.2). */
+  releaseSession?: string;
 }
 
 export type PreFlightRetrievalProvider = (

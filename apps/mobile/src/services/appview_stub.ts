@@ -14,15 +14,17 @@
  */
 
 import {
-  computeSchemaHash,
-  EtaQueryParamsSchema,
-  EtaQueryResultSchema,
   type SearchServicesParams,
   type SearchCapabilitiesParams,
   type CapabilityCandidate,
   type ServiceProfile,
 } from '@dina/brain';
-import { FEATURE_NAMES } from '@dina/core';
+import {
+  EtaQueryParamsSchema,
+  EtaQueryResultSchema,
+  FEATURE_NAMES,
+  capabilitySchemaHash,
+} from '@dina/core';
 import { allCanonicalCapabilities, resolveSearchableCapability } from '@dina/protocol';
 
 export interface AppViewStubOptions {
@@ -256,8 +258,8 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
  * registry knows about so:
  *   - `search_provider_services` returns a populated `params_schema`
  *     for the LLM to fill from the user's natural language
- *   - the local hash matches what `computeSchemaHash` on the registry
- *     schemas would produce, so any version-pinning round-trip lines up
+ *   - the local hash matches what Core's `capabilitySchemaHash` on the
+ *     registry schemas produces, so any version-pinning round-trip lines up
  */
 export function demoServiceProfile(overrides: Partial<ServiceProfile> = {}): ServiceProfile {
   const paramsSchema = EtaQueryParamsSchema as unknown as Record<string, unknown>;
@@ -280,7 +282,7 @@ export function demoServiceProfile(overrides: Partial<ServiceProfile> = {}): Ser
       eta_query: {
         params: paramsSchema,
         result: resultSchema,
-        schemaHash: computeSchemaHash({
+        schemaHash: capabilitySchemaHash({
           description: capabilityDescription,
           params: paramsSchema,
           result: resultSchema,

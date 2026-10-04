@@ -145,9 +145,9 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
 
   it('throws ConfigError when an explicit LLM provider is incomplete or unknown', () => {
     expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'gemini' })).toThrow(ConfigError);
-    expect(() =>
-      loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'openai', OPENAI_API_KEY: '' }),
-    ).toThrow(ConfigError);
+    expect(() => loadConfig({ DINA_BRAIN_LLM_PROVIDER: 'openai', OPENAI_API_KEY: '' })).toThrow(
+      ConfigError,
+    );
   });
 
   it('honours OpenAI and OpenRouter LLM provider config, with the effort override', () => {
@@ -225,7 +225,6 @@ describe('brain-server — boot (task 5.1)', () => {
           appView: 'ok',
           core: 'fail',
           askRoutes: 'disabled',
-          serviceRuntime: 'disabled',
           stagingDrain: 'disabled',
           runtime: 'ok',
         },
@@ -292,6 +291,33 @@ describe('brain-server — boot (task 5.1)', () => {
     }
   });
 
+  it('checks every caller by default: unsigned asks are refused, the probes stay open', async () => {
+    const booted = await bootServer({
+      DINA_BRAIN_HOST: '127.0.0.1',
+      DINA_BRAIN_PORT: '0',
+      DINA_BRAIN_LOG_LEVEL: 'silent',
+      DINA_BRAIN_PRETTY_LOGS: 'false',
+    });
+    try {
+      expect(booted.config.callers.auth).toBe('required');
+      const ask = await booted.app.inject({
+        method: 'POST',
+        url: '/api/v1/ask',
+        payload: { question: 'q', requesterDid: 'did:key:zSomeone' },
+      });
+      expect(ask.statusCode).toBe(401);
+      expect((await booted.app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
+    } finally {
+      await booted.app.close();
+    }
+  });
+
+  it('refuses to turn the caller check off on a release node', () => {
+    expect(() =>
+      loadConfig({ DINA_ENDPOINT_MODE: 'release', DINA_BRAIN_CALLER_AUTH: 'off' }),
+    ).toThrow(ConfigError);
+  });
+
   it('registers ask routes when an ask coordinator is supplied', async () => {
     const handleAsk = jest.fn(async () => ({
       kind: 'fast_path' as const,
@@ -328,6 +354,9 @@ describe('brain-server — boot (task 5.1)', () => {
         DINA_BRAIN_PORT: '0',
         DINA_BRAIN_LOG_LEVEL: 'silent',
         DINA_BRAIN_PRETTY_LOGS: 'false',
+        // This test is about the route's wiring; who may call it is the
+        // caller-check test's subject (below).
+        DINA_BRAIN_CALLER_AUTH: 'off',
       },
       { askCoordinator: coordinator },
     );
@@ -424,6 +453,8 @@ describe('brain-server — boot (task 5.1)', () => {
           DINA_BRAIN_PRETTY_LOGS: 'false',
           DINA_CORE_URL: 'http://core.example:8100/',
           DINA_SERVICE_KEY_DIR: keyDir,
+          // About the ask composition's wiring; the caller check has its own test.
+          DINA_BRAIN_CALLER_AUTH: 'off',
         },
         {
           askRuntime: { llm: provider, providerName: 'gemini' },
@@ -548,7 +579,7 @@ describe('brain-server — boot (task 5.1)', () => {
     }
   });
 
-  it('composes the shared service runtime when dependencies are supplied', async () => {
+  it('composes no service runtime: an inbound service query is Core’s (A2A plan §4.2a)', async () => {
     const keyDir = await mkdtemp(join(tmpdir(), 'dina-brain-key-'));
     const seed = Uint8Array.from({ length: 32 }, (_v, i) => i + 1);
     await writeFile(join(keyDir, 'brain.ed25519'), seed);
@@ -576,7 +607,7 @@ describe('brain-server — boot (task 5.1)', () => {
       });
     });
     globalThis.fetch = fetchFn as unknown as typeof globalThis.fetch;
-    const timerHandles = [{ id: 'staging' }, { id: 'events' }, { id: 'approvals' }];
+    const timerHandles = [{ id: 'staging' }];
     const setIntervalFn = jest.fn(() => defined(timerHandles.shift(), 'a timer handle'));
     const clearIntervalFn = jest.fn();
     let booted: Awaited<ReturnType<typeof bootServer>> | undefined;
@@ -593,29 +624,18 @@ describe('brain-server — boot (task 5.1)', () => {
         {
           // LLM present → staging drain is wired (it's LLM-driven; no fallback).
           askRuntime: { llm: makeStubLLM(), providerName: 'gemini' },
-          serviceRuntime: {
-            readConfig: () => null,
-            directResponder: jest.fn(),
-            deliver: jest.fn(),
-            workflowEventIntervalMs: 25,
-            approvalReconcileIntervalMs: 50,
-          },
           setInterval: setIntervalFn,
           clearInterval: clearIntervalFn,
         },
       );
 
-      expect(booted.dependencyStatus.serviceRuntime).toBe('configured');
-      expect(booted.compositions.service).toBeDefined();
-      expect(booted.compositions.service?.dispatcher.registeredTypes()).toEqual(['service.query']);
-      expect(setIntervalFn).toHaveBeenNthCalledWith(2, expect.any(Function), 25);
-      expect(setIntervalFn).toHaveBeenNthCalledWith(3, expect.any(Function), 50);
-      await Promise.all([
-        defined(booted.schedulers.stagingDrain, 'the staging drain').flush(),
-        defined(booted.compositions.service, 'the service runtime').flush(),
-      ]);
+      expect(Object.keys(booted.compositions)).not.toContain('service');
+      // Only the staging drain runs a timer here: no workflow-event consumer,
+      // no approval reconciler, no service.query dispatcher in Brain's process.
+      expect(setIntervalFn).toHaveBeenCalledTimes(1);
+      await defined(booted.schedulers.stagingDrain, 'the staging drain').flush();
 
-      // Service runtime composed with Core → /readyz reports ready.
+      // Core composed → /readyz reports ready.
       const ready = await booted.app.inject({ method: 'GET', url: '/readyz' });
       expect(ready.statusCode).toBe(200);
       expect(ready.json()).toMatchObject({
@@ -623,7 +643,6 @@ describe('brain-server — boot (task 5.1)', () => {
         checks: {
           appView: 'ok',
           core: 'ok',
-          serviceRuntime: 'ok',
           stagingDrain: 'ok',
           runtime: 'ok',
         },
@@ -631,7 +650,7 @@ describe('brain-server — boot (task 5.1)', () => {
     } finally {
       await booted?.app.close();
       if (booted !== undefined) {
-        expect(clearIntervalFn).toHaveBeenCalledTimes(3);
+        expect(clearIntervalFn).toHaveBeenCalledTimes(1);
       }
       globalThis.fetch = originalFetch;
       await rm(keyDir, { recursive: true, force: true });

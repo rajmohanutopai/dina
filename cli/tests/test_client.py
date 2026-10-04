@@ -958,3 +958,53 @@ def test_user_ask_retains_legacy_session_header(config):
         assert json.loads(mock_req.call_args.kwargs["body"]) == {"prompt": "Question"}
         assert mock_req.call_args.args[2]["X-Session"] == "sess-user"
         client.close()
+
+
+def test_workflow_reports_carry_the_claim_token_only_when_given(config):
+    """Core requires the claim token on every report on an A2A call's task
+    (design §7.3); other tasks may omit it, and then nothing is sent."""
+    with _patch_transport(*[_tr(200, "{}") for _ in range(8)]) as mock_req:
+        client = DinaClient(config)
+        client.task_heartbeat("t-1", 60, claim_id="claim-1")
+        client.task_progress("t-1", "half way", claim_id="claim-1")
+        client.task_complete("t-1", '{"ok":true}', claim_id="claim-1")
+        client.task_fail("t-1", "broke", assigned_runner="hermes", claim_id="claim-1")
+        client.task_heartbeat("t-2", 60)
+        client.task_progress("t-2", "half way")
+        client.task_complete("t-2", "done")
+        client.task_fail("t-2", "broke")
+    bodies = [json.loads(c.kwargs["body"]) for c in mock_req.call_args_list]
+    paths = [c.args[1] for c in mock_req.call_args_list]
+    assert paths[:4] == [
+        "/v1/workflow/tasks/t-1/heartbeat",
+        "/v1/workflow/tasks/t-1/progress",
+        "/v1/workflow/tasks/t-1/complete",
+        "/v1/workflow/tasks/t-1/fail",
+    ]
+    assert [b.get("claim_id") for b in bodies[:4]] == ["claim-1"] * 4
+    assert bodies[3] == {"error": "broke", "assigned_runner": "hermes", "claim_id": "claim-1"}
+    assert all("claim_id" not in b for b in bodies[4:])
+
+
+def test_task_input_required_asks_under_the_claim(config):
+    answer = '{"status":"awaiting_input","task_id":"t-1","expires_at":1}'
+    with _patch_transport(_tr(200, answer)) as mock_req:
+        out = DinaClient(config).task_input_required(
+            "t-1", "Which stop?", {"type": "object"}, "claim-1"
+        )
+    assert out == {"status": "awaiting_input", "task_id": "t-1", "expires_at": 1}
+    call = mock_req.call_args
+    assert call.args[0:2] == ("POST", "/v1/workflow/tasks/t-1/input-required")
+    assert json.loads(call.kwargs["body"]) == {
+        "claim_id": "claim-1",
+        "prompt": "Which stop?",
+        "input_schema": {"type": "object"},
+    }
+
+
+def test_get_task_reads_the_task_out_of_cores_answer(config):
+    """Core answers ``{"task": {...}}``; the daemon reads the task's status."""
+    with _patch_transport(_tr(200, '{"task":{"id":"t-1","status":"awaiting"}}')):
+        assert DinaClient(config).get_task("t-1") == {"id": "t-1", "status": "awaiting"}
+    with _patch_transport(_tr(200, '{"id":"t-1","status":"running"}')):
+        assert DinaClient(config).get_task("t-1") == {"id": "t-1", "status": "running"}

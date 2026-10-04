@@ -35,6 +35,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md task 5.21-F.
  */
 
+import { askConversation } from '../a2a/conversation';
 import {
   AskApprovalGateway,
   type ApprovalSource,
@@ -225,6 +226,7 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
         buildToolsForAsk({
           askId: ctx.askId,
           requesterDid: ctx.requesterDid,
+          ...askConversation(ctx.askId, ctx.conversation),
         }),
         ctx.forcedSources,
       );
@@ -241,6 +243,7 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
           systemPrompt,
           ctx.question,
           ctx.forcedSources,
+          askConversation(ctx.askId, ctx.conversation).releaseSession,
         ),
         pausedState,
       });
@@ -320,6 +323,7 @@ export function buildAgenticExecuteFn(args: {
     // The legacy/direct Ask path already does this in chat_reasoning; mobile and
     // Home Node use this coordinator path in production, so enforce the same
     // invariant here rather than relying on the model to redirect itself.
+    const conversation = askConversation(input.id, input.conversation);
     const preScreen = await preScreenMessage(input.question);
     if (preScreen.shouldRedirect) {
       return {
@@ -338,6 +342,7 @@ export function buildAgenticExecuteFn(args: {
         ...(input.sessionId !== undefined && input.sessionId !== ''
           ? { sessionId: input.sessionId }
           : {}),
+        ...conversation,
       }),
       input.forcedSources,
     );
@@ -354,6 +359,7 @@ export function buildAgenticExecuteFn(args: {
       systemPrompt,
       input.question,
       input.forcedSources,
+      conversation.releaseSession,
     );
 
     let userMessage = input.question;
@@ -369,6 +375,7 @@ export function buildAgenticExecuteFn(args: {
           ...(input.sessionId !== undefined && input.sessionId !== ''
             ? { sessionId: input.sessionId }
             : {}),
+          releaseSession: conversation.releaseSession,
         });
       } catch {
         result = null;
@@ -404,7 +411,8 @@ async function buildPromptForTurn(
   pipeline: AgenticAskPipeline,
   baseSystemPrompt: string,
   question: string,
-  forcedSources?: readonly IntentSource[],
+  forcedSources: readonly IntentSource[] | undefined,
+  releaseSession: string,
 ): Promise<string> {
   let prompt = `${formatCurrentTimeBlock()}\n\n${baseSystemPrompt}`;
 
@@ -418,7 +426,7 @@ async function buildPromptForTurn(
 
   let hint;
   try {
-    hint = await classifier.classify(question);
+    hint = await classifier.classify(question, { releaseSession });
   } catch {
     hint = IntentClassifier.default();
   }
@@ -649,12 +657,15 @@ export function translateLoopResult(
  * told about the card or the dispatch. Undefined when the loop never asked a
  * plugin, or every ask was refused (a refusal is a thrown tool error).
  */
-function extractPluginInvocationNote(toolCalls: AgenticLoopResult['toolCalls']): string | undefined {
+function extractPluginInvocationNote(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): string | undefined {
   let note: string | undefined;
   for (const call of toolCalls) {
     if (call.name !== 'invoke_plugin' || !call.outcome.success) continue;
     const payload = call.outcome.result as { note?: unknown } | null;
-    if (payload !== null && typeof payload.note === 'string' && payload.note !== '') note = payload.note;
+    if (payload !== null && typeof payload.note === 'string' && payload.note !== '')
+      note = payload.note;
   }
   return note;
 }
@@ -720,7 +731,10 @@ function extractGroupPlanFromToolCalls(
     const result = call.outcome.result as { plan_id?: unknown; intent?: unknown } | null;
     if (result === null || typeof result !== 'object') continue;
     if (typeof result.plan_id !== 'string' || result.plan_id === '') continue;
-    return { planId: result.plan_id, intent: typeof result.intent === 'string' ? result.intent : '' };
+    return {
+      planId: result.plan_id,
+      intent: typeof result.intent === 'string' ? result.intent : '',
+    };
   }
   return undefined;
 }

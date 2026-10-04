@@ -11,7 +11,13 @@ import { getGroupPlanReader } from '../../src/services/group_plan_reader.web';
 import { installServerNotifications } from '../../src/services/server_notifications.web';
 import { resolveServiceConfigCoreClient } from '../../src/services/service_config_resolver.web';
 import { loadTradeDetails } from '../../src/services/trade_details_source.web';
-import { BRAIN, configLoaded, installCoreServedPage } from '../setup/web_brain';
+import {
+  BRAIN,
+  configLoaded,
+  installBrainStreams,
+  installCoreServedPage,
+  streamDelivered,
+} from '../setup/web_brain';
 
 import type { ServiceConfigCoreClient } from '../../src/hooks/useServiceConfigForm';
 
@@ -70,23 +76,12 @@ it('group plan reads', async () => {
 
 it('notifications: the snapshot, then the stream, both on Brain', async () => {
   answering({ notifications: [] });
-  const opened: string[] = [];
-  (globalThis as { EventSource?: unknown }).EventSource = class {
-    addEventListener = jest.fn();
-    close = jest.fn();
-    constructor(url: string) {
-      opened.push(url);
-    }
-  };
-  try {
-    const dispose = installServerNotifications();
-    for (let i = 0; i < 5 && opened.length === 0; i++) await configLoaded();
-    dispose();
-    expect(landed()[0]).toBe(`GET ${BRAIN}/api/v1/notifications`);
-    expect(opened).toEqual([`${BRAIN}/api/v1/notifications/stream`]);
-  } finally {
-    delete (globalThis as { EventSource?: unknown }).EventSource;
-  }
+  const streams = installBrainStreams();
+  const dispose = installServerNotifications();
+  for (let i = 0; i < 5 && streams.opened.length === 0; i++) await streamDelivered();
+  dispose();
+  expect(landed()[0]).toBe(`GET ${BRAIN}/api/v1/notifications`);
+  expect(streams.opened.map((s) => s.url)).toEqual([`${BRAIN}/api/v1/notifications/stream`]);
 });
 
 it('PeerLens reads go to Brain’s AppView proxy', async () => {

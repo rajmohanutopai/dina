@@ -19,12 +19,13 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-W03 / MOBILE-009.
  */
 
-import { parseServiceQueryExecutionPayload } from '@dina/protocol';
+
+import { A2A_EVENT_KINDS, a2aDeliveryText, a2aOperationIdOf } from '../a2a/delivery_text';
 
 import { formatServiceQueryResult, type ServiceQueryEventDetails } from './result_formatter';
 
-import type { CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
-import type { ServiceResponseBody, ServiceQueryExecutionPayload } from '@dina/protocol';
+import type { A2AOperationStatus, CoreClient, WorkflowEvent, WorkflowTask } from '@dina/core';
+import type { ServiceResponseBody } from '@dina/protocol';
 
 /**
  * How the formatted response reaches the surface (chat thread, Telegram,
@@ -39,33 +40,18 @@ export type WorkflowEventDeliverer = (args: {
 }) => void | Promise<void>;
 
 /**
- * Payload of a `service_query_execution` delegation, embedded on every
- * approval task. The `approved`-event dispatcher needs the same shape
- * that `ServiceHandler.executeAndRespond` already accepts.
- */
-/**
- * The approval payload IS the codec shape (`@dina/protocol`'s
- * `ServiceQueryExecutionPayload`) — the hop that used to hand-extract a
- * field subset here silently dropped service_uri/schema_snapshot/
- * mcp_tool (found live in the Tier 1 salon-booking demo). The alias is
- * kept so call sites read naturally; the `type` discriminant is
- * dropped because consumers of an APPROVED event already know.
- */
-export type ApprovedExecutionPayload = Omit<ServiceQueryExecutionPayload, 'type'>;
-
-/**
- * Fired when a workflow task transitions `pending_approval → queued`.
- * Callers typically forward to `ServiceHandler.executeAndRespond` to
- * spawn the delegation task that actually runs the capability. Hook
- * errors behave like `deliver` errors: the event is NOT acked, so Core
- * re-drives it on the next tick.
+ * Fired for an `approved` event on a service card
+ * (`service_query_execution`). The composition forwards the card to Core's
+ * service-query ingress (`ServiceQueryIngress.executeApproved`), which reads
+ * the card itself and alone decides whether it may run: this consumer only
+ * routes. Hook errors behave like `deliver` errors: the event is NOT acked,
+ * so Core re-drives it on the next tick.
  *
- * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P4-P01.
+ * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P4-P01; A2A plan §4.2a.
  */
 export type ApprovalEventDispatcher = (args: {
   event: WorkflowEvent;
   task: WorkflowTask;
-  payload: ApprovedExecutionPayload;
 }) => void | Promise<void>;
 
 /**
@@ -80,17 +66,17 @@ export type WorkflowEventConsumerCoreClient = Pick<
   | 'acknowledgeWorkflowEvent'
   | 'getWorkflowTask'
   | 'failWorkflowEventDelivery'
+  | 'getA2AOperation'
 >;
 
 export interface WorkflowEventConsumerOptions {
   coreClient: WorkflowEventConsumerCoreClient;
   deliver: WorkflowEventDeliverer;
   /**
-   * Optional dispatcher for `approved` events on approval tasks. When
-   * installed, the consumer parses the approval task's payload and hands
-   * it to the dispatcher (typically `ServiceHandler.executeAndRespond`).
-   * When absent, the event is acked as skipped — matching the prior
-   * "chat-approve handler owns execution" posture.
+   * Optional dispatcher for `approved` events on service cards (Core's
+   * `executeApproved` in production). When absent, the event is acked as
+   * skipped — matching the prior "chat-approve handler owns execution"
+   * posture.
    */
   onApproved?: ApprovalEventDispatcher;
   /** Poll cadence in ms. Defaults to 1_000 (snappy chat delivery). */
@@ -280,6 +266,7 @@ export class WorkflowEventConsumer {
       'cancelled',
       'approved',
       'outcome_unknown',
+      ...A2A_EVENT_KINDS,
     ]);
     if (!DELIVERABLE_KINDS.has(event.event_kind)) {
       this.log({
@@ -344,25 +331,10 @@ export class WorkflowEventConsumer {
         await this.ackAndTrack(event, 'skipped', result);
         return;
       }
-      // Review #4: re-read the task's CURRENT state before dispatching.
-      // A redriven `approved` event can arrive after the task has
-      // already been failed / cancelled by the expiry reconciler or
-      // a manual `/service_deny` — dispatching in those cases would
-      // spawn execution on a task that's no longer live. We only
-      // dispatch when the task is in the narrow set of states that
-      // still represent "operator said yes and nothing terminal has
-      // happened yet": queued + running (claimed by a previous event)
-      // + pending_approval (race against reconciler).
-      const DISPATCHABLE: ReadonlySet<string> = new Set(['queued', 'running', 'pending_approval']);
-      if (!DISPATCHABLE.has(task.status)) {
-        this.log({
-          event: 'workflow_event.approved_skipped_terminal',
-          task_id: task.id,
-          task_state: task.status,
-        });
-        await this.ackAndTrack(event, 'skipped', result);
-        return;
-      }
+      // Whether the card may still run (a redriven event after an expiry
+      // or a deny, a card already executed) is Core's call: it re-reads
+      // the card and starts nothing unless the owner's approve left it
+      // live. One judge, so the two can never disagree.
       await this.dispatchApproved(event, task, result);
       return;
     }
@@ -376,9 +348,40 @@ export class WorkflowEventConsumer {
     //     result was silently dropped (ack+skip) and the owner only ever saw
     //     the brain's 60s "did not complete" timeout.
     //   - any other kind isn't chat-deliverable → ack + skip.
+    //   - an A2A Lane 1 task (dispatch child or consent card) → only Core's
+    //     A2A events speak, in Dina's own sentence from the operation's state
+    //     and reason; a released result is read back from Core
+    //     (`getA2AOperation`), never from the event. The workflow's own
+    //     events on those tasks say nothing: Core appends exactly one A2A
+    //     event per ending (design A2A-I7, §6.5).
     let details: ServiceQueryEventDetails;
     let text: string;
-    if (task.kind === 'service_query') {
+    const a2aOperationId = a2aOperationIdOf(task.payload);
+    if (A2A_EVENT_KINDS.has(event.event_kind) !== (a2aOperationId !== null)) {
+      // An A2A event on another task, or a workflow event on an A2A task.
+      await this.ackAndTrack(event, 'skipped', result);
+      return;
+    }
+    if (a2aOperationId !== null) {
+      let operation: A2AOperationStatus | null;
+      try {
+        operation = await this.core.getA2AOperation(a2aOperationId);
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        result.failed++;
+        result.errors.push(err);
+        this.log({ event: 'workflow_event.a2a_fetch_failed', event_id: event.event_id, error: err.message });
+        await this.markDeliveryFailed(event, err);
+        return;
+      }
+      const sentence = a2aDeliveryText(event.event_kind, operation);
+      if (sentence === null) {
+        await this.ackAndTrack(event, 'skipped', result);
+        return;
+      }
+      details = { a2a: { operation_id: a2aOperationId, reply_to: operation?.reply_to ?? null } };
+      text = sentence;
+    } else if (task.kind === 'service_query') {
       details = this.composeDetails(event, task);
       text = formatServiceQueryResult(details);
     } else if (task.kind === 'delegation') {
@@ -455,11 +458,9 @@ export class WorkflowEventConsumer {
   }
 
   /**
-   * Parse the approval task's payload and hand it to the installed
-   * dispatcher. Payload must include `from_did / query_id / capability /
-   * params` for the downstream execution call; anything else surfaces as
-   * a failed dispatch (the event is NOT acked — a redriven event with a
-   * corrected payload can still land).
+   * Hand a service card to the installed dispatcher. Core reads and
+   * checks the card; a card it cannot act on throws, which surfaces as a
+   * failed dispatch (the event is NOT acked, so it redrives with backoff).
    */
   private async dispatchApproved(
     event: WorkflowEvent,
@@ -489,42 +490,8 @@ export class WorkflowEventConsumer {
       return;
     }
 
-    const payload = parseApprovedPayload(task.payload);
-    if (payload === null) {
-      result.failed++;
-      const err = new Error(`workflow_event.approved_payload_invalid: task ${task.id}`);
-      result.errors.push(err);
-      if (this.onError !== null) {
-        try {
-          this.onError(err);
-        } catch {
-          /* swallow */
-        }
-      }
-      if (this.onTaskOutcome !== null) {
-        try {
-          this.onTaskOutcome(event, 'failed');
-        } catch {
-          /* swallow */
-        }
-      }
-      this.log({
-        event: 'workflow_event.approved_payload_invalid',
-        task_id: task.id,
-      });
-      // Review #3: malformed payload is not going to fix itself on
-      // retry — but the consumer has no authority to archive events,
-      // so mark it failed with a long backoff. Core's delivery
-      // scheduler will stop hot-looping; an operator can inspect the
-      // event + task via diagnostics and cancel the task manually.
-      // Previously this branch returned without marking, so every
-      // tick resurrected the same bad event.
-      await this.markDeliveryFailed(event, err);
-      return;
-    }
-
     try {
-      await dispatcher({ event, task, payload });
+      await dispatcher({ event, task });
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       result.failed++;
@@ -702,24 +669,6 @@ function peekPayloadType(raw: string): string {
   } catch {
     return '';
   }
-}
-
-/**
- * Extract the `service_query_execution` envelope from an approval task's
- * payload — via THE codec (`@dina/protocol`'s
- * `parseServiceQueryExecutionPayload`), so every field the handler
- * persists survives this hop by construction. Returns `null` when the
- * payload is a different approval kind (e.g. intent_validation — those
- * flow through their own consumers) or is missing a required identity
- * field; the consumer treats that as a dispatch-failure so Core can
- * redrive after an operator re-issues the task.
- */
-function parseApprovedPayload(raw: string): ApprovedExecutionPayload | null {
-  const parsed = parseServiceQueryExecutionPayload(raw);
-  if (parsed === null) return null;
-  // Drop the discriminant — consumers of an APPROVED event already know.
-  const { type: _type, ...payload } = parsed;
-  return payload;
 }
 
 /**

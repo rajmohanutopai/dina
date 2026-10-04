@@ -17,7 +17,7 @@
  * Brain's PeerLens read proxy).
  */
 
-import { appViewBase } from './appview_base';
+import { appViewBase, appViewFetch } from './appview_base';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -38,7 +38,7 @@ async function getJSON<T>(path: string, params: Record<string, string>): Promise
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await appViewFetch(url, { signal: controller.signal });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new AppViewError(
@@ -364,7 +364,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await appViewFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

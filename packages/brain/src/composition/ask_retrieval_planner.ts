@@ -356,7 +356,11 @@ export interface AskRetrievalFetchers {
    * `executeToolSearch` shape: return the top-N items as
    * `{id, content_l0, body?, persona}`.
    */
-  vaultSearch: (persona: string, query: string) => Promise<readonly RetrievedVaultItem[]>;
+  vaultSearch: (
+    persona: string,
+    query: string,
+    opts?: { releaseSession?: string },
+  ) => Promise<readonly RetrievedVaultItem[]>;
   /**
    * People-graph lookup. Optional — when omitted the plan's `people`
    * field is rendered as a list without resolution.
@@ -412,6 +416,8 @@ export interface RunPreFlightOptions {
    * (the owner-on-app path, or callers without a guard).
    */
   personaAllowed?: (persona: string) => boolean | Promise<boolean>;
+  /** The conversation the pre-fetched items go into; Core logs the release (A2A §4.2). */
+  releaseSession?: string;
 }
 
 export async function runAskPreFlightRetrieval(
@@ -450,7 +456,11 @@ export async function runAskPreFlightRetrieval(
     Promise.all(
       vaultTasks.map(async (t) => {
         try {
-          return await fetchers.vaultSearch(t.persona, t.query);
+          return await fetchers.vaultSearch(
+            t.persona,
+            t.query,
+            opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : undefined,
+          );
         } catch {
           return [] as RetrievedVaultItem[];
         }

@@ -11,6 +11,8 @@
  *   7. On success: setRunId (crash marker) + completeWithDetails.
  */
 
+import { parseServiceQueryExecutionPayload } from '@dina/protocol';
+
 import { MsgTypeServiceResponse, MAX_SERVICE_TTL } from '../../d2d/families';
 import { setProviderWindow, releaseProviderWindow } from '../../service/windows';
 import { WorkflowTaskState, isTerminal } from '../../workflow/domain';
@@ -125,6 +127,17 @@ export function registerServiceRespondRoutes(
         return j(403, {
           error: 'owner_decision_required',
           reason: `a ${type.replace(/_/g, ' ')} is decided by the owner, not answered as a service query`,
+        });
+      }
+      // Only a service card Core's ingress minted for a query it admitted can
+      // be answered (A2A plan §4.2a): the create route refuses that payload
+      // type to every caller, so the requester, query and capability on it
+      // are ones Core checked. Any other approval card names a peer no query
+      // came from, and answering it would open a window to that peer.
+      if (preflight.kind !== 'approval' || parseServiceQueryExecutionPayload(preflight.payload) === null) {
+        return j(403, {
+          error: 'not_a_service_card',
+          reason: 'only a service card Core admitted can be answered as a service query',
         });
       }
     }

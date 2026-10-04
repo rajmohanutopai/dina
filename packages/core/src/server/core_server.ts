@@ -16,6 +16,8 @@ import { CORE_DEFAULT_PORT } from '../constants';
 import { getDeviceByDID } from '../devices/registry';
 
 import { CoreRouter } from './router';
+import { registerA2ARoutes } from './routes/a2a';
+import { registerA2AIngressRoutes } from './routes/a2a_ingress';
 import { registerAgentAuditRoutes } from './routes/agent_audit';
 import { registerAgentFacadeRoutes, type AgentFacadeHandlers } from './routes/agent_facades';
 import {
@@ -28,6 +30,7 @@ import {
   type AskRouteHandler,
   type AskRouteOptions,
 } from './routes/ask';
+import { registerBrainCallerRoutes } from './routes/brain_callers';
 import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
 import { registerCommerceRoutes } from './routes/commerce';
 import { registerContactsRoutes } from './routes/contacts';
@@ -150,6 +153,12 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // choose, widen, drop from required, stop, delete. Owner-only in the authz
   // matrix AND in-handler; guests reach this node only through the 1:1 lane.
   registerGroupCoordinationRoutes(router, options.ownerCapability);
+  // A2A Lane 1 (design §4.3). The routes answer 503 until a host installs the
+  // A2A store and outbound runtime (the server; never the phone in M1a).
+  registerA2ARoutes(router, options.ownerCapability);
+  // A2A Lane 2 (design §4.3): the gateway's doors. 503 until A2A is installed.
+  registerA2AIngressRoutes(router);
+  registerBrainCallerRoutes(router);
   if (options.ownerSetup !== undefined) {
     registerOwnerSetupRoutes(router, options.ownerCapability, options.ownerSetup);
   }

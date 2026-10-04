@@ -16,15 +16,13 @@
  * Source: ARCHITECTURE.md Section 2.4
  */
 
-import { extractPublicKey } from '../identity/did';
 
 import { isScopeAuthorized, requiredScopeFor, resolveAgentScope, type AgentScope } from './agent_scope';
 import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
 import { resolveCallerType, type CallerIdentity } from './caller_type';
-import { verifyRequest } from './canonical';
 import { NonceCache } from './nonce';
-import { PerDIDRateLimiter } from './ratelimit';
-import { isTimestampValid } from './timestamp';
+import { PerDIDRateLimiter, type RateLimitConfig } from './ratelimit';
+import { checkRequestSignature } from './signed_request';
 
 export interface AuthRequest {
   method: string;
@@ -107,7 +105,7 @@ export function getRateLimiter(): PerDIDRateLimiter {
  * 10,000/min). Server builds continue to use the 50/min default by
  * NOT calling this.
  */
-export function configureRateLimiter(config: { maxRequests: number; windowSeconds: number }): void {
+export function configureRateLimiter(config: RateLimitConfig): void {
   rateLimiter = new PerDIDRateLimiter(config);
 }
 
@@ -124,112 +122,48 @@ interface VerifiedIdentity {
  * (`authenticateRequest`) and the owner device (`authenticateOwnerDevice`).
  */
 function verifySignedIdentity(req: AuthRequest): VerifiedIdentity | AuthResult {
+  // 1–4. Headers, timestamp window, Ed25519 signature, nonce replay: the
+  // shared check (`signed_request.ts`), against this process's resolver and
+  // replay cache. The nonce is spent only after the signature is proven
+  // (P3.9), so unsigned requests cannot burn a victim's future nonces.
   const did = req.headers['X-DID'];
-  const timestamp = req.headers['X-Timestamp'];
-  const nonce = req.headers['X-Nonce'];
-  const signature = req.headers['X-Signature'];
-
-  // 1. Validate headers present
-  if (!did || !timestamp || !nonce || !signature) {
-    return {
-      authenticated: false,
-      rejectedAt: 'headers',
-      reason: 'Missing required auth headers (X-DID, X-Timestamp, X-Nonce, X-Signature)',
-    };
-  }
-
-  // 2. Validate timestamp (±5 min window)
-  if (!isTimestampValid(timestamp)) {
-    return {
-      authenticated: false,
-      did,
-      rejectedAt: 'timestamp',
-      reason: 'Timestamp outside ±5 minute window',
-    };
-  }
-
-  // 3. Verify Ed25519 signature
-  //
-  // Resolution order:
-  //   1. The host-supplied resolver, if any. This is how `did:plc:`
-  //      identities (and any non-self-describing DID method) are
-  //      mapped to public keys.
-  //   2. did:key fallback. did:key encodes the public key in the
-  //      DID itself, so the key is *always* derivable — even for
-  //      DIDs the resolver has never seen (e.g. a freshly-paired
-  //      agent). Without this fallback, every signed RPC from a
-  //      paired agent on mobile 401s with "Cannot resolve public
-  //      key for DID" because the mobile resolver only knows the
-  //      self-DID and explicitly-registered D2D peers.
-  let publicKey: Uint8Array | null = null;
-  if (publicKeyResolver) {
-    publicKey = publicKeyResolver(did);
-  }
-  if (!publicKey && did.startsWith('did:key:')) {
-    try {
-      publicKey = extractPublicKey(did);
-    } catch {
-      publicKey = null;
-    }
-  }
-
-  if (!publicKey) {
-    return {
-      authenticated: false,
-      did,
-      rejectedAt: 'signature',
-      reason: 'Cannot resolve public key for DID',
-    };
-  }
-
-  const signatureValid = verifyRequest(
-    req.method,
-    req.path,
-    req.query,
-    timestamp,
-    nonce,
-    req.body,
-    signature,
-    publicKey,
+  const check = checkRequestSignature(
+    {
+      method: req.method,
+      path: req.path,
+      query: req.query,
+      body: req.body,
+      ...(did === undefined ? {} : { did }),
+      ...(req.headers['X-Timestamp'] === undefined ? {} : { timestamp: req.headers['X-Timestamp'] }),
+      ...(req.headers['X-Nonce'] === undefined ? {} : { nonce: req.headers['X-Nonce'] }),
+      ...(req.headers['X-Signature'] === undefined ? {} : { signature: req.headers['X-Signature'] }),
+    },
+    { nonces: nonceCache, resolvePublicKey: publicKeyResolver },
   );
-
-  if (!signatureValid) {
+  if (!check.ok) {
     return {
       authenticated: false,
-      did,
-      rejectedAt: 'signature',
-      reason: 'Ed25519 signature verification failed',
+      ...(check.did === undefined ? {} : { did: check.did }),
+      rejectedAt: check.rejectedAt,
+      reason: check.reason,
     };
   }
 
-  // 4. Nonce replay check — AFTER signature verification (P3.9). The nonce is
-  // a single-use resource recorded by `check()`; consuming it only once a
-  // request is proven authentic stops an attacker from burning a victim's
-  // future nonces (or flooding the cache) with unsigned / bad-signature
-  // requests. A genuine replay still fails here: the replayed request has a
-  // valid signature but its nonce is already recorded.
-  if (!nonceCache.check(nonce)) {
-    return {
-      authenticated: false,
-      did,
-      rejectedAt: 'nonce',
-      reason: 'Nonce already used (replay detected)',
-    };
-  }
+  // 5. Resolve caller type
+  const callerIdentity = resolveCallerType(check.did, req.headers['X-Agent-DID']);
 
-  // 5. Rate limit
-  const agentDID = req.headers['X-Agent-DID'];
-  if (!rateLimiter.allow(did)) {
+  // 6. Rate limit, by the signing DID. A DID no caller holds is refused at
+  // authorization whatever it asks, so it spends no bucket: a flood of
+  // self-made did:keys, each signing its own requests, grows nothing.
+  if (callerIdentity.callerType !== 'unknown' && !rateLimiter.allow(check.did)) {
     return {
       authenticated: false,
-      did,
+      did: check.did,
       rejectedAt: 'rate_limit',
       reason: 'Rate limit exceeded',
     };
   }
-
-  // 6. Resolve caller type
-  return { verified: true, callerIdentity: resolveCallerType(did, agentDID) };
+  return { verified: true, callerIdentity };
 }
 
 function isVerified(r: VerifiedIdentity | AuthResult): r is VerifiedIdentity {
@@ -359,7 +293,7 @@ function mapToAuthzRole(callerType: string, name?: string): AuthzCallerType | nu
   // Service: only recognized names get a role
   if (callerType === 'service' && name) {
     const role = name.toLowerCase();
-    if (role === 'brain' || role === 'admin' || role === 'connector') {
+    if (role === 'brain' || role === 'admin' || role === 'connector' || role === 'gateway') {
       return role as AuthzCallerType;
     }
   }

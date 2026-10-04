@@ -39,6 +39,9 @@ COPY tsconfig.base.json tsconfig.json ./
 # graph before any src file exists, so this list doesn't vary by which
 # app we're building).
 COPY packages/protocol/package.json packages/protocol/tsconfig.json packages/protocol/
+COPY packages/a2a/package.json packages/a2a/tsconfig.json packages/a2a/
+COPY packages/commerce-protocol/package.json packages/commerce-protocol/tsconfig.json packages/commerce-protocol/
+COPY packages/home-node/package.json packages/home-node/tsconfig.json packages/home-node/
 COPY packages/core/package.json packages/core/tsconfig.json packages/core/
 COPY packages/brain/package.json packages/brain/tsconfig.json packages/brain/
 COPY packages/crypto-node/package.json packages/crypto-node/tsconfig.json packages/crypto-node/

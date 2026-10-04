@@ -34,6 +34,8 @@ import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
 
+import { isA2AGatewayRoute } from '@dina/core';
+
 import { installAgentContextDecorator } from './auth/agent_did_decorator';
 import { WEB_APP_PREFIX } from './server/web_app';
 import { REQUEST_ID_HEADER, validateRequestId } from './trace/trace_context';
@@ -282,13 +284,27 @@ export async function createServer(opts: CreateServerOptions) {
   // **Must be awaited** — without the await, the plugin's hooks don't
   // install before downstream route definitions, so the rate-limit
   // hook never fires.
+  //
+  // A2A Lane 2 (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1): every gateway call
+  // arrives from the gateway's one address, so this budget would throttle
+  // every outside client together. When Lane 2 is configured, a call to one
+  // of the gateway's routes that names the gateway's DID skips it; the
+  // gateway's own per-address edge limit and the per-client budgets inside
+  // the ingress routes take its place. Any other caller of those routes keeps
+  // this budget. A call that names the gateway's DID without its key costs
+  // one signature check and is refused there, before it spends a nonce or a
+  // rate-limit bucket.
+  const gatewayDid = config.a2a?.gatewayDid;
   await app.register(rateLimit, {
     max: config.runtime.rateLimitPerMinute,
     timeWindow: '1 minute',
     allowList: (req) =>
       req.url === '/healthz' ||
       req.url === '/readyz' ||
-      (req.method === 'GET' && (req.url === '/app' || req.url.startsWith(WEB_APP_PREFIX))),
+      (req.method === 'GET' && (req.url === '/app' || req.url.startsWith(WEB_APP_PREFIX))) ||
+      (gatewayDid !== undefined &&
+        req.headers['x-did'] === gatewayDid &&
+        isA2AGatewayRoute(req.method, req.url.split('?')[0] ?? '')),
     keyGenerator: (req) => `ip:${req.ip}`,
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the
