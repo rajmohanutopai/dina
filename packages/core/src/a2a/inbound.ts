@@ -796,7 +796,10 @@ export function ingressListTasks(rt: InboundRuntime, envelope: GatewayEnvelope):
   if (!admitted.ok) return admitted.answer;
   if (!rt.budgets.chargeRead(admitted.principal, rt.a2a.nowMs())) return slowDown();
   const { params } = admitted;
-  if (params.status !== undefined) return rpcError(admitted.id, 'invalidParams', 'status_filter_unsupported');
+  // TASK_STATE_UNSPECIFIED is proto3's default: a client that writes defaults sends it for "no filter".
+  if (params.status !== undefined && params.status !== 'TASK_STATE_UNSPECIFIED') {
+    return rpcError(admitted.id, 'invalidParams', 'status_filter_unsupported');
+  }
   const size =
     typeof params.pageSize === 'number' && Number.isInteger(params.pageSize) && params.pageSize > 0
       ? Math.min(params.pageSize, MAX_LIST_PAGE)

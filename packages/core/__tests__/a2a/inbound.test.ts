@@ -1544,6 +1544,9 @@ describe('review findings: cancel, order, egress, versions, list filters, read b
     expect(
       errorOf(ingressListTasks(rt, request('ListTasks', { status: 'TASK_STATE_WORKING' }))),
     ).toEqual({ code: -32602, reason: 'status_filter_unsupported' });
+    // Outside-agent run: proto3's default, sent by a client that writes defaults, means no filter.
+    const unfiltered = resultOf(ingressListTasks(rt, request('ListTasks', { status: 'TASK_STATE_UNSPECIFIED' })));
+    expect((unfiltered.tasks as unknown[]).length).toBe(2);
   });
 
   it('one client polling past its read budget does not slow another', () => {
