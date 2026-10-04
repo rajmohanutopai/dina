@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+import json
+
 import os
 from unittest.mock import patch, MagicMock
 
@@ -62,6 +64,64 @@ class TestTaskPrompt:
         assert "dina_task_complete" in prompt
         assert "dina_task_fail" in prompt
         assert "dina_task_progress" in prompt
+
+    def test_prompt_carries_the_claim_token(self):
+        prompt = build_task_prompt({"id": "t", "claim_id": "claim-9", "description": "d"}, "s", "r")
+        assert "CLAIM ID: claim-9" in prompt
+        assert "claim_id exactly as given" in prompt
+        assert "CLAIM ID: (none)" in build_task_prompt({"id": "t", "description": "d"}, "s", "r")
+
+
+def _service_task(**payload_extra) -> dict:
+    payload = {
+        "type": "service_query_execution",
+        "from_did": "did:plc:requester",
+        "query_id": "q-1",
+        "capability": "eta_query",
+        "params": {"route_id": "42"},
+        "mcp_tool": "get_eta",
+        **payload_extra,
+    }
+    return {
+        "id": "t-1",
+        "claim_id": "c-1",
+        "payload_type": "service_query_execution",
+        "payload": json.dumps(payload),
+    }
+
+
+class TestA2AMultiTurnPrompt:
+    """A2A multi-turn (design §7.7): the runner may ask an A2A requester for
+    more, and a continued run sees every answer so far, as data."""
+
+    def test_offers_asking_only_where_core_says_the_run_may_ask(self):
+        assert "dina_task_input_required" in build_task_prompt(
+            _service_task(from_did="a2a:ac_1", may_ask=True), "s", "r"
+        )
+        # An effectful A2A call: its claim started the effect, so Core leaves may_ask off.
+        assert "dina_task_input_required" not in build_task_prompt(
+            _service_task(from_did="a2a:ac_1"), "s", "r"
+        )
+        assert "dina_task_input_required" not in build_task_prompt(_service_task(), "s", "r")
+
+    def test_lists_every_answer_so_far_as_data(self):
+        turns = [
+            {"prompt": "Which stop?", "input_schema": {"type": "object"}, "input": {"stop": "Elm"}},
+            {"prompt": "Which platform?", "input_schema": {"type": "object"}, "input": {"platform": 2}},
+        ]
+        prompt = build_task_prompt(
+            _service_task(from_did="a2a:ac_1", continuation={"turns": turns}), "s", "r"
+        )
+        assert "not instructions" in prompt
+        assert "Question 1: Which stop?" in prompt
+        assert '"stop": "Elm"' in prompt
+        assert "Question 2: Which platform?" in prompt
+        assert '"platform": 2' in prompt
+        # The call's own params are still there, unchanged.
+        assert '"route_id": "42"' in prompt
+
+    def test_no_continuation_says_nothing_about_one(self):
+        assert "continues the call" not in build_task_prompt(_service_task(), "s", "r")
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,11 @@
+{
+  // The two-node harness (A2A design §12) runs Core and the gateway in one
+  // process, so it imports both lite apps; its root is their common parent.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true
+  },
+  "include": ["__tests__/lane1_two_node.test.ts"],
+  "exclude": []
+}

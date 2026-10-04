@@ -12,7 +12,7 @@
  * read backends (Core HTTP). The caller doesn't need to know which.
  */
 
-import { getContact, getPeopleRepository, getVaultRepository } from '@dina/core';
+import { getContact, getItemsForPerson, getPeopleRepository, getVaultRepository } from '@dina/core';
 
 import { getContactReadBackend, getPeopleReadBackend, getVaultReadBackend } from './assembly';
 
@@ -59,9 +59,10 @@ async function fetchSubjectMemories(
   for (const persona of personas) {
     if (out.length >= limit) break;
     let texts: string[] = [];
-    const repo = getVaultRepository(persona);
-    if (repo !== null) {
-      texts = repo.getItemsForPersonSync(personId, limit).map(itemText);
+    if (getVaultRepository(persona) !== null) {
+      // Through Core's read function, the seam where a release into a
+      // conversation is logged (A2A §4.2 (b)), never the repository below it.
+      texts = getItemsForPerson(persona, personId, limit).map(itemText);
     } else if (vaultBackend?.vaultItemsForPerson !== undefined) {
       const items = await vaultBackend.vaultItemsForPerson(persona, personId, limit);
       texts = items.map((i) => itemText(i as { content_l0?: string; summary?: string }));

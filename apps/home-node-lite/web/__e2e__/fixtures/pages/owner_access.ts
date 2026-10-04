@@ -16,7 +16,10 @@ export async function connectAsOwner(page: Page, ownerKey: string): Promise<void
   await page.getByTestId('root-layout-menu-row-settings').click();
   await page.getByTestId('settings-row-owner-access').click();
   const connected = page.getByTestId('owner-access-connected');
-  if (await connected.isVisible().catch(() => false)) return;
+  if (await connected.isVisible().catch(() => false)) {
+    await page.getByTestId('tab-chat').click();
+    return;
+  }
   await page.getByTestId('owner-access-key').fill(ownerKey);
   const passphrase = process.env.DINA_E2E_OWNER_PASSPHRASE ?? '';
   if (passphrase !== '') await page.getByTestId('owner-access-passphrase').fill(passphrase);

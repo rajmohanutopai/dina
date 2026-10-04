@@ -248,8 +248,8 @@ Evidence:
   `@dina/home-node/service-runtime`.
 - Mobile boot still constructs the ask pipeline and coordinator directly in
   `boot_capabilities.ts`.
-- Mobile `bootstrap.ts` still constructs `ServiceHandler`,
-  `ServiceQueryOrchestrator`, `D2DDispatcher`, `WorkflowEventConsumer`,
+- Mobile `bootstrap.ts` still constructs (through the shared service runtime)
+  Core's `ServiceQueryIngress`, `ServiceQueryOrchestrator`, `D2DDispatcher`, `WorkflowEventConsumer`,
   `ApprovalReconciler`, and `LocalDelegationRunner` directly.
 
 Impact:
@@ -336,8 +336,8 @@ Evidence:
   ask/service slices when dependencies are supplied.
 - Brain server does not construct a full `HomeNodeRuntime`; `/readyz` still
   reports `status: 'not_ready'`, `runtime: 'fail'`, and a 503 response.
-- Service runtime is only composed when `options.serviceRuntime` is supplied to
-  `bootServer`; it is not a complete default server node boot.
+- Brain server composes no service runtime: inbound service queries arrive at
+  Core's relay and Core's ingress handles them (A2A plan §4.2a, 2026-10-03).
 
 Impact:
 

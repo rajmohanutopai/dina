@@ -9,7 +9,8 @@
 
 import { classifyTier } from '../guardian/density';
 import { scanResponse, stripViolations } from '../guardian/guard_scan';
-import { validateAgainstSchema } from '../service/capabilities/schema_validator';
+
+import { serviceSchemaError } from '@dina/core';
 
 import type { ReasoningOutputGuardInput, ReasoningOutputGuardResult } from '@dina/core';
 
@@ -165,7 +166,7 @@ export function createReasoningOutputGuard(): (
         ) {
           return { ok: false, error: 'service result is not an object' };
         }
-        const schemaError = validateAgainstSchema(body.result, request.responseSchema);
+        const schemaError = serviceSchemaError(body.result, request.responseSchema);
         if (schemaError !== null) {
           return {
             ok: false,
@@ -176,7 +177,7 @@ export function createReasoningOutputGuard(): (
         if (!cleaned.ok) {
           return { ok: false, error: 'service result was removed by output policy' };
         }
-        const cleanedSchemaError = validateAgainstSchema(cleaned.value, request.responseSchema);
+        const cleanedSchemaError = serviceSchemaError(cleaned.value, request.responseSchema);
         if (cleanedSchemaError !== null) {
           return {
             ok: false,

@@ -32,13 +32,9 @@
 
 import {
   AppViewClient,
-  EtaQueryParamsSchema,
-  EtaQueryResultSchema,
   PDSAccountClient,
   PDSPublisher,
-  computeSchemaHash,
   createGeminiEmbeddingProvider,
-  getCapability,
   makeTier1CapabilityRunner,
   executeToolSearch,
 } from '@dina/brain';
@@ -62,6 +58,10 @@ import {
   type ProviderName,
 } from '@dina/brain/runtime';
 import {
+  EtaQueryParamsSchema,
+  EtaQueryResultSchema,
+  capabilitySchemaHash,
+  getCapability,
   deriveDIDKey,
   getApprovalManager,
   getPublicKey,
@@ -266,7 +266,7 @@ function buildEnvServiceConfig(): ServiceConfig | undefined {
     const capabilityDef = getCapability('eta_query');
     const capabilityDescription =
       capabilityDef?.description ?? 'Query estimated time of arrival for a transit service.';
-    const schemaHash = computeSchemaHash({
+    const schemaHash = capabilitySchemaHash({
       params: EtaQueryParamsSchema,
       result: EtaQueryResultSchema,
       description: capabilityDescription,
@@ -919,8 +919,8 @@ async function tryBuildAgenticAsk(opts: {
       description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? '',
     }));
   const retrievalFetchers = {
-    async vaultSearch(persona: string, query: string) {
-      const items = await executeToolSearch(persona, query, 5);
+    async vaultSearch(persona: string, query: string, opts?: { releaseSession?: string }) {
+      const items = await executeToolSearch(persona, query, 5, opts?.releaseSession);
       return items.map((i) => ({
         id: i.id,
         content_l0: i.content_l0,

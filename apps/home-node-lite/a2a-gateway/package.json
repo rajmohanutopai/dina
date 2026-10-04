@@ -1,0 +1,35 @@
+{
+  "name": "@dina/home-node-lite-a2a-gateway",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Dina's A2A gateway (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1): the public door for outside A2A agents. Serves the signed Agent Card and the JSON-RPC endpoint, holds no durable state and no Core or Brain keys, and forwards each call to Core signed with its own service key.",
+  "license": "MIT",
+  "main": "src/main.ts",
+  "bin": {
+    "dina-home-node-lite-a2a-gateway": "./src/bin.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/bin.ts",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dina/a2a": "*",
+    "@dina/adapters-node": "*",
+    "@dina/core": "*",
+    "@dina/net-node": "*",
+    "fastify": "^5.8.5",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@dina/storage-node": "*",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^22",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "tsx": "^4.19.0"
+  }
+}

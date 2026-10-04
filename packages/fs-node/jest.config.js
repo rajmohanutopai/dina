@@ -1,5 +1,6 @@
 /** @type {import('jest').Config} */
 module.exports = {
+  ...require('../../jest.memory'),
   preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],

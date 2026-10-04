@@ -1,0 +1,23 @@
+{
+  "lexicon": 1,
+  "id": "com.dinakernel.a2a.fence",
+  "description": "Which server publishes this repository's agent card (docs/A2A_GATEWAY_ARCHITECTURE.md §8.2). Written at activation, never deleted.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["v", "domain", "did", "publisher_epoch", "publisher_instance", "sig"],
+        "properties": {
+          "v": { "type": "integer", "const": 1 },
+          "domain": { "type": "string", "const": "dina:a2a:fence:v1" },
+          "did": { "type": "string", "format": "did" },
+          "publisher_epoch": { "type": "integer", "minimum": 0 },
+          "publisher_instance": { "type": "string", "description": "A v4 UUID." },
+          "sig": { "type": "string", "description": "Base64 Ed25519 signature by #dina_signing over the RFC 8785 form without sig." }
+        }
+      }
+    }
+  }
+}

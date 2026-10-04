@@ -1207,6 +1207,82 @@ describe('§2.3 Bounded Queue', () => {
     }
   })
 
+  it('UT-BQ-003c: re-pointed at a socket while full, the queue holds it once it opens (pause() does nothing while connecting)', async () => {
+    const resolvers: Array<() => void> = []
+    const processFn = vi.fn(async () => {
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+    // ws semantics: pause() is a no-op unless the socket is OPEN (readyState 1).
+    function socket(readyState: number) {
+      const ws = { readyState, isPaused: false, pause: vi.fn(), resume: vi.fn() }
+      ws.pause.mockImplementation(() => {
+        if (ws.readyState === 1) ws.isPaused = true
+      })
+      ws.resume.mockImplementation(() => {
+        ws.isPaused = false
+      })
+      return ws
+    }
+    const queue = new BoundedIngestionQueue(processFn, { maxSize: 2, maxConcurrency: 1 })
+    const oldWs = socket(1)
+    queue.setWebSocket(oldWs as unknown as import('ws').default)
+    queue.push({ timestampUs: 1, data: null })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+    queue.push({ timestampUs: 2, data: null })
+    queue.push({ timestampUs: 3, data: null })
+    expect(queue.push({ timestampUs: 4, data: null })).toBe(false)
+    expect(oldWs.isPaused).toBe(true)
+    // A reconnect while still full, onto a socket still connecting: not marked paused (it could not be).
+    const newWs = socket(0)
+    queue.setWebSocket(newWs as unknown as import('ws').default)
+    expect(queue.isPaused).toBe(false)
+    expect(newWs.isPaused).toBe(false)
+    // It opens: held at once; the waiting items still hold the cursor.
+    newWs.readyState = 1
+    queue.holdIfFull()
+    expect(queue.isPaused).toBe(true)
+    expect(newWs.isPaused).toBe(true)
+    expect(queue.getSafeCursor()).toBe(1)
+    while (resolvers.length > 0 || queue.depth > 0) {
+      resolvers.shift()?.()
+      await new Promise((r) => setTimeout(r, 15))
+    }
+    // Drained below the low watermark: the new socket is resumed.
+    expect(newWs.isPaused).toBe(false)
+    const idleWs = socket(1)
+    queue.setWebSocket(idleWs as unknown as import('ws').default)
+    expect(idleWs.pause).not.toHaveBeenCalled()
+  })
+
+  it('UT-BQ-003b: a required item (an A2A card event) is never dropped: taken past capacity, held in the safe cursor', async () => {
+    const resolvers: Array<() => void> = []
+    const seen: number[] = []
+    const processFn = vi.fn(async (item: { timestampUs: number }) => {
+      seen.push(item.timestampUs)
+      await new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+    const maxSize = 3
+    const queue = new BoundedIngestionQueue(processFn, { maxSize, maxConcurrency: 1 })
+    const mockWs = { pause: vi.fn(), resume: vi.fn() }
+    queue.setWebSocket(mockWs as unknown as import('ws').default)
+    queue.push({ timestampUs: 100, data: null })
+    await vi.waitFor(() => expect(resolvers.length).toBe(1))
+    for (let i = 1; i <= maxSize; i++) queue.push({ timestampUs: 100 + i, data: null })
+    // Full: an ordinary item is dropped, a required one is taken, and the socket pauses either way.
+    expect(queue.push({ timestampUs: 200, data: null })).toBe(false)
+    expect(queue.push({ timestampUs: 50, data: null }, { required: true })).toBe(true)
+    expect(mockWs.pause).toHaveBeenCalled()
+    expect(queue.depth).toBe(maxSize + 1)
+    // Until it is processed, the cursor cannot move past it.
+    expect(queue.getSafeCursor()).toBe(50)
+    while (resolvers.length > 0 || queue.depth > 0) {
+      resolvers.shift()?.()
+      await new Promise((r) => setTimeout(r, 15))
+    }
+    expect(seen).toContain(50)
+    expect(seen).not.toContain(200)
+  })
+
   // TRACE: {"suite": "APPVIEW", "case": "0127", "section": "01", "sectionName": "General", "title": "UT-BQ-004: Fix 5: hysteresis \u2014 ws.resume() at 50%"}
   it('UT-BQ-004: Fix 5: hysteresis — ws.resume() at 50%', async () => {
     // Requirement: After backpressure pauses the WebSocket, it must only

@@ -6,11 +6,13 @@
  * Deliberately small — the manifest validator (§5 rule 4) already
  * bans `$ref` and caps depth, so the schema subset a plugin can pin is
  * a bounded, non-recursive shape. We validate exactly that subset:
- * type, properties, required, items, enum, and the numeric/string
- * bounds. Anything a schema DECLARES that this validator doesn't
- * understand is ignored (it can only make validation stricter upstream,
- * never a bypass), but an unknown top-level `type` fails closed — a
- * result we cannot check is a result we do not accept.
+ * type, properties, required, additionalProperties: false, items, enum,
+ * const, oneOf, pattern, and the numeric/string bounds (inclusive and
+ * exclusive). Anything else a schema declares is ignored here, and an
+ * unknown `type` fails closed. A caller that cannot afford an ignored
+ * constraint audits the schema first with `@dina/protocol`'s
+ * `pinnedSchemaProblems(schema, 'pinned_runtime')`, whose keyword set is
+ * exactly this validator's, and refuses any schema it flags.
  *
  * Pure. No ajv, no codegen — the point is a small auditable surface at
  * the trust boundary, not full JSON-Schema coverage.
@@ -35,6 +37,23 @@ function walk(value: unknown, schema: unknown, path: string): SchemaValidationRe
     return { ok: true };
   }
   const s = schema as Record<string, unknown>;
+
+  // const — exact structural equality.
+  if (Object.prototype.hasOwnProperty.call(s, 'const') && !deepEqual(s.const, value)) {
+    return fail(path, 'not equal to const');
+  }
+
+  // oneOf — exactly one subschema accepts the value. Zero is a mismatch;
+  // two is an ambiguity the schema author ruled out by choosing oneOf.
+  if (Array.isArray(s.oneOf)) {
+    let matches = 0;
+    for (const sub of s.oneOf) if (walk(value, sub, path).ok) matches += 1;
+    if (matches !== 1)
+      return fail(
+        path,
+        matches === 0 ? 'matches no oneOf branch' : 'matches several oneOf branches',
+      );
+  }
 
   // enum — exact membership by structural equality.
   if (Array.isArray(s.enum)) {
@@ -113,15 +132,49 @@ function walk(value: unknown, schema: unknown, path: string): SchemaValidationRe
     if (typeof s.maxLength === 'number' && codePoints > s.maxLength) {
       return fail(path, `longer than ${s.maxLength}`);
     }
+    // pattern — ECMA-262 with the `u` flag, so it matches code points as
+    // JSON Schema intends. Unanchored, as JSON Schema specifies. A pattern
+    // that does not compile fails closed.
+    if (Object.prototype.hasOwnProperty.call(s, 'pattern')) {
+      const re = compilePattern(s.pattern);
+      if (re === null) return fail(path, 'schema pattern does not compile');
+      if (!re.test(value)) return fail(path, 'does not match pattern');
+    }
   }
 
-  // number bounds.
+  // number bounds. The exclusive bounds take the numeric (draft-06+) form; a
+  // non-numeric value constrains nothing here and the schema audit refuses it.
   if (typeof value === 'number') {
     if (typeof s.minimum === 'number' && value < s.minimum) return fail(path, `< ${s.minimum}`);
     if (typeof s.maximum === 'number' && value > s.maximum) return fail(path, `> ${s.maximum}`);
+    if (typeof s.exclusiveMinimum === 'number' && value <= s.exclusiveMinimum) {
+      return fail(path, `<= ${s.exclusiveMinimum}`);
+    }
+    if (typeof s.exclusiveMaximum === 'number' && value >= s.exclusiveMaximum) {
+      return fail(path, `>= ${s.exclusiveMaximum}`);
+    }
   }
 
   return { ok: true };
+}
+
+const compiledPatterns = new Map<string, RegExp | null>();
+const MAX_COMPILED_PATTERNS = 256;
+
+/** A schema pattern compiled once; null when it is not a string or does not compile. */
+function compilePattern(pattern: unknown): RegExp | null {
+  if (typeof pattern !== 'string') return null;
+  const cached = compiledPatterns.get(pattern);
+  if (cached !== undefined) return cached;
+  let re: RegExp | null;
+  try {
+    re = new RegExp(pattern, 'u');
+  } catch {
+    re = null;
+  }
+  if (compiledPatterns.size >= MAX_COMPILED_PATTERNS) compiledPatterns.clear();
+  compiledPatterns.set(pattern, re);
+  return re;
 }
 
 function matchesType(value: unknown, type: string): boolean {

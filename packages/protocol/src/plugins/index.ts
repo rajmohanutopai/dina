@@ -40,7 +40,15 @@ export { normalizeStringSet, normalizePluginManifest, normalizePluginAdvisory } 
 
 export { hasUnsafeText } from './text_safety';
 
-export { validatePluginManifest, schemaDepth, hasRecursiveRef, findSecretFields } from './validate';
+export {
+  validatePluginManifest,
+  schemaDepth,
+  hasRecursiveRef,
+  findSecretFields,
+  pinnedSchemaProblems,
+  type SchemaEnforcementProfile,
+  type SchemaProblem,
+} from './validate';
 export type {
   PluginValidationError,
   PluginValidationOk,

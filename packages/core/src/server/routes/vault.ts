@@ -16,10 +16,11 @@ import {
   queryVault,
   getItem,
   getItemsForPerson,
-  listRecentItems,
+  listRecentPage,
   deleteItem,
 } from '../../vault/crud';
 import { isVaultOperationAllowed, type VaultOrigin } from '../../vault/origin_capability';
+import { parseReleaseSession, type ReleaseContext } from '../../vault/release';
 
 import type { GrantMode } from '../../agent/grant_repository';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
@@ -143,6 +144,25 @@ function agentGate(
   return null;
 }
 
+/**
+ * The release context a read asks for (A2A design §4.2 (b)): `release_session`
+ * names the conversation, and Core logs what it releases into it. Only Brain
+ * releases into conversations — through its service key on the server, or in
+ * process on the phone. Anyone else naming a session is refused rather than
+ * ignored: an agent's reads must never enter a conversation's read set.
+ */
+function releaseFor(req: CoreRequest, raw: unknown): ReleaseContext | CoreResponse | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const brain = req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  if (!brain) return { status: 403, body: { error: 'release_session_brain_only' } };
+  const sessionId = parseReleaseSession(raw);
+  if (sessionId === null) return { status: 400, body: { error: 'release_session_invalid' } };
+  return { sessionId, audience: 'brain' };
+}
+
+const isResponse = (v: ReleaseContext | CoreResponse | undefined): v is CoreResponse =>
+  v !== undefined && 'status' in v;
+
 export function registerVaultRoutes(router: CoreRouter): void {
   router.post('/v1/vault/query', async (req) => {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
@@ -154,9 +174,11 @@ export function registerVaultRoutes(router: CoreRouter): void {
 
     const gate = agentGate(req, persona, 'read', text);
     if (gate !== null) return gate;
+    const release = releaseFor(req, body.release_session);
+    if (isResponse(release)) return release;
 
     try {
-      const results = queryVault(persona, { mode, text, limit });
+      const results = queryVault(persona, { mode, text, limit }, release);
       return { status: 200, body: { items: results, count: results.length } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };
@@ -198,7 +220,9 @@ export function registerVaultRoutes(router: CoreRouter): void {
     const persona = req.query.persona ?? 'general';
     const gate = agentGate(req, persona, 'read', req.params.id ?? '');
     if (gate !== null) return gate;
-    const item = getItem(persona, req.params.id);
+    const release = releaseFor(req, req.query.release_session);
+    if (isResponse(release)) return release;
+    const item = getItem(persona, req.params.id, release);
     if (!item) return { status: 404, body: { error: 'Item not found' } };
     return { status: 200, body: item };
   });
@@ -219,9 +243,10 @@ export function registerVaultRoutes(router: CoreRouter): void {
     try {
       // Fetch one extra to report whether more pages exist without a
       // separate full count.
-      const window = listRecentItems(persona, offset + limit + 1, type);
-      const page = window.slice(offset, offset + limit);
-      return { status: 200, body: { items: page, count: page.length } };
+      const release = releaseFor(req, req.query.release_session);
+      if (isResponse(release)) return release;
+      const page = listRecentPage(persona, { offset, limit, ...(type !== undefined ? { type } : {}) }, release);
+      return { status: 200, body: { items: page.items, count: page.items.length } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };
     }
@@ -257,8 +282,10 @@ export function registerVaultRoutes(router: CoreRouter): void {
     if (personId === '') return { status: 400, body: { error: 'person_id is required' } };
     const gate = agentGate(req, persona, 'read', personId);
     if (gate !== null) return gate;
+    const release = releaseFor(req, req.query.release_session);
+    if (isResponse(release)) return release;
     try {
-      const results = getItemsForPerson(persona, personId, limit);
+      const results = getItemsForPerson(persona, personId, limit, release);
       return { status: 200, body: { items: results, count: results.length } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };

@@ -1220,8 +1220,8 @@ façade** — they are new work, not wrappers.
   `dina_invoke_service` sends a `service.query` D2D to the chosen provider (capability + params +
   `schema_hash`), the provider answers (Tier-1 own-Dina, or a paired agent daemon), and the typed
   result renders. The **provider publishes** the canonical `schema_hash` + freshness; the **requester
-  pins** that hash into every query (`service_query_orchestrator.ts:360`, validated
-  `service_handler.ts:664-699`), and a **requester-owned watch** must not poll faster than the
+  pins** that hash into every query (`service_query_orchestrator.ts:360`, validated by
+  `checkQuerySchemaHash` in `packages/core/src/service/query_ingress.ts`), and a **requester-owned watch** must not poll faster than the
   provider's declared freshness (`watch/service.ts:44`) (see `docs/PUSH_SERVICES_ARCHITECTURE.md`).
 - **Talk / D2D — a Core façade, not the generic send route (NEW-03).** Inbound D2D is already safe:
   bound to the relay-authenticated `from_did` (never the sender-signed inner body), replay-cached,

@@ -360,6 +360,51 @@ describe('PDSPublisher', () => {
     });
   });
 
+  describe('repository-head preconditions (A2A design §8.2)', () => {
+    const publisher = (fetchFn: ReturnType<typeof makeFetch>['fetchFn']) =>
+      new PDSPublisher({ pdsUrl: PDS, handle: HANDLE, password: PASSWORD, fetch: fetchFn });
+
+    it('reads the repository head', async () => {
+      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { cid: 'bafyhead', rev: '3l2abc' })]);
+      expect(await publisher(fetchFn).getLatestCommit()).toEqual({ cid: 'bafyhead', rev: '3l2abc' });
+      expect(calls[1].url).toBe(`${PDS}/xrpc/com.atproto.sync.getLatestCommit?did=${encodeURIComponent(DID)}`);
+    });
+
+    it.each([
+      ['a response without a cid', jsonResponse(200, { rev: 'r' })],
+      ['a refusal', jsonResponse(400, { error: 'RepoNotFound' })],
+    ])('fails closed on %s', async (_name, response) => {
+      const { fetchFn } = makeFetch([sessionOK(), response]);
+      await expect(publisher(fetchFn).getLatestCommit()).rejects.toBeInstanceOf(PDSPublisherError);
+    });
+
+    it('sends swapCommit on a put and on a delete, and reads a lost swap as casLost', async () => {
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { uri: 'at://d/c/self', cid: 'bafyrec' }),
+        jsonResponse(200, {}),
+        jsonResponse(400, { error: 'InvalidSwap', message: 'head moved' }),
+      ]);
+      const p = publisher(fetchFn);
+      await p.putRecord('com.dinakernel.a2a.card', 'self', { card: '{}' }, { swapCommit: 'bafyhead' });
+      expect(calls[1].body).toEqual(expect.objectContaining({ swapCommit: 'bafyhead' }));
+      expect('swapRecord' in (calls[1].body as object)).toBe(false);
+      await p.deleteRecord('com.dinakernel.a2a.card', 'self', { swapCommit: 'bafyhead', swapRecord: 'bafyrec' });
+      expect(calls[2].body).toEqual({
+        repo: DID,
+        collection: 'com.dinakernel.a2a.card',
+        rkey: 'self',
+        swapRecord: 'bafyrec',
+        swapCommit: 'bafyhead',
+      });
+      const lost = await p
+        .deleteRecord('com.dinakernel.a2a.card', 'self', { swapCommit: 'bafystale' })
+        .catch((e: unknown) => e);
+      expect(lost).toBeInstanceOf(PDSPublisherError);
+      expect((lost as PDSPublisherError).casLost).toBe(true);
+    });
+  });
+
   describe('deleteRecordIdempotent', () => {
     it('succeeds on 200', async () => {
       const { fetchFn } = makeFetch([sessionOK(), jsonResponse(200, {})]);

@@ -33,6 +33,7 @@ describe('core-server config (task 4.4/4.5)', () => {
         msgbox: { url: 'wss://test-mailbox.dinakernel.com/ws', enabled: true },
         cors: {},
         services: {},
+        a2a: {},
       });
     });
 
@@ -72,6 +73,7 @@ describe('core-server config (task 4.4/4.5)', () => {
         },
         cors: { allowOrigin: 'https://admin.example.com' },
         services: {},
+        a2a: {},
       });
     });
 
@@ -126,6 +128,27 @@ describe('core-server config (task 4.4/4.5)', () => {
           DINA_BRAIN_DID: 'did:plc:not-a-key-bound-service',
         }),
       ).toThrow(ConfigError);
+    });
+  });
+
+  describe('A2A Lane 2', () => {
+    const lane2 = { DINA_A2A_PUBLIC_URL: 'https://dina.example.org', DINA_A2A_GATEWAY_DID: 'did:key:z6MkGateway' };
+
+    it('takes the public origin and gateway DID together', () => {
+      expect(loadConfig({ ...minimalEnv(), ...lane2 }).a2a).toEqual({
+        publicOrigin: 'https://dina.example.org',
+        gatewayDid: 'did:key:z6MkGateway',
+      });
+    });
+
+    it.each([
+      ['an origin alone', { DINA_A2A_PUBLIC_URL: 'https://dina.example.org' }],
+      ['a gateway DID alone', { DINA_A2A_GATEWAY_DID: 'did:key:z6MkGateway' }],
+      ['an origin with a path', { ...lane2, DINA_A2A_PUBLIC_URL: 'https://dina.example.org/a2a' }],
+      ['plain http off loopback', { ...lane2, DINA_A2A_PUBLIC_URL: 'http://dina.example.org' }],
+      ['a gateway DID that is not a did:key', { ...lane2, DINA_A2A_GATEWAY_DID: 'did:plc:gateway' }],
+    ])('refuses %s', (_name, extra) => {
+      expect(() => loadConfig({ ...minimalEnv(), ...extra })).toThrow(ConfigError);
     });
   });
 

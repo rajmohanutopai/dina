@@ -220,7 +220,7 @@ function isSemVer(v: string): boolean {
 // would silently accept violating values. So a schema may only use the
 // keywords the validator actually enforces, plus harmless annotations —
 // anything else is rejected here rather than silently ignored downstream.
-const ENFORCED_SCHEMA_KEYWORDS = new Set([
+const ENFORCED_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
   'type',
   'properties',
   'required',
@@ -233,6 +233,36 @@ const ENFORCED_SCHEMA_KEYWORDS = new Set([
   'minimum',
   'maximum',
 ]);
+
+/**
+ * Which keyword set a schema is audited against.
+ *
+ * - `plugin_manifest`: the plugin wire contract above. A manifest may declare
+ *   only these keywords; widening the set changes what every conforming
+ *   implementation must accept, so it moves only with the protocol major.
+ * - `pinned_runtime`: everything Core's pinned validator
+ *   (`packages/core/src/plugins/schema_validate.ts`) enforces today, which
+ *   adds `const`, `oneOf`, `pattern` and the exclusive bounds. A2A uses it for
+ *   listing params schemas and skill-binding result schemas, where a keyword
+ *   the validator would skip must refuse the schema instead.
+ */
+export type SchemaEnforcementProfile = 'plugin_manifest' | 'pinned_runtime';
+
+const PINNED_RUNTIME_SCHEMA_KEYWORDS: ReadonlySet<string> = new Set([
+  ...ENFORCED_SCHEMA_KEYWORDS,
+  'const',
+  'oneOf',
+  'pattern',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+]);
+
+/** A pattern longer than this is refused: the validator compiles it on every check. */
+const MAX_SCHEMA_PATTERN_LENGTH = 512;
+
+function enforcedKeywordsFor(profile: SchemaEnforcementProfile): ReadonlySet<string> {
+  return profile === 'pinned_runtime' ? PINNED_RUNTIME_SCHEMA_KEYWORDS : ENFORCED_SCHEMA_KEYWORDS;
+}
 const ANNOTATION_SCHEMA_KEYWORDS = new Set([
   'title',
   'description',
@@ -260,7 +290,7 @@ const KNOWN_SCHEMA_TYPES = new Set([
   'null',
 ]);
 
-interface SchemaProblem {
+export interface SchemaProblem {
   readonly kind: 'unenforceable' | 'malformed';
   readonly path: string;
   readonly detail: string;
@@ -278,7 +308,12 @@ interface SchemaProblem {
  * Descends only the subschema containers the validator recognizes; a
  * `properties` value's own keys are property names, never keywords.
  */
-function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem[]): void {
+function collectSchemaProblems(
+  schema: unknown,
+  path: string,
+  out: SchemaProblem[],
+  enforced: ReadonlySet<string> = ENFORCED_SCHEMA_KEYWORDS,
+): void {
   // PLG-27 #10: cap the collector itself. The `err()` sink bounds the diagnostic
   // COUNT, but without a collector budget a wide/deep schema still accumulates
   // thousands of SchemaProblem entries (each carrying a full nested path) before
@@ -335,7 +370,7 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
       }
       continue;
     }
-    if (!ENFORCED_SCHEMA_KEYWORDS.has(key)) {
+    if (!enforced.has(key)) {
       out.push({ kind: 'unenforceable', path: at(key), detail: `"${key}" is not enforced` });
       continue;
     }
@@ -420,9 +455,36 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
         break;
       case 'minimum':
       case 'maximum':
+      case 'exclusiveMinimum':
+      case 'exclusiveMaximum':
+        // The draft-04 boolean form of the exclusive bounds is not the
+        // validator's form; only the numeric (draft-06+) form is.
         if (typeof v !== 'number' || !Number.isFinite(v))
           bad(at(key), `${key} must be a finite number`);
         break;
+      case 'pattern':
+        if (typeof v !== 'string' || v.length > MAX_SCHEMA_PATTERN_LENGTH) {
+          bad(
+            at(key),
+            `pattern must be a string of at most ${MAX_SCHEMA_PATTERN_LENGTH} characters`,
+          );
+        } else {
+          try {
+            new RegExp(v, 'u');
+          } catch {
+            bad(at(key), 'pattern is not a valid Unicode regular expression');
+          }
+        }
+        break;
+      case 'oneOf':
+        if (!Array.isArray(v) || v.length === 0 || v.length > PLUGIN_CAPS.MAX_ENUM_MEMBERS) {
+          bad(
+            at(key),
+            `oneOf must be a non-empty array of at most ${PLUGIN_CAPS.MAX_ENUM_MEMBERS} schemas`,
+          );
+        }
+        break;
+      // `const` holds any JSON value and is compared structurally.
     }
   }
   // Round-13 #22: cross-keyword bound consistency. Each bound's VALUE shape is
@@ -486,15 +548,51 @@ function collectSchemaProblems(schema: unknown, path: string, out: SchemaProblem
             'property name is empty/blank, too long, or has control/bidi/zero-width chars',
           );
         }
-        collectSchemaProblems(sub, `${at('properties')}.${name}`, out);
+        collectSchemaProblems(sub, `${at('properties')}.${name}`, out, enforced);
       }
     }
   }
   // Descend a SINGLE items schema only — tuple `items` arrays were flagged
   // unenforceable above and are not descended.
   if (owns('items') && !Array.isArray(s.items)) {
-    collectSchemaProblems(s.items, at('items'), out);
+    collectSchemaProblems(s.items, at('items'), out, enforced);
   }
+  // `oneOf` branches are subschemas only where `oneOf` is enforced; under the
+  // manifest profile the keyword itself was already flagged above.
+  if (enforced.has('oneOf') && Array.isArray(s.oneOf)) {
+    s.oneOf.forEach((sub, i) => {
+      if (out.length < PLUGIN_CAPS.MAX_SCHEMA_PROBLEMS) {
+        collectSchemaProblems(sub, `${at('oneOf')}[${i}]`, out, enforced);
+      }
+    });
+  }
+}
+
+/**
+ * Every reason `schema` cannot be enforced exactly under `profile`: keywords
+ * the validator would skip, enforced keywords with malformed values, `false`
+ * or `true` subschemas, unsatisfiable bound pairs, any `$ref`, and nesting
+ * deeper than `PLUGIN_CAPS.MAX_SCHEMA_DEPTH`. Empty means the validator
+ * enforces this schema as written.
+ */
+export function pinnedSchemaProblems(
+  schema: unknown,
+  profile: SchemaEnforcementProfile,
+): readonly SchemaProblem[] {
+  const out: SchemaProblem[] = [];
+  const depth = schemaDepth(schema, 0);
+  if (depth > PLUGIN_CAPS.MAX_SCHEMA_DEPTH) {
+    out.push({
+      kind: 'unenforceable',
+      path: '(schema)',
+      detail: `schema depth ${depth} exceeds ${PLUGIN_CAPS.MAX_SCHEMA_DEPTH}`,
+    });
+    return out;
+  }
+  // `$ref` is in neither profile's keyword set, so every reachable `$ref` is
+  // already reported by name; no separate recursion check is needed here.
+  collectSchemaProblems(schema, '', out, enforcedKeywordsFor(profile));
+  return out;
 }
 
 /**

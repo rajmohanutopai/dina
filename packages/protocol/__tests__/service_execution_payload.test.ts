@@ -11,6 +11,7 @@ import {
   buildServiceQueryExecutionPayload,
   parseServiceQueryExecutionPayload,
   parseServiceExecutionSchemaSnapshot,
+  parseServiceExecutionContinuation,
 } from '../src/types/service_execution';
 
 const SNAPSHOT = {
@@ -156,5 +157,41 @@ describe('parseServiceQueryExecutionPayload', () => {
       operator_approved: 'yes',
     };
     expect(parseServiceQueryExecutionPayload(wire)?.operator_approved).toBeUndefined();
+  });
+
+  describe('continuation (A2A multi-turn)', () => {
+    const TURN = { prompt: 'Which stop?', input_schema: { type: 'object' }, input: { stop: 'Elm' } };
+    const base = { from_did: 'a2a:ac_1', query_id: 'q', capability: 'eta_query', params: { route_id: '42' } };
+
+    it('round-trips every turn, and leaves the params as they were', () => {
+      const wire = buildServiceQueryExecutionPayload({ ...base, continuation: { turns: [TURN, { ...TURN, input: null }] } });
+      const parsed = parseServiceQueryExecutionPayload(JSON.parse(JSON.stringify(wire)));
+      expect(parsed?.continuation).toEqual({ turns: [TURN, { ...TURN, input: null }] });
+      expect(parsed?.params).toEqual({ route_id: '42' });
+    });
+
+    it('may_ask is true or absent, never a truthy coercion', () => {
+      expect(buildServiceQueryExecutionPayload({ ...base, may_ask: true }).may_ask).toBe(true);
+      expect('may_ask' in buildServiceQueryExecutionPayload({ ...base, may_ask: false })).toBe(false);
+      const wire = { type: SERVICE_QUERY_EXECUTION_TYPE, ...base, may_ask: 'yes' };
+      expect(parseServiceQueryExecutionPayload(wire)?.may_ask).toBeUndefined();
+      expect(parseServiceQueryExecutionPayload({ ...wire, may_ask: true })?.may_ask).toBe(true);
+    });
+
+    it('writes nothing for no turns', () => {
+      expect('continuation' in buildServiceQueryExecutionPayload(base)).toBe(false);
+      expect('continuation' in buildServiceQueryExecutionPayload({ ...base, continuation: { turns: [] } })).toBe(false);
+    });
+
+    it.each([
+      ['no turns', { turns: [] }],
+      ['turns that are not a list', { turns: TURN }],
+      ['a turn with no prompt', { turns: [{ ...TURN, prompt: 7 }] }],
+      ['a turn whose schema is a list', { turns: [{ ...TURN, input_schema: [] }] }],
+      ['a turn with no input member', { turns: [{ prompt: 'p', input_schema: {} }] }],
+      ['one good turn beside a bad one', { turns: [TURN, null] }],
+    ])('reads %s as no continuation', (_name, raw) => {
+      expect(parseServiceExecutionContinuation(raw)).toBeUndefined();
+    });
   });
 });

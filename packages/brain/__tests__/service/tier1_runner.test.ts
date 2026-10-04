@@ -5,7 +5,7 @@
  * fail-loud paths (no listing / no instruction).
  */
 
-import { AppointmentAvailabilityResultSchema } from '../../src/service/capabilities/appointment';
+import { AppointmentAvailabilityResultSchema } from '@dina/core';
 import { makeTier1CapabilityRunner } from '../../src/service/tier1_runner';
 
 import type { ChatOptions, ChatResponse, LLMProvider } from '../../src/llm/adapters/provider';
@@ -130,6 +130,25 @@ describe('makeTier1CapabilityRunner', () => {
       }),
     );
     expect(seenRkeys).toEqual(['branch-2']);
+  });
+
+  it('a task that names a listing it cannot read fails, and never runs for the default listing', async () => {
+    const { provider } = scriptedProvider([{ content: JSON.stringify(VALID), toolCalls: [] }]);
+    const seenRkeys: string[] = [];
+    const runner = makeTier1CapabilityRunner({
+      getLLM: () => provider,
+      nowMsFn: () => NOW,
+      readConfig: (rkey) => {
+        seenRkeys.push(rkey);
+        return salonConfig();
+      },
+    });
+    for (const serviceUri of ['at://did:plc:salon123/app.bsky.feed.post/branch-2', 'branch-2', 'at://did:plc:salon123/com.dinakernel.service.profile/..']) {
+      await expect(runner('appointment_availability', {}, task('t2b', { service_uri: serviceUri }))).rejects.toThrow(
+        /names a listing that is not a listing reference/,
+      );
+    }
+    expect(seenRkeys).toEqual([]);
   });
 
   it('resolves an ALIAS query against the canonical-keyed config', async () => {

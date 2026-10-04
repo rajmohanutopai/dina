@@ -28,6 +28,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import {
+  A2AGuardWorker,
+  buildA2AGuardLLMCall,
   AppViewClient,
   StagingDrainScheduler,
   buildRememberRuntime,
@@ -38,10 +40,12 @@ import {
   resetAskCommandHandler,
   setAccessiblePersonas,
   setAskCommandHandler,
+  setOwnerTurnRecorder,
   setContactReadBackend,
   setPeopleReadBackend,
   setReminderBackend,
   setVaultReadBackend,
+  vaultReadBackendFromCore,
 } from '@dina/brain';
 import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
@@ -63,12 +67,8 @@ import {
   wireChatRememberRuntime,
   type ChatRememberRuntimeHandle,
 } from '@dina/home-node/chat-runtime';
-import {
-  buildHomeNodeServiceRuntime,
-  type HomeNodeServiceRuntime,
-  type HomeNodeServiceRuntimeOptions,
-} from '@dina/home-node/service-runtime';
 
+import { CallerDirectory, registerCallerAuth } from './caller_auth';
 import { loadConfig, type BrainServerConfig } from './config';
 import { buildCoreClient, type CoreClientStatus } from './core_client';
 import { registerHostAllowlistGuard } from './host_guard';
@@ -108,9 +108,9 @@ const PERSONA_DESCRIPTIONS: Record<string, string> = {
 };
 
 /**
- * Loopback check for the bind-host guard. The brain HTTP surface is
- * unauthenticated localhost-only by design, so it must only bind to a
- * loopback interface unless an operator explicitly opts in.
+ * Loopback check for the bind-host guard. Every caller of the brain HTTP
+ * surface signs (caller_auth.ts), and it still binds to loopback only, as a
+ * second wall, unless an operator explicitly opts in.
  */
 function isLoopbackHost(host: string): boolean {
   const h = host.trim().toLowerCase();
@@ -131,7 +131,6 @@ export interface BrainServerDependencyStatus {
   core: CoreClientStatus;
   askRoutes: 'configured' | 'disabled';
   reminderRoutes: 'configured' | 'disabled';
-  serviceRuntime: 'configured' | 'disabled';
   stagingDrain: 'running' | 'disabled';
   /**
    * `'pending'` while `bootServer` is mid-flight (route handler also
@@ -150,7 +149,6 @@ export interface BrainServerSchedulers {
 
 export interface BrainServerCompositions {
   ask?: HomeNodeAskRuntime;
-  service?: HomeNodeServiceRuntime;
 }
 
 export interface BootedServer {
@@ -177,12 +175,6 @@ export interface BrainServerBootOptions {
    * Explicit `askCoordinator` wins when both are supplied.
    */
   askRuntime?: HomeNodeAskRuntimeOptions;
-  /**
-   * Server-resolved service runtime dependencies. When supplied with a
-   * configured Core client, boot composes the same shared Brain service
-   * primitives mobile uses. Omit to keep service handling explicitly disabled.
-   */
-  serviceRuntime?: HomeNodeServiceRuntimeOptions;
   /** Route prefix for ask routes. Defaults to /api/v1. */
   askRoutePrefix?: string;
   /** Test hook for the staging-drain cadence timer. Production uses Node globals. */
@@ -246,6 +238,7 @@ export async function bootServer(
   const configuredLLMRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
+  let a2aGuard: A2AGuardWorker | null = null;
   let chatRememberRuntime: ChatRememberRuntimeHandle | undefined;
   // Hoisted so both the staging drain (which builds rememberRuntime
   // from these descriptors) and the askRuntime path further down
@@ -258,7 +251,6 @@ export async function bootServer(
     core: coreResult.status,
     askRoutes: 'disabled',
     reminderRoutes: 'disabled',
-    serviceRuntime: 'disabled',
     stagingDrain: 'disabled',
     runtime: 'pending',
   };
@@ -269,13 +261,7 @@ export async function bootServer(
     // unset so it uses the in-process queryVault fast-path; lite must
     // route through `core.vaultQuery` because vault SQLite lives in
     // core-server's process.
-    setVaultReadBackend({
-      vaultQuery: (persona, query) => core.vaultQuery(persona, query),
-      vaultGet: (persona, itemId) => core.vaultGet(persona, itemId),
-      vaultList: (persona, opts) => core.vaultList(persona, opts),
-      vaultItemsForPerson: (persona, personId, limit) =>
-        core.vaultItemsForPerson(persona, personId, limit),
-    });
+    setVaultReadBackend(vaultReadBackendFromCore(core));
 
     // People-graph read backend — parallel to the vault backend. The
     // reasoning agent's `find_person` tool uses these handles to
@@ -442,11 +428,11 @@ export async function bootServer(
   // fastify_start (scaffold — full route binding in tasks 5.3 – 5.49).
   const app = Fastify({ logger: false }); // we manage our own logger
 
-  // Anti-DNS-rebinding Host allowlist (runs before every route). Guards the
-  // whole unauthenticated /api/v1/* surface — state-mutating routes (chat
-  // reset, remember, reminders) and owner-private reads (contacts,
-  // notifications) — from a browser tricked into treating an attacker
-  // hostname as 127.0.0.1. See host_guard.ts.
+  // Anti-DNS-rebinding Host allowlist (runs before every route). A wall
+  // beside the caller check below: it keeps the /api/v1/* surface —
+  // state-mutating routes (chat reset, remember, reminders) and owner-private
+  // reads (contacts, notifications) — from a browser tricked into treating
+  // an attacker hostname as 127.0.0.1. See host_guard.ts.
   registerHostAllowlistGuard(app);
 
   // WEB_OWNER_SURFACE_PLAN §3.4 — the Core-served web app reads Brain's
@@ -459,11 +445,23 @@ export async function bootServer(
   if (webOrigins.length > 0)
     logger.info({ origins: webOrigins }, 'brain-server CORS for the web app');
 
+  // Brain knows who is calling (caller_auth.ts; A2A design §4.1, plan §3.18):
+  // every request but the health probes is signed by Core or by an owner
+  // device, both learnt from Core. Registered before any route.
+  if (config.callers.auth === 'required') {
+    registerCallerAuth(app, {
+      directory: new CallerDirectory(coreResult.fetchCallers ?? (async () => null)),
+    });
+    logger.info('brain-server serves signed callers only (Core, owner devices)');
+  } else {
+    logger.warn('brain-server caller check is OFF (DINA_BRAIN_CALLER_AUTH=off, development only)');
+  }
+
   app.addHook('onClose', async () => {
+    await a2aGuard?.stop();
     schedulers.stagingDrain?.stop();
     await schedulers.reasoningBackend?.stop();
     chatRememberRuntime?.dispose();
-    await compositions.service?.dispose();
   });
   // Freshness stamp — the epoch ms this Brain process booted. Relay E2E
   // uses it to detect a dina-node running STALE code (started before the
@@ -474,30 +472,9 @@ export async function bootServer(
   app.get('/healthz', async () => ({ status: 'ok', role: 'brain', startedAt: brainStartedAt }));
   registerServiceSearchRoutes(app, { appView: clients.appView });
 
-  if (options.serviceRuntime !== undefined) {
-    if (clients.core === undefined) {
-      logger.warn(
-        { core: dependencyStatus.core },
-        'brain-server service runtime disabled because Core client is not configured',
-      );
-    } else {
-      const serviceSetInterval = options.serviceRuntime.setInterval ?? options.setInterval;
-      const serviceClearInterval = options.serviceRuntime.clearInterval ?? options.clearInterval;
-      compositions.service = buildHomeNodeServiceRuntime({
-        ...options.serviceRuntime,
-        core: clients.core,
-        appView: clients.appView,
-        ...(serviceSetInterval !== undefined ? { setInterval: serviceSetInterval } : {}),
-        ...(serviceClearInterval !== undefined ? { clearInterval: serviceClearInterval } : {}),
-        logger: (entry) => {
-          options.serviceRuntime?.logger?.(entry);
-          logger.info(entry, 'brain-server service');
-        },
-      });
-      dependencyStatus.serviceRuntime = 'configured';
-      logger.info('brain-server service runtime configured');
-    }
-  }
+  // No service runtime here: an inbound `service.query` arrives at Core's
+  // relay and Core's own ingress handles it (A2A plan §4.2a). Results for
+  // this Brain's chat come back through `/api/v1/chat/service-result`.
 
   const askRuntime = configuredLLMRuntime;
   let askCoordinator = options.askCoordinator;
@@ -520,11 +497,12 @@ export async function bootServer(
       const lookupPersonas = personaDescriptors;
       const liteCoreClient = clients.core;
       const retrievalFetchers = {
-        async vaultSearch(persona: string, query: string) {
+        async vaultSearch(persona: string, query: string, opts?: { releaseSession?: string }) {
           const result = await liteCoreClient.vaultQuery(persona, {
             mode: 'fts5',
             text: query,
             limit: 5,
+            ...(opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : {}),
           });
           return result.items.map((item) => ({
             id: String(item.id ?? ''),
@@ -557,6 +535,9 @@ export async function bootServer(
         // Owner shortcut for the vault persona guard — the SPA user is the
         // owner, so their /ask must never hit `approval_required` on vault_search.
         ownerDid,
+        // A2A Lane 1 runs on the server node: the loop may propose messages
+        // to remote agents the owner set up; Core mints the consent card.
+        a2aClient: liteCoreClient,
         // Default fastPathMs (3 s). Async overflow is no longer a
         // problem: the SPA's chat_transport.web.ts subscribes to
         // `/api/v1/chat/stream` (SSE) and reflects every server-side
@@ -568,6 +549,16 @@ export async function bootServer(
       });
       compositions.ask = ask;
       askCoordinator = ask.coordinator;
+      // A2A Lane 1 guard (design §6.5): scans held remote results through the
+      // same router (PII-scrubbed egress) and posts digest-bound verdicts. It
+      // exists only where a model is configured; without one, results stay
+      // held and Core tells the owner why.
+      a2aGuard = new A2AGuardWorker({
+        core: clients.core,
+        llm: buildA2AGuardLLMCall(ask.pipeline.router),
+        logger: (entry) => logger.info(entry, 'a2a guard'),
+      });
+      a2aGuard.start();
       logger.info(
         { providerName: askRuntime.providerName },
         'brain-server ask coordinator configured',
@@ -577,6 +568,7 @@ export async function bootServer(
   if (askCoordinator !== undefined) {
     registerAskRoutes(app, {
       coordinator: askCoordinator,
+      ownerDid,
       ...(options.askRoutePrefix !== undefined ? { prefix: options.askRoutePrefix } : {}),
     });
     dependencyStatus.askRoutes = 'configured';
@@ -594,9 +586,13 @@ export async function bootServer(
       requesterDid: ownerDid,
     });
     setAskCommandHandler(askCommandHandler.handler);
+    // A2A §4.2 (a): the owner's words are recorded in Core at turn start.
+    const turnCore = clients.core;
+    if (turnCore !== undefined) setOwnerTurnRecorder((input) => turnCore.recordOwnerTurn(input));
     app.addHook('onClose', async () => {
       askCommandHandler.dispose();
       resetAskCommandHandler();
+      setOwnerTurnRecorder(null);
     });
     logger.info('brain-server /ask command handler wired (agentic LLM)');
   }
@@ -608,8 +604,14 @@ export async function bootServer(
   //
   // `/dev` UI is opt-in via `DINA_BRAIN_DEV_UI=1` so production
   // operators don't accidentally expose it to the public listener.
+  // The `/dev` page cannot sign, so it is served only with the caller check
+  // off (a development node).
+  const devUIRequested = process.env.DINA_BRAIN_DEV_UI === '1';
+  if (devUIRequested && config.callers.auth === 'required') {
+    logger.warn('brain-server /dev needs DINA_BRAIN_CALLER_AUTH=off (it cannot sign); not served');
+  }
   registerChatRoutes(app, {
-    exposeDevUI: process.env.DINA_BRAIN_DEV_UI === '1',
+    exposeDevUI: devUIRequested && config.callers.auth === 'off',
   });
 
   // Tier-1 capability execution endpoint. The lite Core's reserved
@@ -633,8 +635,8 @@ export async function bootServer(
   if (clients.core !== undefined) {
     // The approval inbox is NOT here: owner decisions need owner authority,
     // so the web inbox reads and decides at Core as the owner device
-    // (WEB_OWNER_SURFACE_PLAN §3.5). Brain, unauthenticated by design, keeps
-    // no door that approves, cancels or answers a card.
+    // (WEB_OWNER_SURFACE_PLAN §3.5). Brain keeps no door that approves,
+    // cancels or answers a card.
 
     // GROUP_COORDINATION §9 — the plan card's READ path on the web thin
     // client, through Brain's own two doors (read a plan, list handles).
@@ -732,8 +734,6 @@ export async function bootServer(
       core: dependencyStatus.core === 'configured' ? ('ok' as const) : ('fail' as const),
       askRoutes:
         dependencyStatus.askRoutes === 'configured' ? ('ok' as const) : ('disabled' as const),
-      serviceRuntime:
-        dependencyStatus.serviceRuntime === 'configured' ? ('ok' as const) : ('disabled' as const),
       stagingDrain:
         dependencyStatus.stagingDrain === 'running' ? ('ok' as const) : ('disabled' as const),
       runtime: dependencyStatus.runtime === 'ok' ? ('ok' as const) : ('fail' as const),
@@ -750,19 +750,19 @@ export async function bootServer(
     });
   });
 
-  // SECURITY: the brain HTTP surface (api / chat / ask / reminder) is
-  // UNAUTHENTICATED — a localhost-only analyst API by design (mobile drives it
-  // in-process; the web app, served by Core, calls it cross-origin from the
-  // listed web origins only). Binding it to a non-loopback
-  // interface would expose vault-write paths (e.g. /remember) + the LLM to the
-  // network with no auth. Fail closed: refuse a non-loopback bind unless an
+  // SECURITY: the brain HTTP surface (api / chat / ask / reminder) is a
+  // localhost-only analyst API (mobile drives it in-process; the web app,
+  // served by Core, calls it cross-origin from the listed web origins only).
+  // Every caller signs (caller_auth.ts), but binding it to a non-loopback
+  // interface would still put vault-write paths (e.g. /remember) and the LLM
+  // in front of the network, one wall from a stolen owner-device key. Fail closed: refuse a non-loopback bind unless an
   // operator explicitly opts in (e.g. a trusted authenticating reverse proxy
   // fronts it). The default host is 127.0.0.1, so normal deployments are
   // unaffected.
   if (!isLoopbackHost(config.network.host) && process.env.DINA_BRAIN_ALLOW_NONLOOPBACK !== '1') {
     throw new Error(
       `brain-server refuses to bind to non-loopback host "${config.network.host}": its HTTP API is ` +
-        `unauthenticated and localhost-only by design. Front it with an authenticating proxy and set ` +
+        `meant for loopback (vault-write paths and the LLM sit behind it). Front it with an authenticating proxy and set ` +
         `DINA_BRAIN_ALLOW_NONLOOPBACK=1 to override.`,
     );
   }
@@ -816,7 +816,6 @@ export async function bootServer(
       'internal Brain reasoning worker started',
     );
   }
-  compositions.service?.start();
   // Boot finished — `/readyz` now reflects "runtime ok" rather than
   // "pending". The overall ready/not-ready code still depends on Core,
   // so a Core-less boot stays 503 (with runtime: 'ok', core: 'fail').

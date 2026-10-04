@@ -1,3 +1,4 @@
+import { A2A_CARD_COLLECTION } from '@dina/a2a'
 import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID } from '@dina/commerce-protocol'
 
 /**
@@ -38,6 +39,16 @@ export const TRUST_COLLECTIONS = [
 ] as const
 
 export type TrustCollection = typeof TRUST_COLLECTIONS[number]
+
+/**
+ * Collections the A2A directory indexes (design §8.3). Not trust records:
+ * they go around `trust_v1_enabled` and the trust pipeline entirely, to the
+ * directory's own spool (`ingester/a2a-directory.ts`).
+ */
+export const A2A_COLLECTIONS = [A2A_CARD_COLLECTION] as const
+
+/** The Jetstream subscription: every collection anything here ingests. */
+export const JETSTREAM_COLLECTIONS: readonly string[] = [...TRUST_COLLECTIONS, ...A2A_COLLECTIONS]
 
 /** Map from short record type name to full collection NSID */
 export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {

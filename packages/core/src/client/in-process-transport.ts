@@ -28,7 +28,16 @@ import { base64 } from '@scure/base';
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 
-
+import {
+  a2aDelegateBody,
+  a2aGuardVerdictBody,
+  ownerTurnBody,
+  parseA2AAgentsResponse,
+  parseA2ASelfResponse,
+  parseA2ADelegateResponse,
+  parseA2AGuardVerdictResponse,
+  parseOwnerTurnResponse,
+} from './a2a_wire';
 import {
   parseInvokePluginToolResponse,
   parseOpenGroupPlanResponse,
@@ -38,6 +47,14 @@ import {
 import { CoreHttpError } from './http-transport';
 
 import type {
+  A2ACallableAgent,
+  A2ADelegateInput,
+  A2ADelegateResult,
+  A2AGuardVerdictInput,
+  A2AGuardVerdictResult,
+  OwnerTurnInput,
+  A2AGuardWork,
+  A2AOperationStatus,
   ApproveWorkflowTaskOptions,
   InvokePluginToolInput,
   InvokePluginToolResult,
@@ -54,6 +71,7 @@ import type {
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
+  VaultReleaseOptions,
   VaultListResult,
   VaultDeleteResult,
   SignResult,
@@ -126,6 +144,11 @@ import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
  * The Fastify HTTP adapter strips this flag on inbound HTTP requests
  * so external callers cannot forge in-process trust.
  */
+/** The release session as a query parameter, when the read names one. */
+function releaseQuery(opts: VaultReleaseOptions | undefined): Record<string, string> {
+  return opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {};
+}
+
 function blankRequest(overrides: Partial<CoreRequest>): CoreRequest {
   return {
     method: 'GET',
@@ -221,6 +244,7 @@ export class InProcessTransport implements CoreClient {
     if (query.limit !== undefined) body.limit = query.limit;
     if (query.embedding !== undefined) body.embedding = query.embedding;
     if (query.type !== undefined) body.type = query.type;
+    if (query.releaseSession !== undefined) body.release_session = query.releaseSession;
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
@@ -232,12 +256,12 @@ export class InProcessTransport implements CoreClient {
     return expectOk<VaultQueryResult>(res, `vaultQuery(persona=${persona})`);
   }
 
-  async vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null> {
+  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
     const res = await this.router.handle(
       blankRequest({
         method: 'GET',
         path: `/v1/vault/item/${encodeURIComponent(itemId)}`,
-        query: { persona },
+        query: { persona, ...releaseQuery(opts) },
       }),
     );
     if (res.status === 404) return null;
@@ -248,12 +272,13 @@ export class InProcessTransport implements CoreClient {
     persona: string,
     personId: string,
     limit: number,
+    opts?: VaultReleaseOptions,
   ): Promise<VaultQueryItem[]> {
     const res = await this.router.handle(
       blankRequest({
         method: 'GET',
         path: '/v1/vault/subjects',
-        query: { persona, person_id: personId, limit: String(limit) },
+        query: { persona, person_id: personId, limit: String(limit), ...releaseQuery(opts) },
       }),
     );
     const ok = expectOk<{ items?: VaultQueryItem[] }>(
@@ -285,6 +310,7 @@ export class InProcessTransport implements CoreClient {
           ...(opts?.limit !== undefined ? { limit: String(opts.limit) } : {}),
           ...(opts?.offset !== undefined ? { offset: String(opts.offset) } : {}),
           ...(opts?.type !== undefined ? { type: opts.type } : {}),
+          ...releaseQuery(opts),
         },
       }),
     );
@@ -813,6 +839,50 @@ export class InProcessTransport implements CoreClient {
       blankRequest({ method: 'POST', path: '/v1/plugins/tool-invoke', body }),
     );
     return parseInvokePluginToolResponse(res.status, res.body);
+  }
+
+  async listA2AAgents(): Promise<A2ACallableAgent[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/a2a/agents' }));
+    // 503 = Lane 1 not installed (the phone in M1a): nothing to propose to.
+    return res.status === 200 ? parseA2AAgentsResponse(res.body) : [];
+  }
+
+  async a2aSelfDid(): Promise<string | null> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/a2a/self' }));
+    return parseA2ASelfResponse(res.status, res.body);
+  }
+
+  async delegateToA2AAgent(input: A2ADelegateInput): Promise<A2ADelegateResult> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/a2a/delegate', body: a2aDelegateBody(input) }),
+    );
+    return parseA2ADelegateResponse(res.status, res.body);
+  }
+
+  async getA2AOperation(operationId: string): Promise<A2AOperationStatus | null> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: `/v1/a2a/operations/${encodeURIComponent(operationId)}` }),
+    );
+    if (res.status === 404) return null;
+    return expectOk<A2AOperationStatus>(res, 'getA2AOperation()');
+  }
+
+  async claimA2AGuardJob(): Promise<A2AGuardWork | null> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/a2a/guard/next', body: {} }));
+    if (res.status === 204) return null;
+    return expectOk<A2AGuardWork>(res, 'claimA2AGuardJob()');
+  }
+
+  async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/a2a/guard/verdict', body: a2aGuardVerdictBody(input) }),
+    );
+    return parseA2AGuardVerdictResponse(res.status, res.body);
+  }
+
+  async recordOwnerTurn(input: OwnerTurnInput): Promise<boolean> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/a2a/turns', body: ownerTurnBody(input) }));
+    return parseOwnerTurnResponse(res.status, res.body);
   }
 
   async openGroupPlan(input: OpenGroupPlanClientInput): Promise<OpenGroupPlanClientResult> {

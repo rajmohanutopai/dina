@@ -26,11 +26,16 @@ import {
   resolveCatalogCapability,
 } from '@dina/protocol';
 
+import {
+  findCapabilityConfig,
+  getCapability,
+  lookupPublishedSchema,
+  snapshotForCapability,
+} from '@dina/core';
+
 import { answerCacheKey, getTier1AnswerCache, type Tier1AnswerCache } from './answer_cache';
-import { getCapability } from './capabilities/registry';
 import { getVaultFactBuilder } from './capabilities/vault_facts';
 import { buildCapabilityRuntime, type CapabilityRuntimeOptions } from './capability_runtime';
-import { findCapabilityConfig, lookupPublishedSchema, snapshotForCapability } from './service_handler';
 
 import type { LocalCapabilityRunner, WorkflowTask } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
@@ -78,9 +83,13 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
       throw new Error(`tier1_runner: task ${task.id} payload is not a service_query_execution`);
     }
 
+    // No listing named is the default one; a listing named but unreadable
+    // fails the run, never answers for another listing.
     const serviceUri = payload.service_uri ?? '';
-    const rkey =
-      serviceUri !== '' ? (parseServiceListingUri(serviceUri)?.rkey ?? DEFAULT_RKEY) : DEFAULT_RKEY;
+    const rkey = serviceUri === '' ? DEFAULT_RKEY : parseServiceListingUri(serviceUri)?.rkey;
+    if (rkey === undefined) {
+      throw new Error(`tier1_runner: task ${task.id} names a listing that is not a listing reference`);
+    }
     const config = options.readConfig(rkey);
     const cap = findCapabilityConfig(config, capability);
     if (cap === null) {

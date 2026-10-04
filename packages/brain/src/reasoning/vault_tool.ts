@@ -21,7 +21,7 @@
  * (same guarantee the pre-assembly path gives).
  */
 
-import { getItem, listRecentItems , listPersonas } from '@dina/core';
+import { getItem, listRecentItems, listPersonas, type ReleaseContext } from '@dina/core';
 
 import {
   executeToolSearch,
@@ -56,7 +56,7 @@ import { ApprovalRequiredError, type AgentTool } from './tool_registry';
  */
 export type VaultPersonaGuard = (persona: string) => Promise<string | null> | string | null;
 
-export interface VaultSearchToolOptions {
+export interface VaultSearchToolOptions extends VaultReleaseScope {
   /** Upper limit on how many rows one call can return. */
   maxResults?: number;
   /** Optional pluggable gate — see `VaultPersonaGuard` docstring. */
@@ -80,12 +80,49 @@ export interface VaultSearchToolOptions {
   allowedPersonas?: () => readonly string[] | null;
 }
 
-export interface VaultBrowseToolOptions {
+export interface VaultBrowseToolOptions extends VaultReleaseScope {
   personaGuard?: VaultPersonaGuard;
 }
 
-export interface VaultGetFullContentToolOptions {
+export interface VaultGetFullContentToolOptions extends VaultReleaseScope {
   personaGuard?: VaultPersonaGuard;
+}
+
+/**
+ * The conversation a tool's reads go into. Every read names it, so Core logs
+ * what it released into that conversation (A2A design §4.2 (b)); a tool
+ * built without one logs nothing.
+ */
+export interface VaultReleaseScope {
+  releaseSession?: string;
+}
+
+type VaultItem = ReturnType<typeof listRecentItems>[number];
+
+function releaseOf(releaseSession: string | undefined): ReleaseContext | undefined {
+  return releaseSession !== undefined
+    ? { sessionId: releaseSession, audience: 'brain' }
+    : undefined;
+}
+
+/**
+ * A persona's newest items: through Core's HTTP surface on the server (Brain
+ * holds no vault there), in process on the phone.
+ */
+async function recentItemsFor(
+  persona: string,
+  limit: number,
+  releaseSession: string | undefined,
+): Promise<VaultItem[]> {
+  const backend = getVaultReadBackend();
+  if (backend !== null && backend.vaultList !== undefined) {
+    const res = await backend.vaultList(persona, {
+      limit,
+      ...(releaseSession !== undefined ? { releaseSession } : {}),
+    });
+    return res.items as VaultItem[];
+  }
+  return listRecentItems(persona, limit, undefined, releaseOf(releaseSession));
 }
 
 /**
@@ -189,9 +226,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       const limit = requestedLimit !== undefined ? Math.min(requestedLimit, cap) : cap;
 
       const namedPersona =
-        typeof args.persona === 'string' && args.persona.trim() !== ''
-          ? args.persona.trim()
-          : null;
+        typeof args.persona === 'string' && args.persona.trim() !== '' ? args.persona.trim() : null;
 
       // Single-persona path — LLM explicitly named one. Run the
       // pluggable guard FIRST so a sensitive/locked persona can bail
@@ -215,7 +250,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
         }
         await checkPersonaGuard(personaGuard, namedPersona);
         const accessible = getAccessiblePersonas().includes(namedPersona);
-        const rows = await executeToolSearch(namedPersona, query, limit);
+        const rows = await executeToolSearch(namedPersona, query, limit, options.releaseSession);
         return {
           persona: namedPersona,
           personas_searched: [namedPersona],
@@ -292,7 +327,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       //     proceeds over everything the registry has open.
       //   - For an agent bailing on a fresh approval, we never reach this point.
       for (const persona of accessiblePersonas) {
-        const rows = await executeToolSearch(persona, query, limit);
+        const rows = await executeToolSearch(persona, query, limit, options.releaseSession);
         merged.push(...rows);
       }
       merged.sort((a, b) => b.score - a.score);
@@ -323,7 +358,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
  * than throwing — the LLM is told to skip them silently per the
  * `VAULT_CONTEXT` prompt.
  */
-export function createListPersonasTool(): AgentTool {
+export function createListPersonasTool(options: VaultReleaseScope = {}): AgentTool {
   return {
     name: 'list_personas',
     description:
@@ -372,7 +407,7 @@ export function createListPersonasTool(): AgentTool {
           // `core.search_vault(persona, query="")` semantics via the
           // timestamp-DESC helper. Capped at BROWSE_LIMIT so a huge
           // vault doesn't blow the prompt.
-          const items = listRecentItems(p.name, BROWSE_LIMIT);
+          const items = await recentItemsFor(p.name, BROWSE_LIMIT, options.releaseSession);
           entry.item_count = items.length;
           const types = new Set<string>();
           const summaries: string[] = [];
@@ -429,8 +464,7 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
       items: Record<string, string>[];
       note?: string;
     }> {
-      const persona =
-        typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
+      const persona = typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
       if (persona === '') throw new Error('browse_vault: persona is required');
 
       // Pluggable gate — sensitive/locked personas bail the loop with
@@ -448,7 +482,7 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
 
       let rawItems;
       try {
-        rawItems = listRecentItems(persona, BROWSE_LIMIT);
+        rawItems = await recentItemsFor(persona, BROWSE_LIMIT, options.releaseSession);
       } catch {
         return { persona, items: [] };
       }
@@ -488,9 +522,7 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
  * you need the complete original document") keeps this off the hot
  * path — it's a fetch-by-id, not a search.
  */
-export function createGetFullContentTool(
-  options: VaultGetFullContentToolOptions = {},
-): AgentTool {
+export function createGetFullContentTool(options: VaultGetFullContentToolOptions = {}): AgentTool {
   const personaGuard = options.personaGuard;
   return {
     name: 'get_full_content',
@@ -524,10 +556,8 @@ export function createGetFullContentTool(
           content_l1?: string;
         }
     > {
-      const persona =
-        typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
-      const itemId =
-        typeof args.item_id === 'string' && args.item_id !== '' ? args.item_id : '';
+      const persona = typeof args.persona === 'string' && args.persona !== '' ? args.persona : '';
+      const itemId = typeof args.item_id === 'string' && args.item_id !== '' ? args.item_id : '';
       if (persona === '' || itemId === '') {
         return { error: 'persona and item_id are required' };
       }
@@ -543,8 +573,14 @@ export function createGetFullContentTool(
       const backend = getVaultReadBackend();
       const item =
         backend !== null && backend.vaultGet !== undefined
-          ? ((await backend.vaultGet(persona, itemId)) as Awaited<ReturnType<typeof getItem>>)
-          : getItem(persona, itemId);
+          ? ((await backend.vaultGet(
+              persona,
+              itemId,
+              options.releaseSession !== undefined
+                ? { releaseSession: options.releaseSession }
+                : undefined,
+            )) as Awaited<ReturnType<typeof getItem>>)
+          : getItem(persona, itemId, releaseOf(options.releaseSession));
       if (item === null) return { error: `Item ${itemId} not found in ${persona}` };
 
       return {

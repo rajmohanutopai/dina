@@ -16,6 +16,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { releaseSessionId } from '../a2a/conversation';
 import { CoreHttpError } from '../errors';
 import { reason } from '../pipeline/chat_reasoning';
 import { listRemindersByPersonaRouted } from '../reminders/backend';
@@ -159,13 +160,19 @@ export async function handleChat(
   // storing it would leave a blank user bubble above the lane prompt (P3). Skip
   // the write in that case — the handler's lane-specific prompt is the only
   // user-facing reply for a bare command.
+  let ownerWords = '';
   if (parsed.explicit && COMPOSER_MODE_INTENTS.has(parsed.intent)) {
     if (parsed.payload.trim() !== '') {
       addUserMessage(thread, parsed.payload, { mode: parsed.intent });
+      ownerWords = parsed.payload;
     }
   } else {
     addUserMessage(thread, text);
+    ownerWords = text;
   }
+  // A2A §4.2 (a): Core records the owner's words now, before any model sees
+  // the turn, so nothing a model writes later can pass as the owner's.
+  if (ownerWords.trim() !== '') await recordOwnerTurn(thread, ownerWords);
 
   let typed: BotResponse;
   let sources: string[] = [];
@@ -663,6 +670,33 @@ export type AskCommandHandler = (
    */
   missingCapabilities?: MissingCapabilityNotice[];
 }>;
+
+/** Records the owner's words in Core at the start of a chat turn; installed by each host. */
+export type OwnerTurnRecorder = (input: { releaseSession: string; turnId: string; text: string }) => Promise<boolean>;
+
+let ownerTurnRecorder: OwnerTurnRecorder | null = null;
+
+export function setOwnerTurnRecorder(recorder: OwnerTurnRecorder | null): void {
+  ownerTurnRecorder = recorder;
+}
+
+/**
+ * Best effort: a turn Core could not record only means no span of it can be
+ * proved to be the owner's (it stays unverified), so chat goes on. Logs no
+ * text.
+ */
+async function recordOwnerTurn(thread: string, text: string): Promise<void> {
+  if (ownerTurnRecorder === null) return;
+  try {
+    await ownerTurnRecorder({
+      releaseSession: releaseSessionId('chat', thread),
+      turnId: `turn-${bytesToHex(randomBytes(12))}`,
+      text,
+    });
+  } catch {
+    /* unrecorded: the turn's words stay unprovable */
+  }
+}
 
 let askHandler: AskCommandHandler | null = null;
 

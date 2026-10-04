@@ -66,6 +66,9 @@ describe('11.1 Schema Correctness', () => {
       'commerce_relationship_claims', 'catalog_snapshots',
       // Moderation + redaction bookkeeping.
       'admin_audit_log', 'did_redactions',
+      // The A2A directory (design §8.3): cards, the moderator's gate, account
+      // status, the event spool, and the readiness row serving reads.
+      'a2a_cards', 'a2a_card_takedowns', 'a2a_account_status', 'a2a_event_spool', 'a2a_directory_state',
     ]
 
     const result = await db.execute(sql`

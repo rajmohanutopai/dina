@@ -27,7 +27,9 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { isA2ALane } from '@dina/a2a';
 import { LOCAL_RUNNER_NAME, isPluginLane } from '@dina/protocol';
+
 
 import { recordDecisionSafe } from '../plugins/decisions';
 import {
@@ -37,6 +39,7 @@ import {
   type ReasoningSensitivity,
   type ReasoningTaskKind,
 } from '../reasoning/domain';
+import { isReservedLane, reservedLaneSql } from '../service/reserved_lanes';
 
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
 import {
@@ -333,6 +336,16 @@ export interface WorkflowRepository {
   ): boolean;
 
   /**
+   * A2A multi-turn (docs/A2A_GATEWAY_ARCHITECTURE.md §7.7): park a running
+   * task that is waiting for its requester's answer. Only the claim holder
+   * may (`agentDID`, and `claimId` when given); the task moves `running →
+   * awaiting`, its lease cleared (an awaiting task has no executor) and its
+   * expiry set to `expiresAtSec`, after which the expiry sweep fails it.
+   * Returns whether the task moved.
+   */
+  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean;
+
+  /**
    * Revert tasks whose lease expired (agent died mid-execution) back to
    * `queued` for re-claim. Uses the `running → queued` transition and
    * clears `agent_did` + `lease_expires_at`. Appends a `lease_expired`
@@ -478,9 +491,30 @@ export interface WorkflowRepository {
    * the create() path or starve other observers.
    */
   subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void;
+
+  /**
+   * The one observer of tasks a lapsed lease returns to the queue
+   * (`expireLeasedTasks`), told inside the transaction that moved each one,
+   * so what it writes commits with the move. One slot, replaced by the
+   * next call (null clears it): a host that swaps its workflow service
+   * moves the observer with it, and none is left behind. An observer that
+   * throws is isolated; the requeue stands.
+   */
+  observeRequeues(observer: RequeueObserver | null): void;
 }
 
 export type ApprovalCreatedListener = (task: WorkflowTask) => void;
+export type RequeueObserver = (task: WorkflowTask) => void;
+
+/** Tell the requeue observer, if any; its throw is its own. */
+function tellRequeued(observer: RequeueObserver | null, task: WorkflowTask): void {
+  if (observer === null) return;
+  try {
+    observer({ ...task });
+  } catch {
+    /* isolated: an observer must not undo or block a requeue */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Global repository accessor (follows the existing `reminders/repository.ts`
@@ -611,8 +645,30 @@ const EVENT_COLUMNS = `
 
 export class SQLiteWorkflowRepository implements WorkflowRepository {
   private readonly approvalListeners = new Set<ApprovalCreatedListener>();
+  private requeueObserver: RequeueObserver | null = null;
 
   constructor(private readonly db: DatabaseAdapter) {}
+
+  /**
+   * The connection this repository writes through. A feature whose rows must
+   * commit together with workflow rows (A2A Lane 1) checks it shares this
+   * connection: only one connection can make both writes one transaction.
+   */
+  get adapter(): DatabaseAdapter {
+    return this.db;
+  }
+
+  /**
+   * Delete tasks outright; their events and other dependent rows go with
+   * them (ON DELETE CASCADE). Only for a caller that owns the tasks' whole
+   * life: A2A's purge of an ended operation's consent card and dispatch
+   * child, whose payloads carry the approved message. Returns rows deleted.
+   */
+  deleteTasks(ids: readonly string[]): number {
+    let deleted = 0;
+    for (const id of ids) deleted += this.db.run('DELETE FROM workflow_tasks WHERE id = ?', [id]);
+    return deleted;
+  }
 
   create(task: WorkflowTask): void {
     // Convention: unset idempotency_key stored as NULL so the partial
@@ -666,6 +722,10 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       throw classifyConflict(err, task, idemKey !== null);
     }
     fanOutApprovalCreated(this.approvalListeners, task);
+  }
+
+  observeRequeues(observer: RequeueObserver | null): void {
+    this.requeueObserver = observer;
   }
 
   subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void {
@@ -1007,14 +1067,23 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // the reserved dina.local lane: the back-compat "named filter also
       // takes untagged tasks" clause is exactly how a plugin would claim
       // generic agent work (PLUGIN_ARCHITECTURE.md §9.1 launch gate).
-      const exactOnly = runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter);
+      // A2A dispatch lanes (`a2a:<remote_agent_id>`) are reserved the same
+      // way (A2A design §6.3): only the host's in-process runner claims one.
+      const exactOnly =
+        runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter) || isA2ALane(runnerFilter);
+      // An inbound A2A child pinned to a runner (A2A design §7.3) is
+      // claimable by that runner only: a claim by anyone else never sees it,
+      // so it can neither take the child nor stall behind it. The A2A tables
+      // live in this same identity database.
+      // A generic claim takes no reserved lane, by the one rule
+      // (`service/reserved_lanes.ts`) the create route and the save use.
       const runnerClause =
         runnerFilter === ''
-          ? `(requested_runner IS NULL OR (requested_runner != ? AND requested_runner NOT LIKE 'plugin:%'))`
+          ? `(requested_runner IS NULL OR NOT ${reservedLaneSql('requested_runner')})`
           : exactOnly
             ? `requested_runner = ?`
             : `(requested_runner IS NULL OR requested_runner = '' OR requested_runner = ?)`;
-      const runnerParam = runnerFilter === '' ? LOCAL_RUNNER_NAME : runnerFilter;
+      const runnerParams = runnerFilter === '' ? [] : [runnerFilter];
       // `next_run_at` gates claim ELIGIBILITY: a requeued task carrying a
       // retry-backoff timestamp (§9.1) is invisible to claimers until it
       // comes due. NULL / 0 = immediately eligible (legacy rows).
@@ -1025,9 +1094,13 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
            AND (expires_at IS NULL OR expires_at > ?)
            AND (next_run_at IS NULL OR next_run_at = 0 OR next_run_at <= ?)
            AND ${runnerClause}
+           AND NOT EXISTS (
+             SELECT 1 FROM a2a_task_children c
+              WHERE c.child_task_id = workflow_tasks.id
+                AND c.pep_did IS NOT NULL AND c.pep_did != ?)
          ORDER BY created_at ASC
          LIMIT 1`,
-        [nowSec, nowSec, runnerParam],
+        [nowSec, nowSec, ...runnerParams, agentDID],
       );
       if (rows.length === 0) return;
       const candidate = rowToTask(rows[0]);
@@ -1282,6 +1355,20 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return affected > 0;
   }
 
+  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
+    const claimClause = claimId !== undefined ? ' AND claim_id = ?' : '';
+    const params: unknown[] = [expiresAtSec, nowMs, id, agentDID];
+    if (claimId !== undefined) params.push(claimId);
+    return (
+      this.db.run(
+        `UPDATE workflow_tasks
+            SET state = 'awaiting', lease_expires_at = NULL, expires_at = ?, updated_at = ?
+          WHERE id = ? AND state = 'running' AND agent_did = ?${claimClause}`,
+        params,
+      ) > 0
+    );
+  }
+
   expireLeasedTasks(nowMs: number): WorkflowTask[] {
     const reverted: WorkflowTask[] = [];
     this.db.transaction(() => {
@@ -1295,7 +1382,16 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       for (const row of rows) {
         const task = rowToTask(row);
         const priorAgent = task.agent_did ?? '';
-        const verdict = classifyLeaseLoss(task, nowMs);
+        // A2A design §7.3: an inbound child whose permit its claim consumed
+        // may have acted; its lapsed lease is `outcome_unknown`, never a
+        // requeue that could act twice.
+        const inboundEffectStarted =
+          this.db.query(
+            `SELECT 1 FROM a2a_permits
+              WHERE execution_child_id = ? AND direction = 'inbound' AND state = 'consumed' LIMIT 1`,
+            [task.id],
+          ).length > 0;
+        const verdict: LeaseLossVerdict = inboundEffectStarted ? { kind: 'outcome_unknown' } : classifyLeaseLoss(task, nowMs);
 
         if (verdict.kind === 'outcome_unknown') {
           // §9.5: declared-effectful, no idempotency contract — Dina
@@ -1370,7 +1466,7 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
           delivery_failed: false,
           details: JSON.stringify({ previous_agent_did: priorAgent }),
         });
-        reverted.push({
+        const requeued: WorkflowTask = {
           ...task,
           status: 'queued',
           agent_did: undefined,
@@ -1378,7 +1474,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
           claim_id: undefined,
           ...(nextRunAt !== null ? { next_run_at: nextRunAt } : {}),
           updated_at: nowMs,
-        });
+        };
+        tellRequeued(this.requeueObserver, requeued);
+        reverted.push(requeued);
       }
     });
     return reverted;
@@ -1410,7 +1508,8 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       const claimRequired =
         completeTaskRow?.kind === 'reasoning' ||
         parsePluginEnvelope(completeTaskRow?.payload ?? '') !== null ||
-        isPluginLane(completeTaskRow?.requested_runner ?? '');
+        isPluginLane(completeTaskRow?.requested_runner ?? '') ||
+        isA2ALane(completeTaskRow?.requested_runner ?? '');
       if (claimRequired && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
         return;
@@ -1459,7 +1558,8 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       const claimRequired =
         failTaskRow?.kind === 'reasoning' ||
         parsePluginEnvelope(failTaskRow?.payload ?? '') !== null ||
-        isPluginLane(failTaskRow?.requested_runner ?? '');
+        isPluginLane(failTaskRow?.requested_runner ?? '') ||
+        isA2ALane(failTaskRow?.requested_runner ?? '');
       if (claimRequired && claimId === undefined) {
         this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);
         return;
@@ -1814,6 +1914,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
   private readonly events: WorkflowEvent[] = [];
   private nextEventId = 1;
   private readonly approvalListeners = new Set<ApprovalCreatedListener>();
+  private requeueObserver: RequeueObserver | null = null;
 
   create(task: WorkflowTask): void {
     if (this.tasks.has(task.id)) {
@@ -1833,6 +1934,10 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     // Defensive copy so callers mutating the input don't corrupt storage.
     this.tasks.set(task.id, { ...task });
     fanOutApprovalCreated(this.approvalListeners, task);
+  }
+
+  observeRequeues(observer: RequeueObserver | null): void {
+    this.requeueObserver = observer;
   }
 
   subscribeApprovalCreated(listener: ApprovalCreatedListener): () => void {
@@ -2122,13 +2227,12 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     // external agent); other filters = unset/'' or exact match.
     const matchesFilter = (requested: string | undefined): boolean => {
       if (runnerFilter === '') {
-        // Generic agents take neither the reserved in-process lane nor
-        // any plugin lane (§9.1).
-        return (
-          requested !== LOCAL_RUNNER_NAME && !(requested !== undefined && isPluginLane(requested))
-        );
+        // Generic agents take no reserved lane: not the in-process lane, no
+        // plugin lane (§9.1), no A2A or reasoning lane (A2A design §6.3) —
+        // by the one rule the SQL store uses.
+        return requested === undefined || !isReservedLane(requested);
       }
-      if (runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter)) {
+      if (runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter) || isA2ALane(runnerFilter)) {
         return requested === runnerFilter; // exact only — no untagged convenience
       }
       return requested === undefined || requested === '' || requested === runnerFilter;
@@ -2351,6 +2455,18 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return true;
   }
 
+  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
+    const t = this.tasks.get(id);
+    if (t === undefined) return false;
+    if (t.status !== 'running' || t.agent_did !== agentDID) return false;
+    if (claimId !== undefined && t.claim_id !== claimId) return false;
+    t.status = 'awaiting';
+    t.lease_expires_at = undefined;
+    t.expires_at = expiresAtSec;
+    t.updated_at = nowMs;
+    return true;
+  }
+
   expireLeasedTasks(nowMs: number): WorkflowTask[] {
     const reverted: WorkflowTask[] = [];
     for (const t of this.tasks.values()) {
@@ -2407,6 +2523,7 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
         delivery_failed: false,
         details: JSON.stringify({ previous_agent_did: priorAgent }),
       });
+      tellRequeued(this.requeueObserver, t);
       reverted.push({ ...t });
     }
     return reverted;
@@ -2428,7 +2545,8 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     if (
       (t.kind === 'reasoning' ||
         parsePluginEnvelope(t.payload) !== null ||
-        isPluginLane(t.requested_runner ?? '')) &&
+        isPluginLane(t.requested_runner ?? '') ||
+        isA2ALane(t.requested_runner ?? '')) &&
       claimId === undefined
     ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'complete', nowMs, resultJSON);
@@ -2467,7 +2585,8 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     if (
       (t.kind === 'reasoning' ||
         parsePluginEnvelope(t.payload) !== null ||
-        isPluginLane(t.requested_runner ?? '')) &&
+        isPluginLane(t.requested_runner ?? '') ||
+        isA2ALane(t.requested_runner ?? '')) &&
       claimId === undefined
     ) {
       this.recordLateReport(id, agentDID, 'no-claim-token', 'fail', nowMs, errorMsg);

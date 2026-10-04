@@ -262,7 +262,7 @@ export function createReasoningPolicySnapshotResolver(
 }
 
 /**
- * Build the callback injected into the shared ServiceHandler.
+ * Build the callback injected into Core's service-query ingress.
  *
  * Absence, revocation, an offline foreground host, a disallowed vault, or a
  * queue race all return `null`; the established service executor remains the

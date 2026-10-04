@@ -1,7 +1,7 @@
 /**
  * Tier 1 AUTO path, composed end-to-end (docs/SERVICE_PROVIDER_TIERS.md):
  *
- *   ServiceHandler.handleQuery (real)  →  workflow repo (real, in-memory)
+ *   Core's ServiceQueryIngress.admitQuery (real)  →  workflow repo (real, in-memory)
  *     →  LocalDelegationRunner (real, default 'dina.local' exact filter)
  *     →  makeTier1CapabilityRunner (real)  →  scripted LLM
  *     →  WorkflowService.complete (real)
@@ -13,15 +13,17 @@
  * and only dies here (or live).
  */
 
-import { WorkflowService, InMemoryWorkflowRepository, LocalDelegationRunner } from '@dina/core';
+import {
+  WorkflowService,
+  InMemoryWorkflowRepository,
+  LocalDelegationRunner,
+  ServiceQueryIngress,
+} from '@dina/core';
 
-
-import { ServiceHandler } from '../../src/service/service_handler';
 import { makeTier1CapabilityRunner } from '../../src/service/tier1_runner';
 
 import type { ChatOptions, ChatResponse, LLMProvider } from '../../src/llm/adapters/provider';
-import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import type { ServiceConfig, WorkflowTask, WorkflowTaskState } from '@dina/core';
+import type { ServiceConfig } from '@dina/core';
 
 const REQUESTER = 'did:plc:customer';
 const NOW_MS = 1_750_000_000_000;
@@ -78,53 +80,19 @@ function scriptedLLM(script: Partial<ChatResponse>[]): { provider: LLMProvider; 
   return { provider, systems };
 }
 
-interface CreateInput {
-  id: string;
-  kind: string;
-  payload: string;
-  description?: string;
-  correlationId?: string;
-  origin?: string;
-  initialState?: string;
-  expiresAtSec?: number;
-  requestedRunner?: string;
-}
-
-function handlerClient(service: WorkflowService): ServiceHandlerCoreClient {
-  return {
-    async createWorkflowTask(input: CreateInput) {
-      const task = service.create({
-        id: input.id,
-        kind: input.kind as WorkflowTask['kind'],
-        payload: input.payload,
-        description: input.description ?? '',
-        correlationId: input.correlationId,
-        origin: input.origin,
-        initialState: input.initialState as WorkflowTaskState | undefined,
-        expiresAtSec: input.expiresAtSec,
-        requestedRunner: input.requestedRunner,
-      });
-      return { task, deduped: false };
-    },
-    async cancelWorkflowTask(id: string, reason?: string) {
-      return service.cancel(id, reason ?? '');
-    },
-  } as unknown as ServiceHandlerCoreClient;
-}
-
-describe('Tier 1 auto path — handleQuery → dina.local claim → runCapability → complete', () => {
+describe('Tier 1 auto path — admitQuery → dina.local claim → runCapability → complete', () => {
   it('a stranger query is answered by the in-process runtime, end to end', async () => {
     const repo = new InMemoryWorkflowRepository();
     const service = new WorkflowService({ repository: repo, nowMsFn: () => NOW_MS });
-    const handler = new ServiceHandler({
-      coreClient: handlerClient(service),
+    const ingress = new ServiceQueryIngress({
+      workflow: service,
       readConfig: () => SALON_CONFIG,
       nowSecFn: () => NOW_SEC,
       generateUUID: () => 'auto1',
     });
 
     // 1. Inbound auto-policy query → delegation lands on the reserved lane.
-    await handler.handleQuery(REQUESTER, {
+    await ingress.admitQuery(REQUESTER, {
       query_id: 'q-auto-1',
       capability: 'appointment_availability',
       params: { service: 'haircut', time_after: '4pm' },

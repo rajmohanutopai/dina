@@ -84,6 +84,11 @@ services:
       # on first boot. Empty values skip publish (dev-mode).
       DINA_PDS_HANDLE: ${DINA_PDS_HANDLE:-}
       DINA_PDS_PASSWORD: ${DINA_PDS_PASSWORD:-}
+      # A2A Lane 2 (the `a2a` profile below). Both set, or neither: the
+      # gateway's public https origin (Core puts it on the card it signs) and
+      # the DID `keygen` printed for the gateway's own key.
+      DINA_A2A_PUBLIC_URL: ${DINA_A2A_PUBLIC_URL:-}
+      DINA_A2A_GATEWAY_DID: ${DINA_A2A_GATEWAY_DID:-}
     # Task 7.20 — ports match the Go production compose. Operators
     # running both stacks side-by-side override DINA_CORE_PORT_EXTERNAL
     # on the host side.
@@ -91,6 +96,8 @@ services:
       - "127.0.0.1:${DINA_CORE_PORT_EXTERNAL:-8100}:8100"
     networks:
       - dina-lite
+      # Only the A2A gateway shares this one: it reaches Core, never Brain.
+      - dina-a2a
     # The image already carries a HEALTHCHECK; compose surfaces its
     # status and depends_on: condition: service_healthy below uses it.
     healthcheck:
@@ -174,6 +181,53 @@ services:
       retries: 3
       start_period: 30s
 
+  # ─── A2A gateway — the public door for outside agents (opt-in) ─────────
+  # docs/A2A_GATEWAY_ARCHITECTURE.md §4.1. Its own container, user and key
+  # volume; on `dina-a2a` it reaches Core and no other container (not Brain,
+  # not the vault volume). It POSTs clients' webhooks to public hosts only:
+  # its outbound policy refuses private, loopback and link-local answers, so
+  # container names (which resolve privately) are out of its reach. Enable it:
+  #   1. docker compose --profile a2a run --rm a2a-gateway keygen
+  #      → prints the gateway's did:key; put it in .env as DINA_A2A_GATEWAY_DID
+  #   2. set DINA_A2A_PUBLIC_URL (https origin your TLS terminator serves)
+  #   3. docker compose --profile a2a up -d
+  # The published port stays on host loopback; put a TLS terminator in front
+  # and point it at 127.0.0.1:${DINA_A2A_GATEWAY_PORT_EXTERNAL:-8400}.
+  a2a-gateway:
+    profiles: ['a2a']
+    image: ghcr.io/rajmohan/dina-home-node-lite-a2a-gateway:${DINA_IMAGE_TAG:-dev}
+    build:
+      context: ../..
+      dockerfile: apps/home-node-lite/docker/Dockerfile.a2a-gateway
+    container_name: dina-a2a-gateway-lite
+    restart: unless-stopped
+    cap_drop: ['ALL']
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      # The gateway's key, and nothing of Core's or Brain's.
+      - dina-a2a-gateway-key:/var/lib/dina-gateway
+    environment:
+      DINA_CORE_URL: http://core-lite:8100
+      DINA_A2A_GATEWAY_PORT: 8400
+      DINA_A2A_GATEWAY_DID: ${DINA_A2A_GATEWAY_DID:-}
+      # 1 when the TLS terminator sets X-Forwarded-For (per-address limits).
+      DINA_A2A_GATEWAY_TRUST_PROXY: ${DINA_A2A_GATEWAY_TRUST_PROXY:-}
+      # Event streams open at once, and per client address (empty: 500, 20).
+      DINA_A2A_GATEWAY_MAX_STREAMS: ${DINA_A2A_GATEWAY_MAX_STREAMS:-}
+      DINA_A2A_GATEWAY_STREAMS_PER_IP: ${DINA_A2A_GATEWAY_STREAMS_PER_IP:-}
+      DINA_LOG_LEVEL: ${DINA_LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:${DINA_A2A_GATEWAY_PORT_EXTERNAL:-8400}:8400"
+    networks:
+      - dina-a2a
+    depends_on:
+      core-lite:
+        condition: service_healthy
+
 # ─── Networks ────────────────────────────────────────────────────────────
 # A single isolated bridge network. Both services attach; external
 # traffic enters via the published ports above. No internet-egress rules
@@ -183,6 +237,10 @@ networks:
   dina-lite:
     driver: bridge
     name: dina-lite
+  # Core and the A2A gateway only.
+  dina-a2a:
+    driver: bridge
+    name: dina-a2a
 
 # ─── Volumes ─────────────────────────────────────────────────────────────
 # dina-core-vault — persists identity.sqlite + vault/<persona>.sqlite
@@ -193,3 +251,6 @@ networks:
 volumes:
   dina-core-vault:
     name: dina-core-vault
+  # The A2A gateway's service key (opt-in `a2a` profile).
+  dina-a2a-gateway-key:
+    name: dina-a2a-gateway-key

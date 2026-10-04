@@ -176,6 +176,13 @@ describe('createFindPersonTool — in-process repo (mobile path)', () => {
     expect(out.matches[0]?.surfaces.map((s) => s.surface).sort()).toEqual(['Em', 'Emma']);
   });
 
+  it('hands the model no vault excerpt: its source persona is unknown, so its release could not be logged', async () => {
+    setPeopleRepository(new StubRepo([emma]));
+    const out = await createFindPersonTool().execute({ name: 'emma' });
+    expect(JSON.stringify(out)).not.toContain('in-context excerpt');
+    expect(JSON.stringify(out)).toContain('src-1');
+  });
+
   it('returns every match when surfaces collide across people', async () => {
     setPeopleRepository(new StubRepo([alex1, alex2]));
     const tool = createFindPersonTool();

@@ -70,8 +70,10 @@ describe('admin-audit-log wrapper', () => {
       // the documented vocabulary count. If a future commit removes a
       // verb from the array without bumping the test count, the
       // failure is loud.
-      const expectedCount = 10
+      const expectedCount = 12
       expect(ADMIN_ACTIONS.length).toBe(expectedCount)
+      // The A2A directory's moderation verbs (design §8.3).
+      expect(ADMIN_ACTIONS).toEqual(expect.arrayContaining(['takedown_a2a_card', 'restore_a2a_card']))
     })
   })
 

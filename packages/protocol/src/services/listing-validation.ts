@@ -31,7 +31,7 @@
 import { getCatalogCapability, classifyCatalogCapability } from './capability-catalog';
 
 import type { ServiceConfig, ServiceListingStatus, ServiceSurface } from '../types/capability';
-import type { Discoverability } from '../types/catalog';
+import type { CapabilityDefinition, Discoverability } from '../types/catalog';
 
 /**
  * Effective discoverability for a listing: the explicit value when present,
@@ -133,6 +133,12 @@ export type ListingValidationCode =
   | 'plugin_capability_unknown'
   | 'plugin_capability_not_provider'
   | 'talk_must_be_known_only'
+  // A2A plan §4.2a — checked in Core, which knows the reserved lanes and the
+  // one schema-hash recipe: an `mcpServer` naming a lane only Core fills, and
+  // a schema with no canonical JSON form (it could be neither published nor
+  // checked).
+  | 'reserved_runner_lane'
+  | 'schema_not_canonical'
   | 'no_capabilities';
 
 export interface ListingValidationError {
@@ -170,6 +176,26 @@ export interface ValidateListingOptions {
 }
 
 const WRITE_ACTIONS: ReadonlySet<string> = new Set(['write', 'booking', 'payment', 'agentic']);
+
+export type ReviewRule = 'write_needs_approval' | 'subject_auth_needs_review';
+
+/**
+ * The rules that make an official capability review-gated on a listing of
+ * this discoverability (empty when `auto` is allowed): a write-class action,
+ * always; a subject-scoped read wherever strangers can reach it (public or
+ * unlisted). The listing validator refuses `auto` under either at save time;
+ * Core's A2A ingress applies the same rules at call time, so a row the
+ * validator never saw cannot lower them.
+ */
+export function reviewRulesFor(
+  def: Pick<CapabilityDefinition, 'action_class' | 'requires_subject_authorization'>,
+  discoverability: Discoverability,
+): ReviewRule[] {
+  const rules: ReviewRule[] = [];
+  if (WRITE_ACTIONS.has(def.action_class)) rules.push('write_needs_approval');
+  if (def.requires_subject_authorization && discoverability !== 'known_only') rules.push('subject_auth_needs_review');
+  return rules;
+}
 
 /**
  * Validate a provider listing. Returns `{ok, errors, discoverability,
@@ -305,8 +331,9 @@ export function validateServiceListing(
             message: `Category "${category}" is not allowed for "${cls.canonical}". Allowed: ${def.category_ids.join(', ')}.`,
           });
         }
+        const reviewRules = reviewRulesFor(def, discoverability);
         // Write/booking/payment/agentic must be review-gated, not auto.
-        if (WRITE_ACTIONS.has(def.action_class) && capConfig.responsePolicy === 'auto') {
+        if (reviewRules.includes('write_needs_approval') && capConfig.responsePolicy === 'auto') {
           errors.push({
             code: 'write_needs_approval',
             capability: raw,
@@ -339,11 +366,7 @@ export function validateServiceListing(
         // front of every stranger-supplied subject identifier — the same
         // pattern as write_needs_approval. `known_only` listings are exempt:
         // access there is explicitly grant-gated per grantee.
-        if (
-          def.requires_subject_authorization &&
-          discoverability !== 'known_only' &&
-          capConfig.responsePolicy === 'auto'
-        ) {
+        if (reviewRules.includes('subject_auth_needs_review') && capConfig.responsePolicy === 'auto') {
           errors.push({
             code: 'subject_auth_needs_review',
             capability: raw,

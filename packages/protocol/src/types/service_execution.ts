@@ -1,10 +1,11 @@
 /**
  * `service_query_execution` task payload — THE codec.
  *
- * This shape rides a workflow task from the provider's ServiceHandler to
- * whoever executes it (the in-process Tier 1 runner, a paired dina-agent
- * over `POST /v1/workflow/tasks/claim`, or — via the approval hop — the
- * WorkflowEventConsumer → executeAndRespond chain), and is read AGAIN by
+ * This shape rides a workflow task from the provider's service-query
+ * ingress (Core's `service/query_ingress.ts`, the only producer) to whoever
+ * executes it (the in-process Tier 1 runner, a paired dina-agent over
+ * `POST /v1/workflow/tasks/claim`, or — via the approval hop — the
+ * WorkflowEventConsumer → `executeApproved` chain), and is read AGAIN by
  * Core's Response Bridge when the task completes. Before this module it
  * was hand-built in two places and hand-parsed in four; two of those
  * parsers silently dropped fields (`service_uri`, `schema_snapshot`,
@@ -19,7 +20,8 @@
  *     `ttl_seconds`, `service_name`, `schema_hash`, `mcp_tool` are
  *     ALWAYS present (string fields default to '').
  *   - `mcp_server`, `schema_snapshot`, `service_uri`,
- *     `grant_id`, `operator_approved` appear only when meaningful.
+ *     `grant_id`, `operator_approved`, `continuation`, `may_ask` appear only
+ *     when meaningful.
  *
  * Parse normalization: the wire writes '' when a string value is absent;
  * `parseServiceQueryExecutionPayload` normalizes '' → undefined so TS
@@ -38,6 +40,26 @@ export interface ServiceExecutionSchemaSnapshot {
   params: Record<string, unknown>;
   result: Record<string, unknown>;
   schema_hash: string;
+}
+
+/** One question a runner asked the caller, and the caller's answer. */
+export interface ServiceExecutionTurn {
+  /** What the runner asked. */
+  prompt: string;
+  /** The JSON Schema the answer was checked against before it reached the runner. */
+  input_schema: Record<string, unknown>;
+  /** The caller's answer, valid against `input_schema`. */
+  input: unknown;
+}
+
+/**
+ * Present when this run continues a call after its runner asked the caller
+ * for more input (A2A multi-turn, docs/A2A_GATEWAY_ARCHITECTURE.md §7.7):
+ * every question asked and answer given so far, oldest first. The params
+ * are the call's original params, unchanged.
+ */
+export interface ServiceExecutionContinuation {
+  turns: ServiceExecutionTurn[];
 }
 
 /** Parsed + normalized payload. See module docs for wire shape. */
@@ -69,10 +91,19 @@ export interface ServiceQueryExecutionPayload {
   grant_id?: string;
   /**
    * True when this execution was spawned by an operator's approval
-   * (`executeAndRespond`). The Tier 1 runtime tells the model the
+   * (`executeApproved`). The Tier 1 runtime tells the model the
    * human gate already passed ("ask me first" → confirm, not re-ask).
    */
   operator_approved?: boolean;
+  /** The answers so far, when this run continues a call (see `ServiceExecutionContinuation`). */
+  continuation?: ServiceExecutionContinuation;
+  /**
+   * True when the runner that claims this run may still ask its requester
+   * for input (A2A multi-turn, design §7.7): a call from an A2A client whose
+   * claim crosses no effect boundary. Absent otherwise, and then an ask is
+   * refused: the runner must complete or fail.
+   */
+  may_ask?: boolean;
 }
 
 /** Builder input — same fields, presence-optional where the wire defaults. */
@@ -111,7 +142,37 @@ export function buildServiceQueryExecutionPayload(
   if (input.operator_approved === true) {
     out.operator_approved = true;
   }
+  if (input.continuation !== undefined && input.continuation.turns.length > 0) {
+    out.continuation = { turns: input.continuation.turns.map((t) => ({ ...t })) };
+  }
+  if (input.may_ask === true) {
+    out.may_ask = true;
+  }
   return out;
+}
+
+/**
+ * Narrow a raw `continuation` strictly: every turn has a string prompt, an
+ * object schema and an `input` member. Anything else is `undefined`, which
+ * a reader must treat as no continuation (Core's claim check, which binds
+ * the permit to the payload it hashed, then refuses the run).
+ */
+export function parseServiceExecutionContinuation(raw: unknown): ServiceExecutionContinuation | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const turns = (raw as { turns?: unknown }).turns;
+  if (!Array.isArray(turns) || turns.length === 0) return undefined;
+  const out: ServiceExecutionTurn[] = [];
+  for (const t of turns) {
+    if (t === null || typeof t !== 'object' || Array.isArray(t)) return undefined;
+    const turn = t as Record<string, unknown>;
+    const schema = turn.input_schema;
+    if (typeof turn.prompt !== 'string' || schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
+      return undefined;
+    }
+    if (!('input' in turn)) return undefined;
+    out.push({ prompt: turn.prompt, input_schema: schema as Record<string, unknown>, input: turn.input });
+  }
+  return { turns: out };
 }
 
 /** '' → undefined (the wire's absent-value sentinel for strings). */
@@ -189,6 +250,7 @@ export function parseServiceQueryExecutionPayload(
   const snapshot = parseServiceExecutionSchemaSnapshot(p.schema_snapshot);
   const serviceUri = optionalString(p.service_uri);
   const grantId = optionalString(p.grant_id);
+  const continuation = parseServiceExecutionContinuation(p.continuation);
   return {
     type: SERVICE_QUERY_EXECUTION_TYPE,
     from_did,
@@ -204,5 +266,7 @@ export function parseServiceQueryExecutionPayload(
     ...(serviceUri !== undefined ? { service_uri: serviceUri } : {}),
     ...(grantId !== undefined ? { grant_id: grantId } : {}),
     ...(p.operator_approved === true ? { operator_approved: true } : {}),
+    ...(continuation !== undefined ? { continuation } : {}),
+    ...(p.may_ask === true ? { may_ask: true } : {}),
   };
 }

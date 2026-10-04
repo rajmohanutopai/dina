@@ -4,20 +4,21 @@
  * echo of the published hash against the local config's hash.
  *
  * The bug class this pins (found live in the Tier 1 salon demo): the
- * mobile listing editor stored `computeSchemaHash(paramsSchema)` while
+ * mobile listing editor stored a hash of the params schema alone while
  * the publisher emitted the canonical hash of `{params, result,
  * description}` — so every hash-carrying query against a form-created
  * listing died with `schema_version_mismatch`. All local writers now go
- * through `canonicalCapabilitySchemaHash`; this test fails if either
+ * through Core's `capabilitySchemaHash`; this test fails if either
  * side drifts.
  */
 
-import { computeSchemaHash, getCapability } from '../../src/service/capabilities/registry';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { capabilitySchemaHash, getCapability } from '@dina/core';
+
 import { toPublisherConfig } from '../../src/service/config_sync';
-import {
-  canonicalCapabilitySchemaHash,
-  buildRecord,
-} from '../../src/service/service_publisher';
+import { buildRecord } from '../../src/service/service_publisher';
 
 import type { ServiceConfig } from '@dina/protocol';
 
@@ -28,7 +29,7 @@ function publishedHashFor(config: ServiceConfig, capability: string): string {
 }
 
 describe('local schemaHash ⇔ published schema_hash contract', () => {
-  it('canonicalCapabilitySchemaHash matches what buildRecord publishes', () => {
+  it('capabilitySchemaHash matches what buildRecord publishes', () => {
     const def = getCapability('appointment_availability');
     expect(def).toBeDefined();
     const entry = {
@@ -37,7 +38,7 @@ describe('local schemaHash ⇔ published schema_hash contract', () => {
       schemaHash: '',
       description: def!.description,
     };
-    const local = canonicalCapabilitySchemaHash(entry);
+    const local = capabilitySchemaHash(entry);
     const config: ServiceConfig = {
       isDiscoverable: true,
       discoverability: 'public',
@@ -59,8 +60,8 @@ describe('local schemaHash ⇔ published schema_hash contract', () => {
 
   it('a params-only hash (the old form recipe) does NOT match the published hash', () => {
     const def = getCapability('appointment_availability');
-    const paramsOnly = computeSchemaHash(def!.paramsSchema);
-    const canonical = canonicalCapabilitySchemaHash({
+    const paramsOnly = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(def!.paramsSchema))));
+    const canonical = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,
       description: def!.description,
@@ -70,12 +71,12 @@ describe('local schemaHash ⇔ published schema_hash contract', () => {
 
   it('description is part of the canonical input (a copy edit rotates the hash)', () => {
     const def = getCapability('appointment_book');
-    const a = canonicalCapabilitySchemaHash({
+    const a = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,
       description: 'v1',
     });
-    const b = canonicalCapabilitySchemaHash({
+    const b = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,
       description: 'v2',
@@ -85,11 +86,11 @@ describe('local schemaHash ⇔ published schema_hash contract', () => {
 
   it('missing description hashes like empty-string description (publisher parity)', () => {
     const def = getCapability('appointment_book');
-    const noDesc = canonicalCapabilitySchemaHash({
+    const noDesc = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,
     });
-    const emptyDesc = canonicalCapabilitySchemaHash({
+    const emptyDesc = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,
       description: '',

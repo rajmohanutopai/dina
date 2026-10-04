@@ -30,7 +30,8 @@ import {
   type PdsSuspensionGateContext,
 } from './pds-suspension-gate.js'
 import { env } from '@/config/env.js'
-import { TRUST_COLLECTIONS } from '@/config/lexicons.js'
+import { JETSTREAM_COLLECTIONS, TRUST_COLLECTIONS } from '@/config/lexicons.js'
+import { A2A_UNSTAMPED, isA2ACommit, type A2ACommitEvent, type A2ADirectory } from './a2a-directory.js'
 import { refuseImportedReview, type ImportRefusal } from '@/config/review-feeds.js'
 import { ingesterCursor } from '@/db/schema/index.js'
 import { logger } from '@/shared/utils/logger.js'
@@ -232,7 +233,39 @@ export class JetstreamConsumer {
    */
   private pdsSuspensionGate: PdsSuspensionGateContext | null = null
 
+  /**
+   * The A2A directory (Lane 3, design §8.3). Its card events go around the
+   * trust flag and every trust gate, straight to its spool; they are never
+   * dropped (`required` in the queue) and never reach the file spool.
+   */
+  private a2a: A2ADirectory | null = null
+  /**
+   * The gap generation events from the current socket are stamped with: set
+   * by the gap check before each connection, so an event still queued from
+   * the previous socket keeps the stamp it was received under.
+   */
+  private a2aGeneration = A2A_UNSTAMPED
+
+  /**
+   * Liveness of the current socket (µs, our clock), reset at each connect.
+   * The socket is pinged on the 30 s timer; a pong, or any message, proves it
+   * still delivers. See `livenessTick`.
+   */
+  private connectedAtUs = 0
+  private lastPingUs = 0
+  private lastPongUs = 0
+  private lastMessageUs = 0
+  /** How far behind its own time the last message arrived (replay shows as a large lag). */
+  private lastMessageLagUs = 0
+  /** The last tick at which the queue held the socket paused: a held socket cannot answer, and is not stalled. */
+  private lastHeldUs = 0
+
   constructor(private db: DrizzleDB) {}
+
+  /** Inject the A2A directory. Set before `start()`, so the gap check runs before ingestion. */
+  setA2ADirectory(directory: A2ADirectory | null): void {
+    this.a2a = directory
+  }
 
   /**
    * Inject the namespace-signature gate's context. Called once during
@@ -282,6 +315,8 @@ export class JetstreamConsumer {
   async start(): Promise<void> {
     this.cursor = await this.loadCursor()
     logger.info({ cursor: this.cursor }, 'Starting Jetstream consumer')
+    // Before anything is ingested: events lost to a gap make every card prove itself again.
+    if (this.a2a !== null) this.a2aGeneration = (await this.a2a.markGapIfUnreplayable(this.cursor)).generation
     await this.replaySpool()
     this.connect()
     this.setupGracefulShutdown()
@@ -303,8 +338,64 @@ export class JetstreamConsumer {
     // timestamp (queue), falling back to the highest fully-seen event.
     this.cursorSaveTimer = setInterval(() => {
       void this.advanceAndSaveCursor('timer')
+      void this.livenessTick(Date.now() * 1000)
     }, this.CURSOR_SAVE_INTERVAL_MS)
   }
+
+  /**
+   * Every 30 s: is the socket alive, and is everything up to some moment
+   * received and recorded? If so the A2A directory notes that moment as
+   * "live", and measures gaps from it (a quiet stream moves no cursor, yet
+   * loses nothing while live). Then the socket is pinged for the next tick.
+   *
+   * Live at the last pong needs all of:
+   *   - the last ping was answered (a pong is proof the socket delivers:
+   *     every frame sent before it has arrived), and no answer, pong or
+   *     message, for `STALL_US` terminates the socket (a reconnect follows),
+   *     unless the queue holds the socket paused (backpressure), when the
+   *     tick does nothing at all;
+   *   - nothing queued, in flight or failed;
+   *   - the replay is over: the last message arrived near its own time, or
+   *     the stream has been silent for `CATCH_UP_US` (or connected that long
+   *     with no message), since a replay is sent without pause.
+   * A missed note only makes the next gap judgment stricter.
+   */
+  private async livenessTick(nowUs: number): Promise<void> {
+    const ws = this.ws
+    if (ws === null || ws.readyState !== WebSocket.OPEN) return
+    // Paused by backpressure, the socket can deliver neither messages nor
+    // pongs: not a stall, and nothing to note. The stall clock restarts from
+    // the last held tick once the queue releases it.
+    if (this.queue?.isPaused === true) {
+      this.lastHeldUs = nowUs
+      return
+    }
+    const heardUs = Math.max(this.lastPongUs, this.lastMessageUs, this.connectedAtUs, this.lastHeldUs)
+    if (nowUs - heardUs > JetstreamConsumer.STALL_US) {
+      logger.warn({ silentForMs: Math.round((nowUs - heardUs) / 1000) }, 'Jetstream socket silent; reconnecting')
+      ws.terminate()
+      return
+    }
+    const answered = this.lastPingUs > 0 && this.lastPongUs >= this.lastPingUs
+    const caughtUp =
+      this.lastMessageUs > 0
+        ? this.lastMessageLagUs <= JetstreamConsumer.CATCH_UP_US || nowUs - this.lastMessageUs >= JetstreamConsumer.CATCH_UP_US
+        : nowUs - this.connectedAtUs >= JetstreamConsumer.CATCH_UP_US
+    if (this.a2a !== null && answered && caughtUp && this.queue !== null && this.queue.getSafeCursor() === null) {
+      try {
+        await this.a2a.noteLive(this.lastPongUs)
+      } catch (err) {
+        logger.warn({ err }, 'a2a live note failed')
+      }
+    }
+    this.lastPingUs = nowUs
+    ws.ping()
+  }
+
+  /** No pong and no message for this long: the socket is dead, whatever its state says. */
+  private static readonly STALL_US = 90_000_000
+  /** A message this close to its own time, or this long a silence, means the replay is over. */
+  private static readonly CATCH_UP_US = 60_000_000
 
   /**
    * Advance the in-memory cursor to the current safe position and
@@ -370,7 +461,7 @@ export class JetstreamConsumer {
 
   private connect(): void {
     const params = new URLSearchParams()
-    for (const collection of TRUST_COLLECTIONS) {
+    for (const collection of JETSTREAM_COLLECTIONS) {
       params.append('wantedCollections', collection)
     }
     if (this.cursor > 0) {
@@ -378,15 +469,18 @@ export class JetstreamConsumer {
     }
 
     const url = `${env.JETSTREAM_URL}/subscribe?${params.toString()}`
-    logger.info({ url: env.JETSTREAM_URL, collections: TRUST_COLLECTIONS.length }, 'Connecting to Jetstream')
+    logger.info({ url: env.JETSTREAM_URL, collections: JETSTREAM_COLLECTIONS.length }, 'Connecting to Jetstream')
 
     // SEC-MED-08: Validate TLS and hostname before opening WebSocket
     validateJetstreamUrl(env.JETSTREAM_URL)
 
     this.ws = new WebSocket(url)
 
-    this.queue = new BoundedIngestionQueue(
-      (item) => this.processEvent(item.data as JetstreamEvent),
+    // One queue for the consumer's life, re-pointed at each new socket: events
+    // still waiting from an earlier socket keep holding the safe cursor (a card
+    // event among them is not yet recorded, design §8.3).
+    this.queue ??= new BoundedIngestionQueue(
+      (item) => this.processEvent(item.data as JetstreamEvent, item.context),
       {
         maxSize: 1000,
         maxConcurrency: env.DATABASE_POOL_MAX,
@@ -403,19 +497,41 @@ export class JetstreamConsumer {
     )
     this.queue.setWebSocket(this.ws)
 
+    this.connectedAtUs = 0
+    this.lastPingUs = 0
+    this.lastPongUs = 0
+    this.lastMessageUs = 0
+    this.lastMessageLagUs = 0
+    this.lastHeldUs = 0
+
     this.ws.on('open', () => {
       logger.info('Jetstream connection established')
       this.reconnectAttempts = 0
+      this.connectedAtUs = Date.now() * 1000
+      // Re-pointed while still full, the queue could not pause a connecting socket: hold it now.
+      this.queue?.holdIfFull()
       metrics.gauge('ingester.connected', 1)
+    })
+
+    this.ws.on('pong', () => {
+      this.lastPongUs = Date.now() * 1000
     })
 
     this.ws.on('message', (data: Buffer) => {
       try {
         const event: JetstreamEvent = JSON.parse(data.toString())
+        this.lastMessageUs = Date.now() * 1000
+        this.lastMessageLagUs = Math.max(0, this.lastMessageUs - event.time_us)
         if (event.time_us > this.highestSeenTimeUs) {
           this.highestSeenTimeUs = event.time_us
         }
-        if (!this.queue!.push({ data: event, timestampUs: event.time_us })) {
+        // A card event, or an account event (the directory's account gate), is
+        // never dropped: it waits in the queue, holding the cursor, instead. A
+        // card event carries the gap generation it was received under.
+        const card = isA2ACommit(event as { kind: string; commit?: { collection?: string } })
+        const required = card || event.kind === 'account'
+        const context = card ? { a2aGeneration: this.a2aGeneration } : undefined
+        if (!this.queue!.push({ data: event, timestampUs: event.time_us, ...(context ? { context } : {}) }, { required })) {
           metrics.incr('ingester.queue.dropped')
           logger.warn({ event: event.kind }, 'queue full — spooling dropped event')
           try {
@@ -445,7 +561,7 @@ export class JetstreamConsumer {
     })
   }
 
-  private async processEvent(event: JetstreamEvent): Promise<void> {
+  private async processEvent(event: JetstreamEvent, context?: Readonly<Record<string, unknown>>): Promise<void> {
     if (event.kind === 'identity') {
       await this.handleIdentityEvent(event as JetstreamIdentityEvent)
       return
@@ -455,6 +571,18 @@ export class JetstreamConsumer {
       return
     }
     if (event.kind !== 'commit') return
+
+    // The A2A directory: around the trust flag, the trust gates and the
+    // per-DID limits (a dropped card event would lose its ordering); its
+    // spool insert is this event's acknowledgement.
+    if (this.a2a !== null && isA2ACommit(event)) {
+      // No stamp (an event replayed from the file spool): it may apply, never prove.
+      const generation = typeof context?.a2aGeneration === 'number' ? context.a2aGeneration : A2A_UNSTAMPED
+      await this.a2a.receive(event as A2ACommitEvent, generation)
+      metrics.incr('ingester.events.received', { collection: event.commit.collection, operation: event.commit.operation })
+      await this.countForCursor()
+      return
+    }
 
     const { commit, did } = event as JetstreamCommitCreate | JetstreamCommitDelete
     const collection = commit.collection
@@ -553,6 +681,10 @@ export class JetstreamConsumer {
       await this.handleDelete(did, commit as JetstreamCommitDelete['commit'], traceId)
     }
 
+    await this.countForCursor()
+  }
+
+  private async countForCursor(): Promise<void> {
     this.eventsSinceCursorSave++
     if (this.eventsSinceCursorSave >= this.CURSOR_SAVE_INTERVAL) {
       // HIGH-03 fix: queue may be null during spool replay (before connect())
@@ -724,6 +856,8 @@ export class JetstreamConsumer {
   private async handleIdentityEvent(event: JetstreamIdentityEvent): Promise<void> {
     logger.info({ did: event.did, handle: event.identity?.handle }, 'Identity event')
     metrics.incr('ingester.events.identity')
+    // A DID document may have changed: a card holder's signatures are checked again.
+    await this.a2a?.noteIdentity(event.did)
   }
 
   private async handleAccountEvent(event: JetstreamAccountEvent): Promise<void> {
@@ -731,6 +865,9 @@ export class JetstreamConsumer {
       logger.info({ did: event.did, status: event.account.status }, 'Account status change')
     }
     metrics.incr('ingester.events.account', { status: event.account?.status ?? 'active' })
+    if (typeof event.account?.active === 'boolean') {
+      await this.a2a?.noteAccount(event.did, event.account.active, event.time_us)
+    }
   }
 
   private async loadCursor(): Promise<number> {
@@ -761,7 +898,17 @@ export class JetstreamConsumer {
       // BEFORE resubscribing, so the new connection resumes from what we
       // actually processed instead of replaying the whole stale window
       // (idle-timeout disconnects on quiet streams hit this every cycle).
-      void this.advanceAndSaveCursor('reconnect').finally(() => this.connect())
+      void this.advanceAndSaveCursor('reconnect')
+        .then(async () => {
+          // An outage longer than Jetstream keeps events lost some: the gap
+          // is recorded before ingestion resumes, or it does not resume.
+          if (this.a2a !== null) this.a2aGeneration = (await this.a2a.markGapIfUnreplayable(this.cursor)).generation
+          this.connect()
+        })
+        .catch((err: unknown) => {
+          logger.error({ err }, 'a2a gap check failed; reconnecting later')
+          this.reconnectWithBackoff()
+        })
     }, delay)
   }
 

@@ -169,6 +169,27 @@
       "when": 1790001001000,
       "tag": "0023_commerce_service_rkey",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790001002000,
+      "tag": "0024_imported_review_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790001003000,
+      "tag": "0025_a2a_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790001004000,
+      "tag": "0026_a2a_identity_check",
+      "breakpoints": true
     }
   ]
 }

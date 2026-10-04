@@ -233,7 +233,7 @@ function parseServiceApproveCommand(payload: string, originalText: string): Pars
 
 /**
  * Workflow task ids are caller-generated strings. Accept the character set
- * produced by `ServiceHandler.createApprovalTask` (`approval-<uuid>`) and
+ * produced by Core's service-query ingress (`approval-<uuid>`) and
  * other internal generators (`svc-exec-<uuid>`), plus conservative separators.
  * Reject anything that looks like shell-injection / path traversal.
  */

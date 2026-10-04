@@ -50,7 +50,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6e task 6.17.
  */
 
-import { computeSchemaHash } from './schema_hash';
+import { capabilitySchemaHash } from '@dina/core';
 
 /** JSON Schema fragment for a capability's params + result. Kept opaque. */
 export type JsonSchema = Record<string, unknown>;
@@ -168,7 +168,7 @@ export function buildServiceProfile(
       description: raw.description,
       params: raw.params,
       result: raw.result,
-      schema_hash: computeSchemaHash(hashInput),
+      schema_hash: capabilitySchemaHash(hashInput),
     };
   }
 
@@ -203,7 +203,7 @@ export function buildServiceProfile(
  */
 export function hashCapabilitySchema(schema: CapabilitySchemaInput): string {
   validateCapabilitySchema('<capability>', schema);
-  return computeSchemaHash({
+  return capabilitySchemaHash({
     description: schema.description,
     params: schema.params,
     result: schema.result,

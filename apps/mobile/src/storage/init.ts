@@ -17,6 +17,8 @@ import { registerEngagementProvider, collectNotificationBriefingItems } from '@d
 import { resetThreads } from '@dina/brain/chat';
 import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/notifications';
 import {
+  A2AReleaseLog,
+  installA2AReleaseLog,
   createCommerceRuntime,
   installBuyerOrderSender,
   installBuyerAuthorityProvider,
@@ -277,6 +279,10 @@ export async function initializePersistence(
   setServiceGrantRepository(new SQLiteServiceGrantRepository(identityDB));
   // Group plans (GROUP_COORDINATION §7): owner-private, in the identity store.
   setGroupPlanRepository(new SQLiteGroupPlanRepository(identityDB));
+  // A2A §4.2 (b): what Core releases to Brain in a conversation, logged by the
+  // vault read functions themselves. On the phone Brain calls them directly,
+  // so the log must live here too, not only behind the server's routes.
+  installA2AReleaseLog(new A2AReleaseLog(identityDB));
   // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
   // grants (constraints, per-execution consumption) + owner-private
   // decision log.
@@ -885,6 +891,7 @@ export async function shutdownAllPersistence(): Promise<void> {
     rebuildContactProjections();
     setContactRepository(null);
     setGroupPlanRepository(null);
+    installA2AReleaseLog(null);
     setServiceOfferRepository(null);
     setServiceDecisionRepository(null);
     setServiceGrantRepository(null);

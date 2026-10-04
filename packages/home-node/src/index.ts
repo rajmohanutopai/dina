@@ -38,8 +38,8 @@ export type {
 } from './types';
 export { openAllPersonasForInAppUser } from './persona_lifecycle';
 export type { OpenAllPersonasOptions } from './persona_lifecycle';
-export { applyDinaPlcUpdate } from './plc_dina_update';
-export type { ApplyDinaPlcUpdateOptions } from './plc_dina_update';
+export { applyDinaPlcUpdate, ensureA2ACardKey } from './plc_dina_update';
+export type { ApplyDinaPlcUpdateOptions, EnsureA2ACardKeyOptions } from './plc_dina_update';
 export { makeResolveSender, pickEd25519VerificationMethod } from './resolve_sender';
 export type { MakeResolveSenderOptions } from './resolve_sender';
 export { makeSendD2D, makeOutboxRedeliver } from './send_d2d';
@@ -66,3 +66,5 @@ export type {
   FetchResponseLike,
   RepoProofChainDeps,
 } from './repo_proof_chain';
+export { A2ADispatchRunner } from './a2a_runner';
+export type { A2ADispatchRunnerOptions } from './a2a_runner';

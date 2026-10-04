@@ -1,0 +1,451 @@
+{
+  "description": "A2A Lane 3 golden vectors (design §8.2): Ed25519 over RFC 8785 of every field except sig; sig is padded base64. Verification is RFC 8032 §5.1.7 with canonical encodings (S < L).",
+  "public_key_hex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "card_text": "{\"capabilities\":{\"extendedAgentCard\":false,\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Next-bus times for route 42.\",\"name\":\"Bus 42 Desk\",\"skills\":[{\"description\":\"Arrival time.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\"}",
+  "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+  "envelope": {
+    "value": {
+      "v": 1,
+      "domain": "dina:a2a:directory-envelope:v1",
+      "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+      "collection": "com.dinakernel.a2a.card",
+      "rkey": "self",
+      "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+      "freshness_epoch": 3,
+      "publisher_epoch": 2,
+      "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+      "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+    },
+    "signing_text": "{\"card_hash\":\"c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf\",\"collection\":\"com.dinakernel.a2a.card\",\"did\":\"did:plc:ewvi7nxzyoun6zhxrhs64oiz\",\"domain\":\"dina:a2a:directory-envelope:v1\",\"freshness_epoch\":3,\"publisher_epoch\":2,\"publisher_instance\":\"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47\",\"rkey\":\"self\",\"v\":1}"
+  },
+  "fence": {
+    "value": {
+      "v": 1,
+      "domain": "dina:a2a:fence:v1",
+      "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+      "publisher_epoch": 2,
+      "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+      "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+    },
+    "signing_text": "{\"did\":\"did:plc:ewvi7nxzyoun6zhxrhs64oiz\",\"domain\":\"dina:a2a:fence:v1\",\"publisher_epoch\":2,\"publisher_instance\":\"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47\",\"v\":1}"
+  },
+  "attempted_record_digest": {
+    "record": {
+      "$type": "com.dinakernel.a2a.card",
+      "card": "{\"capabilities\":{\"extendedAgentCard\":false,\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Next-bus times for route 42.\",\"name\":\"Bus 42 Desk\",\"skills\":[{\"description\":\"Arrival time.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\"}",
+      "directory_envelope": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "endpoint": "https://a2a.example.org/rpc",
+      "protocol_version": "1.0",
+      "skills": [
+        "eta_query@self"
+      ]
+    },
+    "digest": "3a07ff68078a2e23f4c0fcc70e86bd806df6a48c512f1ccdd8a0a232b64b4617",
+    "reordered_digest": "3a07ff68078a2e23f4c0fcc70e86bd806df6a48c512f1ccdd8a0a232b64b4617",
+    "envelope_only_change_digest": "4290d88715c1e14c4d5bf14cf568f6426774141dcd163a4127d3c117a53dd468",
+    "sibling_change_digest": "a7a227200f9dc01404a9989fa3083769163f23c7b9dcf1302c6b7f32db59da67"
+  },
+  "unicode_card": {
+    "card_text": "{\"capabilities\":{},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Línea 42 horarios\",\"name\":\"Bús 42 — 🚌\",\"skills\":[{\"description\":\"Hora.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"～\",\"😀\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\",\"😀\":\"grinning face\",\"～\":\"fullwidth tilde\"}",
+    "card_text_utf8_hex": "7b226361706162696c6974696573223a7b7d2c2264656661756c74496e7075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c2264656661756c744f75747075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c226465736372697074696f6e223a224cc3ad6e6561203432e280a8686f726172696f73222c226e616d65223a2242c3ba7320343220e2809420f09f9a8c222c22736b696c6c73223a5b7b226465736372697074696f6e223a22486f72612e222c226964223a226574615f71756572794073656c66222c226e616d65223a22455441222c2274616773223a5b22efbd9e222c22f09f9880225d7d5d2c22737570706f72746564496e7465726661636573223a5b7b2270726f746f636f6c42696e64696e67223a224a534f4e525043222c2270726f746f636f6c56657273696f6e223a22312e30222c2275726c223a2268747470733a2f2f6132612e6578616d706c652e6f72672f727063227d5d2c2276657273696f6e223a2231222c22f09f9880223a226772696e6e696e672066616365222c22efbd9e223a2266756c6c77696474682074696c6465227d",
+    "card_hash": "d2d415d34cfffccd3fc7be06ba3637135842d40e7eab02799d11c87d805f4801",
+    "record_digest": "9938e00c88636553765a4db4d7c2b7b1687e65826f9d488573251682614b8c3f"
+  },
+  "jcs": [
+    {
+      "name": "non-ASCII, astral and U+2028 are written raw, not escaped",
+      "input": "{\"b\":\"\\u00e9\\ud83d\\ude00\\u2028\",\"a\":1}",
+      "canonical": "{\"a\":1,\"b\":\"é😀 \"}",
+      "canonical_utf8_hex": "7b2261223a312c2262223a22c3a9f09f9880e280a8227d"
+    },
+    {
+      "name": "keys sort by UTF-16 code unit, so U+1F600 precedes U+FF5E",
+      "input": "{\"\\uff5e\":1,\"\\ud83d\\ude00\":2}",
+      "canonical": "{\"😀\":2,\"～\":1}",
+      "canonical_utf8_hex": "7b22f09f9880223a322c22efbd9e223a317d"
+    },
+    {
+      "name": "numbers in ECMAScript form",
+      "input": "[1e21,1e-7,-0,0.1,100,1.5e300,-1E+2]",
+      "canonical": "[1e+21,1e-7,0,0.1,100,1.5e+300,-100]",
+      "canonical_utf8_hex": "5b31652b32312c31652d372c302c302e312c3130302c312e35652b3330302c2d3130305d"
+    },
+    {
+      "name": "control characters escaped as JSON.stringify does; solidus left alone",
+      "input": "\"\\u0001\\n\\t\\\"\\\\\\/\\u001f\"",
+      "canonical": "\"\\u0001\\n\\t\\\"\\\\/\\u001f\"",
+      "canonical_utf8_hex": "225c75303030315c6e5c745c225c5c2f5c753030316622"
+    },
+    {
+      "name": "nested members sorted at every level",
+      "input": "{\"z\":{\"b\":[{\"d\":1,\"c\":2}],\"a\":null},\"y\":true}",
+      "canonical": "{\"y\":true,\"z\":{\"a\":null,\"b\":[{\"c\":2,\"d\":1}]}}",
+      "canonical_utf8_hex": "7b2279223a747275652c227a223a7b2261223a6e756c6c2c2262223a5b7b2263223a322c2264223a317d5d7d7d"
+    }
+  ],
+  "envelope_refusals": [
+    {
+      "name": "replayed into another repository",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "context": {
+        "repoDid": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": "envelope_did_mismatch"
+    },
+    {
+      "name": "signed for another repository",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "7654MkbPEcTLFAAK6iQHzM69Cze1H7ftAZ9x+NyGm+arX/hsfpWv+U5etxyAcujg6aTcwP2usOPZ8mp60krfBQ=="
+      },
+      "expect": "envelope_did_mismatch"
+    },
+    {
+      "name": "replayed onto another collection",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "context": {
+        "collection": "com.dinakernel.a2a.fence"
+      },
+      "expect": "envelope_collection_mismatch"
+    },
+    {
+      "name": "replayed onto another rkey",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "context": {
+        "rkey": "other"
+      },
+      "expect": "envelope_rkey_mismatch"
+    },
+    {
+      "name": "paired with a different card",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "context": {
+        "cardText": "{\"capabilities\":{},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Línea 42 horarios\",\"name\":\"Bús 42 — 🚌\",\"skills\":[{\"description\":\"Hora.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"～\",\"😀\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\",\"😀\":\"grinning face\",\"～\":\"fullwidth tilde\"}"
+      },
+      "expect": "envelope_card_hash_mismatch"
+    },
+    {
+      "name": "the fence domain",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_domain"
+    },
+    {
+      "name": "version 2",
+      "value": {
+        "v": 2,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_version"
+    },
+    {
+      "name": "an extra member",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg==",
+        "extra": 1
+      },
+      "expect": "envelope_members"
+    },
+    {
+      "name": "a fractional epoch",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 1.5,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_freshness_epoch"
+    },
+    {
+      "name": "a negative epoch",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": -1,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_publisher_epoch"
+    },
+    {
+      "name": "an uppercase instance",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3F2B8C1E-7A4D-4B9E-9C1F-2D6E8A0B5C47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_publisher_instance"
+    },
+    {
+      "name": "an unpadded signature",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg"
+      },
+      "expect": "envelope_sig"
+    },
+    {
+      "name": "a tampered epoch",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 4,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg=="
+      },
+      "expect": "envelope_signature"
+    },
+    {
+      "name": "a signature over non-canonical bytes",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "8Qr0xa/yGREpLO3eJtENs+I8cuRek8xE62/GAvb7UmpN0P5wjE87QrVws5PBsgD1Bg5H9LtpyIV8tow48TxtDQ=="
+      },
+      "expect": "envelope_signature"
+    },
+    {
+      "name": "a malleated signature (S + L)",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "collection": "com.dinakernel.a2a.card",
+        "rkey": "self",
+        "card_hash": "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
+        "freshness_epoch": 3,
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/er7kjcRSNMXtVEkWSDjskOXXpXQsNxA4t9Lxu9fx9VGg=="
+      },
+      "expect": "envelope_signature"
+    }
+  ],
+  "fence_refusals": [
+    {
+      "name": "read from another repository",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "repo_did": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+      "expect": "fence_did_mismatch"
+    },
+    {
+      "name": "the envelope domain",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:directory-envelope:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "expect": "fence_domain"
+    },
+    {
+      "name": "a fractional epoch",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2.5,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "expect": "fence_publisher_epoch"
+    },
+    {
+      "name": "an epoch past 2^53",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 9007199254740992,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "expect": "fence_publisher_epoch"
+    },
+    {
+      "name": "a missing member",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2,
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "expect": "fence_members"
+    },
+    {
+      "name": "a tampered epoch",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 3,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg=="
+      },
+      "expect": "fence_signature"
+    },
+    {
+      "name": "a signature over non-canonical bytes",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "9ZJESdkcvEVOfnGLZWoF9tfkqOa9eIVj9zYT/S2FCUFaDWnx9b+SWsl8RRhi+YAtKJi9qIX4JfiTiUyQnu4GCw=="
+      },
+      "expect": "fence_signature"
+    },
+    {
+      "name": "a malleated signature (S + L)",
+      "value": {
+        "v": 1,
+        "domain": "dina:a2a:fence:v1",
+        "did": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+        "publisher_epoch": 2,
+        "publisher_instance": "3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47",
+        "sig": "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchXv8qoAAxSdXDuzeFjIx3AOYXml2r8UlINKRfMgzNYFg=="
+      },
+      "expect": "fence_signature"
+    }
+  ],
+  "signing_text_sha256": "02efeb9c92604a20a0e0a1df9f1a12124eb780e8e81096f392ee021f8d861e77"
+}

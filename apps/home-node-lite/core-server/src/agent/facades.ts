@@ -94,6 +94,8 @@ export interface CreateAgentFacadesOptions {
   reviewPublishRepository?: ReviewPublishRepository;
   now?: () => number;
   fetchImpl?: typeof fetch;
+  /** Calls to Brain only: Core's signed fetch (A2A design §4.1). */
+  brainFetch?: typeof fetch;
 }
 
 export function createAgentFacades(options: CreateAgentFacadesOptions = {}): AgentFacadeHandlers {
@@ -102,7 +104,11 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
     options.brainUrl !== undefined
       ? makeHttpServiceSearchHandler({
           brainUrl: options.brainUrl,
-          ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+          ...(options.brainFetch !== undefined
+            ? { fetchImpl: options.brainFetch }
+            : options.fetchImpl !== undefined
+              ? { fetchImpl: options.fetchImpl }
+              : {}),
         })
       : undefined;
   const appView =

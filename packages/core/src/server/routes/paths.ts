@@ -221,3 +221,28 @@ export const API_REMEMBER = '/api/v1/remember';
 
 export const POLICY_ACTIONS = '/v1/policy/actions';
 export const POLICY_ACTION = '/v1/policy/actions/:action';
+
+// ---------------------------------------------------------------
+// A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §4.3)
+// ---------------------------------------------------------------
+
+export const A2A_DELEGATE = '/v1/a2a/delegate';
+export const A2A_AGENTS = '/v1/a2a/agents';
+/** The DID this node's agent card is published under: the directory's name for this node (§8.4). */
+export const A2A_SELF = '/v1/a2a/self';
+export const A2A_OPERATIONS = '/v1/a2a/operations'; // + /:id
+export const A2A_GUARD_NEXT = '/v1/a2a/guard/next';
+export const A2A_GUARD_VERDICT = '/v1/a2a/guard/verdict';
+/** Brain records the owner's words at the start of each chat turn (A2A §4.2 (a)). */
+export const A2A_TURNS = '/v1/a2a/turns';
+export const OWNER_A2A_REMOTE_AGENTS = '/v1/owner/a2a/remote-agents';
+export const OWNER_A2A_OPERATIONS = '/v1/owner/a2a/operations';
+// A2A Lane 2 (M2): inbound clients and the grants issued to them.
+export const OWNER_A2A_CLIENTS = '/v1/owner/a2a/clients'; // + /:id/{rotate,revoke,grants,did-challenge}
+export const OWNER_A2A_GRANTS = '/v1/owner/a2a/grants'; // + /:grantId/revoke
+// Which paired runner executes A2A work on an mcpServer lane (design §7.3).
+export const OWNER_A2A_RUNNERS = '/v1/owner/a2a/runners'; // + /:lane/unbind
+// Lane 3 (M5, design §8.2): the directory listing switch and the publisher's
+// fencing ceremony.
+export const OWNER_A2A_DIRECTORY_LISTING = '/v1/owner/a2a/directory-listing';
+export const OWNER_A2A_PUBLISHER = '/v1/owner/a2a/publisher'; // + /activate, /deactivate

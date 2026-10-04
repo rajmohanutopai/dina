@@ -16,10 +16,10 @@
 
 import 'fake-indexeddb/auto';
 
-import { multibaseToPublicKey, verify } from '@dina/core';
+import { multibaseToPublicKey, verify, verifyRequest } from '@dina/core';
 
 let mockConfig: WebRuntimeConfig = { servedByCore: true, brainUrl: 'http://127.0.0.1:8200' };
-jest.mock('../../src/services/web_runtime', () => ({
+jest.mock('../../src/services/web_runtime_config', () => ({
   loadWebRuntimeConfig: async () => mockConfig,
 }));
 
@@ -32,8 +32,10 @@ import {
   ownerAccessState,
   subscribeOwnerAccess,
 } from '../../src/services/owner_device.web';
+import { appViewFetch } from '../../src/peerlens/appview_base.web';
+import { brainFetch } from '../../src/services/web_runtime';
 
-import type { WebRuntimeConfig } from '../../src/services/web_runtime';
+import type { WebRuntimeConfig } from '../../src/services/web_runtime_config';
 
 const OWNER_KEY = 'owner-capability-for-web-tests-0123456789';
 const PASSPHRASE = 'correct horse';
@@ -167,6 +169,84 @@ describe('connecting', () => {
     const signature = await signer.sign(message);
     const registered = multibaseToPublicKey(core.registeredKey ?? '');
     expect(verify(registered, message, signature)).toBe(true);
+  });
+
+  it('signs every Brain call so Brain can check it: path, query, body and all', async () => {
+    await connectOwnerDevice({ ownerKey: OWNER_KEY, passphrase: PASSPHRASE, deviceName: 'Laptop' });
+    const before = globalThis.fetch;
+    const seen: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      seen.push({ url, init });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await brainFetch('/api/v1/contacts?q=ann', {
+        method: 'POST',
+        body: '{"a":1}',
+        headers: { 'content-type': 'application/json' },
+      });
+    } finally {
+      globalThis.fetch = before;
+    }
+    const [call] = seen;
+    expect(call?.url).toBe('http://127.0.0.1:8200/api/v1/contacts?q=ann');
+    const h = call?.init.headers as Record<string, string>;
+    expect(h['content-type']).toBe('application/json');
+    const registered = multibaseToPublicKey(core.registeredKey ?? '');
+    const body = new TextEncoder().encode('{"a":1}');
+    const ok = (path: string, query: string, sentBody: Uint8Array) =>
+      verifyRequest(
+        'POST',
+        path,
+        query,
+        h['X-Timestamp'] ?? '',
+        h['X-Nonce'] ?? '',
+        sentBody,
+        h['X-Signature'] ?? '',
+        registered,
+      );
+    expect(h['X-DID']).toBe((await loadOwnerSigner())?.did);
+    expect(ok('/api/v1/contacts', 'q=ann', body)).toBe(true);
+    // A different path, query or body would not verify.
+    expect(ok('/api/v1/chat', 'q=ann', body)).toBe(false);
+    expect(ok('/api/v1/contacts', 'q=bob', body)).toBe(false);
+    expect(ok('/api/v1/contacts', 'q=ann', new TextEncoder().encode('{"a":2}'))).toBe(false);
+  });
+
+  it('signs what the browser sends: a query the URL parser rewrites still verifies', async () => {
+    await connectOwnerDevice({ ownerKey: OWNER_KEY, passphrase: PASSPHRASE, deviceName: 'Laptop' });
+    const before = globalThis.fetch;
+    const seen: { url: string; init: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      seen.push({ url, init });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await brainFetch("/api/v1/contacts/lookup?q=o'brien");
+      await appViewFetch(
+        'http://127.0.0.1:8200/api/peerlens/xrpc/com.dinakernel.peerlens.resolve?subject=x',
+      );
+    } finally {
+      globalThis.fetch = before;
+    }
+    const registered = multibaseToPublicKey(core.registeredKey ?? '');
+    for (const { url, init } of seen) {
+      const sentUrl = new URL(url);
+      const h = init.headers as Record<string, string>;
+      expect(
+        verifyRequest(
+          'GET',
+          sentUrl.pathname,
+          sentUrl.search.slice(1),
+          h['X-Timestamp'] ?? '',
+          h['X-Nonce'] ?? '',
+          new Uint8Array(),
+          h['X-Signature'] ?? '',
+          registered,
+        ),
+      ).toBe(true);
+    }
+    expect(new URL(seen[0]?.url ?? '').search).toBe('?q=o%27brien');
   });
 
   it('the key cannot be read out, and the owner key is not stored anywhere', async () => {

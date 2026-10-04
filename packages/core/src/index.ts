@@ -4,6 +4,7 @@ export * from './crypto';
 // the reference is captured into a class field or module-level let.
 export { defaultFetch } from './runtime/fetch';
 export * from './auth/canonical';
+export * from './auth/signed_request';
 export * from './auth/timestamp';
 export { NonceCache } from './auth/nonce';
 export { NonceReplayCache, DEFAULT_NONCE_TTL_MS } from './rpc/nonce_replay_cache';
@@ -130,6 +131,36 @@ export type {
   ServiceResponseStatus,
 } from './d2d/service_bodies';
 export * from './service/query_window';
+export { capabilitySchemaHash } from './service/capability_schema_hash';
+export type { CapabilitySchemaPair } from './service/capability_schema_hash';
+export {
+  ServiceQueryIngress,
+  checkQuerySchemaHash,
+  findCapabilityConfig,
+  lookupPublishedSchema,
+  pluginBinding,
+  snapshotForCapability,
+  validateQueryParams,
+} from './service/query_ingress';
+export type {
+  ApprovalNotifier,
+  SchemaSnapshot,
+  ServiceDirectResponder,
+  ServiceInboundNotifier,
+  ServiceQueryIngressOptions,
+} from './service/query_ingress';
+export {
+  FALLBACK_TTL_SECONDS,
+  SUPPORTED_CAPABILITIES,
+  getCapability,
+  getTTL,
+  listCapabilities,
+} from './service/capabilities/registry';
+export type { CapabilityDef, Validator } from './service/capabilities/registry';
+export { serviceSchemaError } from './service/capabilities/schema';
+export * from './service/capabilities/eta_query';
+export * from './service/capabilities/appointment';
+export * from './service/capabilities/availability_coordination';
 export type { QueryWindowOptions } from './service/query_window';
 export {
   providerWindow,
@@ -504,8 +535,9 @@ export type {
   TaskExpirySweeperOptions,
   TaskExpirySweepResult,
 } from './workflow/task_expiry_sweeper';
-export { LocalDelegationRunner } from './workflow/local_delegation_runner';
+export { CapabilityInputRequired, LocalDelegationRunner } from './workflow/local_delegation_runner';
 export type {
+  CapabilityTurn,
   LocalDelegationRunnerOptions,
   LocalCapabilityRunner,
 } from './workflow/local_delegation_runner';
@@ -1057,6 +1089,7 @@ export * from './vault/lifecycle';
 export * from './vault/tiered_content';
 export type { TieredItem, TieredLoadConfig } from './vault/tiered_content';
 export * from './vault/crud';
+export * from './vault/release';
 export * from './vault/origin_capability';
 export * from './session/registry';
 export * from './agent/gating_policy';
@@ -1372,6 +1405,7 @@ export type {
   VaultItemInput,
   VaultStoreResult,
   VaultListOptions,
+  VaultReleaseOptions,
   VaultListResult,
   VaultDeleteResult,
   SignResult,
@@ -1636,6 +1670,8 @@ export type {
   AuthMode,
 } from './server/router';
 export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
+export { A2A_CARD_ROUTE, isA2AGatewayRoute } from './server/routes/a2a_ingress';
+export { BRAIN_CALLERS_ROUTE, getCoreServiceDid, installCoreServiceDid } from './server/routes/brain_callers';
 export type { CoreRouterOptions } from './server/core_server';
 export type { AskRouteHandler, AskSubmitInput } from './server/routes/ask';
 export type { CodingGateFn, CodingGateInput, CodingGateResult } from './server/routes/coding_gate';
@@ -1735,3 +1771,20 @@ export * from './reasoning/job_projection';
 
 // Commerce Pack Core stores (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §23)
 export * from './commerce';
+
+// A2A edge decisions (docs/A2A_GATEWAY_ARCHITECTURE.md §4.2)
+export * from './a2a';
+export * from './client/a2a_wire';
+export type {
+  A2ACallableAgent,
+  A2ACallableSkill,
+  A2ADelegateInput,
+  A2ASourceClaim,
+  A2ADelegateResult,
+  A2AGuardVerdictCode,
+  A2AGuardVerdictInput,
+  A2AGuardVerdictResult,
+  A2AGuardWork,
+  OwnerTurnInput,
+  A2AOperationStatus,
+} from './client/core-client';

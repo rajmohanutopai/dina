@@ -127,6 +127,7 @@ vi.mock('@/config/lexicons.js', () => ({
     'com.dinakernel.peerlens.trustPolicy',
     'com.dinakernel.peerlens.notificationPrefs',
   ],
+  JETSTREAM_COLLECTIONS: ['com.dinakernel.peerlens.attestation', 'com.dinakernel.a2a.card'],
 }))
 
 // Mock env
@@ -148,11 +149,16 @@ const mockQueueGetSafeCursor = vi.fn().mockReturnValue(null)
 const mockQueueSetWebSocket = vi.fn()
 const mockQueueInFlight = 0
 
+const mockQueueHoldIfFull = vi.fn()
+let mockQueuePaused = false
+
 vi.mock('@/ingester/bounded-queue.js', () => ({
   BoundedIngestionQueue: vi.fn().mockImplementation(() => ({
     push: mockQueuePush,
     getSafeCursor: mockQueueGetSafeCursor,
     setWebSocket: mockQueueSetWebSocket,
+    holdIfFull: mockQueueHoldIfFull,
+    get isPaused() { return mockQueuePaused },
     get inFlight() { return mockQueueInFlight },
   })),
 }))
@@ -161,12 +167,17 @@ vi.mock('@/ingester/bounded-queue.js', () => ({
 const mockWsOn = vi.fn()
 const mockWsClose = vi.fn()
 vi.mock('ws', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    on: mockWsOn,
-    close: mockWsClose,
-    pause: vi.fn(),
-    resume: vi.fn(),
-  })),
+  default: Object.assign(
+    vi.fn().mockImplementation(() => ({
+      on: mockWsOn,
+      close: mockWsClose,
+      pause: vi.fn(),
+      resume: vi.fn(),
+      ping: vi.fn(),
+      terminate: vi.fn(),
+    })),
+    { OPEN: 1 },
+  ),
 }))
 
 // Now import the consumer after all mocks are set
@@ -280,6 +291,8 @@ function createTestConsumer() {
     push: mockQueuePush,
     getSafeCursor: mockQueueGetSafeCursor,
     setWebSocket: mockQueueSetWebSocket,
+    holdIfFull: mockQueueHoldIfFull,
+    get isPaused() { return mockQueuePaused },
     get inFlight() { return mockQueueInFlight },
   }
 
@@ -1108,6 +1121,229 @@ describe('SS6.5 JetstreamConsumer -- cursor advancement (ghost-listing fix)', ()
       ;(consumer as any).reconnectWithBackoff()
       await vi.runAllTimersAsync()
       expect(connectedWithCursor).toBe(12_345) // resumed from processed position, not the stale boot cursor
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SS6.A2A — the A2A directory's events (design §8.3)
+// ---------------------------------------------------------------------------
+describe('SS6.A2A card, identity and account events reach the A2A directory', () => {
+  function withDirectory() {
+    const t = createTestConsumer()
+    const directory = {
+      receive: vi.fn(async () => undefined),
+      noteIdentity: vi.fn(async () => undefined),
+      noteAccount: vi.fn(async () => undefined),
+      markGapIfUnreplayable: vi.fn(async () => ({ gapped: false, generation: 0 })),
+      noteLive: vi.fn(async () => undefined),
+    }
+    t.consumer.setA2ADirectory(directory as never)
+    return { ...t, directory }
+  }
+  const cardEvent = (): JetstreamCommitCreate => ({
+    did: 'did:plc:author',
+    time_us: 7000,
+    kind: 'commit',
+    commit: {
+      rev: '3aaaaaaaaaaaa',
+      operation: 'create',
+      collection: 'com.dinakernel.a2a.card',
+      rkey: 'self',
+      record: { card: '{}' },
+      cid: 'bafyreib2rxk3rybhqbqkrhkpm3ic6e3p4dkkbjxhvcsg3kbygpjlmmzb6ccc',
+    },
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    clearFlagCache()
+  })
+
+  it('a card event goes to the directory with the trust flag OFF, and nothing of the trust path runs', async () => {
+    const { processEvent, db, directory } = withDirectory()
+    // trust_v1_enabled reads false.
+    db.select.mockReturnValue({ from: () => ({ where: () => ({ limit: async () => [{ boolValue: false }] }) }) })
+    const event = cardEvent()
+    await processEvent(event, { a2aGeneration: 3 })
+    // With the gap generation it was received under.
+    expect(directory.receive).toHaveBeenCalledWith(event, 3)
+    expect(db.select).not.toHaveBeenCalled() // the trust flag is not even read
+    expect(mockValidateRecord).not.toHaveBeenCalled()
+    expect(mockIsRateLimited).not.toHaveBeenCalled()
+    expect(mockHandleCreate).not.toHaveBeenCalled()
+  })
+
+  it('identity and account events are passed on (a card holder is checked again; an inactive account withheld)', async () => {
+    const { processEvent, directory } = withDirectory()
+    await processEvent(makeIdentityEvent())
+    expect(directory.noteIdentity).toHaveBeenCalledWith('did:plc:author')
+    await processEvent(makeAccountEvent('deactivated'))
+    expect(directory.noteAccount).toHaveBeenCalledWith('did:plc:author', false, 5000)
+    await processEvent(makeAccountEvent())
+    expect(directory.noteAccount).toHaveBeenLastCalledWith('did:plc:author', true, 5000)
+  })
+
+  it('a card event with no receipt stamp (replayed from the file spool) is recorded as unstamped: it never proves', async () => {
+    const { processEvent, directory } = withDirectory()
+    await processEvent(cardEvent())
+    expect(directory.receive).toHaveBeenCalledWith(expect.anything(), -1)
+  })
+
+  it('the socket stamps card events with the generation the last gap check returned, and never drops card or account events', async () => {
+    const { consumer, directory } = withDirectory()
+    directory.markGapIfUnreplayable.mockResolvedValueOnce({ gapped: true, generation: 7 })
+    ;(consumer as any).loadCursor = async () => 1
+    ;(consumer as any).replaySpool = async () => undefined
+    ;(consumer as any).setupGracefulShutdown = () => undefined
+    vi.useFakeTimers()
+    try {
+      await consumer.start() // the real connect(): a mocked socket and queue
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+    expect(directory.markGapIfUnreplayable).toHaveBeenCalledWith(1)
+    const onMessage = mockWsOn.mock.calls.find((c) => c[0] === 'message')?.[1] as (data: Buffer) => void
+    const send = (event: unknown) => onMessage(Buffer.from(JSON.stringify(event)))
+    send(cardEvent())
+    send(makeAccountEvent('deactivated'))
+    send(makeCommitCreate())
+    expect(mockQueuePush.mock.calls).toEqual([
+      [expect.objectContaining({ context: { a2aGeneration: 7 } }), { required: true }],
+      [expect.not.objectContaining({ context: expect.anything() }), { required: true }],
+      [expect.not.objectContaining({ context: expect.anything() }), { required: false }],
+    ])
+  })
+
+  describe('liveness: a live note needs proof the socket delivers and the replay is over', () => {
+    const S = 1_000_000
+    function live(over: Record<string, number> = {}) {
+      const t = withDirectory()
+      const ws = { readyState: 1, ping: vi.fn(), terminate: vi.fn() }
+      Object.assign(t.consumer as any, {
+        ws,
+        connectedAtUs: 1_000 * S,
+        lastPingUs: 1_000 * S,
+        lastPongUs: 1_001 * S,
+        lastMessageUs: 0,
+        lastMessageLagUs: 0,
+        ...over,
+      })
+      mockQueueGetSafeCursor.mockReturnValue(null)
+      return { ...t, ws }
+    }
+
+    it('answered, caught up, nothing waiting: notes live at the pong, then pings again', async () => {
+      const { consumer, directory, ws } = live()
+      await (consumer as any).livenessTick(1_070 * S)
+      expect(directory.noteLive).toHaveBeenCalledWith(1_001 * S)
+      expect(ws.ping).toHaveBeenCalledTimes(1)
+    })
+
+    it('OPEN but the last ping unanswered: no live note (everything else would allow one)', async () => {
+      const { consumer, directory } = live({ lastPongUs: 999 * S })
+      // Connected 70 s ago with no message (caught up), queue empty, not yet stalled.
+      await (consumer as any).livenessTick(1_070 * S)
+      expect(directory.noteLive).not.toHaveBeenCalled()
+    })
+
+    it('something still waiting in the queue: no live note', async () => {
+      const { consumer, directory } = live()
+      mockQueueGetSafeCursor.mockReturnValue(4_000)
+      await (consumer as any).livenessTick(1_070 * S)
+      expect(directory.noteLive).not.toHaveBeenCalled()
+    })
+
+    it('mid-replay (the last message far behind its own time, and recent): no live note', async () => {
+      const { consumer, directory } = live({ lastMessageUs: 1_020 * S, lastMessageLagUs: 3_600 * S })
+      await (consumer as any).livenessTick(1_030 * S)
+      expect(directory.noteLive).not.toHaveBeenCalled()
+    })
+
+    it('the replay is over once the stream has been silent for a minute with pings answered', async () => {
+      const { consumer, directory } = live({ lastMessageUs: 1_005 * S, lastMessageLagUs: 3_600 * S, lastPongUs: 1_066 * S, lastPingUs: 1_065 * S })
+      await (consumer as any).livenessTick(1_070 * S)
+      expect(directory.noteLive).toHaveBeenCalledWith(1_066 * S)
+    })
+
+    it('freshly connected with no message yet: not live until a minute has passed', async () => {
+      const { consumer, directory } = live({ connectedAtUs: 1_000 * S, lastPongUs: 1_020 * S, lastPingUs: 1_019 * S })
+      await (consumer as any).livenessTick(1_030 * S)
+      expect(directory.noteLive).not.toHaveBeenCalled()
+    })
+
+    it('held paused by backpressure: never a stall, no ping, no note; the stall clock restarts once released', async () => {
+      const { consumer, directory, ws } = live({ lastPongUs: 1_000 * S, lastPingUs: 1_060 * S })
+      mockQueuePaused = true
+      try {
+        await (consumer as any).livenessTick(1_200 * S) // 200 s silent, but held
+        expect(ws.terminate).not.toHaveBeenCalled()
+        expect(ws.ping).not.toHaveBeenCalled()
+        expect(directory.noteLive).not.toHaveBeenCalled()
+      } finally {
+        mockQueuePaused = false
+      }
+      // Released: 60 s after the last held tick is not yet a stall.
+      await (consumer as any).livenessTick(1_260 * S)
+      expect(ws.terminate).not.toHaveBeenCalled()
+      await (consumer as any).livenessTick(1_291 * S)
+      expect(ws.terminate).toHaveBeenCalledTimes(1)
+    })
+
+    it('a new socket that opens onto a full queue is held at once', () => {
+      const { consumer } = withDirectory()
+      mockWsOn.mockClear()
+      mockQueueHoldIfFull.mockClear()
+      ;(consumer as any).connect()
+      const onOpen = mockWsOn.mock.calls.find((c) => c[0] === 'open')?.[1] as () => void
+      onOpen()
+      expect(mockQueueHoldIfFull).toHaveBeenCalledTimes(1)
+    })
+
+    it('no pong and no message for 90 s: the socket is terminated (a reconnect follows), nothing noted', async () => {
+      const { consumer, directory, ws } = live({ lastPongUs: 1_000 * S, lastPingUs: 1_060 * S })
+      await (consumer as any).livenessTick(1_091 * S)
+      expect(ws.terminate).toHaveBeenCalledTimes(1)
+      expect(directory.noteLive).not.toHaveBeenCalled()
+      expect(ws.ping).not.toHaveBeenCalled()
+    })
+  })
+
+  it('one queue for the consumer’s life: a reconnect re-points it, so earlier events keep holding the cursor', async () => {
+    const { BoundedIngestionQueue } = await import('@/ingester/bounded-queue.js')
+    const { consumer } = withDirectory()
+    ;(consumer as any).queue = null
+    vi.mocked(BoundedIngestionQueue).mockClear()
+    mockQueueSetWebSocket.mockClear()
+    ;(consumer as any).connect()
+    const first = (consumer as any).queue
+    ;(consumer as any).connect()
+    expect(BoundedIngestionQueue).toHaveBeenCalledTimes(1)
+    expect((consumer as any).queue).toBe(first)
+    expect(mockQueueSetWebSocket).toHaveBeenCalledTimes(2)
+  })
+
+  it('a reconnect checks for a gap first; a failed check does not connect, and the next try does', async () => {
+    vi.useFakeTimers()
+    try {
+      const { consumer, directory } = withDirectory()
+      ;(consumer as any).cursor = 4_242
+      mockQueueGetSafeCursor.mockReturnValue(null)
+      directory.markGapIfUnreplayable.mockRejectedValueOnce(new Error('db down'))
+      directory.markGapIfUnreplayable.mockResolvedValueOnce({ gapped: false, generation: 4 })
+      const connects: number[] = []
+      ;(consumer as any).connect = () => connects.push(directory.markGapIfUnreplayable.mock.calls.length)
+      ;(consumer as any).reconnectWithBackoff()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(directory.markGapIfUnreplayable).toHaveBeenCalledWith(4_242)
+      expect(connects).toEqual([])
+      await vi.advanceTimersByTimeAsync(2_000)
+      // Connected only after a check that succeeded (the second), stamping with its generation.
+      expect(connects).toEqual([2])
+      expect((consumer as any).a2aGeneration).toBe(4)
     } finally {
       vi.useRealTimers()
     }

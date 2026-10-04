@@ -22,13 +22,14 @@
  * Source: docs/HOME_NODE_LITE_WEB_UI_TASKS.md — SSE chat delivery.
  */
 
-import {
-  applyRemoteMessage,
-  type ChatMessage,
-  type ChatResponse,
-} from '@dina/brain/chat';
+import { applyRemoteMessage, type ChatMessage, type ChatResponse } from '@dina/brain/chat';
 
-import { brainEventStream, brainFetch, type BrainEventStream } from '../services/web_runtime';
+import {
+  brainEventStream,
+  brainFetch,
+  type BrainEventSource,
+  type BrainEventStream,
+} from '../services/web_runtime';
 
 const CHAT_ENDPOINT = '/api/v1/chat';
 const CHAT_STREAM_ENDPOINT = '/api/v1/chat/stream';
@@ -56,18 +57,14 @@ const streamRefCounts = new Map<string, number>();
 
 function ensureChatStream(threadId: string): void {
   if (activeStreams.has(threadId)) return;
-  // SSR-safe: EventSource only exists in the browser. Tests that run
-  // in jsdom may or may not implement it; we no-op when absent so the
-  // POST path still works in test harnesses.
-  if (typeof EventSource === 'undefined') return;
 
   const path = `${CHAT_STREAM_ENDPOINT}?threadId=${encodeURIComponent(threadId)}`;
   const stream = brainEventStream(path, (es) => attachChatListeners(es, threadId));
   activeStreams.set(threadId, stream);
 }
 
-function attachChatListeners(es: EventSource, threadId: string): void {
-  es.addEventListener('message', (ev: MessageEvent<string>) => {
+function attachChatListeners(es: BrainEventSource, threadId: string): void {
+  es.addEventListener('message', (ev) => {
     let msg: ChatMessage;
     try {
       msg = JSON.parse(ev.data) as ChatMessage;
@@ -85,14 +82,13 @@ function attachChatListeners(es: EventSource, threadId: string): void {
     }
   });
 
-  // EventSource auto-reconnects on transient errors using the
-  // `retry:` value the server sends (2 s). We don't tear it down on
-  // error — let the browser keep trying. A permanent failure (server
-  // gone, route 404'd) eventually surfaces as a stuck UI; users can
-  // refresh. Surfacing this in the UI is a future polish.
+  // The stream reconnects on a dropped connection using the `retry:` value
+  // the server sends (2 s); an HTTP refusal ends it (brainEventStream). We
+  // don't tear it down on error: tearing down here would give up on a
+  // transient blip (e.g. a sleeping laptop). A permanent failure surfaces
+  // as a stuck UI; users can refresh.
   es.addEventListener('error', () => {
-    // No-op; the browser will reconnect. Tearing down here would
-    // give up on a transient blip (e.g. a sleeping laptop).
+    // No-op; the stream reconnects by itself.
   });
 }
 

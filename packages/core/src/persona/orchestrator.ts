@@ -23,6 +23,9 @@
  * Source: ARCHITECTURE.md Tasks 2.34, 2.35
  */
 
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+
 import { aeadEncrypt, aeadDecrypt } from '../crypto/aead';
 import { derivePersonaDEK , deriveDEKHash } from '../crypto/hkdf';
 import { buildIndex, destroyIndex, hasIndex } from '../embedding/persona_index';
@@ -306,6 +309,49 @@ export function unwrapWithPersonaDEK(name: string, envelope: Uint8Array): Uint8A
   const dek = activeDEKs.get(name);
   if (dek === undefined) return null;
   return aeadDecrypt(dek, envelope);
+}
+
+/**
+ * Seal a small secret for one purpose under the persona's live DEK, without
+ * exposing the DEK: a purpose key is derived from it (HKDF-SHA256, `info` =
+ * `purpose`), and `aad` binds the envelope to its place, so a blob copied
+ * elsewhere does not open. Null when the persona is locked.
+ */
+export function sealForPersonaPurpose(
+  name: string,
+  purpose: string,
+  aad: Uint8Array,
+  plaintext: Uint8Array,
+): Uint8Array | null {
+  const dek = activeDEKs.get(name);
+  if (dek === undefined) return null;
+  const key = purposeKey(dek, purpose);
+  try {
+    return aeadEncrypt(key, plaintext, aad);
+  } finally {
+    zeroBytes(key);
+  }
+}
+
+/** Inverse of {@link sealForPersonaPurpose}. Null when locked; throws `AeadError` on a wrong key, place or damage. */
+export function openForPersonaPurpose(
+  name: string,
+  purpose: string,
+  aad: Uint8Array,
+  envelope: Uint8Array,
+): Uint8Array | null {
+  const dek = activeDEKs.get(name);
+  if (dek === undefined) return null;
+  const key = purposeKey(dek, purpose);
+  try {
+    return aeadDecrypt(key, envelope, aad);
+  } finally {
+    zeroBytes(key);
+  }
+}
+
+function purposeKey(dek: Uint8Array, purpose: string): Uint8Array {
+  return hkdf(sha256, dek, undefined, new TextEncoder().encode(purpose), 32);
 }
 
 /**

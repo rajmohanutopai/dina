@@ -32,18 +32,19 @@
 
 import { canonicalJson, pluginLane } from '@dina/protocol';
 
+import { admitInboundClaim } from '../a2a/inbound';
+import { getCommerceRuntime } from '../commerce/runtime';
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
 import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch';
 import { getDrainAuthorizationRepository } from './drain_authorizations';
-import { getCommerceRuntime } from '../commerce/runtime';
 import { getPluginGrantRepository, invocationDigest } from './grants';
+import { validateAgainstSchema } from './schema_validate';
 import {
   LIFECYCLE_CAPABILITIES,
   bareCapabilityName,
   releaseMajorOf,
 } from './update_rebind';
-import { validateAgainstSchema } from './schema_validate';
 
 import type { PluginInstall } from './registry';
 import type { WorkflowTask } from '../workflow/domain';
@@ -531,6 +532,13 @@ export function claimPluginTask(args: {
         );
         continue;
       }
+    }
+    // A2A design §7.3: an inbound A2A call a plugin serves is admitted at the
+    // same boundary as any runner's: its authority re-checked, an effectful
+    // permit consumed. A refused one is already failed and settled.
+    if (admitInboundClaim(task, deviceDid) === 'refused') {
+      terminalized.push(task.id);
+      continue;
     }
     return { task, terminalized };
   }

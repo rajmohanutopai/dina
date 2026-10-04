@@ -12,8 +12,9 @@
  *
  * Core resolves the listing's `ServiceConfig` IN-PROCESS (`getServiceConfig`)
  * and passes it along, so the Brain endpoint never has to round-trip back to
- * Core for it. Loopback HTTP, no signing (the Brain capability route is
- * localhost-only, same posture as its other routes).
+ * Core for it. The call goes out through Core's signed Brain link
+ * (`createSignedBrainFetch`, brain_link.ts): Brain serves only callers whose
+ * signature it checks, so there is no unsigned way to reach it.
  */
 
 import { getServiceConfig, type LocalCapabilityRunner, type WorkflowTask } from '@dina/core';
@@ -28,22 +29,24 @@ export interface HttpTier1RunnerOptions {
   /** Base URL of the lite Brain (e.g. http://127.0.0.1:8200). */
   brainUrl: string;
   logger: Logger;
-  /** Injectable for tests. */
-  fetchImpl?: typeof fetch;
+  /** Core's signed Brain fetch (`createSignedBrainFetch`): Brain refuses an unsigned call. */
+  fetchImpl: typeof fetch;
 }
 
 export function makeHttpTier1Runner(options: HttpTier1RunnerOptions): LocalCapabilityRunner {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl;
   const base = options.brainUrl.replace(/\/+$/, '');
 
   return async (capability: string, params: unknown, task: WorkflowTask): Promise<unknown> => {
     // Resolve the listing config Core holds for this query's rkey. The Brain
     // runtime needs the capability's instruction + result schema + vault pin;
     // Core has them in-process, so pass them rather than make Brain fetch.
+    // No listing named is the default one; a listing named but unreadable
+    // fails the run, never answers for another listing.
     const payload = parseServiceQueryExecutionPayload(task.payload);
     const serviceUri = payload?.service_uri ?? '';
-    const rkey =
-      serviceUri !== '' ? (parseServiceListingUri(serviceUri)?.rkey ?? DEFAULT_RKEY) : DEFAULT_RKEY;
+    const rkey = serviceUri === '' ? DEFAULT_RKEY : parseServiceListingUri(serviceUri)?.rkey;
+    if (rkey === undefined) throw new Error('tier1: the task names a listing that is not a listing reference');
     const config = getServiceConfig(rkey);
 
     options.logger.info(

@@ -24,7 +24,7 @@ import {
   type OwnerAccessState,
   type OwnerDeviceInfo,
 } from './owner_device_types';
-import { loadWebRuntimeConfig } from './web_runtime';
+import { loadWebRuntimeConfig } from './web_runtime_config';
 
 export { OwnerDeviceError };
 export type { ConnectOwnerDeviceInput, OwnerAccessState, OwnerDeviceInfo };

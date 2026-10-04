@@ -42,7 +42,13 @@ export type CallerType =
    * entry point, which verifies the signature and marks the request as
    * the owner.
    */
-  | 'owner_device';
+  | 'owner_device'
+  /**
+   * A2A design §4.1 — the inbound A2A gateway: a separate process with its
+   * own service key (index 3), no vault keys and no principal resolution.
+   * Exactly its allowlist below; everything else fails closed.
+   */
+  | 'gateway';
 
 /**
  * Authorization rules: each entry maps a path prefix to the set of
@@ -253,6 +259,44 @@ const AUTHZ_RULES: {
     exact: true,
     allowed: new Set(['brain', 'owner', 'admin', 'device']),
   },
+  // A2A Lane 1 (design §4.3): Brain proposes, reads its operations, lists
+  // callable agents, and runs the guard. Exact and method-bound, so no other
+  // /v1/a2a path or verb opens to it. Owner management lives under
+  // /v1/owner/a2a and is checked in-handler.
+  { prefix: '/v1/a2a/delegate', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/a2a/agents', method: 'GET', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/a2a/self', method: 'GET', exact: true, allowed: new Set(['brain']) },
+  {
+    prefix: '/v1/a2a/operations/',
+    method: 'GET',
+    singleSegmentTail: true,
+    allowed: new Set(['brain']),
+  },
+  { prefix: '/v1/a2a/guard/next', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/a2a/guard/verdict', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/a2a/turns', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  // A2A Lane 2 (design §4.1, §4.3, §7.5): the gateway's whole allowlist.
+  // Every client-facing route is a POST under /v1/a2a/ingress/, as are its
+  // two delivery doors; the public card is the one GET. No other path or
+  // verb opens to it, and no one else may use these doors.
+  { prefix: '/v1/a2a/ingress/message', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/message/stream', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/tasks/list', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/get', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/cancel', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/subscribe', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/create', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/get', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/list', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/delete', method: 'POST', allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/extended-card', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/events/claim', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/events/ack', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/ingress/did/complete', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/a2a/card', method: 'GET', exact: true, allowed: new Set(['gateway']) },
+  // Who may call Brain (A2A design §4.1): Brain reads it over its own signed
+  // link, and nothing else may (it names the owner's devices).
+  { prefix: '/v1/brain/callers', method: 'GET', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/run', allowed: new Set(['owner']) },
   // OWNER-ONLY (PSVC-4). Watch/subscription management is the subscriber's own
   // standing work — same boundary as /v1/run: every signed caller is denied
@@ -465,6 +509,13 @@ const AUTHZ_RULES: {
     suffix: '/fail',
     method: 'POST',
     allowed: new Set(['brain', 'admin', 'agent', 'plugin']),
+  },
+  // A2A multi-turn (§7.7): only a paired runner asks an A2A caller for input.
+  {
+    prefix: '/v1/workflow/tasks/',
+    suffix: '/input-required',
+    method: 'POST',
+    allowed: new Set(['agent']),
   },
   { prefix: '/v1/workflow/tasks/', allowed: new Set(['brain', 'admin', 'agent']) },
   { prefix: '/v1/workflow/', allowed: new Set(['brain', 'admin']) },

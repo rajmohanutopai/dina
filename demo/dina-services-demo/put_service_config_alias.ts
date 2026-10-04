@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
 import { HttpCoreTransport, deriveDIDKey, getPublicKey } from '@dina/core';
-import { listCapabilities, canonicalCapabilitySchemaHash } from '@dina/brain';
+import { capabilitySchemaHash, listCapabilities } from '@dina/core';
 import type { ServiceConfig } from '@dina/core';
 
 async function main(): Promise<void> {
@@ -62,14 +62,14 @@ async function main(): Promise<void> {
         // bus_eta is an alias of the official eta_query → category from its
         // catalog category_ids (['transit']).
         category: 'transit',
-        schemaHash: canonicalCapabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
+        schemaHash: capabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
       },
     },
     capabilitySchemas: {
       bus_eta: {
         params: eta.paramsSchema,
         result: eta.resultSchema,
-        schemaHash: canonicalCapabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
+        schemaHash: capabilitySchemaHash({ params: eta.paramsSchema, result: eta.resultSchema, description: eta.description }),
         description: eta.description,
         defaultTtlSeconds: eta.defaultTtlSeconds,
       },

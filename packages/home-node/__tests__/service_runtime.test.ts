@@ -1,8 +1,8 @@
-import { InMemoryWorkflowRepository, WorkflowService, setWorkflowService } from '@dina/core';
+import { InMemoryWorkflowRepository, WorkflowService, getWorkflowService } from '@dina/core';
 
 import { buildHomeNodeServiceRuntime, toServiceResponseBody } from '../service-runtime';
 
-import type { CoreClient } from '@dina/core';
+import type { CoreClient, CreateWorkflowTaskInput } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 const REQUESTER = 'did:plc:requester';
@@ -66,6 +66,7 @@ describe('@dina/home-node/service-runtime', () => {
     const core = stubCore();
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
       directResponder: jest.fn(),
@@ -83,8 +84,8 @@ describe('@dina/home-node/service-runtime', () => {
     );
 
     expect(result).toMatchObject({ routed: true, dropped: false, handlerError: null });
-    expect(core.createWorkflowTask).toHaveBeenCalledTimes(1);
-    const call = core.createWorkflowTask.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(core.created).toHaveLength(1);
+    const call = core.created[0] as unknown as Record<string, unknown>;
     expect(call).toMatchObject({
       id: 'svc-exec-uuid-1',
       kind: 'delegation',
@@ -163,6 +164,7 @@ describe('@dina/home-node/service-runtime', () => {
     const directResponder = jest.fn(async () => undefined);
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
       directResponder,
@@ -179,7 +181,7 @@ describe('@dina/home-node/service-runtime', () => {
       },
     );
 
-    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+    expect(core.created).toHaveLength(0);
     expect(directResponder).toHaveBeenCalledWith(REQUESTER, {
       query_id: 'q-1',
       capability: 'unknown_capability',
@@ -196,6 +198,7 @@ describe('@dina/home-node/service-runtime', () => {
     const clearIntervalFn = jest.fn();
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
       directResponder: jest.fn(),
@@ -236,6 +239,7 @@ describe('@dina/home-node/service-runtime', () => {
     const inboundNotifier = jest.fn();
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
       directResponder: jest.fn(),
@@ -274,6 +278,7 @@ describe('@dina/home-node/service-runtime', () => {
     }));
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => INSTRUCTION_CONFIG,
       directResponder: jest.fn(),
@@ -302,12 +307,14 @@ describe('@dina/home-node/service-runtime', () => {
         ttlSeconds: 300,
       }),
     );
-    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+    expect(core.created).toHaveLength(0);
   });
 
   it('fails fast when required runtime dependencies are omitted', () => {
+    const stub = stubCore();
     const base = {
-      core: stubCore().client,
+      core: stub.client,
+      workflow: stub.workflow,
       appView: stubAppView(),
       readConfig: () => SERVICE_CONFIG,
       directResponder: jest.fn(),
@@ -320,6 +327,9 @@ describe('@dina/home-node/service-runtime', () => {
     expect(() => buildHomeNodeServiceRuntime({ ...base, deliver: undefined as never })).toThrow(
       /deliver is required/,
     );
+    expect(() => buildHomeNodeServiceRuntime({ ...base, workflow: undefined as never })).toThrow(
+      /workflow is required/,
+    );
   });
 });
 
@@ -329,7 +339,20 @@ function stubAppView() {
   };
 }
 
+/**
+ * The consumer/reconciler surface of a CoreClient (stubbed), plus the node's
+ * REAL workflow service, through which Core's ingress creates every task
+ * (recorded in `created`).
+ */
 function stubCore() {
+  const workflow = new WorkflowService({ repository: new InMemoryWorkflowRepository() });
+  const created: CreateWorkflowTaskInput[] = [];
+  const realCreate = workflow.create.bind(workflow);
+  workflow.create = (input) => {
+    const task = realCreate(input);
+    created.push(input);
+    return task;
+  };
   const core = {
     createWorkflowTask: jest.fn(async (input: Record<string, unknown>) => ({
       task: { id: input.id },
@@ -353,7 +376,7 @@ function stubCore() {
     })),
     failWorkflowTask: jest.fn(async () => ({})),
   };
-  return { client: core as unknown as CoreClient, ...core };
+  return { client: core as unknown as CoreClient, workflow, created, ...core };
 }
 
 /**
@@ -363,7 +386,7 @@ function stubCore() {
  * pass. That is how the ingress bridge came to exist with no caller at all:
  * a plane can validate, save, publish and advertise itself, and still answer
  * `unavailable` on the one node where somebody forgot the line. Defaulting
- * from the wired `WorkflowService` makes "does this node run plugins?" a
+ * from the node's `WorkflowService` makes "does this node run plugins?" a
  * property of the node rather than a decision each boot makes differently.
  */
 describe('@dina/home-node/service-runtime — plugin plane default (§11.2a)', () => {
@@ -394,6 +417,7 @@ describe('@dina/home-node/service-runtime — plugin plane default (§11.2a)', (
     const rejections: { status: string; error: string }[] = [];
     const runtime = buildHomeNodeServiceRuntime({
       core: core.client,
+      workflow: core.workflow,
       appView: stubAppView(),
       readConfig: () => PLUGIN_CONFIG,
       directResponder: async (_did, body) => {
@@ -423,46 +447,27 @@ describe('@dina/home-node/service-runtime — plugin plane default (§11.2a)', (
 
     expect(calls).toHaveLength(1);
     // No generic delegation task: the install answers, or nothing does.
-    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+    expect(core.created).toHaveLength(0);
   });
 
-  it('refuses when no workflow service is wired, rather than silently queuing', async () => {
-    // No `WorkflowService` registered in this test process, so the default
-    // resolves to null. A node that cannot run plugins must SAY so — silence
-    // leaves the requester waiting out its TTL.
-    setWorkflowService(null);
+  it('DEFAULTS the submitter from the node’s workflow service, with the global still unset', async () => {
+    // Passing an explicit submitter proves the option is forwarded; it says
+    // nothing about the default, which both boots depend on and neither
+    // passes. The phone builds this runtime BEFORE `start()` installs the
+    // workflow global, so the default must come from the service the node
+    // hands in: read from the global it was null there, and every plugin
+    // query on the phone answered "this node runs no plugins".
+    expect(getWorkflowService()).toBeNull();
     const { core, rejections } = await dispatchPluginQuery();
 
-    expect(core.createWorkflowTask).not.toHaveBeenCalled();
+    expect(core.created).toHaveLength(0);
     expect(rejections).toHaveLength(1);
-    expect(rejections[0]).toMatchObject({
-      status: 'unavailable',
-      error: 'plugin_lane_unavailable',
-    });
-  });
-
-  it('DEFAULTS the submitter from the wired workflow service', async () => {
-    // Passing an explicit submitter proves the option is forwarded; it says
-    // nothing about the default, which is the part both boots depend on and
-    // neither passes. Registering a workflow service and watching the refusal
-    // code CHANGE — from "this node runs no plugins" to a real ingress
-    // verdict — is what shows the default resolved.
-    const workflow = new WorkflowService({ repository: new InMemoryWorkflowRepository() });
-    setWorkflowService(workflow);
-    try {
-      const { core, rejections } = await dispatchPluginQuery();
-
-      expect(core.createWorkflowTask).not.toHaveBeenCalled();
-      expect(rejections).toHaveLength(1);
-      expect(rejections[0]?.error).not.toBe('plugin_lane_unavailable');
-      // The bridge ran and refused on its own terms. The code is
-      // `order_subject_denied` rather than `install_unavailable` because
-      // `order_status` is order-scoped: §11.2 subject authorization runs
-      // BEFORE binding resolution, so an unauthorized sender cannot probe
-      // install state through the typed unavailable codes either.
-      expect(rejections[0]?.error).toBe('order_subject_denied');
-    } finally {
-      setWorkflowService(null);
-    }
+    expect(rejections[0]?.error).not.toBe('plugin_lane_unavailable');
+    // The bridge ran and refused on its own terms. The code is
+    // `order_subject_denied` rather than `install_unavailable` because
+    // `order_status` is order-scoped: §11.2 subject authorization runs
+    // BEFORE binding resolution, so an unauthorized sender cannot probe
+    // install state through the typed unavailable codes either.
+    expect(rejections[0]?.error).toBe('order_subject_denied');
   });
 });

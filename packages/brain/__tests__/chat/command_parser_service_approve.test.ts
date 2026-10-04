@@ -28,7 +28,7 @@ describe('/service_approve command parsing', () => {
     expect(cmd.payload).toBe('');
   });
 
-  it('accepts dotted + hyphenated ids (matches ServiceHandler conventions)', () => {
+  it('accepts dotted + hyphenated ids (matches the ingress’s id conventions)', () => {
     for (const id of ['approval-a.b.c', 'svc-exec-from-approval-u1', 'sq-test-1', '42task']) {
       const cmd = parseCommand(`/service_approve ${id}`);
       expect(cmd.intent).toBe('service_approve');

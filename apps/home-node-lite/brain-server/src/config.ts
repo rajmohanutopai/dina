@@ -92,7 +92,18 @@ const LLMSchema = z.discriminatedUnion('provider', [
   }),
 ]);
 
+/**
+ * Who may call Brain (caller_auth.ts; A2A design §4.1, plan §3.18).
+ * `required` (the default): every request but the health probes is signed by
+ * Core or by an owner device. `off`: no check, for development only (the
+ * `/dev` page cannot sign); refused with release endpoints.
+ */
+const CallersSchema = z.object({
+  auth: z.enum(['required', 'off']),
+});
+
 const BrainServerConfigSchema = z.object({
+  callers: CallersSchema,
   core: CoreSchema,
   endpoints: EndpointSchema,
   llm: LLMSchema,
@@ -118,6 +129,9 @@ export class ConfigError extends Error {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerConfig {
   const internalBrainEnabled = readBool(env, 'DINA_INTERNAL_BRAIN_ENABLED', false);
   const candidate = {
+    callers: {
+      auth: blankToUndefined(env.DINA_BRAIN_CALLER_AUTH) ?? 'required',
+    },
     core: {
       baseUrl: normalizeBaseUrl(env.DINA_CORE_URL ?? 'http://127.0.0.1:8100'),
       serviceKeyDir: env.DINA_SERVICE_KEY_DIR ?? './service_keys',
@@ -147,6 +161,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerCon
         message: e.message,
       })),
     );
+  }
+  if (result.data.callers.auth === 'off' && result.data.endpoints.mode === 'release') {
+    throw new ConfigError([
+      {
+        path: 'callers.auth',
+        message:
+          'DINA_BRAIN_CALLER_AUTH=off is for development; a release node checks every caller',
+      },
+    ]);
   }
   if (result.data.reasoning.internalBrainEnabled && result.data.llm.provider === 'none') {
     throw new ConfigError([

@@ -56,11 +56,7 @@ export async function transportComplete(id: string): Promise<Reminder | null> {
 
 // `now` is part of the shared signature for native test determinism; the
 // server stamps its own clock, so the web peer ignores it.
-export async function transportSnooze(
-  id: string,
-  snoozeMs: number,
-  _now?: number,
-): Promise<void> {
+export async function transportSnooze(id: string, snoozeMs: number, _now?: number): Promise<void> {
   const res = await brainFetch(`${BASE}/${encodeURIComponent(id)}/snooze`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -88,10 +84,8 @@ export function watchFiredReminders(
   onFired: (reminder: Reminder) => void,
   _tickMs?: number,
 ): () => void {
-  // SSR/test-safe: EventSource only exists in the browser.
-  if (typeof EventSource === 'undefined') return () => undefined;
   const stream = brainEventStream(`${BASE}/stream`, (es) => {
-    es.addEventListener('fired', (ev: MessageEvent<string>) => {
+    es.addEventListener('fired', (ev) => {
       try {
         onFired(JSON.parse(ev.data) as Reminder);
       } catch {

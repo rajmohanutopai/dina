@@ -30,6 +30,7 @@
  * `fetch` implementation drives the HTTPS call.
  */
 
+import { A2A_CARD_KEY_FRAGMENT, p256Multikey } from '@dina/a2a';
 import { cidForOperation, publicKeyToMultibase, updateDIDPLC } from '@dina/core';
 
 const DEFAULT_PLC_URL = 'https://plc.directory';
@@ -133,6 +134,57 @@ export async function applyDinaPlcUpdate(opts: ApplyDinaPlcUpdateOptions): Promi
       fetch: fetchFn,
     },
   );
+}
+
+export interface EnsureA2ACardKeyOptions {
+  /** The `did:plc:…` whose document names the card key. */
+  did: string;
+  /** The card-signing P-256 key: the 33-byte compressed point. */
+  cardPublicKey: Uint8Array;
+  /** Master seed the K256 rotation key is derived from (as in `applyDinaPlcUpdate`). */
+  masterSeed: Uint8Array;
+  plcURL?: string;
+  fetch?: typeof globalThis.fetch;
+}
+
+/**
+ * Make sure the node's DID document names its A2A card-signing key as
+ * `#a2a_card` (A2A design §8.3: AppView verifies a published card's JWS
+ * against that key, never a URL the card names). Reads the audit log's
+ * last operation; when it already names this key, nothing is written
+ * (`present`). Otherwise posts a chained update that sets `a2a_card`
+ * (adding it, or replacing an older key after a rotation) and keeps
+ * every other field, signed by the same rotation key as the Dina update
+ * (`published`). Throws on any failure, like `applyDinaPlcUpdate`.
+ */
+export async function ensureA2ACardKey(opts: EnsureA2ACardKeyOptions): Promise<'present' | 'published'> {
+  const plcURL = (opts.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+  if (typeof fetchFn !== 'function') throw new Error('ensureA2ACardKey: no fetch available (pass opts.fetch)');
+  const auditLog = await fetchAuditLog(opts.did, plcURL, fetchFn);
+  const lastEntry = auditLog[auditLog.length - 1];
+  const lastOp =
+    lastEntry !== null && typeof lastEntry === 'object' ? (lastEntry as Record<string, unknown>).operation : undefined;
+  if (lastOp === null || typeof lastOp !== 'object') throw new Error('PLC audit log has no last operation');
+  const lastOpRecord = lastOp as Record<string, unknown>;
+  const cardDidKey = `did:key:${p256Multikey(opts.cardPublicKey)}`;
+  const priorVMs = readStringMap(lastOpRecord.verificationMethods);
+  if (priorVMs[A2A_CARD_KEY_FRAGMENT] === cardDidKey) return 'present';
+  const priorRotationKeys = readStringArray(lastOpRecord.rotationKeys);
+  if (priorRotationKeys.length === 0) throw new Error('PLC prior op has no rotation keys — refusing to publish update');
+  await updateDIDPLC(
+    {
+      did: opts.did,
+      prev: cidForOperation(lastOpRecord),
+      verificationMethods: { ...priorVMs, [A2A_CARD_KEY_FRAGMENT]: cardDidKey },
+      rotationKeys: priorRotationKeys,
+      services: readServicesMap(lastOpRecord.services),
+      alsoKnownAs: readStringArray(lastOpRecord.alsoKnownAs),
+      signerRotationSeed: opts.masterSeed,
+    },
+    { plcURL, fetch: fetchFn },
+  );
+  return 'published';
 }
 
 async function fetchAuditLog(

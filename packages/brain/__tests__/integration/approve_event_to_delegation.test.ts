@@ -2,36 +2,33 @@
  * BRAIN-P4-P01 — end-to-end event-driven approve → delegation flow.
  *
  * Differs from `approve_to_delegation.test.ts` (BRAIN-P2-T05) by
- * replacing the simulated Guardian (`handler.executeAndRespond(…)` called
+ * replacing the simulated consumer (`ingress.executeApproved(…)` called
  * directly in-test) with the real `WorkflowEventConsumer` wired to the
- * `onApproved` dispatcher. This proves the approve → executeAndRespond
- * loop is driven by workflow events alone, matching the production
- * architecture.
+ * `onApproved` dispatcher. This proves the approve → execute loop is driven
+ * by workflow events alone, matching the production composition
+ * (`@dina/home-node` service runtime).
  *
  * Wire:
  *   InMemoryWorkflowRepository
- *     ├─ adapter → ServiceHandler.coreClient  (create/cancel/respond)
- *     ├─ adapter → WorkflowEventConsumer.core    (events + getTask)
+ *     └─ adapter → WorkflowEventConsumer.core    (events + getTask)
  *   WorkflowService (real) — single source of truth
- *   ServiceHandler (real) — creates approval then executeAndRespond
- *   WorkflowEventConsumer (real) — onApproved → executeAndRespond
+ *   Core's ServiceQueryIngress (real) — creates the card, then executes it
+ *   WorkflowEventConsumer (real) — onApproved → ingress.executeApproved
  */
 
-import { WorkflowService , InMemoryWorkflowRepository } from '@dina/core';
+import {
+  InMemoryWorkflowRepository,
+  ServiceQueryIngress,
+  WorkflowService,
+  WorkflowTaskState,
+} from '@dina/core';
 
-// ServiceHandler now catches `WorkflowConflictError` from `@dina/core`
-// (task 1.32-H). Core's export IS the repository's class, so the test's
-// previous repo→client-error translation is redundant — the repository
-// error propagates unchanged and satisfies the handler's `instanceof`.
-import { ServiceHandler } from '../../src/service/service_handler';
 import {
   WorkflowEventConsumer,
   type WorkflowEventConsumerCoreClient,
-  type ApprovedExecutionPayload,
 } from '../../src/service/workflow_event_consumer';
 
-import type { ServiceHandlerCoreClient } from '../../src/service/service_handler';
-import type { WorkflowTask, WorkflowTaskState , ServiceConfig } from '@dina/core';
+import type { ServiceConfig } from '@dina/core';
 
 const REQUESTER = 'did:plc:requester';
 const NOW_MS = 1_700_000_000_000;
@@ -49,34 +46,6 @@ const BUS_CONFIG: ServiceConfig = {
   },
 };
 
-/** Adapter: WorkflowService → ServiceHandlerCoreClient. */
-function handlerAdapter(service: WorkflowService): ServiceHandlerCoreClient {
-  return {
-    async createWorkflowTask(input) {
-      // `WorkflowConflictError` from the repository IS the same class
-      // `@dina/core` re-exports and ServiceHandler catches via
-      // `instanceof`, so the repo error propagates unchanged.
-      const task = service.create({
-        id: input.id,
-        kind: input.kind as WorkflowTask['kind'],
-        payload: input.payload,
-        description: input.description ?? '',
-        policy: input.policy,
-        correlationId: input.correlationId,
-        origin: input.origin,
-        initialState: input.initialState as WorkflowTaskState | undefined,
-        expiresAtSec: input.expiresAtSec,
-        priority: input.priority as WorkflowTask['priority'] | undefined,
-        requestedRunner: input.requestedRunner,
-      });
-      return { task, deduped: false };
-    },
-    async cancelWorkflowTask(id, reason) {
-      return service.cancel(id, reason ?? '');
-    },
-  };
-}
-
 /** Adapter: WorkflowService → WorkflowEventConsumerCoreClient. */
 function consumerAdapter(service: WorkflowService): WorkflowEventConsumerCoreClient {
   return {
@@ -93,6 +62,9 @@ function consumerAdapter(service: WorkflowService): WorkflowEventConsumerCoreCli
       if (ok) repo.markEventDelivered(eventId, nowMs);
       return ok;
     },
+    async getA2AOperation() {
+      return null;
+    },
     async getWorkflowTask(id) {
       return service.store().getById(id);
     },
@@ -107,24 +79,23 @@ function consumerAdapter(service: WorkflowService): WorkflowEventConsumerCoreCli
   };
 }
 
-describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)', () => {
+describe('WorkflowEventConsumer.onApproved → Core executes the approved query (BRAIN-P4-P01)', () => {
   it('drives the full approve → delegation loop from a single workflow event', async () => {
     const repo = new InMemoryWorkflowRepository();
     const service = new WorkflowService({
       repository: repo,
       nowMsFn: () => NOW_MS,
     });
-    const coreAdapter = handlerAdapter(service);
 
-    const handler = new ServiceHandler({
-      coreClient: coreAdapter,
+    const ingress = new ServiceQueryIngress({
+      workflow: service,
       readConfig: () => BUS_CONFIG,
       nowSecFn: () => NOW_SEC,
       generateUUID: () => 'u1',
     });
 
-    // 1. Inbound service.query → handler persists an approval task in pending_approval.
-    await handler.handleQuery(REQUESTER, {
+    // 1. Inbound service.query → Core persists an approval card in pending_approval.
+    await ingress.admitQuery(REQUESTER, {
       query_id: 'q-1',
       capability: 'route_info',
       params: { route: '42' },
@@ -140,44 +111,36 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     service.approve(approvalId);
     expect(repo.getById(approvalId)!.status).toBe('queued');
 
-    // 3. Consumer polls the event, dispatches to executeAndRespond.
-    const dispatched: { taskId: string; payload: ApprovedExecutionPayload }[] = [];
+    // 3. Consumer polls the event, dispatches to Core's executeApproved.
+    const dispatched: string[] = [];
     const consumer = new WorkflowEventConsumer({
       coreClient: consumerAdapter(service),
       deliver: () => {
         /* unused in this flow */
       },
-      onApproved: async ({ task, payload }) => {
-        dispatched.push({ taskId: task.id, payload });
-        await handler.executeAndRespond(task.id, payload);
+      onApproved: async ({ task }) => {
+        dispatched.push(task.id);
+        await ingress.executeApproved(task.id);
       },
     });
 
     const tick = await consumer.runTick();
 
-    // 4. Verify: onApproved fired once with the correct payload; event acked.
-    expect(dispatched).toHaveLength(1);
-    expect(dispatched[0]).toEqual({
-      taskId: approvalId,
-      payload: {
-        from_did: REQUESTER,
-        query_id: 'q-1',
-        capability: 'route_info',
-        params: { route: '42' },
-        ttl_seconds: 60,
-        service_name: 'Bus 42',
-        schema_hash: undefined,
-        // WM-BRAIN-06a: the tool name must survive the approval hop or
-        // the approved delegation can't be dispatched by the agent.
-        mcp_tool: 'get_route',
-        // Multi-runner routing (d95165e1): the capability's mcpServer
-        // rides the approval payload so the approved delegation carries
-        // requested_runner. (Assertion was stale — added when the
-        // consumer extraction grew the field.)
-        mcp_server: 'transit',
-        schema_snapshot: undefined,
-        service_uri: undefined,
-      },
+    // 4. Verify: onApproved fired once with the card; event acked. The card
+    // Core minted carries the tool and runner lane (WM-BRAIN-06a, multi-runner
+    // routing) for the owner to see; the delegation takes both from the live
+    // listing.
+    expect(dispatched).toEqual([approvalId]);
+    expect(JSON.parse(repo.getById(approvalId)!.payload)).toMatchObject({
+      type: 'service_query_execution',
+      from_did: REQUESTER,
+      query_id: 'q-1',
+      capability: 'route_info',
+      params: { route: '42' },
+      ttl_seconds: 60,
+      service_name: 'Bus 42',
+      mcp_tool: 'get_route',
+      mcp_server: 'transit',
     });
     expect(tick.delivered).toBe(1);
     expect(tick.failed).toBe(0);
@@ -199,21 +162,21 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     expect(repo.getById(approvalId)!.status).toBe('cancelled');
   });
 
-  it('does NOT ack when executeAndRespond throws; event is redriven on the next tick', async () => {
+  it('does NOT ack when execution throws; event is redriven on the next tick', async () => {
     const repo = new InMemoryWorkflowRepository();
     const service = new WorkflowService({
       repository: repo,
       nowMsFn: () => NOW_MS,
     });
 
-    const handler = new ServiceHandler({
-      coreClient: handlerAdapter(service),
+    const ingress = new ServiceQueryIngress({
+      workflow: service,
       readConfig: () => BUS_CONFIG,
       nowSecFn: () => NOW_SEC,
       generateUUID: () => 'u2',
     });
 
-    await handler.handleQuery(REQUESTER, {
+    await ingress.admitQuery(REQUESTER, {
       query_id: 'q-2',
       capability: 'route_info',
       params: {},
@@ -231,10 +194,10 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     const consumer = new WorkflowEventConsumer({
       coreClient: consumerAdapter(service),
       deliver: () => {},
-      onApproved: async ({ task, payload }) => {
+      onApproved: async ({ task }) => {
         attempts++;
         if (attempts === 1) throw new Error('execute 503');
-        await handler.executeAndRespond(task.id, payload);
+        await ingress.executeApproved(task.id);
       },
     });
 
@@ -259,14 +222,14 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
       repository: repo,
       nowMsFn: () => NOW_MS,
     });
-    const handler = new ServiceHandler({
-      coreClient: handlerAdapter(service),
+    const ingress = new ServiceQueryIngress({
+      workflow: service,
       readConfig: () => BUS_CONFIG,
       nowSecFn: () => NOW_SEC,
       generateUUID: () => 'u3',
     });
 
-    await handler.handleQuery(REQUESTER, {
+    await ingress.admitQuery(REQUESTER, {
       query_id: 'q-3',
       capability: 'route_info',
       params: {},
@@ -277,8 +240,8 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     const consumer = new WorkflowEventConsumer({
       coreClient: consumerAdapter(service),
       deliver: () => {},
-      onApproved: async ({ task, payload }) => {
-        await handler.executeAndRespond(task.id, payload);
+      onApproved: async ({ task }) => {
+        await ingress.executeApproved(task.id);
       },
     });
 
@@ -287,13 +250,9 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
     expect(repo.getById('svc-exec-from-approval-u3')!.status).toBe('queued');
 
     // Synthesise a second approved event for the same task (simulates a
-    // delayed redelivery) and run again. Review #4 changed the
-    // semantics here: once the approval task has reached a terminal
-    // state (the first dispatch moved it to `completed`), the consumer
-    // MUST NOT re-run onApproved — doing so would race `executeAndRespond`
-    // against its own side-effects even with WorkflowConflictError
-    // swallowing. The event is still acknowledged (so Core retires it)
-    // but counted as `skipped`, not `delivered`.
+    // delayed redelivery) and run again. The card is settled (the first
+    // run executed and closed it), so Core's executeApproved starts
+    // nothing: one judge, Core, decides whether a card may still run.
     repo.appendEvent({
       task_id: 'approval-u3',
       at: NOW_MS + 1_000,
@@ -303,19 +262,15 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
       delivery_failed: false,
       details: JSON.stringify({ kind: 'approval', task_payload: '{}' }),
     });
+    const queuedBefore = repo.listByKindAndState('delegation', WorkflowTaskState.Queued, 100).length;
+    const delegation = service.store().getById('svc-exec-from-approval-u3');
     const second = await consumer.runTick();
     expect(second.failed).toBe(0);
-    // Skipped instead of delivered because the approval task is
-    // terminal — see review #4. The tick may also sweep other events
-    // (e.g. the delegation-completed event emitted by the first run)
-    // which get skipped too because the deliver() fn is a no-op here;
-    // the invariant that matters is "the redriven approved event did
-    // NOT trigger a second dispatch," which we check by confirming
-    // zero deliveries AND by the onApproved counter below.
-    expect(second.delivered).toBe(0);
-    expect(second.skipped).toBeGreaterThan(0);
-    // Delegation task unchanged — no duplicate (id is deterministic).
-    expect(service.store().getById('svc-exec-from-approval-u3')).not.toBeNull();
+    // The redriven event is delivered to Core, which judged the settled
+    // card and started nothing: the delegation is the same row, untouched.
+    expect(service.store().getById('svc-exec-from-approval-u3')).toEqual(delegation);
+    expect(service.store().getById('approval-u3')!.status).toBe('cancelled');
+    expect(repo.listByKindAndState('delegation', WorkflowTaskState.Queued, 100)).toHaveLength(queuedBefore);
   });
 
   // Regression for the live Tier 1 salon-booking failure: the approval
@@ -327,7 +282,6 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
   it('service_uri + schema_snapshot survive the approval -> delegation handoff', async () => {
     const repo = new InMemoryWorkflowRepository();
     const service = new WorkflowService({ repository: repo, nowMsFn: () => NOW_MS });
-    const coreAdapter = handlerAdapter(service);
 
     const SALON_URI = 'at://did:plc:salon/com.dinakernel.service.profile/alonso-s-salon';
     const SALON_CONFIG: ServiceConfig = {
@@ -348,14 +302,14 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
       },
     };
 
-    const handler = new ServiceHandler({
-      coreClient: coreAdapter,
+    const ingress = new ServiceQueryIngress({
+      workflow: service,
       readConfig: () => SALON_CONFIG,
       nowSecFn: () => NOW_SEC,
       generateUUID: () => 'u9',
     });
 
-    await handler.handleQuery(REQUESTER, {
+    await ingress.admitQuery(REQUESTER, {
       query_id: 'q-9',
       capability: 'appointment_book',
       params: { time: '4:30 PM' },
@@ -371,8 +325,8 @@ describe('WorkflowEventConsumer.onApproved → executeAndRespond (BRAIN-P4-P01)'
       deliver: () => {
         /* unused */
       },
-      onApproved: async ({ task, payload }) => {
-        await handler.executeAndRespond(task.id, payload);
+      onApproved: async ({ task }) => {
+        await ingress.executeApproved(task.id);
       },
     });
     await consumer.runTick();

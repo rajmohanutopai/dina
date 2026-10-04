@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:protocol": "npm --prefix ../packages/commerce-protocol run build",
+    "build:protocol": "npm --prefix ../packages/commerce-protocol run build && npm --prefix ../packages/a2a run build",
     "test": "npm run test:unit",
     "test:all": "npm run build:protocol && vitest run",
     "test:unit": "npm run build:protocol && vitest run tests/unit/",
@@ -20,6 +20,7 @@
     "admin:moderation": "tsx src/admin/peerlens-moderation-cli.ts"
   },
   "dependencies": {
+    "@dina/a2a": "*",
     "@dina/commerce-protocol": "*",
     "dotenv": "16.6.1",
     "drizzle-orm": "0.45.2",

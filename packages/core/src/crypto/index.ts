@@ -13,6 +13,8 @@ export {
   deriveRotationKey,
   deriveServiceKey,
   deriveNamespaceKey,
+  derivePathP256,
+  deriveP256SigningKey,
 } from './slip0010';
 export type { DerivedKey } from './slip0010';
 export { derivePersonaDEK, deriveBackupKey, deriveDEKHash } from './hkdf';

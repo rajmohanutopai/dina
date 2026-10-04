@@ -102,6 +102,10 @@ def run_daemon(
             continue
 
         task_id = task.get("id", "")
+        # The claim token Core minted for this claim: every report on the
+        # task carries it, so a report from an execution whose lease moved
+        # on cannot land (Core requires it for a call from an A2A client).
+        claim_id = task.get("claim_id", "") or ""
         # Owner-created delegations (the app's Task composer) carry NO CLI
         # session — the owner's chat has no `dina session`. An empty
         # session_name renders a malformed `dina ask … --session ` (no value)
@@ -139,7 +143,7 @@ def run_daemon(
         except DinaClientError as e:
             print(f"[agent-daemon] Session start failed: {e} — failing task", file=sys.stderr)
             try:
-                client.task_fail(task_id, f"Session start failed: {e}")
+                client.task_fail(task_id, f"Session start failed: {e}", claim_id=claim_id)
             except Exception:
                 pass
             continue
@@ -155,7 +159,7 @@ def run_daemon(
 
         # Normalize result into Core task transitions.
         try:
-            _apply_result(client, task_id, session_id, result, runner.runner_name)
+            _apply_result(client, task_id, session_id, result, runner.runner_name, claim_id)
         except Exception as e:
             print(f"[agent-daemon] Result normalization error: {e}", file=sys.stderr)
 
@@ -167,14 +171,21 @@ def run_daemon(
     client.close()
 
 
+# A task in one of these states needs no report from the daemon: the runner
+# finished it over MCP, it is parked on its requester's answer (A2A
+# multi-turn), or it ended some other way.
+_REPORTED = ("completed", "failed", "awaiting", "cancelled", "outcome_unknown")
+
+
 def _apply_result(
     client: DinaClient,
     task_id: str,
     session_id: str,
     result: RunnerResult,
     runner_name: str,
+    claim_id: str = "",
 ) -> None:
-    """Apply a RunnerResult to Core task state."""
+    """Apply a RunnerResult to Core task state, under the task's claim token."""
     if result.state == "running":
         # Fire-and-forget runner (OpenClaw) — mark running and move on.
         mark_ok = False
@@ -193,7 +204,7 @@ def _apply_result(
         if not mark_ok:
             print(f"[agent-daemon] CRITICAL: mark_running failed after submit, failing {task_id}", file=sys.stderr)
             try:
-                client.task_fail(task_id, f"mark_running failed after {runner_name} submit")
+                client.task_fail(task_id, f"mark_running failed after {runner_name} submit", claim_id=claim_id)
             except Exception:
                 pass
             try:
@@ -208,13 +219,14 @@ def _apply_result(
         # The runner may have already called dina_task_complete via MCP.
         try:
             t = client.get_task(task_id)
-            if t and t.get("status") in ("completed", "failed"):
-                print(f"[agent-daemon] Completed (via MCP): {task_id}", file=sys.stderr)
+            if t and t.get("status") in _REPORTED:
+                # Done over MCP already, or parked on the requester's answer.
+                print(f"[agent-daemon] Reported (via MCP): {task_id}", file=sys.stderr)
             else:
                 # Fallback: runner returned completed but didn't call MCP complete.
                 # Pass assigned_runner so it's recorded even on terminal-state write.
                 client.task_complete(task_id, result.summary or "Task completed by runner",
-                                     assigned_runner=runner_name)
+                                     assigned_runner=runner_name, claim_id=claim_id)
                 print(f"[agent-daemon] Completed (fallback): {task_id}", file=sys.stderr)
         except Exception as e:
             print(f"[agent-daemon] Complete fallback error: {e}", file=sys.stderr)
@@ -227,11 +239,11 @@ def _apply_result(
         # Task failed — pass assigned_runner so it's recorded on terminal write.
         try:
             t = client.get_task(task_id)
-            if t and t.get("status") in ("completed", "failed"):
-                print(f"[agent-daemon] Failed (already terminal): {task_id}", file=sys.stderr)
+            if t and t.get("status") in _REPORTED:
+                print(f"[agent-daemon] Failed (already reported): {task_id}", file=sys.stderr)
             else:
                 client.task_fail(task_id, result.error or "Task failed",
-                                 assigned_runner=runner_name)
+                                 assigned_runner=runner_name, claim_id=claim_id)
                 print(f"[agent-daemon] Failed: {task_id} — {result.error[:100]}", file=sys.stderr)
         except Exception as e:
             print(f"[agent-daemon] Fail error: {e}", file=sys.stderr)
@@ -282,15 +294,16 @@ def _reconciler_loop(
                 if result is None:
                     continue
 
+                claim_id = task.get("claim_id", "") or ""
                 if result.state == "completed":
                     try:
-                        client.task_complete(task_id, result.summary or "reconciled")
+                        client.task_complete(task_id, result.summary or "reconciled", claim_id=claim_id)
                         print(f"[reconciler] Completed: {task_id}", file=sys.stderr)
                     except Exception as e:
                         print(f"[reconciler] Complete error: {task_id}: {e}", file=sys.stderr)
                 elif result.state == "failed":
                     try:
-                        client.task_fail(task_id, result.error or "reconciled: failed")
+                        client.task_fail(task_id, result.error or "reconciled: failed", claim_id=claim_id)
                         print(f"[reconciler] Failed: {task_id}", file=sys.stderr)
                     except Exception as e:
                         print(f"[reconciler] Fail error: {task_id}: {e}", file=sys.stderr)

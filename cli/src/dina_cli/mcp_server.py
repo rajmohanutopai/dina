@@ -798,7 +798,7 @@ def dina_action_status(action: str, request_id: str, session: str) -> dict:
 
 
 @mcp.tool()
-def dina_task_complete(task_id: str, result: str) -> dict:
+def dina_task_complete(task_id: str, result: str, claim_id: str = "") -> dict:
     """Report that a delegated task is complete.
 
     IMPORTANT: Call this when you have finished the task. Include a summary
@@ -807,14 +807,15 @@ def dina_task_complete(task_id: str, result: str) -> dict:
     Args:
         task_id: The task ID (from the task prompt)
         result: Human-readable summary of what was accomplished
+        claim_id: The CLAIM ID from the task prompt, exactly as given
     """
     c = _get_client()
-    c.task_complete(task_id, result)
+    c.task_complete(task_id, result, claim_id=claim_id)
     return {"status": "completed", "task_id": task_id}
 
 
 @mcp.tool()
-def dina_task_fail(task_id: str, error: str) -> dict:
+def dina_task_fail(task_id: str, error: str, claim_id: str = "") -> dict:
     """Report that a delegated task failed.
 
     Call this if you cannot complete the task for any reason.
@@ -822,23 +823,57 @@ def dina_task_fail(task_id: str, error: str) -> dict:
     Args:
         task_id: The task ID (from the task prompt)
         error: What went wrong
+        claim_id: The CLAIM ID from the task prompt, exactly as given
     """
     c = _get_client()
-    c.task_fail(task_id, error)
+    c.task_fail(task_id, error, claim_id=claim_id)
     return {"status": "failed", "task_id": task_id}
 
 
 @mcp.tool()
-def dina_task_progress(task_id: str, message: str) -> dict:
+def dina_task_progress(task_id: str, message: str, claim_id: str = "") -> dict:
     """Report progress on a running task (optional).
 
     Args:
         task_id: The task ID (from the task prompt)
         message: Human-readable progress note
+        claim_id: The CLAIM ID from the task prompt, exactly as given
     """
     c = _get_client()
-    c.task_progress(task_id, message)
+    c.task_progress(task_id, message, claim_id=claim_id)
     return {"status": "ok", "task_id": task_id}
+
+
+@mcp.tool()
+def dina_task_input_required(task_id: str, claim_id: str, prompt: str, input_schema: dict) -> dict:
+    """Ask the requester of an A2A call for something you need before you can act.
+
+    Only for a task whose prompt offers it, and only BEFORE you have done
+    anything with an effect (booked, sent, written, paid). When the answer
+    says "awaiting_input", stop: do not call dina_task_complete or
+    dina_task_fail; the requester's answer arrives as a new task that
+    carries every answer so far. When it says "refused", you cannot ask:
+    finish the task now with dina_task_complete or dina_task_fail.
+
+    Args:
+        task_id: The task ID (from the task prompt)
+        claim_id: The CLAIM ID from the task prompt, exactly as given
+        prompt: The question for the requester, in plain words
+        input_schema: A JSON Schema with "type": "object" that the answer must meet
+    """
+    c = _get_client()
+    try:
+        return c.task_input_required(task_id, prompt, input_schema, claim_id)
+    except DinaClientError as e:
+        # A refused ask leaves the task running under this claim: say so,
+        # or an agent that "stops" lets its lease lapse with nothing done.
+        return {
+            "status": "refused",
+            "task_id": task_id,
+            "error": str(e),
+            "next": "You cannot ask the requester for this task. Finish it now with "
+            "dina_task_complete or dina_task_fail.",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +964,7 @@ def configure_profile(profile: str) -> None:
         "dina_task_complete",
         "dina_task_fail",
         "dina_task_progress",
+        "dina_task_input_required",
     )
     if profile == "coding":
         for name in (*runner_tools, *reasoning_tools):

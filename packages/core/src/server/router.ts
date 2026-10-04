@@ -452,6 +452,16 @@ function withAuthHeaderAliases(headers: Record<string, string>): Record<string, 
 }
 
 function authErrorResponse(result: AuthResult): CoreResponse {
+  // Throttling says nothing about the key: a signed caller past its per-DID
+  // bucket hears 429 and when to try again, never the 401 a bad key gets, so
+  // it slows down rather than giving up on its credential.
+  if (result.rejectedAt === 'rate_limit') {
+    return {
+      status: 429,
+      headers: { 'retry-after': '60' },
+      body: { error: result.reason ?? 'rate limit exceeded', rejected_at: 'rate_limit' },
+    };
+  }
   const status = result.rejectedAt === 'authorization' ? 403 : 401;
   return jsonResponse(status, {
     error: result.reason ?? 'authentication failed',

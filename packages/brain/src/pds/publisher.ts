@@ -47,6 +47,27 @@ export interface PutRecordOptions {
    * `casLost` is true — a lost race, not a failure to reach the repo.
    */
   swapRecord?: string | null;
+  /**
+   * The repository head (commit CID) this write expects. The PDS refuses the
+   * write with `InvalidSwap` when any record in the repo changed since, so
+   * one check binds several records (a read of one record, then a write of
+   * another, A2A design §8.2).
+   */
+  swapCommit?: string;
+}
+
+/** Optional preconditions for `deleteRecord`: the same two as `putRecord`. */
+export interface DeleteRecordOptions {
+  /** The CID the deleted record must still have. */
+  swapRecord?: string;
+  /** The repository head the delete expects. */
+  swapCommit?: string;
+}
+
+/** A repository's head, as `com.atproto.sync.getLatestCommit` gives it. */
+export interface LatestCommit {
+  cid: string;
+  rev: string;
 }
 
 /** A record read back from a repo, with the CID a later CAS write needs. */
@@ -187,6 +208,7 @@ export class PDSPublisher {
     // overwrite — which is what every caller got before, and is wrong for
     // any record whose whole purpose is to serialize concurrent writers.
     if ('swapRecord' in options) payload.swapRecord = options.swapRecord ?? null;
+    if (options.swapCommit !== undefined) payload.swapCommit = options.swapCommit;
     const body = await this.post('/xrpc/com.atproto.repo.putRecord', payload, session.accessJwt);
     if (!body || typeof body !== 'object') {
       throw new PDSPublisherError('putRecord: malformed response', null);
@@ -247,16 +269,46 @@ export class PDSPublisher {
 
   /**
    * Delete a record. Throws on any failure — use `deleteRecordIdempotent` if
-   * you need "already-gone" to succeed.
+   * you need "already-gone" to succeed. With a precondition the PDS refuses
+   * the delete (`InvalidSwap`, `casLost`) when it no longer holds.
    */
-  async deleteRecord(collection: string, rkey: string): Promise<void> {
+  async deleteRecord(collection: string, rkey: string, options: DeleteRecordOptions = {}): Promise<void> {
     validateCollectionAndRkey(collection, rkey);
     const session = await this.ensureSession();
     await this.post(
       '/xrpc/com.atproto.repo.deleteRecord',
-      { repo: session.did, collection, rkey },
+      {
+        repo: session.did,
+        collection,
+        rkey,
+        ...(options.swapRecord === undefined ? {} : { swapRecord: options.swapRecord }),
+        ...(options.swapCommit === undefined ? {} : { swapCommit: options.swapCommit }),
+      },
       session.accessJwt,
     );
+  }
+
+  /**
+   * The repository's head (`com.atproto.sync.getLatestCommit`): the commit
+   * CID a `swapCommit` precondition names. `did` defaults to the
+   * authenticated account. Fails closed: any non-success throws.
+   */
+  async getLatestCommit(did?: string): Promise<LatestCommit> {
+    const session = await this.ensureSession();
+    const params = new URLSearchParams({ did: did ?? session.did });
+    const path = '/xrpc/com.atproto.sync.getLatestCommit';
+    const resp = await this.rawGet(`${this.pdsUrl}${path}?${params.toString()}`, session.accessJwt);
+    if (resp.status !== 200) {
+      if (resp.status === 401) this.invalidateSession();
+      throw await toPDSError(path, resp);
+    }
+    const body = await parseJSON(resp);
+    if (!body || typeof body !== 'object') throw new PDSPublisherError('getLatestCommit: malformed response', null);
+    const r = body as Record<string, unknown>;
+    if (typeof r.cid !== 'string' || r.cid === '' || typeof r.rev !== 'string' || r.rev === '') {
+      throw new PDSPublisherError('getLatestCommit: response missing cid/rev', null);
+    }
+    return { cid: r.cid, rev: r.rev };
   }
 
   /**

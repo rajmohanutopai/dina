@@ -87,18 +87,13 @@ describe('remote approval synchronization routes', () => {
 
   it('deduplicates an identical retry and rejects a changed immutable proposal', async () => {
     const router = createCoreRouter();
-    const first = await router.handle(
-      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, proposal()),
-    );
-    const second = await router.handle(
-      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, proposal()),
-    );
+    // A retry resends the same body: one body, built once (its expiry is read
+    // from the clock, so two builds can straddle a second).
+    const body = proposal();
+    const first = await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body));
+    const second = await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body));
     const conflict = await router.handle(
-      request(
-        'POST',
-        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
-        proposal({ source_payload_hash: 'b'.repeat(64) }),
-      ),
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, { ...body, source_payload_hash: 'b'.repeat(64) }),
     );
 
     expect(first.status).toBe(201);

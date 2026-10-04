@@ -84,6 +84,9 @@ function stubCore(init?: Partial<StubState>): {
       if (state.getError !== null) throw state.getError;
       return state.tasks.get(id) ?? null;
     },
+    async getA2AOperation() {
+      return null;
+    },
     async failWorkflowEventDelivery(_eventId: number) {
       // Test fixture no-op: the consumer calls this on delivery
       // failure; individual tests that need to assert on it can
@@ -602,52 +605,24 @@ describe('WorkflowEventConsumer.onApproved', () => {
     };
   }
 
-  it('dispatches payload to onApproved then acks the event', async () => {
+  it('dispatches the service card to onApproved then acks the event', async () => {
     const task = approvalTask('appr-1');
     const { client, state } = stubCore({
       listResult: [approvedEvent()],
       tasks: new Map([['appr-1', task]]),
     });
-    const seen: { taskId: string; from: string; capability: string }[] = [];
+    const seen: string[] = [];
     const c = new WorkflowEventConsumer({
       coreClient: client,
       deliver: noopDeliver,
-      onApproved: ({ task: t, payload }) => {
-        seen.push({ taskId: t.id, from: payload.from_did, capability: payload.capability });
+      onApproved: ({ task: t }) => {
+        seen.push(t.id);
       },
     });
     const result = await c.runTick();
     expect(result.delivered).toBe(1);
-    expect(seen).toEqual([
-      { taskId: 'appr-1', from: 'did:plc:requester', capability: 'eta_query' },
-    ]);
+    expect(seen).toEqual(['appr-1']);
     expect(state.ackCalls).toEqual([100]);
-  });
-
-  it('preserves optional payload fields (ttl_seconds / schema_hash / service_name)', async () => {
-    const task = approvalTask('appr-1');
-    const { client } = stubCore({
-      listResult: [approvedEvent()],
-      tasks: new Map([['appr-1', task]]),
-    });
-    let captured: unknown = null;
-    const c = new WorkflowEventConsumer({
-      coreClient: client,
-      deliver: noopDeliver,
-      onApproved: ({ payload }) => {
-        captured = payload;
-      },
-    });
-    await c.runTick();
-    expect(captured).toEqual({
-      from_did: 'did:plc:requester',
-      query_id: 'q-approve',
-      capability: 'eta_query',
-      params: { stop_id: 'S1' },
-      ttl_seconds: 60,
-      schema_hash: 'sha256:abc',
-      service_name: 'Bus 42',
-    });
   });
 
   it('does NOT ack when onApproved throws; records failure for redrive', async () => {
@@ -661,7 +636,7 @@ describe('WorkflowEventConsumer.onApproved', () => {
       coreClient: client,
       deliver: noopDeliver,
       onApproved: () => {
-        throw new Error('executeAndRespond 503');
+        throw new Error('executeApproved 503');
       },
       onError: (e) => errs.push(e),
     });
@@ -669,15 +644,13 @@ describe('WorkflowEventConsumer.onApproved', () => {
     expect(result.failed).toBe(1);
     expect(state.ackCalls).toEqual([]);
     expect(errs).toHaveLength(1);
-    expect((errs[0] as Error).message).toBe('executeAndRespond 503');
+    expect((errs[0] as Error).message).toBe('executeApproved 503');
   });
 
-  it('records a failure (no-ack, onError fires) when the approval payload is malformed', async () => {
-    // "Malformed" = missing required fields. The event is NOT acked so
-    // operator dashboards keep surfacing it; fixing the payload requires
-    // an operator action outside this module's concern. (Poison-pill
-    // mitigation is a separate, future concern via delivery_attempts
-    // ceilings on Core.)
+  it('leaves judging the card to Core: a card missing fields still reaches the dispatcher, and Core’s refusal redrives', async () => {
+    // Core's executeApproved reads the card itself and throws on one it
+    // cannot act on; the consumer routes and never parses. The event is NOT
+    // acked, so it stays visible and redrives with backoff.
     const task = approvalTask('appr-1', {
       payload: JSON.stringify({ type: 'service_query_execution' /* no from_did */ }),
     });
@@ -692,11 +665,12 @@ describe('WorkflowEventConsumer.onApproved', () => {
       deliver: noopDeliver,
       onApproved: ({ task: t }) => {
         invoked.push(t.id);
+        throw new Error(`executeApproved: approval task ${t.id} has incomplete payload`);
       },
       onError: (e) => errs.push(e),
     });
     const result = await c.runTick();
-    expect(invoked).toHaveLength(0);
+    expect(invoked).toEqual(['appr-1']);
     expect(result.failed).toBe(1);
     expect(state.ackCalls).toEqual([]);
     expect(errs).toHaveLength(1);

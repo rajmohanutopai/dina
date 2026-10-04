@@ -196,9 +196,14 @@ const DEFAULT_CLASSIFICATION: Readonly<IntentClassification> = Object.freeze({
 
 export class IntentClassifier {
   private readonly llm: IntentClassifierLLM;
-  private readonly tocFetcher: () => Promise<TocEntry[]>;
+  private readonly tocFetcher: (releaseSession?: string) => Promise<TocEntry[]>;
 
-  constructor(opts: { llm: IntentClassifierLLM; tocFetcher: () => Promise<TocEntry[]> }) {
+  /**
+   * `tocFetcher` receives the conversation the topics are released into
+   * (A2A §4.2 (b)): topic names reach the model through the hint, so Core
+   * logs them against the conversation.
+   */
+  constructor(opts: { llm: IntentClassifierLLM; tocFetcher: (releaseSession?: string) => Promise<TocEntry[]> }) {
     this.llm = opts.llm;
     this.tocFetcher = opts.tocFetcher;
   }
@@ -212,7 +217,7 @@ export class IntentClassifier {
     return cloneDefault();
   }
 
-  async classify(query: string): Promise<IntentClassification> {
+  async classify(query: string, opts: { releaseSession?: string } = {}): Promise<IntentClassification> {
     // Empty query → conservative default WITHOUT calling the LLM.
     if (typeof query !== 'string' || query.trim() === '') {
       return cloneDefault();
@@ -220,7 +225,7 @@ export class IntentClassifier {
 
     let toc: TocEntry[];
     try {
-      toc = await this.tocFetcher();
+      toc = await this.tocFetcher(opts.releaseSession);
     } catch {
       return cloneDefault();
     }

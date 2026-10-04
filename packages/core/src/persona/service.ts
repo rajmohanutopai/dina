@@ -130,9 +130,23 @@ export function createPersona(
  */
 export function deletePersona(name: string): void {
   const normalized = name.trim().toLowerCase();
+  // A persona's DEK is derived from its name, so a new persona of the same
+  // name could open whatever the old one sealed: everything sealed or logged
+  // under it goes FIRST (the A2A release log and entity originals, §9). A
+  // listener that throws stops the delete, so the persona is never gone
+  // while what it sealed remains.
+  for (const listener of deletionListeners) listener(normalized);
   const repo = getPersonaRepository();
   if (repo) repo.remove(normalized);
   personas.delete(normalized);
+}
+
+const deletionListeners = new Set<(persona: string) => void>();
+
+/** Run `listener` whenever a persona is deleted; returns the unsubscribe. A listener that throws fails the delete. */
+export function onPersonaDeleted(listener: (persona: string) => void): () => void {
+  deletionListeners.add(listener);
+  return () => deletionListeners.delete(listener);
 }
 
 /**

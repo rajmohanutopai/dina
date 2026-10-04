@@ -20,6 +20,13 @@
  * Source: brain/src/adapter/appview_client.py
  */
 
+import {
+  A2A_NAME_MAX_CODE_POINTS,
+  MAX_ID_LENGTH,
+  PROTOCOL_BINDING_JSONRPC,
+  a2aDisplayText,
+  checkOutboundUrl,
+} from '@dina/a2a';
 import { httpBackoff as backoff, isRetryableStatus, parseResponseBody } from '@dina/core';
 
 import { defaultFetch } from '../runtime/fetch';
@@ -113,6 +120,152 @@ export interface SearchCapabilitiesParams {
 }
 
 /** One discovery candidate from `searchCapabilities`. */
+/**
+ * One candidate from the A2A directory (`com.dinakernel.a2a.searchAgents`,
+ * design §8.3): index facts beside a card AppView verified, never a grant.
+ */
+export interface A2ADirectoryAgent {
+  did: string;
+  displayName: string;
+  /** The card's JSON-RPC endpoint. */
+  endpoint: string;
+  /** Skill ids exactly as the card names them (`capability` or `capability@rkey`). */
+  skills: string[];
+  /** PeerLens trust of the publishing DID, 0..1: what the directory orders by. */
+  trustScore: number;
+  recommendation: 'proceed' | 'caution' | 'verify' | 'avoid';
+  indexedAt: string;
+  /** Indexed 30 days ago or more: the directory may be behind the live card. */
+  stale: boolean;
+  cardHash: string;
+}
+
+/**
+ * The directory's verified card for one DID (`com.dinakernel.a2a.getCard`,
+ * design §8.3), reduced to what the owner's review shows beside a remote
+ * agent: the endpoint that card names, and the DID's PeerLens trust.
+ */
+export interface A2ADirectoryCard {
+  did: string;
+  /** The JSON-RPC endpoint the directory's card names. */
+  endpoint: string;
+  cardHash: string;
+  indexedAt: string;
+  stale: boolean;
+  /** PeerLens trust of the DID, 0..1. */
+  trustScore: number;
+  recommendation: 'proceed' | 'caution' | 'verify' | 'avoid';
+}
+
+export interface SearchA2AAgentsParams {
+  /** An exact skill id, or a capability (its aliases resolve). */
+  skill?: string;
+  q?: string;
+  limit?: number;
+}
+
+const DIRECTORY_DID = /^did:(?:plc:[a-z2-7]{24}|web:[a-z0-9.:%-]{1,253})$/;
+const RECOMMENDATIONS = new Set(['proceed', 'caution', 'verify', 'avoid']);
+
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** A getCard answer of exactly the published shape, its card's JSON-RPC endpoint read out, or null. */
+function parseA2ADirectoryCard(did: string, value: unknown): A2ADirectoryCard | null {
+  if (value === null || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const trust = v.trust as Record<string, unknown> | null | undefined;
+  if (
+    typeof v.card !== 'string' ||
+    typeof v.cardHash !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(v.cardHash) ||
+    typeof v.indexedAt !== 'string' ||
+    !ISO_TIMESTAMP.test(v.indexedAt) ||
+    Number.isNaN(Date.parse(v.indexedAt)) ||
+    typeof v.stale !== 'boolean' ||
+    trust === null ||
+    typeof trust !== 'object' ||
+    typeof trust.score !== 'number' ||
+    !Number.isFinite(trust.score) ||
+    trust.score < 0 ||
+    trust.score > 1 ||
+    typeof trust.recommendation !== 'string' ||
+    !RECOMMENDATIONS.has(trust.recommendation)
+  ) {
+    return null;
+  }
+  let card: unknown;
+  try {
+    card = JSON.parse(v.card);
+  } catch {
+    return null;
+  }
+  const interfaces = (card as { supportedInterfaces?: unknown } | null)?.supportedInterfaces;
+  const rpc = Array.isArray(interfaces)
+    ? (interfaces as unknown[]).find(
+        (i): i is { url: string } =>
+          i !== null && typeof i === 'object' && (i as Record<string, unknown>).protocolBinding === PROTOCOL_BINDING_JSONRPC && typeof (i as Record<string, unknown>).url === 'string',
+      )
+    : undefined;
+  if (rpc === undefined || !checkOutboundUrl(rpc.url).ok) return null;
+  return {
+    did,
+    endpoint: rpc.url,
+    cardHash: v.cardHash,
+    indexedAt: v.indexedAt,
+    stale: v.stale,
+    trustScore: trust.score,
+    recommendation: trust.recommendation as A2ADirectoryCard['recommendation'],
+  };
+}
+
+
+/**
+ * A directory result of exactly the published shape, cleaned for the model,
+ * or null (dropped). The directory relays an outside agent's words, so they
+ * get the rule Core applies to the same words: the name is display text
+ * (invisible characters out, bounded), the endpoint passes the outbound URL
+ * rule Core's registration applies (else the owner could never register
+ * it), and each skill id is one a card may carry.
+ */
+function parseA2ADirectoryAgent(value: unknown): A2ADirectoryAgent | null {
+  if (value === null || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const displayName = a2aDisplayText(v.displayName, A2A_NAME_MAX_CODE_POINTS);
+  const ok =
+    typeof v.did === 'string' &&
+    DIRECTORY_DID.test(v.did) &&
+    displayName !== '' &&
+    typeof v.endpoint === 'string' &&
+    checkOutboundUrl(v.endpoint).ok &&
+    Array.isArray(v.skills) &&
+    v.skills.length > 0 &&
+    v.skills.every((id) => typeof id === 'string' && id !== '' && id.length <= MAX_ID_LENGTH) &&
+    typeof v.trustScore === 'number' &&
+    Number.isFinite(v.trustScore) &&
+    v.trustScore >= 0 &&
+    v.trustScore <= 1 &&
+    typeof v.recommendation === 'string' &&
+    RECOMMENDATIONS.has(v.recommendation) &&
+    typeof v.indexedAt === 'string' &&
+    ISO_TIMESTAMP.test(v.indexedAt) &&
+    !Number.isNaN(Date.parse(v.indexedAt)) &&
+    typeof v.stale === 'boolean' &&
+    typeof v.cardHash === 'string' &&
+    /^[0-9a-f]{64}$/.test(v.cardHash);
+  if (!ok) return null;
+  return {
+    did: v.did as string,
+    displayName,
+    endpoint: v.endpoint as string,
+    skills: [...(v.skills as string[])],
+    trustScore: v.trustScore as number,
+    recommendation: v.recommendation as A2ADirectoryAgent['recommendation'],
+    indexedAt: v.indexedAt as string,
+    stale: v.stale as boolean,
+    cardHash: v.cardHash as string,
+  };
+}
+
 export interface CapabilityCandidate {
   canonical: string;
   description: string;
@@ -353,6 +506,39 @@ export class AppViewClient {
       return { ...r, did, isDiscoverable };
     });
     return coerced.filter((s): s is ServiceProfile => isServiceProfile(s)).map(normalizeProfile);
+  }
+
+  /**
+   * The directory's verified card for `did` (design §8.3), or null when it
+   * lists none (404) or answers in another shape. A closed directory (503) or
+   * any other failure throws `AppViewError`.
+   */
+  async getA2ACard(did: string): Promise<A2ADirectoryCard | null> {
+    if (!DIRECTORY_DID.test(did)) return null;
+    let body: unknown;
+    try {
+      body = await this.get('/xrpc/com.dinakernel.a2a.getCard', { did });
+    } catch (err) {
+      if (err instanceof AppViewError && err.status === 404) return null;
+      throw err;
+    }
+    return parseA2ADirectoryCard(did, body);
+  }
+
+  /**
+   * Search the A2A directory (design §8.3). Results of any other shape are
+   * dropped; an HTTP failure (503 while the directory is closed) throws
+   * `AppViewError`.
+   */
+  async searchA2AAgents(params: SearchA2AAgentsParams): Promise<A2ADirectoryAgent[]> {
+    const query: Record<string, string> = {};
+    if (params.skill !== undefined && params.skill !== '') query.skill = params.skill;
+    if (params.q !== undefined && params.q !== '') query.q = params.q;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+    const body = await this.get('/xrpc/com.dinakernel.a2a.searchAgents', query);
+    const agents = (body as { agents?: unknown } | null)?.agents;
+    if (!Array.isArray(agents)) return [];
+    return agents.map(parseA2ADirectoryAgent).filter((a): a is A2ADirectoryAgent => a !== null);
   }
 
   /**

@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "com.dinakernel.a2a.card",
+  "description": "A Dina node's public A2A Agent Card, for the trust-ranked directory (docs/A2A_GATEWAY_ARCHITECTURE.md §8.2). One per repository.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["card", "directory_envelope", "endpoint", "protocol_version", "skills"],
+        "properties": {
+          "card": {
+            "type": "string",
+            "maxLength": 131072,
+            "description": "The JWS-signed Agent Card as RFC 8785 canonical JSON, byte-identical to what /.well-known/agent-card.json serves."
+          },
+          "directory_envelope": {
+            "type": "unknown",
+            "description": "{v, domain, did, collection, rkey, card_hash, freshness_epoch, publisher_epoch, publisher_instance, sig}: signed by the DID document's #dina_signing key over its RFC 8785 form without sig; card_hash is the sha256 of the card string's UTF-8 bytes."
+          },
+          "endpoint": {
+            "type": "string",
+            "format": "uri",
+            "description": "The card's JSON-RPC interface URL. Must equal the card's."
+          },
+          "protocol_version": {
+            "type": "string",
+            "description": "The card's JSON-RPC interface protocol version. Must equal the card's."
+          },
+          "skills": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 256 },
+            "description": "The card's skill ids in order: capability or capability@rkey. Must equal the card's."
+          }
+        }
+      }
+    }
+  }
+}

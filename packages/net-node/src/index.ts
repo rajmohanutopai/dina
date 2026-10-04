@@ -601,6 +601,7 @@ export function computeReconnectDelay(
 
 // The production repo-proof verifier (§5.C1) — inject at boot via
 // `setRepoProofVerifier`. Loads ESM-only `@atproto` at runtime.
+export { createA2AHostTransport, type A2AHostTransportOptions } from './a2a_host_transport';
 export { createRepoProofVerifier } from './repo_proof_verifier';
 export type {
   RepoProofVerifierDeps,

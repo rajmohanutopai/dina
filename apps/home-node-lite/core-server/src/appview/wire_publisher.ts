@@ -49,7 +49,7 @@ import {
 } from '@dina/protocol';
 
 import { type ServiceProfileRecord } from './profile_builder';
-import { computeSchemaHash } from './schema_hash';
+import { capabilitySchemaHash } from '@dina/core';
 import {
   ServiceProfilePublisher,
   type PutRecordFn,
@@ -184,10 +184,21 @@ export function wireServiceProfilePublisher(
     });
 
     const publishing = desired !== null && shouldPublishListing(desired);
-    const outcome =
-      publishing
+    let outcome: Awaited<ReturnType<typeof publishOnce>> | Awaited<ReturnType<typeof unpublishOnce>>;
+    try {
+      outcome = publishing
         ? await publishOnce(publisher, pdsIdentity, desired, logger, rkey)
         : await unpublishOnce(pdsPublisher, rkey, logger);
+    } catch (err) {
+      // A step that throws has no outcome to retry on. Record it as a
+      // permanent failure: an unhandled rejection here would take the
+      // process down, again at every boot, and leave the listing in flight.
+      outcome = {
+        ok: false,
+        reason: 'malformed_profile',
+        detail: err instanceof Error ? err.message : String(err),
+      };
+    }
 
     slot.running = false;
     if (disposed) return;
@@ -455,18 +466,25 @@ export function buildWireServiceProfile(
   for (const cap of capabilities) {
     const localSchema = config.capabilitySchemas?.[cap];
     if (localSchema === undefined) continue; // skip caps with no schema (custom)
-    const wireEntry: Record<string, unknown> = {
-      params: localSchema.params,
-      result: localSchema.result,
-      // The wire hash is derived from the schema, never trusted from the
-      // caller's cached `schemaHash`. AppView rejects malformed hashes and a
-      // stale-but-well-formed hash makes every invocation fail version
-      // negotiation. This mirrors Brain's ServicePublisher exactly.
-      schema_hash: computeSchemaHash({
+    // The wire hash is derived from the schema, never trusted from the
+    // caller's cached `schemaHash`. AppView rejects malformed hashes and a
+    // stale-but-well-formed hash makes every invocation fail version
+    // negotiation. Core's recipe is the one every publisher and the
+    // service-query ingress use; a schema it refuses cannot be published.
+    let schemaHash: string;
+    try {
+      schemaHash = capabilitySchemaHash({
         description: localSchema.description ?? '',
         params: localSchema.params,
         result: localSchema.result,
-      }),
+      });
+    } catch {
+      return `capability "${cap}" has a schema with no canonical JSON form`;
+    }
+    const wireEntry: Record<string, unknown> = {
+      params: localSchema.params,
+      result: localSchema.result,
+      schema_hash: schemaHash,
     };
     if (localSchema.description !== undefined) {
       wireEntry.description = localSchema.description;

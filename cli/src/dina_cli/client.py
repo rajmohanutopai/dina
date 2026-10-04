@@ -27,6 +27,13 @@ class DinaClientError(Exception):
     """Raised when a Dina API call fails."""
 
 
+def _with_claim(body: dict, claim_id: str) -> dict:
+    """``body`` with the claim token added, when there is one."""
+    if claim_id:
+        body["claim_id"] = claim_id
+    return body
+
+
 class _ClientResponse:
     """Minimal httpx.Response-like adapter around TransportResponse.
 
@@ -891,17 +898,22 @@ class DinaClient:
             return None
         return resp.json()
 
-    def task_heartbeat(self, task_id: str, lease_seconds: int = 300) -> None:
+    # Every report on a claimed task may carry the claim token Core minted at
+    # claim (`claim_id` on the claimed task). Core requires it for a call
+    # from an A2A client, so a report from an execution whose lease moved on
+    # cannot land; other tasks accept it and check it the same way.
+
+    def task_heartbeat(self, task_id: str, lease_seconds: int = 300, claim_id: str = "") -> None:
         """Extend lease on a claimed task (POST /v1/workflow/tasks/{id}/heartbeat)."""
         self._request(
             self._core,
             "POST",
             f"/v1/workflow/tasks/{task_id}/heartbeat",
-            json={"lease_seconds": lease_seconds},
+            json=_with_claim({"lease_seconds": lease_seconds}, claim_id),
         )
 
     def task_complete(
-        self, task_id: str, result: str, assigned_runner: str = ""
+        self, task_id: str, result: str, assigned_runner: str = "", claim_id: str = ""
     ) -> None:
         """Mark task as completed (POST /v1/workflow/tasks/{id}/complete)."""
         body: dict = {"result": result}
@@ -911,10 +923,12 @@ class DinaClient:
             self._core,
             "POST",
             f"/v1/workflow/tasks/{task_id}/complete",
-            json=body,
+            json=_with_claim(body, claim_id),
         )
 
-    def task_fail(self, task_id: str, error: str, assigned_runner: str = "") -> None:
+    def task_fail(
+        self, task_id: str, error: str, assigned_runner: str = "", claim_id: str = ""
+    ) -> None:
         """Mark task as failed (POST /v1/workflow/tasks/{id}/fail)."""
         body: dict = {"error": error}
         if assigned_runner:
@@ -923,8 +937,25 @@ class DinaClient:
             self._core,
             "POST",
             f"/v1/workflow/tasks/{task_id}/fail",
-            json=body,
+            json=_with_claim(body, claim_id),
         )
+
+    def task_input_required(
+        self, task_id: str, prompt: str, input_schema: dict, claim_id: str
+    ) -> dict:
+        """Ask the requester of an A2A call for more input
+        (POST /v1/workflow/tasks/{id}/input-required).
+
+        Only before the call has acted. The task then waits for the
+        requester's answer, and the answer comes back as a new task whose
+        payload carries every answer so far (``continuation``)."""
+        resp = self._request(
+            self._core,
+            "POST",
+            f"/v1/workflow/tasks/{task_id}/input-required",
+            json={"claim_id": claim_id, "prompt": prompt, "input_schema": input_schema},
+        )
+        return resp.json()
 
     def mark_running(
         self, task_id: str, run_id: str = "", assigned_runner: str = ""
@@ -940,13 +971,13 @@ class DinaClient:
             json=body,
         )
 
-    def task_progress(self, task_id: str, message: str) -> None:
+    def task_progress(self, task_id: str, message: str, claim_id: str = "") -> None:
         """Update progress on a claimed task (POST /v1/workflow/tasks/{id}/progress)."""
         self._request(
             self._core,
             "POST",
             f"/v1/workflow/tasks/{task_id}/progress",
-            json={"message": message},
+            json=_with_claim({"message": message}, claim_id),
         )
 
     def get_task(self, task_id: str) -> dict | None:
@@ -958,7 +989,11 @@ class DinaClient:
                 "GET",
                 f"/v1/workflow/tasks/{task_id}",
             )
-            return resp.json()
+            body = resp.json()
+            # Core answers ``{"task": {...}}``; callers read the task itself.
+            if isinstance(body, dict) and isinstance(body.get("task"), dict):
+                return body["task"]
+            return body
         except DinaClientError as e:
             if "404" in str(e) or "not found" in str(e).lower():
                 return None

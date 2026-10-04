@@ -731,3 +731,40 @@ describe('plugin binding resolution at save (§23 FR-P2)', () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe('the save refuses what Core would refuse to run or publish (A2A plan §4.2a)', () => {
+  const codes = (result: ReturnType<typeof validateServiceConfigForSave>): string[] =>
+    result.ok ? [] : (result.details ?? []).map((d) => d.code);
+  const saveable = (over: Partial<ServiceConfig>): ServiceConfig => ({
+    ...validConfig,
+    discoverability: 'public',
+    status: 'active',
+    capabilities: { eta_query: { ...validConfig.capabilities.eta_query, category: 'transit' } },
+    ...over,
+  });
+
+  it('the base listing saves', () => {
+    expect(codes(validateServiceConfigForSave(saveable({})))).toEqual([]);
+  });
+
+  it.each(['dina.local', 'plugin:pli_x', 'a2a:ra-1', 'reasoning:claude'])(
+    'refuses an mcpServer naming the reserved lane %s',
+    (lane) => {
+      const config = saveable({
+        capabilities: { eta_query: { ...validConfig.capabilities.eta_query, category: 'transit', mcpServer: lane } },
+      });
+      expect(codes(validateServiceConfigForSave(config))).toContain('reserved_runner_lane');
+    },
+  );
+
+  it('refuses a schema with no canonical JSON form', () => {
+    let deep: Record<string, unknown> = { type: 'object' };
+    for (let i = 0; i < 40; i += 1) deep = { type: 'object', properties: { x: deep } };
+    for (const schemas of [
+      { eta_query: { ...validConfig.capabilitySchemas!.eta_query, description: 'bad \ud800 text' } },
+      { eta_query: { ...validConfig.capabilitySchemas!.eta_query, params: deep } },
+    ]) {
+      expect(codes(validateServiceConfigForSave(saveable({ capabilitySchemas: schemas })))).toContain('schema_not_canonical');
+    }
+  });
+});

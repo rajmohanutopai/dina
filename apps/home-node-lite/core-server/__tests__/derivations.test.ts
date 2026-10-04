@@ -2,6 +2,9 @@
  * Task 4.54 + 4.55 — identity-derivation orchestrator tests.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
   deriveRootSigningKey,
   derivePersonaSigningKey,
@@ -200,9 +203,52 @@ describe('deriveIdentity (tasks 4.54 + 4.55)', () => {
   });
 
   describe('canonical constants', () => {
-    it('SERVICE_INDEX.core = 0, SERVICE_INDEX.brain = 1', () => {
-      expect(SERVICE_INDEX.core).toBe(0);
-      expect(SERVICE_INDEX.brain).toBe(1);
+    it('pins every service-key index: core 0, brain 1, phone approval 2, A2A gateway 3', () => {
+      expect({ ...SERVICE_INDEX }).toEqual({ core: 0, brain: 1, phoneApproval: 2, a2aGateway: 3 });
+    });
+
+    it('gives no two service-key users the same index', () => {
+      const values = Object.values(SERVICE_INDEX);
+      expect(new Set(values).size).toBe(values.length);
+    });
+
+    it('derives every service key through SERVICE_INDEX, never an inline number', () => {
+      // The index-2 collision this table fixed was an inline `deriveServiceKey(seed, 2)`
+      // outside it; the table alone cannot see such a call, so scan the sources.
+      const root = path.resolve(__dirname, '../../../..');
+      const sourceRoots = [
+        'apps/home-node-lite/core-server/src',
+        'apps/home-node-lite/brain-server/src',
+        'apps/mobile/src',
+        'packages',
+      ];
+      const calls: string[] = [];
+      const walk = (dir: string): void => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          if (entry.name === 'node_modules' || entry.name === '__tests__' || entry.name === 'dist') continue;
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else if (/\.tsx?$/.test(entry.name)) {
+            const text = fs.readFileSync(full, 'utf8');
+            // Calls only: the declaration `function deriveServiceKey(` is not a use.
+            for (const m of text.matchAll(/(?<!function )deriveServiceKey\(\s*[^,()]+,\s*([^)]+)\)/g)) {
+              calls.push(`${path.relative(root, full)}: ${(m[1] ?? '').trim()}`);
+            }
+          }
+        }
+      };
+      for (const r of sourceRoots) walk(path.join(root, r));
+      expect(calls.length).toBeGreaterThan(0);
+      const inline = calls.filter((c) => !/: SERVICE_INDEX\.[A-Za-z]+$/.test(c));
+      expect(inline).toEqual([]);
+    });
+
+    it('derives distinct keys for every listed service', () => {
+      const seed = seedFromFixedMnemonic();
+      const keys = Object.values(SERVICE_INDEX).map((i) =>
+        Buffer.from(deriveServiceKey(seed, i).privateKey).toString('hex'),
+      );
+      expect(new Set(keys).size).toBe(keys.length);
     });
 
     it('SERVICE_INDEX is frozen (no runtime mutation)', () => {

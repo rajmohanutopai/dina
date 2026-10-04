@@ -13,8 +13,9 @@
  *             task: { id: string, payload: string }, config: ServiceConfig | null }
  * Response: 200 { result }  |  4xx/5xx { error }
  *
- * Loopback-only, unauthenticated — same posture as the brain's other routes
- * (it is reachable only from the co-located Core over localhost).
+ * Loopback-only, and like every Brain route but the probes it serves signed
+ * callers only (caller_auth.ts): here, the co-located Core under its
+ * service key.
  */
 
 import { makeTier1CapabilityRunner } from '@dina/brain';

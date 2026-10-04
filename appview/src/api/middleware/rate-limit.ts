@@ -74,6 +74,10 @@ export const PER_METHOD_LIMITS_RPM: Readonly<Record<string, number>> = Object.fr
   'com.dinakernel.service.search': 60,
   'com.dinakernel.service.searchCapabilities': 60,
   'com.dinakernel.service.isDiscoverable': 60,
+  // A2A directory (design §8.3): search at the search tier, a card read at
+  // the detail tier.
+  'com.dinakernel.a2a.searchAgents': 60,
+  'com.dinakernel.a2a.getCard': 120,
 })
 
 /**

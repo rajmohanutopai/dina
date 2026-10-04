@@ -27,6 +27,22 @@ export interface XrpcOutcome {
 }
 
 /**
+ * A refusal a handler means to send: its status and error name reach the
+ * caller as they are (a missing record, a surface not open yet). Anything
+ * else a handler throws stays a 500 whose reason the caller never sees.
+ */
+export class XrpcError extends Error {
+  constructor(
+    readonly status: number,
+    readonly error: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'XrpcError'
+  }
+}
+
+/**
  * A ZodError, recognised WITHOUT importing zod.
  *
  * The dispatch does not care which validation library a route uses — it cares
@@ -78,6 +94,9 @@ export async function dispatchXrpc(args: {
   try {
     return { status: 200, body: await route.handler(args.db, parsed) }
   } catch (err) {
+    if (err instanceof XrpcError) {
+      return { status: err.status, body: { error: err.error, message: err.message } }
+    }
     // The REASON stays on this side. A handler's error can name a table, a
     // query or a connection string, and none of that is the caller's.
     args.onError?.(err, args.methodId)

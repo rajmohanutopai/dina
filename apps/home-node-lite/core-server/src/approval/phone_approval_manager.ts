@@ -1,6 +1,8 @@
 import { deriveServiceKey } from '@dina/core';
 import { kvDelete, kvGet, kvSet } from '@dina/core/kv';
 
+import { SERVICE_INDEX } from '../identity/derivations';
+
 import { PhoneApprovalMsgBoxClient, parsePhoneSetupCode } from './phone_approval_msgbox';
 import { PhoneApprovalSyncWorker, withdrawAllPhoneApprovalMirrors } from './phone_approval_sync';
 
@@ -200,7 +202,7 @@ export class PhoneApprovalManager {
   }
 
   private makeClient(target: Pick<PhoneTarget, 'msgbox_url' | 'phone_did'>) {
-    const approvalKey = deriveServiceKey(this.seed, 2);
+    const approvalKey = deriveServiceKey(this.seed, SERVICE_INDEX.phoneApproval);
     return new PhoneApprovalMsgBoxClient({
       msgboxURL: target.msgbox_url,
       phoneDID: target.phone_did,

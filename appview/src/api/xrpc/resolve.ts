@@ -1,9 +1,6 @@
 import { z } from 'zod'
-import { eq, and } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { subjects, subjectScores, didProfiles, flags } from '@/db/schema/index.js'
-import { resolveSubject } from '@/db/queries/subjects.js'
-import { computeRecommendation } from '@/scorer/algorithms/recommendation.js'
+import { authenticityOf, loadSubjectTrustFacts, recommendFromFacts } from '@/db/queries/subject-trust.js'
 import { withSWR, resolveKey, CACHE_TTLS } from '../middleware/swr-cache.js'
 import { getCachedGraphContext } from '../middleware/graph-context-cache.js'
 import { CONSTANTS } from '@/config/constants.js'
@@ -86,7 +83,10 @@ async function computeResolveResponse(
     }
   }
 
-  const subjectId = await resolveSubject(db, subjectRef)
+  // The facts `resolve` decides on, read through the module the A2A
+  // directory shares, so both give one subject the same band.
+  const facts = await loadSubjectTrustFacts(db, subjectRef)
+  const subjectId = facts.subjectId
 
   // Moderator-tombstoned subjects must not feed a trust decision —
   // `resolve` drives proceed/caution/verify/avoid, and a removed
@@ -94,12 +94,7 @@ async function computeResolveResponse(
   // with the subjectId preserved (so cached references don't 404)
   // but every trust-bearing field zeroed and a hard `avoid`.
   if (subjectId) {
-    const [subjectRow] = await db
-      .select({ tombstonedAt: subjects.tombstonedAt })
-      .from(subjects)
-      .where(eq(subjects.id, subjectId))
-      .limit(1)
-    if (subjectRow?.tombstonedAt != null) {
+    if (facts.tombstoned) {
       return {
         subjectId,
         reviewCount: 0,
@@ -119,24 +114,7 @@ async function computeResolveResponse(
     }
   }
 
-  const scores = subjectId
-    ? await db.select().from(subjectScores)
-        .where(eq(subjectScores.subjectId, subjectId))
-        .limit(1).then(r => r[0] ?? null)
-    : null
-
-  let didProfile = null
-  if (subjectRef.type === 'did' && subjectRef.did) {
-    didProfile = await db.select().from(didProfiles)
-      .where(eq(didProfiles.did, subjectRef.did))
-      .limit(1).then(r => r[0] ?? null)
-  }
-
-  const activeFlags = subjectId
-    ? await db.select().from(flags)
-        .where(and(eq(flags.subjectId, subjectId), eq(flags.isActive, true)))
-        .limit(10)
-    : []
+  const { scores, activeFlags } = facts
 
   let graphContext: GraphContext | null = null
   if (requesterDid && subjectRef.type === 'did' && subjectRef.did) {
@@ -152,20 +130,8 @@ async function computeResolveResponse(
     }
   }
 
-  let authenticity = null
-  if (scores?.authenticityConsensus) {
-    authenticity = {
-      predominantAssessment: scores.authenticityConsensus,
-      confidence: scores.authenticityConfidence,
-    }
-  }
-
-  const rec = computeRecommendation({
-    scores, didProfile, flags: activeFlags.map(f => ({
-      flagType: f.flagType, severity: f.severity,
-    })),
-    graphContext, authenticity, context, domain,
-  })
+  const authenticity = authenticityOf(facts)
+  const rec = recommendFromFacts(facts, { graphContext, context, domain })
 
   return {
     // TN-API-003 / Plan §6.3 fields:

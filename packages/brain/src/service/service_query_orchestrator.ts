@@ -17,6 +17,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { capabilitySchemaHash, getCapability, getTTL } from '@dina/core';
 import { MAX_SERVICE_TTL, resolveSearchableCapability } from '@dina/protocol';
 
 import {
@@ -27,8 +28,6 @@ import {
 } from '../appview_client/http';
 
 import { pickTopCandidate, type Location, type RankOptions } from './candidate_ranker';
-import { getCapability, getTTL } from './capabilities/registry';
-import { canonicalCapabilitySchemaHash } from './service_publisher';
 
 import type { CoreClient, ServiceQueryResult } from '@dina/core';
 
@@ -190,7 +189,7 @@ function validateParamsSenderSide(
     // this fast sender-side guard was silently skipped for every
     // registry capability — mis-shaped tool calls left the device and
     // failed a network round-trip later.
-    const ours = canonicalCapabilitySchemaHash({
+    const ours = capabilitySchemaHash({
       params: cap.paramsSchema,
       result: cap.resultSchema,
       description: cap.description,

@@ -92,6 +92,11 @@ interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
    */
   workflowClient?: BuildAgenticAskPipelineInput['workflowClient'];
   /**
+   * A2A Lane 1 client for `list_a2a_agents` / `delegate_to_a2a_agent`.
+   * Only a host that runs Lane 1 (the server node) passes it.
+   */
+  a2aClient?: BuildAgenticAskPipelineInput['a2aClient'];
+  /**
    * How long the AskCoordinator waits for the agentic loop to
    * produce a terminal answer before falling back to async-resume
    * delivery (`kind: 'async'` from `handleAsk`).
@@ -200,6 +205,7 @@ export function buildHomeNodeAskRuntime(
     coreClient: options.core,
     cloudConsentGranted: options.cloudConsentGranted ?? true,
     ...(options.workflowClient !== undefined ? { workflowClient: options.workflowClient } : {}),
+    ...(options.a2aClient !== undefined ? { a2aClient: options.a2aClient } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.sensitivePersonas !== undefined
       ? { sensitivePersonas: options.sensitivePersonas }
@@ -235,6 +241,7 @@ export function buildHomeNodeAskRuntime(
         // agent → skip sensitive/locked). The legacy handler path has no
         // DID → no filter → allow-all (unchanged).
         const requesterDid = ctx?.requesterDid;
+        const releaseSession = ctx?.releaseSession;
         const runOpts: RunPreFlightOptions | undefined =
           requesterDid !== undefined && requesterDid !== ''
             ? {
@@ -245,8 +252,11 @@ export function buildHomeNodeAskRuntime(
                     ? { sessionId: ctx.sessionId }
                     : {}),
                 }),
+                ...(releaseSession !== undefined ? { releaseSession } : {}),
               }
-            : undefined;
+            : releaseSession !== undefined
+              ? { releaseSession }
+              : undefined;
         return await runAskPreFlightRetrieval(plan, fetchers, runOpts);
       } catch {
         return null;

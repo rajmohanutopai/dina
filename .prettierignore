@@ -11,3 +11,4 @@
 # every time, so a real divergence would arrive as noise nobody reads.
 packages/commerce-protocol/conformance/vectors/
 packages/commerce-protocol/conformance/interop/
+packages/a2a/conformance/vectors/

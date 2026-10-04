@@ -189,9 +189,29 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
 
 <section>
   <h2>Approvals <span id="approvalCount" class="muted"></span></h2>
-  <p class="muted">Cards only you may decide: a buyer asking below your automatic price limit, a tender ready to award, a clerk over their limit.</p>
+  <p class="muted">Cards only you may decide: a buyer asking below your automatic price limit, a tender ready to award, a clerk over their limit, a message to a remote agent.</p>
   <div class="bar"><button id="refreshApprovals">Refresh</button></div>
   <div id="approvals" class="muted">Not checked.</div>
+</section>
+
+<section>
+  <h2>Remote agents</h2>
+  <p class="muted">Outside agents (A2A) Dina may ask for help. Dina sends nothing to them until you approve the exact message on an Approvals card.</p>
+  <form id="a2aRegister" class="row">
+    <input id="a2aCardUrl" placeholder="https://agent.example/.well-known/agent-card.json" size="52" />
+    <button class="primary" type="submit">Register</button>
+  </form>
+  <div class="bar"><button id="refreshA2A">Refresh</button></div>
+  <div id="a2aAgents" class="muted">Not checked.</div>
+  <h3>Requests to remote agents</h3>
+  <div id="a2aOps" class="muted">Not checked.</div>
+</section>
+
+<section>
+  <h2>Agent directory</h2>
+  <p class="muted">Lists this node's public A2A card in the PeerLens agent directory, where other agents can find it. A listing grants nothing: every call still needs a client token you issue.</p>
+  <div class="bar"><button id="refreshDirectory">Refresh</button></div>
+  <div id="a2aDirectory" class="muted">Not checked.</div>
 </section>
 
 <section>
@@ -839,6 +859,14 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       card.appendChild(el("div", { text: "Device " + String(p.device_did || "") + " · " +
         (p.value ? money(p.value.minor_units, p.value.currency) : "") }));
       card.appendChild(el("div", { class: "muted", text: String(p.reason || "") }));
+    } else if (p.type === "a2a_delegation_consent") {
+      a2aConsentCard(card, p);
+      yes = "Send it"; no = "Don't send";
+    } else if (p.type === "a2a_inbound_review") {
+      var rd = p.display || {};
+      card.appendChild(el("strong", { text: String(rd.title || "An outside agent asks to use one of your services") }));
+      card.appendChild(el("pre", { text: String(rd.detail || "") }));
+      yes = "Allow"; no = "Refuse";
     } else {
       card.appendChild(el("strong", { text: String(task.description || "Approval") }));
     }
@@ -991,16 +1019,340 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     });
   }
 
+  // ── Remote agents (A2A Lane 1, docs/A2A_GATEWAY_ARCHITECTURE.md §6) ──
+  // The consent card shows exactly what will leave, in full (A2A-I10): no
+  // summary stands in for the message. Every string is set as text.
+  function partText(part) {
+    if (part && typeof part.text === "string") return part.text;
+    return JSON.stringify(part && part.data, null, 2);
+  }
+  function a2aConsentCard(card, p) {
+    var d = p.display || {};
+    var c = p.consent || {};
+    card.appendChild(el("strong", { text: "Send to " + String(d.agent_name || "a remote agent") + ": " + String(d.skill_name || c.skill || "") }));
+    card.appendChild(el("div", { class: "muted", text: "Endpoint " + String(d.endpoint || "") + " · card " + String(d.card_url || "") }));
+    card.appendChild(el("div", { class: "muted", text: "Signature: " + String(d.signature_state || "") + ". " + String(d.signature_detail || "") }));
+    card.appendChild(el("div", { text: String(d.credential || "") }));
+    card.appendChild(el("div", { text: String(d.effect || "") }));
+    (Array.isArray(d.labels) ? d.labels : []).forEach(function (l) { card.appendChild(el("div", { class: "muted", text: String(l) })); });
+    var restricted = Array.isArray(d.restricted_personas) ? d.restricted_personas : [];
+    if (restricted.length) {
+      card.appendChild(el("div", { class: "muted", text: "Private vaults involved: " + restricted.map(String).join(", ") }));
+    }
+    (Array.isArray(d.sources) ? d.sources : []).forEach(function (line) { card.appendChild(el("div", { text: String(line) })); });
+    var ph = Array.isArray(d.placeholders) ? d.placeholders : [];
+    if (ph.length) {
+      card.appendChild(el("div", { class: "muted", text: "Replaced with placeholders: " + ph.map(function (x) { return String(x.type) + " ×" + String(x.count); }).join(", ") }));
+    }
+    card.appendChild(el("div", { text: "Exactly what will be sent:" }));
+    var parts = c.projection && Array.isArray(c.projection.parts) ? c.projection.parts : [];
+    card.appendChild(el("pre", { text: parts.map(partText).join("\\n\\n") }));
+    card.appendChild(el("div", { class: "muted", text: "Consent " + String(p.consent_hash || "").slice(0, 16) + "…" }));
+  }
+  function a2aRefusal(r) {
+    var key = r.body && r.body.error;
+    var words = {
+      already_registered: "That card is already registered.",
+      card_url_not_https: "The card address must start with https://.",
+      card_url_literal_ip: "Use a name, not a bare IP address.",
+      card_no_jsonrpc_1_0_interface: "That agent offers no A2A 1.0 JSON-RPC endpoint Dina can use.",
+      credential_required_by_card: "This agent asks for a credential. Set one up above.",
+      secret_invalid: "That secret is empty or has characters a header cannot carry.",
+      scope_not_on_card: "Choose scopes from the ones the card offers.",
+      scopes_required: "Choose the scopes this credential may ask for.",
+      scheme_kind_mismatch: "That kind of credential does not match the card's scheme.",
+      api_key_not_in_header: "The card sends its key outside a header, which Dina does not do.",
+      token_url_refused: "The card's token address is not one Dina will connect to.",
+      no_bound_skill: "Allow at least one skill first.",
+      publisher_unavailable: "This node has no PDS account to publish from.",
+      repo_unreachable: "Dina could not reach this node's repository. Try again later.",
+      lost_race: "Another change to publishing came first. Refresh and try again.",
+      not_configured: "This node has no public A2A address, so it has no card to publish.",
+      not_active: "Publishing is already stopped.",
+      cancel_refused: "The agent refused to cancel this task. It runs on to its own end.",
+      skill_not_on_card: "That skill is not on the agent's card."
+    };
+    return words[key] || ("Dina could not do that (" + String(key || r.status) + ").");
+  }
+  var A2A_CLASSES = ["read", "quote", "write", "booking", "agentic"];
+  function a2aAgentCard(agent) {
+    var id = String(agent.agent_id);
+    var base = "/v1/owner/a2a/remote-agents/" + encodeURIComponent(id);
+    var card = el("div", { class: "card" });
+    card.appendChild(el("strong", { text: String(agent.name) + " — " + String(agent.status) }));
+    card.appendChild(el("div", { class: "muted", text: String(agent.card_url) + " → " + String(agent.endpoint) }));
+    card.appendChild(el("div", { class: "muted", text: "Signature: " + String(agent.signature_state) + ". " + String(agent.signature_detail || "") }));
+    // A2A §6.1, §8.4: the directory's PeerLens evidence for the Dina node this card names. It informs; it allows nothing.
+    var evidence = el("div", { class: "muted", text: "PeerLens: checking the agent directory…" });
+    card.appendChild(evidence);
+    call("GET", base + "/evidence").then(function (r) { evidence.textContent = a2aEvidenceText(r); });
+    var creds = (Array.isArray(agent.credentials) ? agent.credentials : []).filter(function (c) { return c.status === "active"; });
+    var bound = {};
+    (Array.isArray(agent.bindings) ? agent.bindings : []).forEach(function (b) { bound[b.skill] = b; });
+    var act = function (verb, body) {
+      call("POST", base + verb, body || {}).then(function (r) {
+        if (r.status >= 300) alert(a2aRefusal(r));
+        loadA2A();
+      });
+    };
+    (Array.isArray(agent.skills) ? agent.skills : []).forEach(function (skill) {
+      var row = el("div", { class: "row" }, [el("span", { text: String(skill.name) + " (" + String(skill.id) + "): " + String(skill.description) })]);
+      if (agent.status !== "revoked") {
+        if (bound[skill.id]) {
+          row.appendChild(el("span", { class: "muted", text: "allowed as " + String(bound[skill.id].action_class) }));
+          row.appendChild(btn("Stop allowing", "", function () { act("/bindings/" + encodeURIComponent(skill.id) + "/revoke"); }));
+        } else if (creds.length) {
+          var pick = el("select", {});
+          A2A_CLASSES.forEach(function (k) { pick.appendChild(el("option", { value: k, text: k })); });
+          row.appendChild(pick);
+          // The owner names the credential each skill uses (§5.5).
+          var credPick = el("select", {});
+          creds.forEach(function (c) {
+            credPick.appendChild(el("option", { value: String(c.credential_ref), text: a2aCredentialLabel(c) }));
+          });
+          row.appendChild(credPick);
+          row.appendChild(btn("Allow", "", function () {
+            act("/bindings", { skill: skill.id, action_class: pick.value, credential_ref: credPick.value });
+          }));
+        }
+      }
+      card.appendChild(row);
+    });
+    if (agent.status !== "revoked") a2aCredentialRows(agent, creds, act).forEach(function (r) { card.appendChild(r); });
+    var bar = el("div", { class: "row" });
+    if (agent.status !== "revoked" && !creds.length) bar.appendChild(btn("Use without a credential", "", function () { act("/credentials", { kind: "none" }); }));
+    if (agent.status === "candidate" || agent.status === "changed") bar.appendChild(btn("Activate", "primary", function () { act("/activate"); }));
+    if (agent.status !== "revoked") {
+      bar.appendChild(btn("Check card again", "", function () { act("/verify"); }));
+      bar.appendChild(btn("Remove", "danger", function () { act("/revoke"); }));
+    }
+    card.appendChild(bar);
+    return card;
+  }
+  // What the owner reads about a remote agent's PeerLens evidence: shown beside the review, never a reason to allow.
+  function a2aEvidenceText(r) {
+    var e = r && r.status === 200 ? r.body : null;
+    if (!e || e.status === "unavailable") return "PeerLens: the agent directory is not available right now.";
+    if (e.status === "not_dina") return "PeerLens: no record. This agent's card names no Dina node.";
+    if (e.status === "not_listed") return "PeerLens: " + String(e.did) + " is not in the agent directory.";
+    if (e.status === "other_endpoint") {
+      return "PeerLens: the directory's card for " + String(e.did) + " names another endpoint, so its evidence is not this agent's.";
+    }
+    if (e.status === "listed") {
+      var score = typeof e.trust_score === "number" ? e.trust_score.toFixed(2) : "?";
+      return "PeerLens: " + String(e.recommendation) + " (trust " + score + ") for " + String(e.did) + ", listed " +
+        String(e.indexed_at).slice(0, 10) + (e.stale ? "; the listing may be behind the live card" : "") +
+        ". Evidence informs your review; it allows nothing.";
+    }
+    return "PeerLens: no record.";
+  }
+  // A2A §5.3: a credential for one of the schemes the card declares. Secrets
+  // go in password fields, are posted once, and are never shown again.
+  var A2A_SECRET_FIELDS = {
+    api_key: [["value", "API key"]],
+    bearer: [["token", "Bearer token"]],
+    oauth2_client: [["client_id", "Client id"], ["client_secret", "Client secret"]]
+  };
+  function a2aSecretInputs(kind) {
+    var inputs = {};
+    var row = el("span", {});
+    (A2A_SECRET_FIELDS[kind] || []).forEach(function (f) {
+      var input = el("input", { type: f[0] === "client_id" ? "text" : "password", placeholder: f[1], autocomplete: "off" });
+      inputs[f[0]] = input;
+      row.appendChild(input);
+    });
+    return { row: row, read: function () {
+      var secret = {};
+      Object.keys(inputs).forEach(function (k) { secret[k] = inputs[k].value; inputs[k].value = ""; });
+      return secret;
+    } };
+  }
+  function a2aCredentialLabel(c) {
+    var scope = c.scope || {};
+    var what = c.kind === "none" ? "No credential"
+      : c.kind === "api_key" ? "API key in the " + String(scope.header) + " header"
+      : c.kind === "bearer" ? "Bearer token"
+      : "OAuth client for " + ((scope.scopes || []).join(", ") || "no named scopes");
+    return what + ", revision " + String(c.revision);
+  }
+  function a2aCredentialRows(agent, creds, act) {
+    var rows = [];
+    creds.forEach(function (c) {
+      var row = el("div", { class: "row" }, [el("span", { class: "muted", text: a2aCredentialLabel(c) })]);
+      if (c.kind !== "none") {
+        var fields = a2aSecretInputs(c.kind);
+        row.appendChild(fields.row);
+        row.appendChild(btn("Replace secret", "", function () { act("/credentials/" + encodeURIComponent(c.credential_ref) + "/rotate", { secret: fields.read() }); }));
+      }
+      row.appendChild(btn("Revoke credential", "danger", function () { act("/credentials/" + encodeURIComponent(c.credential_ref) + "/revoke"); }));
+      rows.push(row);
+    });
+    (Array.isArray(agent.schemes) ? agent.schemes : []).forEach(function (sc) {
+      if (!A2A_SECRET_FIELDS[sc.kind]) {
+        rows.push(el("div", { class: "muted", text: "The card asks for “" + String(sc.label || "") + "”, a kind of sign-in Dina cannot provide yet." }));
+        return;
+      }
+      var fields = a2aSecretInputs(sc.kind);
+      var scopeBoxes = [];
+      var row = el("div", { class: "row" }, [el("span", { text: "Credential for “" + String(sc.label || "") + "” (" + (sc.kind === "api_key" ? "API key in the " + String(sc.header) + " header" : sc.kind === "bearer" ? "bearer token" : "OAuth client at " + String(sc.token_host)) + ")" }), fields.row]);
+      (sc.scopes || []).forEach(function (name) {
+        var box = el("input", { type: "checkbox", value: String(name) });
+        scopeBoxes.push(box);
+        row.appendChild(el("label", {}, [box, el("span", { text: String(name) })]));
+      });
+      row.appendChild(btn("Use this credential", "", function () {
+        var body = { kind: sc.kind, scheme: sc.name, secret: fields.read() };
+        if (sc.kind === "oauth2_client") body.scopes = scopeBoxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+        act("/credentials", body);
+      }));
+      rows.push(row);
+    });
+    return rows;
+  }
+  function a2aOpRow(op) {
+    var row = el("div", { class: "card" }, [
+      el("strong", { text: String(op.agent_name || "remote agent") + " · " + String(op.skill || "") + " — " + String(op.state) + (op.reason ? " (" + String(op.reason) + ")" : "") })
+    ]);
+    if (op.result !== null && op.result !== undefined) {
+      var r = op.result;
+      var text = r && r.version === 1 && Array.isArray(r.parts) ? r.parts.map(partText).join("\\n\\n") : JSON.stringify(r, null, 2);
+      row.appendChild(el("pre", { text: text }));
+    }
+    if (op.state === "completed") {
+      // What the answer's placeholders stand for, shown beside it (A2A §6.5),
+      // never written into the agent's text.
+      var legendBox = el("div", { class: "muted" });
+      row.appendChild(btn("Show placeholders", "", function () {
+        call("GET", "/v1/owner/a2a/operations/" + encodeURIComponent(String(op.operation_id))).then(function (r) {
+          clear(legendBox);
+          var legend = r.body && Array.isArray(r.body.placeholder_legend) ? r.body.placeholder_legend : [];
+          if (!legend.length) legendBox.appendChild(el("div", { text: "No placeholder in this answer stands for a detail Dina kept." }));
+          legend.forEach(function (e) { legendBox.appendChild(el("div", { text: String(e.placeholder) + " = " + String(e.original) })); });
+        });
+      }));
+      row.appendChild(legendBox);
+    }
+    // The owner's cancel, once asked of the remote (A2A §6.4): one request per task.
+    if (op.state === "running" && op.cancel === "refused") {
+      row.appendChild(el("div", { class: "muted", text: "The agent refused to cancel. The task runs on to its own end." }));
+    } else if (op.state === "running" && (op.cancel === "requested" || op.cancel === "attempting")) {
+      row.appendChild(el("div", { class: "muted", text: "Cancel asked. Waiting for the agent's answer." }));
+    }
+    if (op.state === "pending_decision" || op.state === "queued" || (op.state === "running" && !op.cancel)) {
+      row.appendChild(btn("Cancel", "danger", function () {
+        call("POST", "/v1/owner/a2a/operations/" + encodeURIComponent(String(op.operation_id)) + "/cancel", {}).then(function (res) {
+          if (res.status >= 300) alert(a2aRefusal(res));
+          loadA2A(); loadApprovals();
+        });
+      }));
+    }
+    return row;
+  }
+  function loadA2A() {
+    var agentsBox = document.getElementById("a2aAgents");
+    var opsBox = document.getElementById("a2aOps");
+    call("GET", "/v1/owner/a2a/remote-agents").then(function (r) {
+      clear(agentsBox); agentsBox.className = "";
+      if (r.status !== 200) { agentsBox.className = "muted"; agentsBox.textContent = r.status === 503 ? "Remote agents are not available on this node." : a2aRefusal(r); return; }
+      var agents = Array.isArray(r.body.agents) ? r.body.agents : [];
+      if (!agents.length) { agentsBox.className = "muted"; agentsBox.textContent = "No remote agents registered."; return; }
+      agents.forEach(function (a) { agentsBox.appendChild(a2aAgentCard(a)); });
+    });
+    call("GET", "/v1/owner/a2a/operations").then(function (r) {
+      clear(opsBox); opsBox.className = "";
+      if (r.status !== 200) { opsBox.className = "muted"; opsBox.textContent = "Not available."; return; }
+      var ops = Array.isArray(r.body.operations) ? r.body.operations : [];
+      if (!ops.length) { opsBox.className = "muted"; opsBox.textContent = "No requests yet."; return; }
+      ops.forEach(function (o) { opsBox.appendChild(a2aOpRow(o)); });
+    });
+  }
+  // A2A §8.2: the directory listing and its publisher are the owner's alone.
+  var A2A_PUBLISH_STATES = {
+    not_published: "Not published.",
+    pending: "Publishing…",
+    published: "Published.",
+    failed: "Publishing failed. Dina will try again.",
+    stood_down: "Stopped publishing.",
+    deactivating: "Taking the card down…"
+  };
+  var A2A_STAND_DOWN_NOTICES = {
+    another_server_publishing: "Another server now publishes this node's card, so this one stopped. Start publishing here only if this server should take over.",
+    fence_missing: "This node's publishing fence is gone from its repository, so it stopped publishing. Start publishing to set a new one.",
+    fence_unverifiable: "This node could not verify the publishing fence in its repository, so it stopped publishing. Start publishing to check again."
+  };
+  function a2aDirectoryPanel(view, act) {
+    var box = el("div", {});
+    box.appendChild(el("div", { text: view.listing_enabled ? "Listing is on." : "Listing is off." }));
+    box.appendChild(el("div", { class: "muted", text: (A2A_PUBLISH_STATES[view.state] || String(view.state)) + (view.active ? " This server publishes." : " This server does not publish.") }));
+    if (view.listing_enabled && view.active && !view.eligible && view.state !== "stood_down") {
+      box.appendChild(el("div", { class: "muted", text: "Nothing goes out until this node has a gateway and at least one public skill." }));
+    }
+    if (view.published_at) {
+      box.appendChild(el("div", { class: "muted", text: "Last published " + new Date(view.published_at).toISOString() + (view.published_uri ? " as " + String(view.published_uri) : "") + "." }));
+    }
+    if (view.state === "failed" && view.next_retry_at) {
+      box.appendChild(el("div", { class: "muted", text: "Attempts so far: " + String(view.attempts) + ". Next try " + new Date(view.next_retry_at).toISOString() + "." }));
+    }
+    if (view.notice) {
+      box.appendChild(el("div", { class: "card", text: A2A_STAND_DOWN_NOTICES[view.notice] || ("Publishing stopped (" + String(view.notice) + ").") }));
+    }
+    var bar = el("div", { class: "bar" });
+    bar.appendChild(btn(view.listing_enabled ? "Turn listing off" : "Turn listing on", "", function () {
+      act("/v1/owner/a2a/directory-listing", { enabled: !view.listing_enabled });
+    }));
+    if (view.active) bar.appendChild(btn("Stop publishing", "danger", function () { act("/v1/owner/a2a/publisher/deactivate", {}); }));
+    else bar.appendChild(btn("Start publishing", "primary", function () { act("/v1/owner/a2a/publisher/activate", {}); }));
+    box.appendChild(bar);
+    return box;
+  }
+  // Offered only after activation found a fence it cannot verify (§8.2): replacing it is the owner's call.
+  function a2aRefenceOffer(act) {
+    return el("div", { class: "card" }, [
+      el("div", { text: "A publishing fence Dina cannot verify stands in this node's repository. Replace it only if no other server should publish this node's card." }),
+      btn("Replace the fence and publish from here", "danger", function () { act("/v1/owner/a2a/publisher/activate", { refence: true }); })
+    ]);
+  }
+  function directoryAct(path, body) {
+    call("POST", path, body).then(function (r) {
+      if (r.status === 409 && r.body && r.body.error === "fence_unverifiable" && body.refence !== true) {
+        document.getElementById("a2aDirectory").appendChild(a2aRefenceOffer(directoryAct));
+        return;
+      }
+      if (r.status >= 300) alert(a2aRefusal(r));
+      loadDirectory();
+    });
+  }
+  function loadDirectory() {
+    var box = document.getElementById("a2aDirectory");
+    call("GET", "/v1/owner/a2a/publisher").then(function (r) {
+      clear(box); box.className = "";
+      if (r.status !== 200) { box.className = "muted"; box.textContent = r.status === 503 ? "The agent directory is not available on this node." : a2aRefusal(r); return; }
+      box.appendChild(a2aDirectoryPanel(r.body, directoryAct));
+    });
+  }
+  function registerA2A(evt) {
+    evt.preventDefault();
+    var input = document.getElementById("a2aCardUrl");
+    call("POST", "/v1/owner/a2a/remote-agents", { card_url: input.value.trim() }).then(function (r) {
+      if (r.status !== 201) { alert(a2aRefusal(r)); return; }
+      input.value = "";
+      loadA2A();
+    });
+  }
+
   // ── wire up ─────────────────────────────────────────────────────────
   document.getElementById("save").addEventListener("click", function () {
     setCap(document.getElementById("cap").value);
     document.getElementById("cap").value = "";
     refreshKeyState();
-    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks();
+    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks(); loadA2A(); loadDirectory();
   });
   document.getElementById("refreshApprovals").addEventListener("click", loadApprovals);
   document.getElementById("refreshTenders").addEventListener("click", loadTenders);
   document.getElementById("refreshPacks").addEventListener("click", loadPacks);
+  document.getElementById("refreshA2A").addEventListener("click", loadA2A);
+  document.getElementById("refreshDirectory").addEventListener("click", loadDirectory);
+  document.getElementById("a2aRegister").addEventListener("submit", registerA2A);
   document.getElementById("presenceConfirm").addEventListener("click", confirmPresence);
   document.getElementById("presenceCancel").addEventListener("click", function () {
     pendingRetry = null;
@@ -1024,7 +1376,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   });
   document.getElementById("watchForm").addEventListener("submit", createWatch);
   refreshKeyState();
-  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks(); }
+  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadTenders(); loadPacks(); loadA2A(); loadDirectory(); }
 })();
 </script>
 </body>

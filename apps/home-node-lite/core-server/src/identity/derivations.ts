@@ -43,10 +43,17 @@ import {
   type DerivedKey,
 } from '@dina/core';
 
-/** Service indices per CLAUDE.md: Core = 0, Brain = 1. */
+/**
+ * Every user of `m/9999'/3'/{n}'`, one index each. A key derived at an index
+ * listed twice would be one key serving two roles, so a test asserts the
+ * values are distinct. Phone approval (2) was derived inline before; the
+ * A2A gateway (3) is docs/A2A_GATEWAY_ARCHITECTURE.md §4.1.
+ */
 export const SERVICE_INDEX = Object.freeze({
   core: 0,
   brain: 1,
+  phoneApproval: 2,
+  a2aGateway: 3,
 } as const);
 
 /** Canonical persona indices per ARCHITECTURE.md §"Key Derivation". */

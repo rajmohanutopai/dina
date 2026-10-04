@@ -14,7 +14,7 @@
 import { AppViewClient } from '@dina/brain';
 import { PLACEHOLDER_LISTING_NAME } from '@dina/core';
 
-import { appViewBase } from '../peerlens/appview_base';
+import { appViewBase, appViewFetch } from '../peerlens/appview_base';
 
 import { loadContacts } from './contacts_source';
 
@@ -87,7 +87,7 @@ export async function resolveSupplierNames(
 export async function supplierNamesHere(
   refs: readonly SupplierRef[],
 ): Promise<Map<string, string | null>> {
-  const appView = new AppViewClient({ appViewURL: await appViewBase() });
+  const appView = new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });
   return resolveSupplierNames(refs, {
     contacts: loadContacts,
     listingName: async (did, rkey) =>

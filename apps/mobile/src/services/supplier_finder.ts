@@ -22,7 +22,7 @@
 
 import { AppViewClient } from '@dina/brain';
 
-import { appViewBase } from '../peerlens/appview_base';
+import { appViewBase, appViewFetch } from '../peerlens/appview_base';
 
 import {
   loadOwnSupplierReviews,
@@ -289,7 +289,7 @@ export async function findSuppliers(
  * phone, Brain's read-only proxy on the web (`appViewBase`).
  */
 export async function findSuppliersHere(input: FindSuppliersInput): Promise<FindSuppliersResult> {
-  const client = new AppViewClient({ appViewURL: await appViewBase() });
+  const client = new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });
   // Loaded lazily: the booted node is the phone's; the browser has none.
   const { getBootedNode } = await import('../hooks/useNodeBootstrap');
   const ownReviews =

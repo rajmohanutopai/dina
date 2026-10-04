@@ -20,6 +20,7 @@ on:
     paths:
       - "appview/**"
       - "packages/commerce-protocol/**"
+      - "packages/a2a/**"
       - "packages/protocol/**"
       - "package.json"
       - "package-lock.json"
@@ -29,6 +30,7 @@ on:
     paths:
       - "appview/**"
       - "packages/commerce-protocol/**"
+      - "packages/a2a/**"
       - "packages/protocol/**"
       - "package.json"
       - "package-lock.json"

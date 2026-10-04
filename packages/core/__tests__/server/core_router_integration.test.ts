@@ -287,25 +287,19 @@ describe('CoreRouter integration', () => {
     }
 
     it("rejects runner_filter 'dina.local' — the reserved lane is in-process only", async () => {
-      // Seed a Tier 1 task on the reserved lane, then try to claim it
-      // over HTTP as an external agent naming the lane. An agent that
-      // could claim it would execute (and forge results for) a task
-      // meant to run on the provider's own Dina.
-      await router.handle(
-        signedReq(
-          'POST',
-          '/v1/workflow/tasks',
-          {
-            id: 'del-tier1',
-            kind: 'delegation',
-            description: '',
-            payload: '{"type":"service_query_execution","capability":"x","params":{}}',
-            initial_state: 'queued',
-            requested_runner: 'dina.local',
-          },
-          brain,
-        ),
-      );
+      // Seed a Tier 1 task on the reserved lane the way Core's service-query
+      // ingress does (through the workflow service: the create route refuses
+      // the lane), then try to claim it over HTTP as an external agent naming
+      // the lane. An agent that could claim it would execute (and forge
+      // results for) a task meant to run on the provider's own Dina.
+      getWorkflowService()!.create({
+        id: 'del-tier1',
+        kind: 'delegation',
+        description: '',
+        payload: '{"type":"service_query_execution","capability":"x","params":{}}',
+        initialState: WorkflowTaskState.Queued,
+        requestedRunner: 'dina.local',
+      });
       const resp = await router.handle(
         signedReq(
           'POST',
@@ -395,20 +389,15 @@ describe('CoreRouter integration', () => {
         params: { route_id: '42', location: { lat: 37.762, lng: -122.435 } },
         mcp_tool: 'transit__get_eta',
       });
-      await router.handle(
-        signedReq(
-          'POST',
-          '/v1/workflow/tasks',
-          {
-            id: 'svc-exec-1',
-            kind: 'delegation',
-            description: 'Execute service query: eta_query',
-            payload,
-            initial_state: 'queued',
-          },
-          brain,
-        ),
-      );
+      // Core's service-query ingress mints these (the create route refuses
+      // them to every caller), so the task is seeded the way it does.
+      getWorkflowService()!.create({
+        id: 'svc-exec-1',
+        kind: 'delegation',
+        description: 'Execute service query: eta_query',
+        payload,
+        initialState: WorkflowTaskState.Queued,
+      });
       const resp = await router.handle(
         signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: 30_000 }, agent),
       );
@@ -1058,6 +1047,43 @@ describe('CoreRouter integration', () => {
       expect(sent).toHaveLength(1);
       expect(sent[0].body.card).toBeUndefined();
     });
+
+    it('POST /v1/service/respond refuses an approval card Core did not mint as a service card', async () => {
+      // Brain can create an approval card with no type (or another type)
+      // naming any DID; answering it would open a provider window to a peer
+      // no query came from and send that peer Brain's words.
+      const sent: unknown[] = [];
+      setServiceRespondSender(async (...args) => {
+        sent.push(args);
+      });
+      const forged = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks',
+          {
+            id: 'forged-card',
+            kind: 'approval',
+            description: '',
+            payload: JSON.stringify({ from_did: 'did:plc:victim', query_id: 'q-forged', capability: 'eta_query', ttl_seconds: 60 }),
+            initial_state: 'pending_approval',
+          },
+          brain,
+        ),
+      );
+      expect(forged.status).toBe(201);
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/service/respond',
+          { task_id: 'forged-card', response_body: { status: 'success', result: { eta: 1 } } },
+          brain,
+        ),
+      );
+      expect(resp.status).toBe(403);
+      expect((resp.body as { error?: string }).error).toBe('not_a_service_card');
+      expect(sent).toHaveLength(0);
+      expect(getWorkflowService()!.store().getById('forged-card')?.status).toBe('pending_approval');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1089,6 +1115,7 @@ describe('CoreRouter integration', () => {
           revoked.push(id);
           return true;
         },
+        revokeAllForGrantee: () => 0,
       });
       setD2DSender(async (to, type, body) => {
         if (senderThrows) throw new Error('msgbox down');

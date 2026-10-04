@@ -102,6 +102,17 @@ describe('HttpCoreTransport (task 1.31)', () => {
     expect(calls[0]?.init.body).toBeUndefined();
   });
 
+  it('a2aSelfDid GETs /v1/a2a/self: the DID on 200, null on anything else', async () => {
+    const answers = [ok({ did: 'did:plc:ewvi7nxzyoun6zhxrhs64oiz' }), ok({ error: 'node_did_unavailable' }, 503), ok({ did: '' }), ok({ did: 7 })];
+    const { client, calls } = makeStubClient(() => answers.shift() as HttpResponse);
+    const t = new HttpCoreTransport({ baseUrl: 'http://core:8100', httpClient: client, signer: makeStubSigner().signer });
+    expect(await t.a2aSelfDid()).toBe('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
+    expect(await t.a2aSelfDid()).toBeNull();
+    expect(await t.a2aSelfDid()).toBeNull();
+    expect(await t.a2aSelfDid()).toBeNull();
+    expect(calls.map((c) => [c.init.method, c.url])).toEqual(Array(4).fill(['GET', 'http://core:8100/v1/a2a/self']));
+  });
+
   it('listContacts GETs /v1/contacts and returns the contacts array', async () => {
     const { client, calls } = makeStubClient(() =>
       ok({ contacts: [{ did: 'did:plc:x', displayName: 'X' }] }),
@@ -1522,5 +1533,24 @@ describe('HttpCoreTransport (task 1.31)', () => {
     await expect(t.reasoningHeartbeat('task-1', input)).rejects.toMatchObject({
       status: 409,
     });
+  });
+});
+
+describe('the release session reaches Core on the wire (A2A §4.2 (b))', () => {
+  it('in the signed query of a get, a list and subject recall, and in the body of a search', async () => {
+    const { client, calls } = makeStubClient(() => ({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: new TextEncoder().encode('{"items":[],"count":0,"id":"i1"}'),
+    }));
+    const { signer } = makeStubSigner();
+    const t = new HttpCoreTransport({ baseUrl: 'http://core:8100', httpClient: client, signer });
+    await t.vaultQuery('general', { text: 'dentist', releaseSession: 'chat:main' });
+    await t.vaultGet('general', 'i1', { releaseSession: 'chat:main' });
+    await t.vaultList('general', { limit: 2, releaseSession: 'chat:main' });
+    await t.vaultItemsForPerson('general', 'p1', 3, { releaseSession: 'chat:main' });
+    const [query, get, list, subjects] = calls;
+    expect(JSON.parse(new TextDecoder().decode(query?.init.body as Uint8Array))).toMatchObject({ release_session: 'chat:main' });
+    for (const call of [get, list, subjects]) expect(call?.url).toContain('release_session=chat%3Amain');
   });
 });

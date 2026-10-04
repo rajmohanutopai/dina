@@ -31,6 +31,12 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
 
   RATE_LIMIT_RPM: z.coerce.number().default(60),
+
+  // A2A directory (design §8.3): the PLC directory publishers' DID documents
+  // come from, and how long Jetstream keeps events (an outage longer than
+  // this loses events, and every card must be proved again).
+  A2A_PLC_URL: z.string().url().default('https://plc.directory'),
+  A2A_JETSTREAM_RETENTION_HOURS: z.coerce.number().positive().default(24),
 })
 
 export type Env = z.infer<typeof envSchema>

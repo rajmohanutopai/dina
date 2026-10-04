@@ -7,7 +7,7 @@
  *   - Runner lifecycle: start/stop idempotency + drainOnce
  *   - Response Bridge wiring: completion on a service_query_execution
  *     delegation fires the sendD2D callback
- *   - onApproved wiring: approved event dispatches executeAndRespond
+ *   - onApproved wiring: an approved event makes Core execute the card
  *   - globalWiring: dispose() undoes the chat-orchestrator globals
  *   - Provider role with no config: publish is skipped silently
  */
@@ -224,7 +224,7 @@ describe('createNode — handle shape', () => {
     expect(node.coreClient).toBeDefined();
     expect(node.workflowService).toBeDefined();
     expect(node.orchestrator).toBeDefined();
-    expect(node.handler).toBeDefined();
+    expect(node.ingress).toBeDefined();
     expect(node.runners.events).toBeDefined();
     expect(node.runners.approvals).toBeDefined();
     await node.dispose();
@@ -461,7 +461,7 @@ describe('createNode — a lapsed disclosure review still answers (GROUP_COORDIN
 });
 
 describe('createNode — onApproved wiring', () => {
-  it('approved event on an approval task triggers executeAndRespond', async () => {
+  it('an approved event makes Core execute the approved card', async () => {
     const approvalTask: WorkflowTask = {
       id: 'appr-1',
       kind: 'approval',
@@ -473,7 +473,7 @@ describe('createNode — onApproved wiring', () => {
         from_did: 'did:plc:requester',
         query_id: 'q-2',
         capability: 'eta_query',
-        params: {},
+        params: { route_id: '42' },
         ttl_seconds: 60,
       }),
       result_summary: '',
@@ -497,14 +497,35 @@ describe('createNode — onApproved wiring', () => {
       taskById: new Map([['appr-1', approvalTask]]),
     });
 
-    const node = await createNode(baseOptions({ coreClient: client }));
+    // Core runs an approved card only against the live listing: the node
+    // publishes the capability the card asks for.
+    const listing: ServiceConfig = {
+      isDiscoverable: true,
+      name: 'Bus 42',
+      capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'review' } },
+    };
+    const node = await createNode(baseOptions({ coreClient: client, readConfig: () => listing }));
+    // Core's ingress reads the card from the node's own workflow service, so
+    // the card lives there, approved by the owner (the consumer's view of it
+    // comes from the stubbed client above).
+    node.workflowService.create({
+      id: 'appr-1',
+      kind: 'approval',
+      description: '',
+      payload: approvalTask.payload,
+      origin: 'd2d',
+      initialState: 'pending_approval' as WorkflowTask['status'],
+    });
+    node.workflowService.approve('appr-1');
+    const cancel = jest.spyOn(node.workflowService, 'cancel');
     await node.runners.events.runTick();
 
-    // executeAndRespond creates a delegation task and cancels the approval.
-    expect(state.createCalls.length).toBeGreaterThanOrEqual(1);
-    const delegation = state.createCalls.find((c) => (c as { kind: string }).kind === 'delegation');
-    expect(delegation).toBeDefined();
-    expect(state.cancelCalls).toContainEqual({ id: 'appr-1', reason: 'executed_via_delegation' });
+    // Core created the delegation, on the listing's lane, and closed the card.
+    const delegation = node.workflowService.store().getById('svc-exec-from-appr-1');
+    expect(delegation?.kind).toBe('delegation');
+    expect(delegation?.requested_runner).toBe('transit');
+    expect(cancel).toHaveBeenCalledWith('appr-1', 'executed_via_delegation');
+    expect(state.createCalls).toHaveLength(0);
     await node.dispose();
   });
 });

@@ -16,7 +16,7 @@
  *   PEER_URL=http://127.0.0.1:18298 MOBILE_DID=did:plc:... npx tsx \
  *     apps/mobile/maestro/harness/contact_services_offer.ts
  */
-import { listCapabilities, canonicalCapabilitySchemaHash } from '@dina/brain';
+import { capabilitySchemaHash, listCapabilities } from '@dina/core';
 
 const PEER = process.env.PEER_URL ?? 'http://127.0.0.1:18298';
 const MOBILE_DID = process.env.MOBILE_DID ?? '';
@@ -41,7 +41,7 @@ async function debug(method: string, path: string, body?: unknown): Promise<{ st
 async function main(): Promise<void> {
   const cap = listCapabilities().find((c) => c.name === 'availability_coordination');
   if (cap === undefined) throw new Error('availability_coordination not in brain registry');
-  const schemaHash = canonicalCapabilitySchemaHash({
+  const schemaHash = capabilitySchemaHash({
     params: cap.paramsSchema,
     result: cap.resultSchema,
     description: cap.description,

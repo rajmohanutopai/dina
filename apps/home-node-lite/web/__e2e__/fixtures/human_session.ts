@@ -3,9 +3,10 @@
  *
  * Provides a `human` fixture already at a clean Chat: navigates to Core's
  * /app/, lets the onboarding autopilot provision + unlock, and waits for
- * Chat-ready (the Remember mode chip). Bundles the composer, the chat thread
- * reader, and backstage (debug-dispatch) for invisible assertions. A spec that
- * decides as the owner connects the browser first (`pages/owner_access.ts`).
+ * Chat-ready (the Remember mode chip), then connects the browser as the
+ * owner's device (`pages/owner_access.ts`): Brain serves signed callers only.
+ * Bundles the composer, the chat thread reader, and backstage
+ * (debug-dispatch) for invisible assertions.
  *
  * Requires the AUTOPILOT bundle (dist-e2e) + the functional config (which
  * boots Core with debug-dispatch and Brain with live Gemini).
@@ -17,6 +18,7 @@ import { egressHost, isAllowedEgress, scanForLeaks } from '../support/log_hygien
 
 import * as backstage from './backstage';
 import { ChatThread } from './pages/chat_thread';
+import { connectAsOwner } from './pages/owner_access';
 import { Composer } from './pages/composer';
 
 export interface HumanSession {
@@ -70,6 +72,10 @@ export const test = base.extend<{ human: HumanSession }>({
     await page
       .getByTestId('index-mode-chip-remember')
       .waitFor({ state: 'visible', timeout: 90_000 });
+    // Brain serves signed callers only (A2A design §4.1): the browser reaches
+    // Brain as the owner's paired device, so a human connects it first, as a
+    // person does before using any Brain feature on the web.
+    await connectAsOwner(page, backstage.readOwnerCapability());
 
     await use({
       page,

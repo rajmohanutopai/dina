@@ -182,6 +182,102 @@ export interface ApproveWorkflowTaskOptions {
   pluginGrant?: { type: 'window'; hours?: number };
 }
 
+// ─── A2A Lane 1 wire (docs/A2A_GATEWAY_ARCHITECTURE.md §4.3) ───────────────
+
+export interface A2ACallableSkill {
+  skill: string;
+  name: string;
+  description: string;
+  action_class: string;
+}
+
+export interface A2ACallableAgent {
+  agent_id: string;
+  name: string;
+  description: string;
+  skills: A2ACallableSkill[];
+}
+
+export interface A2ADelegateInput {
+  agentId: string;
+  skill: string;
+  text?: string;
+  data?: Record<string, unknown>;
+  /** The conversation the result returns to. */
+  replyTo?: string;
+  /** The conversation the proposal is made in; it must hold a live owner turn. */
+  releaseSession?: string;
+  /** Where parts of `text` came from; Core proves each against its log or refuses. */
+  sources?: A2ASourceClaim[];
+}
+
+/** A quote of the outgoing text and where Brain says it came from. */
+export type A2ASourceClaim =
+  | { quote: string; from: 'owner' }
+  | { quote: string; from: 'vault'; persona: string; itemId: string };
+
+export type A2ADelegateResult =
+  | {
+      ok: true;
+      operationId: string;
+      approvalTaskId: string;
+      consentHash: string;
+      expiresAtMs: number;
+      projection: { parts: unknown[] };
+      labels: string[];
+    }
+  | { ok: false; status: number; reason: string };
+
+export interface A2AOperationStatus {
+  operation_id: string;
+  state: string;
+  reason: string | null;
+  agent_name: string;
+  skill: string;
+  reply_to: string | null;
+  /** The released result; null until the guard has passed it. */
+  result: unknown;
+  updated_at: number;
+}
+
+export interface A2AGuardWork {
+  job_id: string;
+  claim_id: string;
+  claimed_until: number;
+  digest: string;
+  operation_id: string;
+  agent_name: string;
+  skill: string;
+  content: unknown;
+}
+
+/**
+ * Why the guard decided as it did: a pattern no model was needed for, the
+ * model's own pass or block, or a model answer that could not be read.
+ */
+export type A2AGuardVerdictCode = 'instruction_pattern' | 'model_pass' | 'model_block' | 'guard_unparseable';
+
+export interface A2AGuardVerdictInput {
+  jobId: string;
+  claimId: string;
+  digest: string;
+  verdict: 'passed' | 'blocked';
+  code: A2AGuardVerdictCode;
+  /** The model's short reason, kept bounded for the audit. */
+  note?: string;
+}
+
+export type A2AGuardVerdictResult = { ok: true; state: string } | { ok: false; status: number; reason: string };
+
+export interface OwnerTurnInput {
+  /** The conversation, as vault reads name it (`chat:<thread>`). */
+  releaseSession: string;
+  /** One id per turn; the first record of a turn stands. */
+  turnId: string;
+  /** The owner's words, exactly as entered. */
+  text: string;
+}
+
 export interface CoreClient {
   /**
    * Sanity probe — returns Core's liveness + DID identity snapshot.
@@ -206,7 +302,7 @@ export interface CoreClient {
    * Brain's vault tools when the agent wants to drill into a specific
    * item the search surfaced.
    */
-  vaultGet(persona: string, itemId: string): Promise<VaultQueryItem | null>;
+  vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null>;
 
   /** Insert or upsert a vault item into the named persona's DB. */
   vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult>;
@@ -221,7 +317,12 @@ export interface CoreClient {
    * to surface notes about an inbound DID's person (the structured
    * `did → person_id → subjects` edge) without name/FTS guessing.
    */
-  vaultItemsForPerson(persona: string, personId: string, limit: number): Promise<VaultQueryItem[]>;
+  vaultItemsForPerson(
+    persona: string,
+    personId: string,
+    limit: number,
+    opts?: VaultReleaseOptions,
+  ): Promise<VaultQueryItem[]>;
 
   /** Remove a vault item by id. No-op if the id doesn't exist. */
   vaultDelete(persona: string, itemId: string): Promise<VaultDeleteResult>;
@@ -540,6 +641,44 @@ export interface CoreClient {
    * result rides the task (`getWorkflowTask`). `POST /v1/plugins/tool-invoke`.
    */
   invokePluginTool(input: InvokePluginToolInput): Promise<InvokePluginToolResult>;
+
+  /**
+   * A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §4.3) — the active remote
+   * agents and their bound skills: what Brain may propose to.
+   * `GET /v1/a2a/agents`. Core answers 503 where Lane 1 is not installed (the
+   * phone in M1a); that is an empty list here.
+   */
+  listA2AAgents(): Promise<A2ACallableAgent[]>;
+
+  /**
+   * The DID this node's agent card is published under, so the directory
+   * search can leave the node's own card out (§8.4); null while Core has no
+   * DID. `GET /v1/a2a/self`.
+   */
+  a2aSelfDid(): Promise<string | null>;
+
+  /**
+   * Propose a message to a bound skill. Core stages it and mints the owner's
+   * consent card; nothing is sent until the owner approves. Refusals are
+   * values. `POST /v1/a2a/delegate`.
+   */
+  delegateToA2AAgent(input: A2ADelegateInput): Promise<A2ADelegateResult>;
+
+  /** An outbound operation's state, and its result once released. `GET /v1/a2a/operations/:id`. */
+  getA2AOperation(operationId: string): Promise<A2AOperationStatus | null>;
+
+  /** Claim a held remote result to scan; null when there is none. `POST /v1/a2a/guard/next`. */
+  claimA2AGuardJob(): Promise<A2AGuardWork | null>;
+
+  /** The digest-bound guard verdict. `POST /v1/a2a/guard/verdict`. */
+  submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult>;
+
+  /**
+   * Record the owner's words at the start of a chat turn, before any model
+   * sees it (A2A design §4.2 (a)). `POST /v1/a2a/turns`. True when recorded,
+   * false when the turn was already recorded or no release log is installed.
+   */
+  recordOwnerTurn(input: OwnerTurnInput): Promise<boolean>;
 
   /**
    * GROUP_COORDINATION §11 — open a group plan: Core fans out one
@@ -957,6 +1096,16 @@ export interface VaultQuery {
   limit?: number;
   /** Filter: vault-item type (e.g. `note`, `contact`, `relationship_note`). */
   type?: string;
+  /** The conversation the results are released into; Core logs the release (A2A §4.2). */
+  releaseSession?: string;
+}
+
+/**
+ * A vault read made for a conversation names it, and Core logs what it
+ * released (A2A design §4.2 (b)). Reads with no session log nothing.
+ */
+export interface VaultReleaseOptions {
+  releaseSession?: string;
 }
 
 /**
@@ -999,7 +1148,7 @@ export interface VaultStoreResult {
   storedAt: string;
 }
 
-export interface VaultListOptions {
+export interface VaultListOptions extends VaultReleaseOptions {
   limit?: number;
   offset?: number;
   type?: string;

@@ -1,4 +1,5 @@
 export {
+  listServices,
   registerService,
   registerDevice,
   setDeviceRoleResolver,
@@ -45,6 +46,10 @@ export {
   wireGroupCoordinationOfferReplay,
 } from './src/coordination/group_coordination_service';
 export { coordinationWorkflowHooks } from './src/coordination/disclosure_egress';
+// A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §6.2): the decision hook every
+// host composes, and the runtime it reads (null where Lane 1 is not installed).
+export { a2aWorkflowHooks } from './src/a2a/permits';
+export { getA2ARuntime, installA2A } from './src/a2a/runtime';
 export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
 export { getNodeDID, setNodeDID,

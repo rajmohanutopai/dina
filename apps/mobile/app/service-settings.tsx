@@ -28,11 +28,11 @@ import {
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import {
+  capabilitySchemaHash,
   listCapabilities as listLocalCapabilities,
-  canonicalCapabilitySchemaHash,
+  listPersonas,
   type CapabilityDef,
-} from '@dina/brain';
-import { listPersonas } from '@dina/core';
+} from '@dina/core';
 import {
   validateServiceListing,
   effectiveDiscoverability,
@@ -591,7 +591,7 @@ export default function ServiceSettingsScreen() {
         }
         // schema_hash is ALWAYS derived from the schema entry actually
         // being saved — the publisher's canonical {params, result,
-        // description} recipe (`canonicalCapabilitySchemaHash`). Never a
+        // description} recipe (Core's `capabilitySchemaHash`). Never a
         // cached prior value and never params-only: a stale/params-only
         // local hash diverges from the published record's hash, and the
         // provider then rejects every hash-carrying query with
@@ -602,7 +602,7 @@ export default function ServiceSettingsScreen() {
         const schemaEntry = schemas[c.key];
         const schemaHash =
           schemaEntry !== undefined
-            ? canonicalCapabilitySchemaHash(schemaEntry)
+            ? capabilitySchemaHash(schemaEntry)
             : prior?.schemaHash;
         if (schemaEntry !== undefined && schemaHash !== undefined) {
           schemaEntry.schemaHash = schemaHash;

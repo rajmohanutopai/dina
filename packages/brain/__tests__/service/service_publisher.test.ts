@@ -5,7 +5,7 @@
  */
 
 import { PDSPublisher, PDSPublisherError } from '../../src/pds/publisher';
-import { computeSchemaHash } from '../../src/service/capabilities/registry';
+import { capabilitySchemaHash } from '@dina/core';
 import {
   PublisherConfigError,
   PublisherIdentityMismatchError,
@@ -125,7 +125,7 @@ describe('ServicePublisher', () => {
       // hard-codes `'abc123'` specifically to prove we don't trust it.
       // GAP-PROF-02: description is part of the hash input so a
       // description change invalidates the cache.
-      const canonical = computeSchemaHash({
+      const canonical = capabilitySchemaHash({
         params: validPublishConfig.capabilitySchemas!.eta_query.params,
         result: validPublishConfig.capabilitySchemas!.eta_query.result,
         description: '',
@@ -164,7 +164,7 @@ describe('ServicePublisher', () => {
       // cached hashes from leaking to AppView / ingesters.
       const params = { type: 'object', required: ['location'] };
       const result = { type: 'object', required: ['eta_minutes'] };
-      const canonical = computeSchemaHash({ params, result, description: '' });
+      const canonical = capabilitySchemaHash({ params, result, description: '' });
       expect(canonical).toMatch(/^[0-9a-f]{64}$/);
 
       const rec = buildRecord(
@@ -185,7 +185,7 @@ describe('ServicePublisher', () => {
     it('WM-BRAIN-06c: matches canonical when caller pre-computes correctly (no warning)', () => {
       const params = { type: 'object', required: ['location'] };
       const result = { type: 'object', required: ['eta_minutes'] };
-      const canonical = computeSchemaHash({ params, result, description: '' });
+      const canonical = capabilitySchemaHash({ params, result, description: '' });
       const entries: Record<string, unknown>[] = [];
       const rec = buildRecord(
         {
@@ -209,7 +209,7 @@ describe('ServicePublisher', () => {
     it('WM-BRAIN-06c: logs a mismatch warning when caller hash diverges from canonical', () => {
       const params = { type: 'object', required: ['location'] };
       const result = { type: 'object', required: ['eta_minutes'] };
-      const canonical = computeSchemaHash({ params, result, description: '' });
+      const canonical = capabilitySchemaHash({ params, result, description: '' });
       const entries: Record<string, unknown>[] = [];
       buildRecord(
         {
@@ -264,8 +264,8 @@ describe('ServicePublisher', () => {
     it('GAP-PROF-02: description is part of the canonical hash', () => {
       const params = { type: 'object' };
       const result = { type: 'object' };
-      const withoutDesc = computeSchemaHash({ params, result, description: '' });
-      const withDesc = computeSchemaHash({ params, result, description: 'Returns ETA in minutes' });
+      const withoutDesc = capabilitySchemaHash({ params, result, description: '' });
+      const withDesc = capabilitySchemaHash({ params, result, description: 'Returns ETA in minutes' });
       expect(withoutDesc).not.toBe(withDesc);
 
       const rec = buildRecord(

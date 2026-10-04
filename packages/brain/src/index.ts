@@ -21,25 +21,11 @@ export type {
   WorkflowEventConsumerCoreClient,
   WorkflowEventTickResult,
   ApprovalEventDispatcher,
-  ApprovedExecutionPayload,
 } from './service/workflow_event_consumer';
 export type {
   ApprovalReconcilerOptions,
   ReconciliationTickResult,
 } from './service/approval_reconciliation';
-export {
-  ServiceHandler,
-  snapshotForCapability,
-  findCapabilityConfig,
-} from './service/service_handler';
-export type {
-  ServiceHandlerOptions,
-  ServiceHandlerCoreClient,
-  ApprovalNotifier,
-  ServiceInboundNotifier,
-  ServiceDirectResponder,
-  SchemaSnapshot,
-} from './service/service_handler';
 // Tier 1 prompt-provider execution plane (docs/SERVICE_PROVIDER_TIERS.md).
 export {
   buildCapabilityRuntime,
@@ -62,7 +48,6 @@ export {
   stableStringify,
 } from './service/answer_cache';
 export type { Tier1AnswerCacheOptions, AnswerCacheKeyParts } from './service/answer_cache';
-export { validateAgainstSchema } from './service/capabilities/schema_validator';
 export * from './guardian/silence';
 export * from './llm/router';
 export type {
@@ -173,15 +158,6 @@ export type {
 } from './pipeline/identity_extraction';
 export * from './briefing/assembly';
 export * from './briefing/providers';
-export * from './service/capabilities/registry';
-export type { CapabilityDef, Validator } from './service/capabilities/registry';
-export * from './service/capabilities/eta_query';
-export type {
-  Location,
-  EtaQueryParams,
-  EtaQueryResult,
-  EtaQueryStatus,
-} from './service/capabilities/eta_query';
 export { AppViewClient, AppViewError } from './appview_client/http';
 export type {
   AppViewClientOptions,
@@ -232,6 +208,25 @@ export type {
 export { runAgenticTurn } from './reasoning/agentic_loop';
 export type { AgenticLoopOptions, AgenticLoopResult } from './reasoning/agentic_loop';
 export { createDelegateToAgentTool } from './reasoning/delegate_agent_tool';
+export { createDelegateToA2AAgentTool, createListA2AAgentsTool, createSearchA2AAgentsTool } from './reasoning/a2a_tools';
+export type { A2ADelegateOutcome, A2ADirectoryCoreClient, A2AToolCoreClient, A2AToolOptions } from './reasoning/a2a_tools';
+export {
+  A2AGuardWorker,
+  A2A_GUARD_SYSTEM_PROMPT,
+  buildA2AGuardLLMCall,
+  guardPrompt,
+  instructionPattern,
+  parseGuardAnswer,
+  scanRemoteResult,
+  GUARD_VERDICT_MARGIN_MS,
+} from './a2a/guard_worker';
+export type { A2AGuardLLM, A2AGuardWorkerOptions, GuardDecision, GuardScanBudget } from './a2a/guard_worker';
+export {
+  A2A_EVENT_KINDS,
+  a2aDeliveryText,
+  a2aOperationIdOf,
+  renderReleasedResult,
+} from './a2a/delivery_text';
 export type { DelegateOutcome, DelegateToAgentToolOptions } from './reasoning/delegate_agent_tool';
 export { createScheduleReminderTool } from './reasoning/schedule_reminder_tool';
 export type {
@@ -295,7 +290,9 @@ export type {
 export { getAskApprovalGateway } from './composition/ask_gateway_registry';
 export { createCoordinatorAskHandler } from './composition/coordinator_ask_handler';
 export type { CreateCoordinatorAskHandlerOptions } from './composition/coordinator_ask_handler';
-export { setAskCommandHandler, resetAskCommandHandler } from './chat/orchestrator';
+export { setAskCommandHandler, resetAskCommandHandler, setOwnerTurnRecorder } from './chat/orchestrator';
+export type { OwnerTurnRecorder } from './chat/orchestrator';
+export { askConversation, releaseSessionId } from './a2a/conversation';
 export type { AskCommandHandler, MissingCapabilityNotice } from './chat/orchestrator';
 
 // Typed chat-response surface — Python-parity port of
@@ -334,7 +331,6 @@ export {
   SERVICE_PROFILE_RKEY,
   buildRecord as buildServiceProfileRecord,
   shouldPublishProfile,
-  canonicalCapabilitySchemaHash,
 } from './service/service_publisher';
 export type {
   ServicePublisherOptions,
