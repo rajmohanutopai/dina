@@ -6,6 +6,15 @@
 /** Where a Dina gateway serves the JSON-RPC binding (the REST binding is under `A2A_REST_PATH`). */
 export const A2A_RPC_PATH = '/a2a/v1';
 
+/**
+ * Whether a request came to the JSON-RPC endpoint: its path, or its path with
+ * a trailing slash, which a client that joins "/" onto the card's URL sends
+ * (any built on httpx's `base_url`, the official A2A TCK among them).
+ */
+export function isA2ARpcPath(path: string): boolean {
+  return path === A2A_RPC_PATH || path === `${A2A_RPC_PATH}/`;
+}
+
 /** The only protocol version Dina speaks; `Major.Minor`, never a patch (spec §3.6). */
 export const A2A_PROTOCOL_VERSION = '1.0';
 

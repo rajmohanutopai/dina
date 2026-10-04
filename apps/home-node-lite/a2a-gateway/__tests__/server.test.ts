@@ -9,6 +9,8 @@ import { Writable } from 'node:stream';
 
 import { pino } from 'pino';
 
+import { a2aError, dinaRefusal } from '@dina/a2a';
+
 import { EdgeLimiter } from '../src/edge_limit';
 import { AGENT_CARD_PATH, buildGatewayServer } from '../src/server';
 import { StreamHub } from '../src/stream_hub';
@@ -217,11 +219,43 @@ describe('forwarding', () => {
     expect(res.headers['www-authenticate']).toBe('Bearer realm="dina-a2a"');
   });
 
+  // TCK VER-SERVER-002 (spec §3.6.2): a version needs no authority to refuse
+  it('answers a version Dina does not speak before anything else, credential or not, on both bindings', async () => {
+    const body = '{"jsonrpc":"2.0","id":3,"method":"ListTasks","params":{}}';
+    for (const headers of [{ 'a2a-version': '9.9' }, { 'a2a-version': '9.9', authorization: '' }] as Record<string, string>[]) {
+      const res = await rpc(body, headers);
+      expect(res.statusCode).toBe(200);
+      expect((res.json() as { id: number; error: { code: number } })).toEqual(expect.objectContaining({ id: 3, error: expect.objectContaining({ code: -32009 }) }));
+    }
+    const rest = await app.inject({ method: 'GET', url: '/a2a/rest/tasks', headers: { 'a2a-version': '0.3' } });
+    expect(rest.statusCode).toBe(400);
+    expect((rest.json() as { error: { details: { reason: string }[] } }).error.details[0]?.reason).toBe('VERSION_NOT_SUPPORTED');
+    expect(forwarded).toEqual([]);
+    // Control: 1.0, and no header at all (Core reads the version then), are forwarded.
+    await rpc(body, { 'a2a-version': '1.0' });
+    await app.inject({ method: 'POST', url: '/a2a/v1', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, payload: body });
+    expect(forwarded).toHaveLength(2);
+  });
+
+  // TCK interop: a client built on httpx's base_url posts to the endpoint with a trailing slash
+  it('serves the JSON-RPC endpoint with a trailing slash too, forwarding the path the client sent', async () => {
+    coreReply = { ok: true, answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: { tasks: [] } } } };
+    const res = await rpc('{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}', {}, '/a2a/v1/');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ jsonrpc: '2.0', id: 1, result: { tasks: [] } });
+    // A DID-signed request signed this path; Core checks the signature against it.
+    expect(forwarded.map((f) => f.envelope.request.path)).toEqual(['/a2a/v1/']);
+    // Control: the plain path is forwarded as itself.
+    await rpc('{"jsonrpc":"2.0","id":2,"method":"ListTasks","params":{}}');
+    expect(forwarded.map((f) => f.envelope.request.path)).toEqual(['/a2a/v1/', '/a2a/v1']);
+  });
+
   it('answers 503 when Core does not answer for the client', async () => {
     coreReply = { ok: false, status: 403 };
     const res = await rpc('{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}');
     expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ error: 'unavailable' });
+    // A JSON-RPC client gets a JSON-RPC error (TCK JSONRPC-ERR-001, spec §3.3.2).
+    expect(res.json()).toEqual({ jsonrpc: '2.0', id: 1, error: dinaRefusal('unavailable') });
   });
 });
 
@@ -298,6 +332,22 @@ describe('the card', () => {
     clock += 30_000;
     await app.inject({ method: 'GET', url: AGENT_CARD_PATH });
     expect(cardCalls).toBe(2);
+  });
+
+  // TCK CARD-CACHE-002 (spec §8.6.1 SHOULD)
+  it('tags the card with an ETag of its bytes: a client that has them gets 304, a changed card a new tag', async () => {
+    const first = await app.inject({ method: 'GET', url: AGENT_CARD_PATH });
+    const etag = first.headers.etag as string;
+    expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
+    const again = await app.inject({ method: 'GET', url: AGENT_CARD_PATH, headers: { 'if-none-match': etag } });
+    expect([again.statusCode, again.body, again.headers.etag]).toEqual([304, '', etag]);
+    // A changed card is a new tag, and a stale tag gets the card.
+    cardReply = { ok: true, card: { name: 'Bus 43' }, jwks: { keys: [] } };
+    clock += 30_000;
+    const changed = await app.inject({ method: 'GET', url: AGENT_CARD_PATH, headers: { 'if-none-match': etag } });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.headers.etag).not.toBe(etag);
+    expect(changed.json()).toEqual({ name: 'Bus 43' });
   });
 
   it('serves the card’s canonical bytes, whatever order Core’s object has', async () => {
@@ -426,10 +476,11 @@ describe('REST (HTTP+JSON, A2A §11)', () => {
     expect((res.json() as { error: { status: string } }).error.status).toBe('UNIMPLEMENTED');
   });
 
-  it('keeps the plain answers off REST paths', async () => {
+  it('keeps REST’s answers off the JSON-RPC endpoint, and off paths no binding has', async () => {
     const res = await app.inject({ method: 'POST', url: '/a2a/v1', headers: { 'content-type': 'text/plain' }, payload: 'x' });
     expect(res.statusCode).toBe(415);
-    expect(res.json()).toEqual({ error: 'unsupported_media_type' });
+    // TCK JSONRPC-SSE-002: a body not sent as JSON is ContentTypeNotSupportedError (-32005).
+    expect(res.json()).toEqual({ jsonrpc: '2.0', id: null, error: a2aError('contentTypeNotSupported', 'unsupported_media_type') });
     expect((await app.inject({ method: 'GET', url: '/nothing' })).json()).toEqual({ error: 'not_found' });
   });
 
@@ -758,7 +809,7 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
       expect(res.headers.get('content-type')).not.toBe('text/event-stream');
       const text = await res.text();
       expect(text).not.toContain('SECRET');
-      expect(JSON.parse(text)).toEqual({ error: 'unauthenticated' });
+      expect(JSON.parse(text)).toEqual({ jsonrpc: '2.0', id: JSON.parse(streamBody()).id, error: dinaRefusal('unauthenticated') });
       expect([hub.size, hub.awaiting]).toEqual([0, 0]);
     });
 
@@ -806,16 +857,23 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
     });
   });
 
-  it('Core’s JSON-RPC error is the one event, and the stream ends', async () => {
+  // TCK STREAM-SUB-004: an error answers as one (an unknown task's TaskNotFoundError), never as a stream
+  it('Core’s JSON-RPC error answers as a JSON-RPC response: no stream opens, and the slot is free again', async () => {
     const error = {
       jsonrpc: '2.0',
       id: 7,
-      error: { code: -32004, message: 'Operation not supported' },
+      error: { code: -32001, message: 'Task not found' },
     };
     coreReply = { ok: true, answer: { status: 200, headers: {}, body: error } };
-    const s = await open(await listen());
-    expect(await s.next()).toEqual(error);
-    expect(await s.next()).toBe('end');
+    const res = await fetch(`${await listen()}/a2a/v1`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      body: streamBody(),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).not.toContain('text/event-stream');
+    expect(await res.json()).toEqual(error);
+    expect([hub.size, hub.awaiting]).toEqual([0, 0]);
   });
 
   it('a task already ended opens and ends its stream at once', async () => {

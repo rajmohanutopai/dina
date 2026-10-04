@@ -10,6 +10,8 @@ import {
   A2A_EVENTS_ACK_ROUTE,
   A2A_EVENTS_CLAIM_ROUTE,
   A2A_METHODS,
+  A2A_RPC_PATH,
+  dinaRefusal,
   ingressRouteOf,
 } from '@dina/a2a';
 
@@ -83,6 +85,24 @@ describe('through the router', () => {
     iw = await InboundWorld.create();
   });
   afterEach(() => iw.close());
+
+  // TCK: a JSON-RPC client gets a JSON-RPC error for Core's own refusals too (spec §3.3.2)
+  it('an unauthenticated JSON-RPC call: 401 with the challenge, and a JSON-RPC error naming its id; REST keeps google.rpc.Status', async () => {
+    const getTask = concrete(ingressRouteOf('GetTask'));
+    const envelope = iw.request('GetTask', { id: 't-1' }, {}, null);
+    const id = (JSON.parse(envelope.request.body) as { id: number }).id;
+    const res = await post(getTask, envelope);
+    expect(res.status).toBe(401);
+    expect(res.headers?.['www-authenticate']).toBe('Bearer realm="dina-a2a"');
+    expect(res.body).toEqual({ jsonrpc: '2.0', id, error: dinaRefusal('unauthenticated') });
+    // At the endpoint's trailing-slash form too.
+    const slash = await post(getTask, iw.request('GetTask', { id: 't-1' }, { path: `${A2A_RPC_PATH}/` }, null));
+    expect((slash.body as { error: { code: number } }).error.code).toBe(-32000);
+    // Control: the REST binding's refusal is a google.rpc.Status.
+    const rest = await post(getTask, iw.request('GetTask', { id: 't-1' }, { path: '/a2a/rest/tasks/t-1', method: 'GET', body: '' }, null));
+    expect(rest.status).toBe(401);
+    expect((rest.body as { error: { status: string } }).error.status).toBe('UNAUTHENTICATED');
+  });
 
   it('registers a route for every A2A method; a caller other than the gateway is refused in the handler too', async () => {
     for (const path of methodRoutes) {

@@ -83,7 +83,8 @@ function readId(
 const VERSION_PARAM = /^A2A-Version=([0-9.]{1,16})$/;
 
 export function bindSignedDispatch(input: SignedDispatchInput): DispatchBinding {
-  if (input.signedMethod !== 'POST' || input.signedPath !== input.rpcPath) {
+  // The endpoint's path as the client sent it: with or without a trailing slash (`isA2ARpcPath`).
+  if (input.signedMethod !== 'POST' || (input.signedPath !== input.rpcPath && input.signedPath !== `${input.rpcPath}/`)) {
     return { ok: false, reason: 'external_mismatch' };
   }
   let versionParameter: string | undefined;

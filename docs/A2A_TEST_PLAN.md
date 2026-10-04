@@ -1,6 +1,6 @@
 # A2A test plan
 
-Status, 2026-10-04: every scenario below has a test, or is listed under "Owed" with the reason it cannot run here. After the scenarios were written, seven rounds of dual review (Codex and Claude) and six cold audits found 75 more defects (one, C6-8, left as an open question in the notes); each is fixed, has a test, and is listed under "Findings and fixes". The plan covers the A2A gateway as `docs/A2A_GATEWAY_ARCHITECTURE.md` (the design) and `docs/A2A_IMPLEMENTATION_PLAN.md` (the plan) describe it, with the interpretations `implementation-notes.html` records.
+Status, 2026-10-04: every scenario below has a test, or is listed under "Owed" with the reason it cannot run here. After the scenarios were written, seven rounds of dual review (Codex and Claude) and six cold audits found 75 more defects (one, C6-8, left as an open question in the notes), and the real-world runs of 2026-10-04 (the A2A TCK, Playwright, the phone) found seven more; each is fixed, has a test, and is listed under "Findings and fixes". The plan covers the A2A gateway as `docs/A2A_GATEWAY_ARCHITECTURE.md` (the design) and `docs/A2A_IMPLEMENTATION_PLAN.md` (the plan) describe it, with the interpretations `implementation-notes.html` records.
 
 ## How the plan was made
 
@@ -22,7 +22,7 @@ Status, 2026-10-04: every scenario below has a test, or is listed under "Owed" w
 |---|---|---|---|
 | A | The wire contract (`@dina/a2a`): JSON-RPC and REST, strict JSON, JCS, the card and its JWS, projection, envelopes, result sanitation, the delivery wire, DID-auth wire, the directory envelope | 45 of 46 | 1 |
 | B | Lane 1, outbound: registration, credentials, bindings, proposals and provenance, consent, permits, dispatch, result ingest and the guard, the host transport | 46 of 48 | 2 |
-| C | Lane 2, inbound: the gateway process, admission, resolution and access modes, normalization, execution and review, settlement, delivery, streams and webhooks, the extended card | 74 of 80 | 6 |
+| C | Lane 2, inbound: the gateway process, admission, resolution and access modes, normalization, execution and review, settlement, delivery, streams and webhooks, the extended card | 77 of 80 | 3 |
 | D | M4: DID credentials and per-request signatures, inbound multi-turn, the REST binding | 37 of 39 | 2 |
 | E | Lane 3, publishing: the publication state, the card publisher and its fence, the card key in the DID document, the owner console | 56 of 63 | 7 |
 | F | Lane 3, the AppView directory: the spool, revision order, gap generations, verification, the account gate, serving, Brain's search | 51 of 54 | 3 |
@@ -121,6 +121,7 @@ Every finding below was confirmed (by a probe, a refuting agent, or both), fixed
 | Sixth cold audit, C6-7 | low | Brain could read an inbound execution child’s params and result. | The single read, /running and Brain’s list refuse it. |
 | Sixth cold audit, C6-9 | medium | A card drained after a backlog, or reinstated, was served as fresh. | `indexed_at` is the event’s receipt time, on AppView’s clock. |
 | Sixth cold audit, C6-10 | low | A failed publish’s wait delayed the unpublish of a withdrawn card up to 30 minutes. | The wait holds back only the operation that failed (migration v63). |
+| Real-world run, the A2A TCK | medium | JSON-RPC errors carried no A2A ErrorInfo; Core’s and the gateway’s own refusals (401, 413, 429, 503) reached JSON-RPC clients as a bare body; SubscribeToTask on an unknown task opened a stream to carry its error; the endpoint refused the trailing-slash form every httpx base_url client sends; a text-only message was InvalidParams, not ContentTypeNotSupported; an unsupported version was answered only after authentication; the card had no ETag. | Each fixed, with a test that fails when the fix is undone; the TCK went from 40 to 70 passed. |
 | Sixth cold audit, C6-11 / C6-12 / C6-13 | medium | A credential end’s scope, Brain’s event feed after an approval, and the ack’s claimant binding had no test that could fail. | Tests with a bystander client, the feed read as Brain, and the foreign ack sent while the claim is live. |
 
 Judged not real by the refuting agent (the stated rule holds): B-F1 (the 24 h turn log), B-F2 (a lapsed consent card), D-F1 of the first run (an answer after authority ends), E-F2 (a session signed into another account).
@@ -179,14 +180,13 @@ Each fix from the review rounds came with tests that fail when the fix is undone
 
 ## Owed: what cannot run here
 
-These need what this machine lacks. Each is a release gate, not a skip.
+These needed more than the unit suites. Each is a release gate, not a skip.
 
-- **The official A2A conformance kit (TCK)** against a running gateway (needs the TCK and its Python deps).
-- **The Playwright suites** for the owner console and the phone's web build.
-- **A reference PDS feeding Jetstream** into AppView, end to end (needs Docker): publish, ingest, search, getCard, and the 14-day envelope bump as a real commit.
-- **A run on the phone** (iOS device) for the parts the phone carries: the paired approvals of Lane 1 consent cards.
+- **Run on 2026-10-04:** the official A2A conformance kit (TCK) against a local node and gateway (70 passed after the fixes it led to; what still fails is listed in the notes, "Real-world runs"); the Playwright render-smoke (40 of 40) and PR tiers (4 of 5, the fifth an outage of the test AppView); the phone's dev build booting this code over its existing database.
+- **Still owed: publish through the test PDS and read it back from the test AppView** (no Docker needed: `dina_details.md` item 5). It needs this branch's AppView deployed to the shared test servers (`deploy_shared_infra.sh update test`), which the owner runs; then a local node publishes its card to `test-pds.dinakernel.com`, and search and getCard read it back.
+- **Still owed on the phone:** the paired approval of a Lane 1 consent card, and a fresh install's migrations.
 
-**Needs Docker (a reference PDS, Jetstream, the images, a clean `npm ci`)**
+**Needs the shared test servers running this branch’s AppView (the owner deploys it), or Docker for the images and a clean `npm ci`**
 
 - A X-3 (image builds and npm ci on a clean tree): Building the lite core, brain and gateway images and AppView's three stages, and running npm ci on a clean checkout, need Docker and network access.
 - E E106: Needs Docker: a reference PDS, Jetstream and AppView to show the cadence bump is a real commit that advances indexed_at.
@@ -198,13 +198,10 @@ These need what this machine lacks. Each is a release gate, not a skip.
 
 - B X-8 (phone start()): Needs the phone: the code is apps/mobile/src/services/bootstrap.ts (start(), PublisherConfigError branch), outside the packages this task may add tests to; no test exists for it there either.
 - C X-25: Needs a phone run (or the mobile app's tests); apps/mobile is outside the allowed test directories.
-- C X-26: Needs the phone's native op-sqlite adapter; it does not run under node jest here.
 - E E8: Needs a phone: v59 and its triggers on the op-sqlite adapter cannot run under jest.
 
 **Needs a third-party harness (the A2A TCK, Playwright, the Python agent with an LLM runner, a live PDS or PLC)**
 
-- C X-10: Needs a Playwright run of the web app against a booted Core and Brain, or a device run; neither runs in these jest test directories.
-- C X-22: Needs the official A2A TCK, a separate Python project fetched from the network.
 - D X-2: Needs a cross-language harness: a live TS Core and gateway over signed HTTP, with the Python daemon paired as a device.
 - E E153: No rule in the design, plan or notes covers a nullified last audit entry, and the PLC directory lists the live fork operation last; the real shape needs a live PLC directory with a nullified fork.
 
@@ -1385,7 +1382,7 @@ Every GAP row above, and the completeness critic's scenarios (X-n), with what no
 | X-7: Remote-written content on an inbound review card reaches the owner with no guard scan; Brain's model must never read it. | test added with the fix | packages/core/__tests__/a2a/inbound_review_redaction.test.ts › Brain’s reads of the card, one or listed, carry none of the client’s words; what Dina wrote stays (finding C-F4) |
 | X-8: A request signed with the gateway's own key is sent to every Brain route. | new test | apps/home-node-lite/brain-server/__tests__/lane2_brain_callers.test.ts › a request signed with the gateway’s key gets 401 on every Brain route; Core’s own key is served |
 | X-9: Core's five Brain calls are signed under Core's service key and accepted; AppView never carries Brain-bound signature headers. | new test | apps/home-node-lite/core-server/__tests__/lane2_brain_calls.test.ts › the ask bridge, service search and the Tier 1 runner each send a request Brain’s check accepts; › the AppView client beside them carries no signature header; › the A2A result notice and the service result go to Brain through the signed fetch boot hands the workflow plane |
-| X-10: Web owner surface (Core's /app as RN-Web) under the caller check. | owed | Needs a Playwright run of the web app against a booted Core and Brain, or a device run; neither runs in these jest test directories. |
+| X-10: Web owner surface (Core's /app as RN-Web) under the caller check. | run by hand | Playwright render-smoke tier 40 of 40 on a rebuilt bundle, Core’s /app under the caller checks; PR tier 4 of 5, the fifth the test AppView’s own PeerLens search answering HTTP 500 (older server code, not this branch). |
 | X-11: Stolen-bearer response: rotation while streams and push configs opened under the old bearer still exist. | test added with the fix | packages/core/__tests__/a2a/credential_end.test.ts (every case; finding C-F3, reworked by the dual review’s CX-2) |
 | X-12: A grant is revoked while a review call's stream is open and the task records no further event. | new test | packages/core/__tests__/a2a/lane2_authority_edges.test.ts › a grant revoked while a review call waits: nothing more is sent, the call can never run, and its end closes its streams |
 | X-13: The gateway restarts while a client's stream is open; the client calls SubscribeToTask again. | new test | apps/home-node-lite/a2a-gateway/__tests__/lane2_gateway_restart.test.ts › a client that subscribes again after a restart gets the current Task, then the rest: nothing lost, nothing twice |
@@ -1397,11 +1394,11 @@ Every GAP row above, and the completeness critic's scenarios (X-n), with what no
 | X-19: The server swaps its early workflow service for the full plane over one repository; an inbound child's lease then lapses and is requeued. | new test | packages/core/__tests__/a2a/lane2_sweep_and_card.test.ts › after the early workflow service is swapped for the full plane over one repository, a lapsed lease is one event, told to the new observer only |
 | X-20: In one runner tick a Lane 1 step (sweep, held notice or purge) throws. | new test | apps/home-node-lite/core-server/__tests__/lane2_runner_tick.test.ts › when the %s throws, Lane 2’s sweep, nonce purge and DID re-check still run, and the tick resolves |
 | X-21: The self listing is paused, so the card takes the first other live public listing's name. | new test | packages/core/__tests__/a2a/lane2_sweep_and_card.test.ts › a paused self listing gives the name to the first other live public listing, and the version moves with it |
-| X-22: Official A2A TCK run against the gateway for all eleven methods, both bindings, streaming and push. | owed | Needs the official A2A TCK, a separate Python project fetched from the network. |
+| X-22: Official A2A TCK run against the gateway for all eleven methods, both bindings, streaming and push. | run by hand | The official A2A TCK (a2aproject/a2a-tck at 263b9cf) against a local node and gateway, JSON-RPC and REST: 70 passed after the fixes it led to (40 before). What still fails is Dina’s design (the kit’s plain-text messages; Dina takes skill calls), a spec conflict (REST content type), the kit sending no credential (DM-SERIAL-005), a kit bug (CORE-SEND-003 declares no expected error) and one MAY (Last-Modified). See the notes, “Real-world runs”. |
 | X-23: Core's Lane 2 ingress, review, settle, claim and delivery paths log metadata only. | new test | apps/home-node-lite/core-server/__tests__/lane2_core_boot.test.ts › Core’s logs on Lane 2’s ingress, push-config and delivery paths carry no params, bearer, signature, webhook URL or token |
 | X-24: Compromised Brain against inbound execution: claim, complete, fail, heartbeat, progress or input-required on an inbound child on dina.local and on a bound lane. | test added with the fix | packages/core/__tests__/a2a/inbound_brain_verbs.test.ts › Brain cannot %s a running in-process inbound child; the call stays Core’s runner’s to settle (finding C-F1) |
 | X-25: The phone runs no Lane 2. | owed | Needs a phone run (or the mobile app's tests); apps/mobile is outside the allowed test directories. |
-| X-26: A2A migrations v53–v63 (v62's triggers among them) and the revision column on the phone's op-sqlite adapter, fresh and upgrade. | owed | Needs the phone's native op-sqlite adapter; it does not run under node jest here. |
+| X-26: A2A migrations v53–v63 (v62's triggers among them) and the revision column on the phone's op-sqlite adapter, fresh and upgrade. | run by hand | The iPhone 17 Pro simulator’s dev build booted this code over its existing database (v62 and v63 applied there for the first time; Core’s boot throws on a failed migration), its data intact, no errors in the log. A fresh install was not run. |
 
 ---
 

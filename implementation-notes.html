@@ -1521,6 +1521,76 @@
         bounded list.</li>
     </ul>
 
+    <h2>Real-world runs (2026-10-04)</h2>
+    <p class="meta">After the commit, the owed runs that need no Docker were run here, as
+      <code>dina_details.md</code> says they can be: the test servers, idb on the simulator, and a
+      local node.</p>
+    <ul>
+      <li><strong>The official A2A conformance kit (TCK).</strong> a2aproject/a2a-tck at
+        <code>263b9cf</code>, against a fresh local node: Core with one public listing on a paired
+        runner (a stand-in that answers), and the gateway in front of it, over JSON-RPC and REST.
+        The kit sends no credential, so a scratch copy of it sent the client's bearer; nothing
+        else in it was changed. First run: 40 passed. After the fixes below: 70 passed. What still
+        fails, and why:
+        <ul>
+          <li>Thirteen requirements whose setup sends a plain-text message (the kit's own agent
+            completes any text). Dina takes a skill call, a data part naming the skill and its
+            params (design §7.2a), and answers text with
+            <code>ContentTypeNotSupportedError</code>. By design.</li>
+          <li>The REST content type (HTTP_JSON-SVC-001, HTTP_JSON-ERR-001): spec §11.1 says
+            <code>application/json</code>; the spec's own examples, the plan (§2) and Dina say
+            <code>application/a2a+json</code>. An open question, below.</li>
+          <li>DM-SERIAL-005: the kit sends that request with no credential, so it can never pass
+            against an agent that requires one.</li>
+          <li>CORE-SEND-003: a bug in the kit. The requirement names
+            <code>ContentTypeNotSupportedError</code> but declares no expected error, so the kit
+            counts Dina's correct answer (-32005) as a failure.</li>
+          <li>CARD-CACHE-003, a MAY (<code>Last-Modified</code> on the card).</li>
+        </ul></li>
+      <li><strong>Fixes it led to</strong> (each with a test that fails when the fix is undone):
+        <ul>
+          <li>Every JSON-RPC error leads its <code>data</code> with A2A's own
+            <code>ErrorInfo</code> (reason in UPPER_SNAKE_CASE, domain
+            <code>a2a-protocol.org</code>), as spec §9.5 requires and the reference SDK sends; Dina's
+            reason follows. REST already did this.</li>
+          <li>Core's and the gateway's own refusals (401 with its challenge, 413, 429, 503) reach a
+            JSON-RPC client as a JSON-RPC error (code -32000, JSON-RPC's server-error range; spec
+            §3.3.2 asks for a custom error for authentication), with the request's id, under the
+            same HTTP status. They were a bare <code>{"error": "…"}</code>.</li>
+          <li>A JSON-RPC error to a streaming method (<code>SubscribeToTask</code> on an unknown
+            task) answers as a JSON-RPC response; it opened an event stream to carry the error.</li>
+          <li>The endpoint answers at <code>/a2a/v1/</code> too: a client built on httpx's
+            <code>base_url</code> always adds the slash, the kit among them. The gateway forwards
+            the path as sent, since a DID-signed request signs it, and Core's path check takes
+            both forms.</li>
+          <li>A message with no part in a media type Dina reads (text only, a URL, raw bytes) is
+            <code>ContentTypeNotSupportedError</code> (spec §3.1.1), as is a body not sent as JSON;
+            a data part of the wrong shape is still <code>InvalidParams</code>.</li>
+          <li>The gateway answers an <code>A2A-Version</code> header Dina does not speak before
+            anything else, credential or not: it needs no authority, like malformed JSON-RPC. Core
+            keeps its own check.</li>
+          <li>The card carries an <code>ETag</code> of its bytes and answers a matching
+            <code>If-None-Match</code> with 304 (spec §8.6.1 SHOULD).</li>
+        </ul></li>
+      <li><strong>The reference SDK end to end</strong> (<code>scripts/test/a2a_reference_e2e.sh</code>):
+        11 of 11.</li>
+      <li><strong>Playwright.</strong> Render-smoke 40 of 40 on a rebuilt web bundle (Core's
+        <code>/app</code> under the caller checks). PR tier 4 of 5: the fifth is the test
+        AppView's own PeerLens search answering HTTP 500 to any query; that server runs older
+        code (tree <code>18bdc3f5</code>), not this branch.</li>
+      <li><strong>The phone.</strong> The iPhone 17 Pro simulator's development build loaded this
+        code from Metro over its existing database: Core booted (its boot throws on a failed
+        migration), v62 and v63 applied there for the first time, every earlier conversation,
+        contact and reminder intact, no errors in the log. A fresh install, and the paired
+        approval of a Lane 1 consent card, were not run.</li>
+      <li><strong>Not run: the test PDS to the test AppView.</strong> It needs this branch's
+        AppView on the shared test servers, and the deploy
+        (<code>deploy_shared_infra.sh update test</code>) was refused by this session's
+        permissions, as a change to shared infrastructure. The owner runs it; then a local node
+        publishes its card to <code>test-pds.dinakernel.com</code>, and search and getCard read it
+        back.</li>
+    </ul>
+
     <h2>Design decisions — the sixth cold audit (2026-10-04)</h2>
     <p class="meta">A fresh Claude cold audit of <code>bd3da7809fcb0a71</code>, five slices, each
       finding put to a skeptic. 13 findings stood (C6-1..13); a fourteenth came up while fixing
@@ -2376,6 +2446,15 @@
         or end a client's completed results when the authority behind them goes (client or grant
         revoked, listing deleted), so ListTasks need not judge them again. Which, and is a cap on
         the tasks one client keeps wanted as well?</li>
+      <li><strong>The REST content type.</strong> A2A §11.1 says the REST binding uses
+        <code>application/json</code>; the spec's examples, the plan (§2) and Dina use
+        <code>application/a2a+json</code>, and the official TCK enforces §11.1. Keep
+        <code>application/a2a+json</code>, switch, or send <code>application/json</code> for errors
+        only (the AIP-193 example)?</li>
+      <li><strong>REST error statuses follow the reference SDK.</strong> The spec's §5.4 table says
+        409 for <code>TaskNotCancelable</code>, 415 for <code>ContentTypeNotSupported</code> and 502
+        for <code>InvalidAgentResponse</code>; the reference SDK (a2a-sdk 1.2.1) and Dina answer
+        400, 400 and 500. Follow the SDK (today) or the table?</li>
       <li><strong>D2D providers get the same chat message (outside A2A).</strong> A provider-side
         D2D service-query execution task is a <code>delegation</code> task too, so Brain's event
         consumer posts its result in the provider owner's chat whenever a query is answered (the

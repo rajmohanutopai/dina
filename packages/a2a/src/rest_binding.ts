@@ -18,11 +18,11 @@
  * body must be the one in the path.
  */
 
+import { a2aErrorInfo, isA2AErrorInfo, type JsonRpcErrorObject } from './errors';
 import { A2A_DISPATCH_TABLE, isDotSegmentId } from './ingress_routes';
 import { hasOwn, isPlainObject, type JsonObject, type JsonValue } from './json';
 import { parseStrictJson } from './strict_json';
 
-import type { JsonRpcErrorObject } from './errors';
 import type { A2AMethod } from './jsonrpc';
 
 /** Where the REST binding lives on the gateway: the base of every path below. */
@@ -245,38 +245,38 @@ function queryValue(kind: QueryKind, raw: string): JsonValue | null {
   }
 }
 
-/** `google.rpc.ErrorInfo.domain` for A2A's own reasons (as the reference SDK sends them). */
-export const A2A_ERROR_DOMAIN = 'a2a-protocol.org';
-
-/** A2A's error mapping for the REST binding: the HTTP status, the `google.rpc.Code` name, A2A's reason. */
-const REST_ERRORS: Readonly<Record<number, { http: number; status: string; reason: string }>> = Object.freeze({
-  [-32001]: { http: 404, status: 'NOT_FOUND', reason: 'TASK_NOT_FOUND' },
-  [-32002]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'TASK_NOT_CANCELABLE' },
-  [-32003]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'PUSH_NOTIFICATION_NOT_SUPPORTED' },
-  [-32004]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'UNSUPPORTED_OPERATION' },
-  [-32005]: { http: 400, status: 'INVALID_ARGUMENT', reason: 'CONTENT_TYPE_NOT_SUPPORTED' },
-  [-32006]: { http: 500, status: 'INTERNAL', reason: 'INVALID_AGENT_RESPONSE' },
-  [-32007]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'EXTENDED_AGENT_CARD_NOT_CONFIGURED' },
-  [-32008]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'EXTENSION_SUPPORT_REQUIRED' },
-  [-32009]: { http: 400, status: 'FAILED_PRECONDITION', reason: 'VERSION_NOT_SUPPORTED' },
-  [-32700]: { http: 400, status: 'INVALID_ARGUMENT', reason: 'INVALID_REQUEST' },
-  [-32600]: { http: 400, status: 'INVALID_ARGUMENT', reason: 'INVALID_REQUEST' },
-  [-32601]: { http: 404, status: 'NOT_FOUND', reason: 'METHOD_NOT_FOUND' },
-  [-32602]: { http: 400, status: 'INVALID_ARGUMENT', reason: 'INVALID_PARAMS' },
-  [-32603]: { http: 500, status: 'INTERNAL', reason: 'INTERNAL_ERROR' },
+/**
+ * A2A's error mapping for the REST binding: the HTTP status and the
+ * `google.rpc.Code` name. The statuses are the reference SDK's (it answers
+ * 400 where the spec's §5.4 table says 409, 415 or 502).
+ */
+const REST_ERRORS: Readonly<Record<number, { http: number; status: string }>> = Object.freeze({
+  [-32001]: { http: 404, status: 'NOT_FOUND' },
+  [-32002]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32003]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32004]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32005]: { http: 400, status: 'INVALID_ARGUMENT' },
+  [-32006]: { http: 500, status: 'INTERNAL' },
+  [-32007]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32008]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32009]: { http: 400, status: 'FAILED_PRECONDITION' },
+  [-32700]: { http: 400, status: 'INVALID_ARGUMENT' },
+  [-32600]: { http: 400, status: 'INVALID_ARGUMENT' },
+  [-32601]: { http: 404, status: 'NOT_FOUND' },
+  [-32602]: { http: 400, status: 'INVALID_ARGUMENT' },
+  [-32603]: { http: 500, status: 'INTERNAL' },
 });
 
 /**
  * An A2A error as the REST binding answers it: the mapped HTTP status, and
- * `{error: google.rpc.Status}` whose details lead with A2A's own
- * `ErrorInfo` and keep Dina's (its reason, in Dina's domain) after it.
+ * `{error: google.rpc.Status}` whose details are the error's own: A2A's
+ * `ErrorInfo` first (`a2aError` puts it there; added if a caller built the
+ * error without it), then Dina's.
  */
 export function restError(error: JsonRpcErrorObject): { status: number; body: JsonObject } {
-  const mapped = REST_ERRORS[error.code] ?? { http: 500, status: 'INTERNAL', reason: 'INTERNAL_ERROR' };
-  const details: JsonObject[] = [
-    { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: mapped.reason, domain: A2A_ERROR_DOMAIN, metadata: {} },
-    ...(error.data ?? []),
-  ];
+  const mapped = REST_ERRORS[error.code] ?? { http: 500, status: 'INTERNAL' };
+  const data = error.data ?? [];
+  const details: JsonObject[] = isA2AErrorInfo(data[0]) ? [...data] : [a2aErrorInfo(error.code), ...data];
   return {
     status: mapped.http,
     body: { error: { code: mapped.http, status: mapped.status, message: error.message, details } },

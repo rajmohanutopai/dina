@@ -13,7 +13,7 @@
 
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { A2A_DID_BINDING_PATH, A2A_SEND_WAIT_MS, didBindingSigningInput } from '@dina/a2a';
+import { A2A_DID_BINDING_PATH, A2A_SEND_WAIT_MS, didBindingSigningInput, dinaErrorInfo, type JsonObject } from '@dina/a2a';
 
 import {
   A2A_BEARER_LIFETIME_MS,
@@ -80,9 +80,9 @@ const soon = (fn: () => void | Promise<void>, ms = 40): void => {
 
 /** The error a wait that ran out answers: its code, reason and the task it names. */
 function deadlineError(answer: { body?: unknown }): { code: number; reason?: string; task_id?: string } {
-  const error = (answer.body as { error?: { code: number; data?: { reason: string; metadata?: { task_id: string } }[] } }).error;
+  const error = (answer.body as { error?: { code: number; data?: JsonObject[] } }).error;
   if (error === undefined) throw new Error(`no error: ${JSON.stringify(answer.body)}`);
-  const info = error.data?.[0];
+  const info = dinaErrorInfo(error) as { reason: string; metadata?: { task_id: string } } | undefined;
   return { code: error.code, ...(info === undefined ? {} : { reason: info.reason, task_id: info.metadata?.task_id ?? '' }) };
 }
 

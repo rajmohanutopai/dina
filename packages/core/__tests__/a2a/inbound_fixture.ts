@@ -10,7 +10,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
-import { didRequestSigningInput } from '@dina/a2a';
+import { dinaErrorInfo, didRequestSigningInput, type JsonObject } from '@dina/a2a';
 
 import {
   A2A_RPC_PATH,
@@ -163,13 +163,12 @@ export function resultOf(answer: { body?: unknown }): Record<string, unknown> {
   return body.result;
 }
 
+/** The error's code and Dina's reason (A2A's own ErrorInfo leads the details; Dina's follows when given). */
 export function errorOf(answer: { body?: unknown }): { code: number; reason?: string } {
-  const body = answer.body as { error?: { code: number; data?: { reason: string }[] } };
+  const body = answer.body as { error?: { code: number; data?: JsonObject[] } };
   if (body.error === undefined) throw new Error(`no error: ${JSON.stringify(answer.body)}`);
-  return {
-    code: body.error.code,
-    ...(body.error.data?.[0] === undefined ? {} : { reason: body.error.data[0].reason }),
-  };
+  const dina = dinaErrorInfo(body.error);
+  return { code: body.error.code, ...(dina === undefined ? {} : { reason: dina.reason as string }) };
 }
 
 /** The Task inside a SendMessageResponse: A2A v1.0 answers `{task}`, never a bare Task. */

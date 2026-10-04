@@ -25,6 +25,7 @@ import {
   A2A_EVENTS_CLAIM_ROUTE,
   DELIVERY_LIMITS,
   ingressRouteOf,
+  isA2ARpcPath,
   isPlainObject,
   parseDeliveryAcks,
   A2A_METHODS,
@@ -46,6 +47,7 @@ import { buildInboundCard, getA2ACardConfig, ingressGetExtendedAgentCard } from 
 import {
   isRestRequest,
   parseGatewayEnvelope,
+  renderJsonRpcAnswer,
   renderRestAnswer,
   type GatewayAnswer,
   type GatewayEnvelope,
@@ -99,8 +101,13 @@ function serve(handle: Handler): (req: CoreRequest) => Promise<CoreResponse> {
     const a2a = currentRuntime();
     if (a2a === null) return json(503, { error: 'a2a_unavailable' });
     const given = await handle({ ...inboundCore(a2a), budgets }, envelope, req);
-    // Every operation answers in JSON-RPC form; a REST call gets it rendered for REST.
-    const answer = isRestRequest(envelope) ? renderRestAnswer(given) : given;
+    // Every operation answers in JSON-RPC form; a REST call gets it rendered for REST, and a
+    // JSON-RPC call gets Core's own refusals (401, 413, 429) as JSON-RPC errors too.
+    const answer = isRestRequest(envelope)
+      ? renderRestAnswer(given)
+      : isA2ARpcPath(envelope.request.path)
+        ? renderJsonRpcAnswer(given, envelope.request.body)
+        : given;
     return json(answer.status, answer.body, { ...answer.headers, [A2A_CORE_ANSWER_HEADER]: '1' });
   };
 }

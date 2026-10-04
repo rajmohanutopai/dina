@@ -19,6 +19,7 @@ import {
   type InvocationEnvelope,
   type ProjectionCapability,
   A2A_DISPATCH_TABLE,
+  dinaErrorInfo,
 } from '@dina/a2a';
 import {
   CAPABILITY_REGISTRY,
@@ -509,12 +510,15 @@ describe('ingress failure classes (design §7.2: steps 1–4 protocol error, 7�
     expect(Object.keys(INGRESS_OUTCOME_CLASS).sort()).toEqual([...every].sort());
   });
 
+  // TCK CORE-SEND-003 (spec §3.1.1): a media type Dina does not read is ContentTypeNotSupportedError
+  const CONTENT_TYPE = new Set(['no_data_part', 'raw_part_refused', 'url_part_refused']);
   it.each([...ENVELOPE_FAILURES])(
-    'envelope failure %s is a protocol error naming its reason',
+    'envelope failure %s is a protocol error naming its reason: -32005 for content Dina does not read, else -32602',
     (reason) => {
       const out = ingressFailureResponse(reason);
       expect(out.kind).toBe('protocol_error');
-      expect(out.kind === 'protocol_error' && out.error.code).toBe(-32602);
+      expect(out.kind === 'protocol_error' && out.error.code).toBe(CONTENT_TYPE.has(reason) ? -32005 : -32602);
+      expect(out.kind === 'protocol_error' && dinaErrorInfo(out.error)?.reason).toBe(reason);
     },
   );
 
@@ -595,6 +599,14 @@ describe('dispatch binding (design §5.1)', () => {
       ok: false,
       reason: 'id_mismatch',
     });
+  });
+
+  // TCK interop: the endpoint with a trailing slash is the same endpoint (`isA2ARpcPath`)
+  it('accepts a signature over the endpoint with a trailing slash, and over no other variant', () => {
+    const at = (signedPath: string) => bind({ signedPath }).ok;
+    expect(at(rpcPath)).toBe(true);
+    expect(at(`${rpcPath}/`)).toBe(true);
+    expect([at(`${rpcPath}//`), at(`${rpcPath}/x`), at(rpcPath.slice(0, -1)), at(`${rpcPath}.`)]).toEqual([false, false, false, false]);
   });
 
   it('refuses a signature over another external request', () => {

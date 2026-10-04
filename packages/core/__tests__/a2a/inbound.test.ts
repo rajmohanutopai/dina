@@ -4,7 +4,7 @@
  * gateway drives it — a forwarded raw request and its bearer.
  */
 
-import { DINA_A2A_EXTENSION_URI, canonicalize, exclusionReason, type JsonValue } from '@dina/a2a';
+import { DINA_A2A_EXTENSION_URI, canonicalize, exclusionReason, type JsonObject, type JsonValue } from '@dina/a2a';
 
 import {
   A2A_ENDED_RETENTION_MS,
@@ -159,6 +159,24 @@ describe('steps 1–4: protocol errors, no durable state', () => {
     ['an answer to a task it does not own', { taskId: 'some-task' }, -32001],
   ])('refuses %s', (_name, over, code) => {
     expect(errorOf(call({ skill: 'eta_query', params: { route_id: '42' } }, over)).code).toBe(code);
+  });
+
+  // TCK CORE-SEND-003 (spec §3.1.1): content in a media type Dina does not read
+  it.each([
+    ['a text part only', [{ text: 'when is the next bus?' }], 'no_data_part'],
+    ['a file by URL', [{ url: 'https://example.org/q.json', mediaType: 'application/json' }], 'url_part_refused'],
+    ['raw bytes', [{ raw: 'eyJ9', mediaType: 'application/octet-stream' }], 'raw_part_refused'],
+  ])('%s is ContentTypeNotSupportedError, A2A’s reason first and Dina’s after', (_what, parts, reason) => {
+    const answer = ingressSendMessage(rt, request('SendMessage', { message: { messageId: `m-${reason}`, role: 'ROLE_USER', parts } }));
+    const error = (answer.body as { error: { code: number; data: JsonObject[] } }).error;
+    expect(error.code).toBe(-32005);
+    expect(error.data.map((d) => [d.domain, d.reason])).toEqual([
+      ['a2a-protocol.org', 'CONTENT_TYPE_NOT_SUPPORTED'],
+      ['dinakernel.com', reason],
+    ]);
+    // Control: a data part of the wrong shape is still InvalidParams.
+    const wrongShape = request('SendMessage', { message: { messageId: 'm-bad', role: 'ROLE_USER', parts: [{ data: { nope: 1 } }] } });
+    expect(errorOf(ingressSendMessage(rt, wrongShape)).code).toBe(-32602);
   });
 
   it('refuses a malformed envelope as a protocol error', () => {

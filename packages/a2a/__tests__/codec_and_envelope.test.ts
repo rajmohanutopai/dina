@@ -173,19 +173,32 @@ describe('JSON-RPC 2.0 request envelope', () => {
     expect(!parsed.ok && 'id' in parsed && parsed.id).toBe('r1');
   });
 
+  // TCK JSONRPC-ERR-003 (spec §9.5)
+  it.each(Object.keys(JSONRPC_ERROR_CODES) as (keyof typeof JSONRPC_ERROR_CODES)[])(
+    'every error, %s among them, leads its data with A2A’s ErrorInfo and its UPPER_SNAKE reason',
+    (kind) => {
+      const [first] = a2aError(kind).data ?? [];
+      expect(first).toEqual(expect.objectContaining({ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', domain: 'a2a-protocol.org' }));
+      expect(first?.reason).toMatch(/^[A-Z][A-Z_]+$/);
+    },
+  );
+
   it('builds results and errors with the A2A codes', () => {
     expect(jsonRpcResult(1, { ok: true })).toEqual({ jsonrpc: '2.0', id: 1, result: { ok: true } });
+    // Spec §9.5: an A2A error carries A2A's own ErrorInfo in `data`.
     expect(jsonRpcError(1, a2aError('taskNotFound'))).toEqual({
       jsonrpc: '2.0',
       id: 1,
-      error: { code: -32001, message: 'Task not found' },
-    });
-    expect(a2aError('versionNotSupported', 'only_1_0').data).toEqual([
-      {
-        '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
-        reason: 'only_1_0',
-        domain: 'dinakernel.com',
+      error: {
+        code: -32001,
+        message: 'Task not found',
+        data: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'TASK_NOT_FOUND', domain: 'a2a-protocol.org', metadata: {} }],
       },
+    });
+    // Dina's reason follows A2A's, in Dina's domain.
+    expect(a2aError('versionNotSupported', 'only_1_0').data).toEqual([
+      { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'VERSION_NOT_SUPPORTED', domain: 'a2a-protocol.org', metadata: {} },
+      { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'only_1_0', domain: 'dinakernel.com' },
     ]);
     expect(buildJsonRpcRequest('q', 'SendMessage', {})).toEqual({
       jsonrpc: '2.0',

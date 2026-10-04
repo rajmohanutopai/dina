@@ -75,12 +75,20 @@ export type IngressFailureResponse =
   | { kind: 'rejected'; view: InboundTaskView; reason: IngressFailure };
 
 /**
+ * Protocol errors about the kind of content sent, not its shape: a message
+ * with no part in a media type Dina reads. The card's `defaultInputModes` is
+ * `application/json` and the invocation is its data part, so text, raw bytes
+ * and URLs are media types Dina does not support (spec §3.1.1: that MUST be
+ * `ContentTypeNotSupportedError`).
+ */
+const CONTENT_TYPE_FAILURES: ReadonlySet<IngressFailure> = new Set<IngressFailure>(['no_data_part', 'raw_part_refused', 'url_part_refused']);
+
+/**
  * The caller-facing answer. A protocol error names its reason (it is about
  * the caller's own bytes); a refusal returns the one collapsed view and keeps
  * the reason for the receipt and the audit log only.
  */
 export function ingressFailureResponse(reason: IngressFailure): IngressFailureResponse {
-  return INGRESS_OUTCOME_CLASS[reason] === 'protocol_error'
-    ? { kind: 'protocol_error', error: a2aError('invalidParams', reason) }
-    : { kind: 'rejected', view: REFUSAL_VIEW, reason };
+  if (INGRESS_OUTCOME_CLASS[reason] !== 'protocol_error') return { kind: 'rejected', view: REFUSAL_VIEW, reason };
+  return { kind: 'protocol_error', error: a2aError(CONTENT_TYPE_FAILURES.has(reason) ? 'contentTypeNotSupported' : 'invalidParams', reason) };
 }

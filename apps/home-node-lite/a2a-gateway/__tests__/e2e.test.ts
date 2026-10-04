@@ -21,7 +21,9 @@ import {
   cardSigningForms,
   didBindingSigningInput,
   didRequestSigningInput,
+  dinaErrorInfo,
   verifyAgentCardSignatures,
+  type JsonObject,
 } from '@dina/a2a';
 import { Crypto, createCanonicalRequestSigner } from '@dina/adapters-node';
 import {
@@ -436,7 +438,8 @@ describe('Core trusts the gateway with nothing', () => {
     ).toEqual(
       expect.objectContaining({
         code: -32600,
-        data: [expect.objectContaining({ reason: 'operation_mismatch' })],
+        // A2A's own ErrorInfo first (spec §9.5), Dina's reason after it.
+        data: [expect.objectContaining({ reason: 'INVALID_REQUEST' }), expect.objectContaining({ reason: 'operation_mismatch' })],
       }),
     );
   });
@@ -464,7 +467,7 @@ describe('Core trusts the gateway with nothing', () => {
     });
     if (!out.ok) throw new Error(`core status ${String(out.status)}`);
     expect(
-      (out.answer.body as { error: { data: { reason: string }[] } }).error.data[0]?.reason,
+      dinaErrorInfo((out.answer.body as { error: { data: JsonObject[] } }).error)?.reason,
     ).toBe('id_mismatch');
   });
 

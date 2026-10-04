@@ -33,7 +33,9 @@
  * Logs carry the method, status and latency. Never a body, a token or an id.
  */
 
-import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
+import { createHash } from 'node:crypto';
+
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import {
   A2A_BEARER_CHALLENGE,
@@ -48,14 +50,19 @@ import {
   STREAM_ENDING_TASK_STATES,
   a2aError,
   canonicalize,
+  dinaRefusal,
   ingressPathFor,
+  isA2ARpcPath,
   isPlainObject,
   jsonRpcError,
   matchRestRequest,
   parseJsonRpcRequestText,
+  restError,
   restIngressPath,
   restMethodsFor,
+  speaksA2AVersion,
   type JsonObject,
+  type JsonRpcId,
   type JsonValue,
   type TaskState,
 } from '@dina/a2a';
@@ -185,6 +192,11 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     if (status >= 500) deps.logger.error({ status }, 'a2a gateway error');
     const code = status >= 400 && status < 500 ? status : 500;
     if (rest) return restEdge(reply, code, code === 500 ? 'INTERNAL' : 'INVALID_ARGUMENT', reason);
+    if (isA2ARpcPath((req.raw.url ?? '').split('?')[0] ?? '')) {
+      // A body not sent as JSON is content Dina does not read: A2A's own error names it.
+      if (code === 415) return reply.code(415).send(jsonRpcError(null, a2aError('contentTypeNotSupported', reason)));
+      return rpcEdge(reply, code, reason, null);
+    }
     return reply.code(code).send({ error: reason });
   });
 
@@ -304,10 +316,14 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     if (card === null) return reply.code(503).send({ error: 'unavailable' });
     // The card's canonical bytes (RFC 8785), the bytes its signature covers:
     // the same bytes the node publishes to the directory (design §8.2), so a
-    // reader can compare them, not just their meaning.
+    // reader can compare them, not just their meaning. Their digest is the
+    // ETag (spec §8.6.1 SHOULD), so a client that has them is told 304.
+    const etag = `"${createHash('sha256').update(card.cardText).digest('hex').slice(0, 32)}"`;
+    const headers = { ...PUBLIC_DOC_HEADERS, etag };
+    if (req.headers['if-none-match'] === etag) return reply.code(304).headers(headers).send();
     return reply
       .code(200)
-      .headers({ ...PUBLIC_DOC_HEADERS, 'content-type': 'application/json' })
+      .headers({ ...headers, 'content-type': 'application/json' })
       .send(card.cardText);
   });
 
@@ -345,10 +361,10 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     return reply.code(forwarded.answer.status).headers(forwarded.answer.headers).send(forwarded.answer.body);
   });
 
-  app.post(A2A_RPC_PATH, async (req, reply) => {
+  // The JSON-RPC endpoint, at its path with or without a trailing slash (`isA2ARpcPath`).
+  const rpcRoute = async (req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const started = now();
-    if (limited(req.ip))
-      return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
+    if (limited(req.ip)) return rpcEdge(reply, 429, 'rate_limited', null, { 'retry-after': '60' });
     const raw = typeof req.body === 'string' ? req.body : '';
     const parsed = parseJsonRpcRequestText(raw);
     if (!parsed.ok) {
@@ -357,6 +373,7 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       return reply.code(200).send(jsonRpcError(parsed.id, parsed.error));
     }
     const { request } = parsed;
+    if (versionRefused(req.headers)) return reply.code(200).send(jsonRpcError(request.id, a2aError('versionNotSupported')));
     const route = ingressPathFor(request);
     if (!route.ok) {
       // A dot-segment id names no task, and no forward could keep it: the answer Core gives an unknown id.
@@ -368,8 +385,7 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     // while Core answers: then no stream opens, and the slot is freed.
     let left = false;
     if (streaming) {
-      if (!slots.take(req.ip))
-        return reply.code(429).header('retry-after', '60').send({ error: 'too_many_streams' });
+      if (!slots.take(req.ip)) return rpcEdge(reply, 429, 'too_many_streams', request.id, { 'retry-after': '60' });
       reply.raw.once('close', () => {
         left = true;
       });
@@ -377,18 +393,22 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     const url = req.raw.url ?? '';
     const q = url.indexOf('?');
     const version = req.headers[A2A_VERSION_HEADER.toLowerCase()];
+    // Forwarded as the client sent it: a DID-signed request signed this path.
+    const sentPath = q === -1 ? url : url.slice(0, q);
 
     const forwarded = await deps.core.forward(route.path, {
       request: {
         method: 'POST',
-        path: A2A_RPC_PATH,
+        path: isA2ARpcPath(sentPath) ? sentPath : A2A_RPC_PATH,
         query: q === -1 ? '' : url.slice(q + 1),
         body: raw,
         ...(typeof version === 'string' ? { version } : {}),
       },
       client_auth: clientAuth(req.headers),
     });
-    const streams = streaming && forwarded.ok && forwarded.answer.status === 200 && !left;
+    // A JSON-RPC error (an unknown task, a refused call) is answered as one, never as a stream.
+    const refused = forwarded.ok && isPlainObject(forwarded.answer.body) && 'error' in forwarded.answer.body;
+    const streams = streaming && forwarded.ok && forwarded.answer.status === 200 && !refused && !left;
     if (streaming && !streams) {
       // No stream follows a refusal, or a client that left: the slot is free again.
       slots.answered();
@@ -404,7 +424,7 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
         { method: request.method, core_status: forwarded.status },
         'a2a call not answered by Core',
       );
-      return reply.code(503).send({ error: 'unavailable' });
+      return rpcEdge(reply, 503, 'unavailable', request.id);
     }
     const { answer } = forwarded;
     deps.logger.info(
@@ -413,13 +433,15 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     );
     if (streams) {
       stream(reply, req.ip, (event) => ({ jsonrpc: '2.0', id: request.id, result: event }), answer, (why) => {
-        if (why === 'unavailable') reply.code(503).send({ error: 'unavailable' });
-        else reply.code(401).headers({ 'www-authenticate': A2A_BEARER_CHALLENGE }).send({ error: 'unauthenticated' });
+        if (why === 'unavailable') rpcEdge(reply, 503, 'unavailable', request.id);
+        else rpcEdge(reply, 401, 'unauthenticated', request.id, { 'www-authenticate': A2A_BEARER_CHALLENGE });
       });
       return reply;
     }
     return reply.code(answer.status).headers(answer.headers).send(answer.body);
-  });
+  };
+  app.post(A2A_RPC_PATH, rpcRoute);
+  app.post(`${A2A_RPC_PATH}/`, rpcRoute);
 
   // REST (HTTP+JSON): the method and path name the operation; Core reads its
   // params from the path, the query and the body, and answers bare.
@@ -439,6 +461,10 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
         const allowed = restMethodsFor(path);
         if (allowed.length > 0) return restEdge(reply, 405, 'UNIMPLEMENTED', 'method_not_allowed', { allow: allowed.join(', ') });
         return restEdge(reply, 404, 'NOT_FOUND', 'not_found');
+      }
+      if (versionRefused(req.headers)) {
+        const refused = restError(a2aError('versionNotSupported'));
+        return reply.code(refused.status).headers({ 'content-type': A2A_REST_CONTENT_TYPE }).send(refused.body);
       }
       const streaming = A2A_STREAMING_METHODS.has(match.operation);
       let left = false;
@@ -491,6 +517,32 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
   });
 
   return app;
+}
+
+/**
+ * Whether the client's `A2A-Version` header names a version Dina does not
+ * speak. That needs no authority, so the gateway answers it before anything
+ * else, credential or not (spec §3.6.2: VersionNotSupportedError), as it
+ * answers malformed JSON-RPC. With no header, Core reads the version (it may
+ * ride the query) and answers.
+ */
+function versionRefused(headers: IncomingHttpHeaders): boolean {
+  const version = headers[A2A_VERSION_HEADER.toLowerCase()];
+  return typeof version === 'string' && !speaksA2AVersion(version);
+}
+
+/**
+ * The gateway's own refusal to a JSON-RPC client: a JSON-RPC error
+ * (`dinaRefusal`, code -32000), as Core's own are, under its HTTP status.
+ */
+function rpcEdge(
+  reply: FastifyReply,
+  code: number,
+  reason: string,
+  id: JsonRpcId | null,
+  headers: Record<string, string> = {},
+): FastifyReply {
+  return reply.code(code).headers(headers).send(jsonRpcError(id, dinaRefusal(reason)));
 }
 
 /** The gateway's own answer to a REST client: a `google.rpc.Status`, as Core's are. */

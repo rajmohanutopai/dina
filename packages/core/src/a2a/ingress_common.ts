@@ -11,8 +11,10 @@ import {
   A2A_RPC_PATH,
   DINA_ERROR_DOMAIN,
   a2aError,
+  dinaRefusal,
   isPlainObject,
   jsonRpcError,
+  parseJsonRpcRequestText,
   restError,
   speaksA2AVersion,
   type JsonRpcErrorObject,
@@ -108,6 +110,22 @@ export function renderRestAnswer(answer: GatewayAnswer): GatewayAnswer {
       },
     },
   };
+}
+
+/**
+ * An answer rendered for the JSON-RPC binding. An operation's answer is
+ * already JSON-RPC and passes as it is. Core's own refusal (a 401 challenge,
+ * 413, 429), which is not, becomes a JSON-RPC error (`dinaRefusal`, code
+ * -32000) naming the request's id when its body could be read, under the
+ * same HTTP status and headers (the challenge, `retry-after`).
+ */
+export function renderJsonRpcAnswer(answer: GatewayAnswer, rawBody: string): GatewayAnswer {
+  const body = answer.body;
+  if (isPlainObject(body) && body.jsonrpc === '2.0') return answer;
+  const reason = isPlainObject(body) && typeof body.error === 'string' ? body.error : 'error';
+  const parsed = parseJsonRpcRequestText(rawBody);
+  const id = parsed.ok ? parsed.request.id : 'id' in parsed ? (parsed.id ?? null) : null;
+  return { status: answer.status, ...(answer.headers === undefined ? {} : { headers: answer.headers }), body: jsonRpcError(id, dinaRefusal(reason)) };
 }
 
 export function parseGatewayEnvelope(value: unknown): GatewayEnvelope | null {
