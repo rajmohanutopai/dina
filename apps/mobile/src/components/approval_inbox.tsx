@@ -58,6 +58,18 @@ const SUPPLIER_CARD_KINDS: ReadonlySet<string> = new Set([
 const unnamedSupplierCard = (e: InboxEntry): boolean =>
   SUPPLIER_CARD_KINDS.has(e.kind) && e.requesterName === undefined && e.requesterDID !== '';
 
+/** An agent-action card's headline; an A2A mirror says which way the call goes. */
+function intentHeadline(e: Pick<InboxEntry, 'a2aMirror'>): string {
+  if (e.a2aMirror === 'outbound') return 'Message to an outside agent';
+  if (e.a2aMirror === 'inbound') return 'Request from an outside agent';
+  return 'Agent action approval';
+}
+
+/** An A2A mirror comes via the owner's server node; every other agent card names the agent. */
+function intentRequesterPrefix(e: Pick<InboxEntry, 'a2aMirror'>): string {
+  return e.a2aMirror !== undefined ? 'via' : 'agent';
+}
+
 /**
  * Names the supplier on the buyer's payment cards the way My Orders does: the
  * placed order carries the listing (or the owner's contact) that names it.
@@ -282,7 +294,7 @@ export function useApprovalInbox(): ApprovalInbox {
               : 'someone not in your contacts'
             : '';
       const subline = namesCapability
-        ? `${who !== '' ? `agent ${who}\n` : ''}${entry.paramsPreview || '(no target)'}`
+        ? `${who !== '' ? `${intentRequesterPrefix(entry)} ${who}\n` : ''}${entry.paramsPreview || '(no target)'}`
         : `${who !== '' ? `${who}\n` : ''}${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
       // confirm on web (RN-Web's Alert.alert is a no-op — without this the
@@ -483,7 +495,7 @@ export function ApprovalActionCard({
   // agent_persona_access; a plain read request leaves it undefined → "read".
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
-    ? 'Agent action approval'
+    ? intentHeadline(item)
     : isDisclosure
       ? 'Share a household need?'
       : isSettingsProposal
@@ -518,7 +530,7 @@ export function ApprovalActionCard({
         ? [styles.capability, styles.riskModerate]
         : styles.capability;
   const requesterPrefix = isIntent
-    ? 'agent'
+    ? intentRequesterPrefix(item)
     : isSettingsProposal
       ? 'proposed by'
       : isPriceAsk
@@ -744,7 +756,7 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
   // PLG-29 #1: mirror the pending card — a resolved WRITE grant must read WRITE.
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
   const headline = isIntent
-    ? 'Agent action approval'
+    ? intentHeadline(item)
     : isPlugin
       ? `Plugin action approval · ${item.effect?.actionClass ?? ''}`.replace(/ · $/, '')
       : isStagingAccess

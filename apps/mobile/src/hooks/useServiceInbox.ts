@@ -74,10 +74,17 @@ export interface InboxEntry {
   /** service_query: requester DID. intent_validation: agent DID (when present). */
   requesterDID: string;
   /**
-   * integration_settings_proposal only: the name the owner gave the proposing
-   * device when minting its setup code. A label beside the DID, never instead of it.
+   * integration_settings_proposal: the name the owner gave the proposing
+   * device when minting its setup code. An A2A mirror: "your Home Node".
+   * A label beside the DID, never instead of it.
    */
   requesterName?: string;
+  /**
+   * agent_action only: an A2A consent card (`outbound`, Lane 1) or an outside
+   * agent's call under review (`inbound`, Lane 2) that the owner's server node
+   * mirrored to this phone. The requester is that node, not an agent.
+   */
+  a2aMirror?: 'outbound' | 'inbound';
   /** service_query: serialized params. intent_validation: target text. */
   paramsPreview: string;
   /** intent_validation only — surfaces SAFE/MODERATE/HIGH/BLOCKED. */
@@ -689,6 +696,12 @@ function requireClient(): InboxCoreClient {
   return client;
 }
 
+/** The server node's A2A mirror actions (`phone_approval_sync.ts`), by direction. */
+const A2A_MIRROR_ACTIONS: Readonly<Record<string, 'outbound' | 'inbound'>> = {
+  a2a_delegate: 'outbound',
+  a2a_inbound: 'inbound',
+};
+
 function toEntry(task: WorkflowTask): InboxEntry {
   const parsed = safeParse(task.payload);
   const payloadType = typeof parsed.type === 'string' ? parsed.type : '';
@@ -761,6 +774,31 @@ function toEntry(task: WorkflowTask): InboxEntry {
   }
 
   if (payloadType === 'agent_facade_action_v1' || payloadType === 'remote_facade_action_v1') {
+    // An A2A card the owner's server node mirrored here (A2A plan §3.20): the
+    // node composed the title and the exact text, and the source device is
+    // that node, not an agent. Named as such, never as "an unnamed agent".
+    const a2aMirror =
+      payloadType === 'remote_facade_action_v1' && typeof parsed.action === 'string'
+        ? A2A_MIRROR_ACTIONS[parsed.action]
+        : undefined;
+    if (a2aMirror !== undefined) {
+      const title = typeof parsed.display_title === 'string' ? parsed.display_title : '';
+      const detail = typeof parsed.display_detail === 'string' ? parsed.display_detail : '';
+      return {
+        id: task.id,
+        kind: 'agent_action',
+        capability: title,
+        serviceName: title,
+        description: title,
+        requesterDID: typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '',
+        requesterName: 'your Home Node',
+        a2aMirror,
+        paramsPreview: detail,
+        riskLevel: 'HIGH',
+        createdAt: task.created_at,
+        ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+      };
+    }
     const action = parsed.action === 'talk' || parsed.action === 'delegate' ? parsed.action : '';
     const title =
       typeof parsed.display_title === 'string'

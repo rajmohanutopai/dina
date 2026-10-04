@@ -530,6 +530,55 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
   });
 });
 
+describe('an A2A card the server node mirrored (iPhone run 2026-10-04)', () => {
+  const mirrored: WorkflowTask = {
+    id: 'a2a-m1',
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'user_blocking',
+    description: 'Send to Summarizer: Summarize',
+    payload: JSON.stringify({
+      type: 'remote_facade_action_v1',
+      source_device_did: 'did:key:z6MkServerNode',
+      agent_did: 'a2a:agent-1',
+      action: 'a2a_delegate',
+      display_title: 'Send to Summarizer: Summarize',
+      display_detail: 'Exactly what will be sent:\nThe meeting moved to Friday.',
+    }),
+    result_summary: '',
+    policy: '',
+    created_at: 1_000,
+    updated_at: 1_000,
+  };
+
+  it('names the agent and skill, says it comes via the Home Node, and the confirm dialog repeats both', async () => {
+    const stub = stubClient({ pending: [mirrored] });
+    setInboxCoreClient(stub.client);
+    const dialogs: { title: string; body: string }[] = [];
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, body, buttons) => {
+      dialogs.push({ title: String(title), body: String(body) });
+      void (buttons ?? []).find((b) => b.text === 'Approve')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+
+    expect(screen.getByText('Message to an outside agent')).toBeTruthy();
+    expect(screen.getByText('Send to Summarizer: Summarize')).toBeTruthy();
+    expect(screen.getByText(/^via your Home Node \(/)).toBeTruthy();
+    expect(screen.queryByText(/^agent /)).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-approve-a2a-m1'));
+    });
+    expect(dialogs[0]?.title).toBe('Approve "Send to Summarizer: Summarize"?');
+    expect(dialogs[0]?.body).toMatch(/^via your Home Node\n/);
+    expect(dialogs[0]?.body).not.toMatch(/unnamed agent/);
+    expect(stub.approve).toHaveBeenCalledWith('a2a-m1', undefined);
+    alertSpy.mockRestore();
+  });
+});
+
 describe('Approval inbox inline in Activity — live refresh (R-M6-I2)', () => {
   it('refetches when an approval-kind notification is appended', async () => {
     const stub = stubClient({ pending: [pendingTask('t-1', 1_000)] });

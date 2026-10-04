@@ -548,6 +548,70 @@ describe('useServiceInbox', () => {
     expect(entry.serviceName).toBe('');
   });
 
+  it('reads an A2A card the server node mirrored: its title, its exact text, the node as requester', async () => {
+    // phone_approval_sync.ts sends `a2a_delegate` (Lane 1 consent) and
+    // `a2a_inbound` (Lane 2 review) as facade proposals; iPhone run
+    // 2026-10-04 showed both read as `Approve ""?` from "an unnamed agent".
+    const mirrored = (id: string, action: string, title: string, detail: string): WorkflowTask =>
+      makeTask({
+        id,
+        description: title,
+        payload: JSON.stringify({
+          type: 'remote_facade_action_v1',
+          source_device_did: 'did:key:z6MkServerNode',
+          source_task_id: `src-${id}`,
+          source_payload_hash: 'a'.repeat(64),
+          agent_did: 'a2a:agent-1',
+          action,
+          risk_level: 'HIGH',
+          tool_name: action,
+          proposal_type: 'facade_action',
+          display_title: title,
+          display_detail: detail,
+        }),
+      });
+    const { client } = stubClient({
+      list: [
+        mirrored('m-out', 'a2a_delegate', 'Send to Summarizer: Summarize', 'Exactly what will be sent:\nThe meeting moved.'),
+        mirrored('m-in', 'a2a_inbound', 'Bus app asks to use eta_query', 'route_id: 42'),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [out, inbound] = await listPendingApprovals();
+    expect(out).toMatchObject({
+      kind: 'agent_action',
+      a2aMirror: 'outbound',
+      capability: 'Send to Summarizer: Summarize',
+      paramsPreview: 'Exactly what will be sent:\nThe meeting moved.',
+      requesterDID: 'did:key:z6MkServerNode',
+      requesterName: 'your Home Node',
+      riskLevel: 'HIGH',
+    });
+    expect(inbound).toMatchObject({ a2aMirror: 'inbound', capability: 'Bus app asks to use eta_query', paramsPreview: 'route_id: 42' });
+  });
+
+  it('keeps talk/delegate facade cards as they were, with no A2A marking', async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'f-1',
+          payload: JSON.stringify({
+            type: 'remote_facade_action_v1',
+            source_device_did: 'did:key:z6MkLaptop',
+            action: 'talk',
+            display_title: 'Send a message',
+            display_detail: 'to Sancho',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry.capability).toBe('talk');
+    expect(entry.a2aMirror).toBeUndefined();
+    expect(entry.requesterName).toBeUndefined();
+  });
+
   it('projects remote coding approvals using the authenticated source device', async () => {
     const { client } = stubClient({
       list: [
