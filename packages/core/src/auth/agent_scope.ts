@@ -9,6 +9,10 @@
  *                 coding tool façades (gate, memory, find-service, talk, …).
  *   • `runner`  — a delegation runner. Claims/heartbeats/completes workflow
  *                 tasks; it is NOT a coding agent.
+ *   • `node`    — the owner's own server node, paired to the phone to mirror
+ *                 its approval cards there (UCP plan §3.9). Only it may send a
+ *                 card that opens a link, asks for a person present, or speaks
+ *                 as Dina's shopping; it reaches no coding or runner surface.
  *
  * Both keep `callerType='agent'` (renaming would silently disable the many
  * `!== 'agent'` guards — a fail-open, NEW-02). The scope is an ADDITIONAL
@@ -21,9 +25,9 @@
  * `resolveAgentScope`).
  */
 
-export type AgentScope = 'coding' | 'runner';
+export type AgentScope = 'coding' | 'runner' | 'node';
 
-const VALID_SCOPES: ReadonlySet<string> = new Set<AgentScope>(['coding', 'runner']);
+const VALID_SCOPES: ReadonlySet<string> = new Set<AgentScope>(['coding', 'runner', 'node']);
 
 /** Normalise a device-record scope value; unknown/missing ⇒ undefined (fail-closed). */
 export function resolveAgentScope(deviceScope: string | null | undefined): AgentScope | undefined {

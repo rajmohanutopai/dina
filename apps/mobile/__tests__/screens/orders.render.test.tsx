@@ -20,6 +20,8 @@ import OrdersScreen from '../../app/orders';
 
 import type { OrderDraftSummary, PlacedOrderDto } from '@dina/core';
 
+/** Every focus effect the screen and its sections registered; a refocus runs them all. */
+const mockFocusEffects = new Set<() => void>();
 let mockFocus: (() => void) | null = null;
 const mockPush = jest.fn();
 jest.mock('expo-router', () => {
@@ -27,7 +29,8 @@ jest.mock('expo-router', () => {
   return {
     useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn() }),
     useFocusEffect: (effect: () => void) => {
-      mockFocus = effect;
+      mockFocusEffects.add(effect);
+      mockFocus = () => mockFocusEffects.forEach((e) => e());
       ReactLib.useEffect(effect, [effect]);
     },
     Stack: { Screen: () => null },
@@ -58,6 +61,11 @@ jest.mock('../../src/services/offered_catalog', () => ({
 }));
 jest.mock('../../src/services/owner_commerce_client', () => ({
   getOwnerCommerceClient: () => mockCommerce,
+}));
+/** Shop (UCP) orders; none unless a test sets them. */
+const mockUcp = { orders: jest.fn(), markOrderDone: jest.fn(), startLink: jest.fn() };
+jest.mock('../../src/services/owner_ucp_client', () => ({
+  getOwnerUcpClient: () => mockUcp,
 }));
 jest.mock('../../src/services/commerce_install', () => ({
   buyerInstallStatus: async () => ({ state: 'active' }),
@@ -110,6 +118,9 @@ let openURL: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
   mockFocus = null;
+  mockFocusEffects.clear();
+  mockUcp.orders.mockResolvedValue([]);
+  mockUcp.markOrderDone.mockResolvedValue(null);
   mockCommerce.orderDrafts.mockResolvedValue({ drafts: [] });
   mockCommerce.placedOrders.mockResolvedValue({ orders: [], evidence: 'available' });
   mockCommerce.tenderStory.mockRejectedValue(new Error('no tender in this test'));
@@ -472,5 +483,110 @@ describe('placed orders on My Orders', () => {
       ),
     );
     expect(mockCommerce.placedOrders).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('shop orders on My Orders (UCP plan §3.14)', () => {
+  const shopOrder = (over: Record<string, unknown> = {}) => ({
+    merchant_origin: 'https://tea.example',
+    merchant_host: 'tea.example',
+    order_id: 'ord_1',
+    state: 'open',
+    close_reason: null,
+    shared: true,
+    headline: 'Shipped',
+    summary: {
+      currency: 'EUR',
+      total: '1800',
+      lines: [
+        { title: 'Sencha 100 g', quantity: '2', status: 'processing' },
+        { title: 'Earl Grey', quantity: '1', status: 'processing' },
+      ],
+      latest_event: { type: 'shipped', occurred_at: 1 },
+      adjustments: [],
+      settled: false,
+    },
+    notes: ['A refund: completed'],
+    permalink_url: 'https://tea.example/orders/ord_1',
+    link_scopes: null,
+    created_at: 1,
+    last_change_at: 1,
+    closed_at: null,
+    ...over,
+  });
+
+  it('an order the shop shares only with a linked account offers the link, asking for the scopes its challenge named', async () => {
+    mockUcp.orders.mockResolvedValue([
+      shopOrder({
+        headline: 'Link your account at tea.example to follow this order',
+        link_scopes: ['dev.ucp.shopping.order:read'],
+      }),
+    ]);
+    mockUcp.startLink.mockResolvedValueOnce({
+      started: true,
+      opens: 'here',
+      url: 'https://tea.example/auth/authorize?state=s',
+      scopes: ['dev.ucp.shopping.order:read'],
+      expires_at: 9,
+    });
+    const screen = render(<OrdersScreen />);
+    await waitFor(() => expect(screen.getByTestId('shop-orders-ord_1-link')).toBeTruthy());
+    await act(async () => fireEvent.press(screen.getByTestId('shop-orders-ord_1-link')));
+    expect(mockUcp.startLink).toHaveBeenCalledWith('https://tea.example', [
+      'dev.ucp.shopping.order:read',
+    ]);
+    expect(openURL).toHaveBeenCalledWith('https://tea.example/auth/authorize?state=s');
+    mockUcp.startLink.mockResolvedValueOnce({ started: false, reason: 'not_offered' });
+    await act(async () => fireEvent.press(screen.getByTestId('shop-orders-ord_1-link')));
+    expect(screen.getByTestId('shop-orders-error')).toHaveTextContent(
+      'tea.example does not offer account linking.',
+    );
+  });
+
+  it('an order not waiting for a link offers none', async () => {
+    mockUcp.orders.mockResolvedValue([shopOrder()]);
+    const screen = render(<OrdersScreen />);
+    await waitFor(() => expect(screen.getByTestId('shop-orders-ord_1')).toBeTruthy());
+    expect(screen.queryByTestId('shop-orders-ord_1-link')).toBeNull();
+  });
+
+  it('shows the shop, total, Core’s headline and lines, and opens the shop’s order page; no empty state', async () => {
+    mockUcp.orders.mockResolvedValue([shopOrder()]);
+    const screen = render(<OrdersScreen />);
+    await waitFor(() => expect(screen.getByTestId('shop-orders-ord_1')).toBeTruthy());
+    expect(screen.getByTestId('shop-orders-ord_1-headline').props.children).toBe('Shipped');
+    expect(screen.getByText('EUR 18.00')).toBeTruthy();
+    expect(screen.getByText('2 × Sencha 100 g · and 1 more')).toBeTruthy();
+    // Refunds and disputes wait here quietly, in Core's words.
+    expect(screen.getByText('A refund: completed')).toBeTruthy();
+    expect(screen.queryByTestId('orders-empty')).toBeNull();
+    expect(screen.queryByTestId('shop-orders-ord_1-done')).toBeNull();
+    fireEvent.press(screen.getByTestId('shop-orders-ord_1-open'));
+    expect(openURL).toHaveBeenCalledWith('https://tea.example/orders/ord_1');
+  });
+
+  it('an order the shop only sends updates for says so, and can be marked done', async () => {
+    mockUcp.orders.mockResolvedValue([
+      shopOrder({
+        state: 'not_shared',
+        shared: false,
+        summary: { ...shopOrder().summary, as_sent: true },
+      }),
+    ]);
+    const screen = render(<OrdersScreen />);
+    await waitFor(() => expect(screen.getByTestId('shop-orders-ord_1-as-sent')).toBeTruthy());
+    mockUcp.orders.mockResolvedValue([shopOrder({ state: 'closed', close_reason: 'owner' })]);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('shop-orders-ord_1-done'));
+    });
+    expect(mockUcp.markOrderDone).toHaveBeenCalledWith('https://tea.example', 'ord_1');
+    await waitFor(() => expect(screen.queryByTestId('shop-orders-ord_1-done')).toBeNull());
+  });
+
+  it('a node without shop orders shows no section, and the empty state as before', async () => {
+    mockUcp.orders.mockResolvedValue(null);
+    const screen = render(<OrdersScreen />);
+    await waitFor(() => expect(screen.getByTestId('orders-empty')).toBeTruthy());
+    expect(screen.queryByTestId('shop-orders')).toBeNull();
   });
 });

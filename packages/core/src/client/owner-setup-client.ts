@@ -127,6 +127,16 @@ export class OwnerSetupClient {
     return expectStatus<MintedSetupCode>(res, 201, 'mintCodingAgentCode');
   }
 
+  /** The owner's server node's setup code, to mirror its approval cards here (scope `node`). */
+  async mintServerNodeCode(deviceName?: string): Promise<MintedSetupCode> {
+    const res = await this.dispatcher.dispatch({
+      method: 'POST',
+      path: `${OWNER_SETUP_PREFIX}/server-node`,
+      body: deviceName === undefined ? {} : { device_name: deviceName },
+    });
+    return expectStatus<MintedSetupCode>(res, 201, 'mintServerNodeCode');
+  }
+
   async mintStaffCode(deviceName: string): Promise<MintedSetupCode> {
     const res = await this.dispatcher.dispatch({
       method: 'POST',

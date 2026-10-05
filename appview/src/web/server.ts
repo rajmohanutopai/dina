@@ -22,6 +22,7 @@ import { XRPC_ROUTES } from '@/web/xrpc-routes.js'
 import { extractClientIp } from '@/api/middleware/client-ip.js'
 import { logger } from '@/shared/utils/logger.js'
 import { aggregator } from '@/shared/utils/metrics.js'
+import { createUcpHostServer, ucpHostConfig } from '@/ucp/serve.js'
 
 const db = createDb()
 const port = Number(process.env.PORT ?? 3000)
@@ -44,6 +45,14 @@ const TRUST_PROXY = process.env.TRUST_PROXY === '1'
 const rateLimitEnvOverride = parseInt(process.env.RATE_LIMIT_RPM ?? '0', 10)
 const rateLimitCache = createRateLimitCache()
 
+// UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): off unless
+// UCP_PROFILE_HOST is set; Caddy sends that name and its wildcard here.
+// Read from process.env, not `@/config/env.js`: that module demands the
+// ingester's JETSTREAM_URL in production, which this process does not have.
+const ucpHostSetup = ucpHostConfig(process.env, (process.env.NODE_ENV ?? 'production') === 'production')
+const ucpHost =
+  ucpHostSetup === null ? null : createUcpHostServer({ config: ucpHostSetup, db, rateLimitCache, rateLimitEnvOverride })
+
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${port}`)
@@ -57,6 +66,23 @@ const server = http.createServer(async (req, res) => {
     forwardedFor: typeof xff === 'string' ? xff : Array.isArray(xff) ? xff[0] : undefined,
     remoteAddress: req.socket.remoteAddress,
   })
+
+  // The profile host answers its own names before anything else, so none of
+  // AppView's routes are reachable under them.
+  if (ucpHost !== null) {
+    let handled: boolean
+    try {
+      handled = await ucpHost.serve(req, res, clientIp)
+    } catch (err) {
+      // serve() answers its own failures; this guard keeps any it misses from
+      // becoming an unhandled rejection, which would end the process.
+      logger.error({ errorClass: err instanceof Error ? err.constructor.name : typeof err }, 'ucp host: unhandled')
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' })
+      res.end()
+      return
+    }
+    if (handled) return
+  }
 
   // TN-OBS-001: Prometheus exposition endpoint. Like /health, the
   // `/metrics` endpoint is exempt from the rate limiter — Prometheus
@@ -250,7 +276,10 @@ const server = http.createServer(async (req, res) => {
       methodId,
       searchParams: url.searchParams,
       onError: (err, method) => {
-        logger.error({ err, method }, 'XRPC handler error')
+        // A UCP merchant search's parameters are an owner's need: its failures log their class only.
+        if (method.startsWith('com.dinakernel.ucp.'))
+          logger.error({ errorClass: err instanceof Error ? err.constructor.name : typeof err, method }, 'XRPC handler error')
+        else logger.error({ err, method }, 'XRPC handler error')
       },
     })
     res.writeHead(outcome.status, { 'Content-Type': 'application/json' })

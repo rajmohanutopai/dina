@@ -90,6 +90,11 @@ import {
   getA2AStore,
   installA2A,
   installA2ACardConfig,
+  A2ACardKeyRotation,
+  installA2ACardKeyRotation,
+  getA2ACardKeyRotation,
+  bootA2ACardKeys,
+  startA2ACardKeySchedule,
   installA2ADidResolver,
   installA2APublisher,
   installA2ADirectoryEvidence,
@@ -99,6 +104,22 @@ import {
   installCoreServiceDid,
   deriveP256SigningKey,
   setA2AHostTransport,
+  setUcpPolicySocket,
+  installUcpIdentity,
+  setUcpSigningGeneration,
+  installUcpPublication,
+  installUcpSearchRuntime,
+  installUcpCheckoutRuntime,
+  installUcpSettingsListener,
+  installUcpWebhookOrigin,
+  installUcpMerchantTrust,
+  createUcpSearchRuntime,
+  createUcpCheckoutRuntime,
+  ucpWorkflowHooks,
+  deriveUcpIdentity,
+  UcpPublisher,
+  startPublisherSchedule,
+  type PublisherSchedule,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
@@ -127,8 +148,8 @@ import {
   type MsgBoxBootConfig,
   type WSFactory,
 } from '@dina/core/runtime';
-import { A2ADispatchRunner, ensureA2ACardKey, makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
-import { createA2AHostTransport, makeNodeWebSocketFactory } from '@dina/net-node';
+import { A2ADispatchRunner, currentA2ACardKey, ensureA2ACardKey, makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
+import { createA2AHostTransport, createNodePolicySocket, makeNodeWebSocketFactory } from '@dina/net-node';
 
 import { createAgentFacades } from './agent/facades';
 import { makeHttpAskHandler } from './agent/http_ask_handler';
@@ -653,6 +674,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let phoneApprovalManager: PhoneApprovalManager | null = null;
   let a2aRunner: A2ADispatchRunner | null = null;
   let a2aCardPublisher: A2ACardPublisher | null = null;
+  let a2aCardKeySchedule: { stop(): void; kick(): void } | null = null;
+  let ucpPublication: PublisherSchedule | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
@@ -687,6 +710,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // The runner starts below, once a workflow service exists.
       installA2A({ store: new A2AStore(result.identityDB) });
       setA2AHostTransport(createA2AHostTransport());
+      // UCP (docs/UCP_IMPLEMENTATION_PLAN.md §3.1, §3.3): the policy socket every
+      // UCP call goes through, and the node's UCP identity (the request-signing
+      // key at m/9999'/6'/0' and the profile label), held in memory only.
+      setUcpPolicySocket(createNodePolicySocket());
+      installUcpIdentity(deriveUcpIdentity(identity.seed));
       // The owner's review of a remote agent shows the directory's PeerLens
       // evidence for the Dina node its card names (§6.1, §8.4), read by this
       // trusted host, never relayed by Brain. Display only.
@@ -704,13 +732,37 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
             };
       });
       // Lane 2's card (§7.1): signed with the ES256 card key from the master
-      // seed (plan D4, generation 0), for the public origin Core is told,
-      // never one the gateway names.
+      // seed (plan D4), for the public origin Core is told, never one the
+      // gateway names. The key rotates (UCP plan §4.8, U7): the ring says
+      // which generation signs; a node without one (new, or restored) reads
+      // the generation in use from its DID document first.
       if (config.a2a?.publicOrigin !== undefined) {
-        installA2ACardConfig({
-          key: { privateKey: deriveP256SigningKey(identity.seed, 0).privateKey, generation: 0 },
+        const cardSeed = identity.seed;
+        const cardKeyDid = pdsIdentity?.did;
+        // The PLC directory, bounded: a slow directory never holds a switch or a read open.
+        const plcFetch: typeof fetch = (input, init) =>
+          fetch(input, { ...init, signal: AbortSignal.timeout(10_000) });
+        const plcURL = config.endpoints.plcDirectoryUrl;
+        const cardKeys = new A2ACardKeyRotation({
+          keyAt: (generation) => ({ privateKey: deriveP256SigningKey(cardSeed, generation).privateKey, generation }),
           publicOrigin: config.a2a.publicOrigin,
+          // No did:plc (no PDS): no document; the card signs with generation 0 and does not rotate.
+          document:
+            cardKeyDid === undefined
+              ? null
+              : {
+                  readKey: () => currentA2ACardKey({ did: cardKeyDid, plcURL, fetch: plcFetch }),
+                  recordKey: (cardPublicKey) =>
+                    ensureA2ACardKey({ did: cardKeyDid, cardPublicKey, masterSeed: cardSeed, plcURL, fetch: plcFetch }),
+                },
         });
+        installA2ACardKeyRotation(cardKeys);
+        // A ring on disk installs the card at once, and boot waits on nothing (the schedule's first
+        // run checks the DID document). A node without one reads the document first, bounded by the
+        // timeout above; if it cannot, the schedule keeps trying and no card is served (or
+        // published, or taken down) meanwhile.
+        await bootA2ACardKeys(cardKeys);
+        a2aCardKeySchedule = startA2ACardKeySchedule(cardKeys);
         // A client binding a did:plc (design §5.1, M4): the host looks its
         // document up, uncached; Core reads the keys and checks the signature.
         const didResolver = new DIDResolver();
@@ -754,6 +806,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
           a2aWorkflowHooks(getA2ARuntime),
+          ucpWorkflowHooks(),
         ),
       });
       setWorkflowService(localWorkflowService);
@@ -810,6 +863,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
               return built.ok ? { ok: true, card: built.card } : { ok: false, reason: built.reason };
             },
             gatewayLive: () => getA2ACardConfig() !== null,
+            // The card key is still being read from the DID document: judge nothing yet (no
+            // listing is taken down for a card that is merely not known yet).
+            cardKeyPending: () => getA2ACardKeyRotation()?.ready() === false,
             sign: (message) => ed25519Sign(signingKey.privateKey, message),
             verify: (message, signature) => ed25519Verify(signingKey.publicKey, message, signature),
             signingKeyId: () => signingKeyId,
@@ -832,6 +888,44 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           // deactivation still works.
           installA2APublisher(a2aCardPublisher);
           a2aCardPublisher.start();
+        }
+        // UCP (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): the buyer profile, uploaded
+        // to the Dina-run host under the node's did:plc, when UCP is enabled.
+        // §3.11, §3.16: merchant search and its guard queue on the identity
+        // database, only beside the publisher: a merchant reads the profile it
+        // uploads.
+        if (config.ucp?.enabled === true) {
+          const profileHost = config.ucp.profileHost !== undefined ? { profileHost: config.ucp.profileHost } : {};
+          // §3.13, S8: a server whose A2A gateway has a public origin takes signed order
+          // webhooks there (unless the owner turns them off); the profile lists that URL.
+          installUcpWebhookOrigin(config.a2a?.publicOrigin ?? null);
+          const ucpPublisher = new UcpPublisher({ did: pdsIdentity.did, ...profileHost });
+          // A rotated key signs from the first merchant call after a restart (U7).
+          await ucpPublisher.restoreKeys();
+          ucpPublication = startPublisherSchedule(ucpPublisher);
+          // The owner's UCP settings: status, key ring, and the four actions (§3.5, §4.8).
+          installUcpPublication({ publisher: ucpPublisher, schedule: ucpPublication });
+          // A settings save may change the listed webhook URL: upload the profile now.
+          const publication = ucpPublication;
+          installUcpSettingsListener(() => publication.kick());
+          installUcpSearchRuntime(createUcpSearchRuntime(result.identityDB, { client: profileHost }));
+          // §3.7, §3.10: checkouts and carts on the same database as the workflow's cards.
+          const ucpCheckout = createUcpCheckoutRuntime(result.identityDB, {
+            client: profileHost,
+            // §3.17: without a public address, a sign-in goes to the phone paired as this
+            // node's own (read per call: the phone is paired later in boot, or by the owner).
+            phoneReady: () => {
+              const phone = phoneApprovalManager?.status();
+              return phone?.configured === true && phone.needsServerNodePairing !== true;
+            },
+          });
+          installUcpCheckoutRuntime(ucpCheckout);
+          ucpCheckout.start();
+          // The comparison card's trust lines, read by this trusted host, never relayed by Brain.
+          const peerlens = new AppViewClient({ appViewURL: config.endpoints.appViewBaseUrl });
+          installUcpMerchantTrust((subject) =>
+            peerlens.resolveTrust({ subject, context: 'before-transaction' }),
+          );
         }
         // §10.2/WS-5.1 — how a catalog reaches this node's own repo. Core owns
         // the ORDER (snapshot before pointer, and no pointer if the snapshot
@@ -1239,9 +1333,21 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     app.addHook('onClose', async () => {
       await a2aRunner?.stop();
       await a2aCardPublisher?.stop();
+      a2aCardKeySchedule?.stop();
+      installA2ACardKeyRotation(null);
+      installUcpPublication(null);
+      ucpPublication?.stop();
       installA2APublisher(null);
       installA2ADirectoryEvidence(null);
       setA2AHostTransport(null);
+      installUcpSearchRuntime(null);
+      installUcpCheckoutRuntime(null);
+      installUcpSettingsListener(null);
+      installUcpWebhookOrigin(null);
+      installUcpMerchantTrust(null);
+      setUcpPolicySocket(null);
+      installUcpIdentity(null);
+      setUcpSigningGeneration(null);
       installA2ADidResolver(null);
       installA2A(null);
       installA2ACardConfig(null);

@@ -1,14 +1,15 @@
 /**
  * SLIP-0010 for P-256 ("Nist256p1 seed"), against the official vectors
  * (https://github.com/satoshilabs/slips/blob/master/slip-0010.md), plus the
- * frozen Dina vector for the ES256 signing key at m/9999'/5'/{generation}'
- * (docs/A2A_IMPLEMENTATION_PLAN.md D4). Only hardened steps are checked:
+ * frozen Dina vectors for the ES256 signing keys at m/9999'/5'/{generation}'
+ * (A2A, docs/A2A_IMPLEMENTATION_PLAN.md D4) and m/9999'/6'/{generation}' (UCP,
+ * docs/UCP_IMPLEMENTATION_PLAN.md §3.1). Only hardened steps are checked:
  * Dina derives nothing else.
  */
 
 import { p256 } from '@noble/curves/nist.js';
 
-import { deriveP256SigningKey, derivePath, derivePathP256 } from '../../src';
+import { deriveP256SigningKey, derivePath, derivePathP256, deriveUcpSigningKey } from '../../src';
 import { deriveMasterKeyP256 } from '../../src/crypto/slip0010';
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
@@ -139,5 +140,39 @@ describe("Dina ES256 signing key at m/9999'/5'/{generation}'", () => {
     expect(hex(deriveP256SigningKey(seed, 0).privateKey)).not.toBe(
       hex(derivePath(seed, "m/9999'/5'/0'").privateKey),
     );
+  });
+});
+
+describe("Dina UCP signing key at m/9999'/6'/{generation}'", () => {
+  const seed = bytes('b0a1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728394a5b6c7d8e9f');
+
+  // The private keys were also computed by an independent SLIP-0010 script
+  // (HMAC-SHA512 and addition mod n only), not just copied from this code.
+  it('is frozen for generation 0 and 1', () => {
+    const g0 = deriveUcpSigningKey(seed, 0);
+    expect(hex(g0.privateKey)).toBe(
+      '9d085278bb3ed9c89e4ad5d05b34e6805a52c903aca30a65655560fd5bada0c6',
+    );
+    expect(hex(g0.publicKey)).toBe(
+      '03f92cde21e978a9886726cc37e966e4841d18837f7a4e23ecd6d397d774e9186f',
+    );
+    const g1 = deriveUcpSigningKey(seed, 1);
+    expect(hex(g1.privateKey)).toBe(
+      '1ea2796920542ab16c1e4499b7503022a134fa82db9dc715f8f168c11a12d1cd',
+    );
+    expect(hex(g1.publicKey)).toBe(
+      '031b9426ac6caf1bd386830ed8b23b1d979bb9ceeb4530e476470580233a0ce5e8',
+    );
+  });
+
+  it("equals the generic path m/9999'/6'/0', and is never the A2A key", () => {
+    expect(deriveUcpSigningKey(seed, 0)).toEqual(derivePathP256(seed, "m/9999'/6'/0'"));
+    expect(deriveUcpSigningKey(seed, 0).privateKey).not.toEqual(
+      deriveP256SigningKey(seed, 0).privateKey,
+    );
+  });
+
+  it.each([1.5, -1, 2 ** 31, Number.NaN])('refuses generation %p', (generation) => {
+    expect(() => deriveUcpSigningKey(seed, generation)).toThrow(/generation/);
   });
 });

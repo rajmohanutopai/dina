@@ -14,6 +14,9 @@
  * conversation look cleaner than it is, and taint must never be under-counted.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import type { VaultItem } from '@dina/test-harness';
 
 /** Only Brain is a release audience today; agents read under their own grants and sessions. */
@@ -26,6 +29,19 @@ export interface ReleaseContext {
 }
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/;
+
+/**
+ * The session id of a conversation (A2A design §4.2): `chat:<thread>` or
+ * `ask:<id>` when that fits the id syntax, else a digest of the id, so no
+ * thread name can make a read fail or two threads share a session. Brain
+ * names its sessions with it; Core uses it to find a chat thread's records.
+ */
+export function releaseSessionId(kind: 'chat' | 'ask', id: string): string {
+  const plain = `${kind}:${id}`;
+  // `h-` is the digest form's mark: a thread that spells it gets digested too.
+  if (/^[A-Za-z0-9:._-]{1,128}$/.test(plain) && !id.startsWith('h-')) return plain;
+  return `${kind}:h-${bytesToHex(sha256(new TextEncoder().encode(id))).slice(0, 40)}`;
+}
 
 /** A well-formed release session id, or null. */
 export function parseReleaseSession(value: unknown): string | null {

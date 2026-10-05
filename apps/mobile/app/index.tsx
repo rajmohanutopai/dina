@@ -48,6 +48,7 @@ import { InlineReminderCard } from '../src/components/InlineReminderCard';
 import { InlineReviewDraftCard } from '../src/components/InlineReviewDraftCard';
 import { InlineServiceApprovalCard } from '../src/components/InlineServiceApprovalCard';
 import { InlineServiceQueryCard } from '../src/components/InlineServiceQueryCard';
+import { InlineUcpComparisonCard } from '../src/components/InlineUcpComparisonCard';
 import { InlineVaultReadApprovalCard } from '../src/components/InlineVaultReadApprovalCard';
 import { MessageActionMenu } from '../src/components/MessageActionMenu';
 import { GUIDED_DEMO_LIST_CLEARANCE, useGuidedDemoActive } from '../src/guided_demo/active_context';
@@ -397,6 +398,15 @@ export default function ChatScreen() {
       // the plan is open.
       // A drafted request for quotes: opens the Ask for quotes screen
       // prefilled; nothing is sent from the card.
+      // A merchant search's comparison card (UCP): the shops' own titles from Core,
+      // in the order of each shop's PeerLens trust.
+      if (item.displayType === 'ucp-comparison') {
+        return (
+          <View testID="chat-card-ucp-comparison">
+            <InlineUcpComparisonCard message={item} />
+          </View>
+        );
+      }
       if (item.displayType === 'quote-request-draft') {
         return (
           <View testID="chat-card-quote-request-draft">

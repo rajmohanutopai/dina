@@ -96,6 +96,10 @@ interface BuildHomeNodeAskRuntimeCommon extends HomeNodeAskRuntimeOptions {
    * Only a host that runs Lane 1 (the server node) passes it.
    */
   a2aClient?: BuildAgenticAskPipelineInput['a2aClient'];
+  /** UCP catalogue tools: the Core surface, and the guard worker's kick (plan §4.2 U1). */
+  ucpClient?: BuildAgenticAskPipelineInput['ucpClient'];
+  ucpGuardKick?: BuildAgenticAskPipelineInput['ucpGuardKick'];
+  ucpEnabled?: BuildAgenticAskPipelineInput['ucpEnabled'];
   /**
    * How long the AskCoordinator waits for the agentic loop to
    * produce a terminal answer before falling back to async-resume
@@ -206,6 +210,9 @@ export function buildHomeNodeAskRuntime(
     cloudConsentGranted: options.cloudConsentGranted ?? true,
     ...(options.workflowClient !== undefined ? { workflowClient: options.workflowClient } : {}),
     ...(options.a2aClient !== undefined ? { a2aClient: options.a2aClient } : {}),
+    ...(options.ucpClient !== undefined ? { ucpClient: options.ucpClient } : {}),
+    ...(options.ucpGuardKick !== undefined ? { ucpGuardKick: options.ucpGuardKick } : {}),
+    ...(options.ucpEnabled !== undefined ? { ucpEnabled: options.ucpEnabled } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
     ...(options.sensitivePersonas !== undefined
       ? { sensitivePersonas: options.sensitivePersonas }

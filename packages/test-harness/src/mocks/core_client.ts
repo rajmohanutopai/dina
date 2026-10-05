@@ -29,6 +29,18 @@ import type {
   A2AGuardVerdictResult,
   OwnerTurnInput,
   A2AGuardWork,
+  UcpFetchInput,
+  UcpFetchResult,
+  UcpGuardVerdictInput,
+  UcpGuardVerdictResult,
+  UcpGuardWork,
+  UcpCartCall,
+  UcpCheckoutCall,
+  UcpShopResult,
+  UcpSearchInput,
+  UcpSearchResult,
+  UcpSearchReviewResult,
+  UcpSearchView,
   A2AOperationStatus,
   ApproveWorkflowTaskOptions,
   CoreClient,
@@ -739,6 +751,56 @@ export class MockCoreClient implements CoreClient {
 
   async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
     return this.dispatch('submitA2AGuardVerdict', [input], () => this.a2aGuardVerdictResult);
+  }
+
+  /** UCP (plan §3.11, §3.16) — what `searchUcp` answers; default: UCP not installed. */
+  ucpSearchResult: UcpSearchResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+  /** What `getUcpSearch` answers; default: not found. */
+  ucpSearchView: UcpSearchView | null = null;
+  /** What `raiseUcpSearchReview` answers; default: UCP not installed. */
+  ucpSearchReviewResult: UcpSearchReviewResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+  /** What `claimUcpGuardJob` answers; default: no work. */
+  ucpGuardWork: UcpGuardWork | null = null;
+  /** What `submitUcpGuardVerdict` answers; default: accepted as passed. */
+  ucpGuardVerdictResult: UcpGuardVerdictResult = { ok: true, state: 'passed' };
+
+  async searchUcp(input: UcpSearchInput): Promise<UcpSearchResult> {
+    return this.dispatch('searchUcp', [input], () => this.ucpSearchResult);
+  }
+
+  async getUcpSearch(searchId: string, releaseSession: string): Promise<UcpSearchView | null> {
+    return this.dispatch('getUcpSearch', [searchId, releaseSession], () => this.ucpSearchView);
+  }
+
+  /** What `fetchUcpProducts` answers; default: UCP not installed. */
+  ucpFetchResult: UcpFetchResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+
+  async fetchUcpProducts(input: UcpFetchInput): Promise<UcpFetchResult> {
+    return this.dispatch('fetchUcpProducts', [input], () => this.ucpFetchResult);
+  }
+
+  async raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult> {
+    return this.dispatch('raiseUcpSearchReview', [input], () => this.ucpSearchReviewResult);
+  }
+
+  /** What `ucpCart` / `ucpCheckout` answer; a test sets them. */
+  ucpCartResult: UcpShopResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+  ucpCheckoutResult: UcpShopResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+
+  async ucpCart(input: UcpCartCall): Promise<UcpShopResult> {
+    return this.dispatch('ucpCart', [input], () => this.ucpCartResult);
+  }
+
+  async ucpCheckout(input: UcpCheckoutCall): Promise<UcpShopResult> {
+    return this.dispatch('ucpCheckout', [input], () => this.ucpCheckoutResult);
+  }
+
+  async claimUcpGuardJob(): Promise<UcpGuardWork | null> {
+    return this.dispatch('claimUcpGuardJob', [], () => this.ucpGuardWork);
+  }
+
+  async submitUcpGuardVerdict(input: UcpGuardVerdictInput): Promise<UcpGuardVerdictResult> {
+    return this.dispatch('submitUcpGuardVerdict', [input], () => this.ucpGuardVerdictResult);
   }
 
   /** What `recordOwnerTurn` answers; default: recorded. */

@@ -13,7 +13,9 @@
     "@dina/home-node": "*",
     "@atproto/identity": "^0.5.10",
     "@atproto/repo": "^0.10.12",
-    "@dina/protocol": "*"
+    "@dina/protocol": "*",
+    "@dina/a2a": "*",
+    "@dina/net-policy": "*"
   },
   "peerDependencies": {
     "react-native": ">=0.72"
@@ -37,6 +39,10 @@
     "./repo_proof": {
       "types": "./src/repo_proof_verifier.ts",
       "default": "./src/repo_proof_verifier.ts"
+    },
+    "./policy_socket": {
+      "types": "./src/policy_socket.ts",
+      "default": "./src/policy_socket.ts"
     }
   }
 }

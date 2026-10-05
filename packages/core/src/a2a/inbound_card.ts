@@ -88,7 +88,13 @@ export interface A2ACardKey {
 
 /** What a host serving Lane 2 configures: the card key and the gateway's public origin. */
 export interface A2ACardConfig {
+  /** The key that signs the card. */
   key: A2ACardKey;
+  /**
+   * Other keys the JWK Set lists beside it (U7: a staged key, before it
+   * signs, and a replaced one, for its overlap); none by default.
+   */
+  also?: readonly A2ACardKey[];
   /** `https://host[:port]` (plain http only on loopback), no path, query or credentials. */
   publicOrigin: string;
 }
@@ -107,7 +113,12 @@ export function installA2ACardConfig(config: A2ACardConfig | null): void {
   }
   const origin = parseA2APublicOrigin(config.publicOrigin);
   if (origin === null) throw new Error('A2A public origin must be a bare https origin');
-  cardConfig = { key: { privateKey: config.key.privateKey.slice(), generation: config.key.generation }, publicOrigin: origin };
+  const copy = (k: A2ACardKey): A2ACardKey => ({ privateKey: k.privateKey.slice(), generation: k.generation });
+  cardConfig = {
+    key: copy(config.key),
+    ...(config.also !== undefined && config.also.length > 0 ? { also: config.also.map(copy) } : {}),
+    publicOrigin: origin,
+  };
 }
 
 export function getA2ACardConfig(): A2ACardConfig | null {
@@ -284,7 +295,7 @@ export async function buildInboundCard(
   if (new TextEncoder().encode(canonicalize(signed as unknown as JsonValue)).length > A2A_LIMITS.maxCardBytes) {
     return { ok: false, reason: 'card_too_large' };
   }
-  return { ok: true, card: signed, jwks: { keys: [jwk] } };
+  return { ok: true, card: signed, jwks: { keys: [jwk, ...(args.config.also ?? []).map(cardPublicJwk)] } };
 }
 
 /** A client's live grants, as the extended card's audience reads them: checked now, at build time. */

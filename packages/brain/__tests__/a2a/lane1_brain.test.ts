@@ -11,57 +11,10 @@ import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 import { createFindPersonTool } from '../../src/reasoning/people_tool';
 import { WorkflowEventConsumer, type WorkflowEventConsumerCoreClient } from '../../src/service/workflow_event_consumer';
 import { setPeopleReadBackend } from '../../src/vault_context/assembly';
+import { builderInput, type BuilderInput } from '../composition/ask_pipeline_input';
 
-import type { ChatResponse, LLMProvider } from '../../src/llm/adapters/provider';
 import type { A2AOperationStatus, Person, WorkflowEvent, WorkflowTask } from '@dina/core';
 
-type BuilderInput = Parameters<typeof buildAgenticAskPipeline>[0];
-
-function builderInput(over: Partial<BuilderInput> = {}): BuilderInput {
-  const llm: LLMProvider = {
-    name: 'fake',
-    supportsStreaming: false,
-    supportsToolCalling: true,
-    supportsEmbedding: false,
-    chat: async (): Promise<ChatResponse> => ({ content: '', toolCalls: [], model: 'fake', usage: { inputTokens: 0, outputTokens: 0 }, finishReason: 'end' }),
-    stream: () => {
-      throw new Error('not used');
-    },
-    embed: async () => {
-      throw new Error('not used');
-    },
-  };
-  const appViewClient = {
-    searchServices: async () => [],
-    searchCapabilities: async () => [],
-    isDiscoverable: async () => ({ isDiscoverable: false, capabilities: [] }),
-    searchCatalog: async () => [],
-    getProfile: async () => null,
-    resolveTrust: async () => ({}) as never,
-    searchTrust: async () => ({}) as never,
-  } as unknown as BuilderInput['appViewClient'];
-  const coreClient = {
-    findContactsByPreference: async () => [],
-    contactLookup: async () => null,
-    listPluginToolCapabilities: async () => [],
-    invokePluginTool: async () => ({ ok: false as const, code: 'install_unknown', message: 'none' }),
-    listContacts: async () => [],
-    openGroupPlan: async () => ({ ok: false as const, refusal: 'not_wired', detail: 'none' }),
-    getGroupPlan: async () => null,
-    listGroupPlanHandles: async () => [],
-    createWorkflowTask: async () => ({ task: {} as WorkflowTask, deduped: false }),
-    getWorkflowTask: async () => null,
-    completeWorkflowTask: async () => ({}) as WorkflowTask,
-  } as unknown as BuilderInput['coreClient'];
-  return {
-    llm,
-    providerName: 'gemini',
-    appViewClient,
-    orchestratorHandle: { issueQueryToDID: async () => ({ queryId: 'q', taskId: 't', toDID: 'did:plc:x', serviceName: 'x', deduped: false }) },
-    coreClient,
-    ...over,
-  };
-}
 
 describe('the proposal tools exist only where Lane 1 runs and the ask names its conversation (notes M1a, M1b)', () => {
   const A2A_TOOLS = ['delegate_to_a2a_agent', 'list_a2a_agents'];

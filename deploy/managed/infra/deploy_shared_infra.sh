@@ -181,6 +181,35 @@ ${GRANTS_HOST} {
 EOF
     fi
 
+    # UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): the host's own
+    # name and every label under it, on one wildcard certificate by DNS-01
+    # (caddy/Dockerfile). No `log` directive: Caddy then keeps no access log
+    # for these names, which would otherwise record which merchant fetched
+    # which person's profile, and when. `handle_errors` answers a failed proxy
+    # with its status: Caddy logs a handled error only at debug level, so its
+    # error log never carries a label host or a merchant's address either
+    # (both checked with Caddy 2.11.7 against a dead upstream).
+    if [ -n "${UCP_PROFILE_HOST:-}" ]; then
+        if [ -z "${UCP_ACME_CHALLENGE_DOMAIN:-}" ]; then
+            echo "Error: UCP_PROFILE_HOST needs UCP_ACME_CHALLENGE_DOMAIN (the Hetzner zone the _acme-challenge CNAME points to)." >&2
+            exit 1
+        fi
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${UCP_PROFILE_HOST}, *.${UCP_PROFILE_HOST} {
+	tls {
+		dns hetzner {env.UCP_ACME_DNS_TOKEN}
+		dns_challenge_override_domain ${UCP_ACME_CHALLENGE_DOMAIN}
+		propagation_delay 30s
+	}
+	reverse_proxy appview-web:3000
+	handle_errors {
+		respond {err.status_code}
+	}
+}
+EOF
+    fi
+
     # Optional: public landing page on the apex (+ www → apex redirect).
     # Gated on LANDING_HOST — NOT on DOMAIN — because prod AND test both set
     # DOMAIN=dinakernel.com (test just uses test-* sub-hosts). Only the env
@@ -213,8 +242,12 @@ EOF
 #    host at boot. ~seconds of downtime on the shared hosts; acceptable.
 reload_caddy() {
     info "Restarting Caddy (apply Caddyfile + provision new-host TLS)..."
+    # `up --build` first: Caddy is built (caddy/Dockerfile) and reads its DNS
+    # token from .env, so a changed image or token recreates the container. The
+    # restart then applies the mounted Caddyfile, which Caddy does not watch.
     ssh "$REMOTE" "
         cd $REMOTE_DIR/deploy
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d --build caddy
         COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml restart caddy
     "
 }
@@ -280,6 +313,18 @@ sync_files() {
         --exclude='node_modules' --exclude='dist' \
         "$PROJECT_ROOT/packages/a2a/" \
         "$REMOTE:$REMOTE_DIR/appview-src/packages/a2a/"
+    # @dina/ucp: the UCP profile host's rules (docs/UCP_IMPLEMENTATION_PLAN.md §3.5).
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' \
+        "$PROJECT_ROOT/packages/ucp/" \
+        "$REMOTE:$REMOTE_DIR/appview-src/packages/ucp/"
+    # @dina/net-policy + @dina/net-socket-node: the merchant index's vetted fetches (§3.15).
+    for pkg in net-policy net-socket-node; do
+        rsync -az --delete \
+            --exclude='node_modules' --exclude='dist' \
+            "$PROJECT_ROOT/packages/$pkg/" \
+            "$REMOTE:$REMOTE_DIR/appview-src/packages/$pkg/"
+    done
     rsync -az --delete \
         --exclude='node_modules' \
         --exclude='dist' \
@@ -353,6 +398,32 @@ sync_grants_env() {
         "# <<< grants")
     printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
         sed -i '/# >>> grants/,/# <<< grants/d' .env && cat >> .env && chmod 600 .env"
+}
+
+# -- Step 5c: Forward the UCP profile host's settings into the remote .env --
+# The same marker-block pattern as sync_grants_env. A host without its off-host
+# log is refused here and again in appview-web itself.
+sync_ucp_env() {
+    # appview-web runs with NODE_ENV=production in every environment, so test
+    # needs the bucket as much as prod does (the host refuses to start without it).
+    if [ -n "${UCP_PROFILE_HOST:-}" ] && [ -z "${UCP_LOG_S3_BUCKET:-}" ]; then
+        echo "Error: UCP_PROFILE_HOST is set without the off-host log bucket (UCP_LOG_S3_*)." >&2
+        exit 1
+    fi
+    info "Syncing UCP host env block..."
+    local block
+    block=$(printf '%s\n' \
+        "# >>> ucp (managed by deploy_shared_infra.sh - do not edit)" \
+        "UCP_PROFILE_HOST=${UCP_PROFILE_HOST:-}" \
+        "UCP_ACME_DNS_TOKEN=${UCP_ACME_DNS_TOKEN:-}" \
+        "UCP_LOG_S3_ENDPOINT=${UCP_LOG_S3_ENDPOINT:-}" \
+        "UCP_LOG_S3_REGION=${UCP_LOG_S3_REGION:-}" \
+        "UCP_LOG_S3_BUCKET=${UCP_LOG_S3_BUCKET:-}" \
+        "UCP_LOG_S3_ACCESS_KEY_ID=${UCP_LOG_S3_ACCESS_KEY_ID:-}" \
+        "UCP_LOG_S3_SECRET_ACCESS_KEY=${UCP_LOG_S3_SECRET_ACCESS_KEY:-}" \
+        "# <<< ucp")
+    printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
+        sed -i '/# >>> ucp/,/# <<< ucp/d' .env && cat >> .env && chmod 600 .env"
 }
 
 # ── Step 5: Generate secrets if not present ──
@@ -518,6 +589,7 @@ case "$ACTION" in
         sync_files
         generate_secrets
         sync_grants_env
+        sync_ucp_env
         prepare_compose
         start_services
         reload_caddy
@@ -531,6 +603,7 @@ case "$ACTION" in
         generate_caddyfile
         sync_files
         sync_grants_env
+        sync_ucp_env
         prepare_compose
         ssh "$REMOTE" "
             cd $REMOTE_DIR/deploy &&
@@ -555,6 +628,8 @@ case "$ACTION" in
         generate_caddyfile
         rsync -az --delete --exclude='infra-*.env' --exclude='infra.env' --exclude='.env' \
             "$SCRIPT_DIR/" "$REMOTE:$REMOTE_DIR/deploy/"
+        # The UCP block names a DNS token Caddy reads from .env.
+        sync_ucp_env
         reload_caddy
         health_check
         ;;

@@ -271,6 +271,22 @@ describe('AppView builds and tests the @dina/a2a it ships (notes M5 step 3)', ()
     for (const block of [push, pr]) expect(block).toContain('- "packages/a2a/**"');
   });
 
+  // UCP plan §3.15: AppView runs on every workspace package it depends on, so a change to any
+  // of them (discovery in @dina/ucp, the vetted socket) runs AppView's suites.
+  it('runs its CI on any change under every workspace package AppView depends on', () => {
+    const workflow = read('.github/workflows/appview-test.yml');
+    const triggers = workflow.slice(workflow.indexOf('\non:'), workflow.indexOf('\njobs:'));
+    const push = triggers.slice(triggers.indexOf('push:'), triggers.indexOf('pull_request:'));
+    const pr = triggers.slice(triggers.indexOf('pull_request:'));
+    const deps = Object.keys(readJson<Manifest>('appview/package.json').dependencies ?? {}).filter((d) =>
+      d.startsWith('@dina/'),
+    );
+    expect(deps).toEqual(expect.arrayContaining(['@dina/ucp', '@dina/net-policy', '@dina/net-socket-node']));
+    for (const dep of deps)
+      for (const block of [push, pr])
+        expect([dep, block.includes(`- "packages/${dep.slice('@dina/'.length)}/**"`)]).toEqual([dep, true]);
+  });
+
   // Plan X-3
   it('rebuilds @dina/a2a from source before every test and typecheck run, so a stale dist cannot pass', () => {
     const appview = readJson<Manifest>('appview/package.json');

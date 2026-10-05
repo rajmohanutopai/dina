@@ -1,0 +1,6834 @@
+{
+ "spec": {
+  "tag": "v2026-08-25",
+  "commit": "cd78fb38e819de77d9b527d110476eccb876f1bd",
+  "ucp_version": "2026-08-25"
+ },
+ "unparsed_with_ucp": {
+  "placeholder": 37,
+  "other": 7
+ },
+ "examples": [
+  {
+   "source": "common/extensions/loyalty.md:105",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.capabilities",
+    "target": "$.ucp.capabilities"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.search": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/search",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json"
+       }
+      ],
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/lookup",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/cart",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/cart.json"
+       }
+      ],
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.common.loyalty": [
+       {
+        "version": "2026-08-25",
+        "extends": [
+         "dev.ucp.shopping.catalog.search",
+         "dev.ucp.shopping.catalog.lookup",
+         "dev.ucp.shopping.cart",
+         "dev.ucp.shopping.checkout"
+        ],
+        "spec": "https://ucp.dev/2026-08-25/specification/common/extensions/loyalty",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/loyalty.json"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "common/identity-linking/index.md:476",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {},
+     "capabilities": {
+      "dev.ucp.common.identity_linking": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/identity-linking/",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/identity_linking.json",
+        "config": {
+         "providers": {
+          "app.example.login": [
+           {
+            "type": "oauth2",
+            "auth_url": "https://accounts.example-login.app/",
+            "required_claims": [
+             "email"
+            ]
+           }
+          ]
+         },
+         "scopes": {
+          "dev.ucp.shopping.order:read": {},
+          "dev.ucp.shopping.order:manage": {}
+         }
+        }
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "common/identity-linking/index.md:1118",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {},
+     "capabilities": {
+      "dev.ucp.common.identity_linking": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/identity-linking/",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/identity_linking.json",
+        "config": {
+         "scopes": {
+          "dev.ucp.shopping.order:read": {},
+          "dev.ucp.shopping.order:manage": {}
+         }
+        }
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "common/identity-linking/index.md:1156",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {},
+     "capabilities": {
+      "dev.ucp.common.identity_linking": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/identity-linking/",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/identity_linking.json",
+        "config": {
+         "scopes": {
+          "dev.ucp.shopping.checkout:manage": {},
+          "dev.ucp.shopping.order:read": {},
+          "dev.ucp.shopping.order:manage": {}
+         }
+        }
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "common/location/lookup.md:124",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       },
+       {
+        "id": "downtown-store"
+       }
+      ],
+      "name": "Downtown Store",
+      "address": {
+       "street_address": "100 Broadway",
+       "address_locality": "New York",
+       "address_region": "NY",
+       "address_country": "US",
+       "postal_code": "10005"
+      },
+      "geo": {
+       "latitude": 40.707,
+       "longitude": -74.011
+      },
+      "amenities": {
+       "dev.ucp.amenity.shopping.curbside_pickup": {
+        "description": "Curbside pickup"
+       },
+       "dev.ucp.amenity.shopping.in_store_pickup": {
+        "description": "In-store pickup"
+       },
+       "dev.ucp.amenity.parking": {
+        "description": "On-site parking"
+       }
+      },
+      "timezone": "America/New_York",
+      "hours": [
+       {
+        "day": "monday",
+        "opens": "09:00",
+        "closes": "21:00"
+       },
+       {
+        "day": "tuesday",
+        "opens": "09:00",
+        "closes": "12:00"
+       },
+       {
+        "day": "tuesday",
+        "opens": "13:00",
+        "closes": "21:00"
+       },
+       {
+        "day": "wednesday",
+        "opens": "09:00",
+        "closes": "21:00"
+       },
+       {
+        "day": "thursday",
+        "opens": "09:00",
+        "closes": "21:00"
+       },
+       {
+        "day": "friday",
+        "opens": "09:00",
+        "closes": "22:00"
+       },
+       {
+        "day": "saturday",
+        "opens": "10:00",
+        "closes": "20:00"
+       }
+      ],
+      "exception_hours": [
+       {
+        "title": "Thanksgiving",
+        "valid_from": "2026-11-26",
+        "valid_through": "2026-11-26"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/lookup.md:210",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       }
+      ],
+      "name": "Downtown Store"
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/lookup.md:252",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       }
+      ],
+      "name": "Downtown Store"
+     }
+    ],
+    "messages": [
+     {
+      "type": "info",
+      "code": "not_found",
+      "content": "Unable to find the location associated with loc_invalid_id."
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/lookup.md:301",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       }
+      ],
+      "name": "Downtown Store"
+     },
+     {
+      "id": "loc_uptown",
+      "inputs": [
+       {
+        "id": "loc_uptown"
+       }
+      ],
+      "name": "Uptown Store"
+     }
+    ],
+    "messages": [
+     {
+      "type": "info",
+      "code": "batch_limit_applied",
+      "content": "Processed the first 2 of 3 distinct identifiers; 1 identifier was not processed."
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/mcp.md:28",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.common": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/common/mcp.openrpc.json",
+        "endpoint": "https://business.example.com/ucp/mcp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/location/search",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/location_search.json"
+       }
+      ],
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/location/lookup",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/location_lookup.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "common/location/mcp.md:117",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/location_search",
+    "op": "search",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_valley_grocers",
+      "name": "Valley Grocers"
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/mcp.md:184",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       }
+      ],
+      "name": "Downtown Store"
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/rest.md:29",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.common": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/common/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/location/search",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/location_search.json"
+       }
+      ],
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/location/lookup",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/location_lookup.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "common/location/rest.md:95",
+   "annotation": {
+    "schema": "common/location_search",
+    "op": "search",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_valley_grocers",
+      "name": "Valley Grocers"
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/rest.md:145",
+   "annotation": {
+    "schema": "common/location_lookup",
+    "op": "lookup",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown",
+      "inputs": [
+       {
+        "id": "loc_downtown"
+       }
+      ],
+      "name": "Downtown Store"
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/search.md:369",
+   "annotation": {
+    "schema": "common/location_search",
+    "op": "search",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_valley_grocers",
+      "name": "Valley Grocers",
+      "address": {
+       "street_address": "789 Maple Ave",
+       "address_locality": "Mountain View",
+       "address_region": "CA",
+       "address_country": "US",
+       "postal_code": "94043"
+      },
+      "geo": {
+       "latitude": 37.42,
+       "longitude": -122.08
+      },
+      "amenities": {
+       "dev.ucp.amenity.shopping.curbside_pickup": {
+        "description": "Curbside pickup"
+       },
+       "dev.ucp.amenity.shopping.in_store_pickup": {
+        "description": "In-store pickup"
+       },
+       "dev.ucp.amenity.parking": {
+        "description": "On-site parking"
+       },
+       "com.example.amenity.in_person_installation": {
+        "description": "In-person installation by appointment"
+       }
+      },
+      "timezone": "America/Los_Angeles",
+      "hours": [
+       {
+        "day": "monday",
+        "opens": "08:00",
+        "closes": "21:00"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "source": "common/location/search.md:450",
+   "annotation": {
+    "schema": "common/location_search",
+    "op": "search",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.location.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "locations": [
+     {
+      "id": "loc_downtown_electronics",
+      "name": "Downtown Electronics",
+      "address": {
+       "street_address": "100 Broadway",
+       "address_locality": "New York",
+       "address_region": "NY",
+       "address_country": "US",
+       "postal_code": "10005"
+      },
+      "amenities": {
+       "dev.ucp.amenity.shopping.curbside_pickup": {
+        "description": "Curbside pickup"
+       },
+       "dev.ucp.amenity.shopping.in_store_pickup": {
+        "description": "In-store pickup"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "source": "overview/index.md:374",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "request_constraints": {
+      "path": "$['line_items'][*]",
+      "properties": {
+       "quantity": {
+        "const": 1
+       }
+      }
+     }
+    },
+    "id": "cart_123",
+    "line_items": [
+     {
+      "id": "line_123",
+      "item": {
+       "id": "sku_123",
+       "title": "Bulk screws",
+       "price": 1200
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1200
+       },
+       {
+        "type": "total",
+        "amount": 1200
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1200
+     },
+     {
+      "type": "total",
+      "amount": 1200
+     }
+    ]
+   }
+  },
+  {
+   "source": "overview/index.md:412",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25"
+    },
+    "id": "cart_123",
+    "line_items": [
+     {
+      "id": "line_123",
+      "item": {
+       "id": "sku_123",
+       "title": "Bulk screws",
+       "price": 1200
+      },
+      "quantity": 100,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 120000
+       },
+       {
+        "type": "total",
+        "amount": 120000
+       }
+      ],
+      "ucp": {
+       "request_constraints": {
+        "path": "$['line_items'][?@['id'] == 'line_123']",
+        "properties": {
+         "quantity": {
+          "const": 100
+         }
+        }
+       }
+      }
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 120000
+     },
+     {
+      "type": "total",
+      "amount": 120000
+     }
+    ]
+   }
+  },
+  {
+   "source": "overview/index.md:466",
+   "annotation": {
+    "schema": "shopping/discount",
+    "def": "dev.ucp.shopping.checkout",
+    "op": "update",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "success",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.discount": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {},
+     "request_constraints": {
+      "required": [
+       "discounts"
+      ],
+      "properties": {
+       "discounts": {
+        "required": [
+         "codes"
+        ],
+        "properties": {
+         "codes": {
+          "const": [
+           "ACME-X7Q9-L2M4"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "id": "checkout_123",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "line_123",
+      "item": {
+       "id": "sku_123",
+       "title": "Bulk screws",
+       "price": 1200
+      },
+      "quantity": 24,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 28800
+       },
+       {
+        "type": "total",
+        "amount": 28800
+       }
+      ]
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 28800
+     },
+     {
+      "type": "total",
+      "amount": 28800
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://business.example/terms"
+     }
+    ],
+    "discounts": {
+     "codes": [
+      "ACME-X7Q9-L2M4"
+     ]
+    }
+   }
+  },
+  {
+   "source": "overview/index.md:537",
+   "annotation": {
+    "schema": "common/types/available_payment_instrument",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "type": "card",
+    "ucp": {
+     "request_constraints": {
+      "path": "$['payment']['instruments'][?@['handler_id'] == 'processor_1' && @['type'] == 'card']",
+      "required": [
+       "billing_address"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "overview/index.md:567",
+   "annotation": {
+    "schema": "common/types/available_payment_instrument",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "type": "card",
+    "ucp": {
+     "request_constraints": {
+      "path": "$['payment']['instruments'][?@['handler_id'] == 'processor_1' && @['type'] == 'card']",
+      "required": [
+       "credential"
+      ],
+      "properties": {
+       "credential": {
+        "anyOf": [
+         {
+          "properties": {
+           "type": {
+            "const": "pan"
+           }
+          },
+          "required": [
+           "cvc"
+          ]
+         },
+         {
+          "properties": {
+           "type": {
+            "const": "network_token"
+           }
+          },
+          "required": [
+           "cryptogram",
+           "eci_value"
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "source": "overview/index.md:1287",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview/",
+        "transport": "rest",
+        "endpoint": "https://business.example.com/ucp/v1",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json"
+       },
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview/",
+        "transport": "mcp",
+        "endpoint": "https://business.example.com/ucp/mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json"
+       },
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview/",
+        "transport": "a2a",
+        "endpoint": "https://business.example.com/.well-known/agent-card.json"
+       },
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview/",
+        "transport": "embedded",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/embedded.openrpc.json"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.shopping.fulfillment": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/extensions/fulfillment",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/fulfillment.json",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ],
+      "dev.ucp.shopping.discount": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/extensions/discount",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/discount.json",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ],
+      "dev.ucp.common.identity_linking": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/identity-linking/",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/identity_linking.json",
+        "config": {
+         "providers": {
+          "com.example.idp": [
+           {
+            "type": "oauth2",
+            "auth_url": "https://accounts.example.com/"
+           }
+          ]
+         },
+         "scopes": {
+          "dev.ucp.shopping.order:read": {},
+          "dev.ucp.shopping.order:manage": {}
+         }
+        }
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.processor_tokenizer": [
+       {
+        "id": "processor_tokenizer",
+        "version": "2026-08-25",
+        "spec": "https://example.com/specs/payments/processor_tokenizer",
+        "schema": "https://example.com/specs/payments/merchant_tokenizer.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard",
+              "amex"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "type": "CARD",
+         "tokenization_specification": {
+          "type": "PUSH",
+          "parameters": {
+           "token_retrieval_url": "https://api.psp.example.com/v1/tokens"
+          }
+         }
+        }
+       }
+      ]
+     }
+    },
+    "keys": [
+     {
+      "kid": "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "JrQLj5P_89iXES9-vFgrIy29clF9CC_oPPsw3c5D0bs",
+      "use": "sig",
+      "alg": "EdDSA"
+     },
+     {
+      "kid": "business_2025",
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "qIVYZVLCrPZHGHjP17CTW0_-D9Lfw0EkjqF7xB4FivA",
+      "y": "Mc4nN9LTDOBhfoUeg8Ye9WedFRhnZXZJA12Qp0zZ6F0",
+      "use": "sig",
+      "alg": "ES256"
+     }
+    ]
+   }
+  },
+  {
+   "source": "overview/index.md:1460",
+   "annotation": {
+    "schema": "profile",
+    "def": "platform_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview/",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+        "endpoint": "https://platform.example.com/ucp/v1"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.shopping.fulfillment": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/extensions/fulfillment",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/fulfillment.json",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ],
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/order",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/order.json",
+        "config": {
+         "webhook_url": "https://platform.example.com/webhooks/ucp/orders"
+        }
+       }
+      ],
+      "dev.ucp.common.identity_linking": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/common/identity-linking/",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/identity_linking.json"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.google.pay": [
+       {
+        "id": "gpay_1234",
+        "version": "2024-12-03",
+        "spec": "https://developers.google.com/merchant/ucp/guides/gpay-payment-handler",
+        "schema": "https://pay.google.com/gp/p/ucp/2026-01-11/schemas/gpay_config.json"
+       }
+      ],
+      "dev.shopify.shop_pay": [
+       {
+        "id": "shop_pay_1234",
+        "version": "2026-08-25",
+        "spec": "https://shopify.dev/ucp/shop-pay-handler",
+        "schema": "https://shopify.dev/ucp/schemas/shop-pay-config.json",
+        "available_instruments": [
+         {
+          "type": "shop_pay"
+         }
+        ]
+       }
+      ],
+      "com.example.processor_tokenizer": [
+       {
+        "id": "processor_tokenizer",
+        "version": "2026-08-25",
+        "spec": "https://example.com/specs/payments/processor_tokenizer-payment",
+        "schema": "https://example.com/schemas/payments/delegate-payment.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard"
+             ]
+            }
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "keys": [
+     {
+      "kid": "platform_2025",
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+      "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
+      "use": "sig",
+      "alg": "ES256"
+     }
+    ]
+   }
+  },
+  {
+   "source": "overview/index.md:1714",
+   "annotation": {
+    "reason": "\"illustrative"
+   },
+   "value": {
+    "providers": {
+     "app.example.login": [
+      {
+       "type": "oauth2",
+       "auth_url": "https://login.example.app"
+      }
+     ],
+     "com.google": [
+      {
+       "type": "oauth2",
+       "auth_url": "https://accounts.google.com"
+      }
+     ]
+    },
+    "ucp": {
+     "map_order": {
+      "providers": [
+       "app.example.login",
+       "com.google"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "overview/index.md:1943",
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {}
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "capabilities_incompatible",
+      "content": "No compatible capabilities in the intersection",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com"
+   }
+  },
+  {
+   "source": "overview/index.md:2025",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "capabilities_incompatible",
+      "content": "No compatible capabilities in the intersection",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com"
+   }
+  },
+  {
+   "source": "overview/index.md:3495",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-23",
+     "supported_versions": {
+      "2026-01-11": "https://business.example.com/.well-known/ucp/2026-01-11"
+     },
+     "services": {},
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "overview/index.md:3581",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "version_unsupported",
+      "content": "Version 2026-01-12 is not supported. This business implements version 2026-01-11.",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "payment/examples/encrypted-credential-payment-handler.md:145",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "payment_handlers": {
+      "com.example.platform_encrypted": [
+       {
+        "id": "platform_encrypted",
+        "version": "2026-08-25",
+        "spec": "https://platform.example.com/ucp/encrypted-handler.json",
+        "schema": "https://platform.example.com/ucp/encrypted-handler/schema.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "business_id": "merchant_abc123",
+         "public_key_id": "key_2026_01"
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/examples/encrypted-credential-payment-handler.md:258",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "payment_handlers": {
+      "com.example.platform_encrypted": [
+       {
+        "id": "platform_encrypted",
+        "version": "2026-08-25",
+        "spec": "https://platform.example.com/ucp/encrypted-handler.json",
+        "schema": "https://platform.example.com/ucp/encrypted-handler/schema.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard",
+              "amex",
+              "discover"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "platform_id": "platform_abc123",
+         "supported_algorithms": [
+          "RSA-OAEP-256",
+          "RSA-OAEP-384"
+         ]
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/examples/platform-tokenizer-payment-handler.md:196",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "payment_handlers": {
+      "com.example.platform_tokenizer": [
+       {
+        "id": "platform_wallet",
+        "version": "2026-08-25",
+        "spec": "https://platform.example.com/ucp/handler.json",
+        "schema": "https://platform.example.com/ucp/handler/schema.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "business_id": "business_abc123"
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/examples/platform-tokenizer-payment-handler.md:331",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "payment_handlers": {
+      "com.example.platform_tokenizer": [
+       {
+        "id": "platform_wallet",
+        "version": "2026-08-25",
+        "spec": "https://platform.example.com/ucp/handler.json",
+        "schema": "https://platform.example.com/ucp/handler/schema.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard",
+              "amex",
+              "discover"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "platform_id": "platform_abc123",
+         "default_token_ttl_seconds": 900
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/examples/processor-tokenizer-payment-handler.md:111",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "payment_handlers": {
+      "com.example.processor_tokenizer": [
+       {
+        "id": "processor_tokenizer",
+        "version": "2026-08-25",
+        "spec": "https://example.com/ucp/processor-tokenizer.json",
+        "schema": "https://example.com/ucp/processor-tokenizer/schema.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard",
+              "amex"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "business_id": "merchant_xyz789"
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/examples/processor-tokenizer-payment-handler.md:199",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.payment_handlers",
+    "target": "$.ucp.payment_handlers"
+   },
+   "value": {
+    "ucp": {
+     "payment_handlers": {
+      "com.example.processor_tokenizer": [
+       {
+        "id": "processor_tokenizer",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard",
+              "amex"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {
+         "environment": "production",
+         "business_id": "merchant_xyz789"
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/ap2-mandates.md:69",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {},
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.common.payment.ap2_mandate": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/payment/extensions/ap2-mandates",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/payment_ap2_mandate.json",
+        "extends": "dev.ucp.shopping.checkout",
+        "config": {
+         "vp_formats_supported": {
+          "dc+sd-jwt": {}
+         }
+        }
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/authentication.md:51",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.capabilities",
+    "target": "$.ucp.capabilities"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.payment.authentication": [
+       {
+        "version": "2026-08-25",
+        "extends": "dev.ucp.shopping.checkout",
+        "spec": "https://ucp.dev/2026-08-25/specification/payment/extensions/authentication",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/payment_authentication.json"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/authentication.md:85",
+   "annotation": {
+    "schema": "common/payment_authentication",
+    "def": "dev.ucp.shopping.checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "success",
+     "capabilities": {
+      "dev.ucp.common.payment.authentication": [
+       {
+        "version": "2026-08-25",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.card": [
+       {
+        "id": "card_handler_1",
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "checkout_123",
+    "status": "complete_in_progress",
+    "currency": "USD",
+    "line_items": [],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 100
+     },
+     {
+      "type": "total",
+      "amount": 100
+     }
+    ],
+    "links": [],
+    "payment": {
+     "instruments": [
+      {
+       "id": "instrument_1",
+       "handler_id": "card_handler_1",
+       "type": "card",
+       "selected": true
+      }
+     ]
+    },
+    "actions": {
+     "dev.ucp.common.payment.device_data_collection": [
+      {
+       "id": "ddc-1",
+       "config": {
+        "payment_instrument_id": "instrument_1",
+        "url": "https://payments.example.com/3ds/method/session_123"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/terms.md:266",
+   "annotation": {
+    "reason": "\"capability"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.common.payment.terms": [
+       {
+        "version": "2026-08-25",
+        "extends": [
+         "dev.ucp.shopping.checkout",
+         "dev.ucp.shopping.order"
+        ],
+        "spec": "https://ucp.dev/2026-08-25/specification/payment/extensions/terms",
+        "schema": "https://ucp.dev/2026-08-25/schemas/common/payment_terms.json"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/terms.md:403",
+   "annotation": {
+    "schema": "common/payment_terms",
+    "def": "dev.ucp.shopping.checkout",
+    "op": "update",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.common.payment.terms": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.card_handler": [
+       {
+        "id": "card_handler",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "card"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    "id": "checkout_123",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://example.com/tos"
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 120000
+     },
+     {
+      "type": "total",
+      "amount": 120000
+     }
+    ],
+    "payment": {
+     "selected_term_id": "pt_deposit_balance",
+     "terms": [
+      {
+       "id": "pt_pay_now",
+       "title": "Pay now",
+       "description": {
+        "plain": "Save $50 by paying for your stay today."
+       },
+       "schedules": [
+        {
+         "id": "sched_full",
+         "type": "immediate",
+         "description": {
+          "plain": "Due today when you book."
+         },
+         "amount": 115000
+        }
+       ]
+      },
+      {
+       "id": "pt_deposit_balance",
+       "title": "First night now, balance at check-in",
+       "description": {
+        "plain": "Hold your room with one night's rate."
+       },
+       "schedules": [
+        {
+         "id": "sched_first_night",
+         "type": "immediate",
+         "description": {
+          "plain": "Due today when you book."
+         },
+         "amount": 30000
+        },
+        {
+         "id": "sched_balance",
+         "type": "deferred",
+         "description": {
+          "plain": "Due at check-in on September 1, 2026 at 3:00 PM PDT."
+         },
+         "due_at": "2026-09-01T15:00:00-07:00",
+         "amount": 90000
+        }
+       ]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "payment/extensions/terms.md:503",
+   "annotation": {
+    "schema": "common/payment_terms",
+    "def": "dev.ucp.shopping.order",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.common.payment.terms": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_9f2",
+    "checkout_id": "checkout_7c1",
+    "permalink_url": "https://hotel.example.com/orders/9f2",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_room",
+      "item": {
+       "id": "room_deluxe",
+       "title": "Deluxe King, 3 nights",
+       "price": 120000
+      },
+      "quantity": {
+       "original": 1,
+       "total": 1,
+       "fulfilled": 0
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 120000
+       },
+       {
+        "type": "total",
+        "amount": 120000
+       }
+      ],
+      "status": "processing"
+     }
+    ],
+    "fulfillment": {
+     "expectations": []
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 120000
+     },
+     {
+      "type": "total",
+      "amount": 120000
+     }
+    ],
+    "payment": {
+     "accepted_term": {
+      "id": "pt_deposit_balance",
+      "title": "First night now, balance at check-in",
+      "description": {
+       "plain": "Hold your room with one night's rate."
+      },
+      "schedules": [
+       {
+        "id": "sched_first_night",
+        "type": "immediate",
+        "description": {
+         "plain": "Due today when you book."
+        },
+        "amount": 30000
+       },
+       {
+        "id": "sched_balance",
+        "type": "deferred",
+        "description": {
+         "plain": "Due at check-in on September 1, 2026 at 3:00 PM PDT."
+        },
+        "due_at": "2026-09-01T15:00:00-07:00",
+        "amount": 90000
+       }
+      ]
+     }
+    },
+    "policies": [
+     {
+      "type": "com.example.policy.deposit_forfeiture",
+      "applies_to": [
+       "$.payment.accepted_term"
+      ],
+      "description": {
+       "plain": "The $300 deposit is non-refundable within 48 hours of arrival."
+      }
+     }
+    ]
+   }
+  },
+  {
+   "source": "permalink.md:59",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.capabilities",
+    "target": "$.ucp.capabilities"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.permalink": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/permalink",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/permalink.json",
+        "config": {
+         "endpoint": "https://merchant.example/buy"
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/cart/index.md:185",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json",
+        "endpoint": "https://business.example.com/ucp/mcp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/cart",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/cart.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:170",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:228",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:291",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:347",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Cart not found or has expired",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:442",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 3,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 7500
+       },
+       {
+        "type": "total",
+        "amount": 7500
+       }
+      ]
+     },
+     {
+      "id": "li_2",
+      "item": {
+       "id": "item_456",
+       "title": "Blue Jeans",
+       "price": 7500
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 7500
+       },
+       {
+        "type": "total",
+        "amount": 7500
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 15000
+     },
+     {
+      "type": "total",
+      "amount": 15000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:548",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123"
+   }
+  },
+  {
+   "source": "shopping/cart/mcp.md:619",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Cart not found or has expired",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:29",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp/v1"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/cart",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/cart.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:132",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000,
+      "display_text": "Estimated total (taxes calculated at checkout)"
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:182",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:222",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:269",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Cart not found or has expired",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:343",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 3,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 7500
+       },
+       {
+        "type": "total",
+        "amount": 7500
+       }
+      ]
+     },
+     {
+      "id": "li_2",
+      "item": {
+       "id": "item_456",
+       "title": "Blue Jeans",
+       "price": 7500
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 7500
+       },
+       {
+        "type": "total",
+        "amount": 7500
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 15000
+     },
+     {
+      "type": "total",
+      "amount": 15000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123",
+    "expires_at": "2026-01-16T12:00:00Z"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:426",
+   "annotation": {
+    "schema": "shopping/cart",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "cart_abc123",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "total",
+      "amount": 5000
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout?cart=cart_abc123"
+   }
+  },
+  {
+   "source": "shopping/cart/rest.md:523",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.cart": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Cart not found or has expired",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/catalog/index.md:148",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "get_product"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25"
+    },
+    "product": {
+     "id": "prod_bananas",
+     "title": "Bananas",
+     "description": {
+      "plain": "Fresh bananas sold by the pound."
+     },
+     "price_range": {
+      "min": {
+       "amount": 79,
+       "currency": "USD"
+      },
+      "max": {
+       "amount": 79,
+       "currency": "USD"
+      }
+     },
+     "variants": [
+      {
+       "id": "var_bananas",
+       "title": "Bananas",
+       "description": {
+        "plain": "Fresh bananas sold by the pound."
+       },
+       "price": {
+        "amount": 79,
+        "currency": "USD"
+       },
+       "quantity_unit": {
+        "unit": "LBR",
+        "scale": 2,
+        "display_text": "lb",
+        "increment": 25
+       },
+       "availability": {
+        "available": true
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json",
+        "endpoint": "https://business.example.com/ucp/mcp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.catalog.search": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/search",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json"
+       }
+      ],
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/lookup",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:163",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/catalog_search",
+    "op": "search",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [
+     {
+      "id": "prod_abc123",
+      "handle": "blue-runner-pro",
+      "title": "Blue Runner Pro",
+      "description": {
+       "plain": "Lightweight running shoes with responsive cushioning."
+      },
+      "url": "https://business.example.com/products/blue-runner-pro",
+      "categories": [
+       {
+        "value": "187",
+        "taxonomy": "google_product_category"
+       },
+       {
+        "value": "aa-8-1",
+        "taxonomy": "shopify"
+       },
+       {
+        "value": "Footwear > Running",
+        "taxonomy": "merchant"
+       }
+      ],
+      "price_range": {
+       "min": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 12000,
+        "currency": "USD"
+       }
+      },
+      "media": [
+       {
+        "type": "image",
+        "url": "https://cdn.example.com/products/blue-runner-pro.jpg",
+        "alt_text": "Blue Runner Pro running shoes"
+       }
+      ],
+      "options": [
+       {
+        "name": "Size",
+        "values": [
+         {
+          "label": "8"
+         },
+         {
+          "label": "9"
+         },
+         {
+          "label": "10"
+         },
+         {
+          "label": "11"
+         },
+         {
+          "label": "12"
+         }
+        ]
+       }
+      ],
+      "variants": [
+       {
+        "id": "prod_abc123_size10",
+        "sku": "BRP-BLU-10",
+        "title": "Size 10",
+        "description": {
+         "plain": "Size 10 variant"
+        },
+        "price": {
+         "amount": 12000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "options": [
+         {
+          "name": "Size",
+          "label": "10"
+         }
+        ],
+        "tags": [
+         "running",
+         "road",
+         "neutral"
+        ],
+        "seller": {
+         "name": "Example Store",
+         "links": [
+          {
+           "type": "refund_policy",
+           "url": "https://business.example.com/refunds"
+          }
+         ]
+        }
+       }
+      ],
+      "rating": {
+       "value": 4.5,
+       "scale_max": 5,
+       "count": 128
+      },
+      "metadata": {
+       "collection": "Winter 2026",
+       "technology": {
+        "midsole": "React foam",
+        "outsole": "Continental rubber"
+       }
+      }
+     }
+    ],
+    "pagination": {
+     "cursor": "eyJwYWdlIjoxfQ==",
+     "has_next_page": true,
+     "total_count": 47
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:312",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "lookup",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [
+     {
+      "id": "prod_abc123",
+      "title": "Blue Runner Pro",
+      "description": {
+       "plain": "Lightweight running shoes with responsive cushioning."
+      },
+      "price_range": {
+       "min": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 12000,
+        "currency": "USD"
+       }
+      },
+      "variants": [
+       {
+        "id": "prod_abc123_size10",
+        "sku": "BRP-BLU-10",
+        "title": "Size 10",
+        "description": {
+         "plain": "Size 10 variant"
+        },
+        "price": {
+         "amount": 12000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "inputs": [
+         {
+          "id": "prod_abc123",
+          "match": "featured"
+         }
+        ],
+        "tags": [
+         "running",
+         "road",
+         "neutral"
+        ],
+        "seller": {
+         "name": "Example Store",
+         "links": [
+          {
+           "type": "refund_policy",
+           "url": "https://business.example.com/policies/refunds"
+          }
+         ]
+        }
+       }
+      ],
+      "metadata": {
+       "collection": "Winter 2026",
+       "technology": {
+        "midsole": "React foam",
+        "outsole": "Continental rubber"
+       }
+      }
+     },
+     {
+      "id": "prod_def456",
+      "title": "Trail Master X",
+      "description": {
+       "plain": "Rugged trail running shoes with aggressive tread."
+      },
+      "price_range": {
+       "min": {
+        "amount": 15000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 15000,
+        "currency": "USD"
+       }
+      },
+      "variants": [
+       {
+        "id": "var_xyz789",
+        "sku": "TMX-GRN-11",
+        "title": "Size 11 - Green",
+        "description": {
+         "plain": "Size 11 Green variant"
+        },
+        "price": {
+         "amount": 15000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "inputs": [
+         {
+          "id": "var_xyz789",
+          "match": "exact"
+         }
+        ],
+        "tags": [
+         "trail",
+         "waterproof"
+        ],
+        "seller": {
+         "name": "Example Store"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:506",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "get_product",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "product": {
+     "id": "prod_abc123",
+     "handle": "runner-pro",
+     "title": "Runner Pro",
+     "description": {
+      "plain": "Lightweight running shoes with responsive cushioning."
+     },
+     "url": "https://business.example.com/products/runner-pro",
+     "price_range": {
+      "min": {
+       "amount": 12000,
+       "currency": "USD"
+      },
+      "max": {
+       "amount": 15000,
+       "currency": "USD"
+      }
+     },
+     "media": [
+      {
+       "type": "image",
+       "url": "https://cdn.example.com/products/runner-pro-blue.jpg",
+       "alt_text": "Runner Pro in Blue"
+      }
+     ],
+     "options": [
+      {
+       "name": "Color",
+       "values": [
+        {
+         "label": "Blue",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "Red",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "Green",
+         "available": false,
+         "exists": true
+        }
+       ]
+      },
+      {
+       "name": "Size",
+       "values": [
+        {
+         "label": "8",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "9",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "10",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "11",
+         "available": false,
+         "exists": false
+        },
+        {
+         "label": "12",
+         "available": true,
+         "exists": true
+        }
+       ]
+      }
+     ],
+     "selected": [
+      {
+       "name": "Color",
+       "label": "Blue"
+      }
+     ],
+     "variants": [
+      {
+       "id": "prod_abc123_blu_10",
+       "sku": "BRP-BLU-10",
+       "title": "Blue, Size 10",
+       "description": {
+        "plain": "Blue, Size 10"
+       },
+       "price": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "availability": {
+        "available": true
+       },
+       "options": [
+        {
+         "name": "Color",
+         "label": "Blue"
+        },
+        {
+         "name": "Size",
+         "label": "10"
+        }
+       ]
+      },
+      {
+       "id": "prod_abc123_blu_12",
+       "sku": "BRP-BLU-12",
+       "title": "Blue, Size 12",
+       "description": {
+        "plain": "Blue, Size 12"
+       },
+       "price": {
+        "amount": 15000,
+        "currency": "USD"
+       },
+       "availability": {
+        "available": true
+       },
+       "options": [
+        {
+         "name": "Color",
+         "label": "Blue"
+        },
+        {
+         "name": "Size",
+         "label": "12"
+        }
+       ]
+      }
+     ],
+     "rating": {
+      "value": 4.5,
+      "scale_max": 5,
+      "count": 128
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:606",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Product not found: prod_invalid",
+      "severity": "unrecoverable"
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/catalog/mcp.md:658",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "lookup",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [],
+    "messages": [
+     {
+      "type": "info",
+      "code": "not_found",
+      "content": "prod_invalid"
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.catalog.search": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/search",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json"
+       }
+      ],
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/catalog/lookup",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:104",
+   "annotation": {
+    "schema": "shopping/catalog_search",
+    "op": "search"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.search": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [
+     {
+      "id": "prod_abc123",
+      "handle": "blue-runner-pro",
+      "title": "Blue Runner Pro",
+      "description": {
+       "plain": "Lightweight running shoes with responsive cushioning."
+      },
+      "url": "https://business.example.com/products/blue-runner-pro",
+      "categories": [
+       {
+        "value": "187",
+        "taxonomy": "google_product_category"
+       },
+       {
+        "value": "aa-8-1",
+        "taxonomy": "shopify"
+       },
+       {
+        "value": "Footwear > Running",
+        "taxonomy": "merchant"
+       }
+      ],
+      "price_range": {
+       "min": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 12000,
+        "currency": "USD"
+       }
+      },
+      "media": [
+       {
+        "type": "image",
+        "url": "https://cdn.example.com/products/blue-runner-pro.jpg",
+        "alt_text": "Blue Runner Pro running shoes"
+       }
+      ],
+      "options": [
+       {
+        "name": "Size",
+        "values": [
+         {
+          "label": "8"
+         },
+         {
+          "label": "9"
+         },
+         {
+          "label": "10"
+         },
+         {
+          "label": "11"
+         },
+         {
+          "label": "12"
+         }
+        ]
+       }
+      ],
+      "variants": [
+       {
+        "id": "prod_abc123_size10",
+        "sku": "BRP-BLU-10",
+        "title": "Size 10",
+        "description": {
+         "plain": "Size 10 variant"
+        },
+        "price": {
+         "amount": 12000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "options": [
+         {
+          "name": "Size",
+          "label": "10"
+         }
+        ],
+        "tags": [
+         "running",
+         "road",
+         "neutral"
+        ],
+        "seller": {
+         "name": "Example Store",
+         "links": [
+          {
+           "type": "refund_policy",
+           "url": "https://business.example.com/refunds"
+          }
+         ]
+        }
+       }
+      ],
+      "rating": {
+       "value": 4.5,
+       "scale_max": 5,
+       "count": 128
+      },
+      "metadata": {
+       "collection": "Winter 2026",
+       "technology": {
+        "midsole": "React foam",
+        "outsole": "Continental rubber"
+       }
+      }
+     }
+    ],
+    "pagination": {
+     "cursor": "eyJwYWdlIjoxfQ==",
+     "has_next_page": true,
+     "total_count": 47
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:228",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "lookup"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [
+     {
+      "id": "prod_abc123",
+      "title": "Blue Runner Pro",
+      "description": {
+       "plain": "Zapatillas ligeras con amortiguación reactiva."
+      },
+      "price_range": {
+       "min": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 12000,
+        "currency": "USD"
+       }
+      },
+      "variants": [
+       {
+        "id": "prod_abc123_size10",
+        "sku": "BRP-BLU-10",
+        "title": "Talla 10",
+        "description": {
+         "plain": "Variante talla 10"
+        },
+        "price": {
+         "amount": 12000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "inputs": [
+         {
+          "id": "prod_abc123",
+          "match": "featured"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "id": "prod_def456",
+      "title": "Trail Blazer X",
+      "description": {
+       "plain": "Zapatillas de trail con tracción superior."
+      },
+      "price_range": {
+       "min": {
+        "amount": 15000,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 15000,
+        "currency": "USD"
+       }
+      },
+      "variants": [
+       {
+        "id": "prod_def456_size10",
+        "sku": "TBX-GRN-10",
+        "title": "Talla 10",
+        "description": {
+         "plain": "Variante talla 10"
+        },
+        "price": {
+         "amount": 15000,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true
+        },
+        "inputs": [
+         {
+          "id": "prod_def456",
+          "match": "featured"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:386",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "get_product"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "product": {
+     "id": "prod_abc123",
+     "handle": "runner-pro",
+     "title": "Runner Pro",
+     "description": {
+      "plain": "Lightweight running shoes with responsive cushioning."
+     },
+     "url": "https://business.example.com/products/runner-pro",
+     "price_range": {
+      "min": {
+       "amount": 12000,
+       "currency": "USD"
+      },
+      "max": {
+       "amount": 15000,
+       "currency": "USD"
+      }
+     },
+     "media": [
+      {
+       "type": "image",
+       "url": "https://cdn.example.com/products/runner-pro-blue.jpg",
+       "alt_text": "Runner Pro in Blue"
+      }
+     ],
+     "options": [
+      {
+       "name": "Color",
+       "values": [
+        {
+         "label": "Blue",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "Red",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "Green",
+         "available": false,
+         "exists": true
+        }
+       ]
+      },
+      {
+       "name": "Size",
+       "values": [
+        {
+         "label": "8",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "9",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "10",
+         "available": true,
+         "exists": true
+        },
+        {
+         "label": "11",
+         "available": false,
+         "exists": false
+        },
+        {
+         "label": "12",
+         "available": true,
+         "exists": true
+        }
+       ]
+      }
+     ],
+     "selected": [
+      {
+       "name": "Color",
+       "label": "Blue"
+      }
+     ],
+     "variants": [
+      {
+       "id": "prod_abc123_blu_10",
+       "sku": "BRP-BLU-10",
+       "title": "Blue, Size 10",
+       "description": {
+        "plain": "Blue, Size 10"
+       },
+       "price": {
+        "amount": 12000,
+        "currency": "USD"
+       },
+       "availability": {
+        "available": true
+       },
+       "options": [
+        {
+         "name": "Color",
+         "label": "Blue"
+        },
+        {
+         "name": "Size",
+         "label": "10"
+        }
+       ]
+      },
+      {
+       "id": "prod_abc123_blu_12",
+       "sku": "BRP-BLU-12",
+       "title": "Blue, Size 12",
+       "description": {
+        "plain": "Blue, Size 12"
+       },
+       "price": {
+        "amount": 15000,
+        "currency": "USD"
+       },
+       "availability": {
+        "available": true
+       },
+       "options": [
+        {
+         "name": "Color",
+         "label": "Blue"
+        },
+        {
+         "name": "Size",
+         "label": "12"
+        }
+       ]
+      }
+     ],
+     "rating": {
+      "value": 4.5,
+      "scale_max": 5,
+      "count": 128
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:485",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "content": "Product not found: prod_invalid",
+      "severity": "unrecoverable"
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/catalog/rest.md:553",
+   "annotation": {
+    "schema": "shopping/catalog_lookup",
+    "op": "lookup"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.catalog.lookup": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "products": [],
+    "messages": [
+     {
+      "type": "info",
+      "code": "not_found",
+      "content": "prod_invalid1"
+     },
+     {
+      "type": "info",
+      "code": "not_found",
+      "content": "prod_invalid2"
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/checkout/a2a.md:29",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.services",
+    "target": "$.ucp.services"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "a2a",
+        "endpoint": "https://example-business.com/.well-known/agent-card.json"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/index.md:160",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "success",
+     "payment_handlers": {}
+    },
+    "id": "chk_fasteners_1",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_fasteners",
+      "item": {
+       "id": "var_fasteners",
+       "title": "Stainless Steel Fasteners",
+       "price": 1299,
+       "quantity_unit": {
+        "unit": "KGM",
+        "scale": 2,
+        "display_text": "kg"
+       }
+      },
+      "quantity": 125,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1624
+       },
+       {
+        "type": "total",
+        "amount": 1624
+       }
+      ]
+     }
+    ],
+    "messages": [
+     {
+      "type": "warning",
+      "code": "quantity_unit_converted",
+      "path": "$.line_items[0].quantity",
+      "content": "This item is sold by the kilogram. The requested 2.75 lb was converted to 1.25 kg."
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1624
+     },
+     {
+      "type": "total",
+      "amount": 1624
+     }
+    ],
+    "links": []
+   }
+  },
+  {
+   "source": "shopping/checkout/index.md:203",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "success",
+     "payment_handlers": {}
+    },
+    "id": "chk_fasteners_1",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_fasteners",
+      "item": {
+       "id": "var_fasteners",
+       "title": "Stainless Steel Fasteners",
+       "price": 1299,
+       "quantity_unit": {
+        "unit": "KGM",
+        "scale": 2,
+        "display_text": "kg"
+       }
+      },
+      "quantity": 150,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1949
+       },
+       {
+        "type": "total",
+        "amount": 1949
+       }
+      ]
+     }
+    ],
+    "messages": [
+     {
+      "type": "error",
+      "code": "quantity_unit_mismatch",
+      "severity": "recoverable",
+      "path": "$.line_items[0].item.quantity_unit",
+      "content": "This item is sold by the kilogram, not by the pound. Resubmit the quantity as a count of 0.01-kg steps."
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1949
+     },
+     {
+      "type": "total",
+      "amount": 1949
+     }
+    ],
+    "links": []
+   }
+  },
+  {
+   "source": "shopping/checkout/index.md:310",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "success",
+     "payment_handlers": {}
+    },
+    "id": "chk_bananas_1",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_bananas",
+      "item": {
+       "id": "var_bananas",
+       "title": "Bananas",
+       "price": 79,
+       "quantity_unit": {
+        "unit": "LBR",
+        "scale": 2,
+        "display_text": "lb",
+        "increment": 25
+       }
+      },
+      "quantity": 150,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 119
+       },
+       {
+        "type": "total",
+        "amount": 119
+       }
+      ]
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 119
+     },
+     {
+      "type": "total",
+      "amount": 119
+     }
+    ],
+    "links": []
+   }
+  },
+  {
+   "source": "shopping/checkout/index.md:524",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/checkout/mcp.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "op": "read",
+    "direction": "response"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json",
+        "endpoint": "https://business.example.com/ucp/mcp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ],
+      "dev.ucp.shopping.fulfillment": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/extensions/fulfillment",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/fulfillment.json",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.vendor.delegate_payment": [
+       {
+        "id": "handler_1",
+        "version": "2026-08-25",
+        "spec": "https://example.vendor.com/specs/delegate-payment",
+        "schema": "https://example.vendor.com/schemas/delegate-payment-config.json",
+        "available_instruments": [
+         {
+          "type": "card",
+          "constraints": {
+           "properties": {
+            "brand": {
+             "enum": [
+              "visa",
+              "mastercard"
+             ]
+            }
+           }
+          }
+         }
+        ],
+        "config": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/mcp.md:212",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.fulfillment": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.vendor.delegate_payment": [
+       {
+        "id": "handler_1",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "card"
+         }
+        ],
+        "config": {}
+       }
+      ]
+     }
+    },
+    "id": "checkout_abc123",
+    "status": "incomplete",
+    "buyer": {
+     "email": "jane.doe@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Blue Jeans",
+       "price": 5000
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "fulfillment",
+      "display_text": "Shipping",
+      "amount": 500
+     },
+     {
+      "type": "total",
+      "amount": 5500
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "standard",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "links": [
+     {
+      "type": "privacy_policy",
+      "url": "https://business.example.com/privacy"
+     },
+     {
+      "type": "terms_of_service",
+      "url": "https://business.example.com/terms"
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout-sessions/checkout_abc123",
+    "expires_at": "2026-01-11T18:30:00Z"
+   }
+  },
+  {
+   "source": "shopping/checkout/mcp.md:352",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/checkout/mcp.md:471",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ],
+      "dev.ucp.shopping.fulfillment": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.vendor.delegate_payment": [
+       {
+        "id": "handler_1",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "card"
+         }
+        ],
+        "config": {}
+       }
+      ]
+     }
+    },
+    "id": "checkout_abc123",
+    "status": "incomplete",
+    "buyer": {
+     "email": "jane.doe@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Blue Jeans",
+       "price": 5000
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "currency": "USD",
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "fulfillment",
+      "display_text": "Shipping",
+      "amount": 1000
+     },
+     {
+      "type": "total",
+      "amount": 6000
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "express",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "links": [
+     {
+      "type": "privacy_policy",
+      "url": "https://business.example.com/privacy"
+     },
+     {
+      "type": "terms_of_service",
+      "url": "https://business.example.com/terms"
+     }
+    ],
+    "continue_url": "https://business.example.com/checkout-sessions/checkout_abc123",
+    "expires_at": "2026-01-11T18:30:00Z"
+   }
+  },
+  {
+   "source": "shopping/checkout/mcp.md:710",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "item_unavailable",
+      "content": "Items are not available for purchase in your region",
+      "severity": "unrecoverable",
+      "path": "$.line_items"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp/v1"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/checkout",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/checkout.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:116",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.shopify.shop_pay": [
+       {
+        "id": "shop_pay_1234",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "shop_pay"
+         }
+        ],
+        "config": {
+         "merchant_id": "shop_merchant_123"
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_1234567890",
+    "status": "incomplete",
+    "messages": [
+     {
+      "type": "error",
+      "code": "missing",
+      "path": "$.buyer.email",
+      "content": "Buyer email is required",
+      "severity": "recoverable"
+     }
+    ],
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://business.example.com/terms"
+     }
+    ],
+    "payment": {
+     "instruments": [
+      {
+       "id": "instr_shop_pay_1",
+       "handler_id": "shop_pay_1234",
+       "type": "shop_pay",
+       "selected": true,
+       "display": {
+        "email": "buyer@example.com"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:211",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "out_of_stock",
+      "content": "All requested items are currently out of stock",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:276",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.shopify.shop_pay": [
+       {
+        "id": "shop_pay_1234",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "shop_pay"
+         }
+        ],
+        "config": {
+         "merchant_id": "shop_merchant_123"
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_1234567890",
+    "status": "incomplete",
+    "messages": [
+     {
+      "type": "error",
+      "code": "missing",
+      "path": "$.fulfillment.methods[0].selected_destination_id",
+      "content": "Fulfillment address is required",
+      "severity": "recoverable"
+     }
+    ],
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "buyer": {
+     "email": "jane@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://business.example.com/terms"
+     }
+    ],
+    "payment": {
+     "instruments": [
+      {
+       "id": "instr_shop_pay_1",
+       "handler_id": "shop_pay_1234",
+       "type": "shop_pay",
+       "selected": true,
+       "display": {
+        "email": "buyer@example.com"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:423",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.google.pay": [
+       {
+        "id": "gpay_1234",
+        "version": "2026-08-25",
+        "config": {
+         "allowed_payment_methods": [
+          {
+           "type": "CARD",
+           "parameters": {
+            "allowed_card_networks": [
+             "VISA",
+             "MASTERCARD",
+             "AMEX"
+            ]
+           }
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_1234567890",
+    "status": "incomplete",
+    "messages": [
+     {
+      "type": "error",
+      "code": "missing",
+      "path": "$.selected_fulfillment_option",
+      "content": "Please select a fulfillment option",
+      "severity": "recoverable"
+     }
+    ],
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "buyer": {
+     "email": "jane@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://merchant.com/terms"
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "standard",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "payment": {
+     "instruments": [
+      {
+       "id": "pi_gpay_5678",
+       "handler_id": "gpay_1234",
+       "type": "card",
+       "selected": true,
+       "display": {
+        "brand": "mastercard",
+        "last_digits": "5678",
+        "rich_text_description": "Google Pay •••• 5678"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:635",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.shopify.shop_pay": [
+       {
+        "id": "shop_pay_1234",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "shop_pay"
+         }
+        ],
+        "config": {
+         "merchant_id": "shop_merchant_123"
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_1234567890",
+    "status": "ready_for_complete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "buyer": {
+     "email": "jane@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://merchant.com/terms"
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "express",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "payment": {
+     "instruments": [
+      {
+       "id": "instr_shop_pay_1",
+       "handler_id": "shop_pay_1234",
+       "type": "shop_pay",
+       "selected": true,
+       "display": {
+        "email": "buyer@example.com"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:829",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.google.pay": [
+       {
+        "id": "gpay_1234",
+        "version": "2026-08-25",
+        "config": {
+         "allowed_payment_methods": [
+          {
+           "type": "CARD",
+           "parameters": {
+            "allowed_card_networks": [
+             "VISA",
+             "MASTERCARD",
+             "AMEX"
+            ]
+           }
+          }
+         ]
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_123456789",
+    "status": "completed",
+    "currency": "USD",
+    "order": {
+     "id": "ord_99887766",
+     "permalink_url": "https://merchant.com/orders/ord_99887766"
+    },
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "buyer": {
+     "email": "jane@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://merchant.com/terms"
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "express",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "payment": {
+     "instruments": [
+      {
+       "id": "pi_gpay_5678",
+       "handler_id": "gpay_1234",
+       "type": "card",
+       "selected": true,
+       "display": {
+        "brand": "mastercard",
+        "last_digits": "5678",
+        "rich_text_description": "Google Pay •••• 5678"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:993",
+   "annotation": {
+    "schema": "shopping/checkout",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.checkout": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.shopify.shop_pay": [
+       {
+        "id": "shop_pay_1234",
+        "version": "2026-08-25",
+        "available_instruments": [
+         {
+          "type": "shop_pay"
+         }
+        ],
+        "config": {
+         "merchant_id": "shop_merchant_123"
+        }
+       }
+      ]
+     }
+    },
+    "id": "chk_123456789",
+    "status": "completed",
+    "currency": "USD",
+    "order": {
+     "id": "ord_99887766",
+     "permalink_url": "https://merchant.com/orders/ord_99887766"
+    },
+    "line_items": [
+     {
+      "id": "li_1",
+      "item": {
+       "id": "item_123",
+       "title": "Red T-Shirt",
+       "price": 2500
+      },
+      "quantity": 2,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 5000
+       },
+       {
+        "type": "total",
+        "amount": 5000
+       }
+      ]
+     }
+    ],
+    "buyer": {
+     "email": "jane@example.com",
+     "first_name": "Jane",
+     "last_name": "Doe"
+    },
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 5000
+     },
+     {
+      "type": "tax",
+      "amount": 400
+     },
+     {
+      "type": "total",
+      "amount": 5400
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://merchant.com/terms"
+     }
+    ],
+    "fulfillment": {
+     "methods": [
+      {
+       "id": "shipping_1",
+       "type": "shipping",
+       "line_item_ids": [
+        "li_1"
+       ],
+       "selected_destination_id": "dest_home",
+       "destinations": [
+        {
+         "type": "shipping_address",
+         "id": "dest_home",
+         "street_address": "123 Main St",
+         "address_locality": "Springfield",
+         "address_region": "IL",
+         "postal_code": "62701",
+         "address_country": "US"
+        }
+       ],
+       "groups": [
+        {
+         "id": "package_1",
+         "line_item_ids": [
+          "li_1"
+         ],
+         "selected_option_id": "express",
+         "options": [
+          {
+           "id": "standard",
+           "title": "Standard Shipping",
+           "description": "Arrives in 5-7 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 500
+            }
+           ]
+          },
+          {
+           "id": "express",
+           "title": "Express Shipping",
+           "description": "Arrives in 2-3 business days",
+           "totals": [
+            {
+             "type": "total",
+             "amount": 1000
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "payment": {
+     "instruments": [
+      {
+       "id": "instr_shop_pay_1",
+       "handler_id": "shop_pay_1234",
+       "type": "shop_pay",
+       "selected": true,
+       "display": {
+        "email": "buyer@example.com"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "shopping/checkout/rest.md:1395",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-01-11",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "item_unavailable",
+      "content": "All items are not available for purchase",
+      "severity": "unrecoverable"
+     }
+    ],
+    "continue_url": "https://merchant.com/"
+   }
+  },
+  {
+   "source": "shopping/extensions/discount.md:42",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema",
+    "extract": "$.ucp.capabilities",
+    "target": "$.ucp.capabilities"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.discount": [
+       {
+        "version": "2026-08-25",
+        "extends": [
+         "dev.ucp.shopping.cart",
+         "dev.ucp.shopping.checkout"
+        ],
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/extensions/discount",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/discount.json"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "source": "shopping/extensions/fulfillment.md:622",
+   "annotation": {
+    "schema": "shopping/fulfillment",
+    "def": "fulfillment_search_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25"
+    },
+    "products": [
+     {
+      "id": "prod_kettle",
+      "title": "Electric Kettle",
+      "description": {
+       "plain": "1.7L electric kettle."
+      },
+      "price_range": {
+       "min": {
+        "amount": 4999,
+        "currency": "USD"
+       },
+       "max": {
+        "amount": 4999,
+        "currency": "USD"
+       }
+      },
+      "variants": [
+       {
+        "id": "var_ss",
+        "title": "Stainless Steel",
+        "description": {
+         "plain": "Stainless steel finish."
+        },
+        "price": {
+         "amount": 4999,
+         "currency": "USD"
+        },
+        "availability": {
+         "available": true,
+         "status": "in_stock"
+        },
+        "fulfillment": {
+         "methods": [
+          {
+           "type": "shipping",
+           "description": {
+            "plain": "Ships to your address in 1–4 business days"
+           },
+           "availability": {
+            "available": true,
+            "status": "in_stock"
+           },
+           "options": [
+            {
+             "id": "std",
+             "title": "Standard",
+             "description": {
+              "plain": "Arrives in 4 business days"
+             }
+            },
+            {
+             "id": "exp",
+             "title": "Express",
+             "description": {
+              "plain": "Next business day"
+             }
+            }
+           ]
+          },
+          {
+           "type": "pickup",
+           "description": {
+            "plain": "Pickup today at Downtown Store"
+           },
+           "location": "loc_downtown",
+           "availability": {
+            "available": true,
+            "status": "in_stock"
+           }
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:203",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_abc123",
+    "checkout_id": "checkout_xyz789",
+    "permalink_url": "https://business.example.com/orders/abc123",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_shoes",
+      "item": {
+       "id": "prod_shoes",
+       "title": "Running Shoes",
+       "price": 3000
+      },
+      "quantity": {
+       "original": 3,
+       "total": 3,
+       "fulfilled": 3
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 9000
+       },
+       {
+        "type": "total",
+        "amount": 9000
+       }
+      ],
+      "status": "fulfilled"
+     },
+     {
+      "id": "li_shirts",
+      "item": {
+       "id": "prod_shirts",
+       "title": "Cotton T-Shirt",
+       "price": 2000
+      },
+      "quantity": {
+       "original": 2,
+       "total": 2,
+       "fulfilled": 0
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 4000
+       },
+       {
+        "type": "total",
+        "amount": 4000
+       }
+      ],
+      "status": "processing"
+     }
+    ],
+    "fulfillment": {
+     "expectations": [
+      {
+       "id": "exp_1",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 3
+        }
+       ],
+       "method_type": "shipping",
+       "destination": {
+        "street_address": "123 Main St",
+        "address_locality": "Austin",
+        "address_region": "TX",
+        "address_country": "US",
+        "postal_code": "78701"
+       },
+       "description": "Arrives in 2-3 business days",
+       "fulfillable_on": "now"
+      },
+      {
+       "id": "exp_2",
+       "line_items": [
+        {
+         "id": "li_shirts",
+         "quantity": 2
+        }
+       ],
+       "method_type": "shipping",
+       "destination": {
+        "street_address": "123 Main St",
+        "address_locality": "Austin",
+        "address_region": "TX",
+        "address_country": "US",
+        "postal_code": "78701"
+       },
+       "description": "Backordered - ships Jan 15, arrives in 7-10 days",
+       "fulfillable_on": "2025-01-15T00:00:00Z"
+      }
+     ],
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2025-01-08T10:30:00Z",
+       "type": "delivered",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 3
+        }
+       ],
+       "tracking_number": "123456789",
+       "tracking_url": "https://fedex.com/track/123456789",
+       "description": "Delivered to front door"
+      }
+     ]
+    },
+    "adjustments": [
+     {
+      "id": "adj_1",
+      "type": "refund",
+      "occurred_at": "2025-01-10T14:30:00Z",
+      "status": "completed",
+      "line_items": [
+       {
+        "id": "li_shoes",
+        "quantity": -1
+       }
+      ],
+      "totals": [
+       {
+        "type": "total",
+        "amount": -3000
+       }
+      ],
+      "description": "Defective item"
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 13000
+     },
+     {
+      "type": "fulfillment",
+      "amount": 1200
+     },
+     {
+      "type": "tax",
+      "amount": 1142
+     },
+     {
+      "type": "total",
+      "amount": 15342
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:314",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_bananas_1",
+    "checkout_id": "chk_bananas_1",
+    "permalink_url": "https://business.example.com/orders/bananas1",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_bananas",
+      "item": {
+       "id": "var_bananas",
+       "title": "Bananas",
+       "price": 79,
+       "quantity_unit": {
+        "unit": "LBR",
+        "scale": 2,
+        "display_text": "lb",
+        "increment": 25
+       }
+      },
+      "quantity": {
+       "original": 150,
+       "total": 150,
+       "fulfilled": 50
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 119
+       },
+       {
+        "type": "total",
+        "amount": 119
+       }
+      ],
+      "status": "partial"
+     }
+    ],
+    "fulfillment": {
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2026-01-08T10:30:00Z",
+       "type": "shipped",
+       "line_items": [
+        {
+         "id": "li_bananas",
+         "quantity": 50
+        }
+       ],
+       "tracking_number": "123456789",
+       "tracking_url": "https://carrier.example/track/123456789",
+       "description": "0.50 lb shipped"
+      }
+     ]
+    },
+    "adjustments": [
+     {
+      "id": "adj_1",
+      "type": "return",
+      "occurred_at": "2026-01-10T14:30:00Z",
+      "status": "completed",
+      "line_items": [
+       {
+        "id": "li_bananas",
+        "quantity": -25
+       }
+      ],
+      "totals": [
+       {
+        "type": "total",
+        "amount": -20
+       }
+      ],
+      "description": "Returned 0.25 lb"
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 119
+     },
+     {
+      "type": "total",
+      "amount": 119
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:393",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_apples_1",
+    "checkout_id": "chk_apples_1",
+    "permalink_url": "https://business.example.com/orders/apples1",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_apples",
+      "item": {
+       "id": "var_apple",
+       "title": "Honeycrisp Apple",
+       "price": 80,
+       "unit_price": {
+        "amount": 200,
+        "currency": "USD",
+        "measure": {
+         "value": 40,
+         "scale": 2,
+         "unit": "LBR",
+         "display_text": "lb"
+        },
+        "reference": {
+         "value": 1,
+         "unit": "LBR",
+         "display_text": "lb"
+        }
+       }
+      },
+      "quantity": {
+       "original": 3,
+       "total": 3,
+       "fulfilled": 3
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 240
+       },
+       {
+        "type": "total",
+        "amount": 240
+       }
+      ],
+      "status": "fulfilled"
+     }
+    ],
+    "fulfillment": {
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2026-01-14T09:15:00Z",
+       "type": "shipped",
+       "line_items": [
+        {
+         "id": "li_apples",
+         "quantity": 3
+        }
+       ],
+       "description": "Picked 3 apples, 1.14 lb total"
+      }
+     ]
+    },
+    "adjustments": [
+     {
+      "id": "adj_1",
+      "type": "price_adjustment",
+      "occurred_at": "2026-01-14T09:15:00Z",
+      "status": "completed",
+      "line_items": [
+       {
+        "id": "li_apples",
+        "quantity": 0,
+        "measure": {
+         "value": 114,
+         "scale": 2,
+         "unit": "LBR",
+         "display_text": "lb"
+        }
+       }
+      ],
+      "totals": [
+       {
+        "type": "total",
+        "amount": -12
+       }
+      ],
+      "description": "Settled to actual picked weight of 1.14 lb"
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 240
+     },
+     {
+      "type": "total",
+      "amount": 240
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:483",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_bananas_2",
+    "checkout_id": "chk_bananas_2",
+    "permalink_url": "https://business.example.com/orders/bananas2",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_bananas",
+      "item": {
+       "id": "var_bananas",
+       "title": "Bananas",
+       "price": 79,
+       "quantity_unit": {
+        "unit": "LBR",
+        "scale": 2,
+        "display_text": "lb",
+        "increment": 25
+       }
+      },
+      "quantity": {
+       "original": 200,
+       "total": 190,
+       "fulfilled": 190
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 158
+       },
+       {
+        "type": "total",
+        "amount": 158
+       }
+      ],
+      "status": "fulfilled"
+     }
+    ],
+    "fulfillment": {
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2026-01-12T09:15:00Z",
+       "type": "shipped",
+       "line_items": [
+        {
+         "id": "li_bananas",
+         "quantity": 190
+        }
+       ],
+       "description": "Picked 1.90 lb"
+      }
+     ]
+    },
+    "adjustments": [
+     {
+      "id": "adj_1",
+      "type": "price_adjustment",
+      "occurred_at": "2026-01-12T09:15:00Z",
+      "status": "completed",
+      "line_items": [
+       {
+        "id": "li_bananas",
+        "quantity": -10
+       }
+      ],
+      "totals": [
+       {
+        "type": "total",
+        "amount": -8
+       }
+      ],
+      "description": "Adjusted to actual picked weight of 1.90 lb"
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 158
+     },
+     {
+      "type": "total",
+      "amount": 158
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:615",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "severity": "unrecoverable",
+      "content": "Order not found."
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/index.md:638",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "unauthorized",
+      "severity": "unrecoverable",
+      "content": "Not authorized to access this order."
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/mcp.md:30",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "mcp",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/mcp.openrpc.json",
+        "endpoint": "https://business.example.com/ucp/mcp"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/order",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/order.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/order/mcp.md:137",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_abc123",
+    "checkout_id": "checkout_xyz789",
+    "permalink_url": "https://business.example.com/orders/abc123",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_shoes",
+      "item": {
+       "id": "prod_shoes",
+       "title": "Running Shoes",
+       "price": 3000
+      },
+      "quantity": {
+       "total": 1,
+       "fulfilled": 1
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 3000
+       },
+       {
+        "type": "total",
+        "amount": 3000
+       }
+      ],
+      "status": "fulfilled"
+     }
+    ],
+    "fulfillment": {
+     "expectations": [
+      {
+       "id": "exp_1",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 1
+        }
+       ],
+       "method_type": "shipping",
+       "destination": {
+        "street_address": "123 Main St",
+        "address_locality": "Austin",
+        "address_region": "TX",
+        "address_country": "US",
+        "postal_code": "78701"
+       },
+       "description": "Delivered"
+      }
+     ],
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2026-01-08T10:30:00Z",
+       "type": "delivered",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 1
+        }
+       ],
+       "tracking_number": "1Z999AA10123456784",
+       "tracking_url": "https://ups.com/track/1Z999AA10123456784",
+       "description": "Delivered to front door"
+      }
+     ]
+    },
+    "adjustments": [],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 3000
+     },
+     {
+      "type": "fulfillment",
+      "amount": 800
+     },
+     {
+      "type": "tax",
+      "amount": 304
+     },
+     {
+      "type": "total",
+      "amount": 4104
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/mcp.md:214",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "severity": "unrecoverable",
+      "content": "Order not found."
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/mcp.md:249",
+   "binding": "mcp",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read",
+    "direction": "response",
+    "extract": "$.result.structuredContent"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "unauthorized",
+      "severity": "unrecoverable",
+      "content": "Not authorized to access this order."
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/rest.md:29",
+   "annotation": {
+    "schema": "profile",
+    "def": "business_schema"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp/v1"
+       }
+      ]
+     },
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25",
+        "spec": "https://ucp.dev/2026-08-25/specification/shopping/order",
+        "schema": "https://ucp.dev/2026-08-25/schemas/shopping/order.json"
+       }
+      ]
+     },
+     "payment_handlers": {}
+    }
+   }
+  },
+  {
+   "source": "shopping/order/rest.md:111",
+   "annotation": {
+    "schema": "shopping/order",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "id": "order_abc123",
+    "checkout_id": "checkout_xyz789",
+    "permalink_url": "https://business.example.com/orders/abc123",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_shoes",
+      "item": {
+       "id": "prod_shoes",
+       "title": "Running Shoes",
+       "price": 3000
+      },
+      "quantity": {
+       "total": 1,
+       "fulfilled": 1
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 3000
+       },
+       {
+        "type": "total",
+        "amount": 3000
+       }
+      ],
+      "status": "fulfilled"
+     }
+    ],
+    "fulfillment": {
+     "expectations": [
+      {
+       "id": "exp_1",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 1
+        }
+       ],
+       "method_type": "shipping",
+       "destination": {
+        "street_address": "123 Main St",
+        "address_locality": "Austin",
+        "address_region": "TX",
+        "address_country": "US",
+        "postal_code": "78701"
+       },
+       "description": "Delivered"
+      }
+     ],
+     "events": [
+      {
+       "id": "evt_1",
+       "occurred_at": "2026-01-08T10:30:00Z",
+       "type": "delivered",
+       "line_items": [
+        {
+         "id": "li_shoes",
+         "quantity": 1
+        }
+       ],
+       "tracking_number": "1Z999AA10123456784",
+       "tracking_url": "https://ups.com/track/1Z999AA10123456784",
+       "description": "Delivered to front door"
+      }
+     ]
+    },
+    "adjustments": [],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 3000
+     },
+     {
+      "type": "fulfillment",
+      "amount": 800
+     },
+     {
+      "type": "tax",
+      "amount": 304
+     },
+     {
+      "type": "total",
+      "amount": 4104
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/rest.md:179",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "not_found",
+      "severity": "unrecoverable",
+      "content": "Order not found."
+     }
+    ]
+   }
+  },
+  {
+   "source": "shopping/order/rest.md:205",
+   "annotation": {
+    "schema": "common/types/error_response",
+    "op": "read"
+   },
+   "value": {
+    "ucp": {
+     "version": "2026-08-25",
+     "status": "error",
+     "capabilities": {
+      "dev.ucp.shopping.order": [
+       {
+        "version": "2026-08-25"
+       }
+      ]
+     }
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "unauthorized",
+      "severity": "unrecoverable",
+      "content": "Not authorized to access this order."
+     }
+    ]
+   }
+  },
+  {
+   "source": "scaffolds/common_location_lookup_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01"
+    },
+    "locations": []
+   }
+  },
+  {
+   "source": "scaffolds/common_location_search_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01"
+    },
+    "locations": []
+   }
+  },
+  {
+   "source": "scaffolds/common_payment_authentication_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "status": "success",
+     "capabilities": {
+      "dev.ucp.common.payment.authentication": [
+       {
+        "version": "2026-01-01",
+        "extends": "dev.ucp.shopping.checkout"
+       }
+      ]
+     },
+     "payment_handlers": {
+      "com.example.card": [
+       {
+        "id": "card_handler_1",
+        "version": "2026-01-01"
+       }
+      ]
+     }
+    },
+    "id": "checkout_scaffold",
+    "status": "complete_in_progress",
+    "currency": "USD",
+    "line_items": [],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 100
+     },
+     {
+      "type": "total",
+      "amount": 100
+     }
+    ],
+    "links": [],
+    "payment": {
+     "instruments": [
+      {
+       "id": "instrument_1",
+       "handler_id": "card_handler_1",
+       "type": "card",
+       "selected": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "scaffolds/profile_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "services": {
+      "dev.ucp.shopping": [
+       {
+        "version": "2026-01-01",
+        "spec": "https://ucp.dev/2026-01-01/specification/overview",
+        "transport": "rest",
+        "schema": "https://ucp.dev/2026-01-01/services/shopping/rest.openapi.json",
+        "endpoint": "https://business.example.com/ucp/v1"
+       }
+      ]
+     },
+     "capabilities": {},
+     "payment_handlers": {
+      "com.google.pay": [
+       {
+        "id": "gpay",
+        "version": "2026-01-01",
+        "spec": "https://payments.google.com/gpay/specification",
+        "schema": "https://payments.google.com/gpay/schema.json"
+       }
+      ],
+      "dev.shopify.shop_pay": [
+       {
+        "id": "shop_pay",
+        "version": "2026-01-01",
+        "spec": "https://shopify.dev/ucp/shop-pay",
+        "schema": "https://shopify.dev/ucp/shop-pay.json"
+       }
+      ]
+     },
+     "map_order": {
+      "payment_handlers": [
+       "dev.shopify.shop_pay",
+       "com.google.pay"
+      ]
+     }
+    },
+    "keys": [
+     {
+      "kid": "key_2026",
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "WbbXwVYGdJoP4Xm3qCkGvBRcRvKtEfXDbWvPzpPS8LA",
+      "y": "sP4jHHxYqC89HBo8TjrtVOAGHfJDflYxw7MFMxuFMPY",
+      "use": "sig",
+      "alg": "ES256"
+     }
+    ]
+   }
+  },
+  {
+   "source": "scaffolds/shopping_cart_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "status": "success"
+    },
+    "id": "cart_scaffold",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_scaffold",
+      "item": {
+       "id": "item_scaffold",
+       "title": "Scaffold Item",
+       "price": 1000
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1000
+       },
+       {
+        "type": "total",
+        "amount": 1000
+       }
+      ]
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1000
+     },
+     {
+      "type": "total",
+      "amount": 1000
+     }
+    ]
+   }
+  },
+  {
+   "source": "scaffolds/shopping_catalog_lookup_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01"
+    },
+    "products": []
+   }
+  },
+  {
+   "source": "scaffolds/shopping_catalog_lookup_response_get_product.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01"
+    },
+    "product": {
+     "id": "prod_scaffold",
+     "title": "Scaffold Product",
+     "description": {
+      "plain": "Scaffold product."
+     },
+     "price_range": {
+      "min": {
+       "amount": 1000,
+       "currency": "USD"
+      },
+      "max": {
+       "amount": 1000,
+       "currency": "USD"
+      }
+     },
+     "variants": [
+      {
+       "id": "var_scaffold",
+       "title": "Scaffold Variant",
+       "description": {
+        "plain": "Scaffold variant."
+       },
+       "price": {
+        "amount": 1000,
+        "currency": "USD"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "source": "scaffolds/shopping_catalog_search_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01"
+    },
+    "products": []
+   }
+  },
+  {
+   "source": "scaffolds/shopping_checkout_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "status": "success",
+     "payment_handlers": {}
+    },
+    "id": "chk_scaffold",
+    "status": "incomplete",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_scaffold",
+      "item": {
+       "id": "item_scaffold",
+       "title": "Scaffold Item",
+       "price": 1000
+      },
+      "quantity": 1,
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1000
+       },
+       {
+        "type": "total",
+        "amount": 1000
+       }
+      ]
+     }
+    ],
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1000
+     },
+     {
+      "type": "total",
+      "amount": 1000
+     }
+    ],
+    "links": [
+     {
+      "type": "terms_of_service",
+      "url": "https://example.com/terms"
+     }
+    ]
+   }
+  },
+  {
+   "source": "scaffolds/shopping_order_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "status": "success"
+    },
+    "id": "order_scaffold",
+    "checkout_id": "chk_scaffold",
+    "permalink_url": "https://example.com/orders/scaffold",
+    "currency": "USD",
+    "line_items": [
+     {
+      "id": "li_scaffold",
+      "item": {
+       "id": "item_scaffold",
+       "title": "Scaffold Item",
+       "price": 1000
+      },
+      "quantity": {
+       "original": 1,
+       "total": 1,
+       "fulfilled": 0
+      },
+      "totals": [
+       {
+        "type": "subtotal",
+        "amount": 1000
+       },
+       {
+        "type": "total",
+        "amount": 1000
+       }
+      ],
+      "status": "processing"
+     }
+    ],
+    "fulfillment": {},
+    "totals": [
+     {
+      "type": "subtotal",
+      "amount": 1000
+     },
+     {
+      "type": "total",
+      "amount": 1000
+     }
+    ]
+   }
+  },
+  {
+   "source": "scaffolds/shopping_types_error_response_response.json",
+   "value": {
+    "ucp": {
+     "version": "2026-01-01",
+     "status": "error"
+    },
+    "messages": [
+     {
+      "type": "error",
+      "code": "scaffold_error",
+      "content": "Scaffold error message",
+      "severity": "unrecoverable"
+     }
+    ]
+   }
+  }
+ ]
+}

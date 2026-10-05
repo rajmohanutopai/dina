@@ -58,6 +58,11 @@ describe('parentRouteFor', () => {
       expect(parentRouteFor('/infrastructure')).toBe('/settings');
     });
 
+    it('linked-accounts → /settings; the account-link callback → /linked-accounts (UCP plan §3.17)', () => {
+      expect(parentRouteFor('/linked-accounts')).toBe('/settings');
+      expect(parentRouteFor('/ucp/oauth/callback')).toBe('/linked-accounts');
+    });
+
     it('service-settings (per-listing editor) → /my-listings', () => {
       expect(parentRouteFor('/service-settings')).toBe('/my-listings');
     });

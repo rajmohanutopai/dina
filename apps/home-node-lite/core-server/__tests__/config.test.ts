@@ -34,6 +34,7 @@ describe('core-server config (task 4.4/4.5)', () => {
         cors: {},
         services: {},
         a2a: {},
+        ucp: { enabled: false },
       });
     });
 
@@ -74,6 +75,7 @@ describe('core-server config (task 4.4/4.5)', () => {
         cors: { allowOrigin: 'https://admin.example.com' },
         services: {},
         a2a: {},
+        ucp: { enabled: false },
       });
     });
 
@@ -132,7 +134,10 @@ describe('core-server config (task 4.4/4.5)', () => {
   });
 
   describe('A2A Lane 2', () => {
-    const lane2 = { DINA_A2A_PUBLIC_URL: 'https://dina.example.org', DINA_A2A_GATEWAY_DID: 'did:key:z6MkGateway' };
+    const lane2 = {
+      DINA_A2A_PUBLIC_URL: 'https://dina.example.org',
+      DINA_A2A_GATEWAY_DID: 'did:key:z6MkGateway',
+    };
 
     it('takes the public origin and gateway DID together', () => {
       expect(loadConfig({ ...minimalEnv(), ...lane2 }).a2a).toEqual({
@@ -146,13 +151,34 @@ describe('core-server config (task 4.4/4.5)', () => {
       ['a gateway DID alone', { DINA_A2A_GATEWAY_DID: 'did:key:z6MkGateway' }],
       ['an origin with a path', { ...lane2, DINA_A2A_PUBLIC_URL: 'https://dina.example.org/a2a' }],
       ['plain http off loopback', { ...lane2, DINA_A2A_PUBLIC_URL: 'http://dina.example.org' }],
-      ['a gateway DID that is not a did:key', { ...lane2, DINA_A2A_GATEWAY_DID: 'did:plc:gateway' }],
+      [
+        'a gateway DID that is not a did:key',
+        { ...lane2, DINA_A2A_GATEWAY_DID: 'did:plc:gateway' },
+      ],
     ])('refuses %s', (_name, extra) => {
       expect(() => loadConfig({ ...minimalEnv(), ...extra })).toThrow(ConfigError);
     });
   });
 
   describe('required fields', () => {
+    it('turns UCP on with DINA_UCP_ENABLED and names a test profile host', () => {
+      const config = loadConfig({
+        DINA_VAULT_DIR: '/var/lib/dina',
+        DINA_UCP_ENABLED: 'true',
+        DINA_UCP_PROFILE_HOST: 'ucp.test.dinakernel.com',
+      });
+      expect(config.ucp).toEqual({ enabled: true, profileHost: 'ucp.test.dinakernel.com' });
+    });
+
+    it('rejects a UCP profile host that is not a lower-case host name', () => {
+      expect(() =>
+        loadConfig({
+          DINA_VAULT_DIR: '/var/lib/dina',
+          DINA_UCP_PROFILE_HOST: 'https://UCP.example/',
+        }),
+      ).toThrow(ConfigError);
+    });
+
     it('rejects missing DINA_VAULT_DIR', () => {
       expect(() => loadConfig({})).toThrow(ConfigError);
       try {

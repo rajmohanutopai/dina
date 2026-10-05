@@ -89,6 +89,14 @@ import {
   createFindPreferredProviderTool,
 } from '../reasoning/service_tools';
 import { ToolRegistry } from '../reasoning/tool_registry';
+import { createSearchUcpMerchantsTool } from '../reasoning/ucp_merchant_index_tool';
+import { createUcpShopTools, type UcpShopCoreClient } from '../reasoning/ucp_shop_tools';
+import {
+  createGetUcpProductTool,
+  createRequestUcpSearchApprovalTool,
+  createSearchUcpCatalogTool,
+  type UcpToolCoreClient,
+} from '../reasoning/ucp_tools';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -121,7 +129,9 @@ export interface BuildAgenticAskPipelineInput {
     Parameters<typeof createProductResearchTools>[0]['appViewClient'] &
     Parameters<typeof createFindPreferredProviderTool>[0]['appViewClient'] &
     // Only a host that runs Lane 1 searches the A2A directory (the phone does not).
-    Partial<Parameters<typeof createSearchA2AAgentsTool>[0]['appViewClient']>;
+    Partial<Parameters<typeof createSearchA2AAgentsTool>[0]['appViewClient']> &
+    // The UCP merchant index (§3.15): an AppView that has it.
+    Partial<Parameters<typeof createSearchUcpMerchantsTool>[0]['appView']>;
   /** Lazy orchestrator handle for `query_service` — callers wire a thunk-backed
    *  proxy when the orchestrator is constructed later in the boot sequence. */
   orchestratorHandle: Parameters<typeof createQueryServiceTool>[0]['orchestrator'];
@@ -154,6 +164,18 @@ export interface BuildAgenticAskPipelineInput {
    * no A2A tools at all.
    */
   a2aClient?: A2AToolCoreClient & A2ADirectoryCoreClient;
+  /**
+   * UCP (plan §4.2 U1): the Core surface the catalogue tools use. A host that
+   * runs UCP passes it; without it the loop has no UCP tools.
+   */
+  ucpClient?: UcpToolCoreClient & UcpShopCoreClient;
+  /** Kick the UCP guard worker after a search starts (the host owns the worker). */
+  ucpGuardKick?: () => void;
+  /**
+   * Whether this node runs UCP now, asked per ask: the tools are offered only
+   * then, so a node with UCP off shows the model no shopping tools.
+   */
+  ucpEnabled?: () => boolean;
   /** Structured-log sink — propagated to the WM-BRAIN-06d telemetry path. */
   logger?: (entry: Record<string, unknown>) => void;
   /**
@@ -446,6 +468,41 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
           ...(input.logger !== undefined ? { logger: input.logger } : {}),
         }),
       );
+    }
+    // Only in a chat conversation (`replyTo` names it): Core records the owner's turns
+    // only there, so in a one-off ask every search would be refused for want of one.
+    if (
+      input.ucpClient !== undefined &&
+      scope.releaseSession !== undefined &&
+      scope.replyTo !== undefined &&
+      (input.ucpEnabled?.() ?? false)
+    ) {
+      const ucp = {
+        core: input.ucpClient,
+        appView: input.appViewClient,
+        releaseSession: scope.releaseSession,
+        ...(input.ucpGuardKick !== undefined ? { kickGuard: input.ucpGuardKick } : {}),
+        ...(input.logger !== undefined ? { logger: input.logger } : {}),
+      };
+      reg.register(createSearchUcpCatalogTool(ucp));
+      reg.register(createRequestUcpSearchApprovalTool(ucp));
+      reg.register(createGetUcpProductTool(ucp));
+      // Shops to suggest when the owner's allowed ones do not cover a need (§3.15).
+      const searchUcpMerchants = input.appViewClient.searchUcpMerchants?.bind(input.appViewClient);
+      if (searchUcpMerchants !== undefined)
+        reg.register(
+          createSearchUcpMerchantsTool({
+            appView: { searchUcpMerchants },
+            ...(input.logger !== undefined ? { logger: input.logger } : {}),
+          }),
+        );
+      // Buying (UCP plan §3.7): by handle, behind the owner's two cards.
+      for (const tool of createUcpShopTools({
+        core: input.ucpClient,
+        releaseSession: scope.releaseSession,
+        ...(input.logger !== undefined ? { logger: input.logger } : {}),
+      }))
+        reg.register(tool);
     }
     if (input.a2aClient !== undefined && scope.releaseSession !== undefined) {
       const a2a = {

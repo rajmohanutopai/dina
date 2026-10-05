@@ -283,6 +283,16 @@ const AUTHZ_RULES: {
   { prefix: '/v1/a2a/guard/next', method: 'POST', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/a2a/guard/verdict', method: 'POST', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/a2a/turns', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  // UCP (plan §3.11, §3.16): merchant search, its owner card, and the guard over merchant text.
+  { prefix: '/v1/ucp/search', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/search/review', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/search/', method: 'GET', singleSegmentTail: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/products', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/guard/next', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/guard/verdict', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  // UCP plan §3.7, U2.7: carts and checkouts, by handle; Brain only.
+  { prefix: '/v1/ucp/cart', method: 'POST', exact: true, allowed: new Set(['brain']) },
+  { prefix: '/v1/ucp/checkout', method: 'POST', exact: true, allowed: new Set(['brain']) },
   // A2A Lane 2 (design §4.1, §4.3, §7.5): the gateway's whole allowlist.
   // Every client-facing route is a POST under /v1/a2a/ingress/, as are its
   // two delivery doors; the public card is the one GET. No other path or
@@ -302,6 +312,9 @@ const AUTHZ_RULES: {
   { prefix: '/v1/a2a/ingress/events/ack', method: 'POST', exact: true, allowed: new Set(['gateway']) },
   { prefix: '/v1/a2a/ingress/did/complete', method: 'POST', exact: true, allowed: new Set(['gateway']) },
   { prefix: '/v1/a2a/card', method: 'GET', exact: true, allowed: new Set(['gateway']) },
+  // UCP plan §3.13: order webhooks, forwarded by the same public gateway; its alone.
+  { prefix: '/v1/ucp/ingress/webhook', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  { prefix: '/v1/ucp/ingress/oauth-callback', method: 'POST', exact: true, allowed: new Set(['gateway']) },
   // Who may call Brain (A2A design §4.1): Brain reads it over its own signed
   // link, and nothing else may (it names the owner's devices).
   { prefix: '/v1/brain/callers', method: 'GET', exact: true, allowed: new Set(['brain']) },
@@ -347,6 +360,31 @@ const AUTHZ_RULES: {
   // Connected-agent policy is owner-only in-handler. Signed access is limited
   // to the node's own admin/device DID; the handler verifies the exact DID.
   { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },
+  // UCP (plan §4.2 U1): the owner's merchant and context settings, and a search as the owner sees it.
+  { prefix: '/v1/owner/ucp/settings', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  // §3.14: My Orders for UCP orders, and the owner marking a webhook-only one done.
+  { prefix: '/v1/owner/ucp/orders', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/orders/done', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  // §3.17: the owner's linked accounts at merchants: list, start, unlink, and a callback the app caught.
+  { prefix: '/v1/owner/ucp/links', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/links/start', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/links/unlink', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/links/callback', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/links/dismiss', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/publication', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  { prefix: '/v1/owner/ucp/publication', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  {
+    prefix: '/v1/owner/ucp/searches/',
+    method: 'GET',
+    singleSegmentTail: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/searches/',
+    suffix: '/trust',
+    method: 'GET',
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
   { prefix: '/v1/owner/reasoning', allowed: new Set(['owner', 'admin', 'device']) },
 
   // A connected coding host may discover only its own active bindings. The

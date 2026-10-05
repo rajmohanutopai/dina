@@ -293,7 +293,7 @@ describe('16.1 Docker Compose Smoke Tests', () => {
     //
     // The list is exported now. This counts the shipped scheduler, so adding
     // a job is a deliberate update here rather than a silent drift.
-    expect(SCORER_JOBS).toHaveLength(13)
+    expect(SCORER_JOBS).toHaveLength(14)
     // Names are what the overlap guard and the advisory lock are keyed on, so
     // a duplicate would make two jobs share one lock.
     expect(new Set(SCORER_JOBS.map((j) => j.name)).size).toBe(SCORER_JOBS.length)

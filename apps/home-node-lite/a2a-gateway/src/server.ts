@@ -8,6 +8,8 @@
  *                                       at the v1.0 paths (`@dina/a2a`
  *                                       `rest_binding.ts`)
  *   POST /a2a/v1/did-binding            binds a client to a DID (design §5.1)
+ *   POST /ucp/webhooks/orders           UCP order webhooks (UCP plan §3.13)
+ *   GET  /ucp/oauth/callback            a merchant's OAuth redirect back (UCP plan §3.17)
  *   GET  /healthz
  *
  * The gateway decides nothing. It keeps the client's raw body as a string,
@@ -66,7 +68,15 @@ import {
   type JsonValue,
   type TaskState,
 } from '@dina/a2a';
-import { A2A_JWKS_PATH, A2A_RPC_PATH, type GatewayEnvelope } from '@dina/core';
+import {
+  A2A_JWKS_PATH,
+  A2A_RPC_PATH,
+  UCP_OAUTH_CALLBACK_PATH,
+  UCP_WEBHOOK_MAX_BYTES,
+  UCP_WEBHOOK_PUBLIC_PATH,
+  ucpWebhookEnvelope,
+  type GatewayEnvelope,
+} from '@dina/core';
 
 import { StreamSlots, type StreamHub, type StreamStart } from './stream_hub';
 
@@ -76,6 +86,38 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { Logger } from 'pino';
 
 export const AGENT_CARD_PATH = '/.well-known/agent-card.json';
+
+/** The OAuth callback page: nothing loads, nothing is kept, and its URL (with the code) goes nowhere. */
+const CALLBACK_PAGE_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'cache-control': 'no-store',
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'referrer-policy': 'no-referrer',
+} as const;
+
+const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+
+/**
+ * What the owner sees after the merchant sends them back: linked at `host`;
+ * a sign-in already used or lapsed (a reload after a link that worked lands
+ * here, so it claims nothing about the account); a no at the shop; or not linked.
+ */
+export function callbackPage(outcome: { linked: true; host: string } | { linked: false; reason?: string }): string {
+  const head = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">';
+  const page = (title: string, h1: string, p: string) =>
+    `${head}<title>${title}</title><body style="font-family:system-ui;margin:2rem"><h1>${h1}</h1><p>${p}</p>`;
+  if (outcome.linked)
+    return page('Account linked', `Your account at ${escapeHtml(outcome.host)} is linked`, 'You can close this page and go back to Dina.');
+  if (outcome.reason === 'unknown_state')
+    return page('Sign-in already used', 'This sign-in was already used or has expired', 'Linked accounts in Dina shows whether your account is linked.');
+  if (outcome.reason === 'denied')
+    return page('Not linked', 'You said no at the shop', 'Nothing was linked.');
+  // Core did not answer in time: it may still be finishing, so nothing is claimed.
+  if (outcome.reason === 'no_answer')
+    return page('Linking', 'Dina did not answer in time', 'Linked accounts in Dina shows whether your account is linked.');
+  return page('Not linked', 'Your account was not linked', 'Nothing changed. Start again from Dina if you still want to link it.');
+}
 
 export interface StreamLimits {
   perIp: number;
@@ -336,6 +378,58 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
   });
 
   app.get('/healthz', async () => ({ ok: true }));
+
+  // UCP order webhooks (UCP plan §3.13): the exact bytes and the webhook's own headers,
+  // forwarded for Core to store; its 200 relayed, anything else a 503 the merchant retries.
+  // A scope of its own reads the body as bytes (any content type, as the digest covers
+  // them) under the 512 KiB cap.
+  app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: UCP_WEBHOOK_MAX_BYTES }, (_req, body, done) => {
+      done(null, body);
+    });
+    scope.post(UCP_WEBHOOK_PUBLIC_PATH, { bodyLimit: UCP_WEBHOOK_MAX_BYTES }, async (req, reply) => {
+      if (limited(req.ip)) return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
+      const url = req.raw.url ?? '';
+      const q = url.indexOf('?');
+      const body = Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array();
+      const forwarded = await deps.core.ucpWebhook(
+        ucpWebhookEnvelope(UCP_WEBHOOK_PUBLIC_PATH, q === -1 ? '' : url.slice(q + 1), req.headers, body),
+      );
+      if (!forwarded.ok || forwarded.answer.status !== 200) {
+        deps.logger.warn({ core_status: forwarded.ok ? forwarded.answer.status : forwarded.status }, 'ucp webhook not stored');
+        return reply.code(503).header('retry-after', '30').send({ error: 'unavailable' });
+      }
+      return reply.code(200).header('content-type', 'application/json').send(forwarded.answer.body);
+    });
+  });
+
+  // A merchant's OAuth redirect back (UCP plan §3.17): the owner's browser, at the end of
+  // linking an account. Its four parameters go to Core, which finishes the link; the owner
+  // sees a page that says what happened. The code in the URL is single-use and Core's
+  // pending link is consumed once, so the page is never cached or referred on.
+  app.get(UCP_OAUTH_CALLBACK_PATH, async (req, reply) => {
+    reply.headers(CALLBACK_PAGE_HEADERS);
+    if (limited(req.ip)) return reply.code(429).header('retry-after', '60').send(callbackPage({ linked: false }));
+    const query = req.query as Record<string, unknown>;
+    const params: Record<string, string> = {};
+    for (const name of ['code', 'state', 'iss', 'error'] as const) {
+      const v = query[name];
+      if (typeof v === 'string') params[name] = v;
+    }
+    const forwarded = await deps.core.ucpOauthCallback(params);
+    const body = forwarded.ok
+      ? (forwarded.answer.body as { linked?: unknown; merchant_host?: unknown; reason?: unknown } | undefined)
+      : undefined;
+    if (!forwarded.ok) deps.logger.warn({ core_status: forwarded.status }, 'ucp oauth callback not taken');
+    const outcome =
+      body?.linked === true && typeof body.merchant_host === 'string'
+        ? { linked: true as const, host: body.merchant_host }
+        : !forwarded.ok
+          ? { linked: false as const, reason: 'no_answer' }
+          : { linked: false as const, ...(typeof body?.reason === 'string' ? { reason: body.reason } : {}) };
+    return reply.code(forwarded.ok ? 200 : 503).send(callbackPage(outcome));
+  });
 
   // The DID binding (design §5.1): plain JSON, forwarded as it came. The
   // owner's challenge, which names the DID, is the authority; Core checks it

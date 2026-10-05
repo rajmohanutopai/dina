@@ -26,6 +26,7 @@
     "@dina/core": "*",
     "@dina/home-node": "*",
     "@dina/net-expo": "*",
+    "@dina/net-policy": "*",
     "@dina/protocol": "*",
     "@dina/test-harness": "*",
     "@expo-google-fonts/cormorant-garamond": "^0.4.1",

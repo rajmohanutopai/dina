@@ -20,6 +20,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.dinakernel.mobile",
+      "associatedDomains": ["applinks:*.ucp.dinakernel.com"],
       "icon": "./assets/branding/dina-icon.png",
       "infoPlist": {
         "UIBackgroundModes": [
@@ -34,7 +35,15 @@
         "foregroundImage": "./assets/branding/dina-icon-android.png",
         "backgroundColor": "#CCBEB1"
       },
-      "package": "com.dinakernel.mobile"
+      "package": "com.dinakernel.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "*.ucp.dinakernel.com", "pathPrefix": "/oauth/callback" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

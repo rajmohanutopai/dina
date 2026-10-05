@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm'
 import cron from 'node-cron'
 import { refreshProfiles } from './jobs/refresh-profiles.js'
 import { refreshSubjectScores } from './jobs/refresh-subject-scores.js'
@@ -13,6 +12,7 @@ import { cosigExpirySweep } from './jobs/cosig-expiry-sweep.js'
 import { subjectOrphanGc } from './jobs/subject-orphan-gc.js'
 import { subjectEnrichRecompute } from './jobs/subject-enrich-recompute.js'
 import { backfillHandles } from './jobs/backfill-handles.js'
+import { ucpMerchantCrawler } from './jobs/ucp-merchant-crawler.js'
 import type { DrizzleDB } from '@/db/connection.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -61,6 +61,10 @@ export const SCORER_JOBS: ScorerJob[] = [
   // within one or two ticks, slow enough not to hammer the PLC
   // directory.
   { name: 'backfill-handles', schedule: '*/10 * * * *', handler: backfillHandles },
+  // UCP plan §3.15: the merchant index. Hourly at :20 (clear of the on-the-hour and :30
+  // jobs); each origin is read at most once a day, so an hour only bounds how soon a
+  // newly reviewed merchant is read.
+  { name: 'ucp-merchant-crawler', schedule: '20 * * * *', handler: (db) => ucpMerchantCrawler(db) },
 ]
 
 /**
@@ -76,6 +80,56 @@ export const SCORER_JOBS: ScorerJob[] = [
  *
  * Advisory lock IDs are derived from a stable hash of the job name.
  */
+
+interface PoolClientLike {
+  query(text: string, values: unknown[]): Promise<{ rows: { acquired?: boolean }[] }>
+  release(): void
+}
+
+/**
+ * Take a job's advisory lock on a connection of its own: `held` when another
+ * instance holds it; otherwise a handle that releases it on that same
+ * connection, then returns the connection. With no pool to draw from (a test
+ * double), or a lock that cannot be asked for, the local guard alone runs it.
+ */
+export async function takeJobLock(
+  db: DrizzleDB,
+  lockId: number,
+  jobName: string,
+): Promise<'held' | { release: () => Promise<void> }> {
+  const pool = (db as unknown as { $client?: { connect?: () => Promise<PoolClientLike> } }).$client
+  const none = { release: async () => undefined }
+  if (typeof pool?.connect !== 'function') return none
+  let client: PoolClientLike
+  try {
+    client = await pool.connect()
+  } catch (err) {
+    logger.debug({ err, job: jobName }, 'Advisory lock unavailable, using local guard only')
+    return none
+  }
+  try {
+    const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockId])
+    if (result.rows[0]?.acquired === false) {
+      client.release()
+      return 'held'
+    }
+  } catch (err) {
+    logger.debug({ err, job: jobName }, 'Advisory lock unavailable, using local guard only')
+    client.release()
+    return none
+  }
+  return {
+    release: async () => {
+      try {
+        await client.query('SELECT pg_advisory_unlock($1)', [lockId])
+      } catch {
+        /* best-effort: the connection's end releases it too */
+      } finally {
+        client.release()
+      }
+    },
+  }
+}
 
 function jobLockId(jobName: string): number {
   let hash = 0x811c9dc5 // FNV-1a offset basis
@@ -127,23 +181,12 @@ export function startScheduler(db: DrizzleDB): void {
         return
       }
 
-      // Distributed overlap guard (multi-instance via pg advisory lock)
-      let lockAcquired = true // default: proceed if lock check fails
-      try {
-        const lockResult = await db.execute(
-          sql`SELECT pg_try_advisory_lock(${lockId}) AS acquired`
-        )
-        // Drizzle execute returns { rows: [...] } — match codebase convention (subjects.ts:82)
-        const row = (lockResult as any)?.rows?.[0] ?? (lockResult as any)?.[0]
-        const acquired = row?.acquired
-        if (acquired === false) {
-          lockAcquired = false
-        }
-      } catch (err) {
-        // If advisory lock fails (e.g., in test), proceed with local guard only
-        logger.debug({ err, job: job.name }, 'Advisory lock unavailable, using local guard only')
-      }
-      if (!lockAcquired) {
+      // Distributed overlap guard (multi-instance via pg advisory lock). A session lock
+      // belongs to the connection that took it, so it is taken and released on ONE
+      // connection held for the job: through the pool, the unlock could land on another
+      // backend, fail, and leave the lock held until that connection closed.
+      const lock = await takeJobLock(db, lockId, job.name)
+      if (lock === 'held') {
         logger.warn({ job: job.name, lockId }, 'Scorer job skipped — held by another instance')
         metrics.incr('scorer.job.skipped_distributed', { job: job.name })
         return
@@ -162,10 +205,7 @@ export function startScheduler(db: DrizzleDB): void {
         metrics.incr('scorer.job.errors', { job: job.name })
       } finally {
         runningJobs.delete(job.name)
-        // Release distributed lock
-        try {
-          await db.execute(sql`SELECT pg_advisory_unlock(${lockId})`)
-        } catch { /* best-effort unlock */ }
+        await lock.release()
       }
     })
     logger.info({ job: job.name, schedule: job.schedule }, 'Scorer job registered')

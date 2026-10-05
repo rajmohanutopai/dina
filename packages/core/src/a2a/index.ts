@@ -22,6 +22,7 @@ export * from './inbound';
 export * from './inbound_children';
 export * from './inbound_turns';
 export * from './inbound_card';
+export * from './card_key_rotation';
 export * from './inbound_review_card';
 export * from './inbound_resolve';
 export * from './inbound_view';

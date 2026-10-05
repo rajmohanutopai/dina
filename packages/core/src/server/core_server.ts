@@ -64,6 +64,7 @@ import {
 } from './routes/service_respond';
 import { registerSessionRoutes } from './routes/session';
 import { registerStagingRoutes } from './routes/staging';
+import { registerUcpRoutes } from './routes/ucp';
 import { registerVaultRoutes } from './routes/vault';
 import { registerWatchRoutes } from './routes/watch';
 import { registerWorkflowRoutes } from './routes/workflow';
@@ -156,6 +157,7 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // A2A Lane 1 (design §4.3). The routes answer 503 until a host installs the
   // A2A store and outbound runtime (the server; never the phone in M1a).
   registerA2ARoutes(router, options.ownerCapability);
+  registerUcpRoutes(router, options.ownerCapability);
   // A2A Lane 2 (design §4.3): the gateway's doors. 503 until A2A is installed.
   registerA2AIngressRoutes(router);
   registerBrainCallerRoutes(router);

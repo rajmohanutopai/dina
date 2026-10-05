@@ -562,6 +562,12 @@ export function translateLoopResult(
     if (quoteRequestDraft !== undefined) {
       answer.quoteRequestDraft = quoteRequestDraft;
     }
+    // UCP plan §4.2 U1 — a merchant search's comparison card rides beside the
+    // narrative, like the where-to-buy card: the prose answers, the card shows.
+    const ucpComparison = extractUcpComparisonFromToolCalls(result.toolCalls);
+    if (ucpComparison !== undefined) {
+      answer.ucpComparison = ucpComparison;
+    }
     // Provenance for the chat source pill: how many network ("ranked") reviews
     // from other Dinas informed this answer. The mobile bubble turns the count
     // into a label (Ranked reviews ≥ 3, Network reviews 1–2). 0 ⇒ no pill.
@@ -735,6 +741,29 @@ function extractGroupPlanFromToolCalls(
       planId: result.plan_id,
       intent: typeof result.intent === 'string' ? result.intent : '',
     };
+  }
+  return undefined;
+}
+
+const UCP_CARD_TOOLS = new Set(['search_ucp_catalog', 'request_ucp_search_approval']);
+
+/** The last search's comparison card (only its search id: the card reads the rest itself), if any. */
+function extractUcpComparisonFromToolCalls(
+  toolCalls: AgenticLoopResult['toolCalls'],
+): Record<string, unknown> | undefined {
+  for (let i = toolCalls.length - 1; i >= 0; i--) {
+    const call = toolCalls[i];
+    // Both tools that run a search show its card; a fetch does not.
+    if (!UCP_CARD_TOOLS.has(call.name) || !call.outcome.success) continue;
+    const card = (call.outcome.result as { card?: unknown } | null)?.card as
+      | { kind?: unknown; search_id?: unknown }
+      | undefined;
+    if (
+      card?.kind === 'ucp_comparison' &&
+      typeof card.search_id === 'string' &&
+      card.search_id !== ''
+    )
+      return { kind: 'ucp_comparison', search_id: card.search_id };
   }
   return undefined;
 }

@@ -106,6 +106,11 @@ export interface A2ACardPublisherDeps {
   buildCard(): Promise<{ ok: true; card: AgentCard } | { ok: false; reason: string }>;
   /** The gateway is configured (the card has a public origin). */
   gatewayLive(): boolean;
+  /**
+   * The card key is not known yet (a restored node reading its DID document,
+   * UCP plan §4.8): no step judges the card meanwhile. Absent: never pending.
+   */
+  cardKeyPending?(): boolean;
   /** Signs with the node's `dina_signing` key. */
   sign(message: Uint8Array): Uint8Array;
   /** Verifies against the node's current `dina_signing` key. */
@@ -339,6 +344,8 @@ export class A2ACardPublisher implements A2APublisherPort {
       return;
     }
     if (row.publication_active !== 1 || row.state === 'stood_down') return;
+    // Not "no gateway": the card is not known yet. Neither publish nor take it down.
+    if (this.deps.cardKeyPending?.() === true) return;
     const now = this.now();
     const keyId = this.deps.signingKeyId();
     if (row.fence_key_id !== keyId) {

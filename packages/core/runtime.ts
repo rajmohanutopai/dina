@@ -50,6 +50,9 @@ export { coordinationWorkflowHooks } from './src/coordination/disclosure_egress'
 // host composes, and the runtime it reads (null where Lane 1 is not installed).
 export { a2aWorkflowHooks } from './src/a2a/permits';
 export { getA2ARuntime, installA2A } from './src/a2a/runtime';
+// UCP checkout (docs/UCP_IMPLEMENTATION_PLAN.md §3.7): the start card's decision hook, composed at
+// every host; it reads the installed checkout runtime (none until UCP starts).
+export { ucpWorkflowHooks } from './src/commerce/ucp/runtime';
 export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
 export { getNodeDID, setNodeDID,

@@ -20,8 +20,13 @@
 services:
   # ── Caddy (TLS termination + reverse proxy) ──
   caddy:
-    image: caddy:2-alpine
+    # Stock Caddy plus the Hetzner DNS module (caddy/Dockerfile), for the UCP
+    # profile host's wildcard certificate. Its token is used only when
+    # UCP_PROFILE_HOST is set.
+    build: ./caddy
     restart: always
+    environment:
+      UCP_ACME_DNS_TOKEN: ${UCP_ACME_DNS_TOKEN:-}
     ports:
       - "80:80"
       - "443:443"
@@ -170,6 +175,10 @@ services:
       PORT: "3000"
       NODE_ENV: production
       RATE_LIMIT_RPM: "60"
+      # appview-web publishes no port: only Caddy reaches it, and Caddy replaces
+      # any client-sent X-Forwarded-For with the real peer (checked with Caddy
+      # 2.11.7). So the per-address limits key on the client, not on Caddy.
+      TRUST_PROXY: "1"
       # Test-inject endpoints (`com.dinakernel.test.injectAttestation` /
       # `deleteAttestation`) — enabled only when BOTH env vars are
       # set + non-empty. Test environments wire them; prod leaves them
@@ -177,6 +186,15 @@ services:
       # with shared knowledge between AppView + the mobile dev build.
       DINA_TEST_INJECT: ${DINA_TEST_INJECT:-}
       DINA_TEST_INJECT_TOKEN: ${DINA_TEST_INJECT_TOKEN:-}
+      # UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): off while
+      # UCP_PROFILE_HOST is empty. In production it refuses to start without
+      # its off-host log bucket (UCP_LOG_S3_*).
+      UCP_PROFILE_HOST: ${UCP_PROFILE_HOST:-}
+      UCP_LOG_S3_ENDPOINT: ${UCP_LOG_S3_ENDPOINT:-}
+      UCP_LOG_S3_REGION: ${UCP_LOG_S3_REGION:-}
+      UCP_LOG_S3_BUCKET: ${UCP_LOG_S3_BUCKET:-}
+      UCP_LOG_S3_ACCESS_KEY_ID: ${UCP_LOG_S3_ACCESS_KEY_ID:-}
+      UCP_LOG_S3_SECRET_ACCESS_KEY: ${UCP_LOG_S3_SECRET_ACCESS_KEY:-}
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:

@@ -81,12 +81,23 @@ const STRICTER_TIER = `CASE
   WHEN a2a_disclosures.persona_tier = 'sensitive' OR excluded.persona_tier = 'sensitive' THEN 'sensitive'
   ELSE excluded.persona_tier END`;
 
+/** The tier merge for `conversation_taint`: the strictest tier a persona had when read. */
+const STRICTER_TAINT_TIER = STRICTER_TIER.replace(/a2a_disclosures\./g, 'conversation_taint.');
+
 export class A2AReleaseLog {
   private lastPurge = Number.NEGATIVE_INFINITY;
 
   constructor(
     readonly db: DatabaseAdapter,
     private readonly nowMs: () => number = Date.now,
+    /**
+     * Where this node's chat history lives. `core` (the phone): Core's chat
+     * repository holds it and marks coverage from a thread's first message.
+     * `brain` (a server): Brain keeps it in memory, begun again with every
+     * process, and never writes it to Core; a chat session is then covered
+     * from its first recorded turn (UCP plan §3.16).
+     */
+    private readonly options: { chatLivesIn?: 'core' | 'brain' } = {},
   ) {}
 
   /** Sweep expired rows now and then: every boot, and while the log is in use. */
@@ -101,6 +112,7 @@ export class A2AReleaseLog {
     this.sweep(now);
     const tier = tierOf(persona);
     this.db.transaction(() => {
+      if (items.length > 0) this.recordTaint(ctx.sessionId, persona, tier, now);
       for (const item of items) {
         this.db.run(
           `INSERT INTO a2a_disclosures
@@ -123,14 +135,43 @@ export class A2AReleaseLog {
   recordTopics(ctx: ReleaseContext, persona: string, topics: readonly string[]): void {
     const now = this.nowMs();
     this.sweep(now);
+    this.db.transaction(() => {
+      this.recordTaint(ctx.sessionId, persona, tierOf(persona), now);
+      this.db.run(
+        `INSERT INTO a2a_disclosures
+           (session_id, audience, persona, persona_tier, item_id, content_digest, released_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_id, audience, persona, item_id, content_digest)
+         DO UPDATE SET released_at = excluded.released_at, expires_at = excluded.expires_at,
+                       persona_tier = ${STRICTER_TIER}`,
+        [
+          ctx.sessionId,
+          ctx.audience,
+          persona,
+          tierOf(persona),
+          TOPICS_ITEM_ID,
+          canonicalDigest([...topics].sort()),
+          now,
+          now + RELEASE_LOG_TTL_MS,
+        ],
+      );
+    });
+  }
+
+  /**
+   * The durable record of a read (UCP plan §3.16): a chat conversation keeps
+   * every persona Brain read in it for as long as its messages exist, where
+   * this log forgets after a day. Called inside the release's transaction, so
+   * a release is never logged without it. An ask is one request and lives
+   * inside the log's day, so only chat conversations are recorded.
+   */
+  private recordTaint(sessionId: string, persona: string, tier: string, now: number): void {
+    if (!sessionId.startsWith('chat:')) return;
     this.db.run(
-      `INSERT INTO a2a_disclosures
-         (session_id, audience, persona, persona_tier, item_id, content_digest, released_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (session_id, audience, persona, item_id, content_digest)
-       DO UPDATE SET released_at = excluded.released_at, expires_at = excluded.expires_at,
-                     persona_tier = ${STRICTER_TIER}`,
-      [ctx.sessionId, ctx.audience, persona, tierOf(persona), TOPICS_ITEM_ID, canonicalDigest([...topics].sort()), now, now + RELEASE_LOG_TTL_MS],
+      `INSERT INTO conversation_taint (session_id, persona, persona_tier, first_read_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (session_id, persona) DO UPDATE SET persona_tier = ${STRICTER_TAINT_TIER}`,
+      [sessionId, persona, tier, now],
     );
   }
 
@@ -160,13 +201,22 @@ export class A2AReleaseLog {
   recordUtterance(sessionId: string, turnId: string, text: string): boolean {
     const now = this.nowMs();
     this.sweep(now);
-    return (
+    const recorded =
       this.db.run(
         `INSERT INTO a2a_utterances (session_id, turn_id, digest, recorded_at, expires_at)
            VALUES (?, ?, ?, ?, ?) ON CONFLICT (session_id, turn_id) DO NOTHING`,
         [sessionId, turnId, utteranceDigest(text), now, now + RELEASE_LOG_TTL_MS],
-      ) === 1
-    );
+      ) === 1;
+    if (recorded && sessionId.startsWith('chat:') && this.options.chatLivesIn === 'brain') {
+      // UCP plan §3.16: Brain's chat began with its process, after any upgrade, and every
+      // restricted read Brain has made in it since is in the durable taint record: whole.
+      this.db.run(
+        `INSERT INTO conversation_coverage (session_id, covered_since) VALUES (?, ?)
+         ON CONFLICT (session_id) DO NOTHING`,
+        [sessionId, now],
+      );
+    }
+    return recorded;
   }
 
   /** The digests of the owner's live messages in a conversation, oldest first. */

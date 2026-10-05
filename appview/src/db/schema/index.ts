@@ -43,3 +43,4 @@ export {
   commerceProductRelationships,
 } from './commerce-catalog'
 export { a2aAccountStatus, a2aCards, a2aCardTakedowns, a2aEventSpool, a2aDirectoryState } from './a2a'
+export { ucpMerchants, ucpProfileLabels } from './ucp'

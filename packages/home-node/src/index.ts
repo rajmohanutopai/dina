@@ -38,7 +38,7 @@ export type {
 } from './types';
 export { openAllPersonasForInAppUser } from './persona_lifecycle';
 export type { OpenAllPersonasOptions } from './persona_lifecycle';
-export { applyDinaPlcUpdate, ensureA2ACardKey } from './plc_dina_update';
+export { applyDinaPlcUpdate, currentA2ACardKey, ensureA2ACardKey } from './plc_dina_update';
 export type { ApplyDinaPlcUpdateOptions, EnsureA2ACardKeyOptions } from './plc_dina_update';
 export { makeResolveSender, pickEd25519VerificationMethod } from './resolve_sender';
 export type { MakeResolveSenderOptions } from './resolve_sender';

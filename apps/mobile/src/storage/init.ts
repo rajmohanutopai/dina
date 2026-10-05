@@ -19,6 +19,10 @@ import { clearNotificationsMemory, hydrateNotifications } from '@dina/brain/noti
 import {
   A2AReleaseLog,
   installA2AReleaseLog,
+  installUcpSettingsStore,
+  installUcpLinkStore,
+  UcpLinkStore,
+  UcpSettingsStore,
   createCommerceRuntime,
   installBuyerOrderSender,
   installBuyerAuthorityProvider,
@@ -282,7 +286,12 @@ export async function initializePersistence(
   // A2A §4.2 (b): what Core releases to Brain in a conversation, logged by the
   // vault read functions themselves. On the phone Brain calls them directly,
   // so the log must live here too, not only behind the server's routes.
-  installA2AReleaseLog(new A2AReleaseLog(identityDB));
+  installA2AReleaseLog(new A2AReleaseLog(identityDB, Date.now, { chatLivesIn: 'core' }));
+  // UCP (plan §4.2 U1): the owner's merchant and context settings, editable whether UCP is on or off.
+  installUcpSettingsStore(new UcpSettingsStore(identityDB));
+  // UCP §3.17: the app catches merchants' account-link answers for a paired server whether or
+  // not this phone runs UCP itself, and keeps them for that server to pull.
+  installUcpLinkStore(new UcpLinkStore(identityDB));
   // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
   // grants (constraints, per-execution consumption) + owner-private
   // decision log.
@@ -892,6 +901,8 @@ export async function shutdownAllPersistence(): Promise<void> {
     setContactRepository(null);
     setGroupPlanRepository(null);
     installA2AReleaseLog(null);
+    installUcpSettingsStore(null);
+    installUcpLinkStore(null);
     setServiceOfferRepository(null);
     setServiceDecisionRepository(null);
     setServiceGrantRepository(null);

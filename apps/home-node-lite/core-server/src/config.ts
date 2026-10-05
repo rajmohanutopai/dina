@@ -139,7 +139,10 @@ const A2ASchema = z
   .object({
     publicOrigin: z
       .string()
-      .refine((value) => parseA2APublicOrigin(value) !== null, 'must be a bare https origin (no path, query or credentials)')
+      .refine(
+        (value) => parseA2APublicOrigin(value) !== null,
+        'must be a bare https origin (no path, query or credentials)',
+      )
       .optional(),
     gatewayDid: z
       .string()
@@ -151,6 +154,21 @@ const A2ASchema = z
     path: ['gatewayDid'],
   });
 
+/**
+ * UCP buyer (docs/UCP_IMPLEMENTATION_PLAN.md). Off by default until the
+ * profile host is deployed; `profileHost` names a test deployment.
+ */
+const UcpSchema = z.object({
+  enabled: z.boolean(),
+  profileHost: z
+    .string()
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/,
+      'must be a lower-case host name',
+    )
+    .optional(),
+});
+
 /** Full server config — every subsection required. */
 export const CoreServerConfigSchema = z.object({
   endpoints: EndpointSchema.optional(),
@@ -158,6 +176,7 @@ export const CoreServerConfigSchema = z.object({
   storage: StorageSchema,
   runtime: RuntimeSchema,
   msgbox: MsgBoxSchema,
+  ucp: UcpSchema.optional(),
   cors: CorsSchema,
   // Optional — keeps existing test fixtures (which don't supply
   // `services`) typecheck-clean while still surfacing the loaded
@@ -280,6 +299,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
   //   DINA_INTERNAL_BRAIN_ENABLED → services.internalBrainEnabled (default false)
   //   DINA_A2A_PUBLIC_URL  → a2a.publicOrigin   (optional; with DINA_A2A_GATEWAY_DID)
   //   DINA_A2A_GATEWAY_DID → a2a.gatewayDid     (optional; with DINA_A2A_PUBLIC_URL)
+  //   DINA_UCP_ENABLED     → ucp.enabled          (default false: the profile host is not deployed yet)
+  //   DINA_UCP_PROFILE_HOST → ucp.profileHost     (optional; a test deployment's host name)
 
   const endpoints = readEndpoints(env);
   const internalBrainEnabled = readBool(env, 'DINA_INTERNAL_BRAIN_ENABLED', false);
@@ -314,6 +335,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     a2a: {
       publicOrigin: readString(env, 'DINA_A2A_PUBLIC_URL'),
       gatewayDid: readString(env, 'DINA_A2A_GATEWAY_DID'),
+    },
+    ucp: {
+      enabled: readBool(env, 'DINA_UCP_ENABLED', false),
+      profileHost: readString(env, 'DINA_UCP_PROFILE_HOST'),
     },
   };
 

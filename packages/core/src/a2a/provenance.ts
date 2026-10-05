@@ -229,10 +229,18 @@ export function restrictedReads(log: A2AReleaseLog, sessionId: string): string[]
     ...new Set(
       log
         .readSet(sessionId)
-        .filter((r) => RESTRICTED_TIERS.has(r.persona_tier) || RESTRICTED_TIERS.has(currentTier(r.persona)))
+        .filter((r) => isRestrictedRead(r.persona_tier, r.persona))
         .map((r) => r.persona),
     ),
   ].sort();
+}
+
+/**
+ * Whether a read taints: the persona was restricted (sensitive or locked) when
+ * read, or is now (a persona no longer known counts as private).
+ */
+export function isRestrictedRead(tierAtRead: string, persona: string): boolean {
+  return RESTRICTED_TIERS.has(tierAtRead) || RESTRICTED_TIERS.has(currentTier(persona));
 }
 
 function currentTier(persona: string): string {

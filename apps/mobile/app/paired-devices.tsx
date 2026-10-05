@@ -97,7 +97,14 @@ interface SupervisionState {
 }
 
 /** The two kinds this screen pairs; runners and plugins pair elsewhere. */
-type PairableRole = 'agent' | 'staff';
+type PairableRole = 'agent' | 'node' | 'staff';
+
+/** What each pairable kind is called on this screen. */
+const ROLE_LABEL: Record<PairableRole, string> = {
+  agent: 'Coding agent',
+  node: 'Server node',
+  staff: 'Staff phone',
+};
 
 /** A device as the list shows it (Core's owner-setup status, one row). */
 interface DeviceRow {
@@ -418,10 +425,14 @@ export default function PairedDevicesScreen() {
     // string (relay, node identity, and for a staff phone the node's signing
     // key); a coding agent is stamped `coding` scope there.
     void gated('Could not generate setup code', async () => {
+      // A server node (UCP plan §3.9) mirrors its approval cards here: its own scope, so
+      // no coding agent can send a checkout card or a link to open.
       const minted =
         pairing === 'agent'
           ? await client.mintCodingAgentCode(name)
-          : await client.mintStaffCode(name);
+          : pairing === 'node'
+            ? await client.mintServerNodeCode(name)
+            : await client.mintStaffCode(name);
       setLiveCode({
         expiresAt: minted.expires_at,
         deviceName: minted.device_name ?? name,
@@ -625,7 +636,7 @@ export default function PairedDevicesScreen() {
           {/* §6 — a STAFF phone pairs here too: same ceremony, its own
               caller type, authority only through the Staff screen's grants. */}
           <View style={styles.roleRow}>
-            {(['agent', 'staff'] as const).map((r) => (
+            {(['agent', 'node', 'staff'] as const).map((r) => (
               <TouchableOpacity
                 key={r}
                 style={[styles.roleChip, role === r && styles.roleChipActive]}
@@ -634,7 +645,7 @@ export default function PairedDevicesScreen() {
                 testID={`paired-devices-role-${r}`}
               >
                 <Text style={role === r ? styles.roleChipActiveText : styles.roleChipText}>
-                  {r === 'agent' ? 'Coding agent' : 'Staff phone'}
+                  {ROLE_LABEL[r]}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -692,7 +703,7 @@ export default function PairedDevicesScreen() {
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
               <Text style={styles.mono}>
-                {liveCode.role === 'agent' ? 'coding agent' : 'staff phone'}
+                {ROLE_LABEL[liveCode.role].toLowerCase()}
               </Text>
             </Text>
             <Text style={[styles.codeMeta, secondsRemaining < 60 && styles.codeExpiring]}>

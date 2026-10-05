@@ -16,6 +16,7 @@ import {
 } from '@dina/a2a';
 
 import { isAuthorized, type CallerType } from '../../src/auth/authz';
+import { isUcpGatewayRoute, UCP_WEBHOOK_INGRESS_ROUTE } from '../../src/commerce/ucp/webhooks';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { isA2AGatewayRoute, registerA2AIngressRoutes } from '../../src/server/routes/a2a_ingress';
 
@@ -37,6 +38,17 @@ describe('the authorization matrix', () => {
       expect(isAuthorized('gateway', 'GET', path)).toBe(false);
     },
   );
+
+  it('opens the UCP order-webhook door to the gateway alone, and the limiter exemption names it', () => {
+    expect(isAuthorized('gateway', 'POST', UCP_WEBHOOK_INGRESS_ROUTE)).toBe(true);
+    for (const other of ['brain', 'device', 'agent', 'plugin', 'owner'] as CallerType[])
+      expect(isAuthorized(other, 'POST', UCP_WEBHOOK_INGRESS_ROUTE)).toBe(false);
+    expect(isAuthorized('gateway', 'GET', UCP_WEBHOOK_INGRESS_ROUTE)).toBe(false);
+    expect(isAuthorized('gateway', 'POST', '/v1/ucp/cart')).toBe(false);
+    expect(isUcpGatewayRoute('POST', UCP_WEBHOOK_INGRESS_ROUTE)).toBe(true);
+    expect(isUcpGatewayRoute('GET', UCP_WEBHOOK_INGRESS_ROUTE)).toBe(false);
+    expect(isUcpGatewayRoute('POST', '/v1/ucp/cart')).toBe(false);
+  });
 
   it('opens nothing else to the gateway', () => {
     for (const path of [

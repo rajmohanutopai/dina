@@ -12,3 +12,6 @@
 packages/commerce-protocol/conformance/vectors/
 packages/commerce-protocol/conformance/interop/
 packages/a2a/conformance/vectors/
+# Written by packages/ucp/scripts/harvest_spec_examples.mjs from the pinned UCP
+# spec checkout; re-harvesting must reproduce it byte for byte.
+packages/ucp/__tests__/fixtures/

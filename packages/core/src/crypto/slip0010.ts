@@ -375,15 +375,32 @@ export function deriveNamespaceKey(seed: Uint8Array, namespaceIndex: number): De
  * Derive the P-256 (ES256) signing key at `m/9999'/5'/{generation}'`.
  *
  * Purpose 5 is the next free slot after the PeerLens namespaces (purpose 4).
- * One key serves the standards that require ES256 and will not take Ed25519:
- * A2A Agent Card signatures, UCP request signatures and AP2 mandates
- * (docs/A2A_IMPLEMENTATION_PLAN.md D4, docs/AP2_AGENT_PAYMENTS.md §6.1). It
- * stays in the signing tree, apart from the HKDF branch that makes vault keys.
- * A rotation moves to the next generation, as the root key does.
+ * It serves A2A Agent Card signatures, published in the DID document as
+ * `#a2a_card` (docs/A2A_IMPLEMENTATION_PLAN.md D4). UCP signs with its own key
+ * (`deriveUcpSigningKey`, purpose 6), kept out of the DID document. It stays in
+ * the signing tree, apart from the HKDF branch that makes vault keys. A
+ * rotation moves to the next generation, as the root key does.
  */
 export function deriveP256SigningKey(seed: Uint8Array, generation: number): DerivedKey {
+  return derivePathP256(seed, `m/9999'/5'/${p256Generation(generation)}'`);
+}
+
+/**
+ * Derive the UCP request-signing key (P-256, ES256) at `m/9999'/6'/{generation}'`.
+ *
+ * Purpose 6 is UCP's own (docs/UCP_IMPLEMENTATION_PLAN.md §3.1, S11): merchants
+ * must be able to verify ES256, and this key is never written to the DID
+ * document, so a merchant holding the buyer profile cannot look the person up
+ * from it. It is a separate purpose, not another A2A generation, so rotating
+ * one never moves the other.
+ */
+export function deriveUcpSigningKey(seed: Uint8Array, generation: number): DerivedKey {
+  return derivePathP256(seed, `m/9999'/6'/${p256Generation(generation)}'`);
+}
+
+function p256Generation(generation: number): number {
   if (!Number.isSafeInteger(generation) || generation < 0 || generation >= HARDENED_OFFSET) {
     throw new Error('slip0010: P-256 key generation must be an integer in [0, 2^31)');
   }
-  return derivePathP256(seed, `m/9999'/5'/${generation}'`);
+  return generation;
 }

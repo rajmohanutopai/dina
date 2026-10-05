@@ -42,10 +42,13 @@ import {
   COMMERCE_RESTORE_PENDING_KEY,
   markCommerceRestorePending,
 } from '../commerce/restore_marker';
+import { UCP_ARCHIVE_TABLES, ucpRowsForArchive } from '../commerce/ucp/archive_rows';
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
+import { forgetConversation } from '../conversation/forget';
 import { wrapSeed, unwrapSeed } from '../crypto/aesgcm';
 import { validatePersonaName } from '../persona/service';
 import { VALID_PLUGIN_DECISION_KINDS } from '../plugins/decisions';
+import { releaseSessionId } from '../vault/release';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 import type { PluginManifest } from '@dina/protocol';
@@ -125,6 +128,19 @@ const IDENTITY_TABLES = [
   'service_configs',
   'contact_service_offers',
   'chat_messages',
+  // UCP plan §3.16: what Brain read in each chat conversation, and since when
+  // that record is whole. They travel with the chat history they describe: a
+  // restored thread keeps its taint, and a thread restored without them is
+  // uncovered, so its searches need the owner's card.
+  'conversation_taint',
+  'conversation_coverage',
+  // UCP: the owner's allowed merchants and context fields; their configuration travels.
+  'ucp_owner_settings',
+  // UCP plan §3.14: checkout sessions and orders travel (history, and what a
+  // webhook-only order has seen), in their restored form (`ucp/archive_rows.ts`):
+  // no session left able to send, no slot or lease, open orders due at once.
+  // The request journal, carts, webhook inbox, searches and guard jobs do not.
+  ...UCP_ARCHIVE_TABLES,
   // P2-12: the installed-plugin CATALOG (what plugin, version, capabilities,
   // pinned hashes) is portable content worth preserving. It is TRANSFORMED on
   // export to restore PAUSED with no device binding (see buildArchivePayload).
@@ -223,6 +239,17 @@ const EPHEMERAL_KV_PATTERNS: RegExp[] = [
   // taken while a fence was owed demand a second fence, on a different node,
   // for an event that already happened here.
   new RegExp(`^${COMMERCE_RESTORE_PENDING_KEY}$`),
+  // UCP plan §3.5 — the profile publisher's record (`commerce/ucp/publisher.ts`)
+  // names THIS installation: its instance id, epoch and owner controls. Carried
+  // into a restore it would make the new device the same installation as the
+  // old one, so the host could not tell them apart and neither would stand
+  // down; left out, a restored node starts as a new installation and stands
+  // down until the owner activates it.
+  /^ucp:publisher$/,
+  // UCP plan §4.8 (U7) — the A2A card key ring (`a2a/card_key_rotation.ts`).
+  // An archive taken before a rotation would carry an older key back; left
+  // out, a restored node reads the generation in use from its DID document.
+  /^a2a:card_key_ring$/,
 ];
 
 function isEphemeralKvKey(key: unknown): boolean {
@@ -433,6 +460,8 @@ export async function buildArchivePayload(ds: ArchiveDataSource): Promise<Archiv
             pending_expires_at: null,
           }));
       }
+      if ((UCP_ARCHIVE_TABLES as readonly string[]).includes(t))
+        rows = ucpRowsForArchive(t, rows, Date.now());
       identityTables[t] = rows;
       checksums[`identity:${t}`] = tableChecksum(rows);
     }
@@ -500,6 +529,28 @@ function payloadHasData(p: ArchivePayloadV1): boolean {
  * registered `ArchiveDataSource`; when none is installed (dry-run/tests)
  * it produces a valid but empty archive.
  */
+/**
+ * Whether restoring `tables` clears the target's `table` first.
+ *  - Force clears a table the archive supplies (an empty list included: "no
+ *    rows" is a statement), never one it lacks (an older build that did not
+ *    have it; clearing would destroy data the backup never described), and
+ *    never kv_store (it holds secrets kept out of archives; merged instead).
+ *  - UCP plan §3.16: an archive that brings chat history but no coverage
+ *    record (written before UCP) clears coverage, force or not. Coverage says
+ *    a thread's record is whole on this node; history restored from a backup
+ *    that kept no taint makes that untrue.
+ */
+export function clearsOnRestore(
+  table: string,
+  tables: Readonly<Record<string, unknown>>,
+  force: boolean,
+): boolean {
+  const supplied = (t: string): boolean => Object.prototype.hasOwnProperty.call(tables, t);
+  if (table === 'conversation_coverage' && !supplied(table) && supplied('chat_messages'))
+    return true;
+  return force && supplied(table) && table !== KV_TABLE;
+}
+
 export async function createArchive(passphrase: string): Promise<Uint8Array> {
   const ds = getArchiveDataSource();
   const payload = ds !== null ? await buildArchivePayload(ds) : emptyPayload();
@@ -593,11 +644,16 @@ export async function importArchive(
         // preflight already names that state `predatesCommerce`. Under the old
         // rule a force-restore from such a backup wiped every order reference,
         // quote head, use counter and status head on a live trading node.
-        const supplied = Object.prototype.hasOwnProperty.call(
-          payload.identity.tables,
-          table,
-        );
-        if (opts.force && supplied && table !== KV_TABLE) clearTable(idAdapter, table);
+        if (clearsOnRestore(table, payload.identity.tables, opts.force === true)) {
+          // Replacing the chat history ends every conversation the target held:
+          // Core forgets what it kept about each (UCP handles and searches among it).
+          if (table === 'chat_messages') {
+            for (const r of idAdapter.query(`SELECT DISTINCT thread_id FROM chat_messages`)) {
+              forgetConversation(idAdapter, releaseSessionId('chat', String(r.thread_id)));
+            }
+          }
+          clearTable(idAdapter, table);
+        }
         const rows = payload.identity.tables[table];
         if (rows !== undefined) {
           // Round-9 #18: plugin authority never travels. Export bakes installs
@@ -722,7 +778,11 @@ export async function importArchive(
                       r.created_at >= 0
                     );
                   })
-                : rows;
+                : (UCP_ARCHIVE_TABLES as readonly string[]).includes(table)
+                  ? // The archive is the importer's file: UCP rows are put in their
+                    // restored form again here, whatever it says.
+                    ucpRowsForArchive(table, rows, Date.now())
+                  : rows;
           restoreTable(idAdapter, table, safe);
         }
       }
@@ -869,7 +929,16 @@ export async function verifyArchive(archive: Uint8Array, passphrase: string): Pr
 // Encoding (shared with the original wire format)
 // ---------------------------------------------------------------
 
-async function encodeArchive(payload: ArchivePayloadV1, passphrase: string): Promise<Uint8Array> {
+/**
+ * Seal a payload as an archive: the inverse of `readManifest`. `createArchive`
+ * builds the payload from the installed data source and seals it this way; a
+ * caller holding a payload of its own (a tool, or a test standing in for an
+ * archive an older build wrote) seals it here.
+ */
+export async function encodeArchive(
+  payload: ArchivePayloadV1,
+  passphrase: string,
+): Promise<Uint8Array> {
   const manifestBytes = new TextEncoder().encode(JSON.stringify(payload, archiveJsonReplacer));
   const wrapped = await wrapSeed(passphrase, manifestBytes);
 

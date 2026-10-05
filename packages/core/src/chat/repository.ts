@@ -8,10 +8,17 @@
  * `addMessage` into it and hydrates from it on unlock.
  *
  * Greenfield — no migration from any prior shape.
+ *
+ * The thread's taint records live and die with its messages (UCP plan
+ * §3.16): the first message written to a thread marks it covered
+ * (`conversation_coverage`), so Core knows its `conversation_taint` rows are
+ * the whole record; once a thread has no messages left, both go.
  */
 
+import { forgetConversation } from '../conversation/forget';
 import { currentDataScope, type DataScope } from '../scope/data_scope';
 import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/repository';
+import { releaseSessionId } from '../vault/release';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -64,6 +71,23 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
   async append(msg: StoredChatMessage): Promise<void> {
+    this.db.transaction(() => {
+      // A thread's first message, written here: its taint record is complete from now on.
+      // Across every data scope, so a demo thread's history cannot pass for a new one.
+      const earlier = this.db.query(`SELECT 1 FROM chat_messages WHERE thread_id = ? LIMIT 1`, [
+        msg.threadId,
+      ]);
+      if (earlier.length === 0) {
+        this.db.run(
+          `INSERT OR IGNORE INTO conversation_coverage (session_id, covered_since) VALUES (?, ?)`,
+          [releaseSessionId('chat', msg.threadId), msg.timestamp],
+        );
+      }
+      this.insert(msg);
+    });
+  }
+
+  private insert(msg: StoredChatMessage): void {
     this.db.execute(
       `INSERT OR REPLACE INTO chat_messages
        (id, thread_id, type, content, metadata, sources, timestamp, data_scope)
@@ -105,17 +129,41 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
   }
 
   async deleteThread(threadId: string): Promise<boolean> {
-    const affected = this.db.run(
-      `DELETE FROM chat_messages WHERE thread_id = ? AND ${scopedWhere()}`,
-      [threadId, ...scopedParams()],
-    );
+    let affected = 0;
+    this.db.transaction(() => {
+      affected = this.db.run(`DELETE FROM chat_messages WHERE thread_id = ? AND ${scopedWhere()}`, [
+        threadId,
+        ...scopedParams(),
+      ]);
+      this.forgetIfEmpty([threadId]);
+    });
     return affected > 0;
+  }
+
+  /** A thread with no messages left is a conversation that has ended: Core forgets what it kept about it. */
+  private forgetIfEmpty(threadIds: readonly string[]): void {
+    for (const threadId of threadIds) {
+      if (
+        this.db.query(`SELECT 1 FROM chat_messages WHERE thread_id = ? LIMIT 1`, [threadId])
+          .length > 0
+      )
+        continue;
+      forgetConversation(this.db, releaseSessionId('chat', threadId));
+    }
   }
 
   async reset(): Promise<void> {
     // Scope-bound reset (spec: deletes filter to currentDataScope) — a demo
     // reset never wipes user chat. Full sign-out wipe goes through teardown.
-    this.db.run(`DELETE FROM chat_messages WHERE ${scopedWhere()}`, [...scopedParams()]);
+    this.db.transaction(() => {
+      const threads = this.db
+        .query(`SELECT DISTINCT thread_id FROM chat_messages WHERE ${scopedWhere()}`, [
+          ...scopedParams(),
+        ])
+        .map((r) => String(r.thread_id));
+      this.db.run(`DELETE FROM chat_messages WHERE ${scopedWhere()}`, [...scopedParams()]);
+      this.forgetIfEmpty(threads);
+    });
   }
 }
 

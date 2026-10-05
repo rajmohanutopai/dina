@@ -20,6 +20,8 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   A2AReleaseLog,
   installA2AReleaseLog,
+  installUcpSettingsStore,
+  UcpSettingsStore,
   createPersona,
   getNodeDID,
   getPersonaTier,
@@ -302,7 +304,10 @@ export async function initializeStorage(
   setGroupPlanRepository(new SQLiteGroupPlanRepository(identityDB));
   // A2A §4.2 (b): what Core releases to Brain in a conversation, logged by the
   // vault read functions (the same seam the phone uses).
-  installA2AReleaseLog(new A2AReleaseLog(identityDB));
+  // Chat lives in Brain on a server: a chat session is covered from its first recorded turn.
+  installA2AReleaseLog(new A2AReleaseLog(identityDB, Date.now, { chatLivesIn: 'brain' }));
+  // UCP (plan §4.2 U1): the owner's merchant and context settings, editable whether UCP is on or off.
+  installUcpSettingsStore(new UcpSettingsStore(identityDB));
   // Plugin dynamic registry (PLUGIN_ARCHITECTURE.md §6): installs +
   // grants (constraints, per-execution consumption) + owner-private
   // decision log.

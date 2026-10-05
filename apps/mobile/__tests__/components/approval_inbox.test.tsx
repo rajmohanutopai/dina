@@ -19,7 +19,7 @@
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 import {
   appendNotification,
@@ -40,6 +40,12 @@ import type { WorkflowTask } from '@dina/core';
 // Activity uses `useRouter` (notification-row taps) + `useLocalSearchParams`
 // (the `?filter=` deep-link tab); stub both so rendering doesn't crash.
 const pushed: string[] = [];
+/** Whether this phone holds a passphrase-wrapped seed (it can prove a person is here). */
+let wrappedSeed: object | null = { v: 1 };
+jest.mock('../../src/services/wrapped_seed_store', () => ({
+  loadWrappedSeed: async () => wrappedSeed,
+}));
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: (path: string): void => void pushed.push(path) }),
   useLocalSearchParams: () => ({}),
@@ -540,6 +546,7 @@ describe('an A2A card the server node mirrored (iPhone run 2026-10-04)', () => {
     payload: JSON.stringify({
       type: 'remote_facade_action_v1',
       source_device_did: 'did:key:z6MkServerNode',
+      source_device_name: 'Dina laptop approvals',
       agent_did: 'a2a:agent-1',
       action: 'a2a_delegate',
       display_title: 'Send to Summarizer: Summarize',
@@ -551,7 +558,7 @@ describe('an A2A card the server node mirrored (iPhone run 2026-10-04)', () => {
     updated_at: 1_000,
   };
 
-  it('names the agent and skill, says it comes via the Home Node, and the confirm dialog repeats both', async () => {
+  it('names the agent and skill, says which paired device sent it, and the confirm dialog repeats both', async () => {
     const stub = stubClient({ pending: [mirrored] });
     setInboxCoreClient(stub.client);
     const dialogs: { title: string; body: string }[] = [];
@@ -565,14 +572,14 @@ describe('an A2A card the server node mirrored (iPhone run 2026-10-04)', () => {
 
     expect(screen.getByText('Message to an outside agent')).toBeTruthy();
     expect(screen.getByText('Send to Summarizer: Summarize')).toBeTruthy();
-    expect(screen.getByText(/^via your Home Node \(/)).toBeTruthy();
+    expect(screen.getByText(/^via Dina laptop approvals \(/)).toBeTruthy();
     expect(screen.queryByText(/^agent /)).toBeNull();
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('approvals-approve-a2a-m1'));
     });
     expect(dialogs[0]?.title).toBe('Approve "Send to Summarizer: Summarize"?');
-    expect(dialogs[0]?.body).toMatch(/^via your Home Node\n/);
+    expect(dialogs[0]?.body).toMatch(/^via Dina laptop approvals\n/);
     expect(dialogs[0]?.body).not.toMatch(/unnamed agent/);
     expect(stub.approve).toHaveBeenCalledWith('a2a-m1', undefined);
     alertSpy.mockRestore();
@@ -735,5 +742,361 @@ describe('supportsAllow24h (§15.5 — where Core says a grant can silence)', ()
     // No Core card facts at all → the phone offers nothing it cannot back.
     expect(supportsAllow24h({ ...base, grantCanSilence: undefined })).toBe(false);
     expect(supportsAllow24h({ ...base, kind: 'intent_validation' })).toBe(false);
+  });
+});
+
+describe('a held shop search (UCP plan §3.16)', () => {
+  const held: WorkflowTask = {
+    id: 'ucp-search-review-1',
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'normal',
+    description: 'Search https://a-shop.example for: tea for +1 415 555 0134',
+    payload: JSON.stringify({
+      type: 'ucp_search_review',
+      session_id: 'chat:main',
+      binding: 'e'.repeat(64),
+      query: 'tea for +1 415 555 0134',
+      merchants: ['https://a-shop.example'],
+      why: ['personal_data'],
+    }),
+    result_summary: '',
+    policy: '',
+    created_at: 1_000,
+    updated_at: 1_000,
+  };
+
+  it('is headed as a held search, shows the shop and the exact query, and approving sends that decision', async () => {
+    const stub = stubClient({ pending: [held] });
+    setInboxCoreClient(stub.client);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _body, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Approve')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    expect(screen.getByText('A shop search Dina held')).toBeTruthy();
+    expect(screen.getByText('Search a-shop.example?')).toBeTruthy();
+    expect(
+      screen.getByText(
+        /It may carry personal details[\s\S]*https:\/\/a-shop\.example[\s\S]*Exactly what will be sent:\stea for \+1 415 555 0134/,
+      ),
+    ).toBeTruthy();
+    // The phone's own card: no requester line (there is no other device to name).
+    expect(screen.queryByText(/^via /)).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-approve-ucp-search-review-1'));
+    });
+    expect(stub.approve).toHaveBeenCalledWith('ucp-search-review-1', undefined);
+    alertSpy.mockRestore();
+  });
+
+  it('a mirrored one is headed as from a paired device, never as one Dina held', async () => {
+    const mirrored: WorkflowTask = {
+      ...held,
+      id: 'remote-approval-ucp-1',
+      payload: JSON.stringify({
+        type: 'remote_facade_action_v1',
+        source_device_did: 'did:key:z6MkSomeAgent',
+        source_device_name: 'Home Node',
+        source_task_id: 'ucp-search-review-7',
+        source_payload_hash: 'e'.repeat(64),
+        agent_did: 'ucp:search',
+        action: 'ucp_search',
+        risk_level: 'HIGH',
+        tool_name: 'ucp_search',
+        proposal_type: 'facade_action',
+        display_title: 'Search a-shop.example?',
+        display_detail: 'Dina held this search before it left:\nExactly what will be sent:\ntea',
+      }),
+    };
+    const stub = stubClient({ pending: [mirrored] });
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    expect(screen.getByText('A held shop search from a paired device')).toBeTruthy();
+    expect(screen.queryByText('A shop search Dina held')).toBeNull();
+    expect(screen.getByText(/^via Home Node \(/)).toBeTruthy();
+  });
+
+  it('denying it cancels the card and nothing else: no service answer is attempted', async () => {
+    const stub = stubClient({ pending: [held] });
+    setInboxCoreClient(stub.client);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _body, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Deny')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-deny-ucp-search-review-1'));
+    });
+    expect(stub.cancel).toHaveBeenCalledWith('ucp-search-review-1', 'denied_by_operator');
+    expect(stub.client.sendServiceRespond).not.toHaveBeenCalled();
+    expect(stub.approve).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+});
+
+describe('a checkout hand-off card (UCP plan §3.7)', () => {
+  const handoff: WorkflowTask = {
+    id: 'ucp-checkout-handoff-1',
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'normal',
+    description: 'Review and pay at shop.example\n2 each × Sencha — EUR 56.00',
+    payload: JSON.stringify({
+      type: 'ucp_checkout_handoff',
+      session_id: 'ucp-checkout-1',
+      merchant: 'https://shop.example',
+      status: 'incomplete',
+      lines: [{ title: 'Sencha', quantity: '2', unit: 'each', total: { amount: '5600', currency: 'EUR' } }],
+      totals: [{ type: 'total', label: 'Total', amount: { amount: '5600', currency: 'EUR' } }],
+      messages: [],
+      discounts: [],
+      fulfillment: [],
+      links: [],
+      expires_at: 2_000_000_000_000,
+      handoff: { url: 'https://shop.example/checkout/chk_1', source: 'continue_url', off_host: false },
+      notes: [],
+    }),
+    result_summary: '',
+    policy: '',
+    created_at: 1_000,
+    updated_at: 1_000,
+  };
+
+  it('is headed as paying on the merchant’s page, names the host it opens, and a yes opens it', async () => {
+    const stub = stubClient({ pending: [handoff] });
+    setInboxCoreClient(stub.client);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _body, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Approve')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    expect(screen.getByText('Review and pay on the merchant’s page')).toBeTruthy();
+    expect(screen.getByText(/Opens shop\.example/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-approve-ucp-checkout-handoff-1'));
+    });
+    expect(stub.approve).toHaveBeenCalledWith('ucp-checkout-handoff-1', undefined);
+    expect(open).toHaveBeenCalledWith('https://shop.example/checkout/chk_1');
+    alertSpy.mockRestore();
+    open.mockRestore();
+  });
+
+  it('on a phone with no passphrase its own hand-off has no yes: the card asks for a passphrase', async () => {
+    wrappedSeed = null;
+    try {
+      const stub = stubClient({ pending: [{ ...handoff, id: 'ucp-checkout-handoff-2' }] });
+      setInboxCoreClient(stub.client);
+      const screen = render(<NotificationsScreen />);
+      await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+      fireEvent.press(screen.getByTestId('filter-needs_action'));
+      await waitFor(() =>
+        expect(screen.getByTestId('approvals-presence-unavailable-ucp-checkout-handoff-2')).toBeTruthy(),
+      );
+      expect(screen.queryByTestId('approvals-approve-ucp-checkout-handoff-2')).toBeNull();
+      // This phone's own card: no server to send the owner to; it asks for a passphrase.
+      expect(screen.getByText(/Set one in Settings/)).toBeTruthy();
+      expect(screen.queryByText(/server node’s console/)).toBeNull();
+      expect(screen.getByTestId('approvals-deny-ucp-checkout-handoff-2')).toBeTruthy();
+    } finally {
+      wrappedSeed = { v: 1 };
+    }
+  });
+
+  it('an approved hand-off keeps its link in the history, opened by a tap', async () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const screen = render(
+      <ResolvedApprovalCard
+        entry={{
+          id: 'ucp-checkout-handoff-3',
+          kind: 'agent_action',
+          capability: 'Review and pay at shop.example',
+          serviceName: 'Review and pay at shop.example',
+          description: 'Review and pay at shop.example',
+          requesterDID: '',
+          paramsPreview: '',
+          createdAt: 1_000,
+          outcome: 'approved',
+          ucpCheckout: {
+            card: 'handoff',
+            source: 'own',
+            openUrl: 'https://shop.example/checkout/chk_1',
+            linkHost: 'shop.example',
+          },
+        }}
+      />,
+    );
+    fireEvent.press(screen.getByTestId('approvals-resolved-open-ucp-checkout-handoff-3'));
+    expect(open).toHaveBeenCalledWith('https://shop.example/checkout/chk_1');
+    open.mockRestore();
+  });
+
+  it('a no cancels the card and opens nothing', async () => {
+    const stub = stubClient({ pending: [handoff] });
+    setInboxCoreClient(stub.client);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _body, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Deny')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-deny-ucp-checkout-handoff-1'));
+    });
+    expect(stub.cancel).toHaveBeenCalledWith('ucp-checkout-handoff-1', 'denied_by_operator');
+    expect(open).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+    open.mockRestore();
+  });
+});
+
+describe('a linked-account card from the server node (UCP plan §3.17)', () => {
+  const linkCard: WorkflowTask = {
+    id: 'm-link-1',
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'normal',
+    origin: 'agent',
+    description: 'Link your account at shop.example?',
+    payload: JSON.stringify({
+      type: 'remote_facade_presence_v1',
+      source_device_did: 'did:key:z6MkServerNode',
+      source_task_id: 'ucp-link-1:w1',
+      source_payload_hash: 'f'.repeat(64),
+      agent_did: 'ucp:link',
+      action: 'ucp_link_handoff',
+      risk_level: 'HIGH',
+      tool_name: 'ucp_link_handoff',
+      proposal_type: 'facade_action',
+      display_title: 'Link your account at shop.example?',
+      display_detail: 'Dina may read your orders.\nYou sign in at shop.example.',
+      link_url: 'https://shop.example/auth/authorize?state=s',
+      presence_required: true,
+      expires_at: 2_000_000_000,
+    }),
+    result_summary: '',
+    policy: '',
+    created_at: 1_000,
+    updated_at: 1_000,
+  };
+
+  it('is headed as linking an account; a yes made here opens the shop’s sign-in page here', async () => {
+    const stub = stubClient({ pending: [linkCard] });
+    setInboxCoreClient(stub.client);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _body, buttons) => {
+      void (buttons ?? []).find((b) => b.text === 'Approve')?.onPress?.();
+    });
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    expect(screen.getByText('Link your account at a merchant')).toBeTruthy();
+    expect(screen.getByText(/Opens shop\.example/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-approve-m-link-1'));
+    });
+    expect(stub.approve).toHaveBeenCalledWith('m-link-1', undefined);
+    expect(open).toHaveBeenCalledWith('https://shop.example/auth/authorize?state=s');
+    alertSpy.mockRestore();
+    open.mockRestore();
+  });
+
+  it('on a phone with no passphrase it has no yes, and says to set one (the console cannot link)', async () => {
+    wrappedSeed = null;
+    try {
+      const stub = stubClient({ pending: [linkCard] });
+      setInboxCoreClient(stub.client);
+      const screen = render(<NotificationsScreen />);
+      await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+      fireEvent.press(screen.getByTestId('filter-needs_action'));
+      await waitFor(() => expect(screen.getByTestId('approvals-presence-unavailable-m-link-1')).toBeTruthy());
+      expect(screen.queryByTestId('approvals-approve-m-link-1')).toBeNull();
+      expect(screen.getByText(/Linking needs a passphrase/)).toBeTruthy();
+      expect(screen.queryByText(/server node’s console/)).toBeNull();
+    } finally {
+      wrappedSeed = { v: 1 };
+    }
+  });
+
+  it('an approved link card keeps the sign-in page in the history', () => {
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const screen = render(
+      <ResolvedApprovalCard
+        entry={{
+          id: 'm-link-2',
+          kind: 'agent_action',
+          capability: 'Link your account at shop.example?',
+          serviceName: 'Link your account at shop.example?',
+          description: 'Link your account at shop.example?',
+          requesterDID: '',
+          paramsPreview: '',
+          createdAt: 1_000,
+          outcome: 'approved',
+          ucpCheckout: {
+            card: 'link',
+            source: 'mirrored',
+            openUrl: 'https://shop.example/auth/authorize?state=s',
+            linkHost: 'shop.example',
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText('Open shop.example’s sign-in')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('approvals-resolved-open-m-link-2'));
+    expect(open).toHaveBeenCalledWith('https://shop.example/auth/authorize?state=s');
+    open.mockRestore();
+  });
+});
+
+describe('an order notice card (UCP plan §3.14)', () => {
+  const notice: WorkflowTask = {
+    id: 'ucp-order-notice-1',
+    kind: 'approval',
+    status: 'pending_approval',
+    priority: 'user_blocking',
+    result_summary: '',
+    policy: '',
+    created_at: 1_000,
+    updated_at: 1_000,
+    description: 'A delivery attempt failed on your order at tea.example.',
+    payload: JSON.stringify({
+      type: 'ucp_order_notice',
+      merchant_origin: 'https://tea.example',
+      merchant_host: 'tea.example',
+      order_id: 'ord_1',
+      permalink_url: 'https://tea.example/orders/ord_1',
+      what: 'a delivery attempt failed',
+      notice: { kind: 'event', id: 'e1', type: 'failed_attempt' },
+      at: 1,
+    }),
+  };
+
+  it('says what happened, opens the shop’s order page, and has one action, "Seen", taken without a confirm', async () => {
+    const stub = stubClient({ pending: [notice] });
+    setInboxCoreClient(stub.client);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const alertSpy = jest.spyOn(Alert, 'alert');
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    expect(screen.getByText('Your purchase needs a look')).toBeTruthy();
+    expect(screen.queryByTestId('approvals-deny-ucp-order-notice-1')).toBeNull();
+    fireEvent.press(screen.getByTestId('approvals-order-open-ucp-order-notice-1'));
+    expect(open).toHaveBeenCalledWith('https://tea.example/orders/ord_1');
+    expect(screen.getByText('Seen')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('approvals-approve-ucp-order-notice-1'));
+    });
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(stub.approve).toHaveBeenCalledWith('ucp-order-notice-1', undefined);
+    alertSpy.mockRestore();
+    open.mockRestore();
   });
 });

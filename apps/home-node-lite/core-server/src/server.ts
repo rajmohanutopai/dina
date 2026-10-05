@@ -34,7 +34,7 @@ import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import Fastify from 'fastify';
 
-import { isA2AGatewayRoute } from '@dina/core';
+import { isA2AGatewayRoute, isUcpGatewayRoute } from '@dina/core';
 
 import { installAgentContextDecorator } from './auth/agent_did_decorator';
 import { WEB_APP_PREFIX } from './server/web_app';
@@ -304,7 +304,8 @@ export async function createServer(opts: CreateServerOptions) {
       (req.method === 'GET' && (req.url === '/app' || req.url.startsWith(WEB_APP_PREFIX))) ||
       (gatewayDid !== undefined &&
         req.headers['x-did'] === gatewayDid &&
-        isA2AGatewayRoute(req.method, req.url.split('?')[0] ?? '')),
+        (isA2AGatewayRoute(req.method, req.url.split('?')[0] ?? '') ||
+          isUcpGatewayRoute(req.method, req.url.split('?')[0] ?? ''))),
     keyGenerator: (req) => `ip:${req.ip}`,
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the

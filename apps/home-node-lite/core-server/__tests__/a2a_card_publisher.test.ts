@@ -168,6 +168,8 @@ interface Node {
   key: Uint8Array;
   card: AgentCard | null;
   gateway: boolean;
+  /** The card key is still being read from the DID document (UCP plan §4.8). */
+  cardKeyPending: boolean;
   keyReady: boolean;
   /** Runs once, while the card is being built (after the publisher read its row). */
   onBuild: (() => void) | null;
@@ -191,6 +193,7 @@ function publisherFor(n: Node): A2ACardPublisher {
       return card === null ? { ok: false, reason: 'no_projectable_skills' } : { ok: true, card };
     },
     gatewayLive: () => n.gateway,
+    cardKeyPending: () => n.cardKeyPending,
     sign: (m) => sign(n.key, m),
     verify: (m, s) => verify(getPublicKey(n.key), m, s),
     signingKeyId: () => keyIdOf(n.key),
@@ -223,6 +226,7 @@ function node(key = KEY_A): Node {
     key,
     card: CARD(),
     gateway: true,
+    cardKeyPending: false,
     keyReady: true,
     onBuild: null,
     logs: [],
@@ -418,6 +422,20 @@ describe('the predicate: each input, and restoring it', () => {
     expect(repo.card()).toBeNull();
     expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0, last_published_cid: null }));
     n.gateway = true;
+    await step(n);
+    expect(nameInRepo()).toBe('Bus 42');
+  });
+
+  it('the card key not known yet (no card config while it is read): the card stays; known again, it is published as before', async () => {
+    const n = await activeNode();
+    const before = repo.card();
+    expect(before).not.toBeNull();
+    n.gateway = false;
+    n.cardKeyPending = true;
+    await step(n);
+    expect(repo.card()).toEqual(before);
+    n.gateway = true;
+    n.cardKeyPending = false;
     await step(n);
     expect(nameInRepo()).toBe('Bus 42');
   });

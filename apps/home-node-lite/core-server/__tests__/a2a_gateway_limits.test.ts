@@ -39,6 +39,8 @@ async function hits(
   app.post('/v1/a2a/ingress/events/claim', async () => ({ ok: true }));
   app.post('/v1/a2a/ingress/elsewhere', async () => ({ ok: true }));
   app.get('/v1/a2a/card', async () => ({ ok: true }));
+  app.post('/v1/ucp/ingress/webhook', async () => ({ ok: true }));
+  app.post('/v1/ucp/ingress/oauth-callback', async () => ({ ok: true }));
   app.post('/v1/workflow/tasks/claim', async () => ({ ok: true }));
   const statuses: number[] = [];
   const headers = did === null ? {} : { 'x-did': did };
@@ -54,12 +56,18 @@ describe('Core’s per-address budget and the gateway', () => {
     ['POST', '/v1/a2a/ingress/push-configs/t/create'],
     ['POST', '/v1/a2a/ingress/events/claim'],
     ['GET', '/v1/a2a/card'],
+    // UCP plan §3.13: order webhooks come through the same gateway, limited at its edge.
+    ['POST', '/v1/ucp/ingress/webhook'],
+    ['POST', '/v1/ucp/ingress/webhook?x=1'],
+    // UCP plan §3.17: an OAuth callback too.
+    ['POST', '/v1/ucp/ingress/oauth-callback'],
   ] as const)('with Lane 2 on, %s %s passes more than 60 calls a minute', async (method, url) => {
     expect((await hits(true, method, url, 75)).every((s) => s === 200)).toBe(true);
   });
 
   it('with Lane 2 off, the same routes are counted', async () => {
     expect((await hits(false, 'POST', '/v1/a2a/ingress/message', 61)).at(-1)).toBe(429);
+    expect((await hits(false, 'POST', '/v1/ucp/ingress/webhook', 61)).at(-1)).toBe(429);
   });
 
   // Cold audit C3-9: the path alone exempts no one
@@ -69,6 +77,8 @@ describe('Core’s per-address budget and the gateway', () => {
   ])('with Lane 2 on, a call to the gateway’s route that %s stays counted', async (_name, did) => {
     expect((await hits(true, 'POST', '/v1/a2a/ingress/message', 61, did)).at(-1)).toBe(429);
     expect((await hits(true, 'GET', '/v1/a2a/card', 61, did)).at(-1)).toBe(429);
+    expect((await hits(true, 'POST', '/v1/ucp/ingress/webhook', 61, did)).at(-1)).toBe(429);
+    expect((await hits(true, 'POST', '/v1/ucp/ingress/oauth-callback', 61, did)).at(-1)).toBe(429);
   });
 
   it('with Lane 2 on, a route the gateway does not serve stays counted', async () => {

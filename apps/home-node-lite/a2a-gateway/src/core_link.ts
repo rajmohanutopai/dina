@@ -29,9 +29,15 @@ import {
   type DeliveryClaim,
 } from '@dina/a2a';
 import { Crypto, HttpClient, createCanonicalRequestSigner } from '@dina/adapters-node';
+import {
+  UCP_OAUTH_CALLBACK_WAIT_MS,
+  UCP_OAUTH_INGRESS_ROUTE,
+  UCP_WEBHOOK_INGRESS_ROUTE,
+  UCP_WEBHOOK_STORE_WAIT_MS,
+} from '@dina/core';
 
 import type { GatewayServiceKey } from './service_key';
-import type { GatewayEnvelope } from '@dina/core';
+import type { GatewayEnvelope, UcpWebhookEnvelope } from '@dina/core';
 
 export interface CoreAnswer {
   status: number;
@@ -55,6 +61,16 @@ export interface CoreLink {
   card(): Promise<{ ok: true; card: unknown; jwks: unknown } | { ok: false; status: number | 'unreachable' }>;
   /** Claim due task events: at most `limit`, of which at most `webhookLimit` webhook POSTs. */
   claimEvents(limit: number, webhookLimit: number): Promise<{ ok: true; claim: DeliveryClaim } | { ok: false; status: number | 'unreachable' }>;
+  /**
+   * Hand a UCP order webhook to Core (UCP plan §3.13). Core answers within
+   * `UCP_WEBHOOK_STORE_WAIT_MS` or the merchant is told 503 and retries.
+   */
+  ucpWebhook(envelope: UcpWebhookEnvelope): Promise<CoreReply>;
+  /**
+   * Hand an OAuth callback's parameters to Core (UCP plan §3.17), which
+   * exchanges the code: up to `UCP_OAUTH_CALLBACK_WAIT_MS`.
+   */
+  ucpOauthCallback(params: Readonly<Record<string, string>>): Promise<CoreReply>;
   /** Report claimed events; resolves to how many Core applied. */
   ackEvents(acks: readonly DeliveryAck[]): Promise<{ ok: true; applied: number } | { ok: false; status: number | 'unreachable' }>;
 }
@@ -94,6 +110,10 @@ export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKe
   // timeout set for every other call.
   const sendRoute = ingressRouteOf('SendMessage');
   const waiting = new HttpClient({ timeoutMs: Math.max(options.timeoutMs, A2A_SEND_WAIT_MS + SEND_WAIT_MARGIN_MS) });
+  // A webhook is stored or refused quickly: past this, the merchant is better off retrying.
+  const storing = new HttpClient({ timeoutMs: Math.min(options.timeoutMs, UCP_WEBHOOK_STORE_WAIT_MS) });
+  // A callback waits for Core's one code exchange with the merchant.
+  const exchanging = new HttpClient({ timeoutMs: Math.max(options.timeoutMs, UCP_OAUTH_CALLBACK_WAIT_MS) });
   const sign = createCanonicalRequestSigner({
     did: options.key.did,
     privateKey: options.key.seed,
@@ -155,6 +175,26 @@ export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKe
       const body = decode(res.body) as { card?: unknown; jwks?: unknown } | undefined;
       if (res.status !== 200 || body?.card === undefined || body.jwks === undefined) return { ok: false, status: res.status };
       return { ok: true, card: body.card, jwks: body.jwks };
+    },
+    async ucpWebhook(envelope) {
+      let res;
+      try {
+        res = await send('POST', UCP_WEBHOOK_INGRESS_ROUTE, envelope, storing);
+      } catch {
+        return { ok: false, status: 'unreachable' };
+      }
+      if (!isClientAnswer(res.headers)) return { ok: false, status: res.status };
+      return { ok: true, answer: { status: res.status, headers: {}, body: decode(res.body) } };
+    },
+    async ucpOauthCallback(params) {
+      let res;
+      try {
+        res = await send('POST', UCP_OAUTH_INGRESS_ROUTE, params, exchanging);
+      } catch {
+        return { ok: false, status: 'unreachable' };
+      }
+      if (!isClientAnswer(res.headers)) return { ok: false, status: res.status };
+      return { ok: true, answer: { status: res.status, headers: {}, body: decode(res.body) } };
     },
     async claimEvents(limit, webhookLimit) {
       let res;

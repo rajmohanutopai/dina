@@ -9,7 +9,7 @@
 import { p256Multikey } from '@dina/a2a';
 import { cidForOperation, deriveP256SigningKey, deriveRotationKey, secp256k1ToDidKeyMultibase } from '@dina/core';
 
-import { ensureA2ACardKey } from '../src/plc_dina_update';
+import { currentA2ACardKey, ensureA2ACardKey } from '../src/plc_dina_update';
 
 const DID = 'did:plc:nodeaaaaaaaaaaaaaaaaaaaa';
 const PLC = 'https://plc.example';
@@ -85,4 +85,24 @@ it.each([
   const { fetchFn, posts } = make();
   await expect(ensure(fetchFn)).rejects.toThrow(error);
   expect(posts).toEqual([]);
+});
+
+describe('the card key the document names now (UCP plan §4.8: a restored node adopts its generation)', () => {
+  const read = (fetchFn: typeof fetch) => currentA2ACardKey({ did: DID, plcURL: PLC, fetch: fetchFn });
+
+  it('reads it back as the compressed point', async () => {
+    const { fetchFn } = directory(lastOp({ a2a_card: `did:key:${p256Multikey(CARD_KEY)}` }));
+    expect(Buffer.from((await read(fetchFn)) ?? []).toString('hex')).toBe(Buffer.from(CARD_KEY).toString('hex'));
+  });
+
+  it('none named, or something that is not a P-256 did:key: null', async () => {
+    expect(await read(directory(lastOp()).fetchFn)).toBeNull();
+    expect(await read(directory(lastOp({ a2a_card: 'did:key:z6MkSigning' })).fetchFn)).toBeNull();
+    expect(await read(directory(lastOp({ a2a_card: 'https://not-a-key' })).fetchFn)).toBeNull();
+  });
+
+  it('an audit log that cannot be read throws: the node does not guess', async () => {
+    await expect(read(directory(lastOp(), 503).fetchFn)).rejects.toThrow();
+    await expect(read(directory(null).fetchFn)).rejects.toThrow();
+  });
 });

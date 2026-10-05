@@ -13,7 +13,21 @@
  */
 
 import { markNotificationRead } from '@dina/brain/notifications';
-import { buildPluginResultCard } from '@dina/core';
+import {
+  buildPluginResultCard,
+  handoffCardMirror,
+  readHandoffCard,
+  readSearchReviewCard,
+  readStartCard,
+  searchReviewMirror,
+  startCardMirror,
+  UCP_CHECKOUT_HANDOFF_TYPE,
+  UCP_CHECKOUT_START_TYPE,
+  UCP_ORDER_NOTICE_TYPE,
+  orderNoticeDescription,
+  readOrderNoticeCard,
+  UCP_SEARCH_REVIEW_TYPE,
+} from '@dina/core';
 
 import type { CoreClient, WorkflowTask } from '@dina/core';
 import type { CardSpec } from '@dina/protocol';
@@ -75,7 +89,8 @@ export interface InboxEntry {
   requesterDID: string;
   /**
    * integration_settings_proposal: the name the owner gave the proposing
-   * device when minting its setup code. An A2A mirror: "your Home Node".
+   * device when minting its setup code. A mirrored card (A2A, a held shop
+   * search): the sending device's paired name, as Core stamped it.
    * A label beside the DID, never instead of it.
    */
   requesterName?: string;
@@ -85,6 +100,42 @@ export interface InboxEntry {
    * mirrored to this phone. The requester is that node, not an agent.
    */
   a2aMirror?: 'outbound' | 'inbound';
+  /**
+   * A shop search held before it left (UCP plan §3.16). `own`: this phone's
+   * Core held it, and built the card. `mirrored`: a paired device sent the
+   * card (the owner's server node, though the phone cannot yet prove which
+   * device that is), so its words are that device's. The detail shows every
+   * shop and the exact query; approving lets exactly that search go.
+   */
+  ucpSearch?: 'own' | 'mirrored';
+  /**
+   * A checkout card (UCP plan §3.7): `start` asks to open a checkout at a
+   * merchant; `handoff` asks to open the merchant's own page to review and
+   * pay; `link` asks to open a merchant's sign-in page to link an account
+   * (§3.17: the owner's server node has no public origin, so the page opens
+   * here, where the app catches the merchant's answer). `own`: this phone's
+   * Core raised it; `mirrored`: the owner's server node did. A hand-off's or
+   * a link's yes needs a person present, and then opens `openUrl` (shown as
+   * `linkHost` before the tap). Dina never pays.
+   */
+  ucpCheckout?: {
+    card: 'start' | 'handoff' | 'link';
+    source: 'own' | 'mirrored';
+    openUrl?: string;
+    linkHost?: string;
+  };
+  /**
+   * An order notice (UCP plan §3.14): a failure, cancellation or dispute on
+   * an order Dina follows, in Core's words. Its one action is "Seen";
+   * `openUrl` is "Track or return at <linkHost>".
+   */
+  ucpOrderNotice?: {
+    source: 'own' | 'mirrored';
+    openUrl?: string;
+    linkHost?: string;
+    /** A checkout that ended unconfirmed: its link is the store ("Go to"), not an order page. */
+    checkout?: boolean;
+  };
   /** service_query: serialized params. intent_validation: target text. */
   paramsPreview: string;
   /** intent_validation only — surfaces SAFE/MODERATE/HIGH/BLOCKED. */
@@ -471,7 +522,11 @@ function executionResultForTask(task: WorkflowTask): ExecutionResult | undefined
   // that runs on the phone. Its queued state means "approved"; rendering an
   // execution result of "pending" would imply an executor is stuck here.
   const payloadType = safeParse(task.payload).type;
-  if (payloadType === 'remote_coding_gate_v1' || payloadType === 'remote_facade_action_v1') {
+  if (
+    payloadType === 'remote_coding_gate_v1' ||
+    payloadType === 'remote_facade_action_v1' ||
+    payloadType === 'remote_facade_presence_v1'
+  ) {
     return undefined;
   }
   switch (task.status) {
@@ -587,6 +642,38 @@ export async function approvePending(
   // different id space).
   markNotificationRead(taskId);
   return out;
+}
+
+/**
+ * Who sent a mirrored card: the name its device was paired under, stamped by
+ * Core from this phone's own registry. Any paired device may send one, so the
+ * card's action alone never names the sender.
+ */
+/** A link's host, as the card shows it before the tap; empty when it is not https. */
+function hostOf(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' ? u.host : '';
+  } catch {
+    return '';
+  }
+}
+
+function mirrorSender(parsed: Record<string, unknown>): string {
+  const name = parsed.source_device_name;
+  return typeof name === 'string' && name !== '' ? name : 'a paired device';
+}
+
+/**
+ * Decline a UCP card (a held shop search, a checkout's start or hand-off;
+ * UCP plan §3.7, §3.16): cancel the card, and nothing else. It has no peer to
+ * answer; Core reads the cancel as the owner's no, and a mirrored card's
+ * cancel travels back to the server node.
+ */
+export async function declineUcpCard(taskId: string): Promise<WorkflowTask> {
+  const result = await requireClient().cancelWorkflowTask(taskId, 'denied_by_operator');
+  markNotificationRead(taskId); // see comment in approvePending
+  return result;
 }
 
 /**
@@ -773,6 +860,178 @@ function toEntry(task: WorkflowTask): InboxEntry {
     };
   }
 
+  if (payloadType === UCP_SEARCH_REVIEW_TYPE) {
+    // This phone's own held search: the same words a mirrored one carries,
+    // built by Core from the stored card.
+    const card = readSearchReviewCard(task.payload);
+    const mirror = card === null ? null : searchReviewMirror(card);
+    const title = mirror?.title ?? 'Search the shops?';
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: '',
+      requesterName: 'Dina',
+      ucpSearch: 'own',
+      // A card the phone cannot show whole falls back to Core's own description: every shop and the query.
+      paramsPreview: mirror?.detail ?? task.description ?? '',
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === UCP_ORDER_NOTICE_TYPE) {
+    // This node's own order notice: Core's words, read back from the stored card.
+    const card = readOrderNoticeCard(task.payload);
+    const title = card !== null ? orderNoticeDescription(card) : task.description;
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: '',
+      requesterName: 'Dina',
+      ucpOrderNotice: {
+        source: 'own',
+        ...(card !== null
+          ? { openUrl: card.permalink_url, linkHost: hostOf(card.permalink_url) }
+          : {}),
+        ...(card?.notice.kind === 'checkout' ? { checkout: true } : {}),
+      },
+      paramsPreview: title,
+      riskLevel: 'MODERATE',
+      createdAt: task.created_at,
+    };
+  }
+
+  // A mirror is one only when it came through Core's remote-approval route (`origin: 'agent'`,
+  // after its caller check); one made any other way never shows as Dina's own card.
+  const mirrored = task.origin === 'agent';
+  if (
+    mirrored &&
+    payloadType === 'remote_facade_action_v1' &&
+    (parsed.action === 'ucp_order_notice' || parsed.action === 'ucp_checkout_notice')
+  ) {
+    // An order notice the owner's server node mirrored here, in its own words.
+    const title = typeof parsed.display_title === 'string' ? parsed.display_title : '';
+    const link = typeof parsed.link_url === 'string' ? parsed.link_url : undefined;
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '',
+      requesterName: mirrorSender(parsed),
+      ucpOrderNotice: {
+        source: 'mirrored',
+        ...(link !== undefined ? { openUrl: link, linkHost: hostOf(link) } : {}),
+        ...(parsed.action === 'ucp_checkout_notice' ? { checkout: true } : {}),
+      },
+      paramsPreview: typeof parsed.display_detail === 'string' ? parsed.display_detail : title,
+      riskLevel: 'MODERATE',
+      createdAt: task.created_at,
+    };
+  }
+
+  if (payloadType === UCP_CHECKOUT_START_TYPE || payloadType === UCP_CHECKOUT_HANDOFF_TYPE) {
+    // This phone's own checkout card: Core's words, built from the stored card. A card too
+    // long for the short form shows Core's full description.
+    const start = payloadType === UCP_CHECKOUT_START_TYPE ? readStartCard(task.payload) : null;
+    const handoff =
+      payloadType === UCP_CHECKOUT_HANDOFF_TYPE ? readHandoffCard(task.payload) : null;
+    const mirror =
+      start !== null
+        ? startCardMirror(start)
+        : handoff !== null
+          ? handoffCardMirror(handoff)
+          : null;
+    const title =
+      mirror?.title ?? (start !== null ? 'Start checkout?' : 'Review and pay at the merchant');
+    const openUrl = handoff?.handoff.url;
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: '',
+      requesterName: 'Dina',
+      ucpCheckout: {
+        card: start !== null ? 'start' : 'handoff',
+        source: 'own',
+        ...(openUrl !== undefined ? { openUrl, linkHost: hostOf(openUrl) } : {}),
+      },
+      paramsPreview: `${openUrl !== undefined ? `Opens ${hostOf(openUrl)}\n` : ''}${
+        task.description !== '' ? task.description : (mirror?.detail ?? '')
+      }`,
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (
+    mirrored &&
+    ((payloadType === 'remote_facade_action_v1' && parsed.action === 'ucp_checkout_start') ||
+      (payloadType === 'remote_facade_presence_v1' &&
+        (parsed.action === 'ucp_checkout_handoff' || parsed.action === 'ucp_link_handoff')))
+  ) {
+    // A checkout card the owner's server node mirrored here, in its own words. A hand-off's
+    // yes is made in person here (this node gates it), then its link opens here.
+    const title = typeof parsed.display_title === 'string' ? parsed.display_title : '';
+    const link = typeof parsed.link_url === 'string' ? parsed.link_url : undefined;
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '',
+      requesterName: mirrorSender(parsed),
+      ucpCheckout: {
+        card:
+          parsed.action === 'ucp_checkout_start'
+            ? 'start'
+            : parsed.action === 'ucp_link_handoff'
+              ? 'link'
+              : 'handoff',
+        source: 'mirrored',
+        ...(link !== undefined ? { openUrl: link, linkHost: hostOf(link) } : {}),
+      },
+      paramsPreview: `${link !== undefined ? `Opens ${hostOf(link)}\n` : ''}${
+        typeof parsed.display_detail === 'string' ? parsed.display_detail : ''
+      }`,
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  if (payloadType === 'remote_facade_action_v1' && parsed.action === 'ucp_search') {
+    // A held search a paired device (the owner's server node) mirrored here: it
+    // composed the title and the exact text (shops and query).
+    const title = typeof parsed.display_title === 'string' ? parsed.display_title : '';
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: title,
+      serviceName: title,
+      description: title,
+      requesterDID: typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '',
+      requesterName: mirrorSender(parsed),
+      ucpSearch: 'mirrored',
+      paramsPreview: typeof parsed.display_detail === 'string' ? parsed.display_detail : '',
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
   if (payloadType === 'agent_facade_action_v1' || payloadType === 'remote_facade_action_v1') {
     // An A2A card the owner's server node mirrored here (A2A plan §3.20): the
     // node composed the title and the exact text, and the source device is
@@ -791,7 +1050,7 @@ function toEntry(task: WorkflowTask): InboxEntry {
         serviceName: title,
         description: title,
         requesterDID: typeof parsed.source_device_did === 'string' ? parsed.source_device_did : '',
-        requesterName: 'your Home Node',
+        requesterName: mirrorSender(parsed),
         a2aMirror,
         paramsPreview: detail,
         riskLevel: 'HIGH',

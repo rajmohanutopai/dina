@@ -3472,6 +3472,388 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE a2a_card_publication ADD COLUMN retry_operation TEXT;
     `,
   },
+  {
+    version: 64,
+    name: 'ucp_read',
+    // UCP plan §3.11 and §3.16 (milestone U1): what a merchant search needs.
+    //
+    // conversation_taint: each persona Brain read in a chat conversation, with
+    // the strictest tier it had when read, written in the same transaction as
+    // the read's release-log row and kept until the conversation's messages
+    // are deleted; the release log forgets after 24 hours, the conversation
+    // does not. A persona counts as restricted if it was when read or is now,
+    // as the release log's own check does. conversation_coverage: when a conversation's first message was
+    // written on a node that keeps that record; a conversation with older
+    // messages is uncovered, and its searches always need the owner's card.
+    //
+    // ucp_owner_settings: the owner's allowed merchants and context fields (one row).
+    // ucp_handles: the merchant's opaque values (ids, variant ids, URLs, unit
+    // codes) behind the handles Brain sees, per conversation. A handle no
+    // search has used for a day is deleted; its number is never given again
+    // (ucp_handle_counters: one rising counter per kind, and one per product
+    // for its variants), so a stale handle resolves to nothing, never to
+    // another value.
+    // ucp_searches and ucp_search_results: one search, and each product it
+    // returned as Brain may read it (handles, checked fields, guarded text)
+    // and as the owner sees it (record_json and owner_json);
+    // last_claim_seq (rising with every claim) orders guard claims in turn
+    // across searches. Kept a day.
+    // ucp_guard_jobs: one guard job per product, its verdict, or why it was
+    // abandoned; an abandoned job stays abandoned after a restart. A
+    // conversation's rows go with its last message.
+    sql: `
+      CREATE TABLE IF NOT EXISTS conversation_taint (
+        session_id TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        persona_tier TEXT NOT NULL,
+        first_read_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, persona)
+      );
+      CREATE TABLE IF NOT EXISTS conversation_coverage (
+        session_id TEXT PRIMARY KEY,
+        covered_since INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ucp_handles (
+        session_id TEXT NOT NULL,
+        handle TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('merchant', 'product', 'variant', 'unit', 'url')),
+        merchant_origin TEXT NOT NULL,
+        value TEXT NOT NULL,
+        parent TEXT NOT NULL DEFAULT '',
+        seq INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        used_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, handle)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_handles_used ON ucp_handles(used_at);
+      CREATE TABLE IF NOT EXISTS ucp_owner_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        settings_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ucp_handle_counters (
+        session_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        last INTEGER NOT NULL,
+        PRIMARY KEY (session_id, kind)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ucp_handles_value
+        ON ucp_handles(session_id, kind, merchant_origin, value);
+      CREATE TABLE IF NOT EXISTS ucp_searches (
+        search_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        query_digest TEXT NOT NULL,
+        merchants_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('running', 'complete')),
+        created_at INTEGER NOT NULL,
+        guard_until INTEGER NOT NULL,
+        last_claim_seq INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_searches_session ON ucp_searches(session_id);
+      CREATE INDEX IF NOT EXISTS idx_ucp_searches_created ON ucp_searches(created_at);
+      CREATE TABLE IF NOT EXISTS ucp_review_cards (
+        review_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_review_cards_session ON ucp_review_cards(session_id, created_at);
+      CREATE TABLE IF NOT EXISTS ucp_search_results (
+        search_id TEXT NOT NULL REFERENCES ucp_searches(search_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        product_handle TEXT NOT NULL,
+        merchant_origin TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        owner_json TEXT NOT NULL,
+        PRIMARY KEY (search_id, position)
+      );
+      CREATE TABLE IF NOT EXISTS ucp_guard_jobs (
+        job_id TEXT PRIMARY KEY,
+        search_id TEXT NOT NULL REFERENCES ucp_searches(search_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        merchant_origin TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'claimed', 'passed', 'blocked', 'abandoned')),
+        claim_id TEXT,
+        claimed_until INTEGER,
+        created_at INTEGER NOT NULL,
+        resolved_at INTEGER,
+        verdict_json TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_guard_jobs_claim ON ucp_guard_jobs(state, created_at);
+      CREATE INDEX IF NOT EXISTS idx_ucp_guard_jobs_search ON ucp_guard_jobs(search_id);
+    `,
+  },
+  {
+    // UCP plan §3.7, §3.10, §3.12 (U2): checkout sessions and carts, each with
+    // one dispatch slot (a holder, a lease, a fencing generation), and the
+    // journal of every state change sent: its exact bytes, kept for a resend
+    // under the same idempotency key until its retry deadline.
+    version: 65,
+    name: 'ucp_checkout',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ucp_checkouts (
+        session_id TEXT PRIMARY KEY,
+        conversation TEXT NOT NULL,
+        merchant_origin TEXT NOT NULL,
+        leaf_profile_url TEXT NOT NULL,
+        version TEXT NOT NULL,
+        transport TEXT NOT NULL CHECK (transport IN ('mcp', 'rest')),
+        endpoint TEXT NOT NULL,
+        capabilities_hash TEXT NOT NULL,
+        profile_hash TEXT NOT NULL,
+        intent_json TEXT NOT NULL,
+        intent_hash TEXT NOT NULL,
+        review_id TEXT NOT NULL,
+        permit_id TEXT,
+        permit_expires_at INTEGER,
+        permit_void_reason TEXT,
+        merchant_checkout_id TEXT,
+        state TEXT NOT NULL CHECK (state IN (
+          'awaiting_approval', 'creating', 'open', 'handed_off', 'completed', 'canceled',
+          'not_completed', 'unknown', 'declined', 'create_unknown', 'unsettled', 'create_failed',
+          'stale', 'lapsed')),
+        effective_expires_at INTEGER,
+        last_answer_json TEXT,
+        handoff_source TEXT,
+        handed_off_at INTEGER,
+        watch_next_at INTEGER,
+        watch_reads INTEGER NOT NULL DEFAULT 0,
+        prompted_at INTEGER,
+        told_at INTEGER,
+        last_status TEXT,
+        order_id TEXT,
+        order_permalink_url TEXT,
+        slot_holder TEXT,
+        slot_lease_until INTEGER,
+        slot_generation INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ucp_checkouts_merchant_id
+        ON ucp_checkouts(merchant_origin, merchant_checkout_id) WHERE merchant_checkout_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_ucp_checkouts_conversation ON ucp_checkouts(conversation);
+      CREATE INDEX IF NOT EXISTS idx_ucp_checkouts_state ON ucp_checkouts(state);
+      CREATE TABLE IF NOT EXISTS ucp_carts (
+        cart_id TEXT PRIMARY KEY,
+        conversation TEXT NOT NULL,
+        merchant_origin TEXT NOT NULL,
+        version TEXT NOT NULL,
+        transport TEXT NOT NULL CHECK (transport IN ('mcp', 'rest')),
+        endpoint TEXT NOT NULL,
+        merchant_cart_id TEXT,
+        state TEXT NOT NULL CHECK (state IN ('creating', 'open', 'gone')),
+        expires_at INTEGER,
+        last_answer_json TEXT,
+        slot_holder TEXT,
+        slot_lease_until INTEGER,
+        slot_generation INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ucp_carts_merchant_id
+        ON ucp_carts(merchant_origin, merchant_cart_id) WHERE merchant_cart_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_ucp_carts_conversation ON ucp_carts(conversation);
+      CREATE TABLE IF NOT EXISTS ucp_requests (
+        idempotency_key TEXT PRIMARY KEY,
+        owner_kind TEXT NOT NULL CHECK (owner_kind IN ('checkout', 'cart')),
+        owner_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        merchant_origin TEXT NOT NULL,
+        transport TEXT NOT NULL CHECK (transport IN ('mcp', 'rest')),
+        endpoint TEXT NOT NULL,
+        target_id TEXT,
+        rpc_id TEXT,
+        request_bytes BLOB NOT NULL,
+        request_sha256 TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('prepared', 'in_doubt', 'settled', 'abandoned')),
+        first_sent_at INTEGER,
+        retry_deadline INTEGER NOT NULL,
+        conflicts INTEGER NOT NULL DEFAULT 0,
+        not_before INTEGER,
+        outcome_json TEXT,
+        created_at INTEGER NOT NULL,
+        settled_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_requests_owner ON ucp_requests(owner_kind, owner_id, state);
+      CREATE INDEX IF NOT EXISTS idx_ucp_requests_settled ON ucp_requests(settled_at);
+    `,
+  },
+  {
+    // UCP orders (UCP plan §3.14, U3.2): one row per merchant order, followed
+    // by polling (and, from U3.3, signed webhooks) until Dina's closed rule.
+    // The kept record (event and adjustment ids, for good) and the summary
+    // outlive the snapshot, which is dropped at close. One reconciler per
+    // order: a lease with a fencing generation, so only the current holder
+    // writes; notices are written in the same transaction for the owner's
+    // surfaces to take (U3.4).
+    version: 66,
+    name: 'ucp_orders',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ucp_orders (
+        merchant_origin TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        checkout_id TEXT NOT NULL,
+        session_id TEXT,
+        leaf_profile_url TEXT NOT NULL,
+        permalink_url TEXT NOT NULL,
+        version TEXT NOT NULL,
+        transport TEXT NOT NULL CHECK (transport IN ('mcp', 'rest')),
+        state TEXT NOT NULL CHECK (state IN ('open', 'not_shared', 'closed')),
+        close_reason TEXT CHECK (close_reason IS NULL OR close_reason IN
+          ('settled', 'not_found', 'not_shared', 'aged', 'owner')),
+        record_json TEXT NOT NULL,
+        summary_json TEXT,
+        snapshot_json TEXT,
+        notices_json TEXT NOT NULL DEFAULT '[]',
+        decision_item_id TEXT,
+        link_scopes TEXT,
+        -- Verified webhook bodies received while the order was open, each with when it came:
+        -- kept until a poll settles them, and used when the merchant will not share the order.
+        pushed_json TEXT,
+        polls INTEGER NOT NULL DEFAULT 0,
+        prompted_at INTEGER,
+        last_change_at INTEGER NOT NULL,
+        next_poll_at INTEGER,
+        closed_at INTEGER,
+        lease_holder TEXT,
+        lease_until INTEGER,
+        generation INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (merchant_origin, order_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_orders_due ON ucp_orders(state, next_poll_at);
+      CREATE INDEX IF NOT EXISTS idx_ucp_orders_session ON ucp_orders(session_id);
+    `,
+  },
+  {
+    // UCP order webhooks (UCP plan §3.13, U3.3). A delivery about a session
+    // or order Dina holds is written to the inbox before the gateway answers
+    // 200; a worker verifies it later. Only a verified delivery records its
+    // Webhook-Id (per merchant origin, kept 7 days), so an invalid delivery
+    // cannot suppress a later valid one with the same id.
+    version: 67,
+    name: 'ucp_webhooks',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ucp_webhook_inbox (
+        id TEXT PRIMARY KEY,
+        merchant_origin TEXT NOT NULL,
+        webhook_id TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        checkout_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        query TEXT NOT NULL,
+        headers_json TEXT NOT NULL,
+        body BLOB NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_try_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_webhook_inbox_due ON ucp_webhook_inbox(next_try_at);
+      CREATE TABLE IF NOT EXISTS ucp_webhook_seen (
+        merchant_origin TEXT NOT NULL,
+        webhook_id TEXT NOT NULL,
+        seen_at INTEGER NOT NULL,
+        PRIMARY KEY (merchant_origin, webhook_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_webhook_seen_at ON ucp_webhook_seen(seen_at);
+      CREATE INDEX IF NOT EXISTS idx_ucp_checkouts_merchant_id
+        ON ucp_checkouts(merchant_origin, merchant_checkout_id);
+    `,
+  },
+  {
+    // UCP linked accounts (UCP plan §3.17, U4). A pending link holds its
+    // state, PKCE verifier and exact redirect URI for 10 minutes, consumed
+    // once. A link holds its tokens (under SQLCipher, read through one door,
+    // never in a view), a token generation, and a refresh lease so one
+    // caller refreshes at a time. Unlink moves the link to revoking and
+    // queues every token; the queue is drained by revocation (RFC 7009).
+    version: 68,
+    name: 'ucp_links',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ucp_link_pending (
+        state TEXT PRIMARY KEY,
+        merchant_origin TEXT NOT NULL,
+        issuer TEXT NOT NULL,
+        token_endpoint TEXT NOT NULL,
+        revocation_endpoint TEXT,
+        client_id TEXT NOT NULL,
+        redirect_uri TEXT NOT NULL,
+        code_verifier TEXT NOT NULL,
+        scopes_json TEXT NOT NULL,
+        step_up INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        -- A callback through the phone (a server behind NAT) is acknowledged after it is
+        -- finished, and until then the server pulls it again. NULL: owed (or not yet consumed).
+        acked_at INTEGER,
+        -- How the attempt ended (linked, denied, token_unreachable, and so on), for the owner.
+        outcome TEXT,
+        -- The owner unlinked the merchant while this attempt was open: its tokens, if any
+        -- arrive, are revoked and never make a link.
+        cancelled_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ucp_merchant_links (
+        merchant_origin TEXT PRIMARY KEY,
+        issuer TEXT NOT NULL,
+        token_endpoint TEXT NOT NULL,
+        revocation_endpoint TEXT,
+        client_id TEXT NOT NULL,
+        scopes_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('active', 'needs_relink', 'revoking')),
+        generation INTEGER NOT NULL DEFAULT 1,
+        access_token TEXT,
+        refresh_token TEXT,
+        access_expires_at INTEGER,
+        refresh_holder TEXT,
+        refresh_until INTEGER,
+        -- The lifetime of one link: a refresh from an earlier link of the same merchant never lands.
+        link_id TEXT NOT NULL,
+        -- Refresh tokens a step-up replaced (a server may keep them alive): revoked on unlink.
+        superseded_json TEXT,
+        -- Raised by each authorization within one link (a step-up), never by a refresh: an
+        -- approved checkout is bound to it with link_id (§3.7).
+        auth_revision INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS ucp_link_revocations (
+        id TEXT PRIMARY KEY,
+        merchant_origin TEXT NOT NULL,
+        revocation_endpoint TEXT,
+        client_id TEXT NOT NULL,
+        token TEXT NOT NULL,
+        hint TEXT NOT NULL CHECK (hint IN ('access_token', 'refresh_token')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_try_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ucp_link_revocations_due ON ucp_link_revocations(next_try_at);
+      -- Access Dina could not take back (no revocation answered in 7 days): the owner removes it
+      -- at the merchant, then dismisses this.
+      CREATE TABLE IF NOT EXISTS ucp_link_unrevoked (
+        merchant_origin TEXT PRIMARY KEY,
+        since INTEGER NOT NULL
+      );
+      -- A merchant that asked for a linked account on some call (a Bearer challenge): offered
+      -- to the owner until a link there completes.
+      CREATE TABLE IF NOT EXISTS ucp_link_wanted (
+        merchant_origin TEXT PRIMARY KEY,
+        scopes_json TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      -- A callback the claimed link on the phone caught for a paired server (UCP plan §3.17): kept
+      -- until that server pulls it by its state and acknowledges, or for 10 minutes.
+      CREATE TABLE IF NOT EXISTS ucp_link_held_callbacks (
+        state TEXT PRIMARY KEY,
+        params_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

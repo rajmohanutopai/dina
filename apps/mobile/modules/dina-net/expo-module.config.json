@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["DinaNetModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.dinanet.DinaNetModule"]
+  }
+}

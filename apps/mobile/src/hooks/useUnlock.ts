@@ -20,7 +20,9 @@ import {
   closePersona,
   deriveDIDKey,
   deriveRootSigningKey,
+  deriveUcpIdentity,
   getPublicKey,
+  installUcpIdentity,
   listPersonas,
   unwrapSeed,
   type WrappedSeed,
@@ -30,6 +32,7 @@ import { openAllPersonasForInAppUser } from '@dina/home-node';
 import { seedDefaultPersonas } from '../onboarding/default_personas';
 import { loadPersistedDid } from '../services/identity_record';
 import { setAsideUnreadableVaultFiles } from '../services/install_marker';
+import { stopUcp } from '../services/net_socket_wiring';
 import { emitRuntimeWarning } from '../services/runtime_warnings';
 import { ensureVaultSalt } from '../services/vault_salt_store';
 import {
@@ -145,6 +148,10 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   const persistedDid = await loadPersistedDid();
   const did = persistedDid ?? deriveDIDKey(pubKey);
   state.did = did;
+  // UCP (docs/UCP_IMPLEMENTATION_PLAN.md §3.1): the request-signing key and
+  // the profile label come from the master seed, so they exist only while
+  // unlocked, in memory; sealVault clears them.
+  installUcpIdentity(deriveUcpIdentity(masterSeed));
 
   // 4. Ensure the default persona set (general + work + health + finance)
   //    exists. Mirrors main Dina's `core/cmd/dina-core/main.go:443-450`
@@ -390,6 +397,8 @@ export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<v
     return;
   }
   setAccessiblePersonas([]);
+  await stopUcp();
+  installUcpIdentity(null);
   // Close all open personas in the in-memory registry so the next unlock()
   // starts from the correct initial state. openBootPersonas() checks
   // !isOpen before re-opening — without this reset it finds them already

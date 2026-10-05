@@ -101,13 +101,13 @@ export interface VerifiedA2ACard {
 
 export type A2ACardVerdict = { ok: true; card: VerifiedA2ACard } | { ok: false; reason: string }
 
-const sha256 = (bytes: Uint8Array): Uint8Array => createHash('sha256').update(bytes).digest()
+export const sha256 = (bytes: Uint8Array): Uint8Array => createHash('sha256').update(bytes).digest()
 
 // DER SubjectPublicKeyInfo prefixes, so node:crypto takes the raw keys as they are.
 const ED25519_SPKI = Buffer.from('302a300506032b6570032100', 'hex')
 const P256_COMPRESSED_SPKI = Buffer.from('3039301306072a8648ce3d020106082a8648ce3d030107032200', 'hex')
 
-function ed25519Verify(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
+export function ed25519Verify(publicKey: Uint8Array, message: Uint8Array, signature: Uint8Array): boolean {
   try {
     const key = createPublicKey({ key: Buffer.concat([ED25519_SPKI, publicKey]), format: 'der', type: 'spki' })
     return nodeVerify(null, message, key, signature)

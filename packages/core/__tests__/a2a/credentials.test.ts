@@ -73,11 +73,11 @@ beforeEach(async () => {
   setA2AHostTransport(async (request) => {
     if (request.url === 'https://auth.example/token') {
       tokenRequests.push(request);
-      return { ok: true, status: tokenAnswer.status, body: JSON.stringify(tokenAnswer.body), connectedAddress: '203.0.113.5' };
+      return { ok: true, status: tokenAnswer.status, body: JSON.stringify(tokenAnswer.body), connectedAddress: '203.0.114.5' };
     }
     const card = cardTransport.get(request.url);
     if (card === undefined) return { ok: false, error: 'dns_failed', sent: false };
-    return { ok: true, status: 200, body: JSON.stringify(card), connectedAddress: '203.0.113.9' };
+    return { ok: true, status: 200, body: JSON.stringify(card), connectedAddress: '203.0.114.9' };
   });
 });
 afterEach(() => world.close());

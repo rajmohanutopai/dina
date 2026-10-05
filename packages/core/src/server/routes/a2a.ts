@@ -20,6 +20,7 @@
 
 import { A2A_DID_BINDING_PATH, isPlainObject } from '@dina/a2a';
 
+import { getA2ACardKeyRotation } from '../../a2a/card_key_rotation';
 import {
   createA2AClient,
   getA2AClient,
@@ -61,6 +62,7 @@ import {
 } from '../../a2a/remote_agents';
 import { bindRunner, listRunnerBindings, unbindRunner } from '../../a2a/runner_bindings';
 import { getA2ARuntime, getA2AStore, type A2ARuntime } from '../../a2a/runtime';
+import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getNodeDID } from '../../pairing/ceremony';
 import { getServiceGrantRepository, type ServiceGrant } from '../../service/service_grant_repository';
 import { parseReleaseSession } from '../../vault/release';
@@ -79,6 +81,7 @@ import {
   OWNER_A2A_GRANTS,
   OWNER_A2A_DIRECTORY_LISTING,
   OWNER_A2A_PUBLISHER,
+  OWNER_A2A_CARD_KEY,
   OWNER_A2A_REMOTE_AGENTS,
   OWNER_A2A_RUNNERS,
 } from './paths';
@@ -461,6 +464,32 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
   router.get(
     OWNER_A2A_PUBLISHER,
     ownerRoute(async (_req, s) => json(200, await publisherView(s))),
+  );
+
+  // The card key (UCP plan §4.8, U7): the ring, and the owner's rotation. A rotation changes
+  // the key every remote agent pinned with the card, so it needs the owner present.
+  router.get(
+    OWNER_A2A_CARD_KEY,
+    ownerRoute(async () => {
+      const rotation = getA2ACardKeyRotation();
+      return rotation === null ? json(503, { error: 'card_unconfigured' }) : json(200, rotation.view());
+    }),
+  );
+  router.post(
+    OWNER_A2A_CARD_KEY,
+    ownerRoute(async (req) => {
+      const rotation = getA2ACardKeyRotation();
+      if (rotation === null) return json(503, { error: 'card_unconfigured' });
+      if (body(req).action !== 'rotate') return json(400, { error: 'invalid_action' });
+      if (!rotation.ready()) return json(409, { error: 'card_key_unknown' });
+      const refusal = ownerPresenceRefusal(req, Date.now(), 'confirm it is you first');
+      if (refusal !== null) return json(refusal.status, refusal.body);
+      const out = await rotation.rotate();
+      // No DID document to record the key in: a restore could not tell a rotation happened.
+      if (out === 'no_did_document') return json(409, { error: 'no_did_document' });
+      if (out === 'unknown') return json(409, { error: 'card_key_unknown' });
+      return json(200, rotation.view());
+    }),
   );
 
   router.post(

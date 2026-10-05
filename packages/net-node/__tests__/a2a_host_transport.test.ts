@@ -152,7 +152,10 @@ describe('a forbidden destination receives no connection', () => {
     const answers = [['127.0.0.1'], ['10.0.0.1']];
     let lookups = 0;
     const transport = createA2AHostTransport({
-      resolve: async () => answers[Math.min(lookups++, 1)] as string[],
+      // The socket also asks for `ipv4only.arpa` (RFC 7050 NAT64 discovery,
+      // UCP plan §3.3); only lookups of the target name count here.
+      resolve: async (name) =>
+        name === 'ipv4only.arpa' ? [] : (answers[Math.min(lookups++, 1)] as string[]),
       isAllowedAddress: loopbackAllowed,
       ca: CERT,
     });

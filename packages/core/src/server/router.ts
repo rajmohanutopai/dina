@@ -37,6 +37,8 @@ import {
   type AuthResult,
 } from '../auth/middleware';
 
+import type { AgentScope } from '../auth/agent_scope';
+
 export interface CoreRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   /** Path without query string, e.g. `/v1/workflow/tasks/task-42/heartbeat`. */
@@ -95,7 +97,7 @@ export interface CoreRequest {
    * auth middleware for `callerType === 'agent'`; undefined otherwise. The new
    * scope-gated `/v1/agent/*` façades fail closed when it is missing.
    */
-  agentScope?: 'coding' | 'runner';
+  agentScope?: AgentScope;
   /**
    * The owner control-plane capability (INTERACTIVE_SERVICES §12.5, F15). A
    * boot-minted secret the app holds in an app-layer closure and stamps on every

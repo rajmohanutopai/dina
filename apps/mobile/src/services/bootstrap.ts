@@ -56,6 +56,7 @@ import {
   onServiceConfigChanged,
   a2aWorkflowHooks,
   composeWorkflowHooks,
+  ucpWorkflowHooks,
   coordinationWorkflowHooks,
   getA2ARuntime,
   integrationWorkflowHooks,
@@ -763,6 +764,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // Lane 1 runtime, so this handler finds none and does nothing. Composed
       // anyway so the two boots carry the same hooks.
       a2aWorkflowHooks(getA2ARuntime),
+      // UCP checkout's start card (plan §3.7): its yes mints the permit. Finds no runtime
+      // until UCP starts, and then does nothing.
+      ucpWorkflowHooks(),
     ),
     // Wired on the phone too, and for the reason recorded just above: the
     // divergence between the two boots is the recurring defect here, not the

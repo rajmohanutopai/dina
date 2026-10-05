@@ -188,7 +188,7 @@ describe('a phone decision binds to the card’s post_hash', () => {
     // The phone holds a mirror of this card with every field the same but the hash, and its owner said yes.
     const forged = await phone.request('POST', '/v1/agent/approval-sync/v1/proposals', { ...wanted, source_payload_hash: 'e'.repeat(64) });
     expect(forged.status).toBe(201);
-    getWorkflowService()?.approve(remoteApprovalProposalId(PHONE, 'a2a-in-review-x'));
+    getWorkflowService()?.approve(remoteApprovalProposalId(PHONE, 'a2a-in-review-x:w1'));
     const tick = await runPhoneApprovalSyncTick({ client: phone, nowMs: NOW });
     expect(tick.approved).toBe(0);
     expect(getWorkflowService()?.store().getById('a2a-in-review-x')?.status).toBe('pending_approval');
@@ -198,7 +198,7 @@ describe('a phone decision binds to the card’s post_hash', () => {
   it('a yes on the phone for the mirror the server proposed decides the card', async () => {
     card('a2a-in-review-y', 'f'.repeat(64));
     expect((await runPhoneApprovalSyncTick({ client: phone, nowMs: NOW })).pending).toBe(1);
-    getWorkflowService()?.approve(remoteApprovalProposalId(PHONE, 'a2a-in-review-y'));
+    getWorkflowService()?.approve(remoteApprovalProposalId(PHONE, 'a2a-in-review-y:w1'));
     expect((await runPhoneApprovalSyncTick({ client: phone, nowMs: NOW })).approved).toBe(1);
     expect(getWorkflowService()?.store().getById('a2a-in-review-y')?.status).toBe('queued');
   });

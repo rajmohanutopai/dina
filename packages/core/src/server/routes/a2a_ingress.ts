@@ -32,6 +32,7 @@ import {
   type A2AMethod,
 } from '@dina/a2a';
 
+import { getA2ACardKeyRotation } from '../../a2a/card_key_rotation';
 import { ackDeliveries, claimDeliveries } from '../../a2a/delivery';
 import { ingressCompleteDidBinding } from '../../a2a/did_binding';
 import {
@@ -157,6 +158,8 @@ async function serveCard(req: CoreRequest): Promise<CoreResponse> {
   if (inputs === null || store === null) return json(503, { error: 'a2a_card_unconfigured' });
   const built = await buildInboundCard(store, inputs);
   if (!built.ok) return json(404, { error: built.reason });
+  // The gateway serves this JWK Set from now on: a staged card key in it counts as served (U7).
+  await getA2ACardKeyRotation()?.served(built.jwks.keys.map((k) => String(k.kid)));
   return json(200, { card: built.card, jwks: built.jwks });
 }
 

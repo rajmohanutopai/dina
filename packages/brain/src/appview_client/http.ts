@@ -169,6 +169,66 @@ const RECOMMENDATIONS = new Set(['proceed', 'caution', 'verify', 'avoid']);
 
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
+/** A merchant in the UCP merchant index (UCP plan §3.15), as Brain reads it. */
+export interface UcpIndexMerchant {
+  /** `https://host[:port]`. */
+  origin: string;
+  /** PeerLens's name for it (reviewers' words, cleaned for display), or '' when none. */
+  name: string;
+  state: 'usable' | 'pending' | 'unusable';
+  capabilities: string[];
+  /** PeerLens's score 0–1; null when unrated. */
+  trustScore: number | null;
+  recommendation: string | null;
+  reviewCount: number;
+  /** False when PeerLens has no review of it at all. */
+  verified: boolean;
+}
+
+export interface SearchUcpMerchantsParams {
+  capability?: string;
+  q?: string;
+  limit?: number;
+}
+
+const MERCHANT_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
+const UCP_CAPABILITY = /^dev\.ucp\.shopping(?:\.[a-z][a-z0-9_]*)+$/;
+
+/** A searchMerchants entry of exactly the published shape, or null. */
+function parseUcpIndexMerchant(value: unknown): UcpIndexMerchant | null {
+  if (value === null || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const ok =
+    typeof v.origin === 'string' &&
+    MERCHANT_ORIGIN.test(v.origin) &&
+    (v.name === null || typeof v.name === 'string') &&
+    (v.state === 'usable' || v.state === 'pending' || v.state === 'unusable') &&
+    Array.isArray(v.capabilities) &&
+    v.capabilities.every((c) => typeof c === 'string' && UCP_CAPABILITY.test(c)) &&
+    (v.trustScore === null ||
+      (typeof v.trustScore === 'number' &&
+        Number.isFinite(v.trustScore) &&
+        v.trustScore >= 0 &&
+        v.trustScore <= 1)) &&
+    (v.recommendation === null ||
+      (typeof v.recommendation === 'string' && RECOMMENDATIONS.has(v.recommendation))) &&
+    typeof v.reviewCount === 'number' &&
+    Number.isSafeInteger(v.reviewCount) &&
+    v.reviewCount >= 0 &&
+    typeof v.verified === 'boolean';
+  if (!ok) return null;
+  return {
+    origin: v.origin as string,
+    name: typeof v.name === 'string' ? a2aDisplayText(v.name, A2A_NAME_MAX_CODE_POINTS) : '',
+    state: v.state as UcpIndexMerchant['state'],
+    capabilities: [...(v.capabilities as string[])],
+    trustScore: v.trustScore as number | null,
+    recommendation: v.recommendation as string | null,
+    reviewCount: v.reviewCount as number,
+    verified: v.verified as boolean,
+  };
+}
+
 /** A getCard answer of exactly the published shape, its card's JSON-RPC endpoint read out, or null. */
 function parseA2ADirectoryCard(did: string, value: unknown): A2ADirectoryCard | null {
   if (value === null || typeof value !== 'object') return null;
@@ -539,6 +599,23 @@ export class AppViewClient {
     const agents = (body as { agents?: unknown } | null)?.agents;
     if (!Array.isArray(agents)) return [];
     return agents.map(parseA2ADirectoryAgent).filter((a): a is A2ADirectoryAgent => a !== null);
+  }
+
+  /**
+   * Search the UCP merchant index (UCP plan §3.15): merchants PeerLens
+   * reviewers named, ranked by trust. Entries of any other shape are dropped;
+   * an HTTP failure throws `AppViewError`.
+   */
+  async searchUcpMerchants(params: SearchUcpMerchantsParams): Promise<UcpIndexMerchant[]> {
+    const query: Record<string, string> = {};
+    if (params.capability !== undefined && params.capability !== '')
+      query.capability = params.capability;
+    if (params.q !== undefined && params.q !== '') query.q = params.q;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+    const body = await this.get('/xrpc/com.dinakernel.ucp.searchMerchants', query);
+    const merchants = (body as { merchants?: unknown } | null)?.merchants;
+    if (!Array.isArray(merchants)) return [];
+    return merchants.map(parseUcpIndexMerchant).filter((m): m is UcpIndexMerchant => m !== null);
   }
 
   /**

@@ -76,6 +76,7 @@ import {
   setOutboxRedeliverFn,
   setPluginDeviceVerifier,
   setRepoProofVerifier,
+  setUcpPolicySocket,
   startAbandonedInstallSweeper,
   startOutboxDrainer,
   storeItem,
@@ -105,6 +106,12 @@ import {
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
+import {
+  getMobilePolicySocket,
+  kickUcpGuard,
+  ucpRunning,
+  wireMobilePolicySocket,
+} from './net_socket_wiring';
 import { makeMobileRepoProofVerifier } from './repo_proof_wiring';
 import { loadRolePreference } from './role_preference';
 
@@ -421,6 +428,13 @@ export async function buildBootInputs(
   // verified a fixture repo ON THIS DEVICE (self-check). Without it
   // `beginInstall` fails closed and the Plugins door stays shut and says so.
   setRepoProofVerifier(await makeMobileRepoProofVerifier());
+  // UCP plan §3.4 (U6): the pinned policy socket, wired only after its
+  // offline self-check passes on this device, and installed as UCP's socket
+  // (ucpFetch). A phone whose socket fails the check makes no UCP calls.
+  await wireMobilePolicySocket();
+  setUcpPolicySocket(getMobilePolicySocket());
+  // §3.5, §3.11, §3.16: the buyer profile, merchant search and its guard start once the
+  // node is up (useNodeBootstrap), not here: a boot that fails or is dropped starts nothing.
 
   // Dev-only contact seed: when EXPO_PUBLIC_DINA_DEV_CONTACT is set,
   // pre-populate the in-memory directory at boot so end-to-end smoke
@@ -961,6 +975,11 @@ async function tryBuildAgenticAsk(opts: {
     core: lazyCoreClient(),
     orchestratorHandle: lazyOrchestratorHandle(),
     workflowClient: lazyWorkflowClient(),
+    // UCP (plan §4.2 U1): the catalogue tools, through the booted node's Core, and
+    // the kick for this phone's guard worker (net_socket_wiring).
+    ucpClient: lazyUcpClient(),
+    ucpGuardKick: kickUcpGuard,
+    ucpEnabled: ucpRunning,
     installedPersonas,
     retrievalFetchers,
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
@@ -1161,6 +1180,34 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
       if (n === null) throw new Error('lazyCoreClient.cancelWorkflowTask: DinaNode not booted');
       return n.coreClient.cancelWorkflowTask(id, reason);
     },
+  };
+}
+
+type Bootstrap = typeof import('../hooks/useNodeBootstrap');
+
+/**
+ * The UCP tools' Core surface (search, and buying: carts and checkouts), through the booted node's in-process
+ * client, read at call time. Before boot every call answers as Core would
+ * with UCP not running, so the tool says so instead of throwing.
+ */
+function lazyUcpClient(): Pick<
+  import('@dina/core').CoreClient,
+  'searchUcp' | 'getUcpSearch' | 'raiseUcpSearchReview' | 'fetchUcpProducts' | 'ucpCart' | 'ucpCheckout'
+> {
+  function core() {
+    // Required here, not imported: the bootstrap hook imports this module.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const bootstrap = require('../hooks/useNodeBootstrap') as Bootstrap;
+    return bootstrap.getBootedNode()?.coreClient ?? null;
+  }
+  const notRunning = { ok: false as const, status: 503, reason: 'ucp_unavailable' };
+  return {
+    searchUcp: async (input) => (await core()?.searchUcp(input)) ?? notRunning,
+    getUcpSearch: async (id, session) => (await core()?.getUcpSearch(id, session)) ?? null,
+    raiseUcpSearchReview: async (input) => (await core()?.raiseUcpSearchReview(input)) ?? notRunning,
+    fetchUcpProducts: async (input) => (await core()?.fetchUcpProducts(input)) ?? notRunning,
+    ucpCart: async (input) => (await core()?.ucpCart(input)) ?? notRunning,
+    ucpCheckout: async (input) => (await core()?.ucpCheckout(input)) ?? notRunning,
   };
 }
 
